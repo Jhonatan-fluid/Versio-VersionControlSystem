@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-12 · **Commits:** 27 · **Tests:** 722 unit + 95 integration, 0 skipped
+**Date:** 2026-08-12 · **Commits:** 28 · **Tests:** 722 unit + 96 integration, 0 skipped
 
 > One integration test, `RepositoryWatcherTests.A_deleted_file_is_reported`, is **flaky under
 > full-suite load** — see Findings. It passes in isolation and failed once during a complete
@@ -100,7 +100,7 @@ format; `.gitattributes` covers every registered vendor's extensions.
 | **Commit gate** | A stale mirror is exported *and staged* before the commit. Push releases the direction locks; commit does not, and the panel says so |
 | **Diff view** | Eleven languages, new files rendered entirely green, *Show full file*, rows built only when realised, **per-hunk stage and unstage** |
 | **Open in the IDE** | Export runs anyway, from a copy; import waits and names who has the project. Neither marks the binding failed, and the breaker is never fed |
-| **Adoption writes `.gitignore`** | Created when absent, appended when present, never overriding an existing decision. Keeps the toolchain's `-AllUsers.opt` and `-<user>-<machine>.opt` out of git — the second carries a username and machine name in its filename |
+| **Adoption writes `.gitignore`** | Created when absent, appended when present, never overriding an existing decision. Covers `.versio/local/` — locks, backups, scratch copies — and the toolchain's `-AllUsers.opt` and `-<user>-<machine>.opt`, the second of which carries a username and machine name in its filename |
 | **PLC state** | Toolchain, direction lock, staleness and heartbeat, folded into the project panel as facts rather than controls. Two buttons survive: export what is stale, and acknowledge a failure |
 | **Export coverage** | What the export does *not* carry, said out loud: `_coverage.md` in the tree, every skip in the manifest with a stable reason, and a sentence in the panel naming what cannot be relied on. A gap is distinguished from a deliberate omission, and an old manifest reports "unknown" rather than "complete" |
 | **Chrome** | One app-wide progress bar with a caption, maximized on open, log console collapsed, heartbeat during long runs |
@@ -279,6 +279,25 @@ Two constraints that fall out of this and are easy to get wrong:
 This makes export-while-open a solvable problem rather than a refusal. Import is not, and
 should not be: the IDE holds its own copy in memory and would silently revert an import on the
 next Ctrl+S, so it must fail and say so.
+
+### `.versio/local/` was gitignored in three comments and nowhere else
+
+Found by re-reading the plan against the code after building the ignore rules. The engine says
+`.versio/local/` "is gitignored" in three separate places, and §5 of the plan is explicit that
+it must be: it holds the direction locks, session state, project backups — megabytes of binary
+snapshots — and now the scratch copy taken while the IDE has a project open. A committed lock
+pulled onto a colleague's machine is, in the plan's words, a bug factory.
+
+Nothing wrote the rule. **This repository had one because a person typed it by hand**, which is
+precisely why nobody noticed: every test and every manual check ran here. A repository somebody
+else adopted a project into got the vendor's `.opt` rules and nothing else, so their locks and
+backups sat untracked, visible in the panel, and one *stage all* from being committed.
+
+The same shape as the library manager this morning: a comment asserting a property that nothing
+enforces, true only where somebody had arranged it separately. Adoption now writes the rule, and
+the test asserts through git — including that `.versio/repo.json` is **still** reported, because
+it is committed on purpose and an ignore rule that swallowed it would break every clone's
+baseline.
 
 ### What CODESYS actually leaves beside a project, and why it belongs in `.gitignore`
 

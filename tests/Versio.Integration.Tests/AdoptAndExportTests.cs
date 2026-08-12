@@ -534,6 +534,55 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(first, second);
     }
 
+    [SkippableFact]
+    public async Task Versios_own_local_directory_is_ignored_in_a_repository_it_adopts_into()
+    {
+        // Three comments in the engine describe .versio/local/ as gitignored. Nothing wrote
+        // the rule: this repository has one because a person typed it, and a repository
+        // somebody else adopts a project in did not.
+        //
+        // What lives there: the direction locks, session state, project backups - megabytes
+        // of binary snapshots - and the scratch copy taken while the IDE holds a project. The
+        // plan calls a committed lock pulled onto a colleague's machine a bug factory, and it
+        // is right.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        Skip.If(!File.Exists(FixtureProject), "fixture project missing");
+
+        await InitRepoAsync();
+
+        var git = new GitCliClient(_repo, logger: new TestLogger(output));
+        var setup = new RepoSetup(_repo, CodesysProjectFormat.Instance, new TestLogger(output));
+
+        await setup.AdoptAsync(ProjectRelativePath, git, null, CancellationToken.None);
+
+        // Put the real things there, then ask git rather than reading our own file back.
+        var locks = Path.Combine(_repo, ".versio", "local");
+        Directory.CreateDirectory(Path.Combine(locks, "backups", "b-1"));
+        Directory.CreateDirectory(Path.Combine(locks, "open", "b-1"));
+
+        await File.WriteAllTextAsync(Path.Combine(locks, "locks.json"), "{}");
+        await File.WriteAllTextAsync(
+            Path.Combine(locks, "backups", "b-1", "20260812-120000-A.project"), "binary");
+        await File.WriteAllTextAsync(
+            Path.Combine(locks, "open", "b-1", "A.project"), "scratch");
+
+        var status = await git.StatusAsync(CancellationToken.None);
+        foreach (var change in status.Changes)
+        {
+            output.WriteLine($"{change.Effective} {change.Path}");
+        }
+
+        Assert.DoesNotContain(status.Changes, c =>
+            c.Path.Replace(Path.DirectorySeparatorChar, '/')
+             .StartsWith(".versio/local/", StringComparison.OrdinalIgnoreCase));
+
+        // repo.json is committed on purpose - it is the shared project mapping, and a clone
+        // needs it to get the same baseline. Ignoring .versio wholesale would break that.
+        Assert.Contains(status.Changes, c =>
+            c.Path.Replace(Path.DirectorySeparatorChar, '/')
+             .Equals(".versio/repo.json", StringComparison.OrdinalIgnoreCase));
+    }
+
     /// <summary>Whether git is on PATH, so a machine without it skips rather than fails.</summary>
     private static bool GitAvailable
     {

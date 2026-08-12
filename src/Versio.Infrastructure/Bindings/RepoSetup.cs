@@ -138,13 +138,18 @@ public sealed class RepoSetup(
     /// </remarks>
     public async Task<GitIgnorePlan> EnsureGitIgnoreAsync(string projectPath, CancellationToken ct)
     {
-        // No format means no vendor to ask, which is a legitimate way to construct this for
-        // the scan-only paths. Nothing to ignore rather than a guess.
-        var patterns = format?.TransientPatternsFor(projectPath) ?? [];
-        if (patterns.Count == 0)
-        {
-            return GitIgnorePlan.NoChange(string.Empty);
-        }
+        // Versio's own machine-specific directory first, and unconditionally: locks, session
+        // state, backups and the scratch copies taken while the IDE holds a project. Three
+        // comments in the engine described this as gitignored while nothing wrote the rule —
+        // true here only because a person had typed it into this repository by hand.
+        //
+        // Then whatever the vendor leaves beside a project. No format means no vendor to ask,
+        // which is a legitimate way to construct this for the scan-only paths.
+        List<string> patterns =
+        [
+            BindingConventions.LocalIgnorePattern,
+            .. format?.TransientPatternsFor(projectPath) ?? [],
+        ];
 
         var existing = File.Exists(GitIgnorePath)
             ? await File.ReadAllTextAsync(GitIgnorePath, ct).ConfigureAwait(false)

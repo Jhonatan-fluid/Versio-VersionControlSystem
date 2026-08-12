@@ -59,6 +59,24 @@ public static class BindingConventions
     public const string TemplateSuffix = "_template.project";
     public const string ManifestFileName = "_manifest.json";
 
+    /// <summary>
+    /// Versio's own machine-specific directory, which must never reach git.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Locks, session state, project backups and the scratch copies taken when the IDE has a
+    /// project open. A lock that got committed and pulled onto a colleague's machine would be
+    /// a bug factory (plan §5), and the backups are megabytes of binary project snapshots.
+    /// </para>
+    /// <para>
+    /// A constant rather than a string in three comments, because it was a string in three
+    /// comments: they each said it "is gitignored" while nothing wrote the rule. This
+    /// repository had one because a person typed it; a repository somebody else adopts a
+    /// project in did not.
+    /// </para>
+    /// </remarks>
+    public const string LocalIgnorePattern = ".versio/local/";
+
     /// <summary>codescribe's convention, kept as the default: the export folder is a
     /// sibling named after the project.</summary>
     public static string ConventionalExportPath(string projectPath)

@@ -61,7 +61,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | Multi-vendor detection — registry, per-binding vendor, mixed repositories | ✅ `PlcFormats`; Rockwell/Siemens/TwinCAT are additive |
 | Application icon — 8 sizes, hand-tuned below 48px, embedded in the exe | ✅ 12 tests over the `.ico` itself |
 | **Automatic tracking** — every project found, with its `.gitattributes`/LFS rules | ✅ 13 refusal tests + real-repo integration |
-| **`.gitignore` written on adoption**, created if the repository has none | ✅ keeps the toolchain's `.opt` scratch files out of git; scoped to the project, never repository-wide |
+| **`.gitignore` written on adoption**, created if the repository has none | ✅ covers `.versio/local/` (locks, backups, scratch copies) and the toolchain's `.opt` files; project-scoped, never repository-wide |
 | **Automatic export** when the project changes | ✅ 11 files in 16.7 s on the fixture, lock taken and persisted |
 | Direction lock in plain English, shared by the panel and the log | ✅ `SyncNarrative` — every blocking state names its remedy |
 | Heartbeat during a 17–31 s export | ✅ elapsed time in the panel, not silence |
