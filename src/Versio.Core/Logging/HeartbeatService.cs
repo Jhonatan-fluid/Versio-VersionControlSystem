@@ -95,7 +95,10 @@ public sealed class HeartbeatService(IClock clock, VersioLogger logger) : IDispo
     {
         foreach (var op in Running)
         {
-            logger.Log(LogLevel.Information, LogCategory.Codesys, op.Describe(clock),
+            // Perf, not a vendor category. This service times any long operation - a
+            // toolchain run today, a clone tomorrow - and filing its beats under one brand
+            // would hide them from anyone filtering for the operation they are waiting on.
+            logger.Log(LogLevel.Information, LogCategory.Perf, op.Describe(clock),
                        isHeartbeat: true);
             Beat?.Invoke(op);
         }

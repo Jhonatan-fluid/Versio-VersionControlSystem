@@ -6,14 +6,12 @@ using Versio.Core.Bindings;
 using Versio.Core.Locking;
 using Versio.Core.Logging;
 using Versio.Core.Plc;
-using Versio.Core.Plc.Codesys;
 using Versio.Core.Projects;
 using Versio.Core.Sync;
 using Versio.Infrastructure.Bindings;
 using Versio.Infrastructure.FileSystem;
 using Versio.Infrastructure.Platform;
 using Versio.Infrastructure.Plc;
-using Versio.Infrastructure.Plc.Codesys;
 using Versio.Infrastructure.Watching;
 
 namespace Versio.App.ViewModels;
@@ -103,7 +101,15 @@ public sealed class SyncViewModel : ObservableObject
 
     /// <summary>Shared with the shell, so one progress bar covers every kind of work.</summary>
     private readonly BusyTracker _busy;
-    private readonly IPlcProjectFormat _format = CodesysProjectFormat.Instance;
+    /// <summary>
+    /// The format for the repository's vendor.
+    /// </summary>
+    /// <remarks>
+    /// Resolved from the registry rather than named. The first registered format is the
+    /// default until a repository declares which vendor it holds — which is the next step
+    /// here, since a binding already records its own vendor.
+    /// </remarks>
+    private IPlcProjectFormat _format = PlcFormats.All[0];
     private readonly OrphanScanner _orphanScanner = new();
     private readonly MachineIdentity _machine = new();
 
@@ -111,7 +117,12 @@ public sealed class SyncViewModel : ObservableObject
     private IGitClient? _git;
     private SyncOrchestrator? _orchestrator;
     private RepoConfig _config = new();
-    private CodesysInstall? _install;
+    private IPlcToolchain? _toolchain;
+    private PlcToolchainStatus? _status;
+
+    /// <summary>Which vendor this repository's projects belong to. One today; per-binding
+    /// once a repository can hold more than one brand.</summary>
+    private PlcVendor _vendor = PlcFormats.All[0].Vendor;
     private string? _profile;
 
     private string _toolchainState = "Not checked";
@@ -303,7 +314,7 @@ public sealed class SyncViewModel : ObservableObject
         _repositoryRoot = repositoryRoot;
         _git = git;
 
-        ProbeToolchain();
+        await ProbeToolchainAsync(ct).ConfigureAwait(true);
         await BuildOrchestratorAsync(ct).ConfigureAwait(true);
         await RescanAsync().ConfigureAwait(true);
 
@@ -338,44 +349,39 @@ public sealed class SyncViewModel : ObservableObject
     /// Find the toolchain and settle on a profile.
     /// </summary>
     /// <remarks>
-    /// The profile is not optional and cannot be guessed: CODESYS refuses to start headless
-    /// without <c>--profile</c>, and the name does not follow from the install folder —
-    /// <c>CODESYS 3.5.22.20</c> on disk is profile <c>CODESYS V3.5 SP22 Patch 2</c>. It has
-    /// to be read from disk, and with several installed the user must choose rather than
-    /// have Versio pick one and risk a silent project upgrade.
+    /// <para>
+    /// Asks the toolchain, whichever vendor's it is. This used to construct a
+    /// <c>CodesysLocator</c>, call <c>ProfileResolver</c>, read a <c>CodesysInstall</c> and
+    /// build a <c>LocalCodesysRunner</c> — five brand names in a view model with no business
+    /// knowing any of them.
+    /// </para>
+    /// <para>
+    /// The profile is opaque here. It is not optional and it cannot be guessed — CODESYS
+    /// refuses to start headless without one, and the name does not follow from the install
+    /// folder — but that is the toolchain's problem now, and a different vendor will have a
+    /// different one.
+    /// </para>
     /// </remarks>
-    private void ProbeToolchain()
+    private async Task ProbeToolchainAsync(CancellationToken ct)
     {
-        var installs = new CodesysLocator(logger: _logger).FindInstalls();
-        var resolution = ProfileResolver.Resolve(installs);
+        _toolchain = PlcToolchains.For(_vendor, _logger);
 
-        switch (resolution.Outcome)
+        if (_toolchain is null)
         {
-            case ProfileResolution.Resolved:
-                _install = installs[0];
-                _profile = resolution.Profile;
-                ToolchainAvailable = true;
-                ToolchainState = $"{installs[0].InstallFolder} — {resolution.Profile}";
-                _logger.Info(LogCategory.Codesys, $"toolchain ready: {ToolchainState}");
-                break;
-
-            case ProfileResolution.AmbiguousNeedsUserChoice:
-                _install = null;
-                _profile = null;
-                ToolchainAvailable = false;
-                ToolchainState =
-                    $"{resolution.Candidates.Count} profiles installed — pick the one this " +
-                    "repository targets before exporting";
-                break;
-
-            default:
-                _install = null;
-                _profile = null;
-                ToolchainAvailable = false;
-                ToolchainState = resolution.Explanation;
-                _logger.Warn(LogCategory.Codesys, resolution.Explanation);
-                break;
+            // Recognised but not drivable: a project Versio can see and cannot run. A state to
+            // report, not an error - the repository is still a perfectly good git repository.
+            _status = null;
+            _profile = null;
+            ToolchainAvailable = false;
+            ToolchainState = $"{_vendor} projects can be tracked but not exported yet";
+            _logger.Warn(LogCategory.Plc, ToolchainState);
+            return;
         }
+
+        _status = await _toolchain.ProbeAsync(ct).ConfigureAwait(true);
+        _profile = _status.Profile;
+        ToolchainAvailable = _status.Available;
+        ToolchainState = _status.Explanation ?? (_status.Available ? "ready" : "unavailable");
     }
 
     /// <summary>
@@ -410,9 +416,14 @@ public sealed class SyncViewModel : ObservableObject
             return;
         }
 
-        IPlcRunner runner = _install is not null && _profile is not null
-            ? new LocalCodesysRunner(_install.ExecutablePath, new ScriptExtractor(_logger), _logger)
-            : new UnavailableToolchainRunner(ToolchainState);
+        // The toolchain builds its own runner, and always returns one: an unavailable
+        // toolchain yields a runner that fails every job with the reason, so the locks, their
+        // persistence and their recovery keep working on a machine that cannot export.
+        var runner = _toolchain?.CreateRunner(_status ?? new PlcToolchainStatus
+        {
+            Available = false,
+            Explanation = ToolchainState,
+        }) ?? new UnavailableToolchainRunner(ToolchainState);
 
         // Constructed on the UI thread, so Progress<T> captures this context and every
         // report lands back here without an explicit dispatch.
@@ -1174,7 +1185,7 @@ public sealed class SyncViewModel : ObservableObject
 
             if (outcome.IsFailure)
             {
-                _logger.Error(LogCategory.Codesys, sentence);
+                _logger.Error(LogCategory.Plc, sentence);
             }
             else
             {
@@ -1183,7 +1194,7 @@ public sealed class SyncViewModel : ObservableObject
 
             foreach (var warning in outcome.Warnings)
             {
-                _logger.Warn(LogCategory.Codesys, warning);
+                _logger.Warn(LogCategory.Plc, warning);
             }
 
             // The export wrote into the working tree, so every row was computed from a scan
@@ -1357,7 +1368,7 @@ public sealed class SyncViewModel : ObservableObject
 
             if (outcome.IsFailure)
             {
-                _logger.Error(LogCategory.Codesys, sentence);
+                _logger.Error(LogCategory.Plc, sentence);
             }
             else
             {
@@ -1366,7 +1377,7 @@ public sealed class SyncViewModel : ObservableObject
 
             foreach (var warning in outcome.Warnings)
             {
-                _logger.Warn(LogCategory.Codesys, warning);
+                _logger.Warn(LogCategory.Plc, warning);
             }
 
             // The import rewrote the .project, so git sees a different working tree. Rescan

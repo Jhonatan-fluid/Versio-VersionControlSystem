@@ -1,10 +1,12 @@
 # Versio
 
-**Git-native version control for CODESYS projects.**
+**Git-native version control for PLC projects.**
 
-A CODESYS `.project` file is a binary compound document. Git can store it, but it cannot diff it, merge it, or tell you what changed — so version control degrades to "upload a zip with a date in the name". Versio keeps a **textual mirror** of the project inside the same repository, kept in sync automatically, so git becomes genuinely useful for PLC work: line diffs, blame, history, review.
+A PLC project file is a binary compound document. Git can store it, but it cannot diff it, merge it, or tell you what changed — so version control degrades to "upload a zip with a date in the name". Versio keeps a **textual mirror** of the project inside the same repository, kept in sync automatically, so git becomes genuinely useful for PLC work: line diffs, blame, history, review.
 
-> **Status: pre-alpha, and the round trip works.** A project can be tracked from the panel, exported to its reviewable mirror, edited as text, and imported back into the `.project` — driven by the real sync engine and proven end to end against a real project with real CODESYS. See [What works today](#what-works-today).
+**CODESYS 3.5 is implemented today.** Rockwell Studio 5000, Siemens TIA Portal and Beckhoff TwinCAT are the intended next vendors, and the code is organised so adding one is additive — a rule enforced by a test that reads assembly metadata, not by a paragraph here.
+
+> **Status: pre-alpha, and the round trip works automatically.** A project in the repository is tracked without ceremony, exported to its reviewable mirror when it changes, and edits to that mirror flow back into the project — driven by the direction lock, proven end to end against a real project with real CODESYS. See [What works today](#what-works-today).
 
 ---
 
@@ -19,7 +21,7 @@ A CODESYS `.project` file is a binary compound document. Git can store it, but i
                                          └─ _manifest.json         ← GUID → path → hash
 ```
 
-Export is automatic and deterministic. Import applies edited text back into the project. A per-project **direction lock** makes the round trip safe: once one side is authoritative, the other is refused until the work is pushed or discarded.
+Both directions run automatically and deterministically. A per-project **direction lock** is what makes that safe: once one side is authoritative, the other is refused until the work is pushed or discarded. Nobody is present to arbitrate, so the lock, the hash gate, the self-write suppressor and the circuit breaker are the defence rather than defence in depth — and the project is copied aside before an import ever writes to it.
 
 ---
 
@@ -36,8 +38,8 @@ Export is automatic and deterministic. Import applies edited text back into the 
 | Git status / branches / stage / commit / diff / push | ✅ `GitCliClient` over real `git.exe` |
 | Direction lock, hash gate, coalescer, commit gate | ✅ pure logic, heavily tested |
 | Sync orchestrator — locks, loop defences, commit gate | ✅ 24 scenario tests |
-| Change detection — watcher + safety poll + overflow rescan | ✅ `FileChangeWatcher`, wired to the sync panel |
-| **"2 projects not yet exported"** — staleness stated, not implied | ✅ watcher-driven, answered by the commit gate |
+| Change detection — watcher + safety poll + overflow rescan | ✅ `FileChangeWatcher`, driving the sync engine |
+| Staleness stated, not implied — "2 projects not yet exported" | ✅ answered by the commit gate, so the two cannot disagree |
 | **Changed-files panel follows the repository by itself** | ✅ 18 policy tests + 9 against a real filesystem |
 | Design system tokens, light and dark | ✅ `src/Versio.App/Theme/` |
 | Logging — ring buffer, correlation ids, heartbeat, rolling file | ✅ 20 tests; "Open logs folder" selects today's file |
@@ -49,20 +51,21 @@ Export is automatic and deterministic. Import applies edited text back into the 
 | **App-wide progress bar** — one signal for git, export and import alike | ✅ counted `BusyTracker`, indeterminate, with a caption |
 | CODESYS runs with no visible window | ✅ `CREATE_NO_WINDOW` **and** `SW_HIDE` — different subsystems |
 | Repository validation — walks up to `.git`, refuses non-repos with a reason | ✅ handles subdirectories, bare repos and linked worktrees |
-| PLC sync panel — toolchain probe, project discovery, binding state | ✅ real scan, no sample data |
+| PLC panel — toolchain probe, project discovery, lock state in plain English | ✅ real scan, no sample data; folding into the changed-files view is next |
 | **Vendor seam** — `IPlcRunner`/`PlcJob`/`PlcResult`, enforced from assembly metadata | ✅ 22 architecture tests, proven able to fail |
 | Multi-vendor detection — registry, per-binding vendor, mixed repositories | ✅ `PlcFormats`; Rockwell/Siemens/TwinCAT are additive |
 | Application icon — 8 sizes, hand-tuned below 48px, embedded in the exe | ✅ 12 tests over the `.ico` itself |
-| **Adopt a project from the UI** — guards, `.gitattributes`/LFS rules, binding | ✅ 13 refusal tests + real-repo integration |
-| **Manual export from the UI**, driving `SyncOrchestrator` | ✅ 11 files in 16.7 s on the fixture, lock taken and persisted |
+| **Automatic tracking** — every project found, with its `.gitattributes`/LFS rules | ✅ 13 refusal tests + real-repo integration |
+| **Automatic export** when the project changes | ✅ 11 files in 16.7 s on the fixture, lock taken and persisted |
 | Direction lock in plain English, shared by the panel and the log | ✅ `SyncNarrative` — every blocking state names its remedy |
 | Heartbeat during a 17–31 s export | ✅ elapsed time in the panel, not silence |
 | WPF binding-failure tracing — `Versio.exe --trace-bindings <file>` | ✅ the one silent failure class, made loud |
-| **Manual import from the UI** — propose, review the file list, confirm | ✅ unconfirmed pass proven to leave the `.project` byte-identical |
+| **Automatic import** when the mirror changes and no lock forbids it | ✅ the project is copied aside first; a failed backup fails the import |
 | Change detection over the mirror's real contents | ✅ `ContentHash.OfTree`; a hand-edited `.st` is seen, an untouched tree is not |
 | Side-by-side diff and word-level intra-line diff | ⛔ inline only |
-| A diff preview *inside* the import confirmation | ⛔ shows which files change, not what changes in them |
+| Fold the PLC panel into the changed-files view, with lazy object rendering | ⛔ next milestone |
 | Template generation | ⛔ needs a new operation and script — not assembly |
+| A second vendor (TwinCAT / Studio 5000 / TIA Portal) | ⛔ the seam is ready and unproven |
 | **Git side panel** — staging, commit message, fetch/pull/push | ✅ one operation at a time across every button |
 | **The commit gate, enforced** — a stale export is exported and staged first | ✅ push releases the direction locks, commit does not |
 | Stash, per-hunk staging, recent-commits list | ⛔ not built |
@@ -80,25 +83,32 @@ Export is automatic and deterministic. Import applies edited text back into the 
 ```
 Versio.sln
 ├─ src/
-│  ├─ Versio.Core/              Domain + orchestration. Pure.
-│  │  ├─ Abstractions/          IClock, ICodesysRunner, IGitClient, IFileSystem…
-│  │  ├─ Bindings/              project ↔ export-directory relationship, orphan scanning
-│  │  ├─ Codesys/               job contracts, JSON-lines protocol, profile resolution
-│  │  ├─ Equivalence/           semantic comparison of native XML
-│  │  ├─ Git/                   porcelain v2 parser, progress parser, models
+│  ├─ Versio.Core/              Domain + orchestration. Pure — no IO, no processes, no clock.
+│  │  ├─ Abstractions/          IClock, IFileSystem, ILockStore, IGitClient
+│  │  ├─ Bindings/              project ↔ export-directory relationship, adoption, orphans
+│  │  ├─ Diff/                  unified-diff parser and the syntax tokenizer
+│  │  ├─ Git/                   porcelain v2 parser, progress parser, .gitattributes planner
+│  │  ├─ Hashing/               content and export-tree hashing
+│  │  ├─ Iec/                   IEC 61131-3, shared by every vendor: ST codec, declarations
 │  │  ├─ Locking/               lock records, reboot-survival recovery policy
-│  │  ├─ Model/                 CODESYS object types (GUID table)
-│  │  ├─ Serialization/         ST codec, XML scrubber, path mapper, declaration parser
+│  │  ├─ Logging/               ring buffer, correlation ids, heartbeat
+│  │  ├─ Plc/                   the vendor seam: IPlcRunner, PlcJob, PlcResult, PlcFormats
+│  │  │  └─ Codesys/            one vendor: GUID table, XML shape, profiles, wire protocol
+│  │  ├─ Projects/              the manifest and the CODESYS-shaped project tree
 │  │  ├─ Sync/                  state machine, hash gate, suppressor, breaker, commit gate
-│  │  └─ Watching/              debounce, job coalescing, and the rules deciding
-│  │                            when the shell re-reads git
+│  │  └─ Watching/              debounce, coalescing, and when the shell re-reads git
 │  │
 │  ├─ Versio.Infrastructure/    The only project that touches the outside world.
-│  │  ├─ Codesys/               process host, install locator, script extractor
+│  │  ├─ Bindings/              repository scan, repo.json, adoption side effects
+│  │  ├─ FileSystem/            Windows filesystem, JSON lock store
 │  │  ├─ Git/                   git.exe client
-│  │  └─ Platform/              clock, machine identity, process probe
+│  │  ├─ Logging/               rolling file sink
+│  │  ├─ Platform/              clock, machine identity, process probe
+│  │  ├─ Plc/                   toolchain registry, stand-in for an absent toolchain
+│  │  │  └─ Codesys/            process host, install locator, script extractor
+│  │  └─ Watching/              the OS-level file and repository watchers
 │  │
-│  └─ Versio.Scripts/           IronPython 2.7, run inside CODESYS. Embedded into
+│  └─ Versio.Scripts.Codesys/   IronPython 2.7, run inside CODESYS. Embedded into
 │                               Versio.Infrastructure as resources.
 ├─ tests/
 │  ├─ Versio.Core.Tests/        644 unit tests — pure, no IO, ~290 ms

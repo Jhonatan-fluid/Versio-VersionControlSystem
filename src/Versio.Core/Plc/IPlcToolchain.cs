@@ -100,6 +100,26 @@ public interface IPlcToolchain
 
     /// <summary>Check the toolchain is installed and usable before anything depends on it.</summary>
     Task<PlcToolchainStatus> ProbeAsync(CancellationToken ct);
+
+    /// <summary>
+    /// A runner for the installation the probe found.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Creating the runner belongs to the toolchain because only it knows what its runner
+    /// needs — an executable path and a profile name for CODESYS, something else entirely for
+    /// the next vendor. The application asks for a runner and gets one; it does not assemble
+    /// one out of vendor parts, which is what it used to do.
+    /// </para>
+    /// <para>
+    /// <b>Never null, even when the toolchain is missing.</b> An unavailable toolchain returns
+    /// a runner that fails every job with the reason, so the sync engine is still built and
+    /// the locks, their persistence and their recovery all keep working on a machine that
+    /// cannot export. The alternative is a null check in every caller and a panel that goes
+    /// dark for a reason unrelated to what it was showing.
+    /// </para>
+    /// </remarks>
+    IPlcRunner CreateRunner(PlcToolchainStatus status);
 }
 
 /// <summary>Whether a toolchain can be used, and why not if it cannot.</summary>
@@ -113,4 +133,24 @@ public sealed record PlcToolchainStatus
     /// cannot install a vendor toolchain, so the message has to be enough for the user to
     /// fix it themselves.</summary>
     public string? Explanation { get; init; }
+
+    /// <summary>
+    /// The toolchain version identifier to pin on a binding.
+    /// </summary>
+    /// <remarks>
+    /// Opaque above the seam: a CODESYS profile name, a TIA Portal version, a Studio 5000
+    /// revision. Carried from here to the binding and back to the runner, and interpreted by
+    /// nothing in between.
+    /// </remarks>
+    public string? Profile { get; init; }
+
+    /// <summary>
+    /// Several usable installations were found and none can be chosen safely.
+    /// </summary>
+    /// <remarks>
+    /// Distinct from simply unavailable. Picking one for the user risks silently upgrading
+    /// their project to a newer toolchain version, which is not a recoverable mistake — so
+    /// this is reported and refused rather than guessed.
+    /// </remarks>
+    public IReadOnlyList<string> Candidates { get; init; } = [];
 }
