@@ -92,7 +92,77 @@ public class VersioLoggerTests
 
         logger.Info(LogCategory.App, "still gets through");
 
-        Assert.Single(sink.Snapshot());
+        Assert.Contains(sink.Snapshot(), e => e.Message == "still gets through");
+    }
+
+    [Fact]
+    public void A_failing_sink_is_reported_through_the_sinks_that_still_work()
+    {
+        // Swallowing the failure entirely is how "the log file stopped updating" becomes
+        // invisible: the window looks healthy and the one artefact a bug report needs is
+        // silently empty.
+        var (logger, sink, _) = Make();
+        logger.AddSink(new ThrowingSink());
+
+        logger.Info(LogCategory.App, "anything");
+
+        var notice = Assert.Single(sink.Snapshot(), e => e.Level == LogLevel.Error);
+        Assert.Contains(nameof(ThrowingSink), notice.Message);
+        Assert.IsType<IOException>(notice.Exception);
+    }
+
+    [Fact]
+    public void A_failing_sink_is_reported_once_and_not_on_every_entry()
+    {
+        // A sink that throws on every entry would otherwise double the volume of the log
+        // with complaints about itself.
+        var (logger, sink, _) = Make();
+        logger.AddSink(new ThrowingSink());
+
+        logger.Info(LogCategory.App, "one");
+        logger.Info(LogCategory.App, "two");
+        logger.Info(LogCategory.App, "three");
+
+        Assert.Single(sink.Snapshot(), e => e.Level == LogLevel.Error);
+    }
+
+    [Fact]
+    public void A_failing_sink_raises_SinkFailed_for_the_UI()
+    {
+        var (logger, _, _) = Make();
+        var faulty = new ThrowingSink();
+        ILogSink? reported = null;
+        logger.SinkFailed += (s, _) => reported = s;
+        logger.AddSink(faulty);
+
+        logger.Info(LogCategory.App, "anything");
+
+        Assert.Same(faulty, reported);
+    }
+
+    [Fact]
+    public async Task A_sink_added_while_another_thread_is_logging_does_not_throw()
+    {
+        // A List<T> iterated during an Add throws InvalidOperationException — and it would
+        // throw inside the logger, at the moment the log is most wanted. The file sink is
+        // attached while a repository opens, which is exactly when the UI is logging.
+        var (logger, _, _) = Make();
+        using var stop = new CancellationTokenSource(TimeSpan.FromMilliseconds(250));
+
+        var writer = Task.Run(() =>
+        {
+            while (!stop.IsCancellationRequested)
+            {
+                logger.Info(LogCategory.App, "concurrent");
+            }
+        });
+
+        while (!stop.IsCancellationRequested)
+        {
+            logger.AddSink(new InMemoryLogSink(capacity: 4));
+        }
+
+        await writer;   // rethrows anything the writer hit
     }
 
     [Fact]

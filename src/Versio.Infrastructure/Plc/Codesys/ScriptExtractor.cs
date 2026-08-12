@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
+using Versio.Core.Logging;
 
 namespace Versio.Infrastructure.Plc.Codesys;
 
@@ -16,10 +17,21 @@ public sealed class ScriptExtractor
 {
     private readonly Assembly _assembly = typeof(ScriptExtractor).Assembly;
     private readonly Lazy<string> _root;
+    private readonly IVersioLogger _log;
 
-    public ScriptExtractor(string? rootOverride = null)
+    public ScriptExtractor(IVersioLogger? logger = null, string? rootOverride = null)
     {
-        _root = new Lazy<string>(() => rootOverride ?? Extract());
+        _log = logger ?? NullLogger.Instance;
+        _root = new Lazy<string>(() =>
+        {
+            if (rootOverride is not null)
+            {
+                _log.Debug(LogCategory.Codesys, $"using script directory override {rootOverride}");
+                return rootOverride;
+            }
+
+            return Extract();
+        });
     }
 
     public string Root => _root.Value;
@@ -61,6 +73,7 @@ public sealed class ScriptExtractor
         var dir = Path.Combine(Path.GetTempPath(), "Versio", "scripts", stamp);
         Directory.CreateDirectory(dir);
 
+        var written = 0;
         foreach (var resource in resources)
         {
             var target = Path.Combine(dir, ShortName(resource));
@@ -73,7 +86,13 @@ public sealed class ScriptExtractor
                 ?? throw new InvalidOperationException($"cannot open resource {resource}");
             using var file = File.Create(target);
             stream.CopyTo(file);
+            written++;
         }
+
+        // The stamp is the answer to "is CODESYS running the scripts I think it is". A
+        // mismatched one is what a stale extraction looks like from the outside.
+        _log.Debug(LogCategory.Codesys,
+            $"scripts ready at {dir} (stamp {stamp}, {resources.Count} embedded, {written} written)");
 
         return dir;
     }

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Versio.Core.Abstractions;
+using Versio.Core.Logging;
 using Versio.Core.Plc.Codesys;
 
 namespace Versio.Infrastructure.Plc.Codesys;
@@ -21,8 +22,12 @@ namespace Versio.Infrastructure.Plc.Codesys;
 /// going back to V3.3; those are <b>not</b> usable and are excluded.
 /// </para>
 /// </remarks>
-public sealed class CodesysLocator(IEnumerable<string>? searchRoots = null) : ICodesysLocator
+public sealed class CodesysLocator(
+    IEnumerable<string>? searchRoots = null,
+    IVersioLogger? logger = null) : ICodesysLocator
 {
+    private readonly IVersioLogger _log = logger ?? NullLogger.Instance;
+
     private static readonly string[] DefaultRoots =
     [
         Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
@@ -37,6 +42,9 @@ public sealed class CodesysLocator(IEnumerable<string>? searchRoots = null) : IC
     {
         var installs = new List<CodesysInstall>();
 
+        _log.Debug(LogCategory.Codesys,
+            $"searching for CODESYS under {string.Join(", ", _roots)}");
+
         foreach (var root in _roots.Where(Directory.Exists))
         {
             foreach (var dir in SafeDirectories(root, "CODESYS*"))
@@ -47,14 +55,32 @@ public sealed class CodesysLocator(IEnumerable<string>? searchRoots = null) : IC
                     continue;
                 }
 
-                installs.Add(new CodesysInstall
+                var install = new CodesysInstall
                 {
                     InstallFolder = Path.GetFileName(dir),
                     ExecutablePath = exe,
                     Profiles = ProfilesIn(Path.Combine(dir, "CODESYS", "Profiles")),
                     FileVersion = SafeVersion(exe),
-                });
+                };
+
+                installs.Add(install);
+
+                // The profile names in full, because they cannot be guessed from the
+                // folder name and the exact string is what --profile= requires.
+                _log.Info(LogCategory.Codesys,
+                    $"found CODESYS {install.FileVersion} at {exe} with " +
+                    (install.Profiles.Count == 0
+                        ? "no usable profiles"
+                        : $"profile(s): {string.Join(", ", install.Profiles)}"));
             }
+        }
+
+        if (installs.Count == 0)
+        {
+            // Not an error here — the app runs without CODESYS and says so — but it is the
+            // reason every later export is refused, so it is stated once, plainly.
+            _log.Warn(LogCategory.Codesys,
+                "no CODESYS installation found; export and import will be unavailable");
         }
 
         return installs;

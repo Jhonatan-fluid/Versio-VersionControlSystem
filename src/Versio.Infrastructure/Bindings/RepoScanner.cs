@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Versio.Core.Abstractions;
 using Versio.Core.Bindings;
+using Versio.Core.Logging;
 using Versio.Core.Plc;
 
 namespace Versio.Infrastructure.Bindings;
@@ -21,8 +22,13 @@ namespace Versio.Infrastructure.Bindings;
 /// waste, and the whole scan runs on a background thread for the same reason.
 /// </para>
 /// </remarks>
-public sealed class RepoScanner(string repositoryRoot, IPlcProjectFormat format)
+public sealed class RepoScanner(
+    string repositoryRoot,
+    IPlcProjectFormat format,
+    IVersioLogger? logger = null)
 {
+    private readonly IVersioLogger _log = logger ?? NullLogger.Instance;
+
     private static readonly string[] SkipDirectories =
         [".git", ".vs", "bin", "obj", "node_modules", ".versio"];
 
@@ -32,6 +38,7 @@ public sealed class RepoScanner(string repositoryRoot, IPlcProjectFormat format)
         var projects = new List<string>();
         var exportDirs = new List<string>();
         var manifestIds = new Dictionary<string, string>(StringComparer.Ordinal);
+        var started = System.Diagnostics.Stopwatch.StartNew();
 
         await Task.Run(() => Walk(repositoryRoot, projects, exportDirs, manifestIds, ct), ct)
             .ConfigureAwait(false);
@@ -41,6 +48,20 @@ public sealed class RepoScanner(string repositoryRoot, IPlcProjectFormat format)
         var renames = git is null
             ? new Dictionary<string, string>()
             : await git.DetectRenamesAsync(ct).ConfigureAwait(false);
+
+        started.Stop();
+
+        // What the scan found is the input to every adoption decision the user is about to
+        // be offered, so "it did not offer to track my project" is answered here first.
+        _log.Info(LogCategory.Fs,
+            $"scanned {repositoryRoot} in {started.ElapsedMilliseconds} ms: " +
+            $"{projects.Count} project(s), {exportDirs.Count} export tree(s), " +
+            $"{renames.Count} rename(s)");
+
+        foreach (var project in projects)
+        {
+            _log.Debug(LogCategory.Fs, $"found project {project}");
+        }
 
         return new RepoSnapshot
         {
@@ -105,7 +126,7 @@ public sealed class RepoScanner(string repositoryRoot, IPlcProjectFormat format)
         }
     }
 
-    private static string? TryReadBindingId(string manifestPath)
+    private string? TryReadBindingId(string manifestPath)
     {
         try
         {
@@ -119,6 +140,12 @@ public sealed class RepoScanner(string repositoryRoot, IPlcProjectFormat format)
         {
             // A truncated or mid-write manifest must not abort the whole scan; the binding
             // simply reads as unidentified, which the scanner already handles.
+            //
+            // Logged even so: an export tree that cannot be identified is offered to the
+            // user as an orphan, and "why does it want to adopt something it already
+            // tracks" is otherwise a mystery with no trace behind it.
+            _log.Warn(LogCategory.Fs,
+                $"could not read the binding id from {manifestPath}: {e.Message}");
             return null;
         }
     }

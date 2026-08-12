@@ -19,18 +19,52 @@ namespace Versio.Core.Logging;
 /// across <c>await</c> boundaries and onto whichever worker thread continues it — which is
 /// exactly the case a plain field would get wrong.
 /// </para>
+/// <para>
+/// The <c>Debug</c>/<c>Info</c>/<c>Warn</c>/<c>Error</c>/<c>Click</c> vocabulary lives in
+/// <see cref="LoggerExtensions"/> rather than here, so it works against
+/// <see cref="IVersioLogger"/> everywhere and nothing has to depend on this class to get it.
+/// </para>
 /// </remarks>
 public sealed class VersioLogger(IClock clock) : IVersioLogger
 {
     private static readonly AsyncLocal<string?> CurrentOperation = new();
 
-    private readonly List<ILogSink> _sinks = [];
+    private readonly Lock _gate = new();
+
+    /// <summary>Sinks that have already thrown once and been reported. Prevents a broken
+    /// sink from emitting a fault line on every single entry thereafter.</summary>
+    private readonly HashSet<ILogSink> _reportedFaulty = [];
+
+    /// <summary>
+    /// Copy-on-write so <see cref="Log"/> never takes a lock on the hot path.
+    /// </summary>
+    /// <remarks>
+    /// Sinks are added at startup and while a repository is being opened — which happens on
+    /// a background thread while the UI is already logging. A plain <see cref="List{T}"/>
+    /// iterated during an <c>Add</c> throws <see cref="InvalidOperationException"/>, and it
+    /// would throw inside the logger, at the exact moment the log is most wanted.
+    /// </remarks>
+    private volatile ILogSink[] _sinks = [];
 
     public LogLevel MinimumLevel { get; set; } = LogLevel.Debug;
 
+    /// <summary>
+    /// Raised the first time a given sink throws.
+    /// </summary>
+    /// <remarks>
+    /// The app surfaces this in the status bar. Without it, "the log file stopped updating"
+    /// is invisible: the ring buffer keeps working, the window looks healthy, and the one
+    /// artefact a bug report depends on is silently empty.
+    /// </remarks>
+    public event Action<ILogSink, Exception>? SinkFailed;
+
     public VersioLogger AddSink(ILogSink sink)
     {
-        _sinks.Add(sink);
+        lock (_gate)
+        {
+            _sinks = [.. _sinks, sink];
+        }
+
         return this;
     }
 
@@ -53,20 +87,77 @@ public sealed class VersioLogger(IClock clock) : IVersioLogger
             Exception = exception,
         };
 
-        foreach (var sink in _sinks)
+        var sinks = _sinks;
+        foreach (var sink in sinks)
         {
             try
             {
                 sink.Emit(entry);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // A failing sink must never take down the operation being logged. Losing a
                 // log line is bad; losing the export because the log file was locked is
                 // worse.
+                //
+                // But it must not be silent either. Reported once per sink, through the
+                // sinks that still work, so a dead file sink is visible in the UI instead of
+                // being discovered when someone asks for the log after a crash.
+                ReportSinkFailure(sinks, sink, ex);
             }
         }
     }
+
+    /// <summary>
+    /// Announce a broken sink exactly once, without recursing back into <see cref="Log"/>.
+    /// </summary>
+    /// <remarks>
+    /// Writes straight to the surviving sinks rather than calling <see cref="Log"/>: if the
+    /// failure is systemic, routing the complaint through the same path that just failed is
+    /// how a logger turns one locked file into a stack overflow.
+    /// </remarks>
+    private void ReportSinkFailure(ILogSink[] sinks, ILogSink faulted, Exception ex)
+    {
+        lock (_gate)
+        {
+            if (!_reportedFaulty.Add(faulted))
+            {
+                return;
+            }
+        }
+
+        SinkFailed?.Invoke(faulted, ex);
+
+        var notice = new LogEvent
+        {
+            Timestamp = clock.UtcNow,
+            Level = LogLevel.Error,
+            Category = LogCategory.App,
+            Message = $"log sink {faulted.GetType().Name} failed and its output is being " +
+                      "dropped; further failures from it are not reported",
+            OperationId = CurrentOperation.Value,
+            Exception = ex,
+        };
+
+        foreach (var sink in sinks)
+        {
+            if (ReferenceEquals(sink, faulted))
+            {
+                continue;
+            }
+
+            try
+            {
+                sink.Emit(notice);
+            }
+            catch (Exception)
+            {
+                // Nowhere left to complain to.
+            }
+        }
+    }
+
+    public string? CurrentOperationId => CurrentOperation.Value;
 
     public IDisposable BeginOperation(string operationId)
     {
@@ -74,23 +165,6 @@ public sealed class VersioLogger(IClock clock) : IVersioLogger
         CurrentOperation.Value = operationId;
         return new Scope(() => CurrentOperation.Value = previous);
     }
-
-    public void Debug(string category, string message) =>
-        Log(LogLevel.Debug, category, message);
-
-    public void Info(string category, string message) =>
-        Log(LogLevel.Information, category, message);
-
-    public void Warn(string category, string message) =>
-        Log(LogLevel.Warning, category, message);
-
-    public void Error(string category, string message, Exception? ex = null) =>
-        Log(LogLevel.Error, category, message, ex);
-
-    /// <summary>Log a UI interaction: which control, where. Satisfies the "every button
-    /// press is logged" requirement without a line in every handler.</summary>
-    public void Click(string controlPath) =>
-        Log(LogLevel.Information, LogCategory.Ui, $"Click ▸ {controlPath}");
 
     private sealed class Scope(Action onDispose) : IDisposable
     {
