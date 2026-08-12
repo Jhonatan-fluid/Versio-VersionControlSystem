@@ -47,3 +47,6 @@ scratch/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# Downloaded Microsoft bootstrapper, not ours to vendor.
+tools/dotnet-install.ps1
