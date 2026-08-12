@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-12 · **Commits:** 22 · **Tests:** 694 unit + 90 integration, 0 skipped
+**Date:** 2026-08-12 · **Commits:** 24 · **Tests:** 694 unit + 90 integration, 0 skipped
 
 > One integration test, `RepositoryWatcherTests.A_deleted_file_is_reported`, is **flaky under
 > full-suite load** — see Findings. It passes in isolation and failed once during a complete
@@ -32,7 +32,7 @@ end against the real fixture with real CODESYS.
 
 | Question | Answer |
 |---|---|
-| Is the export deterministic? | **Yes** — 3 runs byte-identical across all 11 files, scrubbing `Timestamp` only |
+| Is the export deterministic? | **Yes** — and now enforced by a test that fingerprints the whole tree across two exports, after a regression proved the by-hand measurement was not enough |
 | Does export → edit → import → export round-trip? | **Yes** for textual objects, proven with a deliberate mutation |
 | Can native XML be imported without deleting the object? | **Yes** — `NativeImportHandler` replaces in place, GUID preserved |
 | Can missing objects be created? | **Yes** — from a parse of the ST declaration header |
@@ -116,10 +116,21 @@ behaviour of CODESYS itself is now measured (it refuses cleanly in both directio
 is corrupted); what is missing is Versio's response to that refusal. See the finding below for
 the measurements and the design.
 
-- Pre-flight `<project>.~u` instead of paying a 17–31 s launch to be told no
-- Probe the pid in it, so a crashed IDE does not block sync forever
-- A verdict that means *wait*, not *fail*: no failed binding, no circuit breaker, retry when it
-  clears
+**Export can be made to work anyway, and that is measured too:** the lock is a sidecar on the
+path, the `.project` copies cleanly while held, and exporting the copy produces a byte-identical
+tree. So export does not have to refuse at all.
+
+- **Export:** copy the project to `.versio/local/` — **keeping the same filename**, because the
+  manifest records the basename — and export the copy. `.versio/local/` is already gitignored,
+  so the copy never reaches git or the panel, and the exporter's existing staging swap already
+  puts the result in the right place
+- **Import:** must still refuse. Even if CODESYS allowed the write, the IDE holds its own copy
+  in memory and the next Ctrl+S would silently revert it
+- Pre-flight `<project>.~u` rather than paying a 17–31 s launch to be told no, and probe the pid
+  in it so a crashed IDE does not block sync forever
+- A verdict that means *wait*, not *fail*: no failed binding, no circuit breaker. Retry when the
+  lock file disappears — the watcher can see that happen, so closing CODESYS is the trigger and
+  no button is needed. Offer one anyway for the case where the watcher missed it
 - Behind the vendor seam — `.~u` is a CODESYS fact and `Sync/` may not learn it
 
 ### 2. Export what is currently missing
@@ -175,6 +186,65 @@ More fixture projects. Every field bug becomes a fixture before it is fixed.
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### Recording a GUID broke export determinism, hours after it was added
+
+`_coverage.md` shipped with the skip records carrying the object's GUID, which looked like free
+information. It is not: **CODESYS re-mints the project-level `__VisualizationStyle`'s GUID on
+every open.** Two consecutive exports of the same file:
+
+```
+run 2   09cd3618-c2e4-4e49-888a-02e46902a7b0
+run 3   63754151-d4ae-45bd-9876-9d0db2d723eb
+```
+
+So `_manifest.json` differed on **every single export** — a spurious diff in every commit,
+forever, which is precisely the noise the `Timestamp` scrub exists to remove. Reintroduced by
+the report written about coverage.
+
+**The determinism test added alongside it did not catch this**, because it compared
+`_coverage.md`, and the report carries no GUIDs. A test written in the same hour as the feature,
+against the same mental model, checked the half that could not fail.
+
+Phase 0's gate 0.2 measured byte-identical exports across three runs **by hand**. Nothing in the
+automated suite enforced it, which is how a determinism regression got committed at all. The
+test now fingerprints the **whole export tree** across two exports of one project and compares
+every file — verified to fail against the reverted fix before it was believed.
+
+The GUID is gone from skip records. A skipped object has nothing pointing at it, so path and
+type are identity enough; for an *exported* object the GUID stays, because there it is what
+makes a move a move rather than a delete and an add.
+
+**The general shape:** a value that is stable in every case you look at is not thereby stable.
+This one was stable for five of six skipped objects, and the sixth only reveals itself if you
+export twice and compare — which is the one thing the narrower test did not do.
+
+### Exporting a copy works, and the lock is on the path
+
+Measured, because it decides whether the tool can work at all while an engineer has CODESYS
+open — the normal way of working:
+
+| Question | Answer |
+|---|---|
+| Can the `.project` be copied while CODESYS holds it? | **Yes** — no sharing violation |
+| Does exporting the copy work while the original is locked? | **Yes** — 16.7 s, full export, 10 files |
+| Is the result identical to exporting the original? | **Yes**, all 11 object files byte-for-byte |
+
+The lock is a sidecar on the path (`<project>.~u`), so a copy at another path is unencumbered.
+The only difference between exporting the original and exporting a copy was the unstable GUID
+above — which was not caused by the copy, and is now gone.
+
+Two constraints that fall out of this and are easy to get wrong:
+
+- **The copy must keep the same filename.** The manifest records
+  `os.path.basename(job["project"])`, so exporting `P.project` instead of
+  `RefrigeratorControl.project` would rewrite that field and churn the mirror.
+- **The copy belongs in `.versio/local/`**, which is already gitignored, so it never reaches
+  git and never appears in the panel.
+
+This makes export-while-open a solvable problem rather than a refusal. Import is not, and
+should not be: the IDE holds its own copy in memory and would silently revert an import on the
+next Ctrl+S, so it must fail and say so.
 
 ### A project open in the CODESYS IDE — measured, and it is the normal case
 
@@ -527,7 +597,8 @@ a paragraph in a README — because it was a paragraph in a README, and it had a
 being true.
 
 **Green results are distrusted until they can fail.** Nine vacuous passes have been caught
-this way: a round-trip that succeeded because the import silently did nothing; equivalence tests
+this way — ten counting the determinism test that compared the one file with no GUIDs in it:
+a round-trip that succeeded because the import silently did nothing; equivalence tests
 that "passed" by skipping; a tree spike that measured a collapsed tree; a `Core2` mutation that
 looked absent because the import had errored; a scenario suite that simulated text edits by
 rewriting the one file no human touches; a shell check that reported success because a

@@ -38,6 +38,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | Git status / branches / stage / commit / diff / push | ✅ `GitCliClient` over real `git.exe` |
 | Direction lock, hash gate, coalescer, commit gate | ✅ pure logic, heavily tested |
 | Sync while the project is open in the CODESYS IDE | ⛔ **refused by CODESYS, and Versio mishandles the refusal** — it marks the binding failed. Measured; see STATUS item 1 |
+| Export while the IDE is open, via a copy | ⛔ not built, but **proven possible**: the lock is a sidecar on the path, the project copies cleanly while held, and the copy exports byte-identically |
 | Sync orchestrator — locks, loop defences, commit gate | ✅ 24 scenario tests |
 | Change detection — watcher + safety poll + overflow rescan | ✅ `FileChangeWatcher`, driving the sync engine |
 | Staleness stated, not implied — "2 projects not yet exported" | ✅ answered by the commit gate, so the two cannot disagree |
@@ -249,6 +250,7 @@ Each of these cost real debugging time and is now pinned by a test.
 | **`Mutex` has thread affinity** | It cannot be acquired and released across an `await`. A named `Semaphore` avoids that but loses abandonment recovery, which crash recovery depends on. |
 | **Import runs in two phases** | Creating objects then immediately calling `import_native` makes CODESYS enumerate a dictionary it is still mutating — and it **swallows the exception**, so the import silently does nothing and the run looks clean. |
 | **The export tree holds two kinds of file** | The project's objects, and Versio's own bookkeeping (`_manifest.json`, `_coverage.md`). The importer walks the tree and imports everything it finds, so a new bookkeeping file must be added to `VERSIO_FILES` in `versio_types.py` or CODESYS is handed markdown as native XML. It fails with a warning rather than loudly, which is worse. |
+| **Not every CODESYS GUID is stable** | The project-level `__VisualizationStyle` is re-minted on **every open**. Recording it in the manifest made every export produce a diff. Exported objects' GUIDs are stable and are identity; do not assume the same of an object you only observed once. |
 | **Never rewrite GUIDs in an export** | Only `Timestamp` is scrubbed. Rewriting identity GUIDs breaks visualisations. Masking them for a *comparison* is fine; writing masked ones to disk is not. |
 | **`git apply --cached` reads the index, not the working tree** | It is the *index* that a patch's context is checked against, so a file saved between a diff being read and a hunk being staged does not invalidate the hunk — what gets staged is still what was on screen. The staleness that does matter is the index moving, and that is refused. Never pass `--unidiff-zero`: it disables the check that makes both true. |
 | **WPF `TreeView` does not virtualize by default** | Measured at 5,002 nodes: **94.7 ms virtualized vs 10,635 ms at the defaults**. Needs `IsVirtualizing`, `VirtualizationMode=Recycling` and a `VirtualizingStackPanel` items panel. |

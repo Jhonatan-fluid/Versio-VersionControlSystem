@@ -49,6 +49,40 @@ public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) 
         }
     }
 
+    /// <summary>Export a project that already exists, to a directory of its own.</summary>
+    private async Task<string> ExportAgainAsync(string project, string outLabel)
+    {
+        var install = new Versio.Infrastructure.Plc.Codesys.CodesysLocator()
+            .FindInstalls().FirstOrDefault(i => i.Profiles.Count > 0);
+        Skip.If(install is null, "no CODESYS installation with a profile");
+
+        var exportRoot = Path.Combine(_root, outLabel);
+
+        var runner = new Versio.Infrastructure.Plc.Codesys.LocalCodesysRunner(
+            install!.ExecutablePath,
+            new Versio.Infrastructure.Plc.Codesys.ScriptExtractor(),
+            new TestLogger(output));
+
+        var result = await runner.RunAsync(
+            new Versio.Core.Plc.Codesys.CodesysJob
+            {
+                Operation = Versio.Core.Plc.Codesys.CodesysOperation.Export,
+                Profile = install.Profiles[0],
+                Projects =
+                [
+                    new Versio.Core.Plc.Codesys.ProjectJob
+                    {
+                        BindingId = "b-coverage",
+                        ProjectPath = project,
+                        Path = exportRoot,
+                    },
+                ],
+            }, null, CancellationToken.None);
+
+        Assert.True(result.Succeeded, result.FailureReason);
+        return exportRoot;
+    }
+
     private async Task<string> ExportAsync(string label)
     {
         var install = new Versio.Infrastructure.Plc.Codesys.CodesysLocator()
@@ -118,8 +152,13 @@ public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) 
 
         // Nothing the manifest lists as written may also be listed as skipped: the two lists
         // partition the project, and an object in both would make the report meaningless.
-        var written = manifest.Objects.Select(o => o.Guid).Where(g => g.Length > 0).ToHashSet();
-        Assert.DoesNotContain(manifest.Skipped, s => written.Contains(s.Guid));
+        // Keyed on path, because a skip record carries no GUID - see SkippedObject for why.
+        var written = manifest.Objects
+            .Select(o => o.Path)
+            .Where(x => x.Length > 0)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        Assert.DoesNotContain(manifest.Skipped, x => written.Contains(x.Path));
     }
 
     [SkippableFact]
@@ -167,18 +206,65 @@ public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) 
     }
 
     [SkippableFact]
-    public async Task The_coverage_report_is_byte_identical_across_two_exports()
+    public async Task The_whole_export_is_byte_identical_when_the_same_project_is_exported_twice()
     {
-        // _coverage.md is part of an export whose determinism is proven and load-bearing. A
-        // clock or an unsorted list in here would put a diff in every commit - the same noise
-        // the Timestamp scrub was written to remove, reintroduced by the report about it.
-        var first = await ExportAsync("first");
-        var second = await ExportAsync("second");
+        // Determinism is load-bearing: a spurious byte anywhere in this tree is a diff in
+        // every commit, forever, and the reviewer stops reading them.
+        //
+        // This compares the WHOLE tree rather than one file, because the version that
+        // compared only _coverage.md passed while the manifest was churning on every single
+        // export. CODESYS re-mints the project-level __VisualizationStyle's guid on every
+        // open; recording skipped objects' guids therefore made _manifest.json differ every
+        // time, and the narrower test could not see it because the report carries no guids.
+        //
+        // Phase 0's gate 0.2 measured this by hand across three runs. Nothing in the suite
+        // enforced it until now, which is why a regression could be committed.
+        Skip.IfNot(OperatingSystem.IsWindows(), "CODESYS is Windows-only");
 
-        var a = await File.ReadAllBytesAsync(Path.Combine(first, "_coverage.md"));
-        var b = await File.ReadAllBytesAsync(Path.Combine(second, "_coverage.md"));
+        var project = await ProjectCopyAsync("det");
+        var first = await ExportAgainAsync(project, "det-out-1");
+        var second = await ExportAgainAsync(project, "det-out-2");
 
-        output.WriteLine($"{a.Length} bytes vs {b.Length}");
-        Assert.Equal(a, b);
+        var a = Fingerprint(first);
+        var b = Fingerprint(second);
+
+        foreach (var (path, hash) in a)
+        {
+            output.WriteLine($"{hash[..12]}  {path}");
+        }
+
+        Assert.Equal(a.Keys.OrderBy(k => k, StringComparer.Ordinal),
+                     b.Keys.OrderBy(k => k, StringComparer.Ordinal));
+
+        var differing = a.Where(kv => b[kv.Key] != kv.Value).Select(kv => kv.Key).ToList();
+        Assert.True(differing.Count == 0,
+                    "these files differ between two exports of the same project: " +
+                    string.Join(", ", differing));
     }
+
+    /// <summary>SHA-256 of every file in an export, keyed by its path within the tree.</summary>
+    private static Dictionary<string, string> Fingerprint(string root) =>
+        Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+            .ToDictionary(
+                f => Path.GetRelativePath(root, f).Replace('\\', '/'),
+                f => Convert.ToHexString(
+                    System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(f))),
+                StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Put a copy of the fixture project somewhere it can be exported from.</summary>
+    private async Task<string> ProjectCopyAsync(string label)
+    {
+        var fixture = Core.Tests.TestPaths.Project("RefrigeratorControl.project");
+        Skip.If(!File.Exists(fixture), "fixture project missing");
+
+        var work = Path.Combine(_root, label);
+        Directory.CreateDirectory(work);
+
+        var project = Path.Combine(work, "RefrigeratorControl.project");
+        File.Copy(fixture, project, overwrite: true);
+
+        await Task.CompletedTask;
+        return project;
+    }
+
 }

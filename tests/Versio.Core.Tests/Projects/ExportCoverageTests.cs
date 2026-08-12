@@ -17,7 +17,6 @@ public sealed class ExportCoverageTests
     private static SkippedObject Skip(string type, string reason, string? path = null) =>
         new()
         {
-            Guid = "g-" + type,
             Name = type,
             Type = type,
             Path = path ?? $"Device/{type}",

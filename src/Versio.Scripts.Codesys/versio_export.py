@@ -180,7 +180,12 @@ class Exporter(object):
             reason = skip_reason(obj_type)
             self.skipped += 1
             self.skips.append({
-                "guid": safe(lambda: str(obj.guid), ""),
+                # No guid. CODESYS re-mints the project-level __VisualizationStyle's guid on
+                # EVERY open, so recording it here made _manifest.json differ on every export
+                # - a spurious diff in every commit, which is the exact noise the Timestamp
+                # scrub exists to remove. A guid that changes when you look at it is not an
+                # identity, and a skipped object has nothing pointing at it anyway: path and
+                # type are what the report is keyed on.
                 "name": name,
                 "type": obj_type,
                 "path": (rel_dir + "/" + name).replace("\\", "/").lstrip("/"),

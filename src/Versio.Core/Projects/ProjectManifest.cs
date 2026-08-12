@@ -39,7 +39,15 @@ public sealed record ProjectObject
 /// </remarks>
 public sealed record SkippedObject
 {
-    [JsonPropertyName("guid")] public string Guid { get; init; } = string.Empty;
+    /// <summary>
+    /// Deliberately absent: a skipped object records no GUID.
+    /// </summary>
+    /// <remarks>
+    /// CODESYS re-mints the project-level <c>__VisualizationStyle</c>'s GUID on every open, so
+    /// recording GUIDs here made the manifest differ on every export. A skipped object has
+    /// nothing pointing at it, so <see cref="Path"/> and <see cref="Type"/> are identity
+    /// enough — unlike an exported object, where the GUID is what makes a move a move.
+    /// </remarks>
     [JsonPropertyName("name")] public string Name { get; init; } = string.Empty;
     [JsonPropertyName("type")] public string Type { get; init; } = string.Empty;
     [JsonPropertyName("path")] public string Path { get; init; } = string.Empty;
