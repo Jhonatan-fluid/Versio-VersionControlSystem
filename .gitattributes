@@ -1,0 +1,40 @@
+# ---------------------------------------------------------------------------
+# Line endings
+# ---------------------------------------------------------------------------
+# Normalise to LF in the repository. The exporter writes LF and hashes LF, so a
+# checkout that rewrote endings would make every file look modified.
+* text=auto eol=lf
+
+*.ps1   text eol=crlf
+*.cmd   text eol=crlf
+*.bat   text eol=crlf
+
+*.cs    text diff=csharp
+*.py    text
+*.md    text
+*.json  text
+*.yaml  text
+*.yml   text
+
+# Exported CODESYS source. LF, UTF-8, always diffable - this is the whole point
+# of the tool.
+*.st    text
+*.xml   text
+
+# ---------------------------------------------------------------------------
+# CODESYS binaries
+# ---------------------------------------------------------------------------
+# A .project is a binary compound document. Marking it -diff -merge stops git
+# attempting a text diff or an automatic merge on something it cannot reason
+# about; the readable diff lives in the exported tree beside it.
+*.project        binary -diff -merge filter=lfs diff=lfs merge=lfs
+*.library        binary -diff -merge filter=lfs diff=lfs merge=lfs
+*.projectarchive binary -diff -merge filter=lfs diff=lfs merge=lfs
+*.compiled-library binary -diff -merge filter=lfs diff=lfs merge=lfs
+
+# ---------------------------------------------------------------------------
+# Vendored dependencies (see docs/PLAN.md section 13.3)
+# ---------------------------------------------------------------------------
+third_party/**/*.nupkg   filter=lfs diff=lfs merge=lfs -text
+third_party/**/*.7z.exe  filter=lfs diff=lfs merge=lfs -text
+third_party/**/*.zip     filter=lfs diff=lfs merge=lfs -text

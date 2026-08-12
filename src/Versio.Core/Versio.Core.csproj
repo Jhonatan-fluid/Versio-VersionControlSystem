@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Versio.Core</RootNamespace>
+    <!-- Versio.Core is deliberately platform-neutral and UI-free.
+         See plan section 12.2 - enforced by Versio.Arch.Tests. -->
+  </PropertyGroup>
+
+</Project>

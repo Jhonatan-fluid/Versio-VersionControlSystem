@@ -1,0 +1,267 @@
+using Versio.Core.Git;
+using Versio.Infrastructure.Git;
+using Xunit;
+using Xunit.Abstractions;
+
+namespace Versio.Integration.Tests;
+
+/// <summary>
+/// Drives the real <c>git</c> executable against a throwaway repository.
+/// </summary>
+/// <remarks>
+/// Verifies the porcelain parser against output git actually produces, rather than against
+/// fixtures written from memory. Fixtures drift; git does not.
+/// </remarks>
+[Trait("Category", "Integration")]
+public sealed class GitCliClientTests(ITestOutputHelper output) : IDisposable
+{
+    private readonly string _repo = CreateTempRepo();
+
+    private static string CreateTempRepo()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "Versio", "gitit", Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        return dir;
+    }
+
+    public void Dispose()
+    {
+        try
+        {
+            // git marks objects read-only, so a plain delete fails.
+            foreach (var f in Directory.EnumerateFiles(_repo, "*", SearchOption.AllDirectories))
+            {
+                File.SetAttributes(f, FileAttributes.Normal);
+            }
+
+            Directory.Delete(_repo, recursive: true);
+        }
+        catch (IOException)
+        {
+            // A leftover temp directory is not worth failing a test over.
+        }
+    }
+
+    private GitCliClient Client => new(_repo, log: output.WriteLine);
+
+    private async Task InitAsync()
+    {
+        await RunRawAsync("init", "-b", "main");
+        await RunRawAsync("config", "user.email", "test@versio.local");
+        await RunRawAsync("config", "user.name", "Versio Test");
+    }
+
+    private async Task RunRawAsync(params string[] args)
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo("git")
+        {
+            WorkingDirectory = _repo,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        foreach (var a in args)
+        {
+            psi.ArgumentList.Add(a);
+        }
+
+        using var p = System.Diagnostics.Process.Start(psi)!;
+        await p.WaitForExitAsync();
+    }
+
+    private void Write(string relative, string content)
+    {
+        var full = Path.Combine(_repo, relative);
+        Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+        File.WriteAllText(full, content);
+    }
+
+    [SkippableFact]
+    public async Task A_non_repository_is_detected()
+    {
+        Skip.IfNot(GitAvailable, "git not on PATH");
+
+        Assert.False(await Client.IsRepositoryAsync(CancellationToken.None));
+    }
+
+    [SkippableFact]
+    public async Task A_fresh_repo_reports_an_unborn_branch()
+    {
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        var status = await Client.StatusAsync(CancellationToken.None);
+
+        Assert.True(await Client.IsRepositoryAsync(CancellationToken.None));
+        Assert.Equal("main", status.Branch.Name);
+        Assert.True(status.Branch.IsUnborn);
+        Assert.True(status.IsClean);
+    }
+
+    [SkippableFact]
+    public async Task Untracked_staged_and_modified_states_round_trip_through_the_parser()
+    {
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        Write("plc/Main.st", "PROGRAM Main\nVAR\nEND_VAR\n");
+        var status = await Client.StatusAsync(CancellationToken.None);
+        Assert.Equal(ChangeKind.Untracked,
+            Assert.Single(status.Changes, c => c.Path == "plc/Main.st").Unstaged);
+
+        await Client.StageAsync(["plc/Main.st"], CancellationToken.None);
+        status = await Client.StatusAsync(CancellationToken.None);
+        Assert.Equal(ChangeKind.Added,
+            Assert.Single(status.Changes, c => c.Path == "plc/Main.st").Staged);
+
+        var commit = await Client.CommitAsync("add Main", CancellationToken.None);
+        Assert.True(commit.Success, commit.FailureReason);
+        Assert.True((await Client.StatusAsync(CancellationToken.None)).IsClean);
+
+        Write("plc/Main.st", "PROGRAM Main\nVAR\n  x : INT;\nEND_VAR\n");
+        status = await Client.StatusAsync(CancellationToken.None);
+        Assert.Equal(ChangeKind.Modified,
+            Assert.Single(status.Changes, c => c.Path == "plc/Main.st").Unstaged);
+    }
+
+    [SkippableFact]
+    public async Task Paths_with_spaces_and_non_ascii_survive_the_z_format()
+    {
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        // Exactly the shape a real export produces: "Device/Plc Logic/Application/...".
+        const string path = "Device/Plc Logic/Application/Kühlschrank Regelung.st";
+        Write(path, "PROGRAM X\n");
+
+        var status = await Client.StatusAsync(CancellationToken.None);
+
+        Assert.Contains(status.Changes, c => c.Path == path);
+    }
+
+    [SkippableFact]
+    public async Task A_rename_is_reported_with_its_original_path()
+    {
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        Write("plc/Old.st", new string('x', 400));
+        await Client.StageAsync(["plc/Old.st"], CancellationToken.None);
+        await Client.CommitAsync("initial", CancellationToken.None);
+
+        File.Move(Path.Combine(_repo, "plc/Old.st"), Path.Combine(_repo, "plc/New.st"));
+        await Client.StageAsync(["plc"], CancellationToken.None);
+
+        var status = await Client.StatusAsync(CancellationToken.None);
+        var renamed = Assert.Single(status.Changes, c => c.Staged == ChangeKind.Renamed);
+
+        Assert.Equal("plc/New.st", renamed.Path);
+        Assert.Equal("plc/Old.st", renamed.OriginalPath);
+
+        // This is what lets a renamed project keep its binding id, baseline and lock.
+        var renames = await Client.DetectRenamesAsync(CancellationToken.None);
+        Assert.Equal("plc/New.st", renames["plc/Old.st"]);
+    }
+
+    [SkippableFact]
+    public async Task Branches_are_listed_with_the_current_one_marked()
+    {
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+        Write("a.txt", "a");
+        await Client.StageAsync(["a.txt"], CancellationToken.None);
+        await Client.CommitAsync("initial", CancellationToken.None);
+
+        var created = await Client.CreateBranchAsync("feature/x", checkout: true, CancellationToken.None);
+        Assert.True(created.Success, created.FailureReason);
+
+        var branches = await Client.BranchesAsync(CancellationToken.None);
+
+        Assert.Equal(2, branches.Count);
+        Assert.Equal("feature/x", Assert.Single(branches, b => b.IsCurrent).Name);
+    }
+
+    [SkippableFact]
+    public async Task Discard_restores_a_modified_file()
+    {
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+        Write("a.txt", "original");
+        await Client.StageAsync(["a.txt"], CancellationToken.None);
+        await Client.CommitAsync("initial", CancellationToken.None);
+
+        Write("a.txt", "changed");
+        var discard = await Client.DiscardAsync(["a.txt"], CancellationToken.None);
+
+        Assert.True(discard.Success, discard.FailureReason);
+        Assert.Equal("original", File.ReadAllText(Path.Combine(_repo, "a.txt")));
+        Assert.True((await Client.StatusAsync(CancellationToken.None)).IsClean);
+    }
+
+    [SkippableFact]
+    public async Task An_empty_commit_message_is_refused_before_git_is_invoked()
+    {
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        var result = await Client.CommitAsync("   ", CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains("message", result.FailureReason);
+    }
+
+    [SkippableFact]
+    public async Task An_unreachable_remote_fails_without_hanging_on_a_prompt()
+    {
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        // GIT_TERMINAL_PROMPT=0 is what stops this blocking forever on a credential prompt
+        // under a redirected console, with nothing on screen to explain the hang.
+        var result = await Client.VerifyRemoteAsync(
+            "https://invalid.versio.test/nope.git", CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.NotNull(result.FailureReason);
+        output.WriteLine($"failure: {result.FailureReason}");
+    }
+
+    [SkippableFact]
+    public async Task A_diff_is_produced_for_a_modified_file()
+    {
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+        Write("plc/Main.st", "PROGRAM Main\nVAR\nEND_VAR\n");
+        await Client.StageAsync(["plc/Main.st"], CancellationToken.None);
+        await Client.CommitAsync("initial", CancellationToken.None);
+
+        Write("plc/Main.st", "PROGRAM Main\nVAR\n  nSpeed : INT;\nEND_VAR\n");
+        var diff = await Client.DiffAsync("plc/Main.st", staged: false, CancellationToken.None);
+
+        Assert.Contains("+  nSpeed : INT;", diff);
+    }
+
+    private static bool GitAvailable
+    {
+        get
+        {
+            try
+            {
+                using var p = System.Diagnostics.Process.Start(
+                    new System.Diagnostics.ProcessStartInfo("git", "--version")
+                    {
+                        RedirectStandardOutput = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                    });
+                p!.WaitForExit(5000);
+                return p.ExitCode == 0;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+    }
+}

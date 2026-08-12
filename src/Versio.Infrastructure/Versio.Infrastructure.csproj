@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Versio.Infrastructure</RootNamespace>
+    <!-- The only project allowed to touch the real filesystem, real processes and real git.
+         Kept deliberately thin: it is verified by integration tests, not unit tests, so
+         every line here is a line that cannot be cheaply proven. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Versio.Core\Versio.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Command-line construction is internal but must be regression-tested: the quoting
+         CODESYS accepts is not what .NET's ArgumentList produces. -->
+    <InternalsVisibleTo Include="Versio.Integration.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Scripts travel inside the assembly and are written to a temp directory at run time,
+         so they always match the app version. A stale copy on disk would be very hard to
+         diagnose from the symptoms. -->
+    <EmbeddedResource Include="..\Versio.Scripts\*.py" LinkBase="Scripts" />
+  </ItemGroup>
+
+</Project>

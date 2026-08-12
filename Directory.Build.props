@@ -1,0 +1,23 @@
+<Project>
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+
+    <!-- Single source of truth for version. Flows to assembly metadata and the installer. -->
+    <VersioVersion>0.1.0</VersioVersion>
+    <Version>$(VersioVersion)</Version>
+    <Company>Versio</Company>
+    <Product>Versio</Product>
+
+    <!-- Plan section 13.2: trimming and NativeAOT are unsupported for WPF. Asserted here so
+         nobody turns them on for size and discovers runtime XAML failures later. -->
+    <PublishTrimmed>false</PublishTrimmed>
+    <PublishAot>false</PublishAot>
+  </PropertyGroup>
+
+</Project>
