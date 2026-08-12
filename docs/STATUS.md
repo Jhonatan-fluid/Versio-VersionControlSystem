@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-12 · **Commits:** 12 · **Tests:** 618 unit + 64 integration, 0 skipped
+**Date:** 2026-08-12 · **Commits:** 12 · **Tests:** 622 unit + 64 integration, 0 skipped
 
 ---
 
@@ -444,6 +444,46 @@ exactly when an object exports to more than one layer — which the fixture does
 Found by an assertion written to trust the name. Nothing depends on the field today and it is
 not worth a schema change on its own, but the integration test now asserts against distinct
 GUIDs and says why, so the next person does not trust it either.
+
+### Reversed by decision — sync is automatic in both directions
+
+**This overturns a decision the plan reversed by measurement, deliberately and on the owner's
+instruction.** §7.4.6 made `On git action` the default because a CODESYS cold start measures
+17–31 s, so exporting after every settled save runs the toolchain most of the working day. The
+cost is real and unchanged. The judgement that it is worth paying is the product owner's, and
+the machinery to make it bearable was already built: the coalescer's 5-second cancel window and
+30-second minimum interval mean a save storm produces one export, not one per keystroke.
+
+What that changes:
+
+| Was | Now |
+|---|---|
+| Adoption offered, never performed (§5.3, R28) | Every `.project` found is tracked automatically. Templates are still refused — a binding whose project is a template exports the template into its own tree, which is incoherent rather than merely unwanted |
+| Export at the commit gate | A settled change to a `.project` exports, unattended |
+| Import detected, applied only on confirmation | A settled change under an export tree imports, unattended, when no lock forbids it |
+
+**The locks stop being defence in depth and become the defence.** With nobody present to
+refuse anything, the direction lock, the hash gate, the self-write suppressor and the circuit
+breaker are the only things between a save and an unwanted overwrite. Four scenarios now cover
+exactly that, and the most important of them is that an export's own output — which lands in
+the tree the text watcher is watching — does not come back as an import. With both directions
+automatic, a version that acted on that echo would sync forever.
+
+### Done — the project is copied aside before an import
+
+`import_native` had no backup, and the plan listed one for Phase 3. Unattended import made it
+required rather than desirable: an export can always be regenerated from the project, while a
+project damaged by an import is gone unless git happens to hold it — and it will not, if the
+damage lands on top of changes never committed.
+
+The copy goes under `.versio/local/backups/<binding>/`, which is gitignored: this is a local
+undo, not history, and committing megabytes of binary snapshots would be its own problem. The
+last ten survive per binding — enough to walk back past a bad import, bounded so a busy
+afternoon does not fill a disk.
+
+**A failed backup fails the import**, and is pinned by a test. Running the one operation that
+can destroy the project having skipped the step that makes it recoverable is the worst of both
+outcomes.
 
 ### Verifying the UI, not just the engine
 

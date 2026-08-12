@@ -27,6 +27,7 @@
 | Was | Became | Why |
 |---|---|---|
 | Automatic export on save | **`On git action` is the default** (§7.4.6) | Cold start measured at 17–31 s; export-on-save runs CODESYS most of the working day |
+| ~~`On git action` as the default~~ | **Automatic, both directions** — *re-reversed by the product owner, 2026-08-12* | The 17–31 s cost is unchanged and still real. The judgement that automatic sync is worth it is the owner's; the coalescer's cancel window and minimum interval are what make it bearable, and the direction lock is what makes it safe. See STATUS |
 | LibGit2Sharp for reads | **`git.exe` throughout** (§8.1) | Removes the native payload that breaks single-file publish, and credentials just work |
 | Avalonia for a macOS build | **WPF, Windows only** (§13.7) | CODESYS has no macOS build, so a Mac client could only ever have been a review client |
 | PLCopenXML as the export format | **ST + native XML** (§3.1.5) | `textual_declaration` gives the text directly; PLCopenXML is less readable, less complete and lossy on import |

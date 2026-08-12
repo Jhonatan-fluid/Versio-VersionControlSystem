@@ -183,6 +183,93 @@ public class SyncOrchestratorTests
             $"expected the echo to be swallowed, got {echo.Verdict}: {echo.Explanation}");
     }
 
+    // --- unattended, both directions ------------------------------------------
+    //
+    // Export and import both run without anybody present. That moves the entire burden of
+    // "do not overwrite the work I just did" onto the direction lock, the hash gate and the
+    // breaker - so the cases below are no longer defence in depth, they are the defence.
+
+    [Fact]
+    public async Task An_import_copies_the_project_aside_before_writing_to_it()
+    {
+        // Nobody is watching, and an export can always be regenerated while a damaged
+        // project cannot. The copy is what makes unattended import defensible.
+        var h = await SyncedHarness();
+        h.SetExportedText("edited by hand");
+
+        Assert.Equal(SyncVerdict.Completed, (await h.TextChanged()).Verdict);
+
+        var backups = h.Fs.EnumerateFiles(Path.Combine(Root, ".versio", "local", "backups"))
+            .ToList();
+
+        Assert.NotEmpty(backups);
+        Assert.Contains(backups, b => b.EndsWith("A.project", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task An_import_that_cannot_be_backed_up_does_not_run()
+    {
+        // The worst of both: the operation that can destroy the project, having skipped the
+        // step that makes it recoverable.
+        var h = await SyncedHarness();
+        h.SetExportedText("edited by hand");
+        h.Fs.FailCopyTimes = 99;
+
+        var outcome = await h.TextChanged();
+
+        Assert.Equal(SyncVerdict.Failed, outcome.Verdict);
+        Assert.Contains("back up", outcome.Explanation, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(h.Codesys.Jobs, j => j.Operation == CodesysOperation.Import);
+        Assert.Equal(SyncDirection.Failed, h.Orchestrator.StateOf(BindingId));
+    }
+
+    [Fact]
+    public async Task An_automatic_export_does_not_provoke_an_automatic_import()
+    {
+        // The loop the whole design exists to avoid. An export writes into the tree the text
+        // watcher is watching, so its own output arrives back as a text change; with both
+        // directions automatic, a version that acted on it would sync forever.
+        var h = new Harness(new OrchestratorOptions { RequireImportConfirmation = false });
+        h.Codesys.BeforeRun = job =>
+        {
+            if (job.Operation == CodesysOperation.Export)
+            {
+                h.SetExportedText("written by the export");
+            }
+
+            return Task.CompletedTask;
+        };
+
+        Assert.Equal(SyncVerdict.Completed, (await h.ProjectChanged()).Verdict);
+
+        // The echo of our own export, arriving as a settled text change.
+        var echo = await h.TextChanged();
+
+        Assert.NotEqual(SyncVerdict.Completed, echo.Verdict);
+        Assert.DoesNotContain(h.Codesys.Jobs, j => j.Operation == CodesysOperation.Import);
+    }
+
+    [Fact]
+    public async Task The_side_that_moved_first_wins_until_it_is_released()
+    {
+        // With both directions automatic this is the rule that stops one engineer's save
+        // from being overwritten by the other side a moment later.
+        var h = new Harness(new OrchestratorOptions { RequireImportConfirmation = false });
+
+        await h.ProjectChanged();
+        Assert.Equal(SyncDirection.ProjectAuthoritative, h.Orchestrator.StateOf(BindingId));
+
+        h.SetExportedText("a teammate edited the mirror");
+        var blocked = await h.TextChanged();
+
+        Assert.Equal(SyncVerdict.BlockedByLock, blocked.Verdict);
+        Assert.DoesNotContain(h.Codesys.Jobs, j => j.Operation == CodesysOperation.Import);
+
+        // Released by a push, and the other direction becomes available again.
+        await h.Orchestrator.ReleaseAfterPushAsync("c1", CancellationToken.None);
+        Assert.Equal(SyncDirection.Clean, h.Orchestrator.StateOf(BindingId));
+    }
+
     // --- the text side of the hash gate ---------------------------------------
     //
     // These exist because the suite was, for a while, incapable of failing here: a text edit

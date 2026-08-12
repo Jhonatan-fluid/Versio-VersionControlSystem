@@ -1,3 +1,4 @@
+using System.Globalization;
 using Versio.Core.Abstractions;
 using Versio.Core.Bindings;
 using Versio.Core.Plc.Codesys;
@@ -57,6 +58,9 @@ public sealed class SyncOrchestrator
     private readonly string _repoRoot;
     private readonly LockOwner _owner;
     private readonly IProgress<CodesysProgress>? _progress;
+
+    /// <summary>How many project backups to keep per binding before an import.</summary>
+    private const int BackupsKept = 10;
 
     private readonly Dictionary<string, ProjectBinding> _bindings;
     private readonly Dictionary<string, BindingLock> _locks = new(StringComparer.Ordinal);
@@ -410,6 +414,31 @@ public sealed class SyncOrchestrator
         ProjectBinding binding, TransitionResult transition, CancellationToken ct)
     {
         var started = _clock.UtcNow;
+
+        try
+        {
+            await BackUpProjectAsync(binding, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Refuse rather than proceed. Running the one operation that can destroy the
+            // project having failed to make it recoverable is the worst of both.
+            await ApplyAsync(binding.Id, SyncTrigger.ImportFailed, string.Empty, ct)
+                .ConfigureAwait(false);
+
+            var why = $"could not back up {binding.ProjectPath} before importing: {ex.Message}";
+            _log.Error(LogCategory.Sync, why, ex);
+
+            return new SyncOutcome
+            {
+                Verdict = SyncVerdict.Failed,
+                BindingId = binding.Id,
+                Explanation = why,
+                State = SyncDirection.Failed,
+                Duration = _clock.UtcNow - started,
+            };
+        }
+
         var job = new CodesysJob
         {
             Operation = CodesysOperation.Import,
@@ -677,6 +706,75 @@ public sealed class SyncOrchestrator
 
         var mirror = await ExportTreeHashAsync(binding, ct).ConfigureAwait(false);
         return (mirror != synced.MirrorHash, mirror);
+    }
+
+    /// <summary>
+    /// Copy the project file aside before an import writes into it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Import is the one operation that writes the file nobody can rebuild by hand.</b> An
+    /// export can always be regenerated from the project; a project damaged by an import is
+    /// gone unless git happens to have it, and it will not if the damage lands on top of
+    /// changes that were never committed. Now that import runs unattended there is nobody
+    /// watching it happen, so the copy is not optional.
+    /// </para>
+    /// <para>
+    /// Under <c>.versio/local/</c>, which is gitignored: these are a local undo, not history,
+    /// and committing megabytes of binary project snapshots would be its own problem. The last
+    /// <see cref="BackupsKept"/> survive - enough to walk back past a bad import, bounded so a
+    /// busy afternoon does not fill a disk.
+    /// </para>
+    /// <para>
+    /// A failure here <b>stops the import</b>. Proceeding without the copy would be doing the
+    /// dangerous half of the operation having skipped the part that makes it recoverable.
+    /// </para>
+    /// </remarks>
+    private async Task<string?> BackUpProjectAsync(ProjectBinding binding, CancellationToken ct)
+    {
+        var source = Absolute(binding.ProjectPath);
+        if (!_fs.FileExists(source))
+        {
+            // Nothing to lose yet. An import that creates the project is unusual but not
+            // wrong, and refusing it over a missing backup would be.
+            return null;
+        }
+
+        var folder = Combine(".versio", "local", "backups", binding.Id);
+        var stamp = _clock.UtcNow.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
+        var name = Path.GetFileName(binding.ProjectPath.Replace('/', Path.DirectorySeparatorChar));
+        var destination = Path.Combine(folder, $"{stamp}-{name}");
+
+        _fs.CreateDirectory(folder);
+        await _fs.CopyAsync(source, destination, ct).ConfigureAwait(false);
+
+        PruneBackups(folder);
+
+        _log.Info(LogCategory.Sync, $"{binding.Id}: project backed up to {destination}");
+        return destination;
+    }
+
+    /// <summary>Keep the most recent backups and drop the rest.</summary>
+    private void PruneBackups(string folder)
+    {
+        try
+        {
+            var existing = _fs.EnumerateFiles(folder)
+                .OrderByDescending(f => f, StringComparer.Ordinal)
+                .Skip(BackupsKept)
+                .ToList();
+
+            foreach (var stale in existing)
+            {
+                _fs.DeleteFile(stale);
+            }
+        }
+        catch (IOException ex)
+        {
+            // Pruning is housekeeping. Failing it must never fail the import that just
+            // succeeded in making a backup.
+            _log.Debug(LogCategory.Sync, $"could not prune old backups: {ex.Message}");
+        }
     }
 
     private async Task<string> ProjectHashAsync(ProjectBinding binding, CancellationToken ct)

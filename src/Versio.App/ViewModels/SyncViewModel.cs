@@ -461,6 +461,14 @@ public sealed class SyncViewModel : ObservableObject
         var scanner = new RepoScanner(_repositoryRoot, _format, _logger);
         var snapshot = await scanner.ScanAsync(_git, CancellationToken.None).ConfigureAwait(true);
 
+        // Detection and tracking are one step now: anything found is tracked, and the locks
+        // take it from there.
+        if (await AutoAdoptAsync(snapshot, CancellationToken.None).ConfigureAwait(true) > 0)
+        {
+            await BuildOrchestratorAsync(CancellationToken.None).ConfigureAwait(true);
+            StartWatching();
+        }
+
         var findings = _orphanScanner.Scan(_config, snapshot);
         var selectedPath = SelectedProject?.Path;
 
@@ -612,7 +620,7 @@ public sealed class SyncViewModel : ObservableObject
         _logger.Debug(LogCategory.Watch,
             $"settled: {change.Path} (tier {change.Tier})");
 
-        OnUi(() => _ = RefreshStalenessAsync());
+        OnUi(() => _ = SyncSettledChangeAsync(change));
     }
 
     /// <summary>
@@ -907,6 +915,168 @@ public sealed class SyncViewModel : ObservableObject
         await RescanAsync().ConfigureAwait(true);
         await RefreshStalenessAsync().ConfigureAwait(true);
     }
+
+    /// <summary>
+    /// Adopt every project in the repository that is not tracked yet.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Detection and tracking are one step: a <c>.project</c> that appears in the repository
+    /// becomes a tracked project, and from then on the locks drive it. The plan originally had
+    /// adoption offered rather than performed, on the grounds that auto-exporting an unknown
+    /// project launches CODESYS for 17-31 s on a file that might be a vendor sample - that is
+    /// a real cost, and the decision to pay it is deliberate.
+    /// </para>
+    /// <para>
+    /// <b>Templates are still refused.</b> That guard is not about risk appetite: a binding
+    /// whose project is a template exports the template into its own tree, which is incoherent
+    /// rather than merely unwanted, and genuinely confusing to unpick afterwards (plan R28).
+    /// </para>
+    /// </remarks>
+    private async Task<int> AutoAdoptAsync(RepoSnapshot snapshot, CancellationToken ct)
+    {
+        if (_repositoryRoot is null)
+        {
+            return 0;
+        }
+
+        var setup = new RepoSetup(_repositoryRoot, _format);
+        var adopted = 0;
+
+        foreach (var project in snapshot.ProjectFiles.OrderBy(p => p, StringComparer.Ordinal))
+        {
+            if (_format.IsTemplate(project) ||
+                _config.Bindings.Any(b =>
+                    string.Equals(b.ProjectPath, project, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            var result = await setup.AdoptAsync(project, _git, _profile, ct).ConfigureAwait(true);
+            if (result.Adopted)
+            {
+                _config = result.Config;
+                adopted++;
+                _logger.Info(LogCategory.Sync,
+                    $"tracking {project} automatically as {result.Decision.Binding!.Id}");
+            }
+            else
+            {
+                // Not an error: an ignored path, or a template. Said once at Debug so a
+                // repository full of samples does not fill the log on every scan.
+                _logger.Debug(LogCategory.Sync,
+                    $"not tracking {project}: {result.Decision.Explanation}");
+            }
+        }
+
+        return adopted;
+    }
+
+    /// <summary>
+    /// A watched file settled. Work out which side of which binding moved, and sync it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is where the locks earn their keep. Both directions run unattended, so the only
+    /// thing standing between a save and an unwanted overwrite is the direction lock: once one
+    /// side is authoritative the other is refused until the work is pushed or discarded. The
+    /// orchestrator applies that, the circuit breaker and the hash gate before anything runs.
+    /// </para>
+    /// <para>
+    /// Jobs are <b>not</b> synchronous, deliberately: the coalescer's cancel window and
+    /// minimum interval are what stop a save storm from launching a CODESYS process per
+    /// keystroke. A refusal here is normal and expected - most settled changes are the echo of
+    /// an export we just wrote.
+    /// </para>
+    /// </remarks>
+    private async Task SyncSettledChangeAsync(WatchedChange change)
+    {
+        if (_orchestrator is null || _repositoryRoot is null)
+        {
+            return;
+        }
+
+        var path = Relative(change.Path);
+        var (binding, source) = Locate(path);
+        if (binding is null)
+        {
+            return;
+        }
+
+        _logger.Debug(LogCategory.Sync,
+            $"{binding.Id}: {source} change settled at {path}");
+
+        var outcome = await _orchestrator.HandleChangeAsync(new SyncJob
+        {
+            BindingId = binding.Id,
+            Source = source,
+
+            // Confirmed, because there is nobody to ask. The project is copied aside before
+            // an import writes into it, which is what makes that answer defensible.
+            Confirmed = true,
+            Reason = $"automatic, {source}",
+        }, CancellationToken.None).ConfigureAwait(true);
+
+        var sentence = SyncNarrative.Describe(outcome);
+
+        if (outcome.IsFailure)
+        {
+            _logger.Error(LogCategory.Sync, sentence);
+        }
+        else if (outcome.DidWork)
+        {
+            _logger.Info(LogCategory.Sync, sentence);
+        }
+        else
+        {
+            // Coalesced, throttled, unchanged, or blocked by the lock. All routine.
+            _logger.Debug(LogCategory.Sync, sentence);
+        }
+
+        if (outcome.DidWork || outcome.IsFailure)
+        {
+            Summary = sentence;
+            LockState = SyncNarrative.Describe(outcome.State);
+            await RescanAsync().ConfigureAwait(true);
+            await RefreshStalenessAsync().ConfigureAwait(true);
+        }
+    }
+
+    /// <summary>Which binding a changed path belongs to, and which side of it.</summary>
+    /// <remarks>
+    /// The project file is matched exactly and the export tree by prefix, in that order. A
+    /// project sitting beside its own export directory - <c>plc/A.project</c> next to
+    /// <c>plc/A</c> - would match a careless prefix test both ways, and exporting because of
+    /// an export is the loop the whole design exists to avoid.
+    /// </remarks>
+    private (ProjectBinding? Binding, ChangeSource Source) Locate(string repoRelativePath)
+    {
+        foreach (var binding in _config.Bindings.Where(b => b.Enabled))
+        {
+            if (string.Equals(Normalize(binding.ProjectPath), repoRelativePath,
+                              StringComparison.OrdinalIgnoreCase))
+            {
+                return (binding, ChangeSource.Project);
+            }
+        }
+
+        foreach (var binding in _config.Bindings.Where(b => b.Enabled))
+        {
+            var prefix = Normalize(binding.ExportPath).TrimEnd('/') + "/";
+            if (repoRelativePath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return (binding, ChangeSource.ExportedText);
+            }
+        }
+
+        return (null, ChangeSource.Project);
+    }
+
+    private static string Normalize(string path) => path.Replace('\\', '/').TrimStart('/');
+
+    /// <summary>Absolute watcher path back to the repo-relative form the bindings use.</summary>
+    private string Relative(string absolute) =>
+        Normalize(System.IO.Path.GetRelativePath(_repositoryRoot!, absolute));
 
     private bool CanAdopt() => _repositoryRoot is not null && SelectedProject is { Tracked: false };
 
