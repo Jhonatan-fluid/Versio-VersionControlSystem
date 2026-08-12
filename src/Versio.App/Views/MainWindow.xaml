@@ -13,6 +13,7 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="../Theme/Theme.xaml" />
             </ResourceDictionary.MergedDictionaries>
+            <views:ResourceKeyConverter x:Key="ResourceKey" />
         </ResourceDictionary>
     </Window.Resources>
 
@@ -280,16 +281,78 @@
                                            FontFamily="{DynamicResource Font.UI}"
                                            FontSize="{DynamicResource Font.Size.Body}"
                                            Foreground="{DynamicResource Brush.Text.Secondary}" />
-                                <Button Content="Rescan" HorizontalAlignment="Left"
-                                        Margin="0,10,0,0"
-                                        Style="{StaticResource GhostButton}"
-                                        Command="{Binding Sync.RescanCommand}" />
+
+                                <!-- The three actions, in the order they are used: track a
+                                     project, export it, clear a failure if one happened.
+                                     Each disables itself when it cannot apply, and the
+                                     sentence above says why. -->
+                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                    <Button Content="Track project"
+                                            Style="{StaticResource AccentButton}"
+                                            Command="{Binding Sync.AdoptCommand}" />
+                                    <Button Content="Export now" Margin="6,0,0,0"
+                                            Style="{StaticResource GhostButton}"
+                                            Command="{Binding Sync.ExportCommand}" />
+                                    <Button Content="Rescan" Margin="6,0,0,0"
+                                            Style="{StaticResource GhostButton}"
+                                            Command="{Binding Sync.RescanCommand}" />
+                                </StackPanel>
                             </StackPanel>
+
+                            <!-- The direction lock, in plain English. Without this the lock
+                                 is invisible magic that blocks the user with no explanation
+                                 (plan section 9.5). -->
+                            <Border DockPanel.Dock="Top"
+                                    Background="{DynamicResource Brush.Surface.Sunken}"
+                                    CornerRadius="{DynamicResource Radius.Control}"
+                                    Padding="10,8" Margin="0,0,0,10">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Sync.LockState}"
+                                                         Value="">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Sync.LockState}" TextWrapping="Wrap"
+                                               FontFamily="{DynamicResource Font.UI}"
+                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                               Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                    <Button Content="Acknowledge failure"
+                                            HorizontalAlignment="Left" Margin="0,8,0,0"
+                                            Style="{StaticResource GhostButton}"
+                                            Command="{Binding Sync.AcknowledgeCommand}" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Heartbeat. A CODESYS launch is 17-31 s with nothing on screen
+                                 to show for it, and silence is indistinguishable from a hang. -->
+                            <TextBlock DockPanel.Dock="Top" Text="{Binding Sync.Activity}"
+                                       TextWrapping="Wrap" Margin="0,0,0,10"
+                                       FontFamily="{DynamicResource Font.Mono}"
+                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                       Foreground="{DynamicResource Brush.Status.Modified}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Sync.Activity}" Value="">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
 
                             <TextBlock DockPanel.Dock="Top" Text="PROJECTS"
                                        Style="{StaticResource SectionLabel}" Margin="0,4,0,6" />
 
                             <ListBox ItemsSource="{Binding Sync.Projects}"
+                                     SelectedItem="{Binding Sync.SelectedProject}"
                                      Background="Transparent" BorderThickness="0"
                                      ItemContainerStyle="{StaticResource RowItem}"
                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -316,7 +379,8 @@
                                                        VerticalAlignment="Center" Margin="10,0,0,0"
                                                        FontFamily="{DynamicResource Font.Mono}"
                                                        FontSize="{DynamicResource Font.Size.Caption}"
-                                                       Foreground="{DynamicResource Brush.Status.Modified}" />
+                                                       Foreground="{Binding BrushKey,
+                                                           Converter={StaticResource ResourceKey}}" />
                                         </Grid>
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>

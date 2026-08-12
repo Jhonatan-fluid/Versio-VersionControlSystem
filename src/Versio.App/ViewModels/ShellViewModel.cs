@@ -1,9 +1,11 @@
 using System.Collections.ObjectModel;
 using System.IO;
 using Versio.App.Mvvm;
+using Versio.Core.Abstractions;
 using Versio.Core.Git;
 using Versio.Core.Logging;
 using Versio.Infrastructure.Git;
+using Versio.Infrastructure.Platform;
 // RepositoryLocator lives in Core; FileSystemRepositoryProbe is its Infrastructure half.
 
 namespace Versio.App.ViewModels;
@@ -106,11 +108,12 @@ public sealed class ShellViewModel : ObservableObject
 
     public ShellViewModel(VersioLogger logger, LogViewModel log,
                           Func<string, GitCliClient>? gitFactory = null,
-                          IRepositoryProbe? probe = null)
+                          IRepositoryProbe? probe = null,
+                          IClock? clock = null)
     {
         _logger = logger;
         Log = log;
-        Sync = new SyncViewModel(logger);
+        Sync = new SyncViewModel(logger, clock ?? new SystemClock());
         _gitFactory = gitFactory ?? (path => new GitCliClient(path,
             log: message => logger.Debug(LogCategory.Git, message)));
         _locator = new RepositoryLocator(probe ?? new FileSystemRepositoryProbe());

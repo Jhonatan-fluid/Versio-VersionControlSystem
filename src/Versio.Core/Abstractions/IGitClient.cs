@@ -64,4 +64,15 @@ public interface IGitClient
     /// <summary>Renames git detected, old path → new path. Used to re-link a binding whose
     /// project was renamed rather than treating it as delete + add.</summary>
     Task<IReadOnlyDictionary<string, string>> DetectRenamesAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Whether <c>git lfs</c> is installed and usable in this repository.
+    /// </summary>
+    /// <remarks>
+    /// Asked before writing an LFS rule into <c>.gitattributes</c>, never assumed. A
+    /// <c>filter=lfs</c> rule in a repository without LFS fails every later checkout and
+    /// commit, and the teammate who hits it did not choose LFS and cannot see where the rule
+    /// came from (plan R10).
+    /// </remarks>
+    Task<bool> IsLfsAvailableAsync(CancellationToken ct);
 }

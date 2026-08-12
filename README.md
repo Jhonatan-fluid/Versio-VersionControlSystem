@@ -44,6 +44,7 @@ Export is automatic and deterministic. Import applies edited text back into the 
 | Repository validation — walks up to `.git`, refuses non-repos with a reason | ✅ handles subdirectories, bare repos and linked worktrees |
 | PLC sync panel — toolchain probe, project discovery, binding state | ✅ real scan, no sample data |
 | Vendor seam — `IPlcToolchain`, `Iec` vs `Plc.Codesys` vs neutral | ✅ 11 tests |
+| Application icon — 8 sizes, hand-tuned below 48px, embedded in the exe | ✅ 12 tests over the `.ico` itself |
 | **Adopt a project + manual export/import from the UI** | ⛔ next milestone |
 | Git side panel, project tree, packaging | ⛔ not built |
 
@@ -79,7 +80,10 @@ Versio.sln
 ├─ tests/
 │  ├─ Versio.Core.Tests/        352 unit tests — pure, no IO, ~100 ms
 │  └─ Versio.Integration.Tests/  21 tests against real CODESYS and real git, ~23 s
-├─ tools/                       PowerShell harnesses used during Phase 0
+├─ tools/                       PowerShell harnesses used during Phase 0, plus
+│                               New-VersioIcon.ps1 which generates the app icon
+├─ assets/                      versio.svg (reference drawing) and versio.ico
+│                               (the build input — generated, never hand-edited)
 ├─ fixtures/projects/           the CODESYS project the suite runs against
 └─ docs/
    ├─ PLAN.md                   the full architecture plan
@@ -191,6 +195,7 @@ Each of these cost real debugging time and is now pinned by a test.
 | **Import runs in two phases** | Creating objects then immediately calling `import_native` makes CODESYS enumerate a dictionary it is still mutating — and it **swallows the exception**, so the import silently does nothing and the run looks clean. |
 | **Never rewrite GUIDs in an export** | Only `Timestamp` is scrubbed. Rewriting identity GUIDs breaks visualisations. Masking them for a *comparison* is fine; writing masked ones to disk is not. |
 | **WPF `TreeView` does not virtualize by default** | Measured at 5,002 nodes: **94.7 ms virtualized vs 10,635 ms at the defaults**. Needs `IsVirtualizing`, `VirtualizationMode=Recycling` and a `VirtualizingStackPanel` items panel. |
+| **An `.ico` is eight drawings, not one** | Windows does not downscale gracefully. The mark is redrawn per size, with a simplified variant below 48px — the 1-unit plate stagger is half a pixel at 32px, too small to see and large enough to smear every edge. Run `tools/New-VersioIcon.ps1 -PreviewDirectory …` and **look at the 16px output** before believing a change. |
 | **A framework-dependent exe needs `DOTNET_ROOT`** | If the SDK is installed per-user rather than machine-wide, `Versio.exe` cannot find the runtime and shows a "must install .NET" dialog. Self-contained publish removes this entirely — which is why §13.2 specifies it. |
 
 ---

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Versio application icon - "Stack".
+
+  Three plates: the version history, oldest at the bottom, current on top in the
+  brightest ink. The green dot is the status badge - the current version is
+  synced. Colours are the app's own tokens (src/Versio.App/Theme/tokens/), so the
+  icon and the UI cannot drift apart:
+
+      #1D2026  Color.Surface.Base     tile
+      #3D4451  Color.Border.Strong    oldest plate
+      #5C6472  Color.Text.Disabled    middle plate
+      #E8EAED  Color.Text.Primary     current plate
+      #4ADE80  Color.Status.Added     badge
+
+  This file is the reference drawing, NOT the build input. The shipped icon is
+  assets/versio.ico, produced by tools/New-VersioIcon.ps1, which redraws this
+  geometry per size and uses a simplified variant below 32 px - the stagger and
+  the notch turn to mush at 16 px. Change the geometry in BOTH places, or run
+  the script and look at the 16 px output before believing it.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 64 64"
+     role="img" aria-label="Versio">
+  <title>Versio</title>
+
+  <rect width="64" height="64" rx="14" fill="#1D2026"/>
+
+  <rect x="16" y="40" width="34" height="8" rx="3" fill="#3D4451"/>
+  <rect x="15" y="28" width="34" height="8" rx="3" fill="#5C6472"/>
+  <rect x="14" y="16" width="34" height="8" rx="3" fill="#E8EAED"/>
+
+  <!-- Punched in the tile colour so the badge reads as a notch, not an overlay. -->
+  <circle cx="47" cy="20" r="7.5" fill="#1D2026"/>
+  <circle cx="47" cy="20" r="5.2" fill="#4ADE80"/>
+</svg>

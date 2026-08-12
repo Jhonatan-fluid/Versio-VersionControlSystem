@@ -9,6 +9,12 @@
     <AssemblyName>Versio</AssemblyName>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
 
+    <!-- Embedded into the PE image, which is what Explorer, the taskbar and the
+         installer all read. WPF also falls back to it for the window's title-bar
+         icon when Window.Icon is unset, so one declaration covers every surface.
+         Regenerate with tools/New-VersioIcon.ps1 - never hand-edit the .ico. -->
+    <ApplicationIcon>..\..\assets\versio.ico</ApplicationIcon>
+
     <!-- Plan section 13.2: unsupported for WPF. Asserted so nobody enables them for size
          and then hits runtime XAML failures on isolated screens. -->
     <PublishTrimmed>false</PublishTrimmed>

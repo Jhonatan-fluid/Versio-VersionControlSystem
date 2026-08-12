@@ -18,6 +18,8 @@ public sealed class GitCliClient(
     string gitExecutable = "git",
     Action<string>? log = null) : IGitClient
 {
+    private bool? _lfsAvailable;
+
     /// <summary>Working tree root that every command runs against.</summary>
     public string RepositoryPath => repositoryPath;
 
@@ -225,6 +227,28 @@ public sealed class GitCliClient(
         }
 
         return renames;
+    }
+
+    /// <summary>Whether <c>git lfs</c> is installed and usable here.</summary>
+    /// <remarks>
+    /// <c>lfs version</c> rather than <c>lfs env</c> or a check for the binary on PATH: it
+    /// is the cheapest call that proves the subcommand actually resolves through <i>this</i>
+    /// git, which is the thing the filter rules will depend on. Cached for the lifetime of
+    /// the client because installing LFS mid-session is not a case worth re-probing for on
+    /// every adopt.
+    /// </remarks>
+    public async Task<bool> IsLfsAvailableAsync(CancellationToken ct)
+    {
+        if (_lfsAvailable is { } known)
+        {
+            return known;
+        }
+
+        var result = await RunAsync(["lfs", "version"], null, ct, TimeSpan.FromSeconds(10))
+            .ConfigureAwait(false);
+
+        _lfsAvailable = result.Success;
+        return result.Success;
     }
 
     private static GitResult NoOp() =>

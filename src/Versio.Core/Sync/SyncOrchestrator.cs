@@ -46,6 +46,7 @@ public sealed class SyncOrchestrator
     private readonly OrchestratorOptions _options;
     private readonly string _repoRoot;
     private readonly LockOwner _owner;
+    private readonly IProgress<CodesysProgress>? _progress;
 
     private readonly Dictionary<string, ProjectBinding> _bindings;
     private readonly Dictionary<string, BindingLock> _locks = new(StringComparer.Ordinal);
@@ -61,10 +62,12 @@ public sealed class SyncOrchestrator
         IFileSystem fs,
         ICodesysRunner codesys,
         ILockStore lockStore,
-        OrchestratorOptions? options = null)
+        OrchestratorOptions? options = null,
+        IProgress<CodesysProgress>? progress = null)
     {
         _repoRoot = repoRoot;
         _owner = owner;
+        _progress = progress;
         _clock = clock;
         _fs = fs;
         _codesys = codesys;
@@ -261,7 +264,7 @@ public sealed class SyncOrchestrator
             ],
         };
 
-        var result = await _codesys.RunAsync(job, null, ct).ConfigureAwait(false);
+        var result = await _codesys.RunAsync(job, _progress, ct).ConfigureAwait(false);
         var elapsed = _clock.UtcNow - started;
 
         if (!result.Succeeded)
@@ -319,7 +322,7 @@ public sealed class SyncOrchestrator
             ],
         };
 
-        var result = await _codesys.RunAsync(job, null, ct).ConfigureAwait(false);
+        var result = await _codesys.RunAsync(job, _progress, ct).ConfigureAwait(false);
         var elapsed = _clock.UtcNow - started;
 
         if (!result.Succeeded)

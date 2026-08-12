@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+using Versio.Core.Plc;
 
 namespace Versio.Core.Bindings;
 
@@ -196,13 +196,19 @@ public sealed class OrphanScanner
     }
 
     /// <summary>Propose a binding for an orphaned project, using the conventions.</summary>
-    public static ProjectBinding ProposeBinding(string projectPath, string id, string? profile = null) =>
+    /// <param name="format">Supplies the export-path convention. Optional so the neutral
+    /// default stays usable, but the caller should pass it: the export layout is a vendor
+    /// decision, and letting it default is how vendor knowledge quietly re-centralises.</param>
+    public static ProjectBinding ProposeBinding(
+        string projectPath, string id, string? profile = null, IPlcProjectFormat? format = null) =>
         new()
         {
             Id = id,
             ProjectPath = Normalize(projectPath),
             TemplatePath = BindingConventions.ConventionalTemplatePath(projectPath),
-            ExportPath = BindingConventions.ConventionalExportPath(projectPath),
+            ExportPath = Normalize(format is null
+                ? BindingConventions.ConventionalExportPath(projectPath)
+                : format.ConventionalExportPath(projectPath)),
             Profile = profile,
             Enabled = true,
         };
@@ -210,15 +216,5 @@ public sealed class OrphanScanner
     private static string Normalize(string p) => p.Replace('\\', '/').TrimStart('/');
 
     internal static bool IsIgnored(string path, IReadOnlyList<string> globs) =>
-        globs.Any(g => GlobToRegex(g).IsMatch(path));
-
-    private static Regex GlobToRegex(string glob)
-    {
-        var pattern = "^" + Regex.Escape(glob.Replace('\\', '/'))
-            .Replace(@"\*\*/", "(?:.*/)?")
-            .Replace(@"\*\*", ".*")
-            .Replace(@"\*", "[^/]*")
-            .Replace(@"\?", "[^/]") + "$";
-        return new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-    }
+        PathGlob.Matches(path, globs);
 }
