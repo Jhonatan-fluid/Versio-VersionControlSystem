@@ -45,7 +45,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | Change detection — watcher + safety poll + overflow rescan | ✅ `FileChangeWatcher`, driving the sync engine |
 | Staleness stated, not implied — "2 projects not yet exported" | ✅ answered by the commit gate, so the two cannot disagree |
 | **The project view follows the repository by itself** | ✅ 18 policy tests + 9 against a real filesystem; rebuilt only when something it shows changed |
-| Design system tokens, light and dark | ✅ `src/Versio.App/Theme/` |
+| Design system tokens, light and dark | ✅ `src/Versio.App/Theme/`; switching at runtime repaints open windows, which it never did until it was measured |
 | Logging — ring buffer, correlation ids, heartbeat, rolling file | ✅ 20 tests; "Open logs folder" selects today's file |
 | **The export narrates itself** — directory swap with both file counts, every skip and its reason | ✅ asserted against the log a real export produces, across two runs |
 | Shell — repo/branch dropdowns, rail, changed files, diff, collapsible log | ✅ opens a real repo, shows real git state |
@@ -131,7 +131,7 @@ Versio.sln
 │                               and run on CPython too.
 ├─ tests/
 │  ├─ Versio.Core.Tests/        799 unit tests — pure, no IO, ~290 ms
-│  ├─ Versio.App.Tests/         24 tests that build the real dialogs against the real
+│  ├─ Versio.App.Tests/         45 tests that build the real dialogs against the real
 │  │                            stylesheet on an STA thread — no window is ever shown
 │  └─ Versio.Integration.Tests/ 101 tests against real CODESYS and real git, ~7 min
 ├─ tools/                       PowerShell harnesses used during Phase 0, plus

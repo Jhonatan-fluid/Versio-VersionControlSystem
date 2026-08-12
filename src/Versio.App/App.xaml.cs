@@ -79,8 +79,7 @@ public partial class App : Application
         // Open a repository straight away when one is obvious: an explicit path argument,
         // otherwise the working directory. Starting on an empty window and making the user
         // hunt for a folder picker is a poor first thirty seconds.
-        var candidate = e.Args.FirstOrDefault(a => !a.StartsWith("--", StringComparison.Ordinal))
-                        ?? Directory.GetCurrentDirectory();
+        var candidate = RepositoryArgument(e.Args) ?? Directory.GetCurrentDirectory();
 
         if (Directory.Exists(candidate))
         {
@@ -213,6 +212,47 @@ public partial class App : Application
         logger.Debug(LogCategory.App,
             args.Length == 0 ? "no command-line arguments" : $"arguments: {string.Join(' ', args)}");
     }
+
+    /// <summary>
+    /// The repository path from the command line, if there is one.
+    /// </summary>
+    /// <remarks>
+    /// <b>The value after a flag is not a repository.</b> This used to take the first argument
+    /// that did not start with <c>--</c>, which meant
+    /// <c>Versio.exe --trace-bindings out.txt C:\repo</c> tried to open <c>out.txt</c> and
+    /// silently started with no repository open. The failure was quiet in the worst way: the
+    /// binding tracer it was written for reported a clean run over panels that had never been
+    /// populated, so a diagnostic run proved far less than it appeared to.
+    /// <para>
+    /// Flags that take a value are listed rather than inferred. Guessing — "skip the next
+    /// argument after any flag" — would break the moment a flag without a value is followed by
+    /// the path, which is exactly how <c>--spike</c> is used.
+    /// </para>
+    /// </remarks>
+    internal static string? RepositoryArgument(string[] args)
+    {
+        for (var i = 0; i < args.Length; i++)
+        {
+            var arg = args[i];
+
+            if (ValueFlags.Contains(arg))
+            {
+                i++;                                  // its value, not a path
+                continue;
+            }
+
+            if (!arg.StartsWith("--", StringComparison.Ordinal))
+            {
+                return arg;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Command-line flags that consume the argument after them.</summary>
+    private static readonly HashSet<string> ValueFlags =
+        new(StringComparer.OrdinalIgnoreCase) { "--trace-bindings" };
 
     /// <summary>
     /// <c>--trace-bindings &lt;file&gt;</c>: write every WPF data-binding failure to a file.

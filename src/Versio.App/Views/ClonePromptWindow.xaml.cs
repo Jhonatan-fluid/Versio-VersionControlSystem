@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using Versio.Core.Git;
 
 namespace Versio.App.Views;
@@ -33,6 +34,22 @@ public partial class ClonePromptWindow : Window
     /// <summary>The URL that <see cref="_verify"/> last approved, so an edit can invalidate it.</summary>
     private string? _verifiedUrl;
 
+    /// <summary>
+    /// Waits for typing to stop before verifying.
+    /// </summary>
+    /// <remarks>
+    /// Verification is automatic: pasting a URL should not then require pressing a button to
+    /// find out whether it is any good. But a keystroke is not a URL, and verifying on every
+    /// one would spawn a git process per character and paint the box red while somebody is
+    /// still halfway through typing it. So the timer restarts on each edit and only fires once
+    /// the typing has stopped - and <see cref="LooksComplete"/> keeps it quiet until there is
+    /// something worth asking about.
+    /// </remarks>
+    private readonly DispatcherTimer _verifyAfterTyping = new()
+    {
+        Interval = TimeSpan.FromMilliseconds(600),
+    };
+
     public ClonePromptWindow(
         Func<string, CancellationToken, Task<GitResult>> verify,
         Func<string, string, IProgress<GitProgress>?, CancellationToken, Task<GitResult>> clone,
@@ -45,6 +62,12 @@ public partial class ClonePromptWindow : Window
 
         FolderBox.Text = initialFolder ?? string.Empty;
 
+        _verifyAfterTyping.Tick += async (_, _) =>
+        {
+            _verifyAfterTyping.Stop();
+            await VerifyAsync();
+        };
+
         // Once up front: TextChanged does not fire for the initial values, and a dialog that
         // opens with two blank explanation lines reads as broken rather than as waiting.
         UpdateDestination();
@@ -56,11 +79,64 @@ public partial class ClonePromptWindow : Window
     {
         // Editing the URL invalidates the verification it had. Without this, verifying one
         // remote and then pasting another would clone the second on the strength of the
-        // first — the failure this whole dialog is shaped to prevent.
+        // first - the failure this whole dialog is shaped to prevent.
         _verifiedUrl = null;
         VerifyButton.IsEnabled = !string.IsNullOrWhiteSpace(UrlBox.Text);
-        VerifyMessage.Text = string.Empty;
         UpdateDestination();
+
+        // Restarted on every keystroke, so it fires once when typing stops rather than once
+        // per character.
+        _verifyAfterTyping.Stop();
+
+        if (LooksComplete(UrlBox.Text))
+        {
+            VerifyMessage.Text = string.Empty;
+            _verifyAfterTyping.Start();
+            return;
+        }
+
+        // Half a URL is not a failure, and saying "repository not found" at somebody who is
+        // still typing trains them to ignore the line that will later carry the real answer.
+        VerifyMessage.Text = UrlBox.Text.Trim().Length == 0
+            ? string.Empty
+            : "Waiting for the rest of the address…";
+        VerifyMessage.Foreground =
+            (System.Windows.Media.Brush)FindResource("Brush.Text.Disabled");
+    }
+
+    /// <summary>
+    /// True when a URL is complete enough to be worth asking git about.
+    /// </summary>
+    /// <remarks>
+    /// The two shapes that reach a remote: a scheme with a host and something after it
+    /// (<c>https://host/owner/repo</c>), and the scp-like form (<c>git@host:owner/repo</c>).
+    /// A local path counts too, because a folder is a perfectly good remote and is how the
+    /// clone path is tested. Anything shorter is somebody mid-keystroke.
+    /// </remarks>
+    internal static bool LooksComplete(string? url)
+    {
+        var text = (url ?? string.Empty).Trim();
+        if (text.Length < 4)
+        {
+            return false;
+        }
+
+        var scheme = text.IndexOf("://", StringComparison.Ordinal);
+        if (scheme > 0)
+        {
+            // Something after the host, not just "https://".
+            var rest = text[(scheme + 3)..];
+            var slash = rest.IndexOf('/');
+            return slash > 0 && rest.Length > slash + 1;
+        }
+
+        if (text.Contains('@') && text.Contains(':'))
+        {
+            return text.Length > text.IndexOf(':') + 1;
+        }
+
+        // A local path, absolute or UNC.
+        return Path.IsPathRooted(text) && Directory.Exists(text);
     }
 
     private void OnFolderChanged(object sender, TextChangedEventArgs e) => UpdateDestination();

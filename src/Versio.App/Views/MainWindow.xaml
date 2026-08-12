@@ -8,11 +8,14 @@
         TextOptions.TextRenderingMode="ClearType"
         UseLayoutRounding="True">
 
+    <!-- NO Theme.xaml merge here, deliberately. App.xaml merges it once into
+         Application.Resources, and ThemeManager swaps the palette inside THAT dictionary.
+         A second copy here gave this window its own private palette: lookups found it first
+         and never reached the application's, so the theme buttons in Settings changed
+         nothing on the main window while every dialog — which has no private copy — followed
+         them correctly. One theme, one place, swapped once. -->
     <Window.Resources>
         <ResourceDictionary>
-            <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="../Theme/Theme.xaml" />
-            </ResourceDictionary.MergedDictionaries>
             <views:ResourceKeyConverter x:Key="ResourceKey" />
             <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
 

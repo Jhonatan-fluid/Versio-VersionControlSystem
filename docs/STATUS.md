@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-12 · **Commits:** 29 · **Tests:** 799 unit + 24 UI + 101 integration, 0 skipped
+**Date:** 2026-08-12 · **Commits:** 30 · **Tests:** 799 unit + 45 UI + 101 integration, 0 skipped
 
 > One integration test, `RepositoryWatcherTests.A_deleted_file_is_reported`, is **flaky under
 > full-suite load** — see Findings. It passes in isolation and failed once during a complete
@@ -204,6 +204,74 @@ More fixture projects. Every field bug becomes a fixture before it is fixed.
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### The theme switch changed a colour nothing was looking at
+
+Reported from use: the Light/Dark buttons in Settings did nothing. Two independent causes, and
+the second one is the more interesting.
+
+**One: the main window carried its own copy of the theme.** `MainWindow.xaml` merged
+`Theme.xaml` into `Window.Resources`, and `App.xaml` merges it into `Application.Resources`.
+WPF resolves upwards and stops at the first hit, so the window found its private palette and
+never reached the application's — the one `ThemeManager` swaps. Every dialog, having no private
+copy, followed the switch correctly, which is why the branch dialog opened dark over a light
+window. The merge is gone: one theme, one place.
+
+**Two: replacing the palette repainted nothing.** Measured with a probe rather than reasoned
+about, and the numbers are the finding:
+
+```
+after Apply(Dark)   Color.Surface.Base = #FF1D2026      the palette did change
+                    Brush.Surface.Base = #FFFFFFFF      the brush did not
+                    window background  = #FFFFFFFF      nor did anything painted with it
+```
+
+`Semantic.xaml` defines its brushes as `SolidColorBrush` with `Color="{DynamicResource
+Color.Surface.Base}"`, and the comment above `ThemeManager` said that is what makes the whole
+window re-theme without a restart. It is not: a `Freezable` living in a resource dictionary
+resolves its `DynamicResource` once, and replacing a *sibling* dictionary underneath it does
+not re-resolve it. So the swap updated a colour that no live brush was reading any more.
+
+**It had never worked, and it looked like it did** — because `Apply(System)` runs at startup
+*before* any window exists, so the first resolution of every brush already sees the right
+palette. Only a switch made while the app is running has anything to re-resolve, and that is
+the one thing nobody had automated.
+
+The fix rebuilds the whole theme dictionary and replaces it in `Application.Resources`, so
+every brush is a fresh instance and every `DynamicResource` consumer in an open window is
+invalidated. Four tests now cover it, and reverting to the palette-only swap fails three of
+them.
+
+### A diagnostic that verified an empty window
+
+`Versio.exe --trace-bindings <file> C:epo` never opened the repository. The startup code
+took "the first argument that does not start with `--`" as the repository path, which is the
+trace file.
+
+The cost was not the missing repository — it is logged — but what it did to the instrument.
+That flag exists to verify the UI, and every clean binding trace taken with it was a clean
+trace over an **empty** window: no repository, no project rows, no git panel contents, so most
+bindings had never been evaluated at all. A verification that quietly checks nothing is worse
+than no verification, because it gets reported as a pass. Both of this session's earlier
+"clean trace" runs were exactly that, and were re-run properly afterwards.
+
+Flags that consume a value are listed rather than inferred: "skip whatever follows a flag"
+breaks on `--spike C:epo`, which is how the spike is actually run.
+
+### A project with nothing to review stayed on screen
+
+Also reported from use: a project sitting in the panel with no changes under it and a badge
+reading 0.
+
+It was doing what it was told. A project stayed visible when its sync state was anything other
+than `Clean`, and the commonest state in the tool's whole life is `ProjectAuthoritative` — the
+direction lock taken by a successful export and held until the work is **pushed**. So a project
+that had been exported, committed and left alone sat permanently in a panel whose stated
+premise is "everything with something to review", with nothing to review.
+
+The rule now asks whether there is something to *do*: never exported, failed, conflicted, text
+ahead (an import is outstanding), or stale. A held lock with everything up to date is a fact
+about state, not a task, and it is already reported in the panel header in its own sentence.
 
 ### The UI had no automated coverage, and the first test written found a bug
 

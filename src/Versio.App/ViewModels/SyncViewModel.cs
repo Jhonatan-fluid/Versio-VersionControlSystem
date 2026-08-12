@@ -261,6 +261,9 @@ public sealed class SyncViewModel : ObservableObject
     /// the file list the export reported: an export can delete an object as well as write
     /// one, and staging only the writes would leave the deletion out of the commit.
     /// </remarks>
+    /// <summary>Bindings whose mirror is behind their project, from the last gate evaluation.</summary>
+    private readonly HashSet<string> _staleBindings = new(StringComparer.Ordinal);
+
     public IReadOnlyList<string> ExportPaths =>
         [.. _config.Bindings.Where(b => b.Enabled).Select(b => b.ExportPath)];
 
@@ -698,6 +701,16 @@ public sealed class SyncViewModel : ObservableObject
             var stale = new HashSet<string>(gate.StaleBindings, StringComparer.Ordinal);
             UnexportedCount = stale.Count;
 
+            // Kept, not just counted: the tree needs to know WHICH bindings are behind, so a
+            // project with unexported work stays on screen even when git has nothing to say
+            // about it. Replaced wholesale rather than added to, so a binding that has since
+            // been exported stops being stale.
+            _staleBindings.Clear();
+            foreach (var id in stale)
+            {
+                _staleBindings.Add(id);
+            }
+
             foreach (var row in Projects.Where(p => p.Tracked && !p.Busy))
             {
                 if (stale.Contains(row.BindingId!))
@@ -904,11 +917,25 @@ public sealed class SyncViewModel : ObservableObject
                     AbsolutePath(b.ExportPath), BindingConventions.ManifestFileName),
                 State: Projects.FirstOrDefault(p => p.BindingId == b.Id)?.State ?? "tracked",
 
-                // Anything other than Clean is a state git cannot report: a mirror that is
-                // behind, a direction lock held, a failure nobody has acknowledged. Those
-                // projects stay visible however quiet the working tree is.
+                // Visible when there is something to DO, not merely something to report.
+                //
+                // This used to be "any state other than Clean", and the state that made that
+                // wrong is the commonest one in the tool's life: after a successful export
+                // the binding holds ProjectAuthoritative until the work is PUSHED, so a
+                // project that had been exported, committed and left alone sat in a panel
+                // whose whole premise is "everything with something to review", with no
+                // changes under it and nothing to review. The lock is still reported - it is
+                // in the header, in its own sentence, which is where a fact about state
+                // belongs.
+                //
+                // Failed and Conflict stay: both need a person. Text-ahead stays: an import
+                // is outstanding, and committing the mirror would otherwise hide it. Stale
+                // is handled below, and a project with no manifest at the callsite.
                 NeedsAttention: (_orchestrator?.StateOf(b.Id) ?? SyncDirection.Clean)
-                                != SyncDirection.Clean))
+                                    is SyncDirection.Failed
+                                    or SyncDirection.Conflict
+                                    or SyncDirection.TextAuthoritative
+                                || _staleBindings.Contains(b.Id)))
             .ToList();
 
         // Everything the tree is derived from, in one string. A manifest's write time stands

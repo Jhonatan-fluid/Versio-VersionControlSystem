@@ -42,10 +42,14 @@
                      Tag="https://… or git@…"
                      TextChanged="OnUrlChanged" />
 
-            <Button Grid.Column="1" x:Name="VerifyButton" Content="Verify"
+            <!-- Verification runs by itself once typing stops. The button stays for the
+                 case automation cannot help with: a remote that was unreachable a moment
+                 ago because the VPN was not up yet. -->
+            <Button Grid.Column="1" x:Name="VerifyButton" Content="Re-check"
                     Style="{StaticResource GhostButton}"
                     Padding="16,4" Margin="8,0,0,0"
-                    IsEnabled="False" Click="OnVerify" />
+                    IsEnabled="False" Click="OnVerify"
+                    ToolTip="Check the remote again" />
         </Grid>
 
         <TextBlock Grid.Row="2" x:Name="VerifyMessage" Margin="2,8,0,0"

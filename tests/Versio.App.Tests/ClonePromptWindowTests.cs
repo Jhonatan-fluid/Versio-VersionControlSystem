@@ -185,6 +185,40 @@ public sealed class ClonePromptWindowTests
         Assert.Equal(expected, ClonePromptWindow.RepositoryNameFrom(url));
     }
 
+    [Theory]
+    [InlineData("https://example.test/owner/machine.git", true)]
+    [InlineData("https://example.test/machine", true)]
+    [InlineData("git@example.test:owner/machine.git", true)]
+    [InlineData("ssh://git@example.test/owner/machine.git", true)]
+    [InlineData("", false)]
+    [InlineData("h", false)]
+    [InlineData("https://", false)]
+    [InlineData("https://exam", false)]
+    [InlineData("https://example.test/", false)]
+    [InlineData("git@example.test:", false)]
+    public void A_url_is_only_worth_asking_git_about_once_it_is_complete(string url, bool ready)
+    {
+        // Verification is automatic, which means it fires while somebody is still typing.
+        // Half a URL is not a failure, and painting "repository not found" at every keystroke
+        // would train them to ignore the line that later carries the real answer.
+        Assert.Equal(ready, ClonePromptWindow.LooksComplete(url));
+    }
+
+    [Fact]
+    public void A_half_typed_url_says_it_is_waiting_rather_than_failing()
+    {
+        StaHarness.Run(() =>
+        {
+            var window = Dialog();
+
+            Control<TextBox>(window, "UrlBox").Text = "https://exa";
+
+            var message = Control<TextBlock>(window, "VerifyMessage").Text;
+            Assert.Contains("Waiting", message, StringComparison.Ordinal);
+            Assert.False(Control<Button>(window, "CloneButton").IsEnabled);
+        });
+    }
+
     [Fact]
     public void With_no_folder_chosen_there_is_no_destination_and_no_Clone()
     {
