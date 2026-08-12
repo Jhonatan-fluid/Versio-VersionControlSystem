@@ -16,7 +16,8 @@ param(
     [string]$Codesys = "C:\Program Files\CODESYS 3.5.22.20\CODESYS\Common\CODESYS.exe",
     [string]$Profile,
     [int]$TimeoutSec = 600,
-    [string]$LogDir = "C:\VERSIO\phase0\logs"
+    # Derived from the script's own location so the tools work from any clone path.
+    [string]$LogDir = (Join-Path (Split-Path -Parent $PSScriptRoot) "phase0\logs")
 )
 
 $ErrorActionPreference = "Stop"

@@ -4,6 +4,7 @@ using Versio.App.Mvvm;
 using Versio.Core.Git;
 using Versio.Core.Logging;
 using Versio.Infrastructure.Git;
+// RepositoryLocator lives in Core; FileSystemRepositoryProbe is its Infrastructure half.
 
 namespace Versio.App.ViewModels;
 
@@ -78,6 +79,7 @@ public sealed class ShellViewModel : ObservableObject
 {
     private readonly VersioLogger _logger;
     private readonly Func<string, GitCliClient> _gitFactory;
+    private readonly RepositoryLocator _locator;
 
     private GitCliClient? _git;
     private string? _repositoryPath;
@@ -89,12 +91,14 @@ public sealed class ShellViewModel : ObservableObject
     private bool _isBusy;
 
     public ShellViewModel(VersioLogger logger, LogViewModel log,
-                          Func<string, GitCliClient>? gitFactory = null)
+                          Func<string, GitCliClient>? gitFactory = null,
+                          IRepositoryProbe? probe = null)
     {
         _logger = logger;
         Log = log;
         _gitFactory = gitFactory ?? (path => new GitCliClient(path,
             log: message => logger.Debug(LogCategory.Git, message)));
+        _locator = new RepositoryLocator(probe ?? new FileSystemRepositoryProbe());
 
         OpenRepositoryCommand = new AsyncCommand(OpenRepositoryAsync, onError: ReportError);
         RefreshCommand = new AsyncCommand(RefreshAsync, () => _git is not null,
@@ -213,17 +217,63 @@ public sealed class ShellViewModel : ObservableObject
         }
     }
 
-    /// <summary>Open a repository by path. Separate from the command so the folder picker
-    /// stays in the view, where a dialog belongs.</summary>
+    /// <summary>
+    /// Raised when a chosen folder cannot be used, so the view can show a dialog.
+    /// </summary>
+    /// <remarks>
+    /// An event rather than a direct message box: putting a modal here would make
+    /// <see cref="OpenAsync"/> untestable and would block a background caller.
+    /// </remarks>
+    public event Action<RepositoryLocation>? RepositoryRejected;
+
+    /// <summary>
+    /// Open a repository by path.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The chosen folder is resolved to its working tree root first. <b>Versio runs
+    /// entirely on Git</b> — branches, history, the diff, the direction lock releasing on
+    /// push — so a folder outside a repository gives it nothing to work with, and every
+    /// control would be present but dead. Refusing with an explanation is the better
+    /// failure.
+    /// </para>
+    /// <para>
+    /// A subdirectory is accepted and promoted to its root, because people select the
+    /// folder they were looking at rather than the root — which is what <c>git status</c>
+    /// does too.
+    /// </para>
+    /// </remarks>
     public async Task OpenAsync(string path)
     {
-        _logger.Info(LogCategory.App, $"Opening repository {path}");
+        _logger.Info(LogCategory.App, $"Opening {path}");
+
+        var location = _locator.Locate(path);
+        if (!location.IsUsable)
+        {
+            _logger.Warn(LogCategory.Git, $"{path}: {location.Explanation}");
+            StatusSummary = location.Explanation;
+            RepositoryRejected?.Invoke(location);
+            return;
+        }
+
+        // Always operate on the working tree root, never the folder that was picked.
+        path = location.WorkingTreeRoot!;
+        if (location.Kind == RepositoryKind.InsideWorkingTree)
+        {
+            _logger.Info(LogCategory.Git, $"resolved to repository root {path}");
+        }
+
         var client = _gitFactory(path);
 
+        // Second, authoritative check. The locator reads the filesystem; only git itself
+        // can say whether it will actually operate here, since a corrupt or partially
+        // cloned .git looks perfectly fine from the outside.
         if (!await client.IsRepositoryAsync(CancellationToken.None).ConfigureAwait(true))
         {
-            _logger.Warn(LogCategory.Git, $"{path} is not a git repository");
-            StatusSummary = "Not a git repository";
+            var rejected = location with { Kind = RepositoryKind.NotARepository };
+            _logger.Warn(LogCategory.Git, $"git refused to open {path}");
+            StatusSummary = rejected.Explanation;
+            RepositoryRejected?.Invoke(rejected);
             return;
         }
 

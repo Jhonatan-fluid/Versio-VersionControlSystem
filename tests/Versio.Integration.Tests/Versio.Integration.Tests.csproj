@@ -17,4 +17,11 @@
     <ProjectReference Include="..\..\src\Versio.Infrastructure\Versio.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Shared rather than duplicated. Fixture paths must resolve from the assembly's own
+         location so the suite runs from any clone path — hardcoded paths broke the moment
+         the checkout moved. -->
+    <Compile Include="..\Versio.Core.Tests\TestPaths.cs" Link="TestPaths.cs" />
+  </ItemGroup>
+
 </Project>

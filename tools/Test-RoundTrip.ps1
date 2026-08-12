@@ -18,13 +18,15 @@
 param(
     [Parameter(Mandatory)][string]$Project,
     [Parameter(Mandatory)][string]$Profile,
-    [string]$WorkRoot = "C:\VERSIO\phase0\roundtrip",
+    # Derived from the script's own location so the tools work from any clone path.
+    [string]$WorkRoot = (Join-Path (Split-Path -Parent $PSScriptRoot) "phase0\roundtrip"),
     [switch]$MutateFirst
 )
 
 $ErrorActionPreference = "Stop"
 $tools = Split-Path -Parent $PSCommandPath
-$scripts = "C:\VERSIO\src\Versio.Scripts"
+$repoRoot = Split-Path -Parent $tools
+$scripts = Join-Path $repoRoot "src\Versio.Scripts"
 
 if (Test-Path $WorkRoot) { Remove-Item $WorkRoot -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $WorkRoot | Out-Null

@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using Versio.App.Theme;
 using Versio.App.ViewModels;
+using Versio.Core.Git;
 
 namespace Versio.App.Views;
 
@@ -34,10 +35,43 @@ public partial class MainWindow : Window
             }
         };
 
+        // A rejected folder needs a modal the user cannot miss. The view model raises an
+        // event rather than showing one itself, so opening a repository stays testable.
+        shell.RepositoryRejected += ShowRepositoryRejected;
+
         ApplyLogVisibility();
         SyncThemeRadios();
 
         InputBindings.Add(new KeyBinding(shell.RefreshCommand, Key.F5, ModifierKeys.None));
+    }
+
+    /// <summary>
+    /// Explain why a folder cannot be opened, and offer to choose another.
+    /// </summary>
+    /// <remarks>
+    /// Versio runs entirely on Git, so this is a normal outcome rather than an error path.
+    /// The message says what is wrong and what to do about it, and accepting reopens the
+    /// picker — the user is never left staring at an app that silently does nothing.
+    /// </remarks>
+    private async void ShowRepositoryRejected(RepositoryLocation location)
+    {
+        var caption = location.Kind switch
+        {
+            RepositoryKind.Bare => "Bare repository",
+            RepositoryKind.Inaccessible => "Folder unavailable",
+            _ => "Not a Git repository",
+        };
+
+        var body = $"{location.RequestedPath}\n\n{location.Explanation}\n\n" +
+                   "Choose a different folder?";
+
+        var answer = MessageBox.Show(this, body, caption,
+            MessageBoxButton.OKCancel, MessageBoxImage.Warning, MessageBoxResult.OK);
+
+        if (answer == MessageBoxResult.OK)
+        {
+            await PickRepositoryAsync();
+        }
     }
 
     /// <summary>
@@ -54,14 +88,21 @@ public partial class MainWindow : Window
             _shell.Log.IsExpanded ? "Icon.ChevronDown" : "Icon.ChevronUp");
     }
 
-    private async void OnOpenRepository(object sender, RoutedEventArgs e)
+    private async void OnOpenRepository(object sender, RoutedEventArgs e) =>
+        await PickRepositoryAsync();
+
+    /// <summary>Show the folder picker and hand the result to the view model.</summary>
+    /// <remarks>
+    /// The dialog lives in the view because a dialog is a view concern, and keeping it here
+    /// is what lets <c>ShellViewModel.OpenAsync</c> be driven straight from a test.
+    /// </remarks>
+    private async Task PickRepositoryAsync()
     {
-        // The folder picker lives in the view: a dialog is a view concern, and keeping it
-        // here is what lets ShellViewModel.OpenAsync be driven straight from a test.
         var dialog = new Microsoft.Win32.OpenFolderDialog
         {
-            Title = "Open a repository",
+            Title = "Open a Git repository",
             Multiselect = false,
+            InitialDirectory = _shell.RepositoryPath ?? string.Empty,
         };
 
         if (dialog.ShowDialog(this) == true)

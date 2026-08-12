@@ -16,7 +16,10 @@ namespace Versio.Integration.Tests;
 [Trait("Category", "Integration")]
 public class CodesysRunnerTests(ITestOutputHelper output)
 {
-    private const string FixtureProject = @"C:\VERSIO\fixtures\projects\RefrigeratorControl.project";
+    /// <summary>Resolved from the assembly's own location, never hardcoded — the suite has
+    /// to run from any clone path and in CI.</summary>
+    private static string FixtureProject =>
+        Core.Tests.TestPaths.Project("RefrigeratorControl.project");
 
     private static CodesysLocator Locator => new();
 

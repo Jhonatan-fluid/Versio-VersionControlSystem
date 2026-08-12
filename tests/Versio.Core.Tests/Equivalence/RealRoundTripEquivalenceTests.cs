@@ -22,26 +22,9 @@ namespace Versio.Core.Tests.Equivalence;
 /// </remarks>
 public class RealRoundTripEquivalenceTests
 {
-    private static string FixtureRoot
-    {
-        get
-        {
-            // Walk up to the repository root so the tests do not care where they run from.
-            var dir = new DirectoryInfo(AppContext.BaseDirectory);
-            while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, "fixtures")))
-            {
-                dir = dir.Parent;
-            }
+    private static string Baseline(string name) => TestPaths.Equivalence("baseline", name);
 
-            return dir is null
-                ? throw new DirectoryNotFoundException("could not locate the fixtures directory")
-                : Path.Combine(dir.FullName, "fixtures", "equivalence");
-        }
-    }
-
-    private static string Baseline(string name) => Path.Combine(FixtureRoot, "baseline", name);
-
-    private static string RoundTrip(string name) => Path.Combine(FixtureRoot, "roundtrip", name);
+    private static string RoundTrip(string name) => TestPaths.Equivalence("roundtrip", name);
 
     [Theory]
     [InlineData("GlobalTextList.xml")]

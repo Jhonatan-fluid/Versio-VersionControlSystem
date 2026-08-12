@@ -30,7 +30,7 @@ public class LockRecoveryTests
                                        string projectHash = "sha256:p", string manifestHash = "sha256:m")
         => new()
         {
-            RepoPath = @"C:\VERSIO\repo",
+            RepoPath = @"C:\repo",
             Owner = new LockOwner
             {
                 Machine = "DESKTOP-ABC",

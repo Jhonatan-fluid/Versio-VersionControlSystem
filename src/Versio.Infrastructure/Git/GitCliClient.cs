@@ -18,8 +18,17 @@ public sealed class GitCliClient(
     string gitExecutable = "git",
     Action<string>? log = null) : IGitClient
 {
+    /// <summary>Working tree root that every command runs against.</summary>
     public string RepositoryPath => repositoryPath;
 
+    /// <summary>
+    /// Ask git itself whether it will operate here.
+    /// </summary>
+    /// <remarks>
+    /// The authoritative check. <c>RepositoryLocator</c> inspects the filesystem and can
+    /// only see whether <c>.git</c> <i>looks</i> right; a corrupt or partially-cloned
+    /// repository passes that inspection and still fails every real command.
+    /// </remarks>
     public async Task<bool> IsRepositoryAsync(CancellationToken ct)
     {
         var result = await RunAsync(["rev-parse", "--is-inside-work-tree"], null, ct)
@@ -27,6 +36,9 @@ public sealed class GitCliClient(
         return result.Success && result.StdOut.Trim() == "true";
     }
 
+    /// <summary>Current branch, divergence counts, and every changed path.</summary>
+    /// <remarks>Porcelain v2 is git's stable machine format; the human output is localised
+    /// and reflows between versions.</remarks>
     public async Task<GitStatus> StatusAsync(CancellationToken ct)
     {
         // -z because git otherwise quotes and escapes paths with spaces or non-ASCII, and
@@ -38,6 +50,9 @@ public sealed class GitCliClient(
         return PorcelainV2Parser.Parse(result.StdOut);
     }
 
+    /// <summary>Local branches with their upstream and divergence counts.</summary>
+    /// <remarks>Ahead/behind needs a second command per branch: <c>for-each-ref</c> cannot
+    /// produce both counts in one pass consistently across git versions.</remarks>
     public async Task<IReadOnlyList<BranchInfo>> BranchesAsync(CancellationToken ct)
     {
         // %(if)... would be neater but is fussy across git versions; a fixed field layout
@@ -98,16 +113,25 @@ public sealed class GitCliClient(
             : (0, 0);
     }
 
+    /// <summary>Stage the given paths. An empty list is a no-op, not an error — the caller
+    /// usually got it from a selection that happened to be empty.</summary>
+    /// <remarks>The <c>--</c> separator matters: without it a path that looks like a flag,
+    /// or matches a branch name, is interpreted as one.</remarks>
     public Task<GitResult> StageAsync(IReadOnlyList<string> paths, CancellationToken ct) =>
         paths.Count == 0
             ? Task.FromResult(NoOp())
             : RunAsync(["add", "--", .. paths], null, ct);
 
+    /// <summary>Remove the given paths from the index, leaving the working tree alone.</summary>
     public Task<GitResult> UnstageAsync(IReadOnlyList<string> paths, CancellationToken ct) =>
         paths.Count == 0
             ? Task.FromResult(NoOp())
             : RunAsync(["restore", "--staged", "--", .. paths], null, ct);
 
+    /// <summary>Commit whatever is staged.</summary>
+    /// <remarks>An empty message is refused here rather than by git, so the user gets a
+    /// sentence instead of git's exit code and an editor that never opens under a
+    /// redirected console.</remarks>
     public Task<GitResult> CommitAsync(string message, CancellationToken ct) =>
         string.IsNullOrWhiteSpace(message)
             ? Task.FromResult(new GitResult
@@ -116,32 +140,50 @@ public sealed class GitCliClient(
             })
             : RunAsync(["commit", "-m", message], null, ct);
 
+    /// <summary>Throw away working-tree changes to the given paths.</summary>
+    /// <remarks><b>Destructive and unrecoverable</b> — the content is not in git anywhere.
+    /// Callers must confirm first. Also releases the direction lock (plan §6.5).</remarks>
     public Task<GitResult> DiscardAsync(IReadOnlyList<string> paths, CancellationToken ct) =>
         paths.Count == 0
             ? Task.FromResult(NoOp())
             : RunAsync(["restore", "--worktree", "--", .. paths], null, ct);
 
+    /// <summary>Create a branch, optionally checking it out.</summary>
     public Task<GitResult> CreateBranchAsync(string name, bool checkout, CancellationToken ct) =>
         RunAsync(checkout ? ["checkout", "-b", name] : ["branch", name], null, ct);
 
+    /// <summary>Switch branches.</summary>
+    /// <remarks>Fails on a dirty working tree, which is git's behaviour and the right one:
+    /// switching under unsynced CODESYS work is how it gets lost.</remarks>
     public Task<GitResult> CheckoutAsync(string branch, CancellationToken ct) =>
         RunAsync(["checkout", branch], null, ct);
 
+    /// <summary>Check a remote URL is reachable and the credentials work.</summary>
+    /// <remarks><c>ls-remote</c> is a real reachability <i>and</i> auth check that transfers
+    /// no objects, so the clone dialog can validate before committing to a long download.</remarks>
     public Task<GitResult> VerifyRemoteAsync(string url, CancellationToken ct) =>
-        // ls-remote is a real reachability AND auth check without cloning anything.
         RunAsync(["ls-remote", "--heads", url], null, ct, TimeSpan.FromSeconds(20));
 
+    /// <summary>Fetch from the remote without touching the working tree.</summary>
     public Task<GitResult> FetchAsync(IProgress<GitProgress>? progress, CancellationToken ct) =>
         RunAsync(["fetch", "--progress"], progress, ct, TimeSpan.FromMinutes(10));
 
+    /// <summary>Fast-forward the current branch from its upstream.</summary>
+    /// <remarks><c>--ff-only</c> is deliberate: a divergence is surfaced rather than
+    /// auto-merged. Automatically merging native CODESYS XML would produce a file nobody
+    /// reviewed, in a format nobody can review afterwards.</remarks>
     public Task<GitResult> PullAsync(IProgress<GitProgress>? progress, CancellationToken ct) =>
-        // --ff-only on purpose: surface a divergence rather than auto-merging native XML,
-        // where an automatic merge would produce a file nobody reviewed.
         RunAsync(["pull", "--ff-only", "--progress"], progress, ct, TimeSpan.FromMinutes(10));
 
+    /// <summary>Push the current branch.</summary>
+    /// <remarks>Success is what releases the direction lock (plan §6.5): until work is
+    /// pushed nobody else can see it, so the direction is still meaningfully owned.</remarks>
     public Task<GitResult> PushAsync(IProgress<GitProgress>? progress, CancellationToken ct) =>
         RunAsync(["push", "--progress"], progress, ct, TimeSpan.FromMinutes(10));
 
+    /// <summary>Unified diff for one path.</summary>
+    /// <param name="staged">Compare the index against HEAD rather than the working tree
+    /// against the index — a file can differ on both sides at once.</param>
     public async Task<string> DiffAsync(string path, bool staged, CancellationToken ct)
     {
         string[] args = staged
@@ -151,6 +193,12 @@ public sealed class GitCliClient(
         return result.StdOut;
     }
 
+    /// <summary>Renames git detected, old path → new path.</summary>
+    /// <remarks>
+    /// Used to re-link a binding whose <c>.project</c> was renamed. Without it the rename
+    /// reads as a delete plus an add: the binding id is lost, the baseline resets, and the
+    /// diff shows the whole project as newly added (plan R29).
+    /// </remarks>
     public async Task<IReadOnlyDictionary<string, string>> DetectRenamesAsync(CancellationToken ct)
     {
         var result = await RunAsync(

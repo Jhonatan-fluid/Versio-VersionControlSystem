@@ -4,13 +4,44 @@
 
 | | |
 |---|---|
-| Document | Initial architecture & implementation plan |
-| Date | 2026-08-11 |
-| Status | Draft for review — no code written yet |
-| Revision | **Rev 9** — implementation in progress. **LibGit2Sharp dropped for `git.exe` throughout (§8.1), closing R19.** `Versio.Infrastructure` now drives real CODESYS and real git; 352 unit + 21 integration tests. Rev 8 — **Phase 0 executed against a real project; three findings applied.** `On git action` is now the default sync mode (measured 31.5 s cold start, §7.4.6); profile resolution is a blocking startup gate that must read from disk (§3.7); unknown object types are routine, not exceptional (§3.10); export jobs batch all bindings into one CODESYS session (§12.4). See `PHASE0-FINDINGS.md`. Rev 7: **explicit project↔export bindings, multi-project repos, and orphan detection (§5.1–5.3)**; locks are now per binding (§6.3). Rev 6: **Windows only, WPF confirmed; macOS dropped (§13.7).** Server-hosted CODESYS documented as a Phase 5 option, justified as PLC CI (§13.8). Rev 5 kept: **Velopack replaces Inno Setup** for delta updates + MSI (§13.5). Rev 4 added **packaging, vendored dependencies and distribution (§13)**. Rev 3 added: codescribe source harvested in full (§3.1.4); PLCopenXML demoted off the critical path (§3.1.5); CODESYS Git rejected (§3.8); **losslessness contract and its limits (§3.9)**; **diff-vs-import coverage tiers (§3.10)**; **change detection, coalescing and the commit gate (§7.4)**; design system (§9.0); code structure + full testing strategy (§12) |
-| Target platform | Windows 11 desktop |
-| Location | `C:\VERSIO` — moved out of OneDrive 2026-08-11 (R14). Keep the CODESYS repos here too, not in a synced folder |
-| Detected environment | CODESYS 3.5.22.20 (`C:\Program Files\CODESYS 3.5.22.20\CODESYS\Common\CODESYS.exe`), CODESYS Scripting 4.2.0.0, git 2.53.0.windows.2, **no .NET SDK installed yet** |
+| Document | Architecture and implementation plan — **the design record** |
+| Status | **Rev 10.** Phase 0 complete, Phase 1 largely complete. Implementation is under way and this document is kept in step with it |
+| Where things stand | **[`STATUS.md`](STATUS.md)** — read that first |
+| Measured findings | **[`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md)** — numbers, failures and dead ends |
+| Target platform | Windows 11 desktop. Windows only, by decision (§13.7) |
+| Repository | `C:\GIT\Versio` (nothing depends on this path — the tests and tools resolve it from their own location) |
+| Reference environment | CODESYS 3.5.22.20, profile `CODESYS V3.5 SP22 Patch 2`, CODESYS Scripting 4.2.0.0, git 2.53 with LFS, .NET SDK 9.0.317 |
+
+---
+
+## Start here — for anyone picking this up
+
+**Read in this order:** `README.md` (what it is, how to build) → [`STATUS.md`](STATUS.md) (where it is, what is next) → [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) (what was measured) → this document (why it is shaped this way).
+
+**What this document is.** The design record and its reasoning. Every significant decision is here *with the argument that produced it*, including the ones that were later reversed — those are marked in place rather than deleted, because the reasoning that overturned them is usually more instructive than the conclusion.
+
+**What it is not.** A task list. Sections describing work that is already built say so; §14's roadmap carries an execution-status banner.
+
+### Decisions reversed by measurement — read these before re-opening them
+
+| Was | Became | Why |
+|---|---|---|
+| Automatic export on save | **`On git action` is the default** (§7.4.6) | Cold start measured at 17–31 s; export-on-save runs CODESYS most of the working day |
+| LibGit2Sharp for reads | **`git.exe` throughout** (§8.1) | Removes the native payload that breaks single-file publish, and credentials just work |
+| Avalonia for a macOS build | **WPF, Windows only** (§13.7) | CODESYS has no macOS build, so a Mac client could only ever have been a review client |
+| PLCopenXML as the export format | **ST + native XML** (§3.1.5) | `textual_declaration` gives the text directly; PLCopenXML is less readable, less complete and lossy on import |
+| AvalonEdit for the diff view | **A tokenizer in `Versio.Core`** (§8.3) | Structured Text has no bundled definition, so a custom highlighter was needed regardless |
+| Inno Setup | **Velopack** (§13.5) | Delta updates on a ~110 MB app, plus an MSI for managed sites |
+
+### The disciplines that make the rest cheap
+
+1. **`Versio.Core` touches nothing external.** No `System.IO`, no `Process`, no `DateTimeOffset.Now`, no UI framework — everything sits behind an interface in `Abstractions/`. This is why the lock model, the loop defences and the state machine are tested in ~50 ms instead of by causing real crashes.
+2. **Distrust a green result until it can fail.** Four vacuous passes have already been caught this way: a round-trip that succeeded because the import silently did nothing; equivalence tests that "passed" by skipping; a tree spike that measured a collapsed tree; and a mutation that looked absent because the import had errored. Every measurement now asserts it stressed something.
+3. **Write findings down with their evidence.** A number and the command that produced it, not a recollection.
+
+### Revision history
+
+Rev 10 diff view renders any text file, highlighted per language (§8.3) · Rev 9 LibGit2Sharp dropped for `git.exe` (§8.1), closing R19 · Rev 8 Phase 0 executed; sync-mode default, profile resolution and unknown-type handling all changed by measurement · Rev 7 explicit project↔export bindings, multi-project repos, orphan detection (§5.1–5.3); per-binding locks · Rev 6 Windows only, macOS dropped (§13.7); server-hosted CODESYS parked as Phase 5 (§13.8) · Rev 5 Velopack replaces Inno Setup (§13.5) · Rev 4 packaging and vendored dependencies (§13) · Rev 3 codescribe source harvested (§3.1.4); losslessness contract (§3.9); coverage tiers (§3.10); change detection (§7.4); design system (§9.0); testing strategy (§12)
 
 ---
 
@@ -2038,7 +2069,7 @@ Large-project performance, ST syntax highlighting in the diff, per-hunk staging,
 | R8 | Merge conflicts inside native XML are unreadable | Team friction | Medium | Textual objects are `.st` and merge like normal code; native XML is per-object so conflicts stay local; `--ff-only` default; Phase 5 merge assist |
 | R12 | **The `.st` ↔ object mapping is filename-encoded** (`Parent.Child.action.st`) and object names can contain dots, spaces or non-ASCII | Silent mis-import into the wrong object | **Medium** | Explicit `PathMapper` with round-trip unit tests over adversarial names (§12.5); the manifest carries GUID→path so the filename is a convenience, not the source of truth |
 | R13 | Only one person understands the CODESYS scripting layer | Bus factor | Medium | The Python pure functions are unit-tested and documented; `_coverage.md` and the corpus encode the knowledge in executable form |
-| R14 | Repo inside a cloud-synced folder (OneDrive / Dropbox / Google Drive) | Corrupt/duplicated state, phantom watcher events, sync conflicts on `.git` | **Low** ↓ *mitigated* | Synced folders generate their own file events, may use placeholder files, and syncing a `.git` directory is a known corruption source — on top of the LFS traffic. **Resolved for this project: moved to `C:\VERSIO` on 2026-08-11, outside OneDrive.** The same rule applies to every CODESYS repo Versio manages, so **the repo-open warning stays in scope** — teammates will hit this |
+| R14 | Repo inside a cloud-synced folder (OneDrive / Dropbox / Google Drive) | Corrupt/duplicated state, phantom watcher events, sync conflicts on `.git` | **Low** ↓ *mitigated* | Synced folders generate their own file events, may use placeholder files, and syncing a `.git` directory is a known corruption source — on top of the LFS traffic. **Resolved for this project: moved to `C:\GIT\Versio` on 2026-08-11, outside OneDrive.** The same rule applies to every CODESYS repo Versio manages, so **the repo-open warning stays in scope** — teammates will hit this |
 | R15 | Save storm during a long export → thrash or starvation | Pinned CPU, stale exports | Medium | Single pending slot, 5 s cancel window, 30 s minimum export interval (§7.4.4); `On git action` mode as the escape hatch |
 | R16 | Detection silently degrades (watcher drops, path becomes network/synced) | Stale diffs, false confidence | Medium | Tier-2 poll + tier-3 rescan; **the commit gate (§7.4.5) makes it a UX problem, not a correctness one**; watcher `Error` events logged at WARN, never swallowed |
 | R17 | **Unsigned installer blocked by SmartScreen / industrial IT** | Cannot deploy to the people who need it | **High** | Code-signing certificate procured **before** external distribution; EV for immediate SmartScreen trust. This is a lead-time and budget item, not a technical one (§13.5) |
@@ -2076,7 +2107,7 @@ R9's circuit breaker deserves emphasis: no matter how confident the state machin
 9. **How much does graphical (CFC/LD/FBD) code matter to you?** Those objects can only be native XML — their diffs will never be as good as ST. If your codebase is mostly graphical, the value proposition of the whole tool shrinks and that should be known now.
 10. **Is a licence check on codescribe's Apache-2.0 terms acceptable?** We would be porting substantial portions. Attribution in `NOTICE` plus the licence header is all that is required, but it should be a conscious decision.
 11. ~~**Which sync mode should be the default?**~~ — **answered by measurement (Rev 8): `On git action`.** Cold start is 31.5 s / 17.6 s warm, so automatic-on-save would run CODESYS most of the working day. Automatic is now opt-in. Remaining sub-question: is a **resident CODESYS session** (a script that stays alive polling a job file) worth building to get sub-second exports and make Automatic viable again? It would eliminate the cost entirely but adds a long-lived process to babysit.
-12. ~~**Will you move the repos out of OneDrive?**~~ — **answered 2026-08-11: moved to `C:\VERSIO`.** Remaining: the CODESYS repos themselves must follow the same rule when they are created, and the repo-open warning stays in scope for teammates.
+12. ~~**Will you move the repos out of OneDrive?**~~ — **answered 2026-08-11: moved to `C:\GIT\Versio`.** Remaining: the CODESYS repos themselves must follow the same rule when they are created, and the repo-open warning stays in scope for teammates.
 13. **Who else will run Versio, and on what kind of machine?** This decides packaging seriousness. Just you → the published folder is enough indefinitely. Colleagues on locked-down industrial IT → **per-user install and a signed installer are hard requirements**, and the certificate has procurement lead time (R17).
 14. **Is there budget and an entity for a code-signing certificate?** EV gets immediate SmartScreen trust and costs meaningfully more than OV; OV requires reputation to accumulate. Needed before anyone outside this machine installs it.
 15. **Bundle Git, or require Git for Windows?** This plan bundles PortableGit so the app is genuinely self-contained, at the cost of ~120 MB and the GPL compliance work (§13.4, R18). Requiring a system Git is smaller and simpler but breaks the "runs on a clean machine" promise you asked for. **My recommendation is to bundle**, but it is a real trade.

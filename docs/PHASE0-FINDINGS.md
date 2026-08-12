@@ -234,7 +234,7 @@ The whole guarded section now runs on one dedicated long-running thread, so acqu
 ## What runs today
 
 ```
-C:\VERSIO\
+C:\GIT\Versio\
 ├─ src\Versio.Scripts\          probe, export, import, types, text, decl  (+ 2 probe helpers)
 ├─ src\Versio.Core\             pure domain logic - no IO, no processes, no UI
 │   ├─ Bindings\ Codesys\ Equivalence\ Locking\ Model\
@@ -249,7 +249,7 @@ C:\VERSIO\
 ```
 
 ```bash
-cd C:\VERSIO && dotnet test
+cd C:\GIT\Versio && dotnet test
 ```
 
 The integration suite drives a real CODESYS install through `ICodesysRunner`:
