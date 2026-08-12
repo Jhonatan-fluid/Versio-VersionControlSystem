@@ -1,0 +1,22 @@
+<!--
+    Type. Monospace for anything that is data - paths, hashes, branch names, GUIDs, log
+    lines, ST code - because misalignment in those is information, not noise.
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+
+    <FontFamily x:Key="Font.UI">Segoe UI Variable Text, Segoe UI, Segoe UI Emoji</FontFamily>
+    <FontFamily x:Key="Font.Mono">Cascadia Mono, Consolas, Courier New</FontFamily>
+
+    <sys:Double x:Key="Font.Size.Caption">11</sys:Double>
+    <sys:Double x:Key="Font.Size.Body">13</sys:Double>
+    <sys:Double x:Key="Font.Size.Code">13</sys:Double>
+    <sys:Double x:Key="Font.Size.Subtitle">16</sys:Double>
+    <sys:Double x:Key="Font.Size.Title">22</sys:Double>
+
+    <FontWeight x:Key="Font.Weight.Regular">Normal</FontWeight>
+    <FontWeight x:Key="Font.Weight.Medium">Medium</FontWeight>
+    <FontWeight x:Key="Font.Weight.Semibold">SemiBold</FontWeight>
+
+</ResourceDictionary>

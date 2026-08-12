@@ -1,0 +1,17 @@
+<!--
+    The only entry point. Views merge this and nothing else.
+
+    Palette.Light is merged at index 0 so ThemeManager can replace exactly one dictionary
+    at runtime without disturbing anything below it.
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="tokens/Palette.Light.xaml" />
+        <ResourceDictionary Source="tokens/Semantic.xaml" />
+        <ResourceDictionary Source="tokens/Typography.xaml" />
+        <ResourceDictionary Source="tokens/Spacing.xaml" />
+    </ResourceDictionary.MergedDictionaries>
+
+</ResourceDictionary>

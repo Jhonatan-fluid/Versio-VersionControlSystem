@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- WPF needs the Windows-flavoured TFM; the rest of the solution stays net9.0. -->
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>Versio.App</RootNamespace>
+    <AssemblyName>Versio</AssemblyName>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+
+    <!-- Plan section 13.2: unsupported for WPF. Asserted so nobody enables them for size
+         and then hits runtime XAML failures on isolated screens. -->
+    <PublishTrimmed>false</PublishTrimmed>
+    <PublishAot>false</PublishAot>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Versio.Core\Versio.Core.csproj" />
+    <ProjectReference Include="..\Versio.Infrastructure\Versio.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

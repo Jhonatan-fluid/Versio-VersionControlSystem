@@ -1,0 +1,47 @@
+<!--
+    Dark palette. Key set is identical to Palette.Light.xaml by contract.
+
+    Dark is the expected default for this audience, so it is not an afterthought: every
+    screen is checked in both, and ThemeTokenTests verifies the contrast ratios here as
+    strictly as in light.
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Surfaces -->
+    <Color x:Key="Color.Surface.Sunken">#16181D</Color>
+    <Color x:Key="Color.Surface.Base">#1D2026</Color>
+    <Color x:Key="Color.Surface.Raised">#252932</Color>
+    <Color x:Key="Color.Surface.Hover">#2B303B</Color>
+    <Color x:Key="Color.Surface.Selected">#2C3B55</Color>
+
+    <!-- Borders -->
+    <Color x:Key="Color.Border.Subtle">#2E333D</Color>
+    <Color x:Key="Color.Border.Strong">#3D4451</Color>
+
+    <!-- Text -->
+    <Color x:Key="Color.Text.Primary">#E8EAED</Color>
+    <Color x:Key="Color.Text.Secondary">#9AA2B1</Color>
+    <Color x:Key="Color.Text.Disabled">#5C6472</Color>
+    <Color x:Key="Color.Text.OnAccent">#FFFFFF</Color>
+
+    <!-- Accent -->
+    <Color x:Key="Color.Accent.Default">#4F8DF7</Color>
+    <Color x:Key="Color.Accent.Hover">#6BA0F9</Color>
+    <Color x:Key="Color.Accent.Muted">#1E3462</Color>
+
+    <!-- Status -->
+    <Color x:Key="Color.Status.Added">#4ADE80</Color>
+    <Color x:Key="Color.Status.Modified">#FBBF24</Color>
+    <Color x:Key="Color.Status.Deleted">#F87171</Color>
+    <Color x:Key="Color.Status.Renamed">#C4A0FF</Color>
+    <Color x:Key="Color.Status.Conflict">#FB923C</Color>
+    <Color x:Key="Color.Status.Neutral">#8B93A1</Color>
+
+    <!-- Diff -->
+    <Color x:Key="Color.Diff.AddedBg">#12301F</Color>
+    <Color x:Key="Color.Diff.DeletedBg">#331617</Color>
+    <Color x:Key="Color.Diff.AddedWord">#1B5334</Color>
+    <Color x:Key="Color.Diff.DeletedWord">#5C2326</Color>
+
+</ResourceDictionary>

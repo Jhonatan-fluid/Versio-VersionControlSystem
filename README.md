@@ -35,8 +35,10 @@ Export is automatic and deterministic. Import applies edited text back into the 
 | Drive CODESYS headlessly from C# | ✅ `LocalCodesysRunner` |
 | Git status / branches / stage / commit / diff / push | ✅ `GitCliClient` over real `git.exe` |
 | Direction lock, hash gate, coalescer, commit gate | ✅ pure logic, heavily tested |
-| **Sync orchestrator** tying it together | ⛔ not built |
-| **Desktop UI** | ⛔ not built |
+| Sync orchestrator — locks, loop defences, commit gate | ✅ 24 scenario tests |
+| Change detection — watcher + safety poll + overflow rescan | ✅ `FileChangeWatcher` |
+| Design system tokens, light and dark | ✅ `src/Versio.App/Theme/` |
+| **Desktop UI** — shell, panels, diff view | ⛔ not built |
 
 Known limitations are recorded honestly in [docs/PHASE0-FINDINGS.md](docs/PHASE0-FINDINGS.md) — including one real CODESYS mutation (`Core2` in task configuration) that keeps task config **diff-only** for now.
 
@@ -155,6 +157,8 @@ Each of these cost real debugging time and is now pinned by a test.
 | **`Mutex` has thread affinity** | It cannot be acquired and released across an `await`. A named `Semaphore` avoids that but loses abandonment recovery, which crash recovery depends on. |
 | **Import runs in two phases** | Creating objects then immediately calling `import_native` makes CODESYS enumerate a dictionary it is still mutating — and it **swallows the exception**, so the import silently does nothing and the run looks clean. |
 | **Never rewrite GUIDs in an export** | Only `Timestamp` is scrubbed. Rewriting identity GUIDs breaks visualisations. Masking them for a *comparison* is fine; writing masked ones to disk is not. |
+| **WPF `TreeView` does not virtualize by default** | Measured at 5,002 nodes: **94.7 ms virtualized vs 10,635 ms at the defaults**. Needs `IsVirtualizing`, `VirtualizationMode=Recycling` and a `VirtualizingStackPanel` items panel. |
+| **A framework-dependent exe needs `DOTNET_ROOT`** | If the SDK is installed per-user rather than machine-wide, `Versio.exe` cannot find the runtime and shows a "must install .NET" dialog. Self-contained publish removes this entirely — which is why §13.2 specifies it. |
 
 ---
 

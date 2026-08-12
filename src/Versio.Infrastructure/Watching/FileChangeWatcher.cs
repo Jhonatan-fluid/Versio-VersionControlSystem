@@ -1,0 +1,262 @@
+using Versio.Core.Abstractions;
+
+namespace Versio.Infrastructure.Watching;
+
+public sealed record WatchedChange(string Path, DateTimeOffset DetectedUtc, WatchTier Tier);
+
+public enum WatchTier
+{
+    /// <summary>FileSystemWatcher — push-based, near-instant. The normal path.</summary>
+    Watcher,
+
+    /// <summary>Periodic stat comparison. Catches what tier 1 dropped.</summary>
+    SafetyPoll,
+
+    /// <summary>The watcher reported buffer overflow; everything must be re-checked.</summary>
+    OverflowRescan,
+}
+
+/// <summary>
+/// Three-tier change detection for one repository.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>Nothing here polls in the happy case.</b> <see cref="FileSystemWatcher"/> is
+/// push-based and fires within milliseconds. The 30-second poll exists because watchers
+/// genuinely lose events: the internal buffer overflows under a burst and the events are
+/// simply gone, and network paths, cloud-synced folders and antivirus all interfere.
+/// </para>
+/// <para>
+/// Settle detection rather than a fixed debounce: a save produces several events (temp
+/// file, rename, attribute change) and the file may still be locked when the last one
+/// arrives. Waiting for quiet <i>and</i> readability is fast when the write is fast and
+/// patient when it is not.
+/// </para>
+/// <para>
+/// None of this is relied on for correctness. The commit gate re-checks hashes before any
+/// commit, so the worst case of a completely broken watcher is that the diff appears at
+/// commit time instead of at save time.
+/// </para>
+/// </remarks>
+public sealed class FileChangeWatcher : IDisposable
+{
+    private readonly List<FileSystemWatcher> _watchers = [];
+    private readonly Dictionary<string, DateTimeOffset> _pending = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, (long Size, DateTime Written)> _known
+        = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Lock _gate = new();
+    private readonly IClock _clock;
+    private readonly TimeSpan _quietPeriod;
+    private readonly Timer _settleTimer;
+    private readonly Timer _pollTimer;
+    private readonly Action<string>? _log;
+
+    public event Action<WatchedChange>? Settled;
+
+    public FileChangeWatcher(
+        IClock clock,
+        TimeSpan? quietPeriod = null,
+        TimeSpan? pollInterval = null,
+        Action<string>? log = null)
+    {
+        _clock = clock;
+        _quietPeriod = quietPeriod ?? TimeSpan.FromMilliseconds(750);
+        _log = log;
+
+        _settleTimer = new Timer(_ => CheckSettled(), null,
+            TimeSpan.FromMilliseconds(200), TimeSpan.FromMilliseconds(200));
+        _pollTimer = new Timer(_ => SafetyPoll(), null,
+            pollInterval ?? TimeSpan.FromSeconds(30), pollInterval ?? TimeSpan.FromSeconds(30));
+    }
+
+    /// <summary>Watch a single file — the .project.</summary>
+    public void WatchFile(string path)
+    {
+        var dir = Path.GetDirectoryName(path);
+        if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir))
+        {
+            return;
+        }
+
+        Track(path);
+        Add(dir, Path.GetFileName(path), includeSubdirectories: false);
+    }
+
+    /// <summary>Watch a directory tree — the export root.</summary>
+    public void WatchTree(string root)
+    {
+        if (!Directory.Exists(root))
+        {
+            return;
+        }
+
+        foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+        {
+            Track(file);
+        }
+
+        Add(root, "*", includeSubdirectories: true);
+    }
+
+    private void Add(string dir, string filter, bool includeSubdirectories)
+    {
+        var watcher = new FileSystemWatcher(dir, filter)
+        {
+            // 64 KB. The default 8 KB overflows readily on an export that writes dozens of
+            // files, and an overflow silently discards events.
+            InternalBufferSize = 64 * 1024,
+            IncludeSubdirectories = includeSubdirectories,
+            NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size,
+        };
+
+        watcher.Changed += (_, e) => Enqueue(e.FullPath);
+        watcher.Created += (_, e) => Enqueue(e.FullPath);
+        watcher.Deleted += (_, e) => Enqueue(e.FullPath);
+        watcher.Renamed += (_, e) => Enqueue(e.FullPath);
+
+        // Never swallow this. An overflow means events were lost, and the only correct
+        // response is to re-check everything.
+        watcher.Error += (_, e) =>
+        {
+            _log?.Invoke($"watcher error ({e.GetException().Message}) - forcing a rescan");
+            SafetyPoll(WatchTier.OverflowRescan);
+        };
+
+        watcher.EnableRaisingEvents = true;
+        _watchers.Add(watcher);
+    }
+
+    private void Enqueue(string path)
+    {
+        lock (_gate)
+        {
+            _pending[path] = _clock.UtcNow;
+        }
+    }
+
+    private void CheckSettled()
+    {
+        List<string> ready;
+        lock (_gate)
+        {
+            var now = _clock.UtcNow;
+            ready = _pending.Where(kv => now - kv.Value >= _quietPeriod)
+                            .Select(kv => kv.Key)
+                            .ToList();
+        }
+
+        foreach (var path in ready)
+        {
+            // Quiet is not enough: the writer may still hold the file. Leaving it pending
+            // costs one more 200 ms tick, which is far cheaper than reading a torn file.
+            if (!IsReadable(path) && File.Exists(path))
+            {
+                lock (_gate)
+                {
+                    _pending[path] = _clock.UtcNow;
+                }
+
+                continue;
+            }
+
+            lock (_gate)
+            {
+                _pending.Remove(path);
+            }
+
+            Track(path);
+            Settled?.Invoke(new WatchedChange(path, _clock.UtcNow, WatchTier.Watcher));
+        }
+    }
+
+    private void SafetyPoll(WatchTier tier = WatchTier.SafetyPoll)
+    {
+        List<string> tracked;
+        lock (_gate)
+        {
+            tracked = [.. _known.Keys];
+        }
+
+        foreach (var path in tracked)
+        {
+            try
+            {
+                var info = new FileInfo(path);
+                if (!info.Exists)
+                {
+                    continue;
+                }
+
+                bool changed;
+                lock (_gate)
+                {
+                    changed = !_known.TryGetValue(path, out var known) ||
+                              known.Size != info.Length ||
+                              known.Written != info.LastWriteTimeUtc;
+                }
+
+                if (changed)
+                {
+                    Track(path);
+                    _log?.Invoke($"{tier} detected a change the watcher missed: {path}");
+                    Settled?.Invoke(new WatchedChange(path, _clock.UtcNow, tier));
+                }
+            }
+            catch (IOException)
+            {
+                // Being written right now; the next poll will catch it.
+            }
+        }
+    }
+
+    private void Track(string path)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists)
+            {
+                return;
+            }
+
+            lock (_gate)
+            {
+                _known[path] = (info.Length, info.LastWriteTimeUtc);
+            }
+        }
+        catch (IOException)
+        {
+            // Locked right now; it will be tracked on a later pass.
+        }
+    }
+
+    private static bool IsReadable(string path)
+    {
+        try
+        {
+            using var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            return true;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    public void Dispose()
+    {
+        _settleTimer.Dispose();
+        _pollTimer.Dispose();
+        foreach (var watcher in _watchers)
+        {
+            watcher.EnableRaisingEvents = false;
+            watcher.Dispose();
+        }
+
+        _watchers.Clear();
+    }
+}

@@ -1362,7 +1362,17 @@ Because the export mirrors the CODESYS structure (§3.2), the left pane should s
 
 **Design: a virtualized `TreeView` reconstructing the CODESYS object tree, with change state rolled up.**
 
-> ⚠️ **WPF `TreeView` virtualization is off by default.** It supports virtualization, but only when explicitly enabled — the container must be a `VirtualizingStackPanel` with `IsVirtualizing="True"` and `VirtualizationMode="Recycling"`, set on the `TreeView` itself. Left at the defaults it realises every node, and a few thousand objects will make the app's primary control crawl. **Verify with a synthetic 5,000-node tree in Phase 1**, before the rest of the UI is built on it.
+> ⚠️ **WPF `TreeView` virtualization is off by default — and the cost is not marginal.**
+> **Measured** on a 5,002-node CODESYS-shaped tree (devices → applications → folders → POUs → methods), fully expanded:
+>
+> | | bind | containers realised |
+> |---|---|---|
+> | `IsVirtualizing=True` + `VirtualizationMode=Recycling` + `ScrollUnit=Pixel` | **94.7 ms** | 23 |
+> | WPF defaults | **10,635 ms** | 5,002 |
+>
+> **112× slower** at the defaults. All three attributes must be set on the `TreeView` itself, with a `VirtualizingStackPanel` as its `ItemsPanel`.
+>
+> Note how the first version of this spike lied: it reported a pass at **13 containers for both trees**, because a collapsed tree realises only its roots and stresses nothing — a comparison that could not fail. The measurement now asserts the unvirtualized tree realised most of its nodes before it will trust the result. Spike lives in `src/Versio.App/Spikes/`, runnable via `Versio.exe --measure`.
 
 ```mermaid
 flowchart TB
@@ -2029,7 +2039,7 @@ Large-project performance, ST syntax highlighting in the diff, per-hunk staging,
 | R22 | A bad release auto-updates everyone at once | Fleet-wide breakage on a tool that writes project files | Medium | `beta`/`stable` channels + staged rollout to one machine first; user-triggered apply, never silent restart |
 | ~~R23~~ | ~~Avalonia chosen for a macOS build nobody uses~~ | — | **Closed** | **Resolved Rev 6: macOS dropped, WPF confirmed (§13.7).** The risk existed only while the decision was open |
 | ~~R24~~ | ~~macOS notarization / Apple Developer account~~ | — | **Closed** | No macOS build |
-| R25 | **Project tree not virtualized** — WPF `TreeView` virtualization is **off by default** | The control users look at all day crawls at a few thousand objects | **Medium** | `IsVirtualizing="True"` + `VirtualizationMode="Recycling"` explicitly set (§9.3). **Phase 1: measure with a 5,000-node synthetic tree before the rest of the UI is built on it** |
+| ~~R25~~ | ~~Project tree not virtualized~~ | — | **Closed — measured** | **Confirmed real, then fixed.** 5,002 nodes fully expanded: virtualized **94.7 ms / 23 realised**, defaults **10,635 ms / 5,002 realised** — 112× slower. The three attributes in §9.3 are what close it, and the spike stays in the repo as a regression check |
 | R26 | **CODESYS licensing forbids a shared server** | Kills §13.8 — no PLC CI, no warm instance | Medium | Ask CODESYS whenever convenient (q19). **Nothing before Phase 5 depends on it**; the `ICodesysRunner` seam keeps the option open for free |
 | R27 | Server-hosted CODESYS serialises the whole team behind one instance | Engineers queue behind each other; worse than local | Medium | CODESYS is a desktop IDE, not a server product (§13.8.3). Measure with a realistic job before committing; N instances means N licences and a heavy host |
 | R28 | **A `_template.project` gets adopted as a trackable project** | A binding that exports the template into its own tree — nonsense, and confusing to unpick | **Medium if unguarded** | Two independent exclusions (§5.3): any path referenced as a `template` by a binding, **plus** the `*_template.project` naming convention for templates with no binding yet. Covered by `OrphanScanner` tests |
