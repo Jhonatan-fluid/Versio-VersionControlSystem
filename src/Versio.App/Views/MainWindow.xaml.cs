@@ -143,6 +143,22 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>
+    /// Selecting an object in the tree shows its diff.
+    /// </summary>
+    /// <remarks>
+    /// A code-behind handler because <c>TreeView.SelectedItem</c> is read-only and cannot be
+    /// bound - the standard WPF workaround, and cheaper than the attached-behaviour it would
+    /// otherwise take.
+    /// </remarks>
+    private void OnTreeNodeSelected(object sender, RoutedPropertyChangedEventArgs<object> e)
+    {
+        if (e.NewValue is TreeRow row)
+        {
+            _shell.Sync.SelectedNode = row;
+        }
+    }
+
     private void OnRailChanged(object sender, RoutedEventArgs e)
     {
         if (sender is not RadioButton { Tag: string tag } ||

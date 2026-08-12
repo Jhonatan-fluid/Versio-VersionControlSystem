@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-12 · **Commits:** 12 · **Tests:** 603 unit + 63 integration, 0 skipped
+**Date:** 2026-08-12 · **Commits:** 12 · **Tests:** 618 unit + 64 integration, 0 skipped
 
 ---
 
@@ -14,7 +14,7 @@ The risky half is done. Every hard question the plan raised about CODESYS has be
 
 ```
   CODESYS pipeline    ████████████████████  proven on a real project
-  Domain core         ████████████████████  603 tests, 290 ms
+  Domain core         ████████████████████  618 tests, 300 ms
   Infrastructure      ████████████████████  drives real CODESYS + real git
   Desktop shell       █████████████████░░░  adopt, export and import wired end to end
   Packaging           ██░░░░░░░░░░░░░░░░░░  publish profile only
@@ -402,6 +402,49 @@ whole-list rather than per-file, because partial staging belongs with per-hunk s
 needs the diff view to own a selection first — half-offering it would be worse than not
 offering it.
 
+### Done — the project tree, built from the manifest
+
+The sync panel now shows the project as CODESYS structures it, not as paths on disk. A flat
+list of `plc/Machine/Device/Plc Logic/Application/Main.st` was a regression from what the
+engineer looks at all day.
+
+`ProjectTreeBuilder` is pure — manifest and git status in, an immutable snapshot out — which
+is what lets the roll-up rules be tested without an export, a repository or a UI. Those rules
+are the part most likely to be quietly wrong: a folder that under-reports its descendants
+hides a change behind a collapsed node, and that looks exactly like no change at all.
+
+| Decision | Why |
+|---|---|
+| **The node is the object, not the file** | A GVL exports to both `.gvl.st` and `.gvl.xml`. Two rows would invite the question of which one is the real object; they are layers of one node, and the diff opens the readable one |
+| **An object is changed when any layer is** | Editing the `.st` and leaving the `.xml` alone still means the object changed. A node reporting the quieter of its two files would hide it |
+| **Badges count descendants, not children** | So a change is never hidden behind a collapsed folder |
+| **Roll-up strength is by attention deserved** | A conflict outranks everything because nothing proceeds until it is resolved; a deletion, an addition or a move outranks an edit, because those are the ones somebody might not have meant |
+| **Changed-only prunes empty folders** | Keeping them would rebuild the full tree one level at a time and defeat the filter |
+| **Built off the UI thread** | The plan names this as the most likely source of jank, and the 5,002-node spike is why that is believed rather than assumed |
+
+The `TreeView` carries all three virtualization attributes and a `VirtualizingStackPanel`
+items panel — 94.7 ms against 10,635 ms at the WPF defaults, measured.
+
+**Selecting an object opens its diff** in the same pane the changed-files list uses. That
+exposed a latent bug: the diff header read `SelectedChange.Path`, which only the changed-files
+list ever sets, so an object picked in the tree would have shown its diff under the previously
+selected file's name. There is now one `SelectedDiffPath` regardless of how the file was
+reached.
+
+**A repository with one tracked project no longer opens on an empty tree.** Nothing was
+selected until somebody clicked the single row, and an empty panel reads as broken rather than
+as unselected.
+
+#### Finding — `objectCount` in the manifest is a file count
+
+`versio_export.py` writes `len(records)`, and there is one record per *file*. The field
+therefore equals `objects.Count`, not the number of distinct objects, and the two differ
+exactly when an object exports to more than one layer — which the fixture does, via its GVL.
+
+Found by an assertion written to trust the name. Nothing depends on the field today and it is
+not worth a schema change on its own, but the integration test now asserts against distinct
+GUIDs and says why, so the next person does not trust it either.
+
 ### Verifying the UI, not just the engine
 
 `Versio.exe --trace-bindings <file>` writes every WPF data-binding failure to a file. A broken
@@ -417,9 +460,9 @@ and the instrument itself was proven able to fail before its clean result was be
 - Branch creation, clone-with-verification dialog
 - Per-hunk staging
 
-### 3. Project tree replacing the flat file list
+### 3. Project tree — *built*
 
-The manifest already carries GUID → path → type. The tree builder is specified in §9.3 and the virtualization is proven; what is missing is the builder itself and parsing `config/*.yaml` back into device nodes.
+The builder, the virtualized `TreeView`, roll-up badges, the changed-only filter, search, and selection driving the diff. Remaining: parsing `config/*.yaml` back into device nodes so a changed EtherCAT cycle time appears under the device that owns it, a layer switcher in the diff pane (`ST | native`), the context menu, and expansion state persisted per repository.
 
 ### 4. Diff view — *largely done*
 

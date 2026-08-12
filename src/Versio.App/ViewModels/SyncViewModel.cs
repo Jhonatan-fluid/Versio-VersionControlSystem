@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using Versio.App.Mvvm;
 using Versio.Core.Abstractions;
 using Versio.Core.Bindings;
@@ -6,6 +7,7 @@ using Versio.Core.Locking;
 using Versio.Core.Logging;
 using Versio.Core.Plc;
 using Versio.Core.Plc.Codesys;
+using Versio.Core.Projects;
 using Versio.Core.Sync;
 using Versio.Infrastructure.Bindings;
 using Versio.Infrastructure.FileSystem;
@@ -124,6 +126,9 @@ public sealed class SyncViewModel : ObservableObject
 
     private string _stalenessSummary = string.Empty;
     private int _unexportedCount;
+    private bool _changedOnly = true;
+    private string _treeSearch = string.Empty;
+    private string _treeSummary = string.Empty;
     private string? _pendingImportBindingId;
     private string _importPrompt = string.Empty;
 
@@ -279,6 +284,8 @@ public sealed class SyncViewModel : ObservableObject
             LockState = value is { Tracked: true } && _orchestrator is not null
                 ? SyncNarrative.Describe(_orchestrator.StateOf(value.BindingId!))
                 : string.Empty;
+
+            _ = RebuildTreeAsync();
 
             // A proposal belongs to the project it was made for. Leaving it up while the
             // selection moves is how somebody confirms an import against the wrong project
@@ -485,7 +492,13 @@ public sealed class SyncViewModel : ObservableObject
         // Restore the selection by path. A rescan after an adopt replaces every row, and
         // dropping the user back to nothing selected right when they are about to export is
         // a small thing that feels broken.
-        SelectedProject = Projects.FirstOrDefault(p => p.Path == selectedPath);
+        // Restore the selection by path, and fall back to something sensible rather than
+        // nothing. A repository with one tracked project opening on an empty tree reads as a
+        // broken panel, when all that happened is that nobody had clicked the single row yet.
+        SelectedProject =
+            Projects.FirstOrDefault(p => p.Path == selectedPath)
+            ?? Projects.FirstOrDefault(p => p.Tracked)
+            ?? Projects.FirstOrDefault();
 
         Summary = Projects.Count switch
         {
@@ -497,6 +510,7 @@ public sealed class SyncViewModel : ObservableObject
         };
 
         RaiseCommandStates();
+        await RebuildTreeAsync().ConfigureAwait(true);
 
         _logger.Info(LogCategory.Sync,
             $"scan: {Projects.Count} project(s), {Findings.Count} finding(s)");
@@ -668,6 +682,142 @@ public sealed class SyncViewModel : ObservableObject
         }
 
         _ui.Post(_ => action(), null);
+    }
+
+    /// <summary>The selected project's object tree, as CODESYS structures it.</summary>
+    public ObservableCollection<TreeRow> Tree { get; } = [];
+
+    /// <summary>Show only changed objects, with the folders needed to reach them.</summary>
+    public bool ChangedOnly
+    {
+        get => _changedOnly;
+        set
+        {
+            if (SetProperty(ref _changedOnly, value))
+            {
+                _logger.Click($"Tree.ChangedOnly={value}");
+                _ = RebuildTreeAsync();
+            }
+        }
+    }
+
+    /// <summary>Filter the tree by object name.</summary>
+    public string TreeSearch
+    {
+        get => _treeSearch;
+        set
+        {
+            if (SetProperty(ref _treeSearch, value))
+            {
+                _ = RebuildTreeAsync();
+            }
+        }
+    }
+
+    /// <summary>One sentence about the tree, or why there is not one.</summary>
+    public string TreeSummary
+    {
+        get => _treeSummary;
+        private set => SetProperty(ref _treeSummary, value);
+    }
+
+    private TreeRow? _selectedNode;
+
+    /// <summary>Selecting an object opens its diff.</summary>
+    public TreeRow? SelectedNode
+    {
+        get => _selectedNode;
+        set
+        {
+            if (SetProperty(ref _selectedNode, value) && value is { IsFolder: false })
+            {
+                NodeSelected?.Invoke(value);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Raised when an object is picked, so the shell can show its diff.
+    /// </summary>
+    /// <remarks>
+    /// An event rather than a reference to the shell. The sync panel has no business knowing
+    /// what a diff pane is, and the alternative - passing the shell in - makes the two
+    /// mutually dependent for one call.
+    /// </remarks>
+    public event Action<TreeRow>? NodeSelected;
+
+    /// <summary>
+    /// Rebuild the tree for the selected project from its manifest and git's status.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Read and built on a background thread, then handed over as a finished list. Rebuilding
+    /// a whole tree on the UI thread on every status refresh is the most likely source of jank
+    /// in this app - the plan says so, and the 5,002-node spike is why it is believed.
+    /// </para>
+    /// <para>
+    /// A missing manifest is a normal state, not an error: the project is tracked but has
+    /// never been exported. It says so rather than showing an empty box.
+    /// </para>
+    /// </remarks>
+    private async Task RebuildTreeAsync()
+    {
+        var row = SelectedProject;
+        if (_repositoryRoot is null || _git is null || row is not { Tracked: true })
+        {
+            Tree.Clear();
+            TreeSummary = row is { Tracked: false }
+                ? "Track this project to see its objects."
+                : string.Empty;
+            return;
+        }
+
+        var binding = _config.Bindings.FirstOrDefault(b => b.Id == row.BindingId);
+        if (binding is null)
+        {
+            Tree.Clear();
+            return;
+        }
+
+        var manifestPath = System.IO.Path.Combine(
+            AbsolutePath(binding.ExportPath), BindingConventions.ManifestFileName);
+
+        if (!File.Exists(manifestPath))
+        {
+            Tree.Clear();
+            TreeSummary = $"{row.Name} has not been exported yet.";
+            return;
+        }
+
+        var status = await _git.StatusAsync(CancellationToken.None).ConfigureAwait(true);
+        var options = new ProjectTreeOptions { ChangedOnly = ChangedOnly, Search = TreeSearch };
+        var exportPath = binding.ExportPath;
+
+        var built = await Task.Run(async () =>
+        {
+            var json = await File.ReadAllTextAsync(manifestPath).ConfigureAwait(false);
+            var manifest = ProjectManifest.Parse(json);
+            var tree = ProjectTreeBuilder.Build(manifest, exportPath, status.Changes, options);
+
+            // The rows are constructed here too, off the dispatcher: on a real project that
+            // is thousands of small objects, and none of it needs the UI thread.
+            return (Manifest: manifest, Rows: tree.Children.Select(c => new TreeRow(c, 0)).ToList());
+        }).ConfigureAwait(true);
+
+        Tree.Clear();
+        foreach (var node in built.Rows)
+        {
+            Tree.Add(node);
+        }
+
+        TreeSummary = Tree.Count == 0
+            ? ChangedOnly
+                ? $"Nothing changed in {row.Name}."
+                : $"{row.Name} exported no objects."
+            : $"{built.Manifest.Objects.Count} file(s) across {built.Manifest.ObjectCount} object(s).";
+
+        _logger.Debug(LogCategory.Sync,
+            $"tree for {row.Name}: {Tree.Count} root node(s), changedOnly={ChangedOnly}");
     }
 
     /// <summary>

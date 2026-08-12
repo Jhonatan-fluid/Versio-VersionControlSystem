@@ -65,7 +65,9 @@ Export is automatic and deterministic. Import applies edited text back into the 
 | **Git side panel** — staging, commit message, fetch/pull/push | ✅ one operation at a time across every button |
 | **The commit gate, enforced** — a stale export is exported and staged first | ✅ push releases the direction locks, commit does not |
 | Stash, per-hunk staging, recent-commits list | ⛔ not built |
-| Project tree, packaging | ⛔ not built |
+| **Project tree** — CODESYS structure, roll-up badges, changed-only, search | ✅ 15 unit tests + built from a real export |
+| Config nodes from `config/*.yaml`, layer switcher, context menu | ⛔ not built |
+| Packaging | ⛔ not built |
 
 **[docs/STATUS.md](docs/STATUS.md)** has the current state and the route to completion.
 **[docs/PHASE0-FINDINGS.md](docs/PHASE0-FINDINGS.md)** records the measurements and the known limitations — including one real CODESYS mutation (`Core2` in task configuration) that keeps task config **diff-only** for now.
@@ -98,8 +100,8 @@ Versio.sln
 │  └─ Versio.Scripts/           IronPython 2.7, run inside CODESYS. Embedded into
 │                               Versio.Infrastructure as resources.
 ├─ tests/
-│  ├─ Versio.Core.Tests/        603 unit tests — pure, no IO, ~290 ms
-│  └─ Versio.Integration.Tests/  59 tests against real CODESYS and real git, ~110 s
+│  ├─ Versio.Core.Tests/        618 unit tests — pure, no IO, ~300 ms
+│  └─ Versio.Integration.Tests/  64 tests against real CODESYS and real git, ~120 s
 ├─ tools/                       PowerShell harnesses used during Phase 0, plus
 │                               New-VersioIcon.ps1 which generates the app icon
 ├─ assets/                      versio.svg (reference drawing) and versio.ico

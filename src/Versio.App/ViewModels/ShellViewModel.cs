@@ -186,6 +186,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         BuildGitCommands();
 
+        // Picking an object in the project tree shows its diff in the same pane the
+        // changed-files list uses. One diff pane, whichever way the file was reached.
+        Sync.NodeSelected += row =>
+        {
+            if (row.PrimaryFile is { } path)
+            {
+                SelectedDiffPath = path;
+                _ = LoadDiffForPathAsync(path);
+            }
+        };
+
         logger.Info(LogCategory.App, "Versio started");
     }
 
@@ -1292,12 +1303,65 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
     }
 
+    private string _selectedDiffPath = string.Empty;
+
+    /// <summary>
+    /// Path the diff pane is showing, whichever list it was chosen from.
+    /// </summary>
+    /// <remarks>
+    /// The header used to read <c>SelectedChange.Path</c>, which is only ever set by the
+    /// changed-files list - so an object picked in the project tree showed its diff under the
+    /// previous file's name.
+    /// </remarks>
+    public string SelectedDiffPath
+    {
+        get => _selectedDiffPath;
+        private set => SetProperty(ref _selectedDiffPath, value);
+    }
+
+    /// <summary>Load the diff for a path that did not come from a ChangeRow.</summary>
+    private async Task LoadDiffForPathAsync(string path)
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var context = ShowFullFile ? GitDiff.FullFileContext : GitDiff.DefaultContext;
+
+            // Unstaged first: it is what the engineer just edited. A file staged and then
+            // edited again differs on both sides, and the working-tree change is the one they
+            // are looking for.
+            var diff = await _git.DiffAsync(path, staged: false, CancellationToken.None, context)
+                .ConfigureAwait(true);
+
+            if (string.IsNullOrWhiteSpace(diff))
+            {
+                diff = await _git.DiffAsync(path, staged: true, CancellationToken.None, context)
+                    .ConfigureAwait(true);
+            }
+
+            SelectedDiff = string.IsNullOrWhiteSpace(diff)
+                ? $"{path}" + Environment.NewLine + Environment.NewLine +
+                  "No changes to show for this object."
+                : diff;
+        }
+        catch (Exception ex)
+        {
+            ReportError(ex);
+        }
+    }
+
     private async Task LoadDiffAsync(ChangeRow row)
     {
         if (_git is null)
         {
             return;
         }
+
+        SelectedDiffPath = row.Path;
 
         try
         {

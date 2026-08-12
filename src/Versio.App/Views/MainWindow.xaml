@@ -569,7 +569,7 @@
                             <TextBlock DockPanel.Dock="Top" Text="PROJECTS"
                                        Style="{StaticResource SectionLabel}" Margin="0,4,0,6" />
 
-                            <ListBox ItemsSource="{Binding Sync.Projects}"
+                            <ListBox DockPanel.Dock="Top" ItemsSource="{Binding Sync.Projects}"
                                      SelectedItem="{Binding Sync.SelectedProject}"
                                      Background="Transparent" BorderThickness="0"
                                      ItemContainerStyle="{StaticResource RowItem}"
@@ -603,6 +603,120 @@
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
                             </ListBox>
+                            <!-- OBJECTS: the project as CODESYS structures it, not as paths
+                                 on disk. A flat list of
+                                 plc/Machine/Device/Plc Logic/Application/Main.st is a
+                                 regression from what the engineer looks at all day. -->
+                            <Grid DockPanel.Dock="Top" Margin="0,10,0,4">
+                                <TextBlock Text="OBJECTS" Style="{StaticResource SectionLabel}" />
+                                <CheckBox HorizontalAlignment="Right" Content="Changed only"
+                                          VerticalAlignment="Center"
+                                          IsChecked="{Binding Sync.ChangedOnly}"
+                                          Foreground="{DynamicResource Brush.Text.Secondary}"
+                                          FontFamily="{DynamicResource Font.UI}"
+                                          FontSize="{DynamicResource Font.Size.Caption}"
+                                          ToolTip="Untick to see where in the machine the change sits" />
+                            </Grid>
+
+                            <TextBox DockPanel.Dock="Top" Margin="0,0,0,6"
+                                     Style="{StaticResource FlatTextBox}"
+                                     Tag="Find an object…"
+                                     Text="{Binding Sync.TreeSearch, UpdateSourceTrigger=PropertyChanged, Delay=200}" />
+
+                            <TextBlock DockPanel.Dock="Bottom" Text="{Binding Sync.TreeSummary}"
+                                       TextWrapping="Wrap" Margin="0,6,0,0"
+                                       FontFamily="{DynamicResource Font.UI}"
+                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                       Foreground="{DynamicResource Brush.Text.Disabled}" />
+
+                            <!-- WPF TreeView virtualization is OFF by default and the cost is
+                                 not marginal: measured at 94.7 ms virtualized against
+                                 10,635 ms at the defaults on a 5,002-node CODESYS-shaped tree.
+                                 All three attributes are required, and so is the
+                                 VirtualizingStackPanel items panel. The spike that measured
+                                 it lives in Spikes/ and runs from the command line. -->
+                            <TreeView ItemsSource="{Binding Sync.Tree}"
+                                      Background="Transparent" BorderThickness="0"
+                                      VirtualizingStackPanel.IsVirtualizing="True"
+                                      VirtualizingStackPanel.VirtualizationMode="Recycling"
+                                      VirtualizingStackPanel.ScrollUnit="Pixel"
+                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                      SelectedItemChanged="OnTreeNodeSelected">
+                                <TreeView.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <VirtualizingStackPanel />
+                                    </ItemsPanelTemplate>
+                                </TreeView.ItemsPanel>
+
+                                <TreeView.ItemContainerStyle>
+                                    <Style TargetType="TreeViewItem">
+                                        <Setter Property="IsExpanded"
+                                                Value="{Binding IsExpanded, Mode=TwoWay}" />
+                                        <Setter Property="Foreground"
+                                                Value="{DynamicResource Brush.Text.Primary}" />
+                                    </Style>
+                                </TreeView.ItemContainerStyle>
+
+                                <TreeView.ItemTemplate>
+                                    <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                                        <Grid Margin="0,1">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="14" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <TextBlock Grid.Column="0" Text="{Binding Glyph}"
+                                                       VerticalAlignment="Center"
+                                                       FontFamily="{DynamicResource Font.Mono}"
+                                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                                       FontWeight="{DynamicResource Font.Weight.Semibold}"
+                                                       Foreground="{Binding BrushKey,
+                                                           Converter={StaticResource ResourceKey}}" />
+
+                                            <TextBlock Grid.Column="1" Text="{Binding Name}"
+                                                       VerticalAlignment="Center"
+                                                       FontFamily="{DynamicResource Font.UI}"
+                                                       FontSize="{DynamicResource Font.Size.Body}"
+                                                       Foreground="{DynamicResource Brush.Text.Primary}"
+                                                       TextTrimming="CharacterEllipsis" />
+
+                                            <!-- The CODESYS type, so a POU and a visualisation
+                                                 with the same name are told apart. -->
+                                            <TextBlock Grid.Column="2" Text="{Binding TypeLabel}"
+                                                       VerticalAlignment="Center" Margin="8,0,0,0"
+                                                       FontFamily="{DynamicResource Font.Mono}"
+                                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                                       Foreground="{DynamicResource Brush.Text.Disabled}" />
+
+                                            <!-- Roll-up count, so a change is never hidden
+                                                 behind a collapsed folder. -->
+                                            <Border Grid.Column="3" Margin="8,0,4,0"
+                                                    Background="{DynamicResource Brush.Surface.Sunken}"
+                                                    CornerRadius="8" Padding="6,0"
+                                                    VerticalAlignment="Center">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Visibility" Value="Visible" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding Badge}" Value="">
+                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <TextBlock Text="{Binding Badge}"
+                                                           FontFamily="{DynamicResource Font.Mono}"
+                                                           FontSize="{DynamicResource Font.Size.Caption}"
+                                                           Foreground="{Binding BrushKey,
+                                                               Converter={StaticResource ResourceKey}}" />
+                                            </Border>
+                                        </Grid>
+                                    </HierarchicalDataTemplate>
+                                </TreeView.ItemTemplate>
+                            </TreeView>
+
                         </DockPanel>
                     </Border>
 
@@ -640,13 +754,13 @@
                                       FontSize="{DynamicResource Font.Size.Caption}"
                                       ToolTip="Show every line of the file, with the changes still highlighted" />
                             <TextBlock Style="{StaticResource Mono}" VerticalAlignment="Center"
-                                       Text="{Binding SelectedChange.Path}"
+                                       Text="{Binding SelectedDiffPath}"
                                        Foreground="{DynamicResource Brush.Text.Disabled}"
                                        TextTrimming="CharacterEllipsis" MaxWidth="420" />
                         </StackPanel>
                     </Grid>
                     <views:DiffView DiffText="{Binding SelectedDiff}"
-                                    FilePath="{Binding SelectedChange.Path}"
+                                    FilePath="{Binding SelectedDiffPath}"
                                     Margin="6,0,6,8">
                         <ListBox.ItemContainerStyle>
                             <Style TargetType="ListBoxItem">
