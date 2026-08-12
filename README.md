@@ -64,6 +64,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | Change detection over the mirror's real contents | ✅ `ContentHash.OfTree`; a hand-edited `.st` is seen, an untouched tree is not |
 | Side-by-side diff and word-level intra-line diff | ⛔ inline only |
 | **One project view** — the full CODESYS tree with changes marked, plus every other changed file | ✅ replaced the PLC panel and the changed-files list |
+| A project with a clean mirror is not listed | ✅ unless it needs attention — never exported, behind, locked, failed. The empty state says why rather than going blank |
 | **Lazy object rendering** — a row is built when something can reach it, not before | ✅ `TreeRow.Children` on first access; the tree survives a refresh without collapsing |
 | **Export coverage stated, not assumed** — `_coverage.md` + every skip in the manifest | ✅ a gap is distinguished from a deliberate omission; an old manifest reports "unknown", never "complete" |
 | **Library references exported** (`config/libraries.yaml`) | ⛔ **a real gap, now reported.** A library version bump changes nothing in the mirror |

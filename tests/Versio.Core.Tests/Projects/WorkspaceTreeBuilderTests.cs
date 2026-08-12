@@ -29,19 +29,32 @@ public sealed class WorkspaceTreeBuilderTests
         new() { Path = path, Staged = ChangeKind.Unmodified, Unstaged = kind };
 
     private static WorkspaceProject Project(
-        ProjectManifest? manifest = null, string exportState = "in sync") =>
+        ProjectManifest? manifest = null, string exportState = "in sync",
+        bool needsAttention = false) =>
         new()
         {
             ProjectPath = ProjectPath,
             ExportPath = ExportPath,
             Manifest = manifest,
             ExportState = exportState,
+            NeedsAttention = needsAttention,
         };
 
+    /// <summary>Builds with unchanged projects kept, for the tests about tree shape.</summary>
+    /// <remarks>
+    /// Explicit rather than relying on the default, because the default is now to hide them: a
+    /// test asserting the shape of a project row would otherwise assert against an empty list
+    /// and pass for the wrong reason.
+    /// </remarks>
     private static IReadOnlyList<ProjectTreeNode> Build(
         WorkspaceProject project, IReadOnlyList<FileChange> changes, string search = "") =>
         WorkspaceTreeBuilder.Build([project], changes,
-            new ProjectTreeOptions { ChangedOnly = false, Search = search });
+            new ProjectTreeOptions
+            {
+                ChangedOnly = false,
+                Search = search,
+                HideUnchangedProjects = false,
+            });
 
     private static IEnumerable<ProjectTreeNode> Flatten(ProjectTreeNode node)
     {
@@ -213,11 +226,12 @@ public sealed class WorkspaceTreeBuilderTests
     {
         var roots = WorkspaceTreeBuilder.Build(
             [
-                Project(Manifest(Obj("Main", "App/Main.st", "g1"))),
+                Project(Manifest(Obj("Main", "App/Main.st", "g1")), needsAttention: true),
                 new WorkspaceProject
                 {
                     ProjectPath = "plc/Another.project",
                     ExportPath = "plc/Another",
+                    NeedsAttention = true,
                 },
             ],
             [Change("a-sorts-first.txt")]);
@@ -228,6 +242,88 @@ public sealed class WorkspaceTreeBuilderTests
 
         // And the projects are ordered by path, not by the order the config listed them.
         Assert.Equal("Another.project", roots[0].Name);
+    }
+
+    // --- which projects are listed at all ---------------------------------------
+
+    [Fact]
+    public void A_project_with_nothing_changed_is_not_listed()
+    {
+        // The panel answers "what changed". A project whose mirror is clean has nothing to
+        // review, and listing it anyway turns the view into a directory listing that happens
+        // to mark changes.
+        var roots = WorkspaceTreeBuilder.Build(
+            [Project(Manifest(Obj("Quiet", "App/Quiet.st", "g1")))], []);
+
+        Assert.Empty(roots);
+    }
+
+    [Fact]
+    public void A_project_with_a_change_anywhere_under_it_is_listed()
+    {
+        var roots = WorkspaceTreeBuilder.Build(
+            [Project(Manifest(
+                Obj("Touched", "App/Touched.st", "g1"),
+                Obj("Quiet", "App/Quiet.st", "g2")))],
+            [Change("plc/Machine/App/Touched.st")]);
+
+        var project = Assert.Single(roots);
+
+        // And it still carries the whole tree, quiet objects included: once a project is on
+        // screen the question becomes "where in the machine", which needs its neighbours.
+        Assert.Contains(Flatten(project), n => n.Name == "Quiet");
+    }
+
+    [Fact]
+    public void A_changed_project_file_alone_is_enough_to_list_it()
+    {
+        // The .project moved but the mirror has not caught up - exactly the moment somebody
+        // wants to see it.
+        var roots = WorkspaceTreeBuilder.Build(
+            [Project(Manifest(Obj("Quiet", "App/Quiet.st", "g1")))],
+            [Change(ProjectPath)]);
+
+        Assert.Single(roots);
+    }
+
+    [Fact]
+    public void A_project_needing_attention_is_listed_however_quiet_the_working_tree_is()
+    {
+        // Never exported, mirror behind, lock held, failed. Git reports nothing about any of
+        // those - there is no changed file to report - so hiding on git's say-so would hide
+        // precisely the projects that need a person.
+        var roots = WorkspaceTreeBuilder.Build(
+            [Project(manifest: null, exportState: "never exported", needsAttention: true)], []);
+
+        Assert.Equal("never exported", Assert.Single(roots).Detail);
+    }
+
+    [Fact]
+    public void A_search_reaches_into_a_project_that_has_no_changes()
+    {
+        // The box searches the project, not the diff. Quietly restricting it to changed
+        // objects would be a search that lies about what the project contains.
+        var roots = WorkspaceTreeBuilder.Build(
+            [Project(Manifest(
+                Obj("Pump", "App/Pump.st", "g1"),
+                Obj("Valve", "App/Valve.st", "g2")))],
+            [],
+            new ProjectTreeOptions { ChangedOnly = false, Search = "pump" });
+
+        var project = Assert.Single(roots);
+        var found = Assert.Single(Flatten(project), n => n.Kind == ProjectNodeKind.Object);
+        Assert.Equal("Pump", found.Name);
+    }
+
+    [Fact]
+    public void A_search_matching_nothing_in_a_clean_project_still_hides_it()
+    {
+        var roots = WorkspaceTreeBuilder.Build(
+            [Project(Manifest(Obj("Pump", "App/Pump.st", "g1")))],
+            [],
+            new ProjectTreeOptions { ChangedOnly = false, Search = "matches-nothing" });
+
+        Assert.Empty(roots);
     }
 
     [Fact]

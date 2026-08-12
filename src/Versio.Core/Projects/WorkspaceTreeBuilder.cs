@@ -21,6 +21,18 @@ public sealed record WorkspaceProject
 
     /// <summary>Export state in a few words, shown on the project row instead of a diff.</summary>
     public string ExportState { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Show this project even when nothing under it changed.
+    /// </summary>
+    /// <remarks>
+    /// For the states a clean working tree cannot express and the user still has to see: a
+    /// project tracked but never exported, one whose mirror is behind, one holding a direction
+    /// lock, one that failed. Hiding those because git happens to report no changed file would
+    /// be hiding exactly the projects that need attention — git has nothing to say about a
+    /// project whose mirror was never written.
+    /// </remarks>
+    public bool NeedsAttention { get; init; }
 }
 
 /// <summary>
@@ -66,10 +78,24 @@ public static class WorkspaceTreeBuilder
 
         var roots = new List<ProjectTreeNode>();
         var claimed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var searching = !string.IsNullOrWhiteSpace(opts.Search);
 
         foreach (var project in projects.OrderBy(p => p.ProjectPath, StringComparer.OrdinalIgnoreCase))
         {
-            roots.Add(BuildProject(project, changes, status, opts, claimed));
+            var node = BuildProject(project, changes, status, opts, claimed);
+
+            // Built first and dropped after, never skipped: building it is what claims the
+            // project's files, and a project skipped before that would leak its own exported
+            // paths back into the panel as loose rows.
+            if (opts.HideUnchangedProjects &&
+                !node.HasChanges &&
+                !project.NeedsAttention &&
+                !(searching && node.Children.Count > 0))
+            {
+                continue;
+            }
+
+            roots.Add(node);
         }
 
         // Everything git reports that no project accounted for. Sorted by path because that

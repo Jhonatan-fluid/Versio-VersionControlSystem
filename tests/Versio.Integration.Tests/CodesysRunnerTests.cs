@@ -14,6 +14,7 @@ namespace Versio.Integration.Tests;
 /// deliberately separated from the unit project.
 /// </remarks>
 [Trait("Category", "Integration")]
+[Collection(CodesysCollection.Name)]
 public class CodesysRunnerTests(ITestOutputHelper output)
 {
     /// <summary>Resolved from the assembly's own location, never hardcoded — the suite has

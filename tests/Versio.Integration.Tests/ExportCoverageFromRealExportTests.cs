@@ -23,6 +23,7 @@ namespace Versio.Integration.Tests;
 /// </para>
 /// </remarks>
 [Trait("Category", "Integration")]
+[Collection(CodesysCollection.Name)]
 public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) : IDisposable
 {
     private readonly string _root = Path.Combine(

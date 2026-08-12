@@ -31,6 +31,7 @@ namespace Versio.Integration.Tests;
 /// </para>
 /// </remarks>
 [Trait("Category", "Integration")]
+[Collection(CodesysCollection.Name)]
 public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
 {
     private const string ProjectRelativePath = "plc/RefrigeratorControl.project";

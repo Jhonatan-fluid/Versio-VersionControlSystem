@@ -41,6 +41,19 @@ public sealed class WorkspaceTreeFromCommittedExportTests(ITestOutputHelper outp
         ExportState = state,
     };
 
+    /// <summary>Keeps an unchanged project listed, which these tests are all about.</summary>
+    /// <remarks>
+    /// The panel now hides a project with a clean mirror. These assertions are about the shape
+    /// the manifest produces, not about which projects get listed, so they ask for it
+    /// explicitly - relying on the default would make every one of them assert against an
+    /// empty list and pass for the wrong reason.
+    /// </remarks>
+    private static readonly ProjectTreeOptions KeepClean = new()
+    {
+        ChangedOnly = false,
+        HideUnchangedProjects = false,
+    };
+
     private static IEnumerable<ProjectTreeNode> Flatten(ProjectTreeNode node)
     {
         yield return node;
@@ -55,7 +68,7 @@ public sealed class WorkspaceTreeFromCommittedExportTests(ITestOutputHelper outp
     {
         Skip.If(!File.Exists(ManifestPath), "the fixture's export is not committed");
 
-        var roots = WorkspaceTreeBuilder.Build([Fixture()], []);
+        var roots = WorkspaceTreeBuilder.Build([Fixture()], [], KeepClean);
 
         var project = Assert.Single(roots);
         Assert.Equal(ProjectNodeKind.Project, project.Kind);
@@ -93,7 +106,7 @@ public sealed class WorkspaceTreeFromCommittedExportTests(ITestOutputHelper outp
         // grouping works on data CODESYS produced rather than on data a test wrote.
         Skip.If(!File.Exists(ManifestPath), "the fixture's export is not committed");
 
-        var roots = WorkspaceTreeBuilder.Build([Fixture()], []);
+        var roots = WorkspaceTreeBuilder.Build([Fixture()], [], KeepClean);
 
         var layered = Flatten(roots[0])
             .Where(n => n.Kind == ProjectNodeKind.Object && n.Files.Count > 1)
@@ -178,7 +191,7 @@ public sealed class WorkspaceTreeFromCommittedExportTests(ITestOutputHelper outp
         // one place somebody is most likely to click first.
         Skip.If(!File.Exists(ManifestPath), "the fixture's export is not committed");
 
-        var roots = WorkspaceTreeBuilder.Build([Fixture("exported · 11 files")], []);
+        var roots = WorkspaceTreeBuilder.Build([Fixture("exported · 11 files")], [], KeepClean);
 
         var project = Assert.Single(roots);
         Assert.Equal("exported · 11 files", project.Detail);

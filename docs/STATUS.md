@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-12 · **Commits:** 21 · **Tests:** 688 unit + 90 integration, 0 skipped
+**Date:** 2026-08-12 · **Commits:** 22 · **Tests:** 694 unit + 90 integration, 0 skipped
 
 > One integration test, `RepositoryWatcherTests.A_deleted_file_is_reported`, is **flaky under
 > full-suite load** — see Findings. It passes in isolation and failed once during a complete
@@ -95,7 +95,7 @@ format; `.gitattributes` covers every registered vendor's extensions.
 
 | | |
 |---|---|
-| **Project view** | **One panel.** Every tracked project with its full CODESYS-shaped object tree beneath it, and every other changed file beside them. Changes marked and rolled up; search across both; a `.project` row reports its export rather than a diff it cannot have |
+| **Project view** | **One panel.** Every project *with something to review* — a change, a mirror behind, a lock held, a failure, or never exported — carrying its full CODESYS-shaped object tree, with every other changed file beside them. A project whose mirror is clean is not listed, and the empty state says so rather than going blank. Search still reaches into a clean project, because the box searches the project and not the diff |
 | **Git panel** | Staging, commit message with a 50/72 guide, Ctrl+Enter, fetch / pull / push, stash, recent commits with click-to-diff. One operation at a time across every button — a shared counted flag, so a 17–31 s export also holds them |
 | **Commit gate** | A stale mirror is exported *and staged* before the commit. Push releases the direction locks; commit does not, and the panel says so |
 | **Diff view** | Eleven languages, new files rendered entirely green, *Show full file*, rows built only when realised, **per-hunk stage and unstage** |
@@ -208,6 +208,23 @@ no warning names a bookkeeping file — verified to fail without the guard befor
 The general lesson is about the shape of the mistake rather than the file: **the export tree has
 two kinds of contents, and only one of them is the project.** Nothing in the code said so until
 now.
+
+### The integration suite had been lucky about running two CODESYS instances
+
+xunit runs test *classes* in parallel by default, and four classes already drove a real
+headless CODESYS. Adding a fifth that launches five exports tipped it over:
+`ProjectTreeFromRealExportTests` began failing in a full run and passing on its own, with the
+export exiting in **0.9 s** instead of 17 — two instances contending on the profile and the
+shared temp state, and the loser dying with nothing useful to say.
+
+The race was always there. Nothing had changed about it except the odds, which means the suite
+had been passing on luck for as long as those four classes have existed.
+
+Found only by running the whole suite **from a fresh clone** rather than from the working tree
+it was written in — a habit worth keeping, since it is also the first thing anybody taking this
+over will do. The CODESYS-driving classes now share an xunit collection and run one at a time.
+The cost is wall clock, and it is the right trade: a slow suite that is believed beats a fast
+one that is not.
 
 ### `git apply --cached` reads the index, not the working tree
 

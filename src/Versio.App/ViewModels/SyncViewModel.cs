@@ -897,7 +897,13 @@ public sealed class SyncViewModel : ObservableObject
                 b.ExportPath,
                 ManifestPath: System.IO.Path.Combine(
                     AbsolutePath(b.ExportPath), BindingConventions.ManifestFileName),
-                State: Projects.FirstOrDefault(p => p.BindingId == b.Id)?.State ?? "tracked"))
+                State: Projects.FirstOrDefault(p => p.BindingId == b.Id)?.State ?? "tracked",
+
+                // Anything other than Clean is a state git cannot report: a mirror that is
+                // behind, a direction lock held, a failure nobody has acknowledged. Those
+                // projects stay visible however quiet the working tree is.
+                NeedsAttention: (_orchestrator?.StateOf(b.Id) ?? SyncDirection.Clean)
+                                != SyncDirection.Clean))
             .ToList();
 
         // Everything the tree is derived from, in one string. A manifest's write time stands
@@ -941,6 +947,11 @@ public sealed class SyncViewModel : ObservableObject
                     ExportPath = source.ExportPath,
                     Manifest = manifest,
 
+                    // A project with no manifest has never been exported. Git reports nothing
+                    // about it, because there is nothing on disk to report on - and it is
+                    // precisely the project somebody needs to be told about.
+                    NeedsAttention = source.NeedsAttention || manifest is null,
+
                     // The gap rides along on the row itself. A project whose libraries are
                     // not exported reads as "in sync", which is true of what was exported
                     // and misleading about the project - so the row says both.
@@ -952,7 +963,8 @@ public sealed class SyncViewModel : ObservableObject
 
             return (Roots: WorkspaceTreeBuilder.Build(projects, status.Changes,
                         new ProjectTreeOptions { ChangedOnly = false, Search = search }),
-                    Coverage: coverage);
+                    Coverage: coverage,
+                    Tracked: projects.Count);
         }).ConfigureAwait(true);
 
         var roots = built.Roots;
@@ -974,18 +986,27 @@ public sealed class SyncViewModel : ObservableObject
 
         var objects = roots.Sum(CountObjects);
         var changed = status.Changes.Count;
+        var shownProjects = roots.Count(r => r.Kind == ProjectNodeKind.Project);
+        var hidden = built.Tracked - shownProjects;
 
-        TreeSummary = (objects, changed) switch
+        // An empty panel has to say why it is empty. A tracked project that is simply in sync
+        // is now hidden, and a panel that went blank without explaining itself reads as a
+        // broken scan - which is the failure this wording exists to prevent.
+        TreeSummary = (Tree.Count, hidden) switch
         {
-            (0, 0) when sources.Count == 0 => "No PLC projects tracked in this repository.",
-            (0, 0) => "Nothing changed, and no objects exported yet.",
-            (0, var c) => $"{c} changed file(s).",
-            (var o, 0) => $"{o} object(s), nothing changed.",
-            var (o, c) => $"{o} object(s) · {c} changed file(s).",
+            (0, 0) when built.Tracked == 0 => "No PLC projects tracked in this repository.",
+            (0, 1) => "Nothing has changed. 1 tracked project is in sync, so it is not listed.",
+            (0, var h) when h > 1 =>
+                $"Nothing has changed. {h} tracked projects are in sync, so they are not listed.",
+            (0, _) => "Nothing has changed.",
+            (_, 0) => $"{objects} object(s) · {changed} changed file(s).",
+            var (_, h) => $"{objects} object(s) · {changed} changed file(s) · " +
+                          $"{h} project(s) in sync, not listed.",
         };
 
         _logger.Debug(LogCategory.Sync,
-            $"tree: {Tree.Count} root(s), {objects} object(s), {changed} changed file(s)");
+            $"tree: {Tree.Count} root(s), {objects} object(s), {changed} changed file(s), " +
+            $"{hidden} project(s) hidden as in sync");
     }
 
     /// <summary>A manifest's identity for change detection: when it was written, and how big.</summary>

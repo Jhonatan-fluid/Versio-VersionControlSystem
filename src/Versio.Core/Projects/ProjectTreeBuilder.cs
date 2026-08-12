@@ -106,6 +106,24 @@ public sealed record ProjectTreeOptions
 
     /// <summary>Match against object and folder names. Empty matches everything.</summary>
     public string Search { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Drop a project from the workspace tree when nothing under it changed.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Read by <see cref="WorkspaceTreeBuilder"/> only. A project with a clean mirror is a
+    /// project with nothing to review, and listing it anyway makes the panel a directory
+    /// listing that happens to mark changes rather than a view of what changed.
+    /// </para>
+    /// <para>
+    /// It does <b>not</b> hide a project that needs attention — never exported, behind,
+    /// locked, failed — because those are exactly the projects git has nothing to say about.
+    /// Nor does it apply while a search is running: the box searches the whole project, and a
+    /// filter that quietly restricted it to changed objects would be a search that lies.
+    /// </para>
+    /// </remarks>
+    public bool HideUnchangedProjects { get; init; } = true;
 }
 
 /// <summary>
