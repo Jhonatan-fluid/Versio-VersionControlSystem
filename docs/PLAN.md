@@ -1449,7 +1449,8 @@ Rail icons (top to bottom): 📄 Changed files · 🔀 Git · 🔄 Sync/CODESYS 
 - **Repo dropdown** — MRU list persisted to `%AppData%\Versio\recent.json`; shows path, branch, and a dot for dirty state; missing paths shown greyed with a *Remove* action.
 - **Open ▾** — split button: *Open existing repository…* (folder picker, validates `.git` presence) / *Clone new repository…* (modal: URL field, **Verify** button running `git ls-remote`, destination folder, then Clone with progress). The Clone button stays disabled until verification passes.
 - **Project selector** — shown only when a repo has more than one binding (§5.2). Lists each project with its own sync state, and badges any orphan the scanner found (§5.3).
-- **Branch dropdown** — local branches with ahead/behind; *Create new branch…* inline at the bottom; switching is disabled with a tooltip explaining why when **any** direction lock is held.
+- **Branch dropdown** — local branches with ahead/behind; switching is disabled with a tooltip explaining why when **any** direction lock is held. **Rev 11: not built** — git refuses a dirty-tree checkout by itself, which covers the dangerous case without explaining it.
+  - ~~*Create new branch…* inline at the bottom~~ → **a button beside the dropdown** (Rev 11). That list's selection means "switch to this branch", so a row meaning something else would sit one arrow-key away from a checkout. The dialog validates the name against `git check-ref-format`'s rules while it is typed, and says which rule a refusal broke.
 - **⟳ Refresh** — forces a full rescan (status + hash + orphan scan).
 
 ### 9.3 Main split — the project tree, not a flat file list

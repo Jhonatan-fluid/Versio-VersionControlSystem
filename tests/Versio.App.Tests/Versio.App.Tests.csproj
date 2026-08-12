@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- WPF needs the Windows-flavoured TFM, exactly as Versio.App does. This is the only
+         test project that carries it: everything testable without a UI stays in
+         Versio.Core.Tests, which runs in milliseconds and on any platform. -->
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Versio.App.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Referencing the WinExe is deliberate and supported: the dialogs under test are its
+         types, and duplicating them anywhere else would test a copy. -->
+    <ProjectReference Include="..\..\src\Versio.App\Versio.App.csproj" />
+  </ItemGroup>
+
+</Project>

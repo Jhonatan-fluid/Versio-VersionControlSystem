@@ -26,6 +26,9 @@
     <sys:String x:Key="Icon.ChevronDown">&#xE70D;</sys:String>
     <sys:String x:Key="Icon.ChevronUp">&#xE70E;</sys:String>
     <sys:String x:Key="Icon.Delete">&#xE74D;</sys:String>
+    <sys:String x:Key="Icon.Add">&#xE710;</sys:String>
+    <sys:String x:Key="Icon.Undo">&#xE7A7;</sys:String>
+    <sys:String x:Key="Icon.Download">&#xE896;</sys:String>
     <sys:String x:Key="Icon.Pause">&#xE769;</sys:String>
     <sys:String x:Key="Icon.Filter">&#xE71C;</sys:String>
 

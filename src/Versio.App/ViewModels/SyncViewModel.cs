@@ -1132,6 +1132,40 @@ public sealed class SyncViewModel : ObservableObject
     }
 
     /// <summary>
+    /// The binding whose export tree contains a repo-relative path, if any.
+    /// </summary>
+    /// <remarks>
+    /// The matching itself lives in <see cref="BindingConventions.OwnerOf"/> rather than here:
+    /// it is a rule about paths and bindings, not about a panel, and Core is where it can be
+    /// tested against the cases that have actually caused bugs — a sibling directory sharing a
+    /// prefix, and a <c>.project</c> beside the export tree named after it.
+    /// </remarks>
+    public string? BindingOwning(string repoRelativePath) =>
+        BindingConventions.OwnerOf(_config.Bindings, repoRelativePath)?.Id;
+
+    /// <summary>
+    /// Release one binding's direction lock after its mirror was discarded (plan section 6.5).
+    /// </summary>
+    /// <remarks>
+    /// Discarding is the other way a direction stops being owned. The lock exists because one
+    /// side holds work the other has not seen; throwing that work away means there is nothing
+    /// left to protect, and leaving the lock held would block the next export for no reason
+    /// anybody could discover from the UI.
+    /// </remarks>
+    public async Task ReleaseAfterDiscardAsync(string bindingId, CancellationToken ct)
+    {
+        if (_orchestrator is null)
+        {
+            return;
+        }
+
+        await _orchestrator.ReleaseAfterDiscardAsync(bindingId, ct).ConfigureAwait(true);
+
+        await RescanAsync().ConfigureAwait(true);
+        await RefreshStalenessAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>
     /// Adopt every project in the repository that is not tracked yet.
     /// </summary>
     /// <remarks>

@@ -325,6 +325,109 @@ public sealed class GitCliClientTests(ITestOutputHelper output) : IDisposable
     }
 
     [SkippableFact]
+    public async Task A_repository_can_be_cloned_and_the_clone_carries_the_history()
+    {
+        // No network needed: a local path is a perfectly good remote, so this exercises the
+        // real clone path — process, arguments, working directory, progress — without making
+        // the suite depend on somebody's connection or on a host staying up.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+        Write("plc/Main.st", "PROGRAM Main\nEND_PROGRAM\n");
+        await Client.StageAsync(["plc/Main.st"], CancellationToken.None);
+        await Client.CommitAsync("first", CancellationToken.None);
+
+        var target = Path.Combine(_repo, "..", $"clone-{Guid.NewGuid():N}"[..14]);
+        var seen = new List<GitProgress>();
+
+        var result = await GitCliClient.CloneAsync(
+            _repo, target, "git", new Progress<GitProgress>(p => seen.Add(p)),
+            new TestLogger(output), CancellationToken.None);
+
+        try
+        {
+            Assert.True(result.Success, result.FailureReason);
+
+            // The folder is created BY git, from the last segment of the path — cloning into
+            // a folder that had to exist first would silently accept a non-empty one.
+            Assert.True(Directory.Exists(target), "the clone directory was not created");
+            Assert.True(File.Exists(Path.Combine(target, "plc", "Main.st")),
+                        "the working tree did not arrive");
+
+            // And it is a real repository, not just files: the history came too.
+            var clone = new GitCliClient(target, logger: new TestLogger(output));
+            Assert.True(await clone.IsRepositoryAsync(CancellationToken.None));
+            Assert.NotEmpty(await clone.HeadCommitAsync(CancellationToken.None));
+        }
+        finally
+        {
+            SafeDelete(target);
+        }
+    }
+
+    [SkippableFact]
+    public async Task Cloning_into_a_path_with_no_parent_is_refused_before_git_runs()
+    {
+        // A drive root has no parent, and handing it to git would clone the repository into
+        // the root of the disk. Refused with a sentence rather than attempted — and refused
+        // WITHOUT running git, which is why this needs no repository of its own.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+
+        var result = await GitCliClient.CloneAsync(
+            _repo, "C:\\", "git", null, new TestLogger(output), CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains("cloned into", result.FailureReason);
+    }
+
+    [SkippableFact]
+    public async Task Cloning_a_url_that_is_not_a_repository_fails_with_gits_own_words()
+    {
+        // The failure a person actually hits: a typo in the URL. It must arrive as a sentence
+        // rather than as an exit code, because it is shown in a dialog.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+
+        var target = Path.Combine(_repo, "..", $"nope-{Guid.NewGuid():N}"[..13]);
+
+        var result = await GitCliClient.CloneAsync(
+            Path.Combine(_repo, "not-a-repository"), target, "git", null,
+            new TestLogger(output), CancellationToken.None);
+
+        try
+        {
+            Assert.False(result.Success);
+            Assert.NotNull(result.FailureReason);
+            output.WriteLine($"failure: {result.FailureReason}");
+        }
+        finally
+        {
+            SafeDelete(target);
+        }
+    }
+
+    /// <summary>Remove a throwaway clone, read-only git objects and all.</summary>
+    private static void SafeDelete(string directory)
+    {
+        try
+        {
+            if (!Directory.Exists(directory))
+            {
+                return;
+            }
+
+            foreach (var f in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
+            {
+                File.SetAttributes(f, FileAttributes.Normal);
+            }
+
+            Directory.Delete(directory, recursive: true);
+        }
+        catch (IOException)
+        {
+            // A leftover temp directory is not worth failing a test over.
+        }
+    }
+
+    [SkippableFact]
     public async Task A_diff_is_produced_for_a_modified_file()
     {
         Skip.IfNot(GitAvailable, "git not on PATH");

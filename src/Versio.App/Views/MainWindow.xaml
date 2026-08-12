@@ -93,9 +93,19 @@
                     </ComboBox.ItemTemplate>
                 </ComboBox>
 
-                <Button Grid.Column="2" Style="{StaticResource IconButton}"
-                        Content="{DynamicResource Icon.Folder}" Margin="6,0,0,0"
-                        Click="OnOpenRepository" ToolTip="Open a repository…" />
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="6,0,0,0">
+                    <Button Style="{StaticResource IconButton}"
+                            Content="{DynamicResource Icon.Folder}"
+                            Click="OnOpenRepository" ToolTip="Open a repository…" />
+
+                    <!-- Clone. Beside Open because they answer the same question — "work on
+                         which repository?" — and this is the answer when you do not have it
+                         yet. Enabled without one open, unlike everything else in this bar. -->
+                    <Button Style="{StaticResource IconButton}"
+                            Content="{DynamicResource Icon.Download}"
+                            Command="{Binding CloneCommand}"
+                            ToolTip="Clone a repository…" />
+                </StackPanel>
 
                 <!-- Branch dropdown. Closed: name and divergence only. Upstream tracking is
                      only useful while comparing branches, so it lives in the open list. -->
@@ -124,10 +134,20 @@
                     </ComboBox.ItemTemplate>
                 </ComboBox>
 
-                <Button Grid.Column="4" Style="{StaticResource IconButton}"
-                        HorizontalAlignment="Left" Margin="4,0,0,0"
-                        Content="{DynamicResource Icon.Refresh}"
-                        Command="{Binding RefreshCommand}" ToolTip="Refresh (F5)" />
+                <!-- Create a branch. A button rather than an item at the bottom of the
+                     dropdown: that list's selection means "switch to this", and a row that
+                     meant something else would be one arrow-key away from a checkout. -->
+                <StackPanel Grid.Column="4" Orientation="Horizontal"
+                            HorizontalAlignment="Left" Margin="4,0,0,0">
+                    <Button Style="{StaticResource IconButton}"
+                            Content="{DynamicResource Icon.Add}"
+                            Command="{Binding CreateBranchCommand}"
+                            ToolTip="Create a branch from HEAD and switch to it…" />
+
+                    <Button Style="{StaticResource IconButton}"
+                            Content="{DynamicResource Icon.Refresh}"
+                            Command="{Binding RefreshCommand}" ToolTip="Refresh (F5)" />
+                </StackPanel>
 
                 <!-- Settings: theme lives here now, not as a top-level button. -->
                 <Button Grid.Column="5" x:Name="SettingsButton"
@@ -472,9 +492,21 @@
 
                             <Grid DockPanel.Dock="Top" Margin="0,0,0,4">
                                 <TextBlock Text="NOT STAGED" Style="{StaticResource SectionLabel}" />
-                                <Button HorizontalAlignment="Right" Content="Stage all"
-                                        Style="{StaticResource GhostButton}" Padding="8,2"
-                                        Command="{Binding StageCommand}" />
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                    <!-- Discard is per-FILE and needs a selection, while
+                                         "Stage all" takes the list. That asymmetry is the
+                                         point: this is the only button here that destroys
+                                         work nothing else has a copy of, so it acts on one
+                                         named file, after a confirmation that names it. -->
+                                    <Button Content="Discard" Padding="8,2"
+                                            Style="{StaticResource GhostButton}"
+                                            Foreground="{DynamicResource Brush.Status.Deleted}"
+                                            Command="{Binding DiscardCommand}"
+                                            ToolTip="Throw away the changes to the selected file — this cannot be undone" />
+                                    <Button Content="Stage all" Padding="8,2" Margin="6,0,0,0"
+                                            Style="{StaticResource GhostButton}"
+                                            Command="{Binding StageCommand}" />
+                                </StackPanel>
                             </Grid>
                             <ListBox ItemsSource="{Binding Unstaged}"
                                      SelectedItem="{Binding SelectedUnstaged}"

@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -46,6 +47,30 @@ public partial class MainWindow : Window
             MessageBox.Show(this, body, caption, MessageBoxButton.OKCancel,
                             MessageBoxImage.Warning, MessageBoxResult.Cancel)
             == MessageBoxResult.OK;
+
+        // A branch name needs a text box and live validation, which a MessageBox cannot do.
+        // The dialog is owned so it centres on the window and cannot be lost behind it.
+        shell.PromptForBranchName = () =>
+        {
+            var prompt = new BranchPromptWindow { Owner = this };
+            return prompt.ShowDialog() == true ? prompt.BranchNameResult : null;
+        };
+
+        // The clone dialog runs the conversation — verify, then clone — using git handed to
+        // it by the shell. The view supplies the window; the view model supplies the
+        // operations, so no dialog here ever constructs a git client of its own.
+        shell.PromptForClone = () =>
+        {
+            var prompt = new ClonePromptWindow(
+                shell.VerifyRemoteAsync,
+                shell.CloneAsync,
+                initialFolder: Path.GetDirectoryName(shell.RepositoryPath))
+            {
+                Owner = this,
+            };
+
+            return Task.FromResult(prompt.ShowDialog() == true ? prompt.ClonedPath : null);
+        };
 
         ApplyLogVisibility();
         SyncThemeRadios();

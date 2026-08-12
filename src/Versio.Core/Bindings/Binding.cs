@@ -102,4 +102,53 @@ public static class BindingConventions
     /// </summary>
     public static bool LooksLikeTemplate(string path) =>
         path.Replace('\\', '/').EndsWith(TemplateSuffix, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// True when a repo-relative path lies inside a repo-relative directory.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Segment-aware, not a prefix match.</b> <c>plc/Machine</c> does not contain
+    /// <c>plc/Machine2/Main.st</c>, and it does not contain <c>plc/Machine.project</c> either —
+    /// which is the shape of a bug this codebase has already had once, in a fake filesystem
+    /// whose <c>EnumerateFiles</c> was a bare <c>StartsWith</c>. A test written against that
+    /// would have proved the opposite of what it claimed.
+    /// </para>
+    /// <para>
+    /// The directory itself is not "inside" itself: the callers are asking which binding owns
+    /// a <i>file</i>, and a path equal to the export root is not one.
+    /// </para>
+    /// </remarks>
+    public static bool IsUnder(string path, string directory)
+    {
+        var p = path.Replace('\\', '/').Trim('/');
+        var d = directory.Replace('\\', '/').Trim('/');
+
+        return d.Length > 0 &&
+               p.Length > d.Length + 1 &&
+               p[d.Length] == '/' &&
+               p.StartsWith(d, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// The binding whose export tree contains a repo-relative path, or null.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Used to decide whether an action on one file concerns a tracked project at all —
+    /// discarding a file inside a mirror releases that binding's direction lock (plan §6.5),
+    /// while discarding an unrelated README must release nothing.
+    /// </para>
+    /// <para>
+    /// <b>Longest match wins</b>, so a binding nested inside another's tree is answered
+    /// correctly rather than by whichever happens to come first in the config. Disabled
+    /// bindings are skipped: they are not syncing, so they hold no lock to release.
+    /// </para>
+    /// </remarks>
+    public static ProjectBinding? OwnerOf(IEnumerable<ProjectBinding> bindings, string path) =>
+        bindings
+            .Where(b => b.Enabled)
+            .Where(b => IsUnder(path, b.ExportPath))
+            .OrderByDescending(b => b.ExportPath.Length)
+            .FirstOrDefault();
 }

@@ -210,6 +210,81 @@ public sealed partial class GitCliClient(
         return RunAsync(["ls-remote", "--heads", url], null, ct, TimeSpan.FromSeconds(20));
     }
 
+    /// <summary>
+    /// Check a remote is reachable when no repository is open yet.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The clone dialog's Verify button, which by definition runs before there is a repository
+    /// to run inside. <c>ls-remote</c> needs no repository — only a working directory that
+    /// exists — so the temp folder is used and nothing is written to it.
+    /// </para>
+    /// <para>
+    /// The same check, deliberately, as the instance method: reachability <i>and</i>
+    /// authentication, transferring no objects. Verifying with anything weaker would let a
+    /// dialog say "reachable" and then fail minutes into a download.
+    /// </para>
+    /// </remarks>
+    public static Task<GitResult> VerifyRemoteAsync(
+        string url, string gitExecutable, IVersioLogger? logger, CancellationToken ct) =>
+        new GitCliClient(Path.GetTempPath(), gitExecutable, logger).VerifyRemoteAsync(url, ct);
+
+    /// <summary>
+    /// Clone a repository into <paramref name="targetDirectory"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Static, and deliberately not on <see cref="IGitClient"/>.</b> Every other operation
+    /// here runs <i>inside</i> a repository, which is what the interface models and what every
+    /// implementation of it can assume. A clone has no repository yet: it runs in the parent
+    /// directory and creates one. Putting it on the seam would force a repo-less special case
+    /// into every future implementation for the sake of one call made once per repository.
+    /// </para>
+    /// <para>
+    /// The parent is where git is run, and the target's own name is passed as the argument, so
+    /// git creates the folder itself. Running in the target and cloning into <c>.</c> would
+    /// require the folder to exist first and would silently accept a non-empty one.
+    /// </para>
+    /// <para>
+    /// <c>--progress</c> because git only emits counters when it believes it is talking to a
+    /// terminal, and this is exactly the operation somebody watches: a clone of a repository
+    /// full of PLC binaries is minutes of apparently nothing.
+    /// </para>
+    /// </remarks>
+    public static Task<GitResult> CloneAsync(
+        string url, string targetDirectory, string gitExecutable,
+        IProgress<GitProgress>? progress, IVersioLogger? logger, CancellationToken ct)
+    {
+        var parent = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(targetDirectory));
+        var name = Path.GetFileName(Path.TrimEndingDirectorySeparator(targetDirectory));
+
+        if (string.IsNullOrEmpty(parent) || string.IsNullOrEmpty(name))
+        {
+            // A path with no parent is a drive root, and cloning into one is never what was
+            // meant. Refused with a reason rather than handed to git, which would clone the
+            // repository into the root of the disk.
+            //
+            // The reason travels in StdErr because GitResult derives FailureReason from it —
+            // git's own words when there are any, and this refusal happens before git runs.
+            return Task.FromResult(new GitResult
+            {
+                Success = false,
+                ExitCode = -1,
+                StdErr = $"'{targetDirectory}' is not a folder a repository can be cloned into.",
+            });
+        }
+
+        // The parent must exist before git runs, because it is the working directory of the
+        // process rather than something git creates.
+        Directory.CreateDirectory(parent);
+
+        var client = new GitCliClient(parent, gitExecutable, logger);
+        client._log.Info(LogCategory.Git, $"cloning {Redact(url)} into {targetDirectory}");
+
+        return client.RunAsync(["clone", "--progress", url, name], progress, ct,
+                               TimeSpan.FromMinutes(30));
+    }
+
     /// <summary>Fetch from the remote without touching the working tree.</summary>
     public Task<GitResult> FetchAsync(IProgress<GitProgress>? progress, CancellationToken ct)
     {

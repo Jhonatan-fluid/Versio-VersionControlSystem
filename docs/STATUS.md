@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-12 · **Commits:** 28 · **Tests:** 749 unit + 98 integration, 0 skipped
+**Date:** 2026-08-12 · **Commits:** 29 · **Tests:** 799 unit + 24 UI + 101 integration, 0 skipped
 
 > One integration test, `RepositoryWatcherTests.A_deleted_file_is_reported`, is **flaky under
 > full-suite load** — see Findings. It passes in isolation and failed once during a complete
@@ -21,10 +21,10 @@ end against the real fixture with real CODESYS.
 
 ```
   CODESYS pipeline    ████████████████████  proven on a real project
-  Domain core         ████████████████████  671 tests, 318 ms
+  Domain core         ████████████████████  721 tests, 286 ms
   Vendor seam         ████████████████████  enforced from assembly metadata
   Infrastructure      ████████████████████  drives real CODESYS + real git
-  Desktop shell       ██████████████████░░  one project view, full git surface, diff
+  Desktop shell       ███████████████████░  one project view, full git surface, diff
   Packaging           ██░░░░░░░░░░░░░░░░░░  icon and publish profile only
 ```
 
@@ -110,7 +110,8 @@ format; `.gitattributes` covers every registered vendor's extensions.
 | | |
 |---|---|
 | **Project view** | **One panel.** Every project *with something to review* — a change, a mirror behind, a lock held, a failure, or never exported — carrying its full CODESYS-shaped object tree, with every other changed file beside them. A project whose mirror is clean is not listed, and the empty state says so rather than going blank. Search still reaches into a clean project, because the box searches the project and not the diff |
-| **Git panel** | Staging, commit message with a 50/72 guide, Ctrl+Enter, fetch / pull / push, stash, recent commits with click-to-diff. One operation at a time across every button — a shared counted flag, so a 17–31 s export also holds them |
+| **Git panel** | Staging, commit message with a 50/72 guide, Ctrl+Enter, fetch / pull / push, stash, recent commits with click-to-diff, **discard**. One operation at a time across every button — a shared counted flag, so a 17–31 s export also holds them |
+| **Branch and clone** | Create a branch from HEAD and switch to it, with the name checked against git's rules while it is typed; clone a repository after verifying the remote, then open it. Both are modal dialogs built from the one stylesheet, and both are covered by tests that construct them against the real theme |
 | **Commit gate** | A stale mirror is exported *and staged* before the commit. Push releases the direction locks; commit does not, and the panel says so |
 | **Diff view** | Eleven languages, new files rendered entirely green, *Show full file*, rows built only when realised, **per-hunk stage and unstage** |
 | **Open in the IDE** | Export runs anyway, from a copy; import waits and names who has the project. Neither marks the binding failed, and the breaker is never fed |
@@ -139,13 +140,24 @@ fixture: two library managers, **both exported now**, and `_coverage.md` reports
   rather than as "the library manager changed". The data exists and parses now; this is a tree
   feature rather than an exporter one
 
-### 2. Finish the git surface
+### 2. ~~Finish the git surface~~ — **done**
 
 - ~~Stash~~, ~~recent commits with click-to-diff~~, ~~per-hunk staging~~ — **done**
-- Branch creation, and the clone-with-verification dialog. `CreateBranchAsync` and
-  `VerifyRemoteAsync` are both written and tested; neither has a surface
-- Discard, with a confirmation. `DiscardAsync` exists and is deliberately unreachable until
-  there is a dialog worth trusting in front of it
+- ~~Branch creation~~ — a dialog that validates the name **as it is typed**, against git's own
+  rules, and creates-and-switches. `BranchName` is 35 unit tests in Core, because the useful
+  half is the *reason* a name is refused, and git's own refusal arrives after a process spawn
+  in wording written for a terminal
+- ~~Clone with verification~~ — URL, **Verify** (`ls-remote`: reachability *and* credentials,
+  transferring nothing), destination, then Clone with progress. **Clone stays dead until
+  Verify passes**, and editing the URL afterwards shuts it again — the failure the dialog is
+  shaped around is verifying one remote and cloning another. `GitCliClient.CloneAsync` is
+  static and deliberately not on `IGitClient`: a clone has no repository to run in
+- ~~Discard~~ — per **file**, never per list, after a confirmation naming the file. An
+  untracked file is refused with an explanation rather than attempted, because git has nothing
+  to restore it from. Discarding inside a mirror releases that binding's direction lock
+- **What is left:** the branch dropdown still does not refuse a switch while a direction lock
+  is held (plan §9.2 asks for that, with a tooltip saying why). Git refuses a dirty-tree
+  checkout on its own, which covers the dangerous case but not the explanation
 
 ### 3. Retry automatically when the IDE closes
 
@@ -192,6 +204,80 @@ More fixture projects. Every field bug becomes a fixture before it is fixed.
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### The UI had no automated coverage, and the first test written found a bug
+
+`--trace-bindings` is a good instrument and it has one blind spot that matters: **it can only
+report on windows that were opened.** A modal nobody has clicked has never been parsed, so its
+XAML has never been checked against the stylesheet at all — a renamed style is not a compile
+error, not a binding warning, and not anything until a user clicks the button that opens it.
+
+Adding two dialogs made that gap load-bearing, so `Versio.App.Tests` exists now: a WPF test
+project that constructs the real windows against the real `Theme.xaml`, loaded by pack URI from
+the app assembly so it cannot drift from what ships. Deliberately breaking a style reference
+fails **all ten** of the branch dialog's tests, which is the class of failure that would
+otherwise have surfaced weeks later in front of somebody.
+
+**The first run found a real defect.** `BranchPromptWindow` validated on `TextChanged`, which
+never fires for a box's initial value, so the dialog opened with a **blank message area and a
+dead Create button** — no explanation of what it wanted. Invisible by inspection, because a
+blank label looks exactly like an empty one, and invisible to the binding tracer, because
+nothing was bound. One call to `Revalidate()` in the constructor.
+
+Three things had to be got right before any of it ran, and each fails in a way that names
+something other than the cause:
+
+- **an STA thread** — xunit runs tests on MTA threads, where a `Window` constructor throws;
+- **an `Application` carrying the theme** — every `StaticResource` resolves by walking up to
+  `Application.Resources`, and without one the XAML parse dies on the first style;
+- **the *same* STA thread every time** — the theme's brushes are `Freezable`s owned by the
+  thread that made them, so a fresh thread per test dies inside the XAML parser with
+  `Dispatcher.VerifyAccess` in the stack and nothing pointing at the real problem. That was the
+  first version of the harness.
+
+### `async void` handlers and a test host that aborted
+
+Driving the clone dialog by raising `Click` passed eight tests and then **aborted the test
+host** — not failed, aborted, with no test named.
+
+The handlers are `async void`, which is what WPF requires of an event handler. On the UI thread
+an `await` posts its continuation back to the dispatcher, so raising a click only *starts* the
+work: the rest runs whenever the dispatcher next pumps, which is during some later test, against
+a window whose test has already finished.
+
+Two changes, and both are improvements to the product rather than concessions to the test:
+
+- the work moved into `VerifyAsync()` and `CloneAsync()`, leaving the `async void` handlers as
+  one-line wrappers that start them. An `async void` that anything else calls is un-awaitable
+  by everything, including the next feature that wants to reuse it;
+- `DialogResult` is set through a guard, because it exists only on a window shown with
+  `ShowDialog` and throws on any other. `ClonedPath` is set first regardless — that is the
+  result; closing is how it gets delivered.
+
+The harness gained a `Run(Func<Task>)` that waits **from the calling thread**, leaving the
+dispatcher free to pump its own continuations. Waiting on it from inside itself deadlocks
+instead.
+
+### Validating a branch name is about the message, not the verdict
+
+Git refuses a bad branch name perfectly well. It does it *after* a process spawn, in a sentence
+written for a terminal — `fatal: 'feature branch' is not a valid branch name` — which arrives in
+a status bar after the dialog has closed, naming neither the offending character nor what to
+type instead.
+
+`BranchName.Validate` is therefore in Core, with the rules transcribed from
+`git check-ref-format` and a **reason for every refusal**: which character, or which rule. A
+check returning a bare `false` would grey out a button and leave the user with nothing to
+change — worse than no validation at all, because git would at least have said something.
+
+It does **not** replace git's check, and the tests say so: a name that passes here can still be
+refused for existing already, or for colliding with a ref path — `feature` and `feature/x`
+cannot both be branches. The failed create is reported rather than assumed away.
+
+The per-segment rules are the ones worth having a test for. `feature/.hidden` and
+`feature/x.lock` are both refused by git, and neither is caught by looking at the name as a
+whole: refs are paths, and git applies those rules to each component. Deleting the loop that
+walks the segments fails five tests.
 
 ### The library reference id changes on every open, and the API is not the one it looks like
 
@@ -782,8 +868,16 @@ what it claimed.
 
 ## Verifying the UI, not just the engine
 
-`Versio.exe --trace-bindings <file>` writes every WPF data-binding failure to a file. A broken
-binding in WPF is otherwise **silent** — a mistyped path or a missing converter produces an
+Two instruments, covering different halves of the problem.
+
+**`Versio.App.Tests` constructs the real windows against the real stylesheet.** A WPF test
+project on an STA thread with `Theme.xaml` loaded by pack URI from the app assembly, so a style
+renamed in the stylesheet and not in a dialog fails the build rather than the first click. It
+covers what the tracer cannot: a modal nobody has opened has never been parsed. 24 tests over
+the two dialogs, and a deliberately broken style reference fails every one of them.
+
+**`Versio.exe --trace-bindings <file>`** writes every WPF data-binding failure to a file. A
+broken binding in WPF is otherwise **silent** — a mistyped path or a missing converter produces an
 empty control and no error anywhere — which made it the one class of failure in this codebase
 that was not loud. Every panel is verified clean through it, and the instrument itself was
 proven able to fail before its clean result was believed.

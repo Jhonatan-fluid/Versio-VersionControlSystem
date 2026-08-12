@@ -81,7 +81,10 @@ Both directions run automatically and deterministically. A per-project **directi
 | **Stash** — push with a message, apply, pop, drop with a confirmation | ✅ parsed from git's own format; 6 integration tests against real git |
 | **Recent commits with click-to-diff** | ✅ the commit's patch opens in the same pane as everything else |
 | **Per-hunk stage and unstage** | ✅ the hunk is copied verbatim and applied to the index; the working tree is never touched |
-| Branch creation, clone-with-verification dialog, discard | ⛔ the client supports all three; none has a surface |
+| **Branch creation** — validated against git's own rules as you type | ✅ creates from HEAD and switches; 35 unit tests over the rules, and the dialog says *which* rule was broken |
+| **Clone with verification** — URL, Verify, destination, progress | ✅ Clone stays dead until `ls-remote` passes, and editing the URL shuts it again |
+| **Discard** — per file, after a confirmation naming it | ✅ refuses an untracked file with an explanation; releases the direction lock when the file was inside a mirror |
+| Branch switching refused while a direction lock is held | ⛔ git refuses a dirty-tree checkout on its own; the explanation is missing |
 | **Project tree** — CODESYS structure, roll-up badges, search | ✅ 28 unit tests + built from the export this repository commits |
 | Config nodes — one tree node per library, layer switcher, context menu | ⛔ not built. The library YAML now exists and parses (`LibraryCatalog`), so a version bump lands under the device that owns it; what is missing is a node per library. Device and IO YAML are still unwritten |
 | Packaging | ⛔ not built |
@@ -127,8 +130,10 @@ Versio.sln
 │                               (text, types, yaml, libraries) import no scriptengine
 │                               and run on CPython too.
 ├─ tests/
-│  ├─ Versio.Core.Tests/        749 unit tests — pure, no IO, ~320 ms
-│  └─ Versio.Integration.Tests/  98 tests against real CODESYS and real git, ~7 min
+│  ├─ Versio.Core.Tests/        799 unit tests — pure, no IO, ~290 ms
+│  ├─ Versio.App.Tests/         24 tests that build the real dialogs against the real
+│  │                            stylesheet on an STA thread — no window is ever shown
+│  └─ Versio.Integration.Tests/ 101 tests against real CODESYS and real git, ~7 min
 ├─ tools/                       PowerShell harnesses used during Phase 0, plus
 │                               New-VersioIcon.ps1 which generates the app icon
 ├─ assets/                      versio.svg (reference drawing) and versio.ico

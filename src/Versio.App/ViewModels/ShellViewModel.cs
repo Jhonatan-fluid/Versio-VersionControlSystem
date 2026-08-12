@@ -123,6 +123,18 @@ public sealed class ChangeRow(FileChange change) : ObservableObject
         : $"← {_change.OriginalPath}";
 
     public bool IsStaged => _change.IsStaged;
+
+    /// <summary>
+    /// What git says happened to this file, unglyphed.
+    /// </summary>
+    /// <remarks>
+    /// The row renders itself through <see cref="Glyph"/> and <see cref="BrushKey"/>, so this
+    /// exists for the one caller that has to <i>decide</i> rather than draw: discard, which
+    /// must refuse an untracked file because git has no copy to restore it from. Reading the
+    /// decision off the glyph — comparing against "?" — would tie behaviour to a string chosen
+    /// for how it looks.
+    /// </remarks>
+    public ChangeKind Kind => _change.Effective;
 }
 
 /// <summary>
@@ -438,7 +450,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         get => _selectedUnstaged;
         set
         {
-            if (SetProperty(ref _selectedUnstaged, value) && value is not null)
+            if (!SetProperty(ref _selectedUnstaged, value))
+            {
+                return;
+            }
+
+            // Discard acts on this selection, so its enabled state moves with it — including
+            // back to disabled when the selection is cleared, which is why this sits outside
+            // the null check.
+            DiscardCommand.RaiseCanExecuteChanged();
+
+            if (value is not null)
             {
                 _ = ShowPathAsync(value.Path, staged: false);
             }
@@ -739,6 +761,18 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                                        () => Ready, ReportError);
         FetchCommand = new AsyncCommand(FetchAsync, () => Ready, ReportError);
 
+        // Enabled only with a row selected. Discard is per-file on purpose: a "discard all"
+        // beside "stage all" would put an irreversible button one pixel away from a routine
+        // one, and the two are not comparable operations.
+        DiscardCommand = new AsyncCommand(
+            DiscardAsync, () => Ready && SelectedUnstaged is not null, ReportError);
+
+        CreateBranchCommand = new AsyncCommand(CreateBranchAsync, () => Ready, ReportError);
+
+        // Cloning needs no open repository — it is how you get one — so it is enabled
+        // whenever nothing else is running, unlike every other command here.
+        CloneCommand = new AsyncCommand(CloneRepositoryAsync, () => !Busy.IsBusy, ReportError);
+
         // Every git button consults the same shared flag, so the moment one operation starts
         // they all go dead together. AsyncCommand.IsRunning only disables the button that was
         // pressed, which would leave Push live during a Pull.
@@ -791,6 +825,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         PopStashCommand.RaiseCanExecuteChanged();
         DropStashCommand.RaiseCanExecuteChanged();
         HunkCommand.RaiseCanExecuteChanged();
+        DiscardCommand.RaiseCanExecuteChanged();
+        CreateBranchCommand.RaiseCanExecuteChanged();
+        CloneCommand.RaiseCanExecuteChanged();
     }
 
     /// <summary>Stage or unstage every row in a list.</summary>
@@ -1021,6 +1058,48 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
     /// <summary>Stage or unstage one hunk of the open diff, by its index.</summary>
     public AsyncCommand<int> HunkCommand { get; private set; } = null!;
+
+    /// <summary>Throw away the working-tree changes to the selected unstaged file.</summary>
+    public AsyncCommand DiscardCommand { get; private set; } = null!;
+
+    /// <summary>Create a branch and switch to it.</summary>
+    public AsyncCommand CreateBranchCommand { get; private set; } = null!;
+
+    /// <summary>Clone a repository, then open it.</summary>
+    public AsyncCommand CloneCommand { get; private set; } = null!;
+
+    /// <summary>
+    /// Asks the view to run the clone dialog, returning where the clone landed or null.
+    /// </summary>
+    /// <remarks>
+    /// The dialog drives verify-then-clone itself, because "Clone stays disabled until Verify
+    /// passes" is a rule about a conversation rather than about one operation. What comes back
+    /// is a path on disk, which is all the shell needs to open it.
+    /// </remarks>
+    public Func<Task<string?>>? PromptForClone { get; set; }
+
+    /// <summary>Check a remote is reachable, with no repository open.</summary>
+    /// <remarks>Handed to the clone dialog. Lives here rather than in the view so that the
+    /// view never constructs a git client of its own.</remarks>
+    public Task<GitResult> VerifyRemoteAsync(string url, CancellationToken ct) =>
+        GitCliClient.VerifyRemoteAsync(url, "git", _logger, ct);
+
+    /// <summary>Clone a repository into a folder that does not exist yet.</summary>
+    public Task<GitResult> CloneAsync(
+        string url, string destination, IProgress<GitProgress>? progress, CancellationToken ct) =>
+        GitCliClient.CloneAsync(url, destination, "git", progress, _logger, ct);
+
+    /// <summary>
+    /// Asks the view for a new branch name, or null when the user backs out.
+    /// </summary>
+    /// <remarks>
+    /// A delegate for the same reason as <see cref="ConfirmDestructive"/>: a modal opened from
+    /// here would block whichever thread called it and would make the command untestable. The
+    /// dialog validates while typing with <see cref="Versio.Core.Git.BranchName"/>; this side validates the
+    /// answer again, because a view model that trusts its view has no way to state what it
+    /// requires.
+    /// </remarks>
+    public Func<string?>? PromptForBranchName { get; set; }
 
     /// <summary>
     /// Asked before anything destroys work git cannot give back.
@@ -1414,6 +1493,176 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             _logger.Error(LogCategory.App, $"could not open the log folder {folder}", ex);
             StatusSummary = $"Logs are in {folder}";
         }
+    }
+
+    /// <summary>
+    /// Throw away the working-tree changes to the selected unstaged file.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The one button in this application that destroys work nothing else has a copy of.</b>
+    /// Not the index, not a stash, not a commit — the content is simply gone. So it is per-file
+    /// rather than per-list, it names the file in the confirmation, and it is unreachable
+    /// without a selection.
+    /// </para>
+    /// <para>
+    /// An <b>untracked</b> file is refused rather than attempted. <c>git restore --worktree</c>
+    /// has nothing to restore it from and fails with "pathspec did not match any file(s) known
+    /// to git", which reads like a bug in Versio rather than like the answer to the question
+    /// that was asked. Deleting it instead would be a different operation, more destructive
+    /// than the one on the button, and not one to perform because the wording happened to fit.
+    /// </para>
+    /// <para>
+    /// Discarding inside an export tree also <b>releases that binding's direction lock</b>
+    /// (plan §6.5). The lock exists because one side holds work the other has not seen; once
+    /// that work is thrown away there is nothing left to guard, and a lock left held would
+    /// block the next export for a reason nobody could find from the UI.
+    /// </para>
+    /// </remarks>
+    private async Task DiscardAsync()
+    {
+        if (_git is null || SelectedUnstaged is not { } row)
+        {
+            return;
+        }
+
+        if (row.Kind == ChangeKind.Untracked)
+        {
+            // Said in the status bar rather than done. The file is not in git at all, so
+            // there is no version to go back to.
+            _logger.Warn(LogCategory.Git,
+                $"discard refused for the untracked file {row.Path}: git has no copy to restore");
+            StatusSummary = $"{row.Path} is not tracked by git yet — there is nothing to restore. " +
+                            "Delete it in Explorer if that is what you meant.";
+            return;
+        }
+
+        var confirmed = ConfirmDestructive?.Invoke(
+            "Discard changes to this file?",
+            $"{row.Path}\n\n" +
+            "The changes are thrown away and cannot be recovered — they are not in a commit, " +
+            "the index or a stash.\n\n" +
+            "Stash them instead if you might want them back.") ?? false;
+
+        if (!confirmed)
+        {
+            _logger.Info(LogCategory.Git, $"discard cancelled for {row.Path}");
+            return;
+        }
+
+        _logger.Click("Git.Discard");
+        using var busy = Busy.Begin($"Discarding {row.Path}…");
+
+        var result = await _git.DiscardAsync([row.Path], CancellationToken.None)
+            .ConfigureAwait(true);
+
+        if (!result.Success)
+        {
+            _logger.Warn(LogCategory.Git, $"discard failed: {result.FailureReason}");
+            StatusSummary = result.FailureReason ?? "the changes could not be discarded";
+            await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+            return;
+        }
+
+        StatusSummary = $"Discarded the changes to {row.Path}.";
+
+        // Only when the file was part of a mirror. A discarded README has nothing to do with
+        // the direction lock, and releasing every lock because one unrelated file was
+        // restored would be the more damaging kind of over-reach.
+        if (Sync.BindingOwning(row.Path) is { } bindingId)
+        {
+            await Sync.ReleaseAfterDiscardAsync(bindingId, CancellationToken.None)
+                .ConfigureAwait(true);
+        }
+
+        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Create a branch and switch to it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Create-and-switch, not create-and-stay.</b> <c>git checkout -b</c> carries the
+    /// working tree across, so it is safe with unsynced CODESYS work in progress — which is
+    /// the state somebody is usually in when they realise this should have been a branch.
+    /// Switching to an <i>existing</i> branch is the dangerous one, and git refuses that
+    /// itself on a dirty tree.
+    /// </para>
+    /// <para>
+    /// The name is validated here as well as in the dialog. Git remains the authority: a name
+    /// that passes both checks can still be refused because it already exists, or because it
+    /// collides with an existing ref path — <c>feature</c> and <c>feature/x</c> cannot both be
+    /// branches — so the failure is reported rather than assumed away.
+    /// </para>
+    /// </remarks>
+    private async Task CreateBranchAsync()
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        _logger.Click("TopBar.CreateBranch");
+
+        if (PromptForBranchName?.Invoke() is not { } name)
+        {
+            return;
+        }
+
+        var check = Versio.Core.Git.BranchName.Validate(name);
+        if (!check.IsValid)
+        {
+            // Reaching this means the dialog let through something it should not have, so it
+            // is logged rather than only shown: it is a wiring bug, not a user error.
+            _logger.Warn(LogCategory.Git, $"refused branch name '{name}': {check.Reason}");
+            StatusSummary = check.Reason;
+            return;
+        }
+
+        using var busy = Busy.Begin($"Creating {name}…");
+
+        var result = await _git.CreateBranchAsync(name, checkout: true, CancellationToken.None)
+            .ConfigureAwait(true);
+
+        StatusSummary = result.Success
+            ? $"On {name}."
+            : result.FailureReason ?? $"{name} could not be created";
+
+        if (!result.Success)
+        {
+            _logger.Warn(LogCategory.Git, $"create branch failed: {result.FailureReason}");
+        }
+
+        // Refreshed either way: a failed create leaves the branch list as it was, and a
+        // successful one has moved HEAD.
+        await RunRefreshAsync(RefreshTrigger.GitMetadata, null).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Run the clone dialog, and open what it produced.
+    /// </summary>
+    /// <remarks>
+    /// Opening it afterwards is the point: a clone that leaves the user looking at the same
+    /// repository they started in, with a new folder somewhere on disk they have to go and
+    /// find, has done the work and withheld the result.
+    /// </remarks>
+    private async Task CloneRepositoryAsync()
+    {
+        _logger.Click("TopBar.Clone");
+
+        if (PromptForClone is null)
+        {
+            return;
+        }
+
+        if (await PromptForClone().ConfigureAwait(true) is not { } cloned)
+        {
+            return;
+        }
+
+        _logger.Info(LogCategory.Git, $"cloned into {cloned}; opening it");
+        await OpenAsync(cloned).ConfigureAwait(true);
     }
 
     private async Task CheckoutAsync(string branch)
