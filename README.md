@@ -4,7 +4,7 @@
 
 A CODESYS `.project` file is a binary compound document. Git can store it, but it cannot diff it, merge it, or tell you what changed — so version control degrades to "upload a zip with a date in the name". Versio keeps a **textual mirror** of the project inside the same repository, kept in sync automatically, so git becomes genuinely useful for PLC work: line diffs, blame, history, review.
 
-> **Status: pre-alpha, no UI yet.** The CODESYS pipeline and the domain core are built and tested against a real project; the desktop app is not. See [What works today](#what-works-today).
+> **Status: pre-alpha.** The CODESYS pipeline, the domain core and a working shell all exist and are tested against a real project. The shell opens a repository and shows real git state; it is not yet wired to the sync engine. See [What works today](#what-works-today).
 
 ---
 
@@ -38,7 +38,10 @@ Export is automatic and deterministic. Import applies edited text back into the 
 | Sync orchestrator — locks, loop defences, commit gate | ✅ 24 scenario tests |
 | Change detection — watcher + safety poll + overflow rescan | ✅ `FileChangeWatcher` |
 | Design system tokens, light and dark | ✅ `src/Versio.App/Theme/` |
-| **Desktop UI** — shell, panels, diff view | ⛔ not built |
+| Logging — ring buffer, correlation ids, heartbeat, rolling file | ✅ 20 tests |
+| Shell — top bar, rail, changed files, diff, log console | ✅ opens a real repo, shows real git state |
+| **Shell wired to the sync engine** — export, import, commit gate | ⛔ not built |
+| Git side panel, project tree, splash screen | ⛔ not built |
 
 Known limitations are recorded honestly in [docs/PHASE0-FINDINGS.md](docs/PHASE0-FINDINGS.md) — including one real CODESYS mutation (`Core2` in task configuration) that keeps task config **diff-only** for now.
 
