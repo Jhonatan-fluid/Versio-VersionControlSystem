@@ -1,6 +1,6 @@
 {
   "bindingId": "6d3f8855e205", 
-  "objectCount": 10, 
+  "objectCount": 12, 
   "objects": [
     {
       "bytes": 217759, 
@@ -28,6 +28,15 @@
       "name": "Glob_Var", 
       "path": "Device/Plc Logic/Application/Glob_Var.gvl.xml", 
       "type": "GVL"
+    }, 
+    {
+      "bytes": 6367, 
+      "form": "LIBRARIES", 
+      "guid": "63f43dce-203a-48c5-b1b9-4754ec306ed4", 
+      "hash": "sha256:fa9754bf1ce79f04244d7eca1eb61024b5cffdefce0720b4d7b90cbfb928ce03", 
+      "name": "Library Manager", 
+      "path": "Device/Plc Logic/Application/Library Manager.libraries.yaml", 
+      "type": "LIBRARY_MANAGER"
     }, 
     {
       "bytes": 2569769, 
@@ -91,17 +100,20 @@
       "name": "GlobalTextList", 
       "path": "GlobalTextList.xml", 
       "type": "GLOBAL_TEXTLIST"
+    }, 
+    {
+      "bytes": 4320, 
+      "form": "LIBRARIES", 
+      "guid": "a154b962-4c42-4c66-82dc-2eaa6ce24df5", 
+      "hash": "sha256:02fd6bc96b0476661420cd01e902f18578478cbb7e2968f5fa818696df45f25e", 
+      "name": "Library Manager", 
+      "path": "Library Manager.libraries.yaml", 
+      "type": "LIBRARY_MANAGER"
     }
   ], 
   "project": "RefrigeratorControl.project", 
-  "schema": 2, 
+  "schema": 3, 
   "skipped": [
-    {
-      "name": "Library Manager", 
-      "path": "Device/Plc Logic/Application/Library Manager", 
-      "reason": "NOT_IMPLEMENTED", 
-      "type": "LIBRARY_MANAGER"
-    }, 
     {
       "name": "Visualization Manager", 
       "path": "Device/Plc Logic/Application/Visualization Manager", 
@@ -113,12 +125,6 @@
       "path": "Device/Plc Logic/Application/__VisualizationStyle", 
       "reason": "SERVICE_OBJECT", 
       "type": "VISUALISATION_STYLE"
-    }, 
-    {
-      "name": "Library Manager", 
-      "path": "Library Manager", 
-      "reason": "NOT_IMPLEMENTED", 
-      "type": "LIBRARY_MANAGER"
     }, 
     {
       "name": "Project Settings", 

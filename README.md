@@ -73,7 +73,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | A project with a clean mirror is not listed | ✅ unless it needs attention — never exported, behind, locked, failed. The empty state says why rather than going blank |
 | **Lazy object rendering** — a row is built when something can reach it, not before | ✅ `TreeRow.Children` on first access; the tree survives a refresh without collapsing |
 | **Export coverage stated, not assumed** — `_coverage.md` + every skip in the manifest | ✅ a gap is distinguished from a deliberate omission; an old manifest reports "unknown", never "complete" |
-| **Library references exported** (`config/libraries.yaml`) | ⛔ **a real gap, now reported.** A library version bump changes nothing in the mirror |
+| **Library references exported** (`<manager>.libraries.yaml`) | ✅ **the gap is closed.** One file per library manager, beside the object that owns it — 21 references on the fixture's application, 13 on its project. Hand-written YAML on both sides, no third-party dependency. Export-only: change libraries in the IDE |
 | Template generation | ⛔ needs a new operation and script — not assembly |
 | A second vendor (TwinCAT / Studio 5000 / TIA Portal) | ⛔ the seam is ready and unproven |
 | **Git side panel** — staging, commit message, fetch/pull/push | ✅ one operation at a time across every button |
@@ -83,7 +83,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | **Per-hunk stage and unstage** | ✅ the hunk is copied verbatim and applied to the index; the working tree is never touched |
 | Branch creation, clone-with-verification dialog, discard | ⛔ the client supports all three; none has a surface |
 | **Project tree** — CODESYS structure, roll-up badges, search | ✅ 28 unit tests + built from the export this repository commits |
-| Config nodes from `config/*.yaml`, layer switcher, context menu | ⛔ not built — and the YAML it would read is not written yet either |
+| Config nodes — one tree node per library, layer switcher, context menu | ⛔ not built. The library YAML now exists and parses (`LibraryCatalog`), so a version bump lands under the device that owns it; what is missing is a node per library. Device and IO YAML are still unwritten |
 | Packaging | ⛔ not built |
 
 **[docs/STATUS.md](docs/STATUS.md)** has the current state and the route to completion.
@@ -107,7 +107,8 @@ Versio.sln
 │  │  ├─ Logging/               ring buffer, correlation ids, heartbeat
 │  │  ├─ Plc/                   the vendor seam: IPlcRunner, PlcJob, PlcResult, PlcFormats
 │  │  │  └─ Codesys/            one vendor: GUID table, XML shape, profiles, wire protocol
-│  │  ├─ Projects/              the manifest and the CODESYS-shaped project tree
+│  │  ├─ Projects/              the manifest, the export-coverage report, the library
+│  │  │                         catalog, and the CODESYS-shaped project tree
 │  │  ├─ Sync/                  state machine, hash gate, suppressor, breaker, commit gate
 │  │  └─ Watching/              debounce, coalescing, and when the shell re-reads git
 │  │
@@ -122,10 +123,12 @@ Versio.sln
 │  │  └─ Watching/              the OS-level file and repository watchers
 │  │
 │  └─ Versio.Scripts.Codesys/   IronPython 2.7, run inside CODESYS. Embedded into
-│                               Versio.Infrastructure as resources.
+│                               Versio.Infrastructure as resources. The pure modules
+│                               (text, types, yaml, libraries) import no scriptengine
+│                               and run on CPython too.
 ├─ tests/
-│  ├─ Versio.Core.Tests/        688 unit tests — pure, no IO, ~300 ms
-│  └─ Versio.Integration.Tests/  90 tests against real CODESYS and real git, ~245 s
+│  ├─ Versio.Core.Tests/        749 unit tests — pure, no IO, ~320 ms
+│  └─ Versio.Integration.Tests/  98 tests against real CODESYS and real git, ~7 min
 ├─ tools/                       PowerShell harnesses used during Phase 0, plus
 │                               New-VersioIcon.ps1 which generates the app icon
 ├─ assets/                      versio.svg (reference drawing) and versio.ico
@@ -254,7 +257,9 @@ Each of these cost real debugging time and is now pinned by a test.
 | **`--noUI` requires `--profile`** | It is a hard precondition, not a preference. |
 | **`Mutex` has thread affinity** | It cannot be acquired and released across an `await`. A named `Semaphore` avoids that but loses abandonment recovery, which crash recovery depends on. |
 | **Import runs in two phases** | Creating objects then immediately calling `import_native` makes CODESYS enumerate a dictionary it is still mutating — and it **swallows the exception**, so the import silently does nothing and the run looks clean. |
-| **The export tree holds two kinds of file** | The project's objects, and Versio's own bookkeeping (`_manifest.json`, `_coverage.md`). The importer walks the tree and imports everything it finds, so a new bookkeeping file must be added to `VERSIO_FILES` in `versio_types.py` or CODESYS is handed markdown as native XML. It fails with a warning rather than loudly, which is worse. |
+| **The export tree holds three kinds of file** | The project's objects; Versio's own bookkeeping (`_manifest.json`, `_coverage.md`); and **export-only** files that are real project state written for review with no trustworthy import path (`*.libraries.yaml`). The importer walks the tree and imports everything it finds, so anything in the second or third group must be declared in `versio_types.py` — `VERSIO_FILES` or `EXPORT_ONLY_SUFFIXES` — or CODESYS is handed markdown or YAML as native XML. It fails with a warning rather than loudly, which is worse. |
+| **`libman.get_libraries()` is not the library API** | It returns *names* — `"#Standard"` — with no version, company or parameters, and looks like a success. `libman.references` carries the real thing, and must be **iterated**: `references[i]` indexes by id, so `references[0]` raises on any project whose first reference has a non-zero id. Reading zero references out of a manager holding 21 is the symptom. |
+| **A library reference's `id` is re-minted on every open** | Measured across two runs of an untouched project: 68 differing lines, **all of them ids**, nothing else moved. Same class as the `__VisualizationStyle` GUID below. What a reference *resolves* to is machine state too — `Standard, *` becomes `3.5.22.0` only because that version is installed here — so the export records what the project **asks for**, never what it got. |
 | **Not every CODESYS GUID is stable** | The project-level `__VisualizationStyle` is re-minted on **every open**. Recording it in the manifest made every export produce a diff. Exported objects' GUIDs are stable and are identity; do not assume the same of an object you only observed once. |
 | **Never rewrite GUIDs in an export** | Only `Timestamp` is scrubbed. Rewriting identity GUIDs breaks visualisations. Masking them for a *comparison* is fine; writing masked ones to disk is not. |
 | **`git apply --cached` reads the index, not the working tree** | It is the *index* that a patch's context is checked against, so a file saved between a diff being read and a hunk being staged does not invalidate the hunk — what gets staged is still what was on screen. The staleness that does matter is the index moving, and that is refused. Never pass `--unidiff-zero`: it disables the check that makes both true. |

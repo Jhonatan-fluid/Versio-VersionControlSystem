@@ -388,7 +388,7 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
     }
 
     [SkippableFact]
-    public async Task An_import_ignores_Versios_own_bookkeeping_files()
+    public async Task An_import_ignores_the_files_that_are_not_objects()
     {
         // A real defect, caught only because the coverage report was added and somebody
         // looked. The importer walks the export tree and treats every file it finds as an
@@ -399,6 +399,12 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
         // Nothing was corrupted. The cost is worse than that: EVERY import would carry a
         // failure warning that is always there and always meaningless, which is how a real
         // native-import failure gets read past. The round-trip test passed throughout.
+        //
+        // The export tree now holds THREE kinds of file, and the third is the one this test
+        // exists to catch on the way in: *.libraries.yaml is real project state, written for
+        // review, with no import path that can be trusted. Handing YAML to import_native
+        // would be the same defect with a different extension - which is precisely what
+        // "the next file added is added for both halves at once" was written to prevent.
         var install = Install;
         Skip.If(install is null, "no CODESYS installation with a profile");
         Skip.If(!File.Exists(FixtureProject), "fixture project missing");
@@ -422,6 +428,12 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
                     "the export wrote no coverage report, so this proves nothing");
         Assert.True(File.Exists(Path.Combine(exportRoot, "_manifest.json")));
 
+        var libraryFiles = Directory
+            .EnumerateFiles(exportRoot, "*.libraries.yaml", SearchOption.AllDirectories)
+            .ToList();
+        Assert.True(libraryFiles.Count > 0,
+                    "the export wrote no library file, so the third case proves nothing");
+
         await orchestrator.ReleaseAfterPushAsync("c1", CancellationToken.None);
 
         // Touch a real object so the import has something to do and the hash gate lets it run.
@@ -442,7 +454,16 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
         // death the first time the exporter legitimately had something to say.
         Assert.DoesNotContain(outcome.Warnings,
             w => w.Contains("_coverage.md", StringComparison.OrdinalIgnoreCase) ||
-                 w.Contains("_manifest.json", StringComparison.OrdinalIgnoreCase));
+                 w.Contains("_manifest.json", StringComparison.OrdinalIgnoreCase) ||
+                 w.Contains(".libraries.yaml", StringComparison.OrdinalIgnoreCase));
+
+        // And the project still has its library file afterwards, unchanged. The import is
+        // meant to leave it alone entirely - not to consume it, not to rewrite it, and not
+        // to delete it on the way past.
+        foreach (var file in libraryFiles)
+        {
+            Assert.True(File.Exists(file), $"the import removed {Path.GetFileName(file)}");
+        }
     }
 
     [SkippableFact]

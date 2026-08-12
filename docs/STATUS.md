@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-12 · **Commits:** 28 · **Tests:** 722 unit + 96 integration, 0 skipped
+**Date:** 2026-08-12 · **Commits:** 28 · **Tests:** 749 unit + 98 integration, 0 skipped
 
 > One integration test, `RepositoryWatcherTests.A_deleted_file_is_reported`, is **flaky under
 > full-suite load** — see Findings. It passes in isolation and failed once during a complete
@@ -21,7 +21,7 @@ end against the real fixture with real CODESYS.
 
 ```
   CODESYS pipeline    ████████████████████  proven on a real project
-  Domain core         ████████████████████  644 tests, 290 ms
+  Domain core         ████████████████████  671 tests, 318 ms
   Vendor seam         ████████████████████  enforced from assembly metadata
   Infrastructure      ████████████████████  drives real CODESYS + real git
   Desktop shell       ██████████████████░░  one project view, full git surface, diff
@@ -39,15 +39,29 @@ end against the real fixture with real CODESYS.
 | Does the WPF tree survive a real project? | **Yes, but only when virtualized** — 94.7 ms vs 10,635 ms at the defaults |
 | How long does a CODESYS launch cost? | **17–31 s.** Paid on every automatic export; the coalescer is what makes that bearable |
 | Does an edited `.st` reach the project? | **Yes** — export, edit, import, verified byte-changed on the real fixture |
+| Can library references be read at all? | **Yes** — `libman.references`, iterated. Not `get_libraries()`, which returns names only, and not `references[i]`, which indexes by id and raises for a position |
+| Is a library reference's identity stable? | **No.** `ref.id` is re-minted on every open: 34 of 34 changed across two runs, with nothing else moving. Not recorded — the same trap as the `__VisualizationStyle` GUID, caught before it shipped this time |
 
 ### Known limitations, carried deliberately
 
-- **Library references are not exported at all.** `LIBRARY_MANAGER` is skipped, and the
-  comment beside it promised a `config/libraries.yaml` that no code has ever written. Adding a
-  library or bumping a version therefore changes nothing in the mirror, moves nothing through
-  the hash gate and appears in no diff. **Now reported rather than silent** — the export writes
-  `_coverage.md`, the manifest records every skip with its reason, and the panel says so in the
-  one sentence that matters. Fixing it is the next real piece of work.
+- **Library references are export-only.** They are exported now — that gap is closed — but the
+  file is written for review and never applied back: adding a library through the scripting API
+  is a different operation from importing an object, and getting it wrong rewires what the
+  machine compiles against. Editing `Library Manager.libraries.yaml` in the mirror changes
+  nothing in the project. The coverage report says so in its own section, and the importer
+  skips the file by suffix rather than feeding YAML to a toolchain that expects XML.
+  The edit is not undone either: it sits in the working tree until the next export rewrites
+  the file from the project. Worth knowing before somebody stages one — **and the panel does
+  not say so yet**, because the coverage sentence only appears when there are gaps and this is
+  not one. The row-level lock glyph is the fix, and it is tree work (§4 below).
+- **How a library reference *resolves* is deliberately not recorded.** The file carries what
+  the project asks for — placeholder, default resolution, redirection, parameters — and not
+  what it resolved to on the exporting machine. Two engineers with different libraries
+  installed would otherwise produce different bytes from the same project, and neither would
+  be wrong.
+- **Managed (fixed-version) library references are untested.** All 34 references in the fixture
+  are placeholders, so the branch that reads `version`, `company` and `title` off a managed
+  library is written from the API's description and has never run against a real one.
 - **Task configuration is diff-only.** `import_native` changes a task's `Core2` from `-1` to
   `-2` unasked. Reproduced three times, pinned by a test, not masked.
 - **Graphical POUs export as native XML**, so their diffs will never read as well as ST.
@@ -102,7 +116,8 @@ format; `.gitattributes` covers every registered vendor's extensions.
 | **Open in the IDE** | Export runs anyway, from a copy; import waits and names who has the project. Neither marks the binding failed, and the breaker is never fed |
 | **Adoption writes `.gitignore`** | Created when absent, appended when present, never overriding an existing decision. Covers `.versio/local/` — locks, backups, scratch copies — and the toolchain's `-AllUsers.opt` and `-<user>-<machine>.opt`, the second of which carries a username and machine name in its filename |
 | **PLC state** | Toolchain, direction lock, staleness and heartbeat, folded into the project panel as facts rather than controls. Two buttons survive: export what is stale, and acknowledge a failure |
-| **Export coverage** | What the export does *not* carry, said out loud: `_coverage.md` in the tree, every skip in the manifest with a stable reason, and a sentence in the panel naming what cannot be relied on. A gap is distinguished from a deliberate omission, and an old manifest reports "unknown" rather than "complete" |
+| **Export coverage** | What the export does *not* carry, said out loud: `_coverage.md` in the tree, every skip in the manifest with a stable reason, and a sentence in the panel naming what cannot be relied on. A gap is distinguished from a deliberate omission, from a file that is exported one way, and an old manifest reports "unknown" rather than "complete" |
+| **Library references** | One `<manager>.libraries.yaml` per library manager, beside the object that owns it — what the project asks for, never how it resolved here. Hand-written YAML on both sides, no dependency added to either. **Export-only**, and stated where a reader will meet it: the file's own header, `_coverage.md`, and the manifest's `form`. **Not yet in the panel** — `CoverageSummary` speaks only when there are gaps, deliberately, and the row-level 🔒 glyph the plan asks for (§9.3) is part of the unbuilt tree work |
 | **Chrome** | One app-wide progress bar with a caption, maximized on open, log console collapsed, heartbeat during long runs |
 | **Logging** | Ring buffer, correlation ids, rolling file from startup, crash handlers on all three .NET channels. The export narrates itself: the directory swap with both file counts, every skip with its reason, the summary, and a warning when a killed run left a staging folder behind |
 
@@ -110,16 +125,19 @@ format; `.gitattributes` covers every registered vendor's extensions.
 
 ## What remains, in dependency order
 
-### 1. Export what is currently missing
+### 1. ~~Export what is currently missing~~ — **done**
 
-The coverage report now names it, which is the point at which it becomes a task rather than a
-rumour. On the fixture: **two library managers, neither exported.**
+The coverage report named it, which is what turned it from a rumour into a task. On the
+fixture: two library managers, **both exported now**, and `_coverage.md` reports **0 gaps**.
 
-- Walk the library manager through the ScriptEngine and write `config/libraries.yaml`
-- A YAML writer has to be written by hand — `Versio.Core` has no third-party dependencies, and
-  that is worth more than the few hundred lines this costs
-- Parse it back into device nodes, so a changed library version appears under the device that
-  owns it. This is the tree feature that was listed before anyone noticed the data did not exist
+- ~~Walk the library manager through the ScriptEngine and write the YAML~~ — `references`,
+  iterated; one file per manager, beside the object that owns it (the plan's single
+  `config/libraries.yaml` was reversed: a real project has two managers, see §5)
+- ~~A YAML writer by hand~~ — `versio_yaml.py` writes it, `LibraryCatalog` reads it, neither
+  side has a dependency. About 350 lines for both halves, and the format is deliberately tiny
+- **Still open:** one tree node **per library**, so a version bump reads as *that library*
+  rather than as "the library manager changed". The data exists and parses now; this is a tree
+  feature rather than an exporter one
 
 ### 2. Finish the git surface
 
@@ -138,6 +156,10 @@ closing CODESYS the retry and need no button at all. Today the next save retries
 
 ### 4. Finish the project tree
 
+- **One node per library**, under its manager, parsed from the exported YAML. `LibraryCatalog`
+  already reads the file; what is missing is the tree builder taking a catalog and the shell
+  handing it one. This is the first piece of the plan's "config nodes parsed from YAML", and
+  the only one whose data now exists
 - A layer switcher in the diff pane (`ST | native`) — objects already carry several layers and
   there is no way to see the other one
 - Context menu, and expansion state persisted per repository. It already survives a refresh;
@@ -170,6 +192,92 @@ More fixture projects. Every field bug becomes a fixture before it is fixed.
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### The library reference id changes on every open, and the API is not the one it looks like
+
+Two measurements, both cheap, both of which would have been expensive to discover later.
+
+**The obvious API is the wrong one.** `libman.get_libraries()` exists and returns 21 items for
+the fixture's application manager, which looks exactly like success. They are **strings** —
+`"#Standard"`, `"#Util"` — with no version, no company, no flags and no parameters. The one
+that carries the reference is `libman.references`, and it must be **iterated**, not indexed:
+`references[i]` looks up by *id*, so `references[0]` raises on every project whose first
+reference does not happen to have id 0. The first attempt read **zero** references out of a
+manager holding 21, and reported no error at all, because the probe swallowed the exception.
+
+**`ref.id` is re-minted on every open.** Two consecutive runs over an untouched project:
+
+```
+run 1   #Standard  id 1886582003        run 2   #Standard  id 1665927582
+run 1   #Util      id 4015974643        run 2   #Util      id 1820137668
+```
+
+68 differing lines across the two dumps, and **every one of them was an id**. Nothing else
+moved. So it is not recorded — the same decision, for the same reason, as the project-level
+`__VisualizationStyle` GUID that broke export determinism hours after it was added. The
+difference is that this one was caught by measuring *before* writing the exporter rather than
+by a determinism test afterwards, which is the cheaper end of the same lesson.
+
+**What resolution a reference gets is a fact about the machine, not the project.** The fixture
+asks for `Standard, * (System)` and resolves it to `Standard, 3.5.22.0 (System)` — a wildcard
+answered by whatever is installed here. Recording the resolved value would make the mirror
+differ between two engineers sharing one repository, with neither of them wrong, and would move
+the hash gate on a machine difference. The file therefore carries the **request** — placeholder,
+default resolution, redirection, parameters, flags — and says in its own header what it leaves
+out and why. `resolution_info` and `resolver_guid` go the same way.
+
+Verified end to end afterwards: two full exports of the fixture, 14 files each, **byte-identical
+across the whole tree**, and `_coverage.md` reporting **0 gaps** where it reported 2.
+
+### A test that passed on broken code and failed on correct code
+
+The reader for `*.libraries.yaml` is hand-written, and so is the writer, and they never meet in
+one process. So the parser was broken deliberately to see which tests noticed — and the answer
+was a genuinely useful surprise.
+
+**Break: stop closing the nested `parameters:` mapping.** All 24 tests still passed. The test
+that claimed to protect it asserted that parameters did not leak into the *next* reference —
+which the list dash prevents on its own, whatever the mapping code does. It could not have
+failed. The property that actually needs a parser is a **sibling key after the mapping**, and
+the fixture cannot exercise it because the emitter writes `parameters` last.
+
+Rewritten against a hand-written document with a key after the map, the new test **failed on
+the correct code**: keeping one pending nested map and reading it at flush time discarded it the
+moment a sibling key followed. The parser now stores nested maps into the item as they are
+found. So the bug was real, the fixture could never have shown it, and the first test written
+for it proved nothing — three separate ways to have shipped it.
+
+A second break was more instructive than the fix: deleting a "close the open mapping" line
+changed **nothing anywhere**. Indent already decided where a key belongs, and the line was a
+second mechanism agreeing with the first — code no test could ever fail on. It was removed
+rather than kept as defence, with the reason written where it stood.
+
+And a third: the rule that drops a nameless half-entry survived being deleted, because
+truncating the fixture never produces one — `name` is the first key of every item. It has its
+own test now, from a document that does.
+
+**The habit this reinforces:** a green suite over a committed fixture proves the fixture, not
+the code. Every rule that only fires on input the fixture cannot contain needs a document
+written to reach it.
+
+### A log test that broke because the export got better
+
+`ExportLoggingTests` asserted the swap line contained `"0 existing file(s) removed, 12 written
+in their place"`, and the summary line `"walked 18, wrote 10, skipped 6"` with `"2 not
+implemented"`. Exporting two more files turned a correct improvement into a failing string
+comparison, which tells the reader nothing about what changed or whether it was wanted.
+
+The numbers were there for a real reason — the counts have to *track reality*, and a swap that
+printed the same pair twice would prove nothing — so they were not simply deleted. They are now
+derived from the things they describe: the file count comes from the export directory on disk,
+and the summary is checked against the `_manifest.json` **that same run wrote**. Both describe
+one export, so they must agree, which is a stronger claim than any literal and one that does
+not need editing the next time the exporter learns to write a file. The two properties worth
+pinning by hand survive: the two swap lines must **differ**, and the fixture still walks 18
+objects.
+
+**The rule of thumb:** assert against another record of the same event, not against a number
+typed into the test. A literal is right until the code improves, and then it is noise.
 
 ### The export's own narrative never reached the log
 
@@ -711,8 +819,12 @@ state machine are tested in milliseconds rather than by causing real crashes.
 a paragraph in a README — because it was a paragraph in a README, and it had already stopped
 being true.
 
-**Green results are distrusted until they can fail.** Nine vacuous passes have been caught
-this way — ten counting the determinism test that compared the one file with no GUIDs in it:
+**Green results are distrusted until they can fail.** Twelve vacuous passes have been caught
+this way — counting the determinism test that compared the one file with no GUIDs in it, and
+the two the library reader gave up when it was broken on purpose: a parameters test that could
+not have failed because a list dash already prevented the leak it asserted, and a
+drop-the-nameless-entry rule that survived deletion because the fixture cannot produce a
+nameless entry. Before those:
 a round-trip that succeeded because the import silently did nothing; equivalence tests
 that "passed" by skipping; a tree spike that measured a collapsed tree; a `Core2` mutation that
 looked absent because the import had errored; a scenario suite that simulated text edits by

@@ -138,9 +138,14 @@ public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) 
             output.WriteLine($"{skipped.Reason,-18} {skipped.Type,-22} {skipped.Path}");
         }
 
-        // Schema 2 is what says "this export counted". Without the bump, an old manifest
+        // The schema is what says "this export counted". Without the bump, an old manifest
         // would read as an export that skipped nothing.
-        Assert.Equal(ExportCoverage.ReportingSchema, manifest.Schema);
+        //
+        // Asserted against CurrentSchema rather than ReportingSchema: the latter is the
+        // oldest manifest whose empty skip list can be believed, and it deliberately does
+        // not move when the writer's version does.
+        Assert.Equal(ExportCoverage.CurrentSchema, manifest.Schema);
+        Assert.True(manifest.Schema >= ExportCoverage.ReportingSchema);
         Assert.NotEmpty(manifest.Skipped);
 
         Assert.All(manifest.Skipped, s =>
@@ -162,11 +167,12 @@ public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) 
     }
 
     [SkippableFact]
-    public async Task The_library_manager_is_reported_as_a_gap_on_a_project_that_has_one()
+    public async Task The_library_manager_is_exported_and_no_longer_reported_as_a_gap()
     {
-        // The finding this feature exists for, proven on a real project rather than asserted
-        // from the type table: the fixture has a library manager, nothing exports it, and
-        // nothing writes the config/libraries.yaml the exporter's comment used to promise.
+        // The finding this whole feature came from, now proven closed against the same real
+        // project that exposed it: the fixture has TWO library managers, neither of which
+        // reached the mirror while a comment promised a config/libraries.yaml that nothing
+        // wrote. This assertion used to say the opposite.
         var exportRoot = await ExportAsync("first");
 
         var manifest = ProjectManifest.Parse(
@@ -175,14 +181,80 @@ public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) 
         var report = ExportCoverage.Of(manifest);
         output.WriteLine(report.Describe());
 
-        Assert.Equal(CoverageVerdict.HasGaps, report.Verdict);
-        Assert.Contains(report.Gaps, g => g.Type == "LIBRARY_MANAGER");
-        Assert.Contains("LIBRARY_MANAGER", report.Describe(), StringComparison.Ordinal);
+        Assert.False(report.HasGaps);
+        Assert.Empty(report.Gaps);
+        Assert.DoesNotContain(manifest.Skipped, s => s.Type == "LIBRARY_MANAGER");
 
-        // And the deliberate skips are not counted as gaps: the fixture's visualisation
+        // Both managers are written, each beside the node that owns it — the point of a
+        // file per manager rather than one config/libraries.yaml: a library change shows up
+        // under the device it belongs to, and two managers cannot share one file.
+        var written = manifest.Objects.Where(o => o.Type == "LIBRARY_MANAGER").ToList();
+
+        Assert.Equal(2, written.Count);
+        Assert.All(written, o => Assert.Equal(ExportCoverage.ExportOnlyForm, o.Form));
+        Assert.Contains(written, o => o.Path == "Library Manager.libraries.yaml");
+        Assert.Contains(written,
+            o => o.Path == "Device/Plc Logic/Application/Library Manager.libraries.yaml");
+
+        // Exported is not the same as editable, and the report says so rather than leaving
+        // it to be found out by editing one.
+        Assert.Equal(2, report.ExportOnlyFiles);
+        Assert.Contains("not applied back", report.Describe(), StringComparison.Ordinal);
+
+        // The deliberate skips are still not counted as gaps: the fixture's visualisation
         // manager is skipped for a reason that loses nothing.
         Assert.Contains(manifest.Skipped, s => s.Reason == "SERVICE_OBJECT");
         Assert.DoesNotContain(report.Gaps, g => g.Reason == "SERVICE_OBJECT");
+    }
+
+    [SkippableFact]
+    public async Task The_exported_library_file_carries_what_the_project_asks_for()
+    {
+        // The two hand-written halves of this file format meet here and nowhere else:
+        // versio_yaml.py writes it inside CODESYS's IronPython 2.7, LibraryCatalog reads it
+        // in .NET. The unit tests parse a committed sample; this is what proves the sample
+        // is still what a real export produces.
+        var exportRoot = await ExportAsync("first");
+
+        var path = Path.Combine(exportRoot, "Device", "Plc Logic", "Application",
+                                "Library Manager.libraries.yaml");
+        Assert.True(File.Exists(path), "the export wrote no library file for the application");
+
+        var text = await File.ReadAllTextAsync(path);
+        var catalog = LibraryCatalog.Parse(text);
+        output.WriteLine($"{catalog.References.Count} reference(s), " +
+                         $"{catalog.References.Count(r => r.SystemLibrary)} from plug-ins");
+
+        Assert.True(catalog.IsValid);
+        Assert.Equal("codesys", catalog.Vendor);
+        Assert.Equal("Device/Plc Logic/Application/Library Manager", catalog.Path);
+        Assert.NotEmpty(catalog.References);
+        Assert.All(catalog.References, r => Assert.False(string.IsNullOrWhiteSpace(r.Name)));
+
+        // Measured on this fixture: a redirection pins Standard to a fixed version, and Util
+        // carries a parameter. Both are project state, and both are exactly the kind of
+        // change that reached no diff at all before this existed.
+        Assert.Equal("Standard, 3.5.22.0 (System)",
+            catalog.References.Single(r => r.Name == "#Standard").Redirection);
+        Assert.Equal("22800", Assert.Contains("IBLOCKSIZE",
+            catalog.References.Single(r => r.Name == "#Util").Parameters));
+
+        // The reference id is NOT recorded. CODESYS re-mints it on every open — measured, 34
+        // of 34 changed across two runs with nothing else moving — so a file carrying it
+        // would put a spurious diff in every commit, exactly as the __VisualizationStyle
+        // guid did. Asserted here rather than left to the determinism test, which would only
+        // catch it after somebody exported twice.
+        Assert.DoesNotContain("id:", text, StringComparison.Ordinal);
+
+        // Nor how it resolved on this machine: that describes which libraries are installed
+        // here, not what the project asks for, and it would differ between two engineers
+        // sharing one repository with neither of them wrong.
+        Assert.DoesNotContain("effectiveResolution", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("resolutionInfo", text, StringComparison.Ordinal);
+
+        // It goes into the repository beside the objects, so it has to read as a diff.
+        Assert.DoesNotContain('\r', text);
+        Assert.EndsWith("\n", text, StringComparison.Ordinal);
     }
 
     [SkippableFact]
@@ -198,7 +270,18 @@ public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) 
 
         Assert.Contains("# Export coverage", text, StringComparison.Ordinal);
         Assert.Contains("LIBRARY_MANAGER", text, StringComparison.Ordinal);
-        Assert.Contains("Not exported, and that is a gap", text, StringComparison.Ordinal);
+
+        // The gap section is GONE from this fixture, because the gap is closed. What the
+        // library managers get instead is the one-way section: exported, reviewable, and not
+        // applied back. Telling those two states apart is the entire reason this report
+        // exists, so the report is asserted to have moved one to the other rather than
+        // merely to have stopped mentioning it.
+        Assert.DoesNotContain("Not exported, and that is a gap", text, StringComparison.Ordinal);
+        Assert.Contains("Exported for review, not applied back", text, StringComparison.Ordinal);
+        Assert.Contains("**Of those, real gaps** | **0**", text, StringComparison.Ordinal);
+
+        // The deliberate skips are still named, with their reason.
+        Assert.Contains("Not exported, deliberately", text, StringComparison.Ordinal);
 
         // It goes into the repository beside the objects, so it has to read as a diff: no
         // CRLF, and a trailing newline like every other file the export writes.

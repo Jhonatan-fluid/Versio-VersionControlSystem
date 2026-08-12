@@ -86,6 +86,13 @@ The per-type dispatch was exercised for real: **2 of 3 POUs are graphical** and 
 > read as "skipped". The export now records a reason per skip and writes `_coverage.md`, and
 > `docs/STATUS.md` carries the finding. Gate 0.6 was recorded as a pass, and on its own terms
 > it was one; it was measuring that the walk completed, not that the output was sufficient.
+>
+> **Closed, same day.** `LibraryManager x2` is now `LIBRARIES x2` — one
+> `<manager>.libraries.yaml` beside each manager, carrying 21 and 13 references respectively.
+> Re-measured coverage on this project: **12 files written, 4 skipped, 0 gaps**, and two full
+> exports byte-identical across the whole tree. The measurement that mattered was taken before
+> a line of the exporter was written: `ref.id` is re-minted on every open (34 of 34 changed
+> across two runs), so it is not recorded — see STATUS.
 
 Export size: 2.9 MB of text from a 383 KB binary — native visualisation XML dominates.
 

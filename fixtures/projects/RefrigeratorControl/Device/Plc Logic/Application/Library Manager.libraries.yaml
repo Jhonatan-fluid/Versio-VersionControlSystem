@@ -1,0 +1,193 @@
+# Library references, exported by Versio. Do not edit - it is rewritten on
+# every export, and importing this file back into the project is NOT supported: change
+# libraries in the IDE (diff-only, plan section 3.10).
+#
+# NOT recorded here, on purpose:
+#   * the reference id - CODESYS re-mints it on every open, so recording it would put a
+#     spurious diff in every commit
+#   * how each reference RESOLVED on the machine that exported (effective resolution,
+#     resolution info, resolver) - that describes which libraries are installed here,
+#     not what the project asks for, so it would differ between two engineers who share
+#     this repository and neither would be wrong
+schema: 1
+vendor: codesys
+manager: "Library Manager"
+path: "Device/Plc Logic/Application/Library Manager"
+referenceCount: 21
+references:
+  - name: "#Standard"
+    namespace: Standard
+    placeholder: Standard
+    defaultResolution: "Standard, * (System)"
+    redirection: "Standard, 3.5.22.0 (System)"
+    systemLibrary: false
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+  - name: "#VisuUserManagement"
+    namespace: VisuUserManagement
+    placeholder: VisuUserManagement
+    defaultResolution: "VisuUserMgmt, * (System)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+  - name: "#Util"
+    namespace: Util
+    placeholder: Util
+    defaultResolution: "Util, * (System)"
+    redirection: "Util, 3.5.22.0 (System)"
+    systemLibrary: false
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+    parameters:
+      IBLOCKSIZE: "22800"
+  - name: "#VisuDialogs"
+    namespace: VisuDialogs
+    placeholder: VisuDialogs
+    defaultResolution: "VisuDialogs, * (System)"
+    systemLibrary: false
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+  - name: "#System_VisuElems"
+    namespace: VisuElems
+    placeholder: System_VisuElems
+    defaultResolution: "VisuElems, 4.9.1.0 (System)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+  - name: "#System_VisuElemMeter"
+    namespace: VisuElemMeter
+    placeholder: System_VisuElemMeter
+    defaultResolution: "VisuElemMeter, 4.9.0.0 (System)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+  - name: "#System_VisuElemsSpecialControls"
+    namespace: VisuElemsSpecialControls
+    placeholder: System_VisuElemsSpecialControls
+    defaultResolution: "VisuElemsSpecialControls, 4.7.0.0 (System)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+  - name: "#System_VisuElemsWinControls"
+    namespace: VisuElemsWinControls
+    placeholder: System_VisuElemsWinControls
+    defaultResolution: "VisuElemsWinControls, 4.9.0.0 (System)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+  - name: "#System_VisuElemTextEditor"
+    namespace: VisuElemTextEditor
+    placeholder: System_VisuElemTextEditor
+    defaultResolution: "VisuElemTextEditor, 4.8.0.0 (System)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+  - name: "#System_VisuElemTrace"
+    namespace: VisuElemTrace
+    placeholder: System_VisuElemTrace
+    defaultResolution: "VisuElemTrace, 4.9.0.0 (System)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+  - name: "#System_VisuNativeControl"
+    namespace: VisuNativeControl
+    placeholder: System_VisuNativeControl
+    defaultResolution: "VisuNativeControl, 4.9.0.0 (System)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+  - name: "#System_VisuElemsAlarm"
+    namespace: VisuElemsAlarm
+    placeholder: System_VisuElemsAlarm
+    defaultResolution: "VisuElemsAlarm, 4.9.0.0 (System)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+  - name: "#System_VisuElemCamDisplayer"
+    namespace: VisuElemCamDisplayer
+    placeholder: System_VisuElemCamDisplayer
+    defaultResolution: "VisuElemCamDisplayer, 4.7.0.0 (System)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+    parameters:
+      GC_POINTS_PER_CAM: "100"
+  - name: "#System_VisuElem3DPath"
+    namespace: VisuElem3DPath
+    placeholder: System_VisuElem3DPath
+    defaultResolution: "VisuElem3DPath, 4.7.0.0 (System)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+    parameters:
+      GC_POINTS_PER_POLYGON: "100"
+  - name: "#System_VisuElemsDateTime"
+    namespace: VisuElemsDateTime
+    placeholder: System_VisuElemsDateTime
+    defaultResolution: "VisuElemsDateTime, 4.9.0.0 (System)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+  - name: "#System_VisuElemXYChart"
+    namespace: VisuElemXYChart
+    placeholder: System_VisuElemXYChart
+    defaultResolution: "VisuElemXYChart, 4.8.0.0 (System)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+  - name: "#System_VisuInputs"
+    namespace: VisuInputs
+    placeholder: System_VisuInputs
+    defaultResolution: "VisuInputs, 4.7.0.0 (System)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+  - name: "#IoStandard"
+    namespace: IoStandard
+    placeholder: IoStandard
+    defaultResolution: "IoStandard, 3.5.22.0 (System)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+  - name: "#3SLicense"
+    namespace: _3S_LICENSE
+    placeholder: "3SLicense"
+    defaultResolution: "3SLicense, 0.0.0.0 (CODESYS)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+  - name: "#CAA Device Diagnosis"
+    namespace: DED
+    placeholder: "CAA Device Diagnosis"
+    defaultResolution: "CAA Device Diagnosis, 3.5.22.0 (CAA Technical Workgroup)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: true
+    publishSymbols: false
+  - name: "#BreakpointLogging"
+    namespace: BPLog
+    placeholder: BreakpointLogging
+    defaultResolution: "Breakpoint Logging Functions, * (3S - Smart Software Solutions GmbH)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false

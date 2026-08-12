@@ -33,25 +33,48 @@ public enum CoverageVerdict
 /// existed, both looked identical from the outside: absent.
 /// </para>
 /// <para>
-/// <b>The gap that prompted it:</b> <c>LIBRARY_MANAGER</c> is skipped, and the comment beside
-/// it in the exporter claimed its content was "captured in <c>config/libraries.yaml</c>
-/// instead". No code has ever written that file. Adding a library or bumping a version
-/// therefore changes nothing in the mirror, moves nothing through the hash gate, and appears
-/// in no diff — silently, which is the part that makes it a bug rather than a limitation.
+/// <b>The gap that prompted it, and is now closed:</b> <c>LIBRARY_MANAGER</c> was skipped
+/// while the comment beside it in the exporter claimed its content was "captured in
+/// <c>config/libraries.yaml</c> instead". No code had ever written that file, so adding a
+/// library or bumping a version changed nothing in the mirror, moved nothing through the hash
+/// gate and appeared in no diff — silently, which is the part that made it a bug rather than a
+/// limitation. Library references are exported from manifest schema 3.
 /// </para>
 /// <para>
-/// Reported rather than fixed, in that order and deliberately. A stated gap is one somebody
-/// can work around; an unstated one is a wrong answer to the only question the tool exists to
-/// answer.
+/// Reported first and fixed after, in that order and deliberately. A stated gap is one
+/// somebody can work around; an unstated one is a wrong answer to the only question the tool
+/// exists to answer. The reporting outlives the gap that prompted it — there will be others,
+/// and <c>NOT_IMPLEMENTED</c> is how the next one announces itself.
 /// </para>
 /// </remarks>
 public static class ExportCoverage
 {
     /// <summary>Manifests at or above this schema record what they skipped.</summary>
+    /// <remarks>
+    /// A threshold, not the current version: it is the oldest manifest whose empty skip list
+    /// can be believed. It does not move when the schema does, because an export written at
+    /// schema 2 still recorded honestly what <i>it</i> left out.
+    /// </remarks>
     public const int ReportingSchema = 2;
+
+    /// <summary>The schema today's exporter writes.</summary>
+    /// <seealso cref="ProjectManifest.Schema"/>
+    public const int CurrentSchema = 3;
 
     /// <summary>The exporter's code for a skip that loses something.</summary>
     public const string GapReason = "NOT_IMPLEMENTED";
+
+    /// <summary>
+    /// The manifest's <c>form</c> for a file that is exported and never applied back.
+    /// </summary>
+    /// <remarks>
+    /// A stable machine string produced by the exporter, like the skip reasons. Library
+    /// references are the first of these: real project state, written so a change reaches the
+    /// diff, with no import path that can be trusted. A file that looks editable and is
+    /// silently ignored is its own kind of gap, so it is counted and said out loud rather than
+    /// left for somebody to discover by editing one.
+    /// </remarks>
+    public const string ExportOnlyForm = "LIBRARIES";
 
     /// <summary>What an export covers, from its manifest alone.</summary>
     public static CoverageReport Of(ProjectManifest? manifest)
@@ -78,6 +101,8 @@ public static class ExportCoverage
             Gaps = gaps,
             DeliberateSkips = deliberate,
             FilesWritten = manifest.Objects.Count,
+            ExportOnlyFiles = manifest.Objects
+                .Count(o => string.Equals(o.Form, ExportOnlyForm, StringComparison.Ordinal)),
         };
     }
 }
@@ -95,6 +120,16 @@ public sealed record CoverageReport
     public int DeliberateSkips { get; init; }
 
     public int FilesWritten { get; init; }
+
+    /// <summary>
+    /// How many written files are exported for review and never applied back.
+    /// </summary>
+    /// <remarks>
+    /// Not a gap: the content <i>is</i> in the mirror and a change to it does reach a diff and
+    /// a commit. What it is not is editable from here, and the difference is worth a sentence
+    /// rather than a discovery.
+    /// </remarks>
+    public int ExportOnlyFiles { get; init; }
 
     /// <summary>True when something in the project cannot be seen in the mirror.</summary>
     public bool HasGaps => Verdict == CoverageVerdict.HasGaps;
@@ -138,10 +173,22 @@ public sealed record CoverageReport
         CoverageVerdict.CompleteByDesign =>
             $"Everything in this project reaches the mirror. {DeliberateSkips} service " +
             "object(s) are not exported, and nothing is lost by that — their content is " +
-            "carried by the project template or by another object's export.",
+            "carried by the project template or by another object's export." + OneWay(),
 
-        _ => "Everything in this project reaches the mirror.",
+        _ => "Everything in this project reaches the mirror." + OneWay(),
     };
+
+    /// <summary>The sentence about one-way files, or nothing when there are none.</summary>
+    /// <remarks>
+    /// Appended rather than woven in, so the reader sees the coverage answer first and this
+    /// second. It qualifies "everything reaches the mirror" without contradicting it: the
+    /// content is there, the edit direction is not.
+    /// </remarks>
+    private string OneWay() =>
+        ExportOnlyFiles == 0
+            ? string.Empty
+            : $" {ExportOnlyFiles} file(s) — library references — are exported for review " +
+              "and not applied back; change those in the IDE.";
 
     /// <summary>The distinct CODESYS types behind the gaps, in a readable list.</summary>
     private string Types()

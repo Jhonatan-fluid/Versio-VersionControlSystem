@@ -456,6 +456,26 @@ public sealed class LocalCodesysRunner(
                         $"[{evt.String("type")}]");
                     break;
 
+                case "libraries":
+                    // Info, not Debug, and bounded: a project has one or two library
+                    // managers, and this is the one export form whose entire point is
+                    // content that used to be invisible. "0 references" is a real answer
+                    // somebody may need to read rather than infer from a file.
+                    _log.Info(LogCategory.Codesys,
+                        $"library references recorded: {evt.Int("count")} " +
+                        $"({evt.Int("system")} added by plug-ins) in {evt.String("path")}");
+                    break;
+
+                case "not_imported":
+                    // An export-only file the import left alone. Logged rather than
+                    // warned: it happens on every import of every project that has a
+                    // library manager, and a warning that is always present is how a
+                    // real one gets read past.
+                    _log.Info(LogCategory.Codesys,
+                        $"not applied to the project ({evt.String("reason")}): " +
+                        $"{evt.String("path")} — change this in the IDE");
+                    break;
+
                 case "summary":
                     _log.Info(LogCategory.Codesys,
                         $"walked {evt.Int("walked")}, wrote {evt.Int("written")}, " +

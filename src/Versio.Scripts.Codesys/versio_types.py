@@ -54,6 +54,7 @@ GUID_TYPE_MAPPING = {
 #   NATIVE    - native export, non-recursive
 #   NATIVE_R  - native export, recursive (object owns children we do not walk separately)
 #   CONTAINER - a structural node: becomes a directory, children walked
+#   LIBRARIES - the object's library references, written as neutral YAML
 #   SKIP      - deliberately not exported
 FORM_ST_FULL = "ST_FULL"
 FORM_ST_DECL = "ST_DECL"
@@ -62,6 +63,7 @@ FORM_GVL_BOTH = "GVL_BOTH"
 FORM_NATIVE = "NATIVE"
 FORM_NATIVE_R = "NATIVE_R"
 FORM_CONTAINER = "CONTAINER"
+FORM_LIBRARIES = "LIBRARIES"
 FORM_SKIP = "SKIP"
 
 TYPE_FORM = {
@@ -89,13 +91,19 @@ TYPE_FORM = {
     "IMAGEPOOL": FORM_NATIVE,          # [VERSIO]
     "PROJECT_INFORMATION": FORM_NATIVE,  # [VERSIO]
 
+    # [VERSIO] Was FORM_SKIP with the reason NOT_IMPLEMENTED - the gap that
+    # _coverage.md was built to report. Native export is not an option here: the
+    # library manager's own XML is a resolution snapshot rather than a list of what
+    # the project asks for. Its references go to neutral YAML instead, which is the
+    # form a second vendor can also produce.
+    "LIBRARY_MANAGER": FORM_LIBRARIES,
+
     # Service objects: exporting the visu manager makes every later import raise an
     # interactive overwrite dialog (codescribe's finding). The template carries them.
     "VISUALISATION_MANAGER": FORM_SKIP,
     "TARGET_VISUALISATION": FORM_SKIP,
     "WEB_VISUALISATION": FORM_SKIP,
     "VISUALISATION_STYLE": FORM_SKIP,
-    "LIBRARY_MANAGER": FORM_SKIP,      # a GAP, not a decision - see SKIP_REASON
     "PROJECT_SETTINGS": FORM_SKIP,     # template-only (Tier 3, plan section 3.10)
     "TASK": FORM_SKIP,                 # covered by TASK_CONFIGURATION recursive export
     "CALL_TO_POU": FORM_SKIP,          # ditto
@@ -117,6 +125,35 @@ VERSIO_FILES = frozenset(["_manifest.json", "_coverage.md"])
 def is_versio_file(file_name):
     """True for a bookkeeping file that describes the export rather than the project."""
     return file_name in VERSIO_FILES
+
+
+# Files that are part of the PROJECT but travel one way only: exported for review,
+# never applied back.
+#
+# The export tree turns out to hold THREE kinds of file, not two:
+#
+#   1. objects           - .st and .xml, exported and imported
+#   2. bookkeeping       - VERSIO_FILES, about the export rather than in it
+#   3. export-only       - real project state, written for the diff, but with no
+#                          import path that can be trusted
+#
+# Library references are the first of the third kind. Handing this file to
+# import_native would be the _coverage.md defect again - CODESYS would be asked to
+# parse YAML as native XML and every import would carry a failure warning that is
+# always present and therefore always read past. Adding a library through the
+# scripting API is a different operation from importing an object, and doing it
+# wrongly rewires what the machine compiles against, so it is not attempted here:
+# the file is diff-only, and both the coverage report and the manifest say so.
+EXPORT_ONLY_SUFFIXES = (".libraries.yaml",)
+
+
+def is_export_only(file_name):
+    """True for a file the export writes that the import must not feed to the toolchain."""
+    lowered = file_name.lower()
+    for suffix in EXPORT_ONLY_SUFFIXES:
+        if lowered.endswith(suffix):
+            return True
+    return False
 
 
 # Why a type is skipped, and whether that is a decision or a gap.
@@ -153,12 +190,6 @@ SKIP_REASON = {
 
     "TASK": SKIP_ELSEWHERE,          # inside TASK_CONFIGURATION's recursive export
     "CALL_TO_POU": SKIP_ELSEWHERE,   # ditto
-
-    # NOT a decision. The comment beside this entry used to read "captured in
-    # config/libraries.yaml instead", and nothing has ever written that file - so
-    # adding a library or bumping a version changes nothing in the mirror, and the
-    # tool's central claim quietly does not hold for library references.
-    "LIBRARY_MANAGER": SKIP_GAP,
 }
 
 # One sentence per code, for _coverage.md and for anyone reading the manifest.
@@ -202,6 +233,7 @@ SUFFIX = {
     FORM_GVL_BOTH: ".st",
     FORM_NATIVE: ".xml",
     FORM_NATIVE_R: ".xml",
+    FORM_LIBRARIES: ".libraries.yaml",
 }
 
 # Types whose file name gets an infix to avoid colliding with a same-named sibling

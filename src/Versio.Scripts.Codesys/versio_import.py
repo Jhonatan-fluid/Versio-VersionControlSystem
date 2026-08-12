@@ -39,7 +39,7 @@ from versio_decl import (DUT_ALIAS, DUT_ENUM, DUT_STRUCT, DUT_UNION,  # noqa: E4
                          KIND_DUT, KIND_FUNCTION, KIND_FUNCTION_BLOCK,
                          KIND_INTERFACE, KIND_PROGRAM, parse_declaration)
 from versio_text import normalize_decl_only, split_st  # noqa: E402
-from versio_types import is_versio_file, type_of  # noqa: E402
+from versio_types import is_export_only, is_versio_file, type_of  # noqa: E402
 
 
 def emit(obj):
@@ -129,11 +129,24 @@ class Importer(object):
         self.failed = 0
         self.native = 0
         self.created = 0
+        self.one_way = 0
         self.warnings = []
 
     def warn(self, code, path, detail=None):
         self.warnings.append({"code": code, "path": path, "detail": detail})
         emit({"t": "warning", "code": code, "path": path, "detail": detail})
+
+    def skip_one_way(self, rel_path):
+        """Note an export-only file that the import deliberately leaves alone.
+
+        NOT a warning. A warning that fires on every single import of every project
+        that has a library manager is noise, and noise is how a real native-import
+        failure gets read past - the exact failure mode _coverage.md caused before it
+        was excluded. It is emitted and counted instead, so the log answers "what
+        happened to my libraries.yaml edit" without anybody having to guess.
+        """
+        self.one_way += 1
+        emit({"t": "not_imported", "path": rel_path, "reason": "EXPORT_ONLY"})
 
     def apply_st(self, obj, rel_path, abs_path, suffix):
         content = read_text(abs_path)
@@ -257,6 +270,13 @@ class Importer(object):
         file_name = os.path.basename(rel_path)
         if is_versio_file(file_name):
             return
+        if is_export_only(file_name):
+            # Belt and braces: run() already filters these out. Guarding both entry
+            # points is the lesson from _coverage.md, where the importer knew about
+            # _manifest.json by name in two places and a third file was added to
+            # neither - and CODESYS was handed markdown as native XML.
+            self.skip_one_way(rel_path)
+            return
 
         rel_dir = os.path.dirname(rel_path).replace("\\", "/")
         parent_name, obj_name, suffix = object_name_from_file(file_name)
@@ -329,6 +349,17 @@ class Importer(object):
                 # one to CODESYS as native XML is how a junk object gets created.
                 if is_versio_file(file_name):
                     continue
+
+                # Real project state, written for review, with no import path that
+                # can be trusted - library references today. Skipped here rather than
+                # sorted into the native list, because "native" means "hand it to
+                # import_native" and this is YAML.
+                if is_export_only(file_name):
+                    self.skip_one_way(
+                        os.path.relpath(os.path.join(dir_path, file_name),
+                                        self.src_root).replace("\\", "/"))
+                    continue
+
                 abs_path = os.path.join(dir_path, file_name)
                 rel_path = os.path.relpath(abs_path, self.src_root).replace("\\", "/")
                 (textual if file_name.endswith(".st") else native).append((abs_path, rel_path))
@@ -371,7 +402,8 @@ def main():
 
     emit({"t": "summary", "updated": imp.updated, "unchanged": imp.unchanged,
           "native": imp.native, "created": imp.created,
-          "missing": imp.missing, "failed": imp.failed, "warnings": len(imp.warnings)})
+          "missing": imp.missing, "failed": imp.failed,
+          "notImported": imp.one_way, "warnings": len(imp.warnings)})
 
     proj.close()
     emit({"t": "done"})

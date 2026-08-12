@@ -58,12 +58,21 @@ public sealed record SkippedObject
 public sealed record ProjectManifest
 {
     /// <summary>
-    /// Manifest format version. 2 added <see cref="Skipped"/>.
+    /// Manifest format version. 2 added <see cref="Skipped"/>; 3 exports library references.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Read rather than ignored, because an empty <see cref="Skipped"/> means two different
     /// things: nothing was skipped, or nobody was counting yet. Treating a schema-1 manifest
     /// as complete coverage would be the most comfortable possible lie.
+    /// </para>
+    /// <para>
+    /// 3 is the same ambiguity one level along. Library references were skipped as
+    /// <c>NOT_IMPLEMENTED</c> up to schema 2 and are exported from 3, so "no records with form
+    /// <c>LIBRARIES</c>" means <i>nobody was writing them yet</i> on a schema-2 manifest and
+    /// <i>this project has no library manager</i> on a schema-3 one. Reading the first as the
+    /// second reports full coverage over the exact hole that work closed.
+    /// </para>
     /// </remarks>
     [JsonPropertyName("schema")] public int Schema { get; init; } = 1;
     [JsonPropertyName("bindingId")] public string BindingId { get; init; } = string.Empty;
@@ -73,6 +82,7 @@ public sealed record ProjectManifest
     [JsonPropertyName("warnings")] public IReadOnlyList<string> Warnings { get; init; } = [];
 
     /// <summary>Objects the export did not write. Empty on a schema-1 manifest.</summary>
+    /// <seealso cref="Schema"/>
     [JsonPropertyName("skipped")] public IReadOnlyList<SkippedObject> Skipped { get; init; } = [];
 
     public static readonly ProjectManifest Empty = new();

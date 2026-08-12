@@ -63,9 +63,14 @@ public sealed class ExportCoverageTests
     [Fact]
     public void An_unimplemented_type_is_a_gap_and_says_what_cannot_be_relied_on()
     {
-        // The case that prompted the feature. LIBRARY_MANAGER is skipped and nothing writes
-        // the config file the exporter's comment promised, so a library version bump changes
-        // nothing in the mirror.
+        // The case that prompted the feature, kept as the example because it is the one
+        // everybody here recognises — LIBRARY_MANAGER was skipped while a comment promised a
+        // config file nothing wrote, so a library version bump changed nothing in the mirror.
+        //
+        // It is HISTORY now: library references are exported from manifest schema 3, and the
+        // real fixture reports no gaps. The manifest below is hand-built precisely so the
+        // reporting rules keep being tested after the gap that prompted them was closed —
+        // they exist for the next one, not for that one.
         var report = ExportCoverage.Of(Manifest(
             Skip("LIBRARY_MANAGER", ExportCoverage.GapReason),
             Skip("VISUALISATION_MANAGER", "SERVICE_OBJECT")));
@@ -108,6 +113,61 @@ public sealed class ExportCoverageTests
 
         Assert.Equal(CoverageVerdict.Unknown, report.Verdict);
         Assert.False(report.HasGaps);
+    }
+
+    [Fact]
+    public void A_file_that_is_exported_but_never_applied_back_is_counted_and_said_out_loud()
+    {
+        // The third kind of content in an export tree, after objects and Versio's own
+        // bookkeeping: real project state, written so a change reaches the diff, with no
+        // import path that can be trusted. Library references are the first of them.
+        //
+        // It is NOT a gap — the content is in the mirror and a change to it does reach a
+        // commit — but a file that looks editable and is silently ignored is its own kind of
+        // hole, so the sentence has to carry it.
+        var manifest = new ProjectManifest
+        {
+            Schema = ExportCoverage.CurrentSchema,
+            Objects =
+            [
+                new ProjectObject { Path = "App/Main.st", Form = "ST_FULL", Guid = "g1" },
+                new ProjectObject
+                {
+                    Path = "App/Library Manager.libraries.yaml",
+                    Form = ExportCoverage.ExportOnlyForm,
+                    Type = "LIBRARY_MANAGER",
+                    Guid = "g2",
+                },
+            ],
+        };
+
+        var report = ExportCoverage.Of(manifest);
+
+        Assert.Equal(CoverageVerdict.Complete, report.Verdict);
+        Assert.False(report.HasGaps);
+        Assert.Equal(1, report.ExportOnlyFiles);
+
+        var sentence = report.Describe();
+        Assert.Contains("Everything in this project reaches the mirror", sentence,
+                        StringComparison.Ordinal);
+        Assert.Contains("not applied back", sentence, StringComparison.Ordinal);
+        Assert.Contains("change those in the IDE", sentence, StringComparison.Ordinal);
+
+        // Still no badge: this is a property of the format, not a problem with the export.
+        // A row that said something on every project with a library manager — which is every
+        // project — would be read past within a day.
+        Assert.Equal(string.Empty, report.Label);
+    }
+
+    [Fact]
+    public void An_export_with_no_one_way_files_says_nothing_about_them()
+    {
+        // The sentence appears only when there is something to say. Volunteering "0 files are
+        // exported one way" on every clean project is how the useful half stops being read.
+        var report = ExportCoverage.Of(Manifest());
+
+        Assert.Equal(0, report.ExportOnlyFiles);
+        Assert.DoesNotContain("not applied back", report.Describe(), StringComparison.Ordinal);
     }
 
     [Fact]

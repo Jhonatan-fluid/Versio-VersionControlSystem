@@ -42,6 +42,16 @@ scratch/
 *.codescribe_staging/
 
 # ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+# The pure modules (versio_text, versio_types, versio_yaml, versio_libraries) are
+# written to run on CPython as well as on CODESYS's IronPython 2.7, precisely so
+# they can be exercised without launching a PLC toolchain. Doing that leaves
+# bytecode beside the source, which belongs to whoever ran it and to nothing else.
+__pycache__/
+*.pyc
+
+# ---------------------------------------------------------------------------
 # OS
 # ---------------------------------------------------------------------------
 Thumbs.db

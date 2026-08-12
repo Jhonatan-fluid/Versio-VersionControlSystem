@@ -22,11 +22,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from versio_text import (content_hash, join_st, normalize_decl_only,  # noqa: E402
                          safe_file_stem, scrub_native_xml)
-from versio_types import (FORM_CONTAINER, FORM_GVL_BOTH, FORM_NATIVE,  # noqa: E402
-                          FORM_NATIVE_R, FORM_SKIP, FORM_ST_DECL,
+from versio_types import (FORM_CONTAINER, FORM_GVL_BOTH, FORM_LIBRARIES,  # noqa: E402
+                          FORM_NATIVE, FORM_NATIVE_R, FORM_SKIP, FORM_ST_DECL,
                           FORM_ST_FULL, FORM_ST_IMPL, SKIP_EXPLANATION,
                           SKIP_GAP, decide_form, file_name_for, skip_reason,
                           type_of)
+import versio_libraries  # noqa: E402
+import versio_yaml  # noqa: E402
 
 
 def emit(obj):
@@ -147,6 +149,34 @@ class Exporter(object):
         write_text(abs_path, scrubbed)
         return scrubbed, n
 
+    def export_libraries(self, obj, object_path, rel_path):
+        """Render one library manager's references as neutral YAML.
+
+        This is the object whose absence started the coverage report: a library
+        reference - adding one, bumping a version, repointing a placeholder - changed
+        nothing in the mirror, moved nothing through the hash gate and reached no
+        diff, while a comment in this file claimed a config/libraries.yaml that
+        nothing had ever written.
+
+        The file is EXPORT-ONLY. It is written for review and is never applied back:
+        see EXPORT_ONLY_SUFFIXES in versio_types for why an import path is not merely
+        missing but deliberately absent.
+        """
+        refs = versio_libraries.read_references(
+            obj, safe,
+            on_error=lambda code, detail: self.warn(code, rel_path, detail))
+
+        name = safe(lambda: obj.get_name(), u"Library Manager")
+        text = versio_libraries.catalog_document(versio_yaml, name, object_path, refs)
+
+        # Said out loud, at Info: this is the one export form whose whole point is
+        # content that used to be invisible, and "0 references" is a real answer that
+        # somebody may need to see rather than infer from a file they never opened.
+        emit({"t": "libraries", "path": rel_path.replace("\\", "/"),
+              "count": len(refs),
+              "system": len([r for r in refs if r.get("systemLibrary")])})
+        return text
+
     def handle(self, obj, rel_dir, parent_name):
         """Export one object and recurse into its children.
 
@@ -236,6 +266,12 @@ class Exporter(object):
                 write_text(abs_path, st_text)
                 self.record(obj, obj_type, FORM_ST_DECL, rel_path, st_text)
 
+            elif form == FORM_LIBRARIES:
+                object_path = (rel_dir + "/" + name).replace("\\", "/").lstrip("/")
+                text = self.export_libraries(obj, object_path, rel_path)
+                write_text(abs_path, text)
+                self.record(obj, obj_type, form, rel_path, text)
+
             elif form in (FORM_NATIVE, FORM_NATIVE_R):
                 text, _ = self.export_native(obj, abs_path, form == FORM_NATIVE_R)
                 self.record(obj, obj_type, form, rel_path, text)
@@ -299,6 +335,23 @@ def coverage_markdown(project, records, skips, warnings):
         lines.append(u"")
         for s in sorted(gaps, key=lambda x: (x["path"], x["type"])):
             lines.append(u"- `%s` — %s" % (s["path"], s["type"]))
+        lines.append(u"")
+
+    # Exported, but one way. A file that is written for review and silently ignored
+    # on the way back is its own kind of gap: editing it looks exactly like editing a
+    # POU, and nothing would tell the engineer their change went nowhere. Stated here
+    # for the same reason the skips are.
+    one_way = [r for r in records if r.get("form") == FORM_LIBRARIES]
+    if one_way:
+        lines.append(u"## Exported for review, not applied back")
+        lines.append(u"")
+        lines.append(u"**These files are written by the export and ignored by the import.**")
+        lines.append(u"They show what the project asks for, so a change reaches the diff and")
+        lines.append(u"the commit - but editing one here does not change the project. Change")
+        lines.append(u"these in the IDE.")
+        lines.append(u"")
+        for r in sorted(one_way, key=lambda x: x["path"]):
+            lines.append(u"- `%s` — %s" % (r["path"], r["type"]))
         lines.append(u"")
 
     other = sorted(k for k in by_reason if k != SKIP_GAP)
@@ -376,7 +429,14 @@ def main():
         # 2: adds "skipped". A schema-1 manifest is not a manifest with nothing
         # skipped - it is one written before anybody counted, and the reader has to
         # be able to tell those apart or an old export reads as perfect coverage.
-        "schema": 2,
+        #
+        # 3: library references are exported (form LIBRARIES) instead of being
+        # skipped as NOT_IMPLEMENTED. Same ambiguity, one level along: on a schema-2
+        # manifest "no LIBRARIES records" means nobody was writing them yet, and on a
+        # schema-3 one it means the project genuinely has no library manager. Reading
+        # the first as the second would report full coverage over the exact hole this
+        # work was done to close.
+        "schema": 3,
         "bindingId": job.get("bindingId", ""),
         "project": os.path.basename(job["project"]),
         "objectCount": len(ex.records),

@@ -199,11 +199,16 @@ public sealed class WorkspaceTreeFromCommittedExportTests(ITestOutputHelper outp
     }
 
     [SkippableFact]
-    public void The_committed_export_reports_the_library_manager_as_a_gap()
+    public void The_committed_export_carries_its_library_references_and_reports_no_gaps()
     {
         // Runs without CODESYS, because the manifest is committed. That matters: the machine
         // this is checked on is not necessarily the machine CODESYS is installed on, and a
         // coverage regression that only a CODESYS box could notice would be noticed late.
+        //
+        // This test used to assert the opposite — two LIBRARY_MANAGER gaps — and it was right
+        // to. The gap is closed, and the assertion inverted with it rather than being deleted:
+        // what it guards now is that the mirror this repository dogfoods really does carry the
+        // library references, and would say so if it stopped.
         Skip.If(!File.Exists(ManifestPath), "the fixture's export is not committed");
 
         var manifest = ProjectManifest.Parse(File.ReadAllText(ManifestPath));
@@ -215,19 +220,42 @@ public sealed class WorkspaceTreeFromCommittedExportTests(ITestOutputHelper outp
             output.WriteLine($"{skipped.Reason,-18} {skipped.Type,-22} {skipped.Path}");
         }
 
-        Assert.Equal(ExportCoverage.ReportingSchema, manifest.Schema);
-        Assert.Equal(CoverageVerdict.HasGaps, report.Verdict);
+        Assert.Equal(ExportCoverage.CurrentSchema, manifest.Schema);
+        Assert.Equal(CoverageVerdict.CompleteByDesign, report.Verdict);
+        Assert.Empty(report.Gaps);
 
-        // The fixture has two library managers - one on the project and one under the
-        // application - and neither reaches the mirror.
-        Assert.Equal(2, report.Gaps.Count);
-        Assert.All(report.Gaps, g => Assert.Equal("LIBRARY_MANAGER", g.Type));
+        // The fixture has two library managers — one on the project and one under the
+        // application — and both now reach the mirror, one file each.
+        Assert.Equal(2, report.ExportOnlyFiles);
+        Assert.Equal(2, manifest.Objects.Count(o => o.Type == "LIBRARY_MANAGER"));
 
-        // The deliberate skips are present and are NOT counted as gaps. If that distinction
-        // ever collapses, this repository's own panel starts crying wolf about a
+        // The deliberate skips are still present and still NOT counted as gaps. If that
+        // distinction ever collapses, this repository's own panel starts crying wolf about a
         // visualisation manager that is skipped on purpose.
         Assert.Equal(4, report.DeliberateSkips);
         Assert.DoesNotContain(report.Gaps, g => g.Reason != ExportCoverage.GapReason);
+    }
+
+    [SkippableFact]
+    public void The_committed_library_file_parses_with_the_reader_that_ships_beside_it()
+    {
+        // Also without CODESYS. The exporter and the reader are two hand-written halves of one
+        // file format that never meet in the same process, and the committed export is the
+        // only place they can be checked against each other for free.
+        var path = Path.Combine(
+            Core.Tests.TestPaths.Root,
+            ExportPath.Replace('/', Path.DirectorySeparatorChar),
+            "Library Manager.libraries.yaml");
+
+        Skip.If(!File.Exists(ManifestPath), "the fixture's export is not committed");
+        Assert.True(File.Exists(path), "the committed export has no library file");
+
+        var catalog = LibraryCatalog.Parse(File.ReadAllText(path));
+
+        Assert.True(catalog.IsValid);
+        Assert.Equal("codesys", catalog.Vendor);
+        Assert.NotEmpty(catalog.References);
+        Assert.All(catalog.References, r => Assert.False(string.IsNullOrWhiteSpace(r.Name)));
     }
 
     [SkippableFact]
@@ -247,6 +275,12 @@ public sealed class WorkspaceTreeFromCommittedExportTests(ITestOutputHelper outp
 
         var text = File.ReadAllText(path);
         Assert.Contains("LIBRARY_MANAGER", text, StringComparison.Ordinal);
+
+        // In the one-way section now, not the gap section. The committed report is the
+        // evidence a reviewer sees, so which section a type appears under is the assertion
+        // worth making — "the word appears somewhere" would survive the gap coming back.
+        Assert.Contains("Exported for review, not applied back", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Not exported, and that is a gap", text, StringComparison.Ordinal);
         Assert.DoesNotContain('\r', text);
     }
 }

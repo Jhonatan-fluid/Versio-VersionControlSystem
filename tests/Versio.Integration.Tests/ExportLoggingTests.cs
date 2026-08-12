@@ -1,4 +1,5 @@
 using Versio.Core.Logging;
+using Versio.Core.Projects;
 using Versio.Infrastructure.Platform;
 using Xunit;
 using Xunit.Abstractions;
@@ -96,6 +97,7 @@ public sealed class ExportLoggingTests(ITestOutputHelper output) : IDisposable
         var lines = buffer.Snapshot().Select(e => e.Message).ToList();
         foreach (var line in lines.Where(l => l.Contains("export directory", StringComparison.Ordinal)
                                               || l.Contains("not exported", StringComparison.Ordinal)
+                                              || l.Contains("librar", StringComparison.Ordinal)
                                               || l.Contains("walked", StringComparison.Ordinal)))
         {
             output.WriteLine(line);
@@ -112,26 +114,62 @@ public sealed class ExportLoggingTests(ITestOutputHelper output) : IDisposable
             .ToList();
 
         Assert.Equal(2, swaps.Count);
-        Assert.Contains("0 existing file(s) removed, 12 written in their place",
+
+        // Counted from the tree on disk rather than written in here as a literal. The first
+        // version of this test hard-coded 12, and it broke the day the exporter learned to
+        // write library references — a real behaviour change showing up as a failing string
+        // comparison, which teaches nobody anything. What the number has to do is track
+        // reality, so reality is what it is compared against.
+        var written = Directory
+            .EnumerateFiles(exportRoot, "*", SearchOption.AllDirectories)
+            .Count();
+
+        Assert.Contains($"0 existing file(s) removed, {written} written in their place",
                         swaps[0], StringComparison.Ordinal);
-        Assert.Contains("12 existing file(s) removed, 12 written in their place",
+        Assert.Contains($"{written} existing file(s) removed, {written} written in their place",
                         swaps[1], StringComparison.Ordinal);
 
-        Assert.Equal(2, lines.Count(l => l.Contains("export directory now holds 12 file(s)",
+        Assert.Equal(2, lines.Count(l => l.Contains($"export directory now holds {written} file(s)",
                                                     StringComparison.Ordinal)));
 
+        // The counts still have to DIFFER between the two runs, which is the property the
+        // literals were there to protect: the first export removes nothing because there was
+        // nothing there, the second removes what the first wrote. A count that ignored the
+        // directory would print the same pair twice and pass a weaker test than this.
+        Assert.NotEqual(swaps[0], swaps[1]);
+
         // The coverage story, in the log rather than only in a file somebody has to open.
-        Assert.Contains(lines, l => l.Contains("not exported (NOT_IMPLEMENTED)",
-                                               StringComparison.Ordinal) &&
-                                    l.Contains("LIBRARY_MANAGER", StringComparison.Ordinal));
+        // Library references are exported now, so the line to look for is the one that says
+        // they were recorded — the NOT_IMPLEMENTED line this used to assert was the gap, and
+        // the fixture no longer has one.
+        Assert.Contains(lines, l => l.Contains("library references recorded", StringComparison.Ordinal) &&
+                                    l.Contains("Device/Plc Logic/Application", StringComparison.Ordinal));
+        Assert.DoesNotContain(lines, l => l.Contains("not exported (NOT_IMPLEMENTED)",
+                                                     StringComparison.Ordinal));
 
         // One spelling of a path. A log line and the manifest disagreeing about separators
         // makes a reader wonder whether they are looking at the same object.
         Assert.DoesNotContain(lines, l => l.Contains("not exported", StringComparison.Ordinal) &&
                                           l.Contains('\\'));
 
-        Assert.Contains(lines, l => l.StartsWith("walked 18, wrote 10, skipped 6",
-                                                 StringComparison.Ordinal) &&
-                                    l.Contains("2 not implemented", StringComparison.Ordinal));
+        // The summary, checked against the manifest THIS export wrote rather than against
+        // numbers typed in here. Both describe the same run, so they have to agree — and
+        // that is a stronger statement than any literal, as well as one that survives the
+        // exporter legitimately learning to write another file. (It has now done that twice:
+        // _coverage.md, then the library references.)
+        var manifest = ProjectManifest.Parse(
+            File.ReadAllText(Path.Combine(exportRoot, "_manifest.json")));
+        var gaps = manifest.Skipped.Count(s => s.Reason == ExportCoverage.GapReason);
+
+        Assert.Contains(lines, l =>
+            l.StartsWith("walked ", StringComparison.Ordinal) &&
+            l.Contains($"wrote {manifest.Objects.Count}, ", StringComparison.Ordinal) &&
+            l.Contains($"skipped {manifest.Skipped.Count} ", StringComparison.Ordinal) &&
+            l.Contains($"{gaps} not implemented", StringComparison.Ordinal));
+
+        // And the fixture's own shape, so a silent drop in what gets walked still fails here.
+        // 18 objects is what this project contains; if that changes, it changed for a reason
+        // somebody should have to state.
+        Assert.Contains(lines, l => l.StartsWith("walked 18,", StringComparison.Ordinal));
     }
 }

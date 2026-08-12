@@ -109,9 +109,19 @@ public static partial class PathMapper
             ((char)Convert.ToInt32(m.Groups[1].Value, 16)).ToString());
     }
 
+    /// <summary>
+    /// The file suffix one export form writes.
+    /// </summary>
+    /// <remarks>
+    /// Must stay in step with <c>SUFFIX</c> in <c>versio_types.py</c>: the two halves build
+    /// the same paths from opposite sides, and a mismatch means the importer looks for a file
+    /// the exporter never wrote. A missing entry there once made an ST write land on the
+    /// native export's path and destroy it.
+    /// </remarks>
     public static string SuffixFor(ExportForm form) => form switch
     {
         ExportForm.StFull or ExportForm.StDeclaration or ExportForm.StImplementation => ".st",
+        ExportForm.Libraries => ".libraries.yaml",
         _ => ".xml",
     };
 

@@ -30,6 +30,25 @@ public enum ExportForm
     NativeRecursive,
 
     /// <summary>
+    /// The object's library references, written as vendor-neutral YAML.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Its own form rather than a flavour of <see cref="Native"/>, because the native XML of a
+    /// library manager is a snapshot of how references <i>resolved</i> on the exporting machine
+    /// rather than a list of what the project <i>asks for</i>. Two engineers with different
+    /// libraries installed would produce different bytes from the same project.
+    /// </para>
+    /// <para>
+    /// <b>One way.</b> Alone among the forms, this one is exported and never imported: the file
+    /// is for review, and libraries are changed in the IDE (plan §3.10, Tier 3). The importer
+    /// skips it by suffix, and the coverage report says so out loud, because a file that looks
+    /// editable and is silently ignored is its own kind of gap.
+    /// </para>
+    /// </remarks>
+    Libraries,
+
+    /// <summary>
     /// Export the node itself natively (non-recursive) <b>and</b> descend into a
     /// subdirectory for its children.
     /// </summary>
@@ -76,13 +95,18 @@ public static class ExportFormRules
         [CodesysObjectType.ImagePool] = ExportForm.Native,
         [CodesysObjectType.ProjectInformation] = ExportForm.Native,
 
+        // Was Skip, reported as the NOT_IMPLEMENTED gap that _coverage.md exists to name:
+        // adding a library or bumping a version changed nothing in the mirror. Its
+        // references now go to neutral YAML, which is the one form a second vendor can
+        // also produce without inventing a file format of its own.
+        [CodesysObjectType.LibraryManager] = ExportForm.Libraries,
+
         // Exporting the visualisation manager makes every later import raise an
         // interactive overwrite dialog (codescribe's finding). The template carries these.
         [CodesysObjectType.VisualisationManager] = ExportForm.Skip,
         [CodesysObjectType.TargetVisualisation] = ExportForm.Skip,
         [CodesysObjectType.WebVisualisation] = ExportForm.Skip,
         [CodesysObjectType.VisualisationStyle] = ExportForm.Skip,
-        [CodesysObjectType.LibraryManager] = ExportForm.Skip,
         [CodesysObjectType.ProjectSettings] = ExportForm.Skip,
         [CodesysObjectType.Task] = ExportForm.Skip,
         [CodesysObjectType.CallToPou] = ExportForm.Skip,
@@ -120,7 +144,24 @@ public static class ExportFormRules
         };
     }
 
-    /// <summary>True when the form produces reviewable plain text rather than XML.</summary>
+    /// <summary>True when the form produces an ST layer — text the toolchain round-trips.</summary>
+    /// <remarks>
+    /// Not simply "is it plain text": <see cref="ExportForm.Libraries"/> writes YAML, which is
+    /// perfectly readable in a diff, but it is not an ST layer and there is no
+    /// <c>textual_declaration</c> on the other end to replace. Answering true for it would put
+    /// a library file through the importer's ST path.
+    /// </remarks>
     public static bool IsTextual(ExportForm form) =>
         form is ExportForm.StFull or ExportForm.StDeclaration or ExportForm.StImplementation;
+
+    /// <summary>
+    /// True when the form travels one way: exported for review, never applied back.
+    /// </summary>
+    /// <remarks>
+    /// The predicate the UI needs for the Tier 3 lock glyph (plan §9.3), and the reason the
+    /// export tree has three kinds of file rather than two — objects, Versio's own bookkeeping,
+    /// and real project state with no trustworthy import path. Kept beside the form table so
+    /// the next one-way form is declared in the same place as the rule that writes it.
+    /// </remarks>
+    public static bool IsExportOnly(ExportForm form) => form is ExportForm.Libraries;
 }
