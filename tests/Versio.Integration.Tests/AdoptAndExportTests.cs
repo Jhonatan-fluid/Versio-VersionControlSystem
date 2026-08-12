@@ -102,6 +102,51 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
     }
 
     [SkippableFact]
+    public async Task Repo_config_is_written_with_LF_so_a_clone_does_not_show_it_modified()
+    {
+        // repo.json is committed by design - it is how a teammate gets the same project
+        // mapping - and .gitattributes stores it LF. System.Text.Json indents with
+        // Environment.NewLine, so on Windows it was written CRLF: the file showed as modified
+        // the moment anyone cloned, and again every time Versio touched it.
+        Skip.If(!File.Exists(FixtureProject), "fixture project missing");
+        await InitRepoAsync();
+
+        var store = new RepoConfigStore(_repo);
+        await store.SaveAsync(
+            new RepoConfig
+            {
+                Bindings =
+                [
+                    new ProjectBinding
+                    {
+                        Id = "b-eol",
+                        ProjectPath = ProjectRelativePath,
+                        ExportPath = "plc/RefrigeratorControl",
+                    },
+                ],
+            }, CancellationToken.None);
+
+        var text = await File.ReadAllTextAsync(store.Path);
+        output.WriteLine(text);
+
+        // By name, not by ordinal. "vendor": 0 tells a reviewer nothing, and inserting a
+        // vendor into PlcVendor would silently repoint every existing binding at a different
+        // toolchain - in a file that is committed and shared, that is a data bug that
+        // announces itself only as an export driven by the wrong tool.
+        Assert.Contains("\"vendor\": \"Codesys\"", text, StringComparison.Ordinal);
+
+        var bytes = await File.ReadAllBytesAsync(store.Path);
+        var carriageReturns = bytes.Count(b => b == (byte)'\r');
+
+        output.WriteLine($"{bytes.Length} bytes, {carriageReturns} CR");
+        Assert.Equal(0, carriageReturns);
+
+        // And it must still parse back to what went in, since the point is a shared mapping.
+        var reloaded = await store.LoadAsync(CancellationToken.None);
+        Assert.Equal("b-eol", Assert.Single(reloaded.Bindings).Id);
+    }
+
+    [SkippableFact]
     public async Task Adopting_the_same_project_twice_is_refused_rather_than_duplicated()
     {
         Skip.If(!File.Exists(FixtureProject), "fixture project missing");

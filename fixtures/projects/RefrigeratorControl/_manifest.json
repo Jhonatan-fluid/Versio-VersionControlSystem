@@ -1,0 +1,99 @@
+{
+  "bindingId": "6d3f8855e205", 
+  "objectCount": 10, 
+  "objects": [
+    {
+      "bytes": 217759, 
+      "form": "NATIVE", 
+      "guid": "9f8998dc-cd78-48bb-9f8d-8bf7be08b5cb", 
+      "hash": "sha256:b590f0e000aee3485c06f33ca3553151186b3b592c8b8545dc525a657838ecfc", 
+      "name": "Diagnosis", 
+      "path": "Device/Plc Logic/Application/Diagnosis.vis.xml", 
+      "type": "VISUALISATION"
+    }, 
+    {
+      "bytes": 238, 
+      "form": "ST_DECL", 
+      "guid": "f8ccf7f9-314d-4201-b460-0f935fbcbf7d", 
+      "hash": "sha256:95040041622aa79187d76c476ede44bd5e1d1f3a0cbbac6fa938b7165dcab870", 
+      "name": "Glob_Var", 
+      "path": "Device/Plc Logic/Application/Glob_Var.gvl.st", 
+      "type": "GVL"
+    }, 
+    {
+      "bytes": 2550, 
+      "form": "NATIVE", 
+      "guid": "f8ccf7f9-314d-4201-b460-0f935fbcbf7d", 
+      "hash": "sha256:ed690f64e8a6a3daea20d702de9675a47a7853b9d889713624fb7c76baccba4b", 
+      "name": "Glob_Var", 
+      "path": "Device/Plc Logic/Application/Glob_Var.gvl.xml", 
+      "type": "GVL"
+    }, 
+    {
+      "bytes": 2569769, 
+      "form": "NATIVE", 
+      "guid": "08412c71-e71d-4e95-8beb-72e28660fbeb", 
+      "hash": "sha256:f6a3a575b86c1e914c73d360c26b9fdd2a399f696e5c1483f2e4d97907ff5847", 
+      "name": "Live_Visu", 
+      "path": "Device/Plc Logic/Application/Live_Visu.vis.xml", 
+      "type": "VISUALISATION"
+    }, 
+    {
+      "bytes": 79078, 
+      "form": "NATIVE", 
+      "guid": "6247544f-164d-4cdc-b8f8-6177e40d8dd8", 
+      "hash": "sha256:d58c226b1ce22654dbefc7c9d3e474880d54f436366936fa2a9ae44f2f1fb348", 
+      "name": "PLC_PRG", 
+      "path": "Device/Plc Logic/Application/PLC_PRG.xml", 
+      "type": "POU"
+    }, 
+    {
+      "bytes": 39722, 
+      "form": "NATIVE", 
+      "guid": "b18a62c7-546d-4b2a-a116-1c9d0f44cbbb", 
+      "hash": "sha256:af5fa2058ecbcf210b512562c5d99ab566d6fb88401b158dce3fb09f7885b40c", 
+      "name": "Signals", 
+      "path": "Device/Plc Logic/Application/Signals.xml", 
+      "type": "POU"
+    }, 
+    {
+      "bytes": 1422, 
+      "form": "ST_FULL", 
+      "guid": "980a4bef-b0b7-4f16-816b-1f41192a0ee0", 
+      "hash": "sha256:33eea7061c2e3c2f4f1bd468046d266247fe7990ed2410243131d455fabea5a8", 
+      "name": "Simulation", 
+      "path": "Device/Plc Logic/Application/Simulation.st", 
+      "type": "POU"
+    }, 
+    {
+      "bytes": 12528, 
+      "form": "NATIVE_R", 
+      "guid": "7c1a32ef-a1ae-4012-81f7-53c1a9cdd552", 
+      "hash": "sha256:79144a970995d1f6ad66a4adadb7d2920f002bd63387f8d9b00d4baab933d2c8", 
+      "name": "Task Configuration", 
+      "path": "Device/Plc Logic/Application/Task Configuration.xml", 
+      "type": "TASK_CONFIGURATION"
+    }, 
+    {
+      "bytes": 180059, 
+      "form": "NATIVE", 
+      "guid": "4f0c492e-5c3e-40e6-a236-cf175e837edf", 
+      "hash": "sha256:aca12fe7e3d37d9f88ec1a63d823acd7e087cfe1bc7ba7f5a9644826bd429e57", 
+      "name": "Visualization", 
+      "path": "Device/Plc Logic/Application/Visualization.vis.xml", 
+      "type": "VISUALISATION"
+    }, 
+    {
+      "bytes": 7440, 
+      "form": "NATIVE", 
+      "guid": "b5430773-3042-47d6-a6d3-28650a6ce532", 
+      "hash": "sha256:91526c92d843f9bcc23f9dca0a94dd7e49cb8f22b84b710f9624b050ba27ec36", 
+      "name": "GlobalTextList", 
+      "path": "GlobalTextList.xml", 
+      "type": "GLOBAL_TEXTLIST"
+    }
+  ], 
+  "project": "RefrigeratorControl.project", 
+  "schema": 1, 
+  "warnings": []
+}

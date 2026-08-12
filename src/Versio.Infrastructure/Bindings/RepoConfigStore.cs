@@ -28,6 +28,15 @@ public sealed class RepoConfigStore(string repositoryRoot)
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         PropertyNameCaseInsensitive = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+
+        // Enums by NAME, not by ordinal.
+        //
+        // repo.json is committed and shared, so both of the alternatives are bad in ways that
+        // do not announce themselves. A reviewer reading "vendor": 0 in a diff learns nothing;
+        // worse, inserting a vendor into PlcVendor - alphabetically, say - would silently
+        // repoint every existing binding at a different toolchain, and the first sign would be
+        // an export driven by the wrong tool.
+        Converters = { new JsonStringEnumConverter() },
     };
 
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
@@ -64,9 +73,16 @@ public sealed class RepoConfigStore(string repositoryRoot)
     {
         Directory.CreateDirectory(System.IO.Path.GetDirectoryName(Path)!);
 
+        // LF, whatever the platform. System.Text.Json indents with Environment.NewLine, so
+        // this file was written CRLF on Windows while .gitattributes stores it LF - which made
+        // repo.json show as modified immediately after every clone, and again every time
+        // Versio touched it. A committed file has to be byte-stable across the machines that
+        // share it, and this one is shared by definition: it is how a teammate gets the same
+        // project mapping.
+        var json = JsonSerializer.Serialize(config, Options).Replace("\r\n", "\n");
+
         var temp = Path + ".tmp";
-        await File.WriteAllTextAsync(temp, JsonSerializer.Serialize(config, Options), Utf8NoBom, ct)
-            .ConfigureAwait(false);
+        await File.WriteAllTextAsync(temp, json, Utf8NoBom, ct).ConfigureAwait(false);
 
         File.Move(temp, Path, overwrite: true);
     }

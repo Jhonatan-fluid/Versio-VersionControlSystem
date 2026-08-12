@@ -1,6 +1,10 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-12 · **Commits:** 19 · **Tests:** 644 unit + 64 integration, 0 skipped
+**Date:** 2026-08-12 · **Commits:** 20 · **Tests:** 644 unit + 65 integration, 0 skipped
+
+> One integration test, `RepositoryWatcherTests.A_deleted_file_is_reported`, is **flaky under
+> full-suite load** — see Findings. It passes in isolation and failed once during a complete
+> run. Known, not fixed.
 
 ---
 
@@ -221,6 +225,55 @@ differs from the number of distinct objects exactly when an object exports to mo
 layer — which the fixture does, via its GVL. Found by an assertion that trusted the field's
 name. Nothing depends on it today; the integration test asserts against distinct GUIDs.
 
+### A flaky watcher test, and two fixes that made it worse
+
+`RepositoryWatcherTests.A_deleted_file_is_reported` failed once during a full run and passes
+in isolation every time. The root cause is a fixed `Thread.Sleep(250)` waiting for
+`FileSystemWatcher` to arm — an assumption that holds on an idle machine and stops holding
+under the full suite, where CODESYS exports are hammering the same disk.
+
+Replacing the sleep with a deterministic arming probe — write a file, wait for the watcher to
+report *it*, then act — made the test fail **consistently**. Windows raises a single
+directory-level notification when several files in one folder change at once, so the probe and
+the test's own file coalesced into one event for `src` rather than two for the files, and the
+assertion looks for a file by name. Moving the probe to the repository root did not help
+either.
+
+**Reverted.** A flake observed once is not worth destabilising a working test for at a
+stopping point, and two attempts had already turned "fails rarely" into "fails always". The
+diagnosis is recorded here so the next attempt starts from it rather than from the sleep.
+
+It is also a second sighting of the directory-level coalescing already documented for `.git`:
+it applies to working-tree folders too, and any test asserting on a per-file event is making
+an assumption Windows does not guarantee.
+
+### Committed configuration has to be byte-stable
+
+`repo.json` is committed by design — it is how a teammate gets the same project mapping — and
+two things made it churn:
+
+- **CRLF.** `System.Text.Json` indents with `Environment.NewLine`, so it was written CRLF on
+  Windows while `.gitattributes` stores it LF. The file showed as modified the moment anyone
+  cloned, and again every time Versio touched it.
+- **Enums by ordinal.** Without a converter, `vendor` would have serialised as `0`. A reviewer
+  reading that in a diff learns nothing, and inserting a vendor into `PlcVendor` —
+  alphabetically, say — would have silently repointed every existing binding at a different
+  toolchain, first noticed as an export driven by the wrong tool.
+
+Both fixed and pinned by a test that reads the bytes back.
+
+### A vacuous check, caught in the act
+
+While investigating whether the export's line endings would churn through git, the first
+measurement used `grep -c $''` and reported that all 34 lines of a `.st` file contained a
+carriage return. They contain none: the pattern matched every line rather than CR-containing
+ones. Measured again with `tr -cd` **and a known-CRLF control file**, the export is LF
+throughout and round-trips through git unchanged.
+
+The fix that was almost applied — rewriting the export's line endings — would have churned a
+proven pipeline to solve a problem that did not exist. The control file is what separated the
+two, and it cost one line.
+
 ### The fake filesystem was not a filesystem
 
 `FakeFileSystem.EnumerateFiles` was a bare prefix match, so `plc/A.project` enumerated as part
@@ -268,12 +321,13 @@ state machine are tested in milliseconds rather than by causing real crashes.
 a paragraph in a README — because it was a paragraph in a README, and it had already stopped
 being true.
 
-**Green results are distrusted until they can fail.** Six vacuous passes have been caught this
-way: a round-trip that succeeded because the import silently did nothing; equivalence tests
+**Green results are distrusted until they can fail.** Seven vacuous passes have been caught
+this way: a round-trip that succeeded because the import silently did nothing; equivalence tests
 that "passed" by skipping; a tree spike that measured a collapsed tree; a `Core2` mutation that
 looked absent because the import had errored; a scenario suite that simulated text edits by
-rewriting the one file no human touches; and a shell check that reported success because a
-process started rather than because it did its job.
+rewriting the one file no human touches; a shell check that reported success because a
+process started rather than because it did its job; and a line-ending measurement whose pattern
+matched every line rather than the ones it claimed to count.
 
 **A silent failure is a bug even when the code is correct.** The rolling file sink was written,
 reviewed and tested by eye — and never instantiated, so nothing reached disk while the log

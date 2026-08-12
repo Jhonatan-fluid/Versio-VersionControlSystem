@@ -2,6 +2,34 @@ using Versio.Core.Git;
 
 namespace Versio.Core.Projects;
 
+/// <summary>What a node in the tree actually is.</summary>
+/// <remarks>
+/// <para>
+/// Split out because the tree stopped being only the export's objects. The one panel now
+/// carries the project file, the objects underneath it and every other changed file in the
+/// repository, and each of those behaves differently when it is selected — an object opens a
+/// diff, a project reports whether its export succeeded.
+/// </para>
+/// <para>
+/// It also removes a latent bug: "folder" used to mean "has no GUID", and a manifest record
+/// that arrived without one therefore rendered as a folder with no children.
+/// </para>
+/// </remarks>
+public enum ProjectNodeKind
+{
+    /// <summary>A folder in the CODESYS structure. Carries no diff of its own.</summary>
+    Folder,
+
+    /// <summary>One CODESYS object, with one or more exported layers.</summary>
+    Object,
+
+    /// <summary>A tracked <c>.project</c> file. Reports its export, never a diff.</summary>
+    Project,
+
+    /// <summary>A changed file that is not part of any export tree.</summary>
+    File,
+}
+
 /// <summary>One node of the project as the engineer thinks about it.</summary>
 /// <remarks>
 /// Immutable, and built away from the UI thread. The tree is rebuilt on every status refresh,
@@ -16,11 +44,24 @@ public sealed record ProjectTreeNode
     /// <summary>Path within the export tree, forward slashes. Identity for a folder.</summary>
     public required string Path { get; init; }
 
+    /// <summary>What this node is. Decides how it renders and what selecting it does.</summary>
+    public ProjectNodeKind Kind { get; init; } = ProjectNodeKind.Folder;
+
     /// <summary>The CODESYS object GUID, or null for a folder.</summary>
     public string? Guid { get; init; }
 
     /// <summary>CODESYS object type, or null for a folder.</summary>
     public string? Type { get; init; }
+
+    /// <summary>
+    /// A short phrase shown beside the name, when the node has one.
+    /// </summary>
+    /// <remarks>
+    /// Carries the export state of a <see cref="ProjectNodeKind.Project"/> row — the thing a
+    /// project row reports instead of a diff, because a <c>.project</c> is a binary compound
+    /// document and there is no diff to show.
+    /// </remarks>
+    public string Detail { get; init; } = string.Empty;
 
     /// <summary>
     /// Every file this object exports to, repo-relative.
@@ -43,7 +84,8 @@ public sealed record ProjectTreeNode
 
     public IReadOnlyList<ProjectTreeNode> Children { get; init; } = [];
 
-    public bool IsFolder => Guid is null;
+    /// <summary>Whether this node groups others rather than standing for one thing.</summary>
+    public bool IsFolder => Kind is ProjectNodeKind.Folder;
 
     /// <summary>True when this node or anything under it changed.</summary>
     public bool HasChanges => Status != ChangeKind.Unmodified || ChangedDescendants > 0;
@@ -149,6 +191,7 @@ public static class ProjectTreeBuilder
                     ? segments.LastOrDefault() ?? first.Path
                     : first.Name,
                 Path = Combine(root, first.Path),
+                Kind = ProjectNodeKind.Object,
                 Guid = string.IsNullOrEmpty(first.Guid) ? null : first.Guid,
                 Type = first.Type,
                 Files = paths,
@@ -189,6 +232,7 @@ public static class ProjectTreeBuilder
         {
             Name = name,
             Path = path,
+            Kind = ProjectNodeKind.Folder,
             Children = children,
 
             // Counted over descendants, so a change is never hidden behind a collapsed node.
@@ -224,7 +268,7 @@ public static class ProjectTreeBuilder
     private static ProjectTreeNode EmptyRoot(ProjectTreeNode tree) =>
         tree with { Children = [], ChangedDescendants = 0, RollUp = ChangeKind.Unmodified };
 
-    private static bool Matches(string name, string search) =>
+    internal static bool Matches(string name, string search) =>
         string.IsNullOrWhiteSpace(search) ||
         name.Contains(search, StringComparison.OrdinalIgnoreCase);
 
@@ -237,7 +281,7 @@ public static class ProjectTreeBuilder
     /// — an object appearing, vanishing or moving — outrank an edit to one that stayed put,
     /// because they are the ones somebody might not have meant.
     /// </remarks>
-    private static ChangeKind Stronger(ChangeKind a, ChangeKind b) =>
+    internal static ChangeKind Stronger(ChangeKind a, ChangeKind b) =>
         Rank(a) >= Rank(b) ? a : b;
 
     private static int Rank(ChangeKind kind) => kind switch
@@ -252,6 +296,6 @@ public static class ProjectTreeBuilder
         _ => 0,
     };
 
-    private static string Combine(string left, string right) =>
+    internal static string Combine(string left, string right) =>
         string.IsNullOrEmpty(left) ? right : $"{left.TrimEnd('/')}/{right.TrimStart('/')}";
 }

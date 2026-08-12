@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "bindings": [
+    {
+      "id": "6d3f8855e205",
+      "projectPath": "fixtures/projects/RefrigeratorControl.project",
+      "templatePath": "fixtures/projects/RefrigeratorControl_template.project",
+      "exportPath": "fixtures/projects/RefrigeratorControl",
+      "profile": "CODESYS V3.5 SP22 Patch 2",
+      "vendor": "Codesys",
+      "enabled": true
+    }
+  ],
+  "ignore": [],
+  "autoAdoptNewProjects": false
+}
