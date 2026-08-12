@@ -45,6 +45,43 @@ public sealed class CodesysProjectFormat : IPlcProjectFormat
         BindingConventions.ConventionalExportPath(projectPath);
 
     /// <summary>
+    /// What CODESYS leaves beside a project, measured on 3.5.22.20.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Opening <c>Machine.project</c> creates <c>Machine.~u</c> while it is held and removes it
+    /// on close; a crash leaves it behind. Exporting or opening also leaves
+    /// <c>Machine-AllUsers.opt</c> and <c>Machine-&lt;user&gt;-&lt;machine&gt;.opt</c>, and those
+    /// <b>persist</b> — they are per-user settings, not locks.
+    /// </para>
+    /// <para>
+    /// The per-user file is the one that matters: its <i>name</i> carries the username and the
+    /// machine name, so committing it writes both into history and guarantees a different file
+    /// for every engineer who opens the project.
+    /// </para>
+    /// <para>
+    /// Only observed files are listed. CODESYS can be configured to write <c>.bak</c> backups
+    /// too, and that is deliberately absent: it has not been seen here, and the rules are
+    /// re-checked on every adoption, so it costs one line to add when it is.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<string> TransientPatternsFor(string projectPath)
+    {
+        if (string.IsNullOrEmpty(projectPath))
+        {
+            return [];
+        }
+
+        var normalized = projectPath.Replace(Backslash, '/');
+        var stem = normalized.EndsWith(BindingConventions.ProjectExtension,
+                                       StringComparison.OrdinalIgnoreCase)
+            ? normalized[..^BindingConventions.ProjectExtension.Length]
+            : normalized;
+
+        return [stem + ".~u", stem + "-*.opt"];
+    }
+
+    /// <summary>
     /// CODESYS writes <c>&lt;project&gt;.~u</c> beside the project while the IDE holds it.
     /// </summary>
     /// <remarks>
@@ -98,6 +135,9 @@ public sealed class CodesysProjectFormat : IPlcProjectFormat
     /// Trim() with no arguments removes the carriage return and any stray whitespace,
     /// so a marker written with either line ending parses the same way.
     /// </remarks>
+    /// <summary>Path separator, written without an escape for the same reason as Lf.</summary>
+    private const char Backslash = (char)92;
+
     private const char Lf = (char)10;
 
     private static string Field(string[] lines, int index) =>

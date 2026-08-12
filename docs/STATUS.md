@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-12 · **Commits:** 26 · **Tests:** 711 unit + 93 integration, 0 skipped
+**Date:** 2026-08-12 · **Commits:** 27 · **Tests:** 722 unit + 95 integration, 0 skipped
 
 > One integration test, `RepositoryWatcherTests.A_deleted_file_is_reported`, is **flaky under
 > full-suite load** — see Findings. It passes in isolation and failed once during a complete
@@ -100,6 +100,7 @@ format; `.gitattributes` covers every registered vendor's extensions.
 | **Commit gate** | A stale mirror is exported *and staged* before the commit. Push releases the direction locks; commit does not, and the panel says so |
 | **Diff view** | Eleven languages, new files rendered entirely green, *Show full file*, rows built only when realised, **per-hunk stage and unstage** |
 | **Open in the IDE** | Export runs anyway, from a copy; import waits and names who has the project. Neither marks the binding failed, and the breaker is never fed |
+| **Adoption writes `.gitignore`** | Created when absent, appended when present, never overriding an existing decision. Keeps the toolchain's `-AllUsers.opt` and `-<user>-<machine>.opt` out of git — the second carries a username and machine name in its filename |
 | **PLC state** | Toolchain, direction lock, staleness and heartbeat, folded into the project panel as facts rather than controls. Two buttons survive: export what is stale, and acknowledge a failure |
 | **Export coverage** | What the export does *not* carry, said out loud: `_coverage.md` in the tree, every skip in the manifest with a stable reason, and a sentence in the panel naming what cannot be relied on. A gap is distinguished from a deliberate omission, and an old manifest reports "unknown" rather than "complete" |
 | **Chrome** | One app-wide progress bar with a caption, maximized on open, log console collapsed, heartbeat during long runs |
@@ -279,6 +280,45 @@ This makes export-while-open a solvable problem rather than a refusal. Import is
 should not be: the IDE holds its own copy in memory and would silently revert an import on the
 next Ctrl+S, so it must fail and say so.
 
+### What CODESYS actually leaves beside a project, and why it belongs in `.gitignore`
+
+Written down because the first account of it in this document was **wrong**. The scratch folder
+after an export was said to hold a `.~u` — inferred from the lock file measured earlier, not
+looked at, because the test had cleaned up before anyone could see. Measured properly:
+
+| | |
+|---|---|
+| Open and close cleanly | **Nothing left.** `<name>.~u` exists only while the project is held, and is removed on close |
+| Killed while open | `.~u` survives — the stale case the pid probe already handles |
+| Export or open | `<name>-AllUsers.opt` and `<name>-<user>-<machine>.opt`, and these **persist** |
+
+The `.opt` files are per-user settings rather than locks, which is why they outlive the session
+that made them — and why they matter here. Untracked in a repository, they turn up in
+`git status`, in the project panel as loose rows, and in anything that stages everything.
+
+**The per-user one is worse than noise: its filename carries the username and the machine
+name.** Committing it writes both into history permanently, and produces a different file for
+every engineer who opens the project — a file that can only ever conflict.
+
+So adoption now writes `.gitignore` as well as `.gitattributes`, **creating it when absent**,
+which is the ordinary starting point for somebody who has kept PLC projects in a folder until
+now. The rules come from the vendor through `IPlcProjectFormat.TransientPatternsFor` and are
+**scoped to the project** — `plc/Machine-*.opt`, never a repository-wide `*.opt`. A repository
+belongs to other people too, and ignoring every file of an extension on the strength of one
+adopted project is not Versio's decision to make.
+
+An existing decision is never overridden, negations included: a repository saying
+`!plc/Machine-*.opt` has been configured deliberately, and adding the positive rule underneath
+would quietly reverse it. Re-adoption adds nothing, so the file does not grow on every scan.
+
+The integration test asserts against **git**, not against the file it just wrote: it creates
+all three leftovers and checks `git status` no longer reports them, while the project itself
+still is reported — an ignore rule that swallowed the thing being tracked would be a far worse
+bug than the noise it removes. Verified to fail with the patterns removed.
+
+**The habit worth keeping:** the wrong version of this was a reasonable inference from a real
+measurement taken minutes earlier, and it read as fact. Looking cost one command.
+
 ### Working while the IDE has the project open
 
 Built on the measurements below. The behaviour now:
@@ -297,7 +337,7 @@ The staleness rule mirrors `LockRecoveryPolicy`, because the problem is the same
 
 Two things the integration test caught that nothing else would have:
 
-- **The scratch folder is emptied, not the copy deleted.** Opening a project makes CODESYS write its own `.~u` beside it, so removing only the file we created left that behind for good. The folder is ours and holds nothing else.
+- **The scratch folder is emptied, not the copy deleted.** Removing only the file we created left the toolchain's own files behind for good. The first write-up of this named the wrong file — `.~u`, inferred rather than looked at, because the test had already cleaned up. Measured properly afterwards: a clean open/close leaves **nothing**, and it is the *export* that leaves `<name>-AllUsers.opt` and `<name>-<user>-<machine>.opt`. See the finding below.
 - **The test's own CODESYS launch used `ArgumentList`**, which quotes the whole `--profile=A B C` pair — the trap already documented in the README and covered by `ArgumentBuildingTests`. It exits 1 in under a second with no output, and the symptom was two silently skipped tests. It now uses `LocalCodesysRunner.BuildArguments`, which also means the test launches CODESYS the same way the product does.
 
 Not built, and deliberately: **automatic retry when the IDE closes.** The `.~u` disappearing is a filesystem event the watcher could see, which would make closing CODESYS the trigger and need no button. Today the next save retries, and *Export now* is there meanwhile. Worth doing, not worth blocking this on.

@@ -61,6 +61,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | Multi-vendor detection — registry, per-binding vendor, mixed repositories | ✅ `PlcFormats`; Rockwell/Siemens/TwinCAT are additive |
 | Application icon — 8 sizes, hand-tuned below 48px, embedded in the exe | ✅ 12 tests over the `.ico` itself |
 | **Automatic tracking** — every project found, with its `.gitattributes`/LFS rules | ✅ 13 refusal tests + real-repo integration |
+| **`.gitignore` written on adoption**, created if the repository has none | ✅ keeps the toolchain's `.opt` scratch files out of git; scoped to the project, never repository-wide |
 | **Automatic export** when the project changes | ✅ 11 files in 16.7 s on the fixture, lock taken and persisted |
 | Direction lock in plain English, shared by the panel and the log | ✅ `SyncNarrative` — every blocking state names its remedy |
 | Heartbeat during a 17–31 s export | ✅ elapsed time in the panel, not silence |
@@ -247,6 +248,7 @@ Each of these cost real debugging time and is now pinned by a test.
 | **`git status` needs `-z`** | Without it git quotes and escapes paths containing spaces or non-ASCII — both routine in CODESYS object names. |
 | **`git status` writes to `.git/index`** | It rewrites the stat cache. Anything that refreshes *because* the index changed will refresh forever. `StatusRefreshPolicy` ignores metadata events for a second after each refresh; working-tree events are never suppressed. |
 | **Windows raises a `.git` directory event for every write inside it** | Including the lock files git creates around each invocation. Treating a bare `.git` event as a real change made lock-file churn alone wake the watcher — caught by the integration suite, not by reading the code. Nothing is lost by dropping it: a write to `.git/index` also raises an event naming `.git/index`. |
+| **CODESYS leaves `.opt` files beside a project** | An export or an open writes `<name>-AllUsers.opt` and `<name>-<user>-<machine>.opt`, and they **persist** — the second puts a username and machine name into git by its filename alone. Adoption ignores them. A clean open/close leaves no `.~u`; only a crash does. |
 | **A project open in the IDE is refused, and `<project>.~u` says so** | CODESYS writes that file beside the project while it holds it — user, machine, pid, timestamp — and refuses any second instance with *"currently in use by 'x' on 'y'"*. Both export and import fail cleanly and change nothing, but `CODESYS.exe` still **exits 0**, so success must be judged from the script's own `rc` and `done` events. Read the `.~u` first and skip the 17–31 s launch. |
 | **CODESYS argument quoting** | `--profile="A B C"`, never `"--profile=A B C"`. `ProcessStartInfo.ArgumentList` produces the latter, and CODESYS exits 1 in under a second with no output. |
 | **`--noUI` requires `--profile`** | It is a hard precondition, not a preference. |

@@ -542,9 +542,11 @@ public sealed class SyncOrchestrator
     /// </summary>
     /// <remarks>
     /// <b>Everything in the folder, not just the copy we made.</b> Opening a project makes the
-    /// toolchain write its own sidecars beside it — CODESYS leaves a <c>.~u</c> while it holds
-    /// one — and deleting only the file we created leaves those behind for good. The folder is
-    /// ours and holds nothing else, so emptying it is both safe and the only way to be sure.
+    /// toolchain write its own files beside it, and they outlive the run: measured on CODESYS
+    /// 3.5.22.20, an export leaves <c>&lt;name&gt;-AllUsers.opt</c> and
+    /// <c>&lt;name&gt;-&lt;user&gt;-&lt;machine&gt;.opt</c>. Deleting only the file we created
+    /// leaves those behind for good. The folder is ours and holds nothing else, so emptying it
+    /// is both safe and the only way to be sure — including of whatever a later version adds.
     /// </remarks>
     private void DiscardScratchProject(string? path)
     {

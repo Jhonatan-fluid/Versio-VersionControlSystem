@@ -88,6 +88,17 @@ public interface IPlcProjectFormat
     /// </remarks>
     string? OccupancyMarkerFor(string projectPath);
 
+    /// <summary>
+    /// Globs for files this toolchain writes beside a project that git should not keep.
+    /// </summary>
+    /// <remarks>
+    /// Scoped to the project rather than blanket extensions: <c>plc/Machine-*.opt</c>, not
+    /// <c>*.opt</c>. A repository is somebody else's too, and ignoring every file of a given
+    /// extension repository-wide on the strength of one adopted project is a decision Versio
+    /// has no business making.
+    /// </remarks>
+    IReadOnlyList<string> TransientPatternsFor(string projectPath);
+
     /// <summary>Read a marker's contents. Never throws; unreadable means held.</summary>
     /// <remarks>
     /// Returns <see cref="OccupancyVerdict.Held"/> or <see cref="OccupancyVerdict.Free"/> only.

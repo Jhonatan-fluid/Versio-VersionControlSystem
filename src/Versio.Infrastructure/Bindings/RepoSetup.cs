@@ -19,6 +19,9 @@ public sealed record AdoptionResult
     /// <summary>Patterns added to <c>.gitattributes</c>, empty when it was already correct.</summary>
     public IReadOnlyList<string> GitAttributePatterns { get; init; } = [];
 
+    /// <summary>Patterns added to <c>.gitignore</c>, empty when it was already correct.</summary>
+    public IReadOnlyList<string> GitIgnorePatterns { get; init; } = [];
+
     public bool LfsConfigured { get; init; }
 
     public bool Adopted => Decision.CanAdopt;
@@ -56,6 +59,8 @@ public sealed class RepoSetup(
 
     public string GitAttributesPath => Path.Combine(repositoryRoot, ".gitattributes");
 
+    public string GitIgnorePath => Path.Combine(repositoryRoot, ".gitignore");
+
     /// <summary>Adopt a discovered project: guard it, write the attributes, write the binding.</summary>
     /// <param name="projectPath">Repo-relative, as the scanner reports it.</param>
     /// <param name="profile">Toolchain profile to pin, when one has been resolved.</param>
@@ -90,6 +95,7 @@ public sealed class RepoSetup(
         }
 
         var attributes = await EnsureGitAttributesAsync(git, ct).ConfigureAwait(false);
+        var ignores = await EnsureGitIgnoreAsync(projectPath, ct).ConfigureAwait(false);
         var updated = await store.AddBindingAsync(decision.Binding!, ct).ConfigureAwait(false);
 
         // Adoption edits two tracked files and creates a binding the user will live with,
@@ -104,8 +110,64 @@ public sealed class RepoSetup(
             Decision = decision,
             Config = updated,
             GitAttributePatterns = attributes.AddedPatterns,
+            GitIgnorePatterns = ignores.AddedPatterns,
             LfsConfigured = attributes.UsesLfs,
         };
+    }
+
+    /// <summary>
+    /// Keep the toolchain's own scratch files out of git, creating <c>.gitignore</c> if needed.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Measured on CODESYS 3.5.22.20: opening a project leaves <c>&lt;name&gt;-AllUsers.opt</c>
+    /// and <c>&lt;name&gt;-&lt;user&gt;-&lt;machine&gt;.opt</c> beside it, and a <c>.~u</c> lock
+    /// while it is held. Untracked, they appear in <c>git status</c>, in the project panel, and
+    /// in anything that stages everything — and the per-user one puts a username and a machine
+    /// name into history by its filename alone.
+    /// </para>
+    /// <para>
+    /// <b>Created when absent</b>, because a repository with no <c>.gitignore</c> is the normal
+    /// starting point for somebody who has kept PLC projects in a folder until now.
+    /// </para>
+    /// <para>
+    /// The patterns come from the vendor and are scoped to this project, so adopting one
+    /// CODESYS project does not quietly ignore every <c>.opt</c> file in somebody else's
+    /// repository.
+    /// </para>
+    /// </remarks>
+    public async Task<GitIgnorePlan> EnsureGitIgnoreAsync(string projectPath, CancellationToken ct)
+    {
+        // No format means no vendor to ask, which is a legitimate way to construct this for
+        // the scan-only paths. Nothing to ignore rather than a guess.
+        var patterns = format?.TransientPatternsFor(projectPath) ?? [];
+        if (patterns.Count == 0)
+        {
+            return GitIgnorePlan.NoChange(string.Empty);
+        }
+
+        var existing = File.Exists(GitIgnorePath)
+            ? await File.ReadAllTextAsync(GitIgnorePath, ct).ConfigureAwait(false)
+            : string.Empty;
+
+        var creating = existing.Length == 0;
+        var plan = GitIgnore.Plan(existing, patterns);
+
+        if (!plan.ChangeNeeded)
+        {
+            _log.Debug(LogCategory.Git, ".gitignore already covers this project's scratch files");
+            return plan;
+        }
+
+        await File.WriteAllTextAsync(GitIgnorePath, plan.Content, Utf8NoBom, ct)
+            .ConfigureAwait(false);
+
+        _log.Info(LogCategory.Git,
+            $"{(creating ? "created .gitignore with" : "added")} " +
+            $"{plan.AddedPatterns.Count} rule(s) for the toolchain's scratch files: " +
+            string.Join(", ", plan.AddedPatterns));
+
+        return plan;
     }
 
     /// <summary>Add the binary/LFS rules for this vendor's project files, if they are absent.</summary>

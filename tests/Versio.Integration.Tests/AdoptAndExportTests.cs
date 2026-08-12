@@ -445,6 +445,119 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
                  w.Contains("_manifest.json", StringComparison.OrdinalIgnoreCase));
     }
 
+    [SkippableFact]
+    public async Task Adoption_creates_a_gitignore_and_git_then_ignores_the_toolchains_leftovers()
+    {
+        // The end of the chain, asserted with git itself rather than by reading our own file
+        // back: a rule that looks right and does not match is the same as no rule.
+        //
+        // Measured on CODESYS 3.5.22.20: opening a project leaves <name>-AllUsers.opt and
+        // <name>-<user>-<machine>.opt beside it, and a .~u lock while it is held. The per-user
+        // one carries a username and a machine name in its filename.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        Skip.If(!File.Exists(FixtureProject), "fixture project missing");
+
+        await InitRepoAsync();
+
+        // No .gitignore at all — the normal starting point for somebody who has kept PLC
+        // projects in a folder until now.
+        Assert.False(File.Exists(Path.Combine(_repo, ".gitignore")));
+
+        var git = new GitCliClient(_repo, logger: new TestLogger(output));
+        var setup = new RepoSetup(_repo, CodesysProjectFormat.Instance, new TestLogger(output));
+
+        var adopted = await setup.AdoptAsync(ProjectRelativePath, git, null, CancellationToken.None);
+        Assert.True(adopted.Adopted, adopted.Decision.Explanation);
+
+        var ignorePath = Path.Combine(_repo, ".gitignore");
+        Assert.True(File.Exists(ignorePath), "adoption created no .gitignore");
+
+        var contents = await File.ReadAllTextAsync(ignorePath);
+        output.WriteLine(contents);
+        Assert.NotEmpty(adopted.GitIgnorePatterns);
+
+        // Now put the real files there and ask git, not ourselves.
+        var folder = Path.GetDirectoryName(Path.Combine(_repo, ProjectRelativePath))!;
+        var stem = Path.GetFileNameWithoutExtension(ProjectRelativePath);
+
+        string[] leftovers =
+        [
+            Path.Combine(folder, stem + "-AllUsers.opt"),
+            Path.Combine(folder, stem + "-elli_-ROG-JVM.opt"),
+            Path.Combine(folder, stem + ".~u"),
+        ];
+
+        foreach (var file in leftovers)
+        {
+            await File.WriteAllTextAsync(file, "scratch");
+        }
+
+        var status = await git.StatusAsync(CancellationToken.None);
+        foreach (var change in status.Changes)
+        {
+            output.WriteLine($"{change.Effective} {change.Path}");
+        }
+
+        Assert.All(leftovers, file =>
+        {
+            var relative = Path.GetRelativePath(_repo, file).Replace(Path.DirectorySeparatorChar, '/');
+            Assert.DoesNotContain(status.Changes, c =>
+                string.Equals(c.Path.Replace(Path.DirectorySeparatorChar, '/'), relative, StringComparison.OrdinalIgnoreCase));
+        });
+
+        // And the project itself is still very much visible - an ignore rule that swallowed
+        // the thing being tracked would be a far worse bug than the noise it removes.
+        Assert.Contains(status.Changes, c =>
+            c.Path.Replace(Path.DirectorySeparatorChar, '/').EndsWith(ProjectRelativePath, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [SkippableFact]
+    public async Task Adopting_twice_does_not_grow_the_gitignore()
+    {
+        // Adoption re-runs on every scan. A second copy of the rules would show up as a diff
+        // on every startup, which is its own kind of broken.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        Skip.If(!File.Exists(FixtureProject), "fixture project missing");
+
+        await InitRepoAsync();
+
+        var git = new GitCliClient(_repo, logger: new TestLogger(output));
+        var setup = new RepoSetup(_repo, CodesysProjectFormat.Instance, new TestLogger(output));
+
+        await setup.AdoptAsync(ProjectRelativePath, git, null, CancellationToken.None);
+        var first = await File.ReadAllTextAsync(Path.Combine(_repo, ".gitignore"));
+
+        var again = await setup.EnsureGitIgnoreAsync(ProjectRelativePath, CancellationToken.None);
+        var second = await File.ReadAllTextAsync(Path.Combine(_repo, ".gitignore"));
+
+        Assert.False(again.ChangeNeeded);
+        Assert.Equal(first, second);
+    }
+
+    /// <summary>Whether git is on PATH, so a machine without it skips rather than fails.</summary>
+    private static bool GitAvailable
+    {
+        get
+        {
+            try
+            {
+                using var p = System.Diagnostics.Process.Start(
+                    new System.Diagnostics.ProcessStartInfo("git", "--version")
+                    {
+                        RedirectStandardOutput = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                    });
+                p!.WaitForExit(5000);
+                return p.ExitCode == 0;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+    }
+
     private static string FixtureProject =>
         Core.Tests.TestPaths.Project("RefrigeratorControl.project");
 
