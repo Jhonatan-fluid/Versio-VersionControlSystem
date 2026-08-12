@@ -91,6 +91,8 @@ public static class SyncNarrative
         SyncVerdict.AwaitingConfirmation =>
             "The exported text changed. Review the diff and confirm before importing.",
 
+        SyncVerdict.BlockedByOpenProject => outcome.Explanation,
+
         SyncVerdict.Failed =>
             $"The operation failed: {outcome.Explanation}",
 

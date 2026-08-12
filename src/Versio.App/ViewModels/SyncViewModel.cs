@@ -485,7 +485,12 @@ public sealed class SyncViewModel : ObservableObject
             runner,
             new JsonLockStore(_repositoryRoot, _logger),
             progress: progress,
-            logger: _logger);
+            logger: _logger,
+
+            // Lets the engine find out that CODESYS has the project open before it spends
+            // 17-31 s being told so - and, for an export, work around it by reading a copy.
+            occupancy: new ProjectOccupancyProbe(
+                new WindowsFileSystem(), _machine, new ProcessProbe()));
 
         var decisions = await _orchestrator
             .RecoverAsync(new LockRecoveryPolicy(_machine, new ProcessProbe()), ct)

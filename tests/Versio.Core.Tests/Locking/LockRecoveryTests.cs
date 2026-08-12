@@ -24,6 +24,8 @@ public class LockRecoveryTests
     private sealed class Probe(bool alive) : IProcessProbe
     {
         public bool IsVersioProcessAlive(int processId, string sessionId) => alive;
+
+    public bool IsProcessAlive(int processId) => alive;
     }
 
     private static LockState StateWith(SyncDirection direction, DateTimeOffset boot,

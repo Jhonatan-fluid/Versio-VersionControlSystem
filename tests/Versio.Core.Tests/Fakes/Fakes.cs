@@ -168,6 +168,8 @@ public sealed class FakeCodesysRunner : IPlcRunner
 public sealed class FakeProcessProbe(bool alive) : IProcessProbe
 {
     public bool IsVersioProcessAlive(int processId, string sessionId) => alive;
+
+    public bool IsProcessAlive(int processId) => alive;
 }
 
 public sealed class FakeMachineIdentity(DateTimeOffset boot, int pid = 4242) : IMachineIdentity

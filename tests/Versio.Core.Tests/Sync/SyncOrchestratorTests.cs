@@ -42,6 +42,9 @@ public class SyncOrchestratorTests
         /// around the orchestrator from outside it.</summary>
         public IVersioLogger? LoggerOverride { get; set; }
 
+        /// <summary>What the IDE is doing with the project, as the engine sees it.</summary>
+        public StubOccupancy Occupancy { get; } = new();
+
         public Harness(OrchestratorOptions? options = null, params ProjectBinding[] extra)
         {
             Binding = new ProjectBinding
@@ -70,7 +73,8 @@ public class SyncOrchestratorTests
                 },
                 Clock, Fs, Codesys, Locks,
                 options ?? new OrchestratorOptions { RequireImportConfirmation = false },
-                logger: LoggerOverride ?? new VersioLogger(Clock).AddSink(Sink));
+                logger: LoggerOverride ?? new VersioLogger(Clock).AddSink(Sink),
+                occupancy: Occupancy);
 
         public void SetProject(string content) =>
             Fs.Write(Path.Combine(Root, "plc", "A.project"), content);
@@ -842,4 +846,181 @@ public class SyncOrchestratorTests
 
         Assert.All(h.Log, e => Assert.Equal("click123", e.OperationId));
     }
+
+    /// <summary>An IDE that is holding the project, or is not, as the test requires.</summary>
+    private sealed class StubOccupancy : IProjectOccupancyProbe
+    {
+        public ProjectOccupancy Answer { get; set; } = ProjectOccupancy.Free;
+
+        public string? AskedAbout { get; private set; }
+
+        public Task<ProjectOccupancy> CheckAsync(
+            ProjectBinding binding, string absoluteProjectPath, CancellationToken ct)
+        {
+            AskedAbout = absoluteProjectPath;
+            return Task.FromResult(Answer);
+        }
+
+        public void Hold(string user = "elli_", string machine = "ROG-JVM") =>
+            Answer = new ProjectOccupancy
+            {
+                Verdict = OccupancyVerdict.Held,
+                User = user,
+                Machine = machine,
+                ProcessId = 45812,
+            };
+    }
+
+    // --- the project is open in the IDE -------------------------------------------
+
+    [Fact]
+    public async Task An_import_waits_while_the_IDE_has_the_project_rather_than_failing()
+    {
+        // The behaviour this whole feature exists for. Somebody saving and leaving CODESYS
+        // open is the most common working state there is; treating it as a failure marks the
+        // binding failed and stops all syncing until a button is pressed, again and again.
+        var h = new Harness();
+        h.Occupancy.Hold();
+        h.SetExportedText("edited by hand");
+
+        var outcome = await h.Orchestrator.HandleChangeAsync(
+            new SyncJob { BindingId = BindingId, Source = ChangeSource.ExportedText,
+                          Confirmed = true, Synchronous = true },
+            CancellationToken.None);
+
+        Assert.Equal(SyncVerdict.BlockedByOpenProject, outcome.Verdict);
+
+        // Not a failure: no failed binding, so nothing has to be acknowledged before the
+        // next attempt, and IsFailure stays false so callers do not report an error.
+        Assert.False(outcome.IsFailure);
+        Assert.NotEqual(SyncDirection.Failed, h.Orchestrator.StateOf(BindingId));
+
+        // And nothing ran.
+        Assert.Empty(h.Codesys.Jobs);
+
+        // The sentence names who has it and what to do, because "blocked" without a remedy
+        // is the message that generates the support call.
+        Assert.Contains("open in the IDE", SyncNarrative.Describe(outcome), StringComparison.Ordinal);
+        Assert.Contains("elli_ on ROG-JVM", SyncNarrative.Describe(outcome), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Waiting_for_the_IDE_does_not_feed_the_circuit_breaker()
+    {
+        // A breaker that counted these would trip after a few saves and halt the project for
+        // the rest of the session - turning a wait into exactly the sticky failure this
+        // verdict was introduced to avoid.
+        var h = new Harness(new OrchestratorOptions
+        {
+            RequireImportConfirmation = false,
+            CircuitBreakerThreshold = 2,
+        });
+
+        h.Occupancy.Hold();
+
+        for (var i = 0; i < 6; i++)
+        {
+            h.SetExportedText($"edit {i}");
+            var outcome = await h.Orchestrator.HandleChangeAsync(
+                new SyncJob { BindingId = BindingId, Source = ChangeSource.ExportedText,
+                              Confirmed = true, Synchronous = true },
+                CancellationToken.None);
+
+            Assert.Equal(SyncVerdict.BlockedByOpenProject, outcome.Verdict);
+        }
+
+        // Let go, and the next one runs as though nothing had happened.
+        h.Occupancy.Answer = ProjectOccupancy.Free;
+        h.SetExportedText("edit after closing");
+
+        var after = await h.Orchestrator.HandleChangeAsync(
+            new SyncJob { BindingId = BindingId, Source = ChangeSource.ExportedText,
+                          Confirmed = true, Synchronous = true },
+            CancellationToken.None);
+
+        Assert.Equal(SyncVerdict.Completed, after.Verdict);
+    }
+
+    [Fact]
+    public async Task An_export_reads_a_copy_when_the_IDE_has_the_original_open()
+    {
+        // Export only reads, and the vendor lock is a sidecar on the path - so a copy at
+        // another path is unencumbered and exports byte-identically. Measured against real
+        // CODESYS; see the finding in STATUS.
+        var h = new Harness();
+        h.Occupancy.Hold();
+        h.SetProject("v2");
+
+        var outcome = await h.Orchestrator.HandleChangeAsync(
+            new SyncJob { BindingId = BindingId, Source = ChangeSource.Project,
+                          Synchronous = true },
+            CancellationToken.None);
+
+        Assert.Equal(SyncVerdict.Completed, outcome.Verdict);
+
+        var job = Assert.Single(h.Codesys.Jobs);
+        var project = Assert.Single(job.Projects);
+
+        // It read the copy, not the original.
+        Assert.Contains(Path.Combine(".versio", "local", "open", BindingId),
+                        project.ProjectPath, StringComparison.OrdinalIgnoreCase);
+
+        // Keeping the project's own filename, because the manifest records the basename and
+        // any other name would rewrite that field on every export while the IDE is open.
+        Assert.Equal("A.project", Path.GetFileName(project.ProjectPath));
+
+        // The mirror still goes where it always did.
+        Assert.Equal(Path.Combine(Root, "plc", "A"), project.Path);
+
+        // And the scratch copy does not survive the run.
+        Assert.False(h.Fs.FileExists(project.ProjectPath));
+    }
+
+    [Fact]
+    public async Task An_export_reads_the_project_itself_when_nobody_has_it_open()
+    {
+        // The copy is for the awkward case only. Paying it always would double the IO on
+        // every export for a situation that is usually not happening.
+        var h = new Harness();
+        h.SetProject("v2");
+
+        await h.Orchestrator.HandleChangeAsync(
+            new SyncJob { BindingId = BindingId, Source = ChangeSource.Project,
+                          Synchronous = true },
+            CancellationToken.None);
+
+        var project = Assert.Single(Assert.Single(h.Codesys.Jobs).Projects);
+
+        Assert.Equal(Path.Combine(Root, "plc", "A.project"), project.ProjectPath);
+        Assert.DoesNotContain("local", project.ProjectPath, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task A_stale_marker_left_by_a_crashed_IDE_does_not_block_anything()
+    {
+        // Resolved to Stale upstream by the probe, which is where the pid is checked. The
+        // engine's part is simply to treat it as free - a crashed IDE must not halt sync
+        // until somebody deletes a file they have never heard of.
+        var h = new Harness();
+        h.Occupancy.Answer = new ProjectOccupancy
+        {
+            Verdict = OccupancyVerdict.Stale,
+            User = "elli_",
+            Machine = "ROG-JVM",
+            ProcessId = 45812,
+        };
+
+        h.SetProject("v2");
+
+        var outcome = await h.Orchestrator.HandleChangeAsync(
+            new SyncJob { BindingId = BindingId, Source = ChangeSource.Project,
+                          Synchronous = true },
+            CancellationToken.None);
+
+        Assert.Equal(SyncVerdict.Completed, outcome.Verdict);
+
+        var project = Assert.Single(Assert.Single(h.Codesys.Jobs).Projects);
+        Assert.Equal(Path.Combine(Root, "plc", "A.project"), project.ProjectPath);
+    }
+
 }

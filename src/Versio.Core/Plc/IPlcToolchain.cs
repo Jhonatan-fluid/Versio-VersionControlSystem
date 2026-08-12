@@ -76,6 +76,25 @@ public interface IPlcProjectFormat
 
     /// <summary>Conventional export directory for a project path.</summary>
     string ConventionalExportPath(string projectPath);
+
+    /// <summary>
+    /// Where this toolchain records that it has a project open, or null if it records nothing.
+    /// </summary>
+    /// <remarks>
+    /// CODESYS writes a <c>&lt;project&gt;.~u</c> sidecar while the IDE holds a project and
+    /// removes it on close. Knowing that before launching is worth 17-31 s per attempt, and
+    /// more importantly it is the difference between "wait" and a failure the user has to
+    /// clear by hand.
+    /// </remarks>
+    string? OccupancyMarkerFor(string projectPath);
+
+    /// <summary>Read a marker's contents. Never throws; unreadable means held.</summary>
+    /// <remarks>
+    /// Returns <see cref="OccupancyVerdict.Held"/> or <see cref="OccupancyVerdict.Free"/> only.
+    /// Whether a marker naming a dead process is <i>stale</i> is not a vendor question, and is
+    /// decided by <see cref="ProjectOccupancyProbe.Resolve"/>.
+    /// </remarks>
+    ProjectOccupancy ParseOccupancy(string markerContents);
 }
 
 /// <summary>

@@ -5,6 +5,15 @@ public interface IProcessProbe
 {
     /// <summary>True when a Versio process with this id is currently running.</summary>
     bool IsVersioProcessAlive(int processId, string sessionId);
+
+    /// <summary>True when any process with this id is running, whatever it is.</summary>
+    /// <remarks>
+    /// The name is not checked, because the caller is asking about somebody else's process —
+    /// a vendor IDE holding a project open. Pid reuse makes this an over-estimate, and that is
+    /// the right way to be wrong: believing a lock that has expired costs a wait, and
+    /// disbelieving one that has not costs two writers on one project.
+    /// </remarks>
+    bool IsProcessAlive(int processId);
 }
 
 /// <summary>Current machine identity. Abstracted so recovery is unit testable.</summary>

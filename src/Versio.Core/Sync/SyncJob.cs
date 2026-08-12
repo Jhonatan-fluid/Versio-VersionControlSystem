@@ -38,6 +38,17 @@ public enum SyncVerdict
     /// <summary>Import needs the user to confirm before anything is written.</summary>
     AwaitingConfirmation,
 
+    /// <summary>
+    /// The project is open in its vendor's IDE, so this direction cannot run yet.
+    /// </summary>
+    /// <remarks>
+    /// <b>A wait, not a failure.</b> Somebody saving and leaving CODESYS open is the most
+    /// common working state there is; treating it as a failure marks the binding failed and
+    /// stops all syncing until a button is pressed, over and over. This verdict deliberately
+    /// leaves the direction lock alone and does not feed the circuit breaker.
+    /// </remarks>
+    BlockedByOpenProject,
+
     /// <summary>CODESYS failed, or the run did not complete.</summary>
     Failed,
 

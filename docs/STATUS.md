@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-12 · **Commits:** 25 · **Tests:** 694 unit + 91 integration, 0 skipped
+**Date:** 2026-08-12 · **Commits:** 26 · **Tests:** 711 unit + 93 integration, 0 skipped
 
 > One integration test, `RepositoryWatcherTests.A_deleted_file_is_reported`, is **flaky under
 > full-suite load** — see Findings. It passes in isolation and failed once during a complete
@@ -99,6 +99,7 @@ format; `.gitattributes` covers every registered vendor's extensions.
 | **Git panel** | Staging, commit message with a 50/72 guide, Ctrl+Enter, fetch / pull / push, stash, recent commits with click-to-diff. One operation at a time across every button — a shared counted flag, so a 17–31 s export also holds them |
 | **Commit gate** | A stale mirror is exported *and staged* before the commit. Push releases the direction locks; commit does not, and the panel says so |
 | **Diff view** | Eleven languages, new files rendered entirely green, *Show full file*, rows built only when realised, **per-hunk stage and unstage** |
+| **Open in the IDE** | Export runs anyway, from a copy; import waits and names who has the project. Neither marks the binding failed, and the breaker is never fed |
 | **PLC state** | Toolchain, direction lock, staleness and heartbeat, folded into the project panel as facts rather than controls. Two buttons survive: export what is stale, and acknowledge a failure |
 | **Export coverage** | What the export does *not* carry, said out loud: `_coverage.md` in the tree, every skip in the manifest with a stable reason, and a sentence in the panel naming what cannot be relied on. A gap is distinguished from a deliberate omission, and an old manifest reports "unknown" rather than "complete" |
 | **Chrome** | One app-wide progress bar with a caption, maximized on open, log console collapsed, heartbeat during long runs |
@@ -108,34 +109,7 @@ format; `.gitattributes` covers every registered vendor's extensions.
 
 ## What remains, in dependency order
 
-### 1. Stop treating "the IDE is open" as a failure
-
-The most common working state there is — an engineer saves and leaves CODESYS open — currently
-ends with the binding marked failed and nothing syncing until somebody presses a button. The
-behaviour of CODESYS itself is now measured (it refuses cleanly in both directions, and nothing
-is corrupted); what is missing is Versio's response to that refusal. See the finding below for
-the measurements and the design.
-
-**Export can be made to work anyway, and that is measured too:** the lock is a sidecar on the
-path, the `.project` copies cleanly while held, and exporting the copy produces a byte-identical
-tree. So export does not have to refuse at all.
-
-- **Export:** copy the project to `.versio/local/` — **keeping the same filename**, because the
-  manifest records the basename — and export the copy. `.versio/local/` is already gitignored,
-  so the copy never reaches git or the panel, and the exporter's existing staging swap already
-  puts the result in the right place. **Log the copy the way the swap is now logged** — where
-  it went, how big, and that the export that follows is of a copy rather than of the project
-  itself, or the log will describe an export of a file the user cannot find
-- **Import:** must still refuse. Even if CODESYS allowed the write, the IDE holds its own copy
-  in memory and the next Ctrl+S would silently revert it
-- Pre-flight `<project>.~u` rather than paying a 17–31 s launch to be told no, and probe the pid
-  in it so a crashed IDE does not block sync forever
-- A verdict that means *wait*, not *fail*: no failed binding, no circuit breaker. Retry when the
-  lock file disappears — the watcher can see that happen, so closing CODESYS is the trigger and
-  no button is needed. Offer one anyway for the case where the watcher missed it
-- Behind the vendor seam — `.~u` is a CODESYS fact and `Sync/` may not learn it
-
-### 2. Export what is currently missing
+### 1. Export what is currently missing
 
 The coverage report now names it, which is the point at which it becomes a task rather than a
 rumour. On the fixture: **two library managers, neither exported.**
@@ -146,13 +120,20 @@ rumour. On the fixture: **two library managers, neither exported.**
 - Parse it back into device nodes, so a changed library version appears under the device that
   owns it. This is the tree feature that was listed before anyone noticed the data did not exist
 
-### 3. Finish the git surface
+### 2. Finish the git surface
 
 - ~~Stash~~, ~~recent commits with click-to-diff~~, ~~per-hunk staging~~ — **done**
 - Branch creation, and the clone-with-verification dialog. `CreateBranchAsync` and
   `VerifyRemoteAsync` are both written and tested; neither has a surface
 - Discard, with a confirmation. `DiscardAsync` exists and is deliberately unreachable until
   there is a dialog worth trusting in front of it
+
+### 3. Retry automatically when the IDE closes
+
+Export and import both handle an open project now. The one piece left is the trigger: the
+vendor's lock file disappearing is a filesystem event the watcher could see, which would make
+closing CODESYS the retry and need no button at all. Today the next save retries and
+*Export now* covers the gap.
 
 ### 4. Finish the project tree
 
@@ -297,6 +278,29 @@ Two constraints that fall out of this and are easy to get wrong:
 This makes export-while-open a solvable problem rather than a refusal. Import is not, and
 should not be: the IDE holds its own copy in memory and would silently revert an import on the
 next Ctrl+S, so it must fail and say so.
+
+### Working while the IDE has the project open
+
+Built on the measurements below. The behaviour now:
+
+| | |
+|---|---|
+| **Export** | Runs. The project is copied to `.versio/local/open/<binding>/` keeping its own filename, and the copy is exported — the vendor lock is a sidecar on the path, so a copy elsewhere is unencumbered |
+| **Import** | Waits, and says who has it. It cannot be made to work: the IDE holds its own copy in memory and the next save would silently revert whatever was imported |
+| **Either** | `BlockedByOpenProject` — **not** a failure. No failed binding, nothing to acknowledge, and the circuit breaker is never fed |
+
+**The check runs before the coalescer and the breaker**, which a test caught: placed after them, six blocked saves tripped a breaker with a threshold of two and halted the project for the session — turning the wait into exactly the sticky failure the verdict was introduced to remove. It runs *after* the hash gate and the direction lock, because "nothing changed" and "the lock forbids this direction" are more specific answers, and reporting the IDE instead would be noise on every settle.
+
+The staleness rule mirrors `LockRecoveryPolicy`, because the problem is the same. A marker naming a dead process **on this machine** is stale and ignored — a crashed IDE must not block sync until somebody deletes a file they have never heard of. A marker from **another machine** is always believed: its pid means nothing here, and a project on a share really can be open on somebody else's desk. Guessing free would put two writers on one project.
+
+**It sits behind the vendor seam.** `IPlcProjectFormat` gained `OccupancyMarkerFor` and `ParseOccupancy`; `Sync/` knows only that something may be held and by whom. A vendor that cannot answer reports free, so registering a format never makes its projects unsyncable.
+
+Two things the integration test caught that nothing else would have:
+
+- **The scratch folder is emptied, not the copy deleted.** Opening a project makes CODESYS write its own `.~u` beside it, so removing only the file we created left that behind for good. The folder is ours and holds nothing else.
+- **The test's own CODESYS launch used `ArgumentList`**, which quotes the whole `--profile=A B C` pair — the trap already documented in the README and covered by `ArgumentBuildingTests`. It exits 1 in under a second with no output, and the symptom was two silently skipped tests. It now uses `LocalCodesysRunner.BuildArguments`, which also means the test launches CODESYS the same way the product does.
+
+Not built, and deliberately: **automatic retry when the IDE closes.** The `.~u` disappearing is a filesystem event the watcher could see, which would make closing CODESYS the trigger and need no button. Today the next save retries, and *Export now* is there meanwhile. Worth doing, not worth blocking this on.
 
 ### A project open in the CODESYS IDE — measured, and it is the normal case
 

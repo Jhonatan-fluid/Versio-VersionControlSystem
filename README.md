@@ -37,8 +37,10 @@ Both directions run automatically and deterministically. A per-project **directi
 | Drive CODESYS headlessly from C# | ✅ `LocalCodesysRunner` |
 | Git status / branches / stage / commit / diff / push | ✅ `GitCliClient` over real `git.exe` |
 | Direction lock, hash gate, coalescer, commit gate | ✅ pure logic, heavily tested |
-| Sync while the project is open in the CODESYS IDE | ⛔ **refused by CODESYS, and Versio mishandles the refusal** — it marks the binding failed. Measured; see STATUS item 1 |
-| Export while the IDE is open, via a copy | ⛔ not built, but **proven possible**: the lock is a sidecar on the path, the project copies cleanly while held, and the copy exports byte-identically |
+| Open-project detection, behind the vendor seam | ✅ `IPlcProjectFormat` answers where the marker is and what it says; a stale one from a crashed IDE is ignored, one from another machine is believed |
+| **Export while the project is open in the CODESYS IDE** | ✅ exports a copy — the vendor lock is a sidecar on the path. Proven against a real CODESYS holding the original |
+| **Import while it is open** — waits and names who has it | ✅ it cannot be made to work: the IDE would revert it on the next save. Neither direction marks the binding failed, and the breaker is never fed |
+| Retry automatically when the IDE closes | ⛔ the lock file vanishing is a watchable event; today the next save retries |
 | Sync orchestrator — locks, loop defences, commit gate | ✅ 24 scenario tests |
 | Change detection — watcher + safety poll + overflow rescan | ✅ `FileChangeWatcher`, driving the sync engine |
 | Staleness stated, not implied — "2 projects not yet exported" | ✅ answered by the commit gate, so the two cannot disagree |

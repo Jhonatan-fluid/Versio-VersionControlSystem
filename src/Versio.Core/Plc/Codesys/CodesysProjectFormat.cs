@@ -43,4 +43,63 @@ public sealed class CodesysProjectFormat : IPlcProjectFormat
 
     public string ConventionalExportPath(string projectPath) =>
         BindingConventions.ConventionalExportPath(projectPath);
+
+    /// <summary>
+    /// CODESYS writes <c>&lt;project&gt;.~u</c> beside the project while the IDE holds it.
+    /// </summary>
+    /// <remarks>
+    /// The extension is <b>replaced</b>, not appended: <c>Machine.project</c> is locked by
+    /// <c>Machine.~u</c>. Measured on 3.5.22.20 by holding a project open and watching the
+    /// directory; the file appears on open and is removed on close.
+    /// </remarks>
+    public string? OccupancyMarkerFor(string projectPath) =>
+        string.IsNullOrEmpty(projectPath)
+            ? null
+            : System.IO.Path.ChangeExtension(projectPath, ".~u");
+
+    /// <summary>
+    /// Read a <c>.~u</c>: user, machine, pid, timestamp, one per line.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Measured contents, from a real IDE session:
+    /// </para>
+    /// <code>
+    /// elli_
+    /// ROG-JVM
+    /// 45812
+    /// 639221606143479369
+    /// </code>
+    /// <para>
+    /// Undocumented, so it is parsed defensively: a file that exists at all means somebody has
+    /// the project, and every field beyond that is a bonus used only for wording. A future
+    /// CODESYS writing a fourth field, or none, must not turn "somebody has this open" into
+    /// "nobody does" — which is the one way this could lose work.
+    /// </para>
+    /// </remarks>
+    public ProjectOccupancy ParseOccupancy(string markerContents)
+    {
+        var lines = (markerContents ?? string.Empty)
+            .Split(Lf)
+            .Select(l => l.Trim())
+            .ToArray();
+
+        return new ProjectOccupancy
+        {
+            Verdict = OccupancyVerdict.Held,
+            User = Field(lines, 0),
+            Machine = Field(lines, 1),
+            ProcessId = int.TryParse(Field(lines, 2), out var pid) && pid > 0 ? pid : null,
+        };
+    }
+
+    /// <summary>The line separator, written without an escape on purpose.</summary>
+    /// <remarks>
+    /// Trim() with no arguments removes the carriage return and any stray whitespace,
+    /// so a marker written with either line ending parses the same way.
+    /// </remarks>
+    private const char Lf = (char)10;
+
+    private static string Field(string[] lines, int index) =>
+        index < lines.Length ? lines[index] : string.Empty;
 }

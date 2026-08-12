@@ -49,6 +49,28 @@ public sealed class MachineIdentity : IMachineIdentity
 /// </remarks>
 public sealed class ProcessProbe(string expectedProcessName = "Versio") : IProcessProbe
 {
+    /// <summary>True when any process with this id is running.</summary>
+    /// <remarks>
+    /// No name check: the caller is asking about somebody else's process, typically a vendor
+    /// IDE. <c>GetProcessById</c> throws for an id nobody holds, which is the answer.
+    /// </remarks>
+    public bool IsProcessAlive(int processId)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(processId);
+            return !process.HasExited;
+        }
+        catch (ArgumentException)
+        {
+            return false;   // no such process
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
     public bool IsVersioProcessAlive(int processId, string sessionId)
     {
         try

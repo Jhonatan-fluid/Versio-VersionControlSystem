@@ -72,6 +72,12 @@ public sealed class SyncOrchestrator
     /// <param name="logger">Optional so the several hundred unit tests that construct this
     /// need not mention it; it defaults to <see cref="NullLogger.Instance"/> rather than to
     /// null, so no call site below has to check.</param>
+    /// <summary>
+    /// Asks whether a vendor IDE has the project open. Optional: without one, every project
+    /// reads as free and the behaviour is exactly what it was before this existed.
+    /// </summary>
+    private readonly IProjectOccupancyProbe? _occupancy;
+
     public SyncOrchestrator(
         string repoRoot,
         IReadOnlyList<ProjectBinding> bindings,
@@ -82,8 +88,10 @@ public sealed class SyncOrchestrator
         ILockStore lockStore,
         OrchestratorOptions? options = null,
         IProgress<PlcProgress>? progress = null,
-        IVersioLogger? logger = null)
+        IVersioLogger? logger = null,
+        IProjectOccupancyProbe? occupancy = null)
     {
+        _occupancy = occupancy;
         _repoRoot = repoRoot;
         _owner = owner;
         _progress = progress;
@@ -272,6 +280,58 @@ public sealed class SyncOrchestrator
                 "exported text changed; review the diff and confirm before importing", state);
         }
 
+        // 5b. IS THE PROJECT OPEN IN ITS IDE?
+        //
+        // Before the coalescer and the breaker, deliberately. A wait must consume neither:
+        // a breaker fed by these would trip after a few saves and halt the project for the
+        // rest of the session, turning the wait into exactly the sticky failure this exists to
+        // avoid. It is also before the lock, because refusing after taking it would leave the
+        // direction claimed for work that never ran.
+        //
+        // After the hash gate and the direction lock, though: "nothing changed" and "the lock
+        // forbids this direction" are more specific answers, and reporting the IDE instead
+        // would be noise on every settle while somebody has CODESYS open.
+        //
+        // It costs one file read, against finding out 17-31 s later from the toolchain itself
+        // — and finding out then as a failure, which marks the binding failed and stops
+        // everything until somebody clears it by hand.
+        //
+        // Somebody saving and leaving CODESYS open is the most common working state there is.
+        // It is a wait, not a fault.
+        var occupancy = _occupancy is null
+            ? ProjectOccupancy.Free
+            : await _occupancy.CheckAsync(binding, Absolute(binding.ProjectPath), ct)
+                .ConfigureAwait(false);
+
+        string? scratchProject = null;
+
+        if (occupancy.IsHeld)
+        {
+            // Import writes into the .project itself. Even if the toolchain allowed it, the
+            // IDE holds its own copy in memory and the next save would silently revert what
+            // was imported - so this direction genuinely has to wait.
+            if (job.Source == ChangeSource.ExportedText)
+            {
+                return Refuse(LogLevel.Information, SyncVerdict.BlockedByOpenProject,
+                    job.BindingId,
+                    $"{ProjectName(binding)} is open in the IDE ({occupancy.Owner}), so the " +
+                    "edited text cannot be imported yet. Close it and the import will run.",
+                    state);
+            }
+
+            // Export only reads, and the lock is a sidecar on the path - so a copy at another
+            // path is unencumbered and exports byte-identically. Measured; see STATUS.
+            scratchProject = await CopyOpenProjectAsync(binding, ct).ConfigureAwait(false);
+
+            if (scratchProject is null)
+            {
+                return Refuse(LogLevel.Warning, SyncVerdict.BlockedByOpenProject, job.BindingId,
+                    $"{ProjectName(binding)} is open in the IDE ({occupancy.Owner}) and could " +
+                    "not be copied aside, so the export was not attempted.",
+                    state);
+            }
+        }
+
         // 6. Coalescing. Skipped for a synchronous job: the commit gate must run now and
         //    block, not queue behind a background export.
         if (!job.Synchronous)
@@ -321,7 +381,7 @@ public sealed class SyncOrchestrator
         try
         {
             return job.Source == ChangeSource.Project
-                ? await ExportAsync(binding, transition, ct).ConfigureAwait(false)
+                ? await ExportAsync(binding, transition, scratchProject, ct).ConfigureAwait(false)
                 : await ImportAsync(binding, transition, ct).ConfigureAwait(false);
         }
         finally
@@ -333,10 +393,17 @@ public sealed class SyncOrchestrator
         }
     }
 
+    /// <param name="scratchProject">
+    /// A copy to export instead of the project itself, when the IDE has the original open.
+    /// Deleted when the run finishes, however it finishes.
+    /// </param>
     private async Task<SyncOutcome> ExportAsync(
-        ProjectBinding binding, TransitionResult transition, CancellationToken ct)
+        ProjectBinding binding, TransitionResult transition, string? scratchProject,
+        CancellationToken ct)
     {
         var started = _clock.UtcNow;
+        var source = scratchProject ?? Absolute(binding.ProjectPath);
+
         var job = new PlcJob
         {
             Operation = PlcOperation.Export,
@@ -346,15 +413,27 @@ public sealed class SyncOrchestrator
                 new PlcProjectJob
                 {
                     BindingId = binding.Id,
-                    ProjectPath = Absolute(binding.ProjectPath),
+                    ProjectPath = source,
+
+                    // Unchanged. The copy is only ever the thing being read; the mirror it
+                    // produces belongs where it always did.
                     Path = Absolute(binding.ExportPath),
                 },
             ],
         };
 
+        // Said out loud when it is a copy. Otherwise the log describes an export of a file at
+        // a path the user cannot find, and nothing explains why.
         _log.Info(LogCategory.Sync,
-            $"{binding.Id}: exporting {binding.ProjectPath} → {binding.ExportPath}" +
+            $"{binding.Id}: exporting " +
+            (scratchProject is null
+                ? binding.ProjectPath
+                : $"a copy of {binding.ProjectPath} (the IDE has the original open)") +
+            $" → {binding.ExportPath}" +
             (string.IsNullOrEmpty(binding.Profile) ? string.Empty : $" [{binding.Profile}]"));
+
+        try
+        {
 
         var result = await _toolchain.RunAsync(job, _progress, ct).ConfigureAwait(false);
         var elapsed = _clock.UtcNow - started;
@@ -408,6 +487,104 @@ public sealed class SyncOrchestrator
             Warnings = LogWarnings(binding.Id, result),
             Duration = elapsed,
         };
+        }
+        finally
+        {
+            DiscardScratchProject(scratchProject);
+        }
+    }
+
+    /// <summary>
+    /// Copy a project the IDE has open, so the export has something it is allowed to read.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The filename is preserved.</b> The manifest records the project's basename, so a copy
+    /// called anything else would rewrite that field and churn the mirror on every export while
+    /// the IDE happened to be open.
+    /// </para>
+    /// <para>
+    /// Under <c>.versio/local/</c>, which is gitignored, so the copy never reaches git and
+    /// never appears in the panel. Deleted as soon as the export finishes: it is scaffolding,
+    /// not a backup, and the backups live next door under their own name.
+    /// </para>
+    /// </remarks>
+    private async Task<string?> CopyOpenProjectAsync(ProjectBinding binding, CancellationToken ct)
+    {
+        var source = Absolute(binding.ProjectPath);
+        var folder = Combine(".versio", "local", "open", binding.Id);
+        var name = Path.GetFileName(binding.ProjectPath.Replace('/', Path.DirectorySeparatorChar));
+        var destination = Path.Combine(folder, name);
+
+        try
+        {
+            _fs.CreateDirectory(folder);
+            await _fs.CopyAsync(source, destination, ct).ConfigureAwait(false);
+
+            _log.Info(LogCategory.Sync,
+                $"{binding.Id}: copied {binding.ProjectPath} to {destination} because the IDE " +
+                "has it open; the export reads the copy");
+
+            return destination;
+        }
+        catch (IOException ex)
+        {
+            // Reported, not thrown. A project that cannot be copied is a project that has to
+            // wait, and a wait is not a failure the user has to acknowledge.
+            _log.Warn(LogCategory.Sync,
+                $"{binding.Id}: could not copy {binding.ProjectPath} aside: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Clear the scratch folder. Never fails the export it belongs to.
+    /// </summary>
+    /// <remarks>
+    /// <b>Everything in the folder, not just the copy we made.</b> Opening a project makes the
+    /// toolchain write its own sidecars beside it — CODESYS leaves a <c>.~u</c> while it holds
+    /// one — and deleting only the file we created leaves those behind for good. The folder is
+    /// ours and holds nothing else, so emptying it is both safe and the only way to be sure.
+    /// </remarks>
+    private void DiscardScratchProject(string? path)
+    {
+        if (path is null)
+        {
+            return;
+        }
+
+        var folder = Path.GetDirectoryName(path);
+        if (folder is null)
+        {
+            return;
+        }
+
+        foreach (var file in SafeEnumerate(folder))
+        {
+            try
+            {
+                _fs.DeleteFile(file);
+                _log.Debug(LogCategory.Sync, $"removed the scratch file {file}");
+            }
+            catch (IOException ex)
+            {
+                // Under .versio/local/, so a leak costs disk and nothing else. The next export
+                // of this binding overwrites the copy in place regardless.
+                _log.Debug(LogCategory.Sync, $"could not remove {file}: {ex.Message}");
+            }
+        }
+    }
+
+    private IEnumerable<string> SafeEnumerate(string folder)
+    {
+        try
+        {
+            return _fs.DirectoryExists(folder) ? _fs.EnumerateFiles(folder) : [];
+        }
+        catch (IOException)
+        {
+            return [];
+        }
     }
 
     private async Task<SyncOutcome> ImportAsync(
@@ -895,6 +1072,10 @@ public sealed class SyncOrchestrator
         string.IsNullOrEmpty(hash) ? "(none)"
         : hash.Length <= 12 ? hash
         : hash[..12];
+
+    /// <summary>The project's filename, which is what somebody calls it.</summary>
+    private static string ProjectName(ProjectBinding binding) =>
+        Path.GetFileName(binding.ProjectPath.Replace('/', Path.DirectorySeparatorChar));
 
     private string Absolute(string relative) =>
         Path.IsPathRooted(relative) ? relative : Combine(relative);
