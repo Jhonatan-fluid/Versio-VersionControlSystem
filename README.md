@@ -37,6 +37,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | Drive CODESYS headlessly from C# | ✅ `LocalCodesysRunner` |
 | Git status / branches / stage / commit / diff / push | ✅ `GitCliClient` over real `git.exe` |
 | Direction lock, hash gate, coalescer, commit gate | ✅ pure logic, heavily tested |
+| Sync while the project is open in the CODESYS IDE | ⛔ **refused by CODESYS, and Versio mishandles the refusal** — it marks the binding failed. Measured; see STATUS item 1 |
 | Sync orchestrator — locks, loop defences, commit gate | ✅ 24 scenario tests |
 | Change detection — watcher + safety poll + overflow rescan | ✅ `FileChangeWatcher`, driving the sync engine |
 | Staleness stated, not implied — "2 projects not yet exported" | ✅ answered by the commit gate, so the two cannot disagree |
@@ -242,6 +243,7 @@ Each of these cost real debugging time and is now pinned by a test.
 | **`git status` needs `-z`** | Without it git quotes and escapes paths containing spaces or non-ASCII — both routine in CODESYS object names. |
 | **`git status` writes to `.git/index`** | It rewrites the stat cache. Anything that refreshes *because* the index changed will refresh forever. `StatusRefreshPolicy` ignores metadata events for a second after each refresh; working-tree events are never suppressed. |
 | **Windows raises a `.git` directory event for every write inside it** | Including the lock files git creates around each invocation. Treating a bare `.git` event as a real change made lock-file churn alone wake the watcher — caught by the integration suite, not by reading the code. Nothing is lost by dropping it: a write to `.git/index` also raises an event naming `.git/index`. |
+| **A project open in the IDE is refused, and `<project>.~u` says so** | CODESYS writes that file beside the project while it holds it — user, machine, pid, timestamp — and refuses any second instance with *"currently in use by 'x' on 'y'"*. Both export and import fail cleanly and change nothing, but `CODESYS.exe` still **exits 0**, so success must be judged from the script's own `rc` and `done` events. Read the `.~u` first and skip the 17–31 s launch. |
 | **CODESYS argument quoting** | `--profile="A B C"`, never `"--profile=A B C"`. `ProcessStartInfo.ArgumentList` produces the latter, and CODESYS exits 1 in under a second with no output. |
 | **`--noUI` requires `--profile`** | It is a hard precondition, not a preference. |
 | **`Mutex` has thread affinity** | It cannot be acquired and released across an `await`. A named `Semaphore` avoids that but loses abandonment recovery, which crash recovery depends on. |
