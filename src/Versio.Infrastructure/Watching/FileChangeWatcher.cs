@@ -1,9 +1,13 @@
 using Versio.Core.Abstractions;
+using Versio.Core.Logging;
 
 namespace Versio.Infrastructure.Watching;
 
+/// <summary>A file that changed and has since stopped changing, with the tier that spotted it.</summary>
 public sealed record WatchedChange(string Path, DateTimeOffset DetectedUtc, WatchTier Tier);
 
+/// <summary>Which of the three detection tiers reported a change. Worth recording: a
+/// change found by anything other than the watcher means events are being dropped.</summary>
 public enum WatchTier
 {
     /// <summary>FileSystemWatcher — push-based, near-instant. The normal path.</summary>
@@ -49,7 +53,7 @@ public sealed class FileChangeWatcher : IDisposable
     private readonly TimeSpan _quietPeriod;
     private readonly Timer _settleTimer;
     private readonly Timer _pollTimer;
-    private readonly Action<string>? _log;
+    private readonly IVersioLogger _log;
 
     public event Action<WatchedChange>? Settled;
 
@@ -57,16 +61,21 @@ public sealed class FileChangeWatcher : IDisposable
         IClock clock,
         TimeSpan? quietPeriod = null,
         TimeSpan? pollInterval = null,
-        Action<string>? log = null)
+        IVersioLogger? logger = null)
     {
         _clock = clock;
         _quietPeriod = quietPeriod ?? TimeSpan.FromMilliseconds(750);
-        _log = log;
+        _log = logger ?? NullLogger.Instance;
+
+        var poll = pollInterval ?? TimeSpan.FromSeconds(30);
 
         _settleTimer = new Timer(_ => CheckSettled(), null,
             TimeSpan.FromMilliseconds(200), TimeSpan.FromMilliseconds(200));
-        _pollTimer = new Timer(_ => SafetyPoll(), null,
-            pollInterval ?? TimeSpan.FromSeconds(30), pollInterval ?? TimeSpan.FromSeconds(30));
+        _pollTimer = new Timer(_ => SafetyPoll(), null, poll, poll);
+
+        _log.Debug(LogCategory.Watch,
+            $"change detection started: quiet period {_quietPeriod.TotalMilliseconds:F0}ms, " +
+            $"safety poll every {poll.TotalSeconds:F0}s");
     }
 
     /// <summary>Watch a single file — the .project.</summary>
@@ -75,11 +84,16 @@ public sealed class FileChangeWatcher : IDisposable
         var dir = Path.GetDirectoryName(path);
         if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir))
         {
+            // Not watching something the caller asked us to watch is exactly the failure
+            // that presents later as "saving does nothing", so it is never silent.
+            _log.Warn(LogCategory.Watch,
+                $"cannot watch {path}: the containing directory does not exist");
             return;
         }
 
         Track(path);
         Add(dir, Path.GetFileName(path), includeSubdirectories: false);
+        _log.Info(LogCategory.Watch, $"watching file {path}");
     }
 
     /// <summary>Watch a directory tree — the export root.</summary>
@@ -87,15 +101,19 @@ public sealed class FileChangeWatcher : IDisposable
     {
         if (!Directory.Exists(root))
         {
+            _log.Warn(LogCategory.Watch, $"cannot watch {root}: the directory does not exist");
             return;
         }
 
+        var tracked = 0;
         foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
         {
             Track(file);
+            tracked++;
         }
 
         Add(root, "*", includeSubdirectories: true);
+        _log.Info(LogCategory.Watch, $"watching tree {root} ({tracked} existing file(s))");
     }
 
     private void Add(string dir, string filter, bool includeSubdirectories)
@@ -118,7 +136,10 @@ public sealed class FileChangeWatcher : IDisposable
         // response is to re-check everything.
         watcher.Error += (_, e) =>
         {
-            _log?.Invoke($"watcher error ({e.GetException().Message}) - forcing a rescan");
+            var error = e.GetException();
+            _log.Warn(LogCategory.Watch,
+                $"watcher error on {dir} ({error.Message}) — events were lost, forcing a " +
+                "full rescan");
             SafetyPoll(WatchTier.OverflowRescan);
         };
 
@@ -165,6 +186,10 @@ public sealed class FileChangeWatcher : IDisposable
             }
 
             Track(path);
+
+            // Debug: one line per saved file, which during an export is dozens. Enough to
+            // reconstruct what the watcher saw without making it the loudest thing in the log.
+            _log.Debug(LogCategory.Watch, $"settled: {path}");
             Settled?.Invoke(new WatchedChange(path, _clock.UtcNow, WatchTier.Watcher));
         }
     }
@@ -198,13 +223,20 @@ public sealed class FileChangeWatcher : IDisposable
                 if (changed)
                 {
                     Track(path);
-                    _log?.Invoke($"{tier} detected a change the watcher missed: {path}");
+
+                    // Warning, not Debug. Tier 1 is push-based and should have caught this;
+                    // that it did not means events are being dropped on this path — a
+                    // network share, a cloud-synced folder, antivirus — and that is worth
+                    // knowing before it is blamed on the export.
+                    _log.Warn(LogCategory.Watch,
+                        $"{tier} found a change the watcher missed: {path}");
                     Settled?.Invoke(new WatchedChange(path, _clock.UtcNow, tier));
                 }
             }
-            catch (IOException)
+            catch (IOException ex)
             {
                 // Being written right now; the next poll will catch it.
+                _log.Debug(LogCategory.Watch, $"polling {path} deferred: {ex.Message}");
             }
         }
     }
@@ -256,6 +288,11 @@ public sealed class FileChangeWatcher : IDisposable
             watcher.EnableRaisingEvents = false;
             watcher.Dispose();
         }
+
+        // Change detection stopping is the sort of thing that gets noticed an hour later.
+        // A line here dates it precisely.
+        _log.Debug(LogCategory.Watch,
+            $"change detection stopped ({_watchers.Count} watcher(s) disposed)");
 
         _watchers.Clear();
     }
