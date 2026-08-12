@@ -102,21 +102,25 @@ public static class Adoption
         string bindingId,
         string? profile = null)
     {
-        var path = Normalize(projectPath);
+        var raw = projectPath.Replace('\\', '/');
 
-        if (string.IsNullOrWhiteSpace(path))
+        if (string.IsNullOrWhiteSpace(raw))
         {
             return AdoptionDecision.NotAProject("no path was supplied");
         }
 
-        // Rooted paths would survive a single session and break on the next clone. The
-        // orchestrator will happily use one, which is exactly why it is refused here.
-        if (Path.IsPathRooted(path) || path.Contains(':'))
+        // Checked BEFORE the leading separator is trimmed, or "/srv/repo/x.project" would be
+        // quietly rewritten into a plausible repo-relative path instead of being refused.
+        // Rooted paths survive one session and break on the next clone, and the orchestrator
+        // will use one quite happily — which is exactly why it is stopped here.
+        if (Path.IsPathRooted(raw) || raw.Contains(':'))
         {
             return AdoptionDecision.NotRepoRelative(
-                $"'{path}' is an absolute path; bindings record repository-relative paths " +
+                $"'{raw}' is an absolute path; bindings record repository-relative paths " +
                 "so a clone or a move does not break them");
         }
+
+        var path = Normalize(raw);
 
         var extension = Path.GetExtension(path);
         if (!format.ProjectExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase))

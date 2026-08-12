@@ -89,7 +89,7 @@ public class CodesysRunnerTests(ITestOutputHelper output)
         var outDir = Path.Combine(work, "export");
 
         var runner = new LocalCodesysRunner(install!.ExecutablePath, new ScriptExtractor(),
-            log: output.WriteLine);
+            new TestLogger(output));
 
         var seen = new List<CodesysProgress>();
         var progress = new Progress<CodesysProgress>(p => seen.Add(p));
@@ -138,7 +138,7 @@ public class CodesysRunnerTests(ITestOutputHelper output)
         Skip.If(install is null, "no CODESYS installation");
 
         var runner = new LocalCodesysRunner(install!.ExecutablePath, new ScriptExtractor(),
-            log: output.WriteLine);
+            new TestLogger(output));
 
         var job = new CodesysJob
         {
@@ -165,7 +165,7 @@ public class CodesysRunnerTests(ITestOutputHelper output)
         Skip.IfNot(File.Exists(FixtureProject), "fixture project not present");
 
         var runner = new LocalCodesysRunner(install!.ExecutablePath, new ScriptExtractor(),
-            log: output.WriteLine);
+            new TestLogger(output));
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
         var job = new CodesysJob

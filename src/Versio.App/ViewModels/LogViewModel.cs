@@ -5,6 +5,13 @@ using Versio.Core.Logging;
 
 namespace Versio.App.ViewModels;
 
+/// <summary>
+/// One row in the log panel.
+/// </summary>
+/// <remarks>
+/// The entry is settable so a heartbeat can update its row in place rather than appending a
+/// new one every two seconds — 300 identical lines would bury the entries that matter.
+/// </remarks>
 public sealed class LogRow(LogEvent entry) : ObservableObject
 {
     private LogEvent _entry = entry;
@@ -73,7 +80,11 @@ public sealed class LogViewModel : ObservableObject, IDisposable
     private readonly Lock _gate = new();
 
     private LogRow? _heartbeatRow;
-    private bool _isExpanded = true;
+    // Collapsed at startup. The log is a diagnostic, not the main event: opening on a wall
+    // of scrolling startup lines pushes the diff and the panels into the top half of the
+    // window and reads as though something is wrong. The header, its count badge and the
+    // chevron stay visible, so it is one click away and never hidden.
+    private bool _isExpanded;
     private bool _autoScroll = true;
     private bool _isPaused;
     private LogLevel _minimumLevel = LogLevel.Debug;

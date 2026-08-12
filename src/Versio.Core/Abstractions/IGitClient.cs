@@ -58,8 +58,16 @@ public interface IGitClient
 
     Task<GitResult> PushAsync(IProgress<GitProgress>? progress, CancellationToken ct);
 
-    /// <summary>Unified diff for one path. <paramref name="staged"/> selects the index.</summary>
-    Task<string> DiffAsync(string path, bool staged, CancellationToken ct);
+    /// <summary>
+    /// Unified diff for one path. <paramref name="staged"/> selects the index.
+    /// </summary>
+    /// <param name="contextLines">
+    /// Unchanged lines to show either side of each change. Raise it to
+    /// <see cref="GitDiff.FullFileContext"/> to render the whole file with its changes still
+    /// marked — which is what a reviewer wants when three lines of context is not enough to
+    /// tell whether an edit to a POU is safe.
+    /// </param>
+    Task<string> DiffAsync(string path, bool staged, CancellationToken ct, int contextLines = 3);
 
     /// <summary>Renames git detected, old path → new path. Used to re-link a binding whose
     /// project was renamed rather than treating it as delete + add.</summary>

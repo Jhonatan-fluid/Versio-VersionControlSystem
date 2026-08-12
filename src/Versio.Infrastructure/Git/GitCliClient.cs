@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using System.Text;
+using System.Text.RegularExpressions;
 using Versio.Core.Abstractions;
 using Versio.Core.Git;
+using Versio.Core.Logging;
 
 namespace Versio.Infrastructure.Git;
 
@@ -9,15 +11,25 @@ namespace Versio.Infrastructure.Git;
 /// <see cref="IGitClient"/> over the real <c>git</c> executable.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Using the CLI rather than a library is what makes credentials work: Git Credential
 /// Manager, SSH agents, 2FA, corporate proxies and SSO all behave exactly as they do in the
 /// engineer's terminal, because it <i>is</i> the engineer's terminal client.
+/// </para>
+/// <para>
+/// <b>Every invocation is logged with its outcome</b>, not just its command line. A git
+/// command that fails silently is indistinguishable from one that was never run, and the
+/// difference matters when the question is why a commit did not appear. Remote URLs are
+/// redacted first — see <see cref="Redact"/>.
+/// </para>
 /// </remarks>
-public sealed class GitCliClient(
+public sealed partial class GitCliClient(
     string repositoryPath,
     string gitExecutable = "git",
-    Action<string>? log = null) : IGitClient
+    IVersioLogger? logger = null) : IGitClient
 {
+    private readonly IVersioLogger _log = logger ?? NullLogger.Instance;
+
     private bool? _lfsAvailable;
 
     /// <summary>Working tree root that every command runs against.</summary>
@@ -134,64 +146,173 @@ public sealed class GitCliClient(
     /// <remarks>An empty message is refused here rather than by git, so the user gets a
     /// sentence instead of git's exit code and an editor that never opens under a
     /// redirected console.</remarks>
-    public Task<GitResult> CommitAsync(string message, CancellationToken ct) =>
-        string.IsNullOrWhiteSpace(message)
-            ? Task.FromResult(new GitResult
+    public Task<GitResult> CommitAsync(string message, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            _log.Warn(LogCategory.Git, "commit refused: a commit message is required");
+            return Task.FromResult(new GitResult
             {
                 Success = false, ExitCode = -1, StdErr = "a commit message is required",
-            })
-            : RunAsync(["commit", "-m", message], null, ct);
+            });
+        }
+
+        // The subject line only. A commit message can be arbitrarily long, and the log wants
+        // enough to identify the commit, not a copy of it.
+        _log.Info(LogCategory.Git,
+            $"committing: {message.Split('\n')[0].TrimEnd('\r')}");
+
+        return RunAsync(["commit", "-m", message], null, ct);
+    }
 
     /// <summary>Throw away working-tree changes to the given paths.</summary>
     /// <remarks><b>Destructive and unrecoverable</b> — the content is not in git anywhere.
     /// Callers must confirm first. Also releases the direction lock (plan §6.5).</remarks>
-    public Task<GitResult> DiscardAsync(IReadOnlyList<string> paths, CancellationToken ct) =>
-        paths.Count == 0
-            ? Task.FromResult(NoOp())
-            : RunAsync(["restore", "--worktree", "--", .. paths], null, ct);
+    public Task<GitResult> DiscardAsync(IReadOnlyList<string> paths, CancellationToken ct)
+    {
+        if (paths.Count == 0)
+        {
+            return Task.FromResult(NoOp());
+        }
+
+        // Warning, and every path by name. This is the one operation here that destroys
+        // work no other copy of exists — if someone comes back asking where their edits
+        // went, this line is the answer.
+        _log.Warn(LogCategory.Git,
+            $"discarding working-tree changes to {paths.Count} path(s): {string.Join(", ", paths)}");
+
+        return RunAsync(["restore", "--worktree", "--", .. paths], null, ct);
+    }
 
     /// <summary>Create a branch, optionally checking it out.</summary>
-    public Task<GitResult> CreateBranchAsync(string name, bool checkout, CancellationToken ct) =>
-        RunAsync(checkout ? ["checkout", "-b", name] : ["branch", name], null, ct);
+    public Task<GitResult> CreateBranchAsync(string name, bool checkout, CancellationToken ct)
+    {
+        _log.Info(LogCategory.Git,
+            checkout ? $"creating branch {name} and switching to it" : $"creating branch {name}");
+        return RunAsync(checkout ? ["checkout", "-b", name] : ["branch", name], null, ct);
+    }
 
     /// <summary>Switch branches.</summary>
     /// <remarks>Fails on a dirty working tree, which is git's behaviour and the right one:
     /// switching under unsynced CODESYS work is how it gets lost.</remarks>
-    public Task<GitResult> CheckoutAsync(string branch, CancellationToken ct) =>
-        RunAsync(["checkout", branch], null, ct);
+    public Task<GitResult> CheckoutAsync(string branch, CancellationToken ct)
+    {
+        _log.Info(LogCategory.Git, $"switching to branch {branch}");
+        return RunAsync(["checkout", branch], null, ct);
+    }
 
     /// <summary>Check a remote URL is reachable and the credentials work.</summary>
     /// <remarks><c>ls-remote</c> is a real reachability <i>and</i> auth check that transfers
     /// no objects, so the clone dialog can validate before committing to a long download.</remarks>
-    public Task<GitResult> VerifyRemoteAsync(string url, CancellationToken ct) =>
-        RunAsync(["ls-remote", "--heads", url], null, ct, TimeSpan.FromSeconds(20));
+    public Task<GitResult> VerifyRemoteAsync(string url, CancellationToken ct)
+    {
+        _log.Info(LogCategory.Git, $"verifying remote {Redact(url)}");
+        return RunAsync(["ls-remote", "--heads", url], null, ct, TimeSpan.FromSeconds(20));
+    }
 
     /// <summary>Fetch from the remote without touching the working tree.</summary>
-    public Task<GitResult> FetchAsync(IProgress<GitProgress>? progress, CancellationToken ct) =>
-        RunAsync(["fetch", "--progress"], progress, ct, TimeSpan.FromMinutes(10));
+    public Task<GitResult> FetchAsync(IProgress<GitProgress>? progress, CancellationToken ct)
+    {
+        // The three network operations get a start line each, because they are the ones that
+        // can sit for minutes behind an auth prompt that will never appear.
+        _log.Info(LogCategory.Git, "fetching");
+        return RunAsync(["fetch", "--progress"], progress, ct, TimeSpan.FromMinutes(10));
+    }
 
     /// <summary>Fast-forward the current branch from its upstream.</summary>
     /// <remarks><c>--ff-only</c> is deliberate: a divergence is surfaced rather than
     /// auto-merged. Automatically merging native CODESYS XML would produce a file nobody
     /// reviewed, in a format nobody can review afterwards.</remarks>
-    public Task<GitResult> PullAsync(IProgress<GitProgress>? progress, CancellationToken ct) =>
-        RunAsync(["pull", "--ff-only", "--progress"], progress, ct, TimeSpan.FromMinutes(10));
+    public Task<GitResult> PullAsync(IProgress<GitProgress>? progress, CancellationToken ct)
+    {
+        _log.Info(LogCategory.Git, "pulling (fast-forward only)");
+        return RunAsync(["pull", "--ff-only", "--progress"], progress, ct, TimeSpan.FromMinutes(10));
+    }
 
     /// <summary>Push the current branch.</summary>
     /// <remarks>Success is what releases the direction lock (plan §6.5): until work is
     /// pushed nobody else can see it, so the direction is still meaningfully owned.</remarks>
-    public Task<GitResult> PushAsync(IProgress<GitProgress>? progress, CancellationToken ct) =>
-        RunAsync(["push", "--progress"], progress, ct, TimeSpan.FromMinutes(10));
+    public Task<GitResult> PushAsync(IProgress<GitProgress>? progress, CancellationToken ct)
+    {
+        _log.Info(LogCategory.Git, "pushing");
+        return RunAsync(["push", "--progress"], progress, ct, TimeSpan.FromMinutes(10));
+    }
 
     /// <summary>Unified diff for one path.</summary>
     /// <param name="staged">Compare the index against HEAD rather than the working tree
     /// against the index — a file can differ on both sides at once.</param>
-    public async Task<string> DiffAsync(string path, bool staged, CancellationToken ct)
+    public async Task<string> DiffAsync(
+        string path, bool staged, CancellationToken ct, int contextLines = GitDiff.DefaultContext)
     {
+        var unified = $"-U{Math.Max(0, contextLines)}";
         string[] args = staged
-            ? ["diff", "--cached", "--", path]
-            : ["diff", "--", path];
+            ? ["diff", unified, "--cached", "--", path]
+            : ["diff", unified, "--", path];
+
         var result = await RunAsync(args, null, ct).ConfigureAwait(false);
+        if (!string.IsNullOrWhiteSpace(result.StdOut))
+        {
+            return result.StdOut;
+        }
+
+        // A file git has never seen has nothing to be compared against, so plain `git diff`
+        // says nothing about it — which used to surface as "no textual diff for this file".
+        // That is the wrong answer to the wrong question: a new file has not got *no* diff,
+        // it is *entirely* new, and every line of it is an addition worth reading before it
+        // is committed.
+        return await UntrackedDiffAsync(path, unified, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The whole of a new file, as an all-additions diff.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>--no-index</c> compares two paths outside the index, so pointing it at
+    /// <c>/dev/null</c> yields a normal unified diff in which the file is new and every line
+    /// is added. Git for Windows understands <c>/dev/null</c> here, and the output carries a
+    /// real <c>new file mode</c> header — so the existing parser and the existing green
+    /// highlighting handle it with no special case of their own.
+    /// </para>
+    /// <para>
+    /// <b>Only for paths git does not track.</b> Falling back whenever the primary diff came
+    /// back empty would render an unmodified tracked file as though every line had just been
+    /// added — the same wrong answer in the opposite direction, and a far more alarming one.
+    /// </para>
+    /// <para>
+    /// <c>--no-index</c> exits <b>1</b> when the files differ, which is the successful case
+    /// here. Its exit code is deliberately not consulted.
+    /// </para>
+    /// </remarks>
+    private async Task<string> UntrackedDiffAsync(
+        string path, string unified, CancellationToken ct)
+    {
+        // ls-files --error-unmatch fails precisely when the path is not in the index.
+        var tracked = await RunAsync(["ls-files", "--error-unmatch", "--", path], null, ct)
+            .ConfigureAwait(false);
+        if (tracked.Success)
+        {
+            _log.Debug(LogCategory.Git,
+                $"no diff for tracked path {path}; nothing to show");
+            return string.Empty;
+        }
+
+        var full = System.IO.Path.Combine(repositoryPath, path.Replace('/', System.IO.Path.DirectorySeparatorChar));
+        if (!File.Exists(full))
+        {
+            // Untracked and gone: a file created and deleted between the status refresh and
+            // this click. Nothing to render, and nothing wrong either.
+            _log.Debug(LogCategory.Git, $"untracked path {path} no longer exists");
+            return string.Empty;
+        }
+
+        var result = await RunAsync(
+            ["diff", unified, "--no-index", "--", "/dev/null", path], null, ct)
+            .ConfigureAwait(false);
+
+        _log.Debug(LogCategory.Git,
+            $"untracked diff for {path}: {result.StdOut.Length} char(s), exit {result.ExitCode}");
+
         return result.StdOut;
     }
 
@@ -248,6 +369,13 @@ public sealed class GitCliClient(
             .ConfigureAwait(false);
 
         _lfsAvailable = result.Success;
+
+        // Logged once, and it matters: without LFS the .gitattributes rules are written
+        // differently, so this single probe changes what adoption does to the repository.
+        _log.Info(LogCategory.Git, result.Success
+            ? $"git-lfs is available: {result.StdOut.Trim()}"
+            : "git-lfs is not available; .project files will be marked binary without LFS");
+
         return result.Success;
     }
 
@@ -329,7 +457,9 @@ public sealed class GitCliClient(
             }
         };
 
-        log?.Invoke($"git {string.Join(' ', args)}");
+        var display = $"git {string.Join(' ', args.Select(Redact))}";
+        _log.Debug(LogCategory.Git, display);
+
         process.Start();
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
@@ -371,6 +501,26 @@ public sealed class GitCliClient(
         }
 
         var exitCode = timedOut ? -1 : SafeExitCode(process);
+
+        if (timedOut)
+        {
+            _log.Error(LogCategory.Git,
+                $"{display} timed out after {stopwatch.Elapsed.TotalSeconds:F1}s and was killed");
+        }
+        else if (exitCode != 0)
+        {
+            // The stderr tail is the whole diagnosis for a failed git command — "not a git
+            // repository", "rejected, non-fast-forward", an auth prompt that could not open.
+            _log.Warn(LogCategory.Git,
+                $"{display} exited {exitCode} in {stopwatch.Elapsed.TotalSeconds:F1}s" +
+                $"{Tail(errText)}");
+        }
+        else
+        {
+            _log.Debug(LogCategory.Git,
+                $"{display} ok in {stopwatch.Elapsed.TotalSeconds:F1}s");
+        }
+
         return new GitResult
         {
             Success = !timedOut && exitCode == 0,
@@ -391,5 +541,47 @@ public sealed class GitCliClient(
         {
             return -1;
         }
+    }
+
+    /// <summary>
+    /// Remove credentials from anything that looks like a remote URL.
+    /// </summary>
+    /// <remarks>
+    /// <c>https://user:token@host/repo.git</c> is an ordinary remote, and a log file is
+    /// something users attach to bug reports and paste into chat. The userinfo section is
+    /// dropped rather than masked in place so that no part of the token's length or shape
+    /// survives. Applied to every argument rather than only to <c>ls-remote</c>, because the
+    /// point of a redaction is that it does not depend on remembering to apply it.
+    /// </remarks>
+    internal static string Redact(string argument) =>
+        CredentialsInUrl().Replace(argument, "$1");
+
+    /// <summary>Matches the <c>user:password@</c> in a URL, capturing the scheme so the
+    /// replacement can keep it.</summary>
+    [GeneratedRegex(@"\b([a-zA-Z][a-zA-Z0-9+.\-]*://)[^/\s:@]+(?::[^/\s@]*)?@")]
+    private static partial Regex CredentialsInUrl();
+
+    /// <summary>
+    /// The last few lines of a stream, for appending to a one-line log entry.
+    /// </summary>
+    /// <remarks>
+    /// The tail rather than the head: git puts the reason a command failed at the end, after
+    /// whatever progress it had already printed. Capped because a failed fetch can emit
+    /// megabytes and the log file is not the place to keep all of it.
+    /// </remarks>
+    private static string Tail(string text, int lines = 3, int maxChars = 500)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return string.Empty;
+        }
+
+        var kept = text.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                       .Select(l => l.TrimEnd('\r'))
+                       .Where(l => l.Length > 0)
+                       .TakeLast(lines);
+
+        var joined = Redact(string.Join(" | ", kept));
+        return $": {(joined.Length > maxChars ? joined[..maxChars] + "…" : joined)}";
     }
 }

@@ -96,6 +96,9 @@ public sealed class SyncViewModel : ObservableObject
     private readonly VersioLogger _logger;
     private readonly IClock _clock;
     private readonly HeartbeatService _heartbeat;
+
+    /// <summary>Shared with the shell, so one progress bar covers every kind of work.</summary>
+    private readonly BusyTracker _busy;
     private readonly IPlcProjectFormat _format = CodesysProjectFormat.Instance;
     private readonly OrphanScanner _orphanScanner = new();
     private readonly MachineIdentity _machine = new();
@@ -113,11 +116,14 @@ public sealed class SyncViewModel : ObservableObject
     private string _lockState = string.Empty;
     private string _activity = string.Empty;
     private ProjectRow? _selectedProject;
+    private string? _pendingImportBindingId;
+    private string _importPrompt = string.Empty;
 
-    public SyncViewModel(VersioLogger logger, IClock clock)
+    public SyncViewModel(VersioLogger logger, IClock clock, BusyTracker? busy = null)
     {
         _logger = logger;
         _clock = clock;
+        _busy = busy ?? new BusyTracker();
         _heartbeat = new HeartbeatService(clock, logger);
 
         // The beat fires on a timer thread. Assigning a string property from there is safe —
@@ -130,6 +136,10 @@ public sealed class SyncViewModel : ObservableObject
         AdoptCommand = new AsyncCommand(AdoptAsync, CanAdopt, onError: Report);
         ExportCommand = new AsyncCommand(ExportAsync, CanExport, onError: Report);
         AcknowledgeCommand = new AsyncCommand(AcknowledgeAsync, CanAcknowledge, onError: Report);
+        ImportCommand = new AsyncCommand(ProposeImportAsync, CanImport, onError: Report);
+        ConfirmImportCommand = new AsyncCommand(ConfirmImportAsync, () => ImportPending,
+                                                onError: Report);
+        CancelImportCommand = new RelayCommand(ClearPendingImport, () => ImportPending);
     }
 
     public ObservableCollection<ProjectRow> Projects { get; } = [];
@@ -146,6 +156,28 @@ public sealed class SyncViewModel : ObservableObject
 
     /// <summary>Clear a failed state so the project can sync again.</summary>
     public AsyncCommand AcknowledgeCommand { get; }
+
+    /// <summary>Ask what an import would do. Writes nothing.</summary>
+    public AsyncCommand ImportCommand { get; }
+
+    /// <summary>Apply the import that was proposed.</summary>
+    public AsyncCommand ConfirmImportCommand { get; }
+
+    /// <summary>Walk away from a proposed import.</summary>
+    public RelayCommand CancelImportCommand { get; }
+
+    /// <summary>Files the import would write into the project. Empty unless one is pending.</summary>
+    public ObservableCollection<string> ImportPreview { get; } = [];
+
+    /// <summary>Whether an import has been proposed and is waiting on the user.</summary>
+    public bool ImportPending => _pendingImportBindingId is not null;
+
+    /// <summary>What the pending import would do, in one sentence. Empty when none is.</summary>
+    public string ImportPrompt
+    {
+        get => _importPrompt;
+        private set => SetProperty(ref _importPrompt, value);
+    }
 
     /// <summary>Display name of the toolchain this repository targets.</summary>
     public string VendorName => _format.DisplayName;
@@ -208,6 +240,11 @@ public sealed class SyncViewModel : ObservableObject
                 ? SyncNarrative.Describe(_orchestrator.StateOf(value.BindingId!))
                 : string.Empty;
 
+            // A proposal belongs to the project it was made for. Leaving it up while the
+            // selection moves is how somebody confirms an import against the wrong project
+            // while reading a file list that describes a different one.
+            ClearPendingImport();
+
             RaiseCommandStates();
         }
     }
@@ -251,7 +288,7 @@ public sealed class SyncViewModel : ObservableObject
     /// </remarks>
     private void ProbeToolchain()
     {
-        var installs = new CodesysLocator().FindInstalls();
+        var installs = new CodesysLocator(logger: _logger).FindInstalls();
         var resolution = ProfileResolver.Resolve(installs);
 
         switch (resolution.Outcome)
@@ -316,8 +353,7 @@ public sealed class SyncViewModel : ObservableObject
         }
 
         ICodesysRunner runner = _install is not null && _profile is not null
-            ? new LocalCodesysRunner(_install.ExecutablePath, new ScriptExtractor(),
-                                     m => _logger.Debug(LogCategory.Codesys, m))
+            ? new LocalCodesysRunner(_install.ExecutablePath, new ScriptExtractor(_logger), _logger)
             : new UnavailableToolchainRunner(ToolchainState);
 
         // Constructed on the UI thread, so Progress<T> captures this context and every
@@ -339,8 +375,9 @@ public sealed class SyncViewModel : ObservableObject
             _clock,
             new WindowsFileSystem(),
             runner,
-            new JsonLockStore(_repositoryRoot),
-            progress: progress);
+            new JsonLockStore(_repositoryRoot, _logger),
+            progress: progress,
+            logger: _logger);
 
         var decisions = await _orchestrator
             .RecoverAsync(new LockRecoveryPolicy(_machine, new ProcessProbe()), ct)
@@ -361,9 +398,10 @@ public sealed class SyncViewModel : ObservableObject
         }
 
         using var scope = _logger.BeginOperation(Guid.NewGuid().ToString("N")[..8]);
+        using var busy = _busy.Begin("Scanning for PLC projects…");
         _logger.Info(LogCategory.Sync, "scanning for PLC projects");
 
-        var scanner = new RepoScanner(_repositoryRoot, _format);
+        var scanner = new RepoScanner(_repositoryRoot, _format, _logger);
         var snapshot = await scanner.ScanAsync(_git, CancellationToken.None).ConfigureAwait(true);
 
         var findings = _orphanScanner.Scan(_config, snapshot);
@@ -453,7 +491,7 @@ public sealed class SyncViewModel : ObservableObject
         _logger.Click("Sync.Adopt");
         using var scope = _logger.BeginOperation(Guid.NewGuid().ToString("N")[..8]);
 
-        var setup = new RepoSetup(_repositoryRoot, _format);
+        var setup = new RepoSetup(_repositoryRoot, _format, _logger);
         var result = await setup.AdoptAsync(row.Path, _git, _profile, CancellationToken.None)
             .ConfigureAwait(true);
 
@@ -510,10 +548,10 @@ public sealed class SyncViewModel : ObservableObject
         using var scope = _logger.BeginOperation(operationId);
 
         row.Busy = true;
-        var previous = row.State;
         row.State = "exporting…";
         RaiseCommandStates();
 
+        using var busy = _busy.Begin($"Exporting {row.Name} with {VendorName}…");
         using var beat = _heartbeat.Track(operationId, $"exporting {row.Name}");
 
         try
@@ -527,11 +565,6 @@ public sealed class SyncViewModel : ObservableObject
             }, CancellationToken.None).ConfigureAwait(true);
 
             var sentence = SyncNarrative.Describe(outcome);
-            Summary = sentence;
-            LockState = SyncNarrative.Describe(outcome.State);
-            row.State = outcome.Verdict == SyncVerdict.Completed
-                ? SyncNarrative.Label(outcome.State)
-                : previous;
 
             if (outcome.IsFailure)
             {
@@ -547,9 +580,15 @@ public sealed class SyncViewModel : ObservableObject
                 _logger.Warn(LogCategory.Codesys, warning);
             }
 
-            // The export wrote into the working tree; whatever the verdict, what git sees
-            // has probably changed and the row state was computed from a stale scan.
+            // The export wrote into the working tree, so every row was computed from a scan
+            // that is now stale. Rescan first, then say what happened — the other way round
+            // and the rescan's own summary would immediately overwrite the outcome the user
+            // is waiting to read.
+            row.Busy = false;
             await RescanAsync().ConfigureAwait(true);
+
+            Summary = sentence;
+            LockState = SyncNarrative.Describe(outcome.State);
         }
         finally
         {
@@ -557,6 +596,199 @@ public sealed class SyncViewModel : ObservableObject
             Activity = string.Empty;
             RaiseCommandStates();
         }
+    }
+
+    private bool CanImport() =>
+        _orchestrator is not null && !ImportPending &&
+        SelectedProject is { Tracked: true, Busy: false };
+
+    /// <summary>
+    /// Ask what an import would do, without doing any of it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Import is the strictly more dangerous direction: an export writes text beside the
+    /// project, while an import writes into the <c>.project</c> itself — the file the
+    /// engineer cannot reconstruct by hand. So it is proposed and then confirmed, never
+    /// applied on one press.
+    /// </para>
+    /// <para>
+    /// <b>The confirmation is the orchestrator's own gate, not a second one bolted on here.</b>
+    /// Running the job unconfirmed puts it through the circuit breaker, the hash gate and the
+    /// direction lock exactly as the real thing would, and returns
+    /// <see cref="SyncVerdict.AwaitingConfirmation"/> only when everything else has already
+    /// agreed to proceed. A dialog written in the view model would have to duplicate all of
+    /// that reasoning and would drift out of step with it.
+    /// </para>
+    /// </remarks>
+    private async Task ProposeImportAsync()
+    {
+        if (_orchestrator is null || SelectedProject is not { Tracked: true } row)
+        {
+            return;
+        }
+
+        _logger.Click("Sync.Import");
+        using var scope = _logger.BeginOperation(Guid.NewGuid().ToString("N")[..8]);
+
+        var outcome = await _orchestrator.HandleChangeAsync(new SyncJob
+        {
+            BindingId = row.BindingId!,
+            Source = ChangeSource.ExportedText,
+            Confirmed = false,
+            Synchronous = true,
+            Reason = "manual import, proposed",
+        }, CancellationToken.None).ConfigureAwait(true);
+
+        if (outcome.Verdict != SyncVerdict.AwaitingConfirmation)
+        {
+            // Refused for some other reason - nothing changed, the lock is held the other
+            // way, the breaker has tripped. Say which, and propose nothing.
+            Summary = SyncNarrative.Describe(outcome);
+            LockState = SyncNarrative.Describe(outcome.State);
+            _logger.Info(LogCategory.Sync, Summary);
+            return;
+        }
+
+        await BuildImportPreviewAsync(row).ConfigureAwait(true);
+
+        _pendingImportBindingId = row.BindingId;
+        OnPropertyChanged(nameof(ImportPending));
+
+        ImportPrompt = ImportPreview.Count switch
+        {
+            0 => $"Import into {row.Name}. The exported text has changed; git reports no " +
+                 "changed files, so review the tree before continuing.",
+            1 => $"Import 1 changed file into {row.Name}. This writes into the project file " +
+                 "itself and cannot be undone from Versio.",
+            var n => $"Import {n} changed files into {row.Name}. This writes into the project " +
+                     "file itself and cannot be undone from Versio.",
+        };
+
+        _logger.Info(LogCategory.Sync,
+            $"import proposed for {row.Name}: {ImportPreview.Count} changed file(s)");
+        RaiseCommandStates();
+    }
+
+    /// <summary>
+    /// What the import would write, according to git.
+    /// </summary>
+    /// <remarks>
+    /// Git rather than a diff of our own: the export tree is committed history, so git already
+    /// knows precisely which of its files differ from the last commit, and it is the same
+    /// answer the engineer sees in the changed-files panel. Deriving a second opinion here
+    /// would give two lists that disagree at the worst possible moment.
+    /// </remarks>
+    private async Task BuildImportPreviewAsync(ProjectRow row)
+    {
+        ImportPreview.Clear();
+        if (_git is null)
+        {
+            return;
+        }
+
+        var binding = _config.Bindings.FirstOrDefault(b => b.Id == row.BindingId);
+        if (binding is null)
+        {
+            return;
+        }
+
+        var prefix = binding.ExportPath.Replace('\\', '/').TrimEnd('/') + "/";
+        var status = await _git.StatusAsync(CancellationToken.None).ConfigureAwait(true);
+
+        foreach (var change in status.Changes
+                     .Where(c => c.Path.Replace('\\', '/')
+                                  .StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                     .OrderBy(c => c.Path, StringComparer.Ordinal))
+        {
+            ImportPreview.Add(change.Path);
+        }
+    }
+
+    /// <summary>Apply the import that was proposed, and only that one.</summary>
+    private async Task ConfirmImportAsync()
+    {
+        if (_orchestrator is null || _pendingImportBindingId is not { } bindingId)
+        {
+            return;
+        }
+
+        var row = Projects.FirstOrDefault(p => p.BindingId == bindingId);
+        if (row is null)
+        {
+            // The project moved out from under the proposal - a rescan, a rename, a branch
+            // switch. Importing anyway would apply it to something the user never saw.
+            ClearPendingImport();
+            Summary = "That project is no longer listed; the import was not applied.";
+            return;
+        }
+
+        _logger.Click("Sync.ConfirmImport");
+        var operationId = Guid.NewGuid().ToString("N")[..8];
+        using var scope = _logger.BeginOperation(operationId);
+
+        row.Busy = true;
+        row.State = "importing…";
+        ClearPendingImport();
+        RaiseCommandStates();
+
+        using var busy = _busy.Begin($"Importing {row.Name} into the project…");
+        using var beat = _heartbeat.Track(operationId, $"importing {row.Name}");
+
+        try
+        {
+            var outcome = await _orchestrator.HandleChangeAsync(new SyncJob
+            {
+                BindingId = bindingId,
+                Source = ChangeSource.ExportedText,
+                Confirmed = true,
+                Synchronous = true,
+                Reason = "manual import, confirmed",
+            }, CancellationToken.None).ConfigureAwait(true);
+
+            var sentence = SyncNarrative.Describe(outcome);
+
+            if (outcome.IsFailure)
+            {
+                _logger.Error(LogCategory.Codesys, sentence);
+            }
+            else
+            {
+                _logger.Info(LogCategory.Sync, sentence);
+            }
+
+            foreach (var warning in outcome.Warnings)
+            {
+                _logger.Warn(LogCategory.Codesys, warning);
+            }
+
+            // The import rewrote the .project, so git sees a different working tree. Rescan
+            // before reporting, or the rescan's own summary overwrites the outcome.
+            row.Busy = false;
+            await RescanAsync().ConfigureAwait(true);
+
+            Summary = sentence;
+            LockState = SyncNarrative.Describe(outcome.State);
+        }
+        finally
+        {
+            row.Busy = false;
+            Activity = string.Empty;
+            RaiseCommandStates();
+        }
+    }
+
+    private void ClearPendingImport()
+    {
+        if (_pendingImportBindingId is null)
+        {
+            return;
+        }
+
+        _pendingImportBindingId = null;
+        ImportPreview.Clear();
+        ImportPrompt = string.Empty;
+        OnPropertyChanged(nameof(ImportPending));
     }
 
     private bool CanAcknowledge() =>
@@ -585,6 +817,9 @@ public sealed class SyncViewModel : ObservableObject
         AdoptCommand.RaiseCanExecuteChanged();
         ExportCommand.RaiseCanExecuteChanged();
         AcknowledgeCommand.RaiseCanExecuteChanged();
+        ImportCommand.RaiseCanExecuteChanged();
+        ConfirmImportCommand.RaiseCanExecuteChanged();
+        CancelImportCommand.RaiseCanExecuteChanged();
     }
 
     private void Report(Exception ex)

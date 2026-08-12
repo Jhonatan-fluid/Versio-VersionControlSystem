@@ -2,6 +2,7 @@ using System.Text;
 using Versio.Core.Abstractions;
 using Versio.Core.Bindings;
 using Versio.Core.Git;
+using Versio.Core.Logging;
 using Versio.Core.Plc;
 
 namespace Versio.Infrastructure.Bindings;
@@ -39,8 +40,13 @@ public sealed record AdoptionResult
 /// export costs 17–31 s of CODESYS and is the user's next, separate decision.
 /// </para>
 /// </remarks>
-public sealed class RepoSetup(string repositoryRoot, IPlcProjectFormat format)
+public sealed class RepoSetup(
+    string repositoryRoot,
+    IPlcProjectFormat format,
+    IVersioLogger? logger = null)
 {
+    private readonly IVersioLogger _log = logger ?? NullLogger.Instance;
+
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
     public string GitAttributesPath => Path.Combine(repositoryRoot, ".gitattributes");
@@ -59,11 +65,20 @@ public sealed class RepoSetup(string repositoryRoot, IPlcProjectFormat format)
 
         if (!decision.CanAdopt)
         {
+            _log.Warn(LogCategory.Sync,
+                $"refused to adopt {projectPath}: {decision.Explanation}");
             return new AdoptionResult { Decision = decision, Config = config };
         }
 
         var attributes = await EnsureGitAttributesAsync(git, ct).ConfigureAwait(false);
         var updated = await store.AddBindingAsync(decision.Binding!, ct).ConfigureAwait(false);
+
+        // Adoption edits two tracked files and creates a binding the user will live with,
+        // so the whole result is stated in one line rather than reconstructed from three.
+        _log.Info(LogCategory.Sync,
+            $"adopted {projectPath} as binding {decision.Binding!.Id} " +
+            $"exporting to {decision.Binding!.ExportPath}" +
+            (profile is null ? " (no profile pinned)" : $" [{profile}]"));
 
         return new AdoptionResult
         {
@@ -93,6 +108,17 @@ public sealed class RepoSetup(string repositoryRoot, IPlcProjectFormat format)
         {
             await File.WriteAllTextAsync(GitAttributesPath, plan.Content, Utf8NoBom, ct)
                 .ConfigureAwait(false);
+
+            // Which rules were added, and whether LFS is behind them. Getting this wrong is
+            // what lets git line-merge a binary project, so the record matters later.
+            _log.Info(LogCategory.Git,
+                $"wrote {plan.AddedPatterns.Count} rule(s) to .gitattributes " +
+                $"({(lfs ? "with LFS" : "binary only, LFS unavailable")}): " +
+                string.Join(", ", plan.AddedPatterns));
+        }
+        else
+        {
+            _log.Debug(LogCategory.Git, ".gitattributes already covers this project type");
         }
 
         return plan;

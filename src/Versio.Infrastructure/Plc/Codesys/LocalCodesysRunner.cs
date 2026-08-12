@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using Versio.Core.Abstractions;
+using Versio.Core.Logging;
 using Versio.Core.Plc.Codesys;
 
 namespace Versio.Infrastructure.Plc.Codesys;
@@ -31,21 +32,40 @@ namespace Versio.Infrastructure.Plc.Codesys;
 public sealed class LocalCodesysRunner(
     string codesysExecutablePath,
     ScriptExtractor scripts,
-    Action<string>? log = null) : ICodesysRunner
+    IVersioLogger? logger = null) : ICodesysRunner
 {
     /// <summary>Global so two Versio windows cannot launch competing CODESYS instances.</summary>
     private const string GlobalMutexName = @"Global\Versio.Codesys.SingleInstance";
 
     private static readonly TimeSpan MutexWait = TimeSpan.FromMinutes(15);
 
+    private readonly IVersioLogger _log = logger ?? NullLogger.Instance;
+
     public async Task<CodesysResult> RunAsync(
         CodesysJob job,
         IProgress<CodesysProgress>? progress,
         CancellationToken cancellationToken)
     {
+        // The job carries its own id, and it is the same id the Python script stamps on its
+        // JSON-lines output — so opening the scope here correlates the C# side, the
+        // subprocess chatter and the heartbeat into one filterable stream.
+        using var scope = _log.BeginOperation(job.OperationId);
+
         var script = ScriptFor(job.Operation);
         var scriptPath = scripts.PathFor(script);
         var jobFile = WriteJobFile(job);
+
+        _log.Info(LogCategory.Codesys,
+            $"{job.Operation} of {job.Projects.Count} project(s) using {script}" +
+            (string.IsNullOrWhiteSpace(job.Profile) ? string.Empty : $" [{job.Profile}]"));
+
+        foreach (var project in job.Projects)
+        {
+            _log.Debug(LogCategory.Codesys,
+                $"{project.BindingId}: {project.ProjectPath} ↔ {project.Path}");
+        }
+
+        _log.Debug(LogCategory.Codesys, $"job file {jobFile}, timeout {job.Timeout}");
 
         try
         {
@@ -80,6 +100,7 @@ public sealed class LocalCodesysRunner(
     {
         using var mutex = new Mutex(false, GlobalMutexName);
         var acquired = false;
+        var waited = Stopwatch.StartNew();
         try
         {
             try
@@ -91,13 +112,30 @@ public sealed class LocalCodesysRunner(
                 // A previous Versio died holding it. We are now the owner, and that is
                 // safe: CODESYS state lives in files, not in the mutex.
                 acquired = true;
-                log?.Invoke($"[{job.OperationId}] recovered an abandoned CODESYS lock");
+                _log.Warn(LogCategory.Codesys,
+                    "recovered an abandoned CODESYS lock — a previous Versio process died " +
+                    "while holding it");
             }
+
+            waited.Stop();
 
             if (!acquired)
             {
+                _log.Error(LogCategory.Codesys,
+                    $"gave up waiting for the machine-wide CODESYS lock after " +
+                    $"{waited.Elapsed.TotalMinutes:F0} minutes");
                 throw new TimeoutException(
                     "another CODESYS operation has been running for over 15 minutes");
+            }
+
+            // Only when it actually blocked. CODESYS is serialised machine-wide, so a wait
+            // here means another Versio — possibly in another window, possibly another user
+            // session — is mid-export, and that is the explanation for an export that
+            // appeared to hang before it had even started.
+            if (waited.Elapsed > TimeSpan.FromSeconds(1))
+            {
+                _log.Info(LogCategory.Codesys,
+                    $"waited {waited.Elapsed.TotalSeconds:F1}s for the machine-wide CODESYS lock");
             }
 
             // Blocking on this dedicated thread is fine and keeps acquire and release
@@ -136,6 +174,17 @@ public sealed class LocalCodesysRunner(
             UseShellExecute = false,
             CreateNoWindow = true,
 
+            // CreateNoWindow alone is not enough here. It sets CREATE_NO_WINDOW, which
+            // suppresses the console a CONSOLE subsystem child would allocate - and
+            // CODESYS.exe is a GUI application. Under --noUI it still creates a top-level
+            // window, and the engineer sees a CODESYS shell flash up and sit there for the
+            // twenty seconds of an export they never asked to watch.
+            //
+            // WindowStyle.Hidden makes .NET pass STARTF_USESHOWWINDOW with SW_HIDE in the
+            // STARTUPINFO, which is the request a GUI child honours for its first window.
+            // The two flags cover different subsystems, so both are set deliberately.
+            WindowStyle = ProcessWindowStyle.Hidden,
+
             // Our scripts JSON-escape non-ASCII, so this is belt-and-braces rather than a
             // fix for an observed failure - but the equivalent assumption did break the git
             // client on a path containing "ü", and CODESYS's own chatter is localised.
@@ -167,7 +216,10 @@ public sealed class LocalCodesysRunner(
         process.OutputDataReceived += OnData;
         process.ErrorDataReceived += OnData;
 
-        log?.Invoke($"[{job.OperationId}] exec {codesysExecutablePath} {psi.Arguments}");
+        // The exact command line, because CODESYS argument quoting is the single most
+        // reliable source of "exits 1 in under a second having done nothing" and the only
+        // way to diagnose it is to see what was actually passed.
+        _log.Debug(LogCategory.Codesys, $"exec {codesysExecutablePath} {psi.Arguments}");
 
         process.Start();
         process.BeginOutputReadLine();
@@ -185,8 +237,17 @@ public sealed class LocalCodesysRunner(
         catch (OperationCanceledException)
         {
             timedOut = timeoutCts.IsCancellationRequested;
-            log?.Invoke($"[{job.OperationId}] " +
-                        (timedOut ? "TIMEOUT" : "cancelled") + " — killing process tree");
+            if (timedOut)
+            {
+                _log.Error(LogCategory.Codesys,
+                    $"timed out after {job.Timeout} — killing the CODESYS process tree. A " +
+                    "--noUI CODESYS sitting on a hidden modal never exits on its own");
+            }
+            else
+            {
+                _log.Warn(LogCategory.Codesys, "cancelled — killing the CODESYS process tree");
+            }
+
             KillTree(process);
 
             if (!timedOut)
@@ -209,8 +270,27 @@ public sealed class LocalCodesysRunner(
         var missingProfile = output.Chatter.Any(ProfileResolver.IsMissingProfileError);
         var exitCode = timedOut ? -1 : SafeExitCode(process);
 
-        log?.Invoke($"[{job.OperationId}] exit={exitCode} in {stopwatch.Elapsed.TotalSeconds:F1}s " +
-                    $"events={output.Events.Count} warnings={output.Warnings.Count()}");
+        _log.Log(exitCode == 0 && !timedOut ? LogLevel.Information : LogLevel.Error,
+            LogCategory.Codesys,
+            $"exit={exitCode} in {stopwatch.Elapsed.TotalSeconds:F1}s " +
+            $"events={output.Events.Count} warnings={output.Warnings.Count()}");
+
+        if (missingProfile)
+        {
+            // A specific, recognisable failure with a specific fix, and one nobody guesses:
+            // the profile string cannot be derived from the install folder name.
+            _log.Error(LogCategory.Codesys,
+                $"CODESYS rejected the profile '{job.Profile}'. The profile name is not the " +
+                @"install folder name — read it from …\CODESYS\Profiles\*.profile.xml");
+        }
+
+        // CODESYS's own output, kept at Debug. It is verbose and mostly uninteresting until
+        // an export fails for a reason our protocol did not model, at which point it is the
+        // only evidence there is.
+        foreach (var line in output.Chatter)
+        {
+            _log.Debug(LogCategory.Codesys, $"› {line}");
+        }
 
         return new CodesysResult
         {

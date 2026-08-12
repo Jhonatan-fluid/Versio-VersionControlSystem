@@ -44,6 +44,7 @@ public sealed record FileChange
         : Unstaged;
 }
 
+/// <summary>One branch, with its upstream and how far it has diverged from it.</summary>
 public sealed record BranchInfo
 {
     public required string Name { get; init; }
@@ -57,6 +58,7 @@ public sealed record BranchInfo
     public bool IsUnborn { get; init; }
 }
 
+/// <summary>The working tree as porcelain v2 reported it: current branch, plus every change.</summary>
 public sealed record GitStatus
 {
     public required BranchInfo Branch { get; init; }
@@ -71,6 +73,7 @@ public sealed record GitStatus
         Changes.Where(c => c.Unstaged is not ChangeKind.Unmodified);
 }
 
+/// <summary>The raw result of one <c>git</c> invocation.</summary>
 public sealed record GitResult
 {
     public required bool Success { get; init; }
@@ -88,4 +91,23 @@ public sealed record GitResult
               ?? StdErr.Trim();
 }
 
+/// <summary>One progress report parsed out of git stderr, such as receiving objects at 47%.</summary>
 public readonly record struct GitProgress(string Phase, int? Percent, string Raw);
+
+/// <summary>Constants for driving <c>git diff</c>.</summary>
+public static class GitDiff
+{
+    /// <summary>
+    /// Context large enough that no real file has more lines than this.
+    /// </summary>
+    /// <remarks>
+    /// Git has no "whole file" switch; the idiom is an unreasonably large <c>-U</c>. A
+    /// million lines is far past any plausible exported POU — the largest object in the
+    /// fixture project is under two thousand — and asking for more context than a file
+    /// contains is not an error, it simply yields the file.
+    /// </remarks>
+    public const int FullFileContext = 1_000_000;
+
+    /// <summary>What git shows when nobody asks for anything else.</summary>
+    public const int DefaultContext = 3;
+}

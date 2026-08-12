@@ -12,13 +12,22 @@ namespace Versio.App.Views;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Built on a virtualized <see cref="ListBox"/> of pre-tokenized rows rather than a rich
-/// text control. A 2.5 MB visualisation diff is a realistic input here, and a
-/// <c>FlowDocument</c> would try to lay all of it out at once.
+/// Built on a virtualized <see cref="ListBox"/> rather than a rich text control. A 2.5 MB
+/// visualisation diff is a realistic input here - the fixture project contains one, 33,644
+/// lines long - and a <c>FlowDocument</c> would try to lay all of it out at once.
 /// </para>
 /// <para>
-/// Rows are produced on a background thread and handed over as an immutable snapshot, so a
-/// large diff never blocks the UI thread while it is tokenized.
+/// <b>The items are diff LINES, not built rows.</b> This class previously handed the list a
+/// pre-built <c>UIElement</c> per line, which made the virtualization decorative: the panel
+/// dutifully realised only the visible containers, but every Grid, gutter and syntax-tokenized
+/// TextBlock had already been constructed before the list ever saw them. Selecting that one
+/// visualisation file locked the UI for as long as it took to build thirty-three thousand
+/// WPF elements. Rows are now built in <see cref="PrepareContainerForItemOverride"/>, so the
+/// cost is paid only for lines somebody can actually see.
+/// </para>
+/// <para>
+/// Parsing runs off the UI thread. It is fast, but "fast" on a 2.5 MB input is still long
+/// enough to drop frames, and the work has no reason to be on the dispatcher.
 /// </para>
 /// </remarks>
 public sealed class DiffView : ListBox
@@ -57,24 +66,57 @@ public sealed class DiffView : ListBox
     private static void OnInputChanged(DependencyObject d, DependencyPropertyChangedEventArgs e) =>
         ((DiffView)d).Rebuild();
 
-    private void Rebuild()
-    {
-        var document = UnifiedDiffParser.Parse(DiffText);
-        var language = LanguageCatalog.ForPath(FilePath);
+    // Set before ItemsSource, so a container can never be prepared without one.
+    private SyntaxLanguage _language = LanguageCatalog.ForPath(null);
 
-        if (document.IsEmpty)
+    /// <summary>Guards against a slow parse landing after a newer selection.</summary>
+    private int _generation;
+
+    private async void Rebuild()
+    {
+        var text = DiffText;
+        var path = FilePath;
+        var generation = ++_generation;
+
+        _language = LanguageCatalog.ForPath(path);
+
+        if (string.IsNullOrEmpty(text))
         {
             ItemsSource = null;
             return;
         }
 
-        var rows = new List<UIElement>(document.Lines.Count);
-        foreach (var line in document.Lines)
+        // Off the dispatcher. Parsing is linear and quick per line, but a 2.5 MB diff is
+        // still tens of thousands of them, and none of that work needs the UI thread.
+        var document = await Task.Run(() => UnifiedDiffParser.Parse(text)).ConfigureAwait(true);
+
+        // A user clicking down a list faster than the parses complete would otherwise see
+        // an earlier, slower file win and replace the one they are looking at.
+        if (generation != _generation)
         {
-            rows.Add(BuildRow(line, language));
+            return;
         }
 
-        ItemsSource = rows;
+        ItemsSource = document.IsEmpty ? null : document.Lines;
+    }
+
+    /// <summary>
+    /// Build a row when its container is realised, and not before.
+    /// </summary>
+    /// <remarks>
+    /// This is what makes the virtualization real. With recycling enabled the same container
+    /// is handed a different line as the user scrolls, so this runs again for the new content
+    /// - which is exactly the behaviour wanted, and the reason the row is rebuilt rather than
+    /// mutated.
+    /// </remarks>
+    protected override void PrepareContainerForItemOverride(DependencyObject element, object item)
+    {
+        base.PrepareContainerForItemOverride(element, item);
+
+        if (element is ContentControl container && item is DiffLine line)
+        {
+            container.Content = BuildRow(line, _language);
+        }
     }
 
     private UIElement BuildRow(DiffLine line, SyntaxLanguage language)

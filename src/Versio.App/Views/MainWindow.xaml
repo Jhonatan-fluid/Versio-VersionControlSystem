@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:Versio.App.Views"
-        Title="Versio" Height="840" Width="1420"
+        Title="Versio" Height="840" Width="1420" WindowState="Maximized"
         Background="{DynamicResource Brush.Surface.Sunken}"
         TextOptions.TextFormattingMode="Display"
         TextOptions.TextRenderingMode="ClearType"
@@ -14,6 +14,7 @@
                 <ResourceDictionary Source="../Theme/Theme.xaml" />
             </ResourceDictionary.MergedDictionaries>
             <views:ResourceKeyConverter x:Key="ResourceKey" />
+            <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
         </ResourceDictionary>
     </Window.Resources>
 
@@ -111,6 +112,22 @@
             </Grid>
         </Border>
 
+        <!-- ========================= APP-WIDE PROGRESS =========================
+             One bar for every kind of work: a git refresh, opening a repository, and a
+             17-31 s CODESYS export all report through the same counted tracker. Indeterminate
+             because none of them can honestly report a percentage - CODESYS gives no progress
+             until it is finished, and a bar that invents one is worse than a bar that admits
+             it does not know.
+
+             Two pixels tall and inside the top bar's shadow, so an operation that takes 50 ms
+             does not shove the whole window down and back on every keystroke. -->
+        <Grid Grid.Row="0" VerticalAlignment="Bottom" Panel.ZIndex="10"
+              Visibility="{Binding Busy.IsBusy, Converter={StaticResource BoolToVisibility}}">
+            <ProgressBar IsIndeterminate="True" Height="2" BorderThickness="0"
+                         Background="Transparent"
+                         Foreground="{DynamicResource Brush.Accent.Default}" />
+        </Grid>
+
         <Popup x:Name="SettingsPopup" PlacementTarget="{Binding ElementName=SettingsButton}"
                Placement="Bottom" HorizontalOffset="-190" VerticalOffset="6"
                StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
@@ -146,11 +163,20 @@
 
                     <TextBlock Text="LOG" Style="{StaticResource SectionLabel}"
                                Margin="10,6,0,6" />
-                    <CheckBox Content="Show log panel" Margin="10,3,10,10"
+                    <CheckBox Content="Show log panel" Margin="10,3,10,8"
                               Foreground="{DynamicResource Brush.Text.Primary}"
                               FontFamily="{DynamicResource Font.UI}"
                               FontSize="{DynamicResource Font.Size.Body}"
                               IsChecked="{Binding Log.IsExpanded, Mode=TwoWay}" />
+
+                    <!-- The log panel shows this session; the folder holds the last five
+                         days. Troubleshooting a problem from yesterday needs the file, so
+                         the way to reach it is a button rather than a path to memorise. -->
+                    <Button Content="Open logs folder…" Margin="10,0,10,10"
+                            HorizontalAlignment="Left"
+                            Style="{StaticResource GhostButton}"
+                            Command="{Binding OpenLogsFolderCommand}"
+                            ToolTip="Daily log files, kept for 5 days" />
                 </StackPanel>
             </Border>
         </Popup>
@@ -293,11 +319,65 @@
                                     <Button Content="Export now" Margin="6,0,0,0"
                                             Style="{StaticResource GhostButton}"
                                             Command="{Binding Sync.ExportCommand}" />
+                                    <Button Content="Import now" Margin="6,0,0,0"
+                                            Style="{StaticResource GhostButton}"
+                                            ToolTip="Write the edited text back into the project"
+                                            Command="{Binding Sync.ImportCommand}" />
                                     <Button Content="Rescan" Margin="6,0,0,0"
                                             Style="{StaticResource GhostButton}"
                                             Command="{Binding Sync.RescanCommand}" />
                                 </StackPanel>
                             </StackPanel>
+
+                            <!-- Import confirmation. Import writes into the .project itself -
+                                 the one file the engineer cannot rebuild by hand - so it is
+                                 proposed, reviewed and then applied, never done on one press.
+                                 The gate itself is the orchestrator's; this only shows it. -->
+                            <Border DockPanel.Dock="Top"
+                                    Background="{DynamicResource Brush.Surface.Sunken}"
+                                    BorderBrush="{DynamicResource Brush.Status.Modified}"
+                                    BorderThickness="1"
+                                    CornerRadius="{DynamicResource Radius.Control}"
+                                    Padding="10,8" Margin="0,0,0,10"
+                                    Visibility="{Binding Sync.ImportPending,
+                                        Converter={StaticResource BoolToVisibility}}">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Sync.ImportPrompt}"
+                                               TextWrapping="Wrap"
+                                               FontFamily="{DynamicResource Font.UI}"
+                                               FontSize="{DynamicResource Font.Size.Body}"
+                                               Foreground="{DynamicResource Brush.Text.Primary}" />
+
+                                    <ItemsControl ItemsSource="{Binding Sync.ImportPreview}"
+                                                  Margin="0,8,0,0" MaxHeight="120">
+                                        <ItemsControl.Template>
+                                            <ControlTemplate TargetType="ItemsControl">
+                                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                                    <ItemsPresenter />
+                                                </ScrollViewer>
+                                            </ControlTemplate>
+                                        </ItemsControl.Template>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding}"
+                                                           FontFamily="{DynamicResource Font.Mono}"
+                                                           FontSize="{DynamicResource Font.Size.Caption}"
+                                                           Foreground="{DynamicResource Brush.Text.Secondary}"
+                                                           TextTrimming="CharacterEllipsis" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                        <Button Content="Confirm import"
+                                                Style="{StaticResource AccentButton}"
+                                                Command="{Binding Sync.ConfirmImportCommand}" />
+                                        <Button Content="Cancel" Margin="6,0,0,0"
+                                                Style="{StaticResource GhostButton}"
+                                                Command="{Binding Sync.CancelImportCommand}" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
 
                             <!-- The direction lock, in plain English. Without this the lock
                                  is invisible magic that blocks the user with no explanation
@@ -430,10 +510,24 @@
                 <DockPanel>
                     <Grid DockPanel.Dock="Top" Margin="14,12,12,8">
                         <TextBlock Style="{StaticResource SectionLabel}" Text="DIFF" />
-                        <TextBlock HorizontalAlignment="Right" Style="{StaticResource Mono}"
-                                   Text="{Binding SelectedChange.Path}"
-                                   Foreground="{DynamicResource Brush.Text.Disabled}"
-                                   TextTrimming="CharacterEllipsis" MaxWidth="420" />
+
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <!-- Three lines of context is enough for a typo and not enough
+                                 for a POU, where whether an edit is safe depends on
+                                 declarations well above it. Still a diff either way: the
+                                 changed lines stay marked and coloured. -->
+                            <CheckBox Content="Show full file" VerticalAlignment="Center"
+                                      Margin="0,0,14,0"
+                                      IsChecked="{Binding ShowFullFile}"
+                                      Foreground="{DynamicResource Brush.Text.Secondary}"
+                                      FontFamily="{DynamicResource Font.UI}"
+                                      FontSize="{DynamicResource Font.Size.Caption}"
+                                      ToolTip="Show every line of the file, with the changes still highlighted" />
+                            <TextBlock Style="{StaticResource Mono}" VerticalAlignment="Center"
+                                       Text="{Binding SelectedChange.Path}"
+                                       Foreground="{DynamicResource Brush.Text.Disabled}"
+                                       TextTrimming="CharacterEllipsis" MaxWidth="420" />
+                        </StackPanel>
                     </Grid>
                     <views:DiffView DiffText="{Binding SelectedDiff}"
                                     FilePath="{Binding SelectedChange.Path}"
@@ -551,11 +645,38 @@
                 <StackPanel Orientation="Horizontal">
                     <Ellipse Width="7" Height="7" VerticalAlignment="Center"
                              Fill="{DynamicResource Brush.Status.Added}" />
+
+                    <!-- What is running, beside the bar that says something is. A moving bar
+                         with no caption tells the user to wait without saying what for, which
+                         over twenty seconds of CODESYS is its own kind of unhelpful. -->
+                    <TextBlock Text="{Binding Busy.Message}" Margin="8,0,0,0"
+                               VerticalAlignment="Center"
+                               FontFamily="{DynamicResource Font.UI}"
+                               FontSize="{DynamicResource Font.Size.Caption}"
+                               Foreground="{DynamicResource Brush.Accent.Default}"
+                               Visibility="{Binding Busy.IsBusy,
+                                   Converter={StaticResource BoolToVisibility}}" />
+
                     <TextBlock Text="{Binding StatusSummary}" Margin="8,0,0,0"
                                VerticalAlignment="Center"
                                FontFamily="{DynamicResource Font.UI}"
                                FontSize="{DynamicResource Font.Size.Caption}"
                                Foreground="{DynamicResource Brush.Text.Secondary}" />
+
+                    <!-- How fresh the file list is, and whether it is keeping itself that
+                         way. Worth stating: on a network share the OS refuses to host a
+                         watcher and the list falls back to a periodic re-read, which is a
+                         real difference in behaviour rather than something to hide. -->
+                    <TextBlock Text="{Binding LastRefreshText}" Margin="14,0,0,0"
+                               VerticalAlignment="Center"
+                               FontFamily="{DynamicResource Font.UI}"
+                               FontSize="{DynamicResource Font.Size.Caption}"
+                               Foreground="{DynamicResource Brush.Text.Disabled}" />
+                    <TextBlock Text="{Binding WatchState}" Margin="8,0,0,0"
+                               VerticalAlignment="Center"
+                               FontFamily="{DynamicResource Font.UI}"
+                               FontSize="{DynamicResource Font.Size.Caption}"
+                               Foreground="{DynamicResource Brush.Accent.Default}" />
                 </StackPanel>
                 <TextBlock HorizontalAlignment="Right" Style="{StaticResource Mono}"
                            Text="{Binding RepositoryPath}"

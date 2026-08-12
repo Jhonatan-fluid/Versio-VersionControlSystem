@@ -42,7 +42,7 @@ public sealed class GitCliClientTests(ITestOutputHelper output) : IDisposable
         }
     }
 
-    private GitCliClient Client => new(_repo, log: output.WriteLine);
+    private GitCliClient Client => new(_repo, logger: new TestLogger(output));
 
     private async Task InitAsync()
     {
@@ -75,6 +75,82 @@ public sealed class GitCliClientTests(ITestOutputHelper output) : IDisposable
         var full = Path.Combine(_repo, relative);
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
         File.WriteAllText(full, content);
+    }
+
+    // --- diff ---------------------------------------------------------------------
+
+    [SkippableFact]
+    public async Task A_brand_new_file_diffs_as_entirely_added()
+    {
+        // It used to show nothing at all. A new file has not got *no* diff - it is *all*
+        // diff, and every line of it deserves reading before it is committed.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+        Write("plc/New.st", "PROGRAM New\nVAR\nEND_VAR\n");
+
+        var diff = await Client.DiffAsync("plc/New.st", staged: false, CancellationToken.None);
+
+        output.WriteLine(diff);
+        Assert.Contains("new file", diff, StringComparison.OrdinalIgnoreCase);
+
+        // Every content line is an addition, which is what paints the view green.
+        var body = diff.Split('\n')
+            .SkipWhile(l => !l.StartsWith("@@", StringComparison.Ordinal))
+            .Skip(1)
+            .Where(l => l.Trim().Length > 0)
+            .ToList();
+
+        Assert.NotEmpty(body);
+        Assert.All(body, l => Assert.StartsWith("+", l, StringComparison.Ordinal));
+        Assert.Contains(body, l => l.Contains("PROGRAM New", StringComparison.Ordinal));
+    }
+
+    [SkippableFact]
+    public async Task An_unmodified_tracked_file_still_shows_nothing()
+    {
+        // The other direction, and the more alarming failure: falling back to --no-index
+        // whenever the primary diff came back empty would render an untouched file as though
+        // every line had just been added.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+        Write("plc/Existing.st", "PROGRAM Existing\nEND_PROGRAM\n");
+        await RunRawAsync("add", "-A");
+        await RunRawAsync("commit", "-m", "first");
+
+        var diff = await Client.DiffAsync("plc/Existing.st", staged: false, CancellationToken.None);
+
+        Assert.True(string.IsNullOrWhiteSpace(diff), "expected no diff, got: " + diff);
+    }
+
+    [SkippableFact]
+    public async Task Full_file_context_shows_unchanged_lines_that_the_default_hides()
+    {
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        // Long enough that the default three lines of context cannot reach either end.
+        var original = string.Join("\n", Enumerable.Range(1, 40).Select(i => $"line {i}")) + "\n";
+        Write("plc/Long.st", original);
+        await RunRawAsync("add", "-A");
+        await RunRawAsync("commit", "-m", "first");
+
+        Write("plc/Long.st", original.Replace("line 20\n", "line 20 edited\n"));
+
+        var narrow = await Client.DiffAsync("plc/Long.st", staged: false, CancellationToken.None);
+        var full = await Client.DiffAsync(
+            "plc/Long.st", staged: false, CancellationToken.None, GitDiff.FullFileContext);
+
+        // The edit shows in both; only the full view reaches the far ends of the file.
+        Assert.Contains("line 20 edited", narrow, StringComparison.Ordinal);
+        Assert.Contains("line 20 edited", full, StringComparison.Ordinal);
+
+        Assert.DoesNotContain("+line 1\n", narrow, StringComparison.Ordinal);
+        Assert.DoesNotContain(" line 1\n", narrow, StringComparison.Ordinal);
+        Assert.Contains(" line 1\n", full, StringComparison.Ordinal);
+        Assert.Contains("line 40", full, StringComparison.Ordinal);
+
+        output.WriteLine($"default {narrow.Length} chars, full {full.Length} chars");
+        Assert.True(full.Length > narrow.Length);
     }
 
     [SkippableFact]
