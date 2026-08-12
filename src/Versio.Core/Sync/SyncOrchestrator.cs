@@ -3,10 +3,13 @@ using Versio.Core.Bindings;
 using Versio.Core.Plc.Codesys;
 using Versio.Core.Locking;
 using Versio.Core.Hashing;
+using Versio.Core.Logging;
 using Versio.Core.Watching;
 
 namespace Versio.Core.Sync;
 
+/// <summary>The tuning knobs behind the loop defences. The defaults are the shipped
+/// values; tests override them to make timing behaviour observable without waiting.</summary>
 public sealed record OrchestratorOptions
 {
     /// <summary>Import is detected automatically but applied only on confirmation, because
@@ -36,6 +39,13 @@ public sealed record OrchestratorOptions
 /// dropped rather than reported as a lock violation — otherwise a no-op save would show the
 /// user a scary refusal.
 /// </para>
+/// <para>
+/// <b>Every decision is logged, and refusals especially.</b> A refusal is invisible by
+/// design — the user saves, and nothing happens — so an unlogged one leaves them with no
+/// way to find out why. Every refusal is therefore built by <see cref="Refuse"/> rather
+/// than by calling <see cref="SyncOutcome.Refused"/> directly, so a path added later cannot
+/// quietly be a silent one.
+/// </para>
 /// </remarks>
 public sealed class SyncOrchestrator
 {
@@ -53,7 +63,11 @@ public sealed class SyncOrchestrator
     private readonly Dictionary<string, JobCoalescer> _coalescers = new(StringComparer.Ordinal);
     private readonly CircuitBreaker _breaker;
     private readonly SelfWriteSuppressor _suppressor;
+    private readonly IVersioLogger _log;
 
+    /// <param name="logger">Optional so the several hundred unit tests that construct this
+    /// need not mention it; it defaults to <see cref="NullLogger.Instance"/> rather than to
+    /// null, so no call site below has to check.</param>
     public SyncOrchestrator(
         string repoRoot,
         IReadOnlyList<ProjectBinding> bindings,
@@ -63,7 +77,8 @@ public sealed class SyncOrchestrator
         ICodesysRunner codesys,
         ILockStore lockStore,
         OrchestratorOptions? options = null,
-        IProgress<CodesysProgress>? progress = null)
+        IProgress<CodesysProgress>? progress = null,
+        IVersioLogger? logger = null)
     {
         _repoRoot = repoRoot;
         _owner = owner;
@@ -72,6 +87,7 @@ public sealed class SyncOrchestrator
         _fs = fs;
         _codesys = codesys;
         _lockStore = lockStore;
+        _log = logger ?? NullLogger.Instance;
         _options = options ?? new OrchestratorOptions();
         _bindings = bindings.ToDictionary(b => b.Id, StringComparer.Ordinal);
         _breaker = new CircuitBreaker(clock, _options.CircuitBreakerThreshold,
@@ -84,6 +100,21 @@ public sealed class SyncOrchestrator
             _coalescers[binding.Id] =
                 new JobCoalescer(clock, _options.CancelWindow, _options.MinimumInterval);
         }
+
+        _log.Info(LogCategory.Sync, bindings.Count == 0
+            ? $"orchestrator ready for {_repoRoot}; no projects are tracked yet"
+            : $"orchestrator ready for {_repoRoot}; tracking " +
+              string.Join(", ", bindings.Select(b => $"{b.Id} ({b.ProjectPath})")));
+
+        // The thresholds decide whether a save is throttled, coalesced or refused outright,
+        // and they are the first thing to check when the answer to "why did nothing happen"
+        // turns out to be "it did, thirty seconds ago".
+        _log.Debug(LogCategory.Sync,
+            $"options: importConfirmation={_options.RequireImportConfirmation} " +
+            $"cancelWindow={_options.CancelWindow.TotalSeconds:F0}s " +
+            $"minInterval={_options.MinimumInterval.TotalSeconds:F0}s " +
+            $"breaker={_options.CircuitBreakerThreshold}/" +
+            $"{_options.CircuitBreakerWindow.TotalSeconds:F0}s");
     }
 
     public SyncDirection StateOf(string bindingId) =>
@@ -104,13 +135,28 @@ public sealed class SyncOrchestrator
     public async Task<IReadOnlyList<RecoveryDecision>> RecoverAsync(
         LockRecoveryPolicy policy, CancellationToken ct)
     {
+        using var scope = _log.JoinOrBeginOperation(out _);
+
         var state = await _lockStore.ReadAsync(ct).ConfigureAwait(false);
+        if (state?.Owner is null)
+        {
+            _log.Info(LogCategory.Lock, "no persisted lock state; nothing to recover");
+        }
+        else
+        {
+            // Who held it and when is the whole story behind a re-adopted lock: it tells the
+            // user whether the work is theirs from before a reboot or a colleague's session.
+            _log.Info(LogCategory.Lock,
+                $"recovering {state.Bindings.Count} persisted lock(s) last held by " +
+                $"{state.Owner.User}@{state.Owner.Machine} " +
+                $"(pid {state.Owner.ProcessId}, renewed {state.Owner.RenewedUtc:u})");
+        }
 
         var hashes = new Dictionary<string, (string, string)>(StringComparer.Ordinal);
         foreach (var binding in _bindings.Values)
         {
             hashes[binding.Id] = (await ProjectHashAsync(binding, ct).ConfigureAwait(false),
-                                  await ManifestHashAsync(binding, ct).ConfigureAwait(false));
+                                  await ExportTreeHashAsync(binding, ct).ConfigureAwait(false));
         }
 
         var decisions = policy.Evaluate(state, hashes);
@@ -119,6 +165,9 @@ public sealed class SyncOrchestrator
         {
             if (!_locks.ContainsKey(decision.BindingId))
             {
+                _log.Warn(LogCategory.Lock,
+                    $"{decision.BindingId}: a lock was recovered for a binding this " +
+                    "repository no longer tracks; ignoring it");
                 continue;
             }
 
@@ -128,6 +177,16 @@ public sealed class SyncOrchestrator
                     decision.BindingId, out var held) == true => held,
                 _ => new BindingLock { Direction = SyncDirection.Clean },
             };
+
+            // Readoption is the consequential one: it means unsynced work survived a crash
+            // or a reboot and the direction is still owned. Logged at Warning so it stands
+            // out in a file the user is reading precisely because something went wrong.
+            _log.Log(decision.Outcome == LockRecovery.ReadoptedAfterRestart
+                    ? LogLevel.Warning
+                    : LogLevel.Information,
+                LogCategory.Lock,
+                $"{decision.BindingId}: {decision.Outcome} — {decision.Explanation}; " +
+                $"now {_locks[decision.BindingId].Direction}");
         }
 
         return decisions;
@@ -136,9 +195,19 @@ public sealed class SyncOrchestrator
     /// <summary>A change was detected. Decide what, if anything, to do about it.</summary>
     public async Task<SyncOutcome> HandleChangeAsync(SyncJob job, CancellationToken ct)
     {
+        // Joins the caller's scope when there is one — a button press already opened it —
+        // and starts a fresh one when the trigger was a file watcher with nobody above it.
+        using var scope = _log.JoinOrBeginOperation(out _);
+
+        _log.Debug(LogCategory.Sync,
+            $"{job.BindingId}: {job.Source} change" +
+            (string.IsNullOrEmpty(job.Reason) ? string.Empty : $" ({job.Reason})") +
+            (job.Synchronous ? " [synchronous]" : string.Empty) +
+            (job.Confirmed ? " [confirmed]" : string.Empty));
+
         if (!_bindings.TryGetValue(job.BindingId, out var binding) || !binding.Enabled)
         {
-            return SyncOutcome.Refused(SyncVerdict.UnknownBinding, job.BindingId,
+            return Refuse(LogLevel.Warning, SyncVerdict.UnknownBinding, job.BindingId,
                 "no enabled binding with that id");
         }
 
@@ -148,7 +217,7 @@ public sealed class SyncOrchestrator
         //    no longer trusted and nothing below it should run.
         if (_breaker.IsTripped(job.BindingId))
         {
-            return SyncOutcome.Refused(SyncVerdict.BlockedByCircuitBreaker, job.BindingId,
+            return Refuse(LogLevel.Warning, SyncVerdict.BlockedByCircuitBreaker, job.BindingId,
                 "sync halted for this project after repeated cycles; acknowledge to resume",
                 state);
         }
@@ -160,8 +229,13 @@ public sealed class SyncOrchestrator
             .ConfigureAwait(false);
         if (!changed)
         {
-            return SyncOutcome.Refused(SyncVerdict.NoChange, job.BindingId,
-                "content is identical to the last synced state", state);
+            // Debug, not Warning: this is the single most common outcome — every save that
+            // did not actually alter the file lands here — and at Info it would drown the
+            // log. The hash is included because "the gate says nothing changed but I know
+            // I changed something" is otherwise unanswerable.
+            return Refuse(LogLevel.Debug, SyncVerdict.NoChange, job.BindingId,
+                $"content is identical to the last synced state (hash {Short(currentHash)})",
+                state);
         }
 
         // 3. Self-write suppression, for text only: an export writes into the tree the text
@@ -169,7 +243,7 @@ public sealed class SyncOrchestrator
         if (job.Source == ChangeSource.ExportedText &&
             _suppressor.ShouldSuppress(binding.ExportPath, currentHash))
         {
-            return SyncOutcome.Refused(SyncVerdict.SelfWriteSuppressed, job.BindingId,
+            return Refuse(LogLevel.Debug, SyncVerdict.SelfWriteSuppressed, job.BindingId,
                 "this was the echo of our own export", state);
         }
 
@@ -180,15 +254,17 @@ public sealed class SyncOrchestrator
         var transition = SyncStateMachine.Next(state, trigger);
         if (!transition.Allowed)
         {
-            return SyncOutcome.Refused(SyncVerdict.BlockedByLock, job.BindingId,
-                transition.Reason, transition.State);
+            // The one refusal the user is most likely to be confused by, so it carries the
+            // state that did the refusing as well as the sentence explaining it.
+            return Refuse(LogLevel.Warning, SyncVerdict.BlockedByLock, job.BindingId,
+                $"{transition.Reason} (lock is {state})", transition.State);
         }
 
         // 5. Import is detected automatically but applied only on confirmation.
         if (job.Source == ChangeSource.ExportedText &&
             _options.RequireImportConfirmation && !job.Confirmed)
         {
-            return SyncOutcome.Refused(SyncVerdict.AwaitingConfirmation, job.BindingId,
+            return Refuse(LogLevel.Information, SyncVerdict.AwaitingConfirmation, job.BindingId,
                 "exported text changed; review the diff and confirm before importing", state);
         }
 
@@ -200,20 +276,28 @@ public sealed class SyncOrchestrator
             switch (action)
             {
                 case CoalesceAction.Coalesced:
-                    return SyncOutcome.Refused(SyncVerdict.Coalesced, job.BindingId,
+                    return Refuse(LogLevel.Debug, SyncVerdict.Coalesced, job.BindingId,
                         "a sync is already running and a follow-up is queued", state);
                 case CoalesceAction.Throttled:
-                    return SyncOutcome.Refused(SyncVerdict.Throttled, job.BindingId,
+                    return Refuse(LogLevel.Debug, SyncVerdict.Throttled, job.BindingId,
                         "throttled; a final sync will run once changes settle", state);
                 case CoalesceAction.Queue:
-                    return SyncOutcome.Refused(SyncVerdict.Coalesced, job.BindingId,
+                    return Refuse(LogLevel.Debug, SyncVerdict.Coalesced, job.BindingId,
                         "queued behind the running sync", state);
             }
         }
 
         if (!_breaker.TryRecord(job.BindingId))
         {
-            return SyncOutcome.Refused(SyncVerdict.BlockedByCircuitBreaker, job.BindingId,
+            // This is the breaker tripping, not a breaker that was already tripped: the
+            // threshold was just crossed. Worth an explicit line — it is the loop defence
+            // of last resort, and its firing means the other two failed.
+            _log.Warn(LogCategory.Sync,
+                $"{job.BindingId}: circuit breaker tripped after " +
+                $"{_breaker.CountInWindow(job.BindingId)} syncs within " +
+                $"{_options.CircuitBreakerWindow.TotalSeconds:F0}s — halting sync for this project");
+
+            return Refuse(LogLevel.Warning, SyncVerdict.BlockedByCircuitBreaker, job.BindingId,
                 "sync halted for this project after repeated cycles; acknowledge to resume",
                 state);
         }
@@ -264,32 +348,51 @@ public sealed class SyncOrchestrator
             ],
         };
 
+        _log.Info(LogCategory.Sync,
+            $"{binding.Id}: exporting {binding.ProjectPath} → {binding.ExportPath}" +
+            (string.IsNullOrEmpty(binding.Profile) ? string.Empty : $" [{binding.Profile}]"));
+
         var result = await _codesys.RunAsync(job, _progress, ct).ConfigureAwait(false);
         var elapsed = _clock.UtcNow - started;
 
         if (!result.Succeeded)
         {
+            var reason = result.FailureReason ?? "the export did not complete";
+            _log.Error(LogCategory.Sync,
+                $"{binding.Id}: export failed after {elapsed.TotalSeconds:F1}s — {reason}");
+
             await ApplyAsync(binding.Id, SyncTrigger.ExportFailed, string.Empty, ct)
                 .ConfigureAwait(false);
             return new SyncOutcome
             {
                 Verdict = SyncVerdict.Failed,
                 BindingId = binding.Id,
-                Explanation = result.FailureReason ?? "the export did not complete",
+                Explanation = reason,
                 State = SyncDirection.Failed,
                 Duration = elapsed,
-                Warnings = Warnings(result),
+                Warnings = LogWarnings(binding.Id, result),
             };
         }
 
         // Register what we wrote so the text watcher's echo is swallowed rather than being
         // mistaken for a user edit.
-        var manifestHash = await ManifestHashAsync(binding, ct).ConfigureAwait(false);
-        _suppressor.Register(binding.ExportPath, manifestHash);
+        var mirrorHash = await ExportTreeHashAsync(binding, ct).ConfigureAwait(false);
+        _suppressor.Register(binding.ExportPath, mirrorHash);
 
         var projectHash = await ProjectHashAsync(binding, ct).ConfigureAwait(false);
         await ApplyAsync(binding.Id, SyncTrigger.ExportSucceeded, projectHash, ct)
             .ConfigureAwait(false);
+
+        var changed = ChangedFiles(result);
+        _log.Info(LogCategory.Sync,
+            $"{binding.Id}: exported {changed.Count} object(s) in {elapsed.TotalSeconds:F1}s");
+
+        // Per-file at Debug. On a large project this is hundreds of lines, which is why it
+        // is not Info — but it is the only record of what an export actually touched.
+        foreach (var file in changed)
+        {
+            _log.Debug(LogCategory.Sync, $"{binding.Id}: wrote {file}");
+        }
 
         return new SyncOutcome
         {
@@ -297,8 +400,8 @@ public sealed class SyncOrchestrator
             BindingId = binding.Id,
             Explanation = transition.Reason,
             State = _locks[binding.Id].Direction,
-            ChangedFiles = ChangedFiles(result),
-            Warnings = Warnings(result),
+            ChangedFiles = changed,
+            Warnings = LogWarnings(binding.Id, result),
             Duration = elapsed,
         };
     }
@@ -322,21 +425,32 @@ public sealed class SyncOrchestrator
             ],
         };
 
+        // Warning, not Information. This is the direction that writes into a binary project
+        // file the user cannot diff afterwards, and it is the line they will look for when
+        // asking what touched their project.
+        _log.Warn(LogCategory.Sync,
+            $"{binding.Id}: importing {binding.ExportPath} → {binding.ProjectPath}" +
+            (string.IsNullOrEmpty(binding.Profile) ? string.Empty : $" [{binding.Profile}]"));
+
         var result = await _codesys.RunAsync(job, _progress, ct).ConfigureAwait(false);
         var elapsed = _clock.UtcNow - started;
 
         if (!result.Succeeded)
         {
+            var reason = result.FailureReason ?? "the import did not complete";
+            _log.Error(LogCategory.Sync,
+                $"{binding.Id}: import failed after {elapsed.TotalSeconds:F1}s — {reason}");
+
             await ApplyAsync(binding.Id, SyncTrigger.ImportFailed, string.Empty, ct)
                 .ConfigureAwait(false);
             return new SyncOutcome
             {
                 Verdict = SyncVerdict.Failed,
                 BindingId = binding.Id,
-                Explanation = result.FailureReason ?? "the import did not complete",
+                Explanation = reason,
                 State = SyncDirection.Failed,
                 Duration = elapsed,
-                Warnings = Warnings(result),
+                Warnings = LogWarnings(binding.Id, result),
             };
         }
 
@@ -344,13 +458,17 @@ public sealed class SyncOrchestrator
         await ApplyAsync(binding.Id, SyncTrigger.ImportSucceeded, projectHash, ct)
             .ConfigureAwait(false);
 
+        _log.Info(LogCategory.Sync,
+            $"{binding.Id}: imported in {elapsed.TotalSeconds:F1}s; " +
+            $"project is now {Short(projectHash)}");
+
         return new SyncOutcome
         {
             Verdict = SyncVerdict.Completed,
             BindingId = binding.Id,
             Explanation = transition.Reason,
             State = _locks[binding.Id].Direction,
-            Warnings = Warnings(result),
+            Warnings = LogWarnings(binding.Id, result),
             Duration = elapsed,
         };
     }
@@ -378,12 +496,25 @@ public sealed class SyncOrchestrator
             });
         }
 
-        return CommitGate.Evaluate(freshness);
+        var result = CommitGate.Evaluate(freshness);
+
+        // The gate is the primary path by which the export tree is written, so its verdict
+        // is part of the narrative of every commit, not a diagnostic.
+        _log.Log(result.Decision == GateDecision.Proceed ? LogLevel.Debug : LogLevel.Information,
+            LogCategory.Sync,
+            $"commit gate: {result.Decision} — {result.Explanation}" +
+            (result.StaleBindings.Count == 0
+                ? string.Empty
+                : $" [{string.Join(", ", result.StaleBindings)}]"));
+
+        return result;
     }
 
     /// <summary>Run a blocking export for every stale binding, then re-check the gate.</summary>
     public async Task<IReadOnlyList<SyncOutcome>> SatisfyCommitGateAsync(CancellationToken ct)
     {
+        using var scope = _log.JoinOrBeginOperation(out _);
+
         var gate = await EvaluateCommitGateAsync(ct).ConfigureAwait(false);
         var outcomes = new List<SyncOutcome>();
 
@@ -391,6 +522,10 @@ public sealed class SyncOrchestrator
         {
             return outcomes;
         }
+
+        _log.Info(LogCategory.Sync,
+            $"commit gate requires an export of {gate.StaleBindings.Count} project(s); " +
+            "running them synchronously before the commit");
 
         foreach (var bindingId in gate.StaleBindings)
         {
@@ -414,6 +549,17 @@ public sealed class SyncOrchestrator
     /// </remarks>
     public async Task ReleaseAfterPushAsync(string headCommit, CancellationToken ct)
     {
+        using var scope = _log.JoinOrBeginOperation(out _);
+
+        var held = _locks.Where(kv => SyncStateMachine.HoldsLock(kv.Value.Direction))
+                         .Select(kv => kv.Key)
+                         .ToList();
+
+        _log.Info(LogCategory.Lock, held.Count == 0
+            ? $"push succeeded at {Short(headCommit)}; no locks were held"
+            : $"push succeeded at {Short(headCommit)}; releasing {held.Count} lock(s): " +
+              string.Join(", ", held));
+
         foreach (var binding in _bindings.Values)
         {
             await ApplyAsync(binding.Id, SyncTrigger.PushSucceeded,
@@ -422,11 +568,20 @@ public sealed class SyncOrchestrator
         }
     }
 
-    public Task ReleaseAfterDiscardAsync(string bindingId, CancellationToken ct) =>
-        ApplyAsync(bindingId, SyncTrigger.ChangesDiscarded, string.Empty, ct);
+    public Task ReleaseAfterDiscardAsync(string bindingId, CancellationToken ct)
+    {
+        _log.Warn(LogCategory.Lock,
+            $"{bindingId}: changes discarded; releasing the direction lock");
+        return ApplyAsync(bindingId, SyncTrigger.ChangesDiscarded, string.Empty, ct);
+    }
 
     public Task AcknowledgeFailureAsync(string bindingId, CancellationToken ct)
     {
+        // Worth recording that a human intervened: everything after this point happens
+        // because someone chose to clear a failure, not because the app decided to retry.
+        _log.Info(LogCategory.Sync,
+            $"{bindingId}: failure acknowledged; resetting the circuit breaker and coalescer");
+
         _breaker.Reset(bindingId);
         _coalescers[bindingId].Reset();
         return ApplyAsync(bindingId, SyncTrigger.FailureAcknowledged, string.Empty, ct);
@@ -437,23 +592,29 @@ public sealed class SyncOrchestrator
     {
         if (!_locks.TryGetValue(bindingId, out var current))
         {
+            _log.Warn(LogCategory.Lock,
+                $"{bindingId}: {trigger} arrived for a binding that is not tracked; ignored");
             return;
         }
 
         var transition = SyncStateMachine.Next(current.Direction, trigger);
         if (!transition.Allowed)
         {
+            // Not an error — the state machine refusing a trigger is how the lock does its
+            // job — but it means a requested change did not happen, so it is never silent.
+            _log.Debug(LogCategory.Lock,
+                $"{bindingId}: {trigger} refused from {current.Direction} — {transition.Reason}");
             return;
         }
 
-        var manifestHash = _bindings.TryGetValue(bindingId, out var binding)
-            ? await ManifestHashAsync(binding, ct).ConfigureAwait(false)
-            : current.LastSynced.ManifestHash;
+        var mirrorHash = _bindings.TryGetValue(bindingId, out var binding)
+            ? await ExportTreeHashAsync(binding, ct).ConfigureAwait(false)
+            : current.LastSynced.MirrorHash;
 
         // A successful sync moves LastSynced only. The mirror now reflects the project, but
         // nothing has been published, so the lock still guards real work.
         var synced = trigger is SyncTrigger.ExportSucceeded or SyncTrigger.ImportSucceeded
-            ? new SyncedState { ProjectHash = projectHash, ManifestHash = manifestHash }
+            ? new SyncedState { ProjectHash = projectHash, MirrorHash = mirrorHash }
             : current.LastSynced;
 
         // A release moves the baseline: this is now the state the world has seen.
@@ -462,7 +623,7 @@ public sealed class SyncOrchestrator
             {
                 HeadCommit = headCommit ?? current.Baseline.HeadCommit,
                 ProjectHash = projectHash,
-                ManifestHash = manifestHash,
+                MirrorHash = mirrorHash,
             }
             : current.Baseline;
 
@@ -473,9 +634,23 @@ public sealed class SyncOrchestrator
             Reason = transition.Reason,
             Baseline = baseline,
             LastSynced = transition.State == SyncDirection.Clean
-                ? new SyncedState { ProjectHash = projectHash, ManifestHash = manifestHash }
+                ? new SyncedState { ProjectHash = projectHash, MirrorHash = mirrorHash }
                 : synced,
         };
+
+        // Only when it actually moved. Re-stating "still ProjectAuthoritative" on every
+        // further edit is the kind of line that makes a log unreadable.
+        if (current.Direction != transition.State)
+        {
+            _log.Info(LogCategory.Lock,
+                $"{bindingId}: {current.Direction} → {transition.State} on {trigger} " +
+                $"({transition.Reason})");
+        }
+        else
+        {
+            _log.Debug(LogCategory.Lock,
+                $"{bindingId}: {trigger} accepted, still {transition.State} ({transition.Reason})");
+        }
 
         await PersistAsync(ct).ConfigureAwait(false);
     }
@@ -500,8 +675,8 @@ public sealed class SyncOrchestrator
             return (hash != synced.ProjectHash, hash);
         }
 
-        var manifest = await ManifestHashAsync(binding, ct).ConfigureAwait(false);
-        return (manifest != synced.ManifestHash, manifest);
+        var mirror = await ExportTreeHashAsync(binding, ct).ConfigureAwait(false);
+        return (mirror != synced.MirrorHash, mirror);
     }
 
     private async Task<string> ProjectHashAsync(ProjectBinding binding, CancellationToken ct)
@@ -517,23 +692,78 @@ public sealed class SyncOrchestrator
     }
 
     /// <summary>
-    /// Hash of the export tree, taken from its manifest.
+    /// Hash of the export tree, over the files it actually contains.
     /// </summary>
     /// <remarks>
-    /// The manifest already contains a canonical hash per object, so hashing it is
-    /// equivalent to hashing the tree and costs one small read instead of walking
-    /// megabytes of visualisation XML on every watcher event.
+    /// <para>
+    /// <b>This used to hash <c>_manifest.json</c> alone</b>, on the reasoning that the
+    /// manifest carries a canonical hash per object, so hashing it was equivalent to hashing
+    /// the tree at the cost of one small read rather than walking megabytes of visualisation
+    /// XML on every watcher event.
+    /// </para>
+    /// <para>
+    /// The reasoning was wrong in the direction that mattered. <b>The manifest is written by
+    /// an export and by nothing else.</b> An engineer editing <c>Simulation.st</c> — the
+    /// entire purpose of the mirror — left it byte-identical, so the hash gate reported
+    /// <see cref="SyncVerdict.NoChange"/> and the import was refused before the direction
+    /// lock was ever consulted. The scenario suite did not catch it because it simulated a
+    /// text edit by rewriting the manifest, which is the one edit no human ever makes.
+    /// </para>
+    /// <para>
+    /// The cost concern was real but much smaller than assumed: this is a SHA-256 over a few
+    /// megabytes, tens of milliseconds, and the watcher coalesces bursts into one call. Being
+    /// slightly slower to answer correctly beats being fast and wrong.
+    /// </para>
     /// </remarks>
-    private async Task<string> ManifestHashAsync(ProjectBinding binding, CancellationToken ct)
+    private async Task<string> ExportTreeHashAsync(ProjectBinding binding, CancellationToken ct)
     {
-        var path = Combine(binding.ExportPath, BindingConventions.ManifestFileName);
-        if (!_fs.FileExists(path))
+        var root = Combine(binding.ExportPath);
+        if (!_fs.DirectoryExists(root))
         {
+            // Empty, not a hash of nothing: "never exported" and "exported to an empty tree"
+            // are different states and the baseline has to be able to tell them apart.
             return string.Empty;
         }
 
-        var text = await _fs.ReadAllTextAsync(path, ct).ConfigureAwait(false);
-        return ContentHash.Of(text);
+        var files = new List<(string Path, string Hash)>();
+        var bytesRead = 0L;
+
+        foreach (var file in _fs.EnumerateFiles(root))
+        {
+            ct.ThrowIfCancellationRequested();
+            var bytes = await _fs.ReadAllBytesAsync(file, ct).ConfigureAwait(false);
+            bytesRead += bytes.Length;
+            files.Add((Path.GetRelativePath(root, file), ContentHash.Of(bytes)));
+        }
+
+        var hash = files.Count == 0 ? string.Empty : ContentHash.OfTree(files);
+
+        // Debug, not Info: this runs on every change event and would drown the log at a
+        // higher level. It is here because "the gate says nothing changed, but I edited a
+        // file" is otherwise unanswerable — the file count says whether the tree was even
+        // seen, and the hash says whether it moved.
+        _log.Debug(LogCategory.Sync,
+            $"{binding.Id}: hashed {files.Count} file(s), {bytesRead:N0} bytes under " +
+            $"{binding.ExportPath} -> {Short(hash)}");
+
+        return hash;
+    }
+
+    /// <summary>
+    /// Build a refusal, logging it on the way out.
+    /// </summary>
+    /// <remarks>
+    /// Every refusal in <see cref="HandleChangeAsync"/> goes through here rather than
+    /// calling <see cref="SyncOutcome.Refused"/> directly, so that a branch added later
+    /// cannot be a silent one. A refusal produces no visible effect by definition — the user
+    /// saved and nothing happened — which makes it the outcome most in need of a log line
+    /// and the easiest one to forget to write.
+    /// </remarks>
+    private SyncOutcome Refuse(LogLevel level, SyncVerdict verdict, string bindingId,
+                               string why, SyncDirection state = SyncDirection.Clean)
+    {
+        _log.Log(level, LogCategory.Sync, $"{bindingId}: {verdict} — {why}");
+        return SyncOutcome.Refused(verdict, bindingId, why, state);
     }
 
     private static IReadOnlyList<string> ChangedFiles(CodesysResult result) =>
@@ -544,10 +774,34 @@ public sealed class SyncOrchestrator
             .Select(p => p!)
             .ToList();
 
-    private static IReadOnlyList<string> Warnings(CodesysResult result) =>
-        result.Output.Warnings
+    /// <summary>
+    /// Collect the run's warnings for the caller, and log each one.
+    /// </summary>
+    /// <remarks>
+    /// A CODESYS warning means an object was skipped or degraded — the export "succeeded"
+    /// but is not complete. The UI shows these, but the UI is transient and the log is what
+    /// survives to the bug report.
+    /// </remarks>
+    private IReadOnlyList<string> LogWarnings(string bindingId, CodesysResult result)
+    {
+        var warnings = result.Output.Warnings
             .Select(w => $"{w.String("code")}: {w.String("path")}")
             .ToList();
+
+        foreach (var warning in warnings)
+        {
+            _log.Warn(LogCategory.Codesys, $"{bindingId}: {warning}");
+        }
+
+        return warnings;
+    }
+
+    /// <summary>First 12 characters of a hash or commit id — enough to compare two by eye,
+    /// short enough not to dominate the line.</summary>
+    private static string Short(string hash) =>
+        string.IsNullOrEmpty(hash) ? "(none)"
+        : hash.Length <= 12 ? hash
+        : hash[..12];
 
     private string Absolute(string relative) =>
         Path.IsPathRooted(relative) ? relative : Combine(relative);

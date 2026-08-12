@@ -17,7 +17,16 @@ public sealed class FakeFileSystem : IFileSystem
     public void Write(string path, string content)
     {
         _files[path] = Encoding.UTF8.GetBytes(content);
-        _dirs.Add(Path.GetDirectoryName(path) ?? string.Empty);
+
+        // Every ancestor, not just the immediate parent. A real filesystem cannot hold
+        // "a/b/c.st" without "a/b" existing, and a fake that can lets a test pass against a
+        // directory layout that could never occur.
+        for (var dir = Path.GetDirectoryName(path);
+             !string.IsNullOrEmpty(dir);
+             dir = Path.GetDirectoryName(dir))
+        {
+            _dirs.Add(dir);
+        }
     }
 
     public bool FileExists(string path) => _files.ContainsKey(path);
@@ -36,8 +45,23 @@ public sealed class FakeFileSystem : IFileSystem
         return Task.CompletedTask;
     }
 
-    public IEnumerable<string> EnumerateFiles(string root, string searchPattern = "*") =>
-        _files.Keys.Where(k => k.StartsWith(root, StringComparison.OrdinalIgnoreCase));
+    /// <summary>
+    /// Files beneath a directory — <b>respecting the directory boundary</b>.
+    /// </summary>
+    /// <remarks>
+    /// This was a bare prefix match, which is not what a directory is. With an export tree at
+    /// <c>plc/A</c> and its project at <c>plc/A.project</c>, the project file matched the
+    /// prefix and was enumerated as part of its own export tree — so the tree hash moved
+    /// whenever the project did, and a test written against it would have proven the opposite
+    /// of what it claimed.
+    /// </remarks>
+    public IEnumerable<string> EnumerateFiles(string root, string searchPattern = "*")
+    {
+        var prefix = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                     + Path.DirectorySeparatorChar;
+
+        return _files.Keys.Where(k => k.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+    }
 
     public Task CopyAsync(string source, string destination, CancellationToken ct)
     {

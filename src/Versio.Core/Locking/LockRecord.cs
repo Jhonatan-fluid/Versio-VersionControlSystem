@@ -36,7 +36,17 @@ public sealed record SyncBaseline
 {
     public string HeadCommit { get; init; } = string.Empty;
     public string ProjectHash { get; init; } = string.Empty;
-    public string ManifestHash { get; init; } = string.Empty;
+    /// <summary>
+    /// Hash of the export tree's actual contents.
+    /// </summary>
+    /// <remarks>
+    /// Was <c>ManifestHash</c>, and hashed <c>_manifest.json</c> alone. That file is written
+    /// by an export and by nothing else, so a hand-edited <c>.st</c> left it identical and
+    /// the hash gate reported no change — the exact edit the mirror exists to carry. Schema 3
+    /// records the rename: a schema-2 value is a manifest hash and will not match.
+    /// </remarks>
+    /// <summary>Hash of the export tree's actual contents. See <see cref="SyncBaseline.MirrorHash"/>.</summary>
+    public string MirrorHash { get; init; } = string.Empty;
 }
 
 /// <summary>
@@ -58,7 +68,7 @@ public sealed record SyncBaseline
 public sealed record SyncedState
 {
     public string ProjectHash { get; init; } = string.Empty;
-    public string ManifestHash { get; init; } = string.Empty;
+    public string MirrorHash { get; init; } = string.Empty;
 }
 
 /// <summary>The lock state of one binding (one .project and its export tree).</summary>
@@ -81,7 +91,7 @@ public sealed record BindingLock
 /// </summary>
 public sealed record LockState
 {
-    public int Schema { get; init; } = 2;
+    public int Schema { get; init; } = 3;
     public string RepoPath { get; init; } = string.Empty;
     public LockOwner? Owner { get; init; }
     public IReadOnlyDictionary<string, BindingLock> Bindings { get; init; }

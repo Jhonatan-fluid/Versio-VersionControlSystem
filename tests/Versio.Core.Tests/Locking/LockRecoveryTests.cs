@@ -27,7 +27,7 @@ public class LockRecoveryTests
     }
 
     private static LockState StateWith(SyncDirection direction, DateTimeOffset boot,
-                                       string projectHash = "sha256:p", string manifestHash = "sha256:m")
+                                       string projectHash = "sha256:p", string mirrorHash = "sha256:m")
         => new()
         {
             RepoPath = @"C:\repo",
@@ -49,7 +49,7 @@ public class LockRecoveryTests
                     {
                         HeadCommit = "9291d00",
                         ProjectHash = projectHash,
-                        ManifestHash = manifestHash,
+                        MirrorHash = mirrorHash,
                     },
                 },
             },
@@ -154,12 +154,12 @@ public class LockRecoveryTests
                 ["b-1"] = new()
                 {
                     Direction = SyncDirection.ProjectAuthoritative,
-                    Baseline = new SyncBaseline { ProjectHash = "p1", ManifestHash = "m1" },
+                    Baseline = new SyncBaseline { ProjectHash = "p1", MirrorHash = "m1" },
                 },
                 ["b-2"] = new()
                 {
                     Direction = SyncDirection.TextAuthoritative,
-                    Baseline = new SyncBaseline { ProjectHash = "p2", ManifestHash = "m2" },
+                    Baseline = new SyncBaseline { ProjectHash = "p2", MirrorHash = "m2" },
                 },
                 ["b-3"] = new() { Direction = SyncDirection.Clean },
             },

@@ -18,6 +18,7 @@ public interface IMachineIdentity
     DateTimeOffset BootId { get; }
 }
 
+/// <summary>What recovery decided to do about one persisted lock, and why.</summary>
 public readonly record struct RecoveryDecision(
     LockRecovery Outcome,
     string BindingId,
@@ -35,10 +36,10 @@ public readonly record struct RecoveryDecision(
 public sealed class LockRecoveryPolicy(IMachineIdentity machine, IProcessProbe processes)
 {
     /// <param name="state">What was read from disk.</param>
-    /// <param name="currentHashes">Freshly computed (projectHash, manifestHash) per binding.</param>
+    /// <param name="currentHashes">Freshly computed (projectHash, mirrorHash) per binding.</param>
     public IReadOnlyList<RecoveryDecision> Evaluate(
         LockState? state,
-        IReadOnlyDictionary<string, (string ProjectHash, string ManifestHash)> currentHashes)
+        IReadOnlyDictionary<string, (string ProjectHash, string MirrorHash)> currentHashes)
     {
         var results = new List<RecoveryDecision>();
         if (state?.Owner is null || state.Bindings.Count == 0)
@@ -71,7 +72,7 @@ public sealed class LockRecoveryPolicy(IMachineIdentity machine, IProcessProbe p
             // Owner is gone. Was the work actually completed or reverted while we were away?
             var stillDiffers = !currentHashes.TryGetValue(bindingId, out var now) ||
                                now.ProjectHash != bindingLock.Baseline.ProjectHash ||
-                               now.ManifestHash != bindingLock.Baseline.ManifestHash;
+                               now.MirrorHash != bindingLock.Baseline.MirrorHash;
 
             if (stillDiffers)
             {
