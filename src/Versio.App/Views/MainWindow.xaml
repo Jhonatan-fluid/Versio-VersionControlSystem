@@ -308,6 +308,28 @@
                                            FontSize="{DynamicResource Font.Size.Body}"
                                            Foreground="{DynamicResource Brush.Text.Secondary}" />
 
+                                <!-- With On git action as the default sync mode there is no
+                                     export on save, so a project can sit unexported all
+                                     afternoon. Saying so is the whole reason the watcher is
+                                     wired up: silence here would read as "in sync". -->
+                                <TextBlock Text="{Binding Sync.StalenessSummary}"
+                                           TextWrapping="Wrap" Margin="0,6,0,0"
+                                           FontFamily="{DynamicResource Font.UI}"
+                                           FontSize="{DynamicResource Font.Size.Caption}"
+                                           Foreground="{DynamicResource Brush.Status.Modified}">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Sync.StalenessSummary}"
+                                                             Value="">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+
                                 <!-- The three actions, in the order they are used: track a
                                      project, export it, clear a failure if one happened.
                                      Each disables itself when it cannot apply, and the

@@ -11,6 +11,7 @@ using Versio.Infrastructure.Bindings;
 using Versio.Infrastructure.FileSystem;
 using Versio.Infrastructure.Platform;
 using Versio.Infrastructure.Plc.Codesys;
+using Versio.Infrastructure.Watching;
 
 namespace Versio.App.ViewModels;
 
@@ -116,6 +117,13 @@ public sealed class SyncViewModel : ObservableObject
     private string _lockState = string.Empty;
     private string _activity = string.Empty;
     private ProjectRow? _selectedProject;
+    private FileChangeWatcher? _watcher;
+
+    /// <summary>Captured at construction, which happens on the UI thread.</summary>
+    private readonly SynchronizationContext? _ui = SynchronizationContext.Current;
+
+    private string _stalenessSummary = string.Empty;
+    private int _unexportedCount;
     private string? _pendingImportBindingId;
     private string _importPrompt = string.Empty;
 
@@ -215,6 +223,27 @@ public sealed class SyncViewModel : ObservableObject
         private set => SetProperty(ref _lockState, value);
     }
 
+    /// <summary>
+    /// How many tracked projects have changes that were never exported.
+    /// </summary>
+    /// <remarks>
+    /// With <c>On git action</c> as the default sync mode there is deliberately no
+    /// export-on-save, so a project can sit unexported all afternoon. Counting it is what
+    /// stops the panel from implying everything is in sync.
+    /// </remarks>
+    public int UnexportedCount
+    {
+        get => _unexportedCount;
+        private set => SetProperty(ref _unexportedCount, value);
+    }
+
+    /// <summary>That count as a sentence, empty when nothing is outstanding.</summary>
+    public string StalenessSummary
+    {
+        get => _stalenessSummary;
+        private set => SetProperty(ref _stalenessSummary, value);
+    }
+
     /// <summary>Live heartbeat text while CODESYS is running, empty otherwise.</summary>
     /// <remarks>
     /// A CODESYS launch costs 17–31 s with nothing on screen to show for it, and silence is
@@ -258,11 +287,19 @@ public sealed class SyncViewModel : ObservableObject
         ProbeToolchain();
         await BuildOrchestratorAsync(ct).ConfigureAwait(true);
         await RescanAsync().ConfigureAwait(true);
+
+        StartWatching();
+        await RefreshStalenessAsync().ConfigureAwait(true);
     }
 
     /// <summary>Clear state when the repository closes, so a stale scan is never shown.</summary>
     public void Detach()
     {
+        // Before anything else: a FileSystemWatcher holds a handle on the directory, and
+        // leaking one keeps the folder locked against rename or delete for the life of the
+        // process - on a repository somebody is trying to move, a visible bug.
+        StopWatching();
+
         _repositoryRoot = null;
         _git = null;
         _orchestrator = null;
@@ -271,6 +308,8 @@ public sealed class SyncViewModel : ObservableObject
         Findings.Clear();
         SelectedProject = null;
         Summary = "No repository open";
+        StalenessSummary = string.Empty;
+        UnexportedCount = 0;
         LockState = string.Empty;
         Activity = string.Empty;
         RaiseCommandStates();
@@ -478,6 +517,148 @@ public sealed class SyncViewModel : ObservableObject
             : "never exported";
     }
 
+    /// <summary>
+    /// Watch every tracked project and its mirror, so staleness is noticed rather than
+    /// discovered at commit time.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This deliberately does not export anything.</b> The default sync mode is
+    /// <c>On git action</c>, decided by measurement: a CODESYS cold start is 17-31 s, so
+    /// exporting after every settled save would run the toolchain most of the working day for
+    /// changes nobody looks at until they commit. What the watcher buys is <i>awareness</i> -
+    /// the panel can say "2 projects not yet exported" instead of implying everything is in
+    /// sync, which the plan calls out explicitly as the thing the status bar must not do.
+    /// </para>
+    /// <para>
+    /// Nothing depends on the watcher being reliable. It drops events - buffers overflow,
+    /// network and cloud-synced paths misbehave, antivirus interferes - and the commit gate
+    /// re-checks from scratch regardless. A completely dead watcher degrades this to "the
+    /// panel tells me when I commit rather than when I saved": annoying, never wrong.
+    /// </para>
+    /// </remarks>
+    private void StartWatching()
+    {
+        StopWatching();
+
+        if (_repositoryRoot is null || _config.Bindings.Count == 0)
+        {
+            return;
+        }
+
+        _watcher = new FileChangeWatcher(_clock, logger: _logger);
+        _watcher.Settled += OnFileSettled;
+
+        foreach (var binding in _config.Bindings.Where(b => b.Enabled))
+        {
+            _watcher.WatchFile(AbsolutePath(binding.ProjectPath));
+
+            // The export tree may not exist yet on a freshly adopted project; the watcher
+            // says so and carries on, and the first export creates it.
+            _watcher.WatchTree(AbsolutePath(binding.ExportPath));
+        }
+
+        _logger.Info(LogCategory.Watch,
+            $"watching {_config.Bindings.Count(b => b.Enabled)} tracked project(s) for changes");
+    }
+
+    private void StopWatching()
+    {
+        if (_watcher is null)
+        {
+            return;
+        }
+
+        _watcher.Settled -= OnFileSettled;
+        _watcher.Dispose();
+        _watcher = null;
+    }
+
+    /// <summary>
+    /// A watched file stopped changing. Re-read staleness; run nothing.
+    /// </summary>
+    /// <remarks>
+    /// Raised on a timer thread, so the work is marshalled to the UI thread before it touches
+    /// anything the view is bound to. The evaluation itself is a hash of each project file
+    /// and its mirror - no toolchain, no process, and cheap enough to do on settle.
+    /// </remarks>
+    private void OnFileSettled(WatchedChange change)
+    {
+        _logger.Debug(LogCategory.Watch,
+            $"settled: {change.Path} (tier {change.Tier})");
+
+        OnUi(() => _ = RefreshStalenessAsync());
+    }
+
+    /// <summary>
+    /// Ask the commit gate what is stale, and say so.
+    /// </summary>
+    /// <remarks>
+    /// The gate is reused rather than reimplemented so the panel and the thing that will
+    /// eventually block a commit can never disagree about which projects need exporting.
+    /// </remarks>
+    private async Task RefreshStalenessAsync()
+    {
+        if (_orchestrator is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var gate = await _orchestrator.EvaluateCommitGateAsync(CancellationToken.None)
+                .ConfigureAwait(true);
+
+            var stale = new HashSet<string>(gate.StaleBindings, StringComparer.Ordinal);
+            UnexportedCount = stale.Count;
+
+            foreach (var row in Projects.Where(p => p.Tracked && !p.Busy))
+            {
+                if (stale.Contains(row.BindingId!))
+                {
+                    row.State = "not exported";
+                }
+            }
+
+            // Stated in the panel rather than only in a row, because the whole point is that
+            // somebody who has not looked at this project all afternoon still finds out.
+            StalenessSummary = stale.Count switch
+            {
+                0 => string.Empty,
+                1 => "1 project has changes that have not been exported.",
+                var n => $"{n} projects have changes that have not been exported.",
+            };
+
+            if (stale.Count > 0)
+            {
+                _logger.Info(LogCategory.Sync,
+                    $"{stale.Count} binding(s) not yet exported: {gate.Explanation}");
+            }
+        }
+        catch (Exception ex)
+        {
+            // Never let a background evaluation take the app down; it is advisory.
+            _logger.Error(LogCategory.Sync, "could not evaluate export staleness", ex);
+        }
+    }
+
+    private string AbsolutePath(string repoRelative) =>
+        System.IO.Path.Combine(
+            _repositoryRoot!,
+            repoRelative.Replace('/', System.IO.Path.DirectorySeparatorChar));
+
+    /// <summary>Run on the UI thread, whichever thread we are called from.</summary>
+    private void OnUi(Action action)
+    {
+        if (_ui is null || SynchronizationContext.Current == _ui)
+        {
+            action();
+            return;
+        }
+
+        _ui.Post(_ => action(), null);
+    }
+
     private bool CanAdopt() => _repositoryRoot is not null && SelectedProject is { Tracked: false };
 
     /// <summary>Track the selected project: guard it, write the rules, write the binding.</summary>
@@ -516,6 +697,11 @@ public sealed class SyncViewModel : ObservableObject
 
         await BuildOrchestratorAsync(CancellationToken.None).ConfigureAwait(true);
         await RescanAsync().ConfigureAwait(true);
+
+        // The binding set changed, so the watch set has to change with it - otherwise the
+        // project just adopted is the one project nobody is watching.
+        StartWatching();
+        await RefreshStalenessAsync().ConfigureAwait(true);
 
         Summary = ToolchainAvailable
             ? $"{row.Name} is now tracked. Export it to create the reviewable mirror."
@@ -586,6 +772,7 @@ public sealed class SyncViewModel : ObservableObject
             // is waiting to read.
             row.Busy = false;
             await RescanAsync().ConfigureAwait(true);
+            await RefreshStalenessAsync().ConfigureAwait(true);
 
             Summary = sentence;
             LockState = SyncNarrative.Describe(outcome.State);
@@ -766,6 +953,7 @@ public sealed class SyncViewModel : ObservableObject
             // before reporting, or the rescan's own summary overwrites the outcome.
             row.Busy = false;
             await RescanAsync().ConfigureAwait(true);
+            await RefreshStalenessAsync().ConfigureAwait(true);
 
             Summary = sentence;
             LockState = SyncNarrative.Describe(outcome.State);

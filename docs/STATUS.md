@@ -329,6 +329,33 @@ Automatic refreshes deliberately do **not** raise it. They fire whenever the wor
 moves, and a bar blinking on every keystroke in the user's editor trains them to ignore the
 one signal that matters.
 
+### Done — tracked projects are watched, and staleness is stated
+
+`FileChangeWatcher` is wired to the sync panel: every tracked project's `.project` and its
+export tree are watched, and when a file settles the panel re-reads how stale things are.
+
+**It deliberately exports nothing.** The default sync mode is `On git action`, decided by
+measurement — a CODESYS cold start is 17–31 s, so exporting after every settled save would run
+the toolchain most of the working day for changes nobody looks at until they commit. What the
+watcher buys is *awareness*: the panel now says **"2 projects have changes that have not been
+exported"** instead of leaving silence that reads as "in sync", which the plan calls out by
+name as the thing the status must not do.
+
+Staleness is answered by `EvaluateCommitGateAsync` rather than by a second opinion written in
+the view model, so the panel and the thing that will eventually block a commit cannot disagree
+about which projects need exporting. No toolchain, no process — a hash per binding.
+
+Nothing depends on the watcher being reliable. It drops events, and the commit gate re-checks
+from scratch regardless; a completely dead watcher degrades this to "the panel tells me at
+commit time rather than at save time" — annoying, never wrong.
+
+`ShellViewModel.Dispose` now releases the sync panel's watcher as well as its own. Each holds
+an OS handle on a directory, and a leaked one keeps the repository folder locked against
+rename or delete after the window closes.
+
+**Remaining on this path:** the commit gate has nothing to gate until there is a commit
+action, which is the git side panel.
+
 ### Verifying the UI, not just the engine
 
 `Versio.exe --trace-bindings <file>` writes every WPF data-binding failure to a file. A broken

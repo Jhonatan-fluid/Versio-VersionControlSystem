@@ -36,7 +36,8 @@ Export is automatic and deterministic. Import applies edited text back into the 
 | Git status / branches / stage / commit / diff / push | ✅ `GitCliClient` over real `git.exe` |
 | Direction lock, hash gate, coalescer, commit gate | ✅ pure logic, heavily tested |
 | Sync orchestrator — locks, loop defences, commit gate | ✅ 24 scenario tests |
-| Change detection — watcher + safety poll + overflow rescan | ✅ `FileChangeWatcher` |
+| Change detection — watcher + safety poll + overflow rescan | ✅ `FileChangeWatcher`, wired to the sync panel |
+| **"2 projects not yet exported"** — staleness stated, not implied | ✅ watcher-driven, answered by the commit gate |
 | **Changed-files panel follows the repository by itself** | ✅ 18 policy tests + 9 against a real filesystem |
 | Design system tokens, light and dark | ✅ `src/Versio.App/Theme/` |
 | Logging — ring buffer, correlation ids, heartbeat, rolling file | ✅ 20 tests; "Open logs folder" selects today's file |

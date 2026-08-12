@@ -988,5 +988,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// keeps the folder locked against rename or delete for the life of the process, which
     /// on a repository the user is trying to move is a visible bug rather than a slow leak.
     /// </remarks>
-    public void Dispose() => StopWatching();
+    public void Dispose()
+    {
+        StopWatching();
+
+        // The sync panel holds its own watcher over every tracked project and its export
+        // tree. Releasing only the shell's would leave those handles open and the repository
+        // folder locked against rename or delete after the window closes.
+        Sync.Detach();
+    }
 }
