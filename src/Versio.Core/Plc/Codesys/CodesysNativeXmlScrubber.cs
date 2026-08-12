@@ -24,6 +24,7 @@ public static partial class NativeXmlScrubber
     [GeneratedRegex("""(?<pre><Single Name="Timestamp" Type="long">)(?<val>[^<]*)(?<post></Single>)""")]
     private static partial Regex TimestampPattern();
 
+    /// <summary>Scrubbed text, and how many substitutions it took.</summary>
     public readonly record struct ScrubResult(string Text, int Replacements);
 
     /// <summary>Canonicalise a native export payload.</summary>

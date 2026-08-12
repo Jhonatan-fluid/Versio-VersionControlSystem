@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace Versio.Core.Plc.Codesys;
 
+/// <summary>Which script the CODESYS subprocess should run.</summary>
 public enum CodesysOperation
 {
     Probe,
@@ -102,6 +103,7 @@ public sealed record CodesysJob
     }
 }
 
+/// <summary>What one CODESYS run did: how it ended, how long it took, what it reported.</summary>
 public sealed record CodesysResult
 {
     public required int ExitCode { get; init; }
@@ -150,6 +152,7 @@ public sealed record CodesysResult
     }
 }
 
+/// <summary>A progress report from inside a running job, for the heartbeat and status bar.</summary>
 public readonly record struct CodesysProgress(
     string OperationId,
     string Phase,

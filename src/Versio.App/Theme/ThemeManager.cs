@@ -2,6 +2,7 @@ using System.Windows;
 
 namespace Versio.App.Theme;
 
+/// <summary>Which palette to paint with.</summary>
 public enum AppTheme
 {
     /// <summary>Follow the Windows app theme.</summary>

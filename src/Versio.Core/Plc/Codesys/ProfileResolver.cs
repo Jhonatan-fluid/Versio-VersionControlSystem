@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 
 namespace Versio.Core.Plc.Codesys;
 
+/// <summary>One CODESYS installation found on this machine.</summary>
 public sealed record CodesysInstall
 {
     /// <summary>Directory name, e.g. "CODESYS 3.5.22.20".</summary>
@@ -16,6 +17,7 @@ public sealed record CodesysInstall
     public string? FileVersion { get; init; }
 }
 
+/// <summary>How the search for a usable profile ended.</summary>
 public enum ProfileResolution
 {
     /// <summary>Exactly one profile — use it.</summary>
@@ -31,6 +33,7 @@ public enum ProfileResolution
     NoInstallFound,
 }
 
+/// <summary>The chosen profile, or why no single one could be chosen.</summary>
 public readonly record struct ProfileResolutionResult(
     ProfileResolution Outcome,
     string? Profile,

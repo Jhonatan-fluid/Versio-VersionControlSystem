@@ -1,5 +1,6 @@
 namespace Versio.Core.Diff;
 
+/// <summary>What one line of a unified diff represents.</summary>
 public enum DiffLineKind
 {
     Context,
@@ -16,6 +17,7 @@ public enum DiffLineKind
     NoNewline,
 }
 
+/// <summary>One line of a unified diff, with its number on each side.</summary>
 public sealed record DiffLine
 {
     public required DiffLineKind Kind { get; init; }
@@ -35,6 +37,7 @@ public sealed record DiffLine
     };
 }
 
+/// <summary>A parsed unified diff, ready to render.</summary>
 public sealed record DiffDocument
 {
     public IReadOnlyList<DiffLine> Lines { get; init; } = [];

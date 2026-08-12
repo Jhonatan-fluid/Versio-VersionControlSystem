@@ -2,6 +2,7 @@ using Versio.Core.Plc;
 
 namespace Versio.Core.Bindings;
 
+/// <summary>What the scanner concluded about one project or export tree.</summary>
 public enum BindingHealth
 {
     /// <summary>Binding exists; project and export both present; manifest agrees.</summary>
@@ -23,6 +24,7 @@ public enum BindingHealth
     CasingMismatch,
 }
 
+/// <summary>One conclusion, carrying the sentence the UI shows for it.</summary>
 public sealed record ScanFinding(
     BindingHealth Health,
     string Path,

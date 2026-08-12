@@ -36,6 +36,8 @@ public enum SyncTrigger
     ForceReleased,
 }
 
+/// <summary>Whether the state machine allowed a trigger, the state it left behind, and a
+/// sentence explaining the decision.</summary>
 public readonly record struct TransitionResult(
     bool Allowed,
     SyncDirection State,

@@ -2,6 +2,7 @@ using Versio.Core.Abstractions;
 
 namespace Versio.Core.Watching;
 
+/// <summary>What to do with a change that has just settled.</summary>
 public enum CoalesceAction
 {
     /// <summary>Nothing running — start now.</summary>

@@ -2,6 +2,7 @@ using Versio.Core.Abstractions;
 
 namespace Versio.Core.Logging;
 
+/// <summary>A long operation currently in flight, and its progress so far.</summary>
 public sealed record RunningOperation
 {
     public required string OperationId { get; init; }

@@ -1,5 +1,6 @@
 namespace Versio.Core.Diff;
 
+/// <summary>What a highlighted span of source is, for colouring purposes.</summary>
 public enum TokenKind
 {
     Plain,
@@ -12,6 +13,8 @@ public enum TokenKind
     Punctuation,
 }
 
+/// <summary>A coloured run within one line, held as offsets rather than substrings so
+/// highlighting a large file does not allocate a string per token.</summary>
 public readonly record struct TokenSpan(int Start, int Length, TokenKind Kind);
 
 /// <summary>

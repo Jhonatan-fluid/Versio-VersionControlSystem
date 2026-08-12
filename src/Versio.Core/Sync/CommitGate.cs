@@ -2,6 +2,7 @@ using Versio.Core.Bindings;
 
 namespace Versio.Core.Sync;
 
+/// <summary>Whether a commit may proceed, and what has to happen first if not.</summary>
 public enum GateDecision
 {
     /// <summary>Nothing stale; the commit may proceed untouched.</summary>
@@ -14,6 +15,7 @@ public enum GateDecision
     Blocked,
 }
 
+/// <summary>The gate verdict, carrying the sentence shown to the user.</summary>
 public sealed record CommitGateResult
 {
     public required GateDecision Decision { get; init; }

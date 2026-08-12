@@ -66,6 +66,7 @@ public sealed class HashGate
         new Dictionary<string, string>(_baseline, StringComparer.Ordinal);
 }
 
+/// <summary>Which files actually changed, and which the gate filtered out as noise.</summary>
 public sealed record GateResult(
     IReadOnlyList<string> Changed,
     IReadOnlyList<string> Unchanged,

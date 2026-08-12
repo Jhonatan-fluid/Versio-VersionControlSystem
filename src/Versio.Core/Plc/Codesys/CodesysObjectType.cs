@@ -52,6 +52,14 @@ public enum CodesysObjectType
     Application,
 }
 
+/// <summary>
+/// The GUID → object-type table.
+/// </summary>
+/// <remarks>
+/// Taken from greenforge-labs/codescribe (Apache-2.0), with attribution. These GUIDs are
+/// CODESYS's own identifiers for object kinds; they are not publicly documented and cannot
+/// be derived, so the table is copied rather than computed.
+/// </remarks>
 public static class CodesysObjectTypes
 {
     private static readonly Dictionary<string, CodesysObjectType> ByGuid =

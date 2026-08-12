@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 
 namespace Versio.Core.Iec;
 
+/// <summary>The kind of program organisation unit a declaration introduces.</summary>
 public enum PouKind
 {
     Unknown = 0,
@@ -12,6 +13,7 @@ public enum PouKind
     Dut,
 }
 
+/// <summary>The kind of user-defined type a declaration introduces.</summary>
 public enum DutKind
 {
     None = 0,

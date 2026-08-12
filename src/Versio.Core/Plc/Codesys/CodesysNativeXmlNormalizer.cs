@@ -47,6 +47,8 @@ public static partial class NativeXmlNormalizer
     /// not read as a change.</summary>
     private static readonly string[] UnorderedContainers = ["List", "Properties", "Dictionary"];
 
+    /// <summary>Normalised XML, plus what had to be masked to get there. The counts are what
+    /// make an equivalence result explainable rather than a bare true or false.</summary>
     public sealed record Normalized(string Text, int GuidsMasked, int CountersMasked);
 
     /// <summary>

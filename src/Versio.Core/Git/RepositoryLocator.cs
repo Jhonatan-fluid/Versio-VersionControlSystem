@@ -25,6 +25,7 @@ public enum RepositoryKind
     Inaccessible,
 }
 
+/// <summary>What was found at a path, and whether git can be driven against it.</summary>
 public sealed record RepositoryLocation
 {
     public required RepositoryKind Kind { get; init; }

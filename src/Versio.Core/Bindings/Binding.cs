@@ -41,6 +41,7 @@ public sealed record RepoConfig
     public bool AutoAdoptNewProjects { get; init; }
 }
 
+/// <summary>The names and layout a binding assumes when nothing overrides them.</summary>
 public static class BindingConventions
 {
     public const string ProjectExtension = ".project";

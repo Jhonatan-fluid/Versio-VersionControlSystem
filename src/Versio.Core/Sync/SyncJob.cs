@@ -45,6 +45,8 @@ public enum SyncVerdict
     UnknownBinding,
 }
 
+/// <summary>What the orchestrator did about one change, and why. Every field here is
+/// something the UI or the log has to be able to state plainly.</summary>
 public sealed record SyncOutcome
 {
     public required SyncVerdict Verdict { get; init; }
