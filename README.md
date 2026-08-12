@@ -4,7 +4,7 @@
 
 A CODESYS `.project` file is a binary compound document. Git can store it, but it cannot diff it, merge it, or tell you what changed — so version control degrades to "upload a zip with a date in the name". Versio keeps a **textual mirror** of the project inside the same repository, kept in sync automatically, so git becomes genuinely useful for PLC work: line diffs, blame, history, review.
 
-> **Status: pre-alpha.** The CODESYS pipeline, the domain core and a working shell all exist and are tested against a real project. The shell opens a repository and shows real git state; it is not yet wired to the sync engine. See [What works today](#what-works-today).
+> **Status: pre-alpha, and the round trip works.** A project can be tracked from the panel, exported to its reviewable mirror, edited as text, and imported back into the `.project` — driven by the real sync engine and proven end to end against a real project with real CODESYS. See [What works today](#what-works-today).
 
 ---
 
@@ -37,15 +37,30 @@ Export is automatic and deterministic. Import applies edited text back into the 
 | Direction lock, hash gate, coalescer, commit gate | ✅ pure logic, heavily tested |
 | Sync orchestrator — locks, loop defences, commit gate | ✅ 24 scenario tests |
 | Change detection — watcher + safety poll + overflow rescan | ✅ `FileChangeWatcher` |
+| **Changed-files panel follows the repository by itself** | ✅ 18 policy tests + 9 against a real filesystem |
 | Design system tokens, light and dark | ✅ `src/Versio.App/Theme/` |
-| Logging — ring buffer, correlation ids, heartbeat, rolling file | ✅ 20 tests |
+| Logging — ring buffer, correlation ids, heartbeat, rolling file | ✅ 20 tests; "Open logs folder" selects today's file |
 | Shell — repo/branch dropdowns, rail, changed files, diff, collapsible log | ✅ opens a real repo, shows real git state |
 | Diff view — gutter, line numbers, syntax highlighting for 11 languages | ✅ ST, C#, Python, XML, JSON, YAML, Markdown, PowerShell, JS/TS, SQL |
+| **New files diff as entirely added**, not as "no diff available" | ✅ `--no-index` against `/dev/null`, all lines green |
+| **Show full file** — every line, changes still highlighted | ✅ large `-U`, so it stays a diff rather than becoming a file viewer |
+| Diff view survives a 2.5 MB / 33,644-line visualisation export | ✅ rows built only when realised; parse off the UI thread |
+| **App-wide progress bar** — one signal for git, export and import alike | ✅ counted `BusyTracker`, indeterminate, with a caption |
+| CODESYS runs with no visible window | ✅ `CREATE_NO_WINDOW` **and** `SW_HIDE` — different subsystems |
 | Repository validation — walks up to `.git`, refuses non-repos with a reason | ✅ handles subdirectories, bare repos and linked worktrees |
 | PLC sync panel — toolchain probe, project discovery, binding state | ✅ real scan, no sample data |
 | Vendor seam — `IPlcToolchain`, `Iec` vs `Plc.Codesys` vs neutral | ✅ 11 tests |
 | Application icon — 8 sizes, hand-tuned below 48px, embedded in the exe | ✅ 12 tests over the `.ico` itself |
-| **Adopt a project + manual export/import from the UI** | ⛔ next milestone |
+| **Adopt a project from the UI** — guards, `.gitattributes`/LFS rules, binding | ✅ 13 refusal tests + real-repo integration |
+| **Manual export from the UI**, driving `SyncOrchestrator` | ✅ 11 files in 16.7 s on the fixture, lock taken and persisted |
+| Direction lock in plain English, shared by the panel and the log | ✅ `SyncNarrative` — every blocking state names its remedy |
+| Heartbeat during a 17–31 s export | ✅ elapsed time in the panel, not silence |
+| WPF binding-failure tracing — `Versio.exe --trace-bindings <file>` | ✅ the one silent failure class, made loud |
+| **Manual import from the UI** — propose, review the file list, confirm | ✅ unconfirmed pass proven to leave the `.project` byte-identical |
+| Change detection over the mirror's real contents | ✅ `ContentHash.OfTree`; a hand-edited `.st` is seen, an untouched tree is not |
+| Side-by-side diff and word-level intra-line diff | ⛔ inline only |
+| A diff preview *inside* the import confirmation | ⛔ shows which files change, not what changes in them |
+| Template generation | ⛔ needs a new operation and script — not assembly |
 | Git side panel, project tree, packaging | ⛔ not built |
 
 **[docs/STATUS.md](docs/STATUS.md)** has the current state and the route to completion.
@@ -68,7 +83,8 @@ Versio.sln
 │  │  ├─ Model/                 CODESYS object types (GUID table)
 │  │  ├─ Serialization/         ST codec, XML scrubber, path mapper, declaration parser
 │  │  ├─ Sync/                  state machine, hash gate, suppressor, breaker, commit gate
-│  │  └─ Watching/              debounce and job coalescing
+│  │  └─ Watching/              debounce, job coalescing, and the rules deciding
+│  │                            when the shell re-reads git
 │  │
 │  ├─ Versio.Infrastructure/    The only project that touches the outside world.
 │  │  ├─ Codesys/               process host, install locator, script extractor
@@ -78,8 +94,8 @@ Versio.sln
 │  └─ Versio.Scripts/           IronPython 2.7, run inside CODESYS. Embedded into
 │                               Versio.Infrastructure as resources.
 ├─ tests/
-│  ├─ Versio.Core.Tests/        352 unit tests — pure, no IO, ~100 ms
-│  └─ Versio.Integration.Tests/  21 tests against real CODESYS and real git, ~23 s
+│  ├─ Versio.Core.Tests/        603 unit tests — pure, no IO, ~290 ms
+│  └─ Versio.Integration.Tests/  59 tests against real CODESYS and real git, ~110 s
 ├─ tools/                       PowerShell harnesses used during Phase 0, plus
 │                               New-VersioIcon.ps1 which generates the app icon
 ├─ assets/                      versio.svg (reference drawing) and versio.ico
@@ -189,6 +205,8 @@ Each of these cost real debugging time and is now pinned by a test.
 | **UTF-8 without BOM, everywhere** | IronPython 2.7's `json.load` fails on a BOM with *"No JSON object could be decoded"*. PowerShell 5.1's `-Encoding utf8` writes one. |
 | **`StandardOutputEncoding` must be set** | .NET otherwise decodes a subprocess using the console codepage and mangles `Kühlschrank Regelung.st`. |
 | **`git status` needs `-z`** | Without it git quotes and escapes paths containing spaces or non-ASCII — both routine in CODESYS object names. |
+| **`git status` writes to `.git/index`** | It rewrites the stat cache. Anything that refreshes *because* the index changed will refresh forever. `StatusRefreshPolicy` ignores metadata events for a second after each refresh; working-tree events are never suppressed. |
+| **Windows raises a `.git` directory event for every write inside it** | Including the lock files git creates around each invocation. Treating a bare `.git` event as a real change made lock-file churn alone wake the watcher — caught by the integration suite, not by reading the code. Nothing is lost by dropping it: a write to `.git/index` also raises an event naming `.git/index`. |
 | **CODESYS argument quoting** | `--profile="A B C"`, never `"--profile=A B C"`. `ProcessStartInfo.ArgumentList` produces the latter, and CODESYS exits 1 in under a second with no output. |
 | **`--noUI` requires `--profile`** | It is a hard precondition, not a preference. |
 | **`Mutex` has thread affinity** | It cannot be acquired and released across an `await`. A named `Semaphore` avoids that but loses abandonment recovery, which crash recovery depends on. |
