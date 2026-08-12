@@ -110,6 +110,7 @@ public sealed class ShellViewModel : ObservableObject
     {
         _logger = logger;
         Log = log;
+        Sync = new SyncViewModel(logger);
         _gitFactory = gitFactory ?? (path => new GitCliClient(path,
             log: message => logger.Debug(LogCategory.Git, message)));
         _locator = new RepositoryLocator(probe ?? new FileSystemRepositoryProbe());
@@ -122,6 +123,9 @@ public sealed class ShellViewModel : ObservableObject
     }
 
     public LogViewModel Log { get; }
+
+    /// <summary>The PLC sync panel — what Versio is for, as distinct from the git client.</summary>
+    public SyncViewModel Sync { get; }
 
     public ObservableCollection<ChangeRow> Changes { get; } = [];
 
@@ -335,6 +339,10 @@ public sealed class ShellViewModel : ObservableObject
 
         RefreshCommand.RaiseCanExecuteChanged();
         await RefreshAsync().ConfigureAwait(true);
+
+        // Scan for PLC projects after the git state is up, so the sync panel is populated
+        // by the time the user reaches for it.
+        await Sync.AttachAsync(path, client, CancellationToken.None).ConfigureAwait(true);
     }
 
     private async Task CheckoutAsync(string branch)

@@ -232,34 +232,96 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- PLC SYNC: the feature Versio exists for. -->
-                    <Border x:Name="SyncPanel" Visibility="Collapsed" Padding="20,8,20,20">
-                        <StackPanel VerticalAlignment="Top">
-                            <TextBlock Text="{DynamicResource Icon.Sync}"
-                                       FontFamily="{DynamicResource Font.Icon}" FontSize="26"
-                                       Foreground="{DynamicResource Brush.Text.Disabled}"
-                                       Margin="0,10,0,12" />
-                            <TextBlock Text="PLC sync"
-                                       FontFamily="{DynamicResource Font.UI}"
-                                       FontSize="{DynamicResource Font.Size.Subtitle}"
-                                       Foreground="{DynamicResource Brush.Text.Primary}"
-                                       Margin="0,0,0,8" />
-                            <TextBlock TextWrapping="Wrap"
-                                       FontFamily="{DynamicResource Font.UI}"
-                                       FontSize="{DynamicResource Font.Size.Body}"
-                                       Foreground="{DynamicResource Brush.Text.Secondary}"
-                                       Text="A PLC project file is binary — git can store it but cannot diff it. Versio exports it to readable text beside the project so every change becomes reviewable, and imports edited text back." />
-                            <TextBlock TextWrapping="Wrap" Margin="0,14,0,0"
-                                       FontFamily="{DynamicResource Font.UI}"
-                                       FontSize="{DynamicResource Font.Size.Body}"
-                                       Foreground="{DynamicResource Brush.Text.Secondary}"
-                                       Text="This panel will show which side is currently authoritative, when the last export ran, what could not be exported, and manual export / import triggers." />
-                            <TextBlock TextWrapping="Wrap" Margin="0,14,0,0"
-                                       FontFamily="{DynamicResource Font.UI}"
-                                       FontSize="{DynamicResource Font.Size.Caption}"
-                                       Foreground="{DynamicResource Brush.Text.Disabled}"
-                                       Text="The export, import and sync engine are built and tested against a real CODESYS project. Connecting them to this panel is the next milestone." />
-                        </StackPanel>
+                    <!-- PLC SYNC: the feature Versio exists for. Real scan, real toolchain
+                         probe, no sample data. -->
+                    <Border x:Name="SyncPanel" Visibility="Collapsed" Padding="14,0,12,12">
+                        <DockPanel>
+                            <!-- Toolchain state. Its absence is reported, not thrown: a repo
+                                 full of CODESYS projects is still a perfectly usable git repo
+                                 on a machine without CODESYS. -->
+                            <Border DockPanel.Dock="Top"
+                                    Background="{DynamicResource Brush.Surface.Sunken}"
+                                    CornerRadius="{DynamicResource Radius.Control}"
+                                    Padding="10,8" Margin="0,0,0,12">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Ellipse Width="7" Height="7" VerticalAlignment="Center"
+                                                 Margin="0,0,8,0">
+                                            <Ellipse.Style>
+                                                <Style TargetType="Ellipse">
+                                                    <Setter Property="Fill"
+                                                            Value="{DynamicResource Brush.Status.Deleted}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Sync.ToolchainAvailable}"
+                                                                     Value="True">
+                                                            <Setter Property="Fill"
+                                                                    Value="{DynamicResource Brush.Status.Added}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Ellipse.Style>
+                                        </Ellipse>
+                                        <TextBlock Text="{Binding Sync.VendorName}"
+                                                   FontFamily="{DynamicResource Font.UI}"
+                                                   FontSize="{DynamicResource Font.Size.Body}"
+                                                   FontWeight="{DynamicResource Font.Weight.Medium}"
+                                                   Foreground="{DynamicResource Brush.Text.Primary}" />
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding Sync.ToolchainState}"
+                                               TextWrapping="Wrap" Margin="15,3,0,0"
+                                               FontFamily="{DynamicResource Font.Mono}"
+                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                               Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                </StackPanel>
+                            </Border>
+
+                            <StackPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+                                <TextBlock Text="{Binding Sync.Summary}" TextWrapping="Wrap"
+                                           FontFamily="{DynamicResource Font.UI}"
+                                           FontSize="{DynamicResource Font.Size.Body}"
+                                           Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                <Button Content="Rescan" HorizontalAlignment="Left"
+                                        Margin="0,10,0,0"
+                                        Style="{StaticResource GhostButton}"
+                                        Command="{Binding Sync.RescanCommand}" />
+                            </StackPanel>
+
+                            <TextBlock DockPanel.Dock="Top" Text="PROJECTS"
+                                       Style="{StaticResource SectionLabel}" Margin="0,4,0,6" />
+
+                            <ListBox ItemsSource="{Binding Sync.Projects}"
+                                     Background="Transparent" BorderThickness="0"
+                                     ItemContainerStyle="{StaticResource RowItem}"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     MaxHeight="260">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Text="{Binding Name}"
+                                                           FontFamily="{DynamicResource Font.UI}"
+                                                           FontSize="{DynamicResource Font.Size.Body}"
+                                                           Foreground="{DynamicResource Brush.Text.Primary}" />
+                                                <TextBlock Text="{Binding Folder}"
+                                                           FontFamily="{DynamicResource Font.Mono}"
+                                                           FontSize="{DynamicResource Font.Size.Caption}"
+                                                           Foreground="{DynamicResource Brush.Text.Disabled}"
+                                                           TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="1" Text="{Binding State}"
+                                                       VerticalAlignment="Center" Margin="10,0,0,0"
+                                                       FontFamily="{DynamicResource Font.Mono}"
+                                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                                       Foreground="{DynamicResource Brush.Status.Modified}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </DockPanel>
                     </Border>
 
                     <ListBox x:Name="ChangesList" ItemsSource="{Binding Changes}"

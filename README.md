@@ -42,7 +42,9 @@ Export is automatic and deterministic. Import applies edited text back into the 
 | Shell — repo/branch dropdowns, rail, changed files, diff, collapsible log | ✅ opens a real repo, shows real git state |
 | Diff view — gutter, line numbers, syntax highlighting for 11 languages | ✅ ST, C#, Python, XML, JSON, YAML, Markdown, PowerShell, JS/TS, SQL |
 | Repository validation — walks up to `.git`, refuses non-repos with a reason | ✅ handles subdirectories, bare repos and linked worktrees |
-| **Shell wired to the sync engine** — export, import, commit gate | ⛔ not built |
+| PLC sync panel — toolchain probe, project discovery, binding state | ✅ real scan, no sample data |
+| Vendor seam — `IPlcToolchain`, `Iec` vs `Plc.Codesys` vs neutral | ✅ 11 tests |
+| **Adopt a project + manual export/import from the UI** | ⛔ next milestone |
 | Git side panel, project tree, packaging | ⛔ not built |
 
 **[docs/STATUS.md](docs/STATUS.md)** has the current state and the route to completion.

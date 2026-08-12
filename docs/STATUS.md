@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-11 · **Commits:** 8 · **Tests:** 391 unit + 21 integration, 0 skipped
+**Date:** 2026-08-11 · **Commits:** 10 · **Tests:** 481 unit + 21 integration, 0 skipped
 
 ---
 
@@ -8,13 +8,13 @@
 
 The risky half is done. Every hard question the plan raised about CODESYS has been answered by measurement against a real project, and the domain logic that could lose someone's work is written and tested without needing CODESYS, git, a clock or a UI to exercise it.
 
-The unfinished half is assembly: a shell exists and shows real git state, but it is not yet connected to the sync engine sitting behind it.
+The unfinished half is assembly: the shell shows real git state and now discovers real PLC projects, but the export and import paths are not yet driven from it.
 
 ```
   CODESYS pipeline    ████████████████████  proven on a real project
-  Domain core         ████████████████████  391 tests, 43 ms
+  Domain core         ████████████████████  481 tests, 50 ms
   Infrastructure      ████████████████████  drives real CODESYS + real git
-  Desktop shell       ████████░░░░░░░░░░░░  renders, not yet wired to sync
+  Desktop shell       ███████████░░░░░░░░░  real git + real PLC scan; export not wired
   Packaging           ██░░░░░░░░░░░░░░░░░░  publish profile only
 ```
 
@@ -40,17 +40,26 @@ The unfinished half is assembly: a shell exists and shows real git state, but it
 
 ## What remains, in dependency order
 
-### 1. Wire the shell to the sync engine — *the next milestone*
+### 1. Wire the shell to the sync engine — *in progress*
 
 Everything below it exists; this is assembly, not invention.
 
-- Sync panel: direction-lock state in plain language, last export, `_coverage.md`
+**Done.** The PLC sync panel is real. It probes the toolchain (install + profile, reporting
+absence rather than throwing), scans the repository for PLC projects, classifies each against
+`.versio/repo.json`, and lists orphan findings that need attention. Templates are excluded so
+they cannot be adopted by accident. `RepoScanner` and `RepoConfigStore` back it; the vendor
+seam it goes through is `IPlcProjectFormat`, so a second brand plugs in without touching it.
+
+**Remaining:**
+
+- **Adopt a project** — write the binding, generate a template, run the first export
+- **Manual export / import** from the panel, driving `SyncOrchestrator`
+- Direction-lock state in plain language, last export, `_coverage.md`
 - Commit gate blocking a stale export, with a blocking progress dialog
 - Heartbeat surfaced in the status bar during a 20-second CODESYS run
 - `FileChangeWatcher` → `SyncOrchestrator` wiring
-- Binding setup: adopt an orphaned project, generate a template
 
-**This is the point at which Versio does what it was built to do.**
+**Adopt + manual export is the point at which Versio does what it was built to do.**
 
 ### 2. Complete the git surface
 
