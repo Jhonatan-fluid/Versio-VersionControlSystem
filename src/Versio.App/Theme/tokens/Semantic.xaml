@@ -33,6 +33,13 @@
     <SolidColorBrush x:Key="Brush.Status.Conflict" Color="{DynamicResource Color.Status.Conflict}" />
     <SolidColorBrush x:Key="Brush.Status.Neutral"  Color="{DynamicResource Color.Status.Neutral}" />
 
+    <SolidColorBrush x:Key="Brush.Syntax.Keyword"   Color="{DynamicResource Color.Syntax.Keyword}" />
+    <SolidColorBrush x:Key="Brush.Syntax.Type"      Color="{DynamicResource Color.Syntax.Type}" />
+    <SolidColorBrush x:Key="Brush.Syntax.Comment"   Color="{DynamicResource Color.Syntax.Comment}" />
+    <SolidColorBrush x:Key="Brush.Syntax.String"    Color="{DynamicResource Color.Syntax.String}" />
+    <SolidColorBrush x:Key="Brush.Syntax.Number"    Color="{DynamicResource Color.Syntax.Number}" />
+    <SolidColorBrush x:Key="Brush.Syntax.Directive" Color="{DynamicResource Color.Syntax.Directive}" />
+
     <SolidColorBrush x:Key="Brush.Diff.AddedBg"     Color="{DynamicResource Color.Diff.AddedBg}" />
     <SolidColorBrush x:Key="Brush.Diff.DeletedBg"   Color="{DynamicResource Color.Diff.DeletedBg}" />
     <SolidColorBrush x:Key="Brush.Diff.AddedWord"   Color="{DynamicResource Color.Diff.AddedWord}" />

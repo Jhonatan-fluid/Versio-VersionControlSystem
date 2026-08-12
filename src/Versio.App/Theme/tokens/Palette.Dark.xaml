@@ -38,6 +38,14 @@
     <Color x:Key="Color.Status.Conflict">#FB923C</Color>
     <Color x:Key="Color.Status.Neutral">#8B93A1</Color>
 
+    <!-- Syntax -->
+    <Color x:Key="Color.Syntax.Keyword">#D2A8FF</Color>
+    <Color x:Key="Color.Syntax.Type">#5FD3E0</Color>
+    <Color x:Key="Color.Syntax.Comment">#8B949E</Color>
+    <Color x:Key="Color.Syntax.String">#7EE787</Color>
+    <Color x:Key="Color.Syntax.Number">#79C0FF</Color>
+    <Color x:Key="Color.Syntax.Directive">#FFA657</Color>
+
     <!-- Diff -->
     <Color x:Key="Color.Diff.AddedBg">#12301F</Color>
     <Color x:Key="Color.Diff.DeletedBg">#331617</Color>

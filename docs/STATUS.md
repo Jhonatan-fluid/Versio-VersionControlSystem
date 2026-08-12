@@ -62,9 +62,9 @@ Everything below it exists; this is assembly, not invention.
 
 The manifest already carries GUID → path → type. The tree builder is specified in §9.3 and the virtualization is proven; what is missing is the builder itself and parsing `config/*.yaml` back into device nodes.
 
-### 4. Diff view worth reading
+### 4. Diff view — *largely done*
 
-Currently a read-only `TextBox`. Needs syntax highlighting for ST, side-by-side, and word-level intra-line diff. AvalonEdit is the specified route.
+Gutter with both sides' line numbers, per-row tinting and syntax highlighting for eleven languages, driven by a table-driven tokenizer in `Versio.Core` rather than AvalonEdit (§8.3 records why). Remaining: **side-by-side mode** and **word-level intra-line diff**.
 
 ### 5. Packaging
 

@@ -41,6 +41,16 @@
     <Color x:Key="Color.Status.Conflict">#C2410C</Color>
     <Color x:Key="Color.Status.Neutral">#6B7280</Color>
 
+    <!-- Syntax. Muted on purpose: in a diff the row tint carries the change and the
+         colours only carry structure, so saturated syntax would fight the thing that
+         matters. -->
+    <Color x:Key="Color.Syntax.Keyword">#8250DF</Color>
+    <Color x:Key="Color.Syntax.Type">#1A7F8E</Color>
+    <Color x:Key="Color.Syntax.Comment">#6E7781</Color>
+    <Color x:Key="Color.Syntax.String">#0A6B34</Color>
+    <Color x:Key="Color.Syntax.Number">#0550AE</Color>
+    <Color x:Key="Color.Syntax.Directive">#953800</Color>
+
     <!-- Diff -->
     <Color x:Key="Color.Diff.AddedBg">#E6F6EC</Color>
     <Color x:Key="Color.Diff.DeletedBg">#FCEAEA</Color>

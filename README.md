@@ -40,8 +40,9 @@ Export is automatic and deterministic. Import applies edited text back into the 
 | Design system tokens, light and dark | ✅ `src/Versio.App/Theme/` |
 | Logging — ring buffer, correlation ids, heartbeat, rolling file | ✅ 20 tests |
 | Shell — repo/branch dropdowns, rail, changed files, diff, collapsible log | ✅ opens a real repo, shows real git state |
+| Diff view — gutter, line numbers, syntax highlighting for 11 languages | ✅ ST, C#, Python, XML, JSON, YAML, Markdown, PowerShell, JS/TS, SQL |
 | **Shell wired to the sync engine** — export, import, commit gate | ⛔ not built |
-| Git side panel, project tree, diff highlighting, packaging | ⛔ not built |
+| Git side panel, project tree, packaging | ⛔ not built |
 
 **[docs/STATUS.md](docs/STATUS.md)** has the current state and the route to completion.
 **[docs/PHASE0-FINDINGS.md](docs/PHASE0-FINDINGS.md)** records the measurements and the known limitations — including one real CODESYS mutation (`Core2` in task configuration) that keeps task config **diff-only** for now.
