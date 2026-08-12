@@ -237,6 +237,17 @@ public sealed class SyncViewModel : ObservableObject
         private set => SetProperty(ref _unexportedCount, value);
     }
 
+    /// <summary>
+    /// Repo-relative export directory of every enabled binding.
+    /// </summary>
+    /// <remarks>
+    /// Handed to the commit path so it can stage what an export just wrote. Directories, not
+    /// the file list the export reported: an export can delete an object as well as write
+    /// one, and staging only the writes would leave the deletion out of the commit.
+    /// </remarks>
+    public IReadOnlyList<string> ExportPaths =>
+        [.. _config.Bindings.Where(b => b.Enabled).Select(b => b.ExportPath)];
+
     /// <summary>That count as a sentence, empty when nothing is outstanding.</summary>
     public string StalenessSummary
     {
@@ -657,6 +668,94 @@ public sealed class SyncViewModel : ObservableObject
         }
 
         _ui.Post(_ => action(), null);
+    }
+
+    /// <summary>
+    /// Whether every tracked project's mirror is current enough to commit.
+    /// </summary>
+    /// <remarks>
+    /// Exposed for the git panel. The gate belongs to the orchestrator, which lives here, and
+    /// the alternative - letting the commit path build its own opinion of staleness - is how
+    /// two answers to one question end up disagreeing at the moment somebody commits.
+    /// </remarks>
+    public Task<CommitGateResult> EvaluateGateAsync(CancellationToken ct) =>
+        _orchestrator is null
+            ? Task.FromResult(new CommitGateResult
+            {
+                Decision = GateDecision.Proceed,
+                Explanation = "no tracked PLC projects in this repository",
+            })
+            : _orchestrator.EvaluateCommitGateAsync(ct);
+
+    /// <summary>
+    /// Export every stale binding, so the commit records the project and its mirror together.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is the primary path by which the export tree is written at all, not a safety net.
+    /// With <c>On git action</c> as the default sync mode there is no export on save, so the
+    /// commit is where the mirror catches up - which is why it runs rather than merely
+    /// refusing, and why it is worth the 17-31 s it costs.
+    /// </para>
+    /// <para>
+    /// Each job is synchronous, so it bypasses the coalescer and runs now rather than queueing
+    /// behind a background sync the user cannot see. The circuit breaker, the hash gate and
+    /// the direction lock still apply.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<SyncOutcome>> SatisfyGateAsync(CancellationToken ct)
+    {
+        if (_orchestrator is null)
+        {
+            return [];
+        }
+
+        var operationId = Guid.NewGuid().ToString("N")[..8];
+        using var scope = _logger.BeginOperation(operationId);
+        using var busy = _busy.Begin("Exporting before commit…");
+        using var beat = _heartbeat.Track(operationId, "commit gate export");
+
+        _logger.Info(LogCategory.Sync, "commit gate: exporting stale bindings before the commit");
+
+        var outcomes = await _orchestrator.SatisfyCommitGateAsync(ct).ConfigureAwait(true);
+
+        foreach (var outcome in outcomes)
+        {
+            var sentence = SyncNarrative.Describe(outcome);
+            if (outcome.IsFailure)
+            {
+                _logger.Error(LogCategory.Sync, sentence);
+            }
+            else
+            {
+                _logger.Info(LogCategory.Sync, sentence);
+            }
+        }
+
+        await RescanAsync().ConfigureAwait(true);
+        await RefreshStalenessAsync().ConfigureAwait(true);
+        Activity = string.Empty;
+
+        return outcomes;
+    }
+
+    /// <summary>Release every direction lock after a successful push (plan section 6.5).</summary>
+    /// <remarks>
+    /// Push, not commit: until work is pushed nobody else can see it, so the direction is
+    /// still meaningfully owned. Push is repo-wide, so this releases every binding.
+    /// </remarks>
+    public async Task ReleaseAfterPushAsync(string headCommit, CancellationToken ct)
+    {
+        if (_orchestrator is null)
+        {
+            return;
+        }
+
+        await _orchestrator.ReleaseAfterPushAsync(headCommit, ct).ConfigureAwait(true);
+        _logger.Info(LogCategory.Lock, $"push released every direction lock at {headCommit}");
+
+        await RescanAsync().ConfigureAwait(true);
+        await RefreshStalenessAsync().ConfigureAwait(true);
     }
 
     private bool CanAdopt() => _repositoryRoot is not null && SelectedProject is { Tracked: false };

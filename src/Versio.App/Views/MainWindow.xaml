@@ -15,6 +15,31 @@
             </ResourceDictionary.MergedDictionaries>
             <views:ResourceKeyConverter x:Key="ResourceKey" />
             <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+
+            <!-- One row template for every list of changed files. Three copies of it would
+                 be three chances for the glyph and its colour to disagree. -->
+            <DataTemplate x:Key="ChangeRowTemplate">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="18" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="{Binding Glyph}"
+                               VerticalAlignment="Center"
+                               FontFamily="{DynamicResource Font.Mono}"
+                               FontSize="{DynamicResource Font.Size.Caption}"
+                               FontWeight="{DynamicResource Font.Weight.Semibold}"
+                               Foreground="{Binding BrushKey,
+                                   Converter={StaticResource ResourceKey}}" />
+                    <TextBlock Grid.Column="1" Text="{Binding Path}"
+                               VerticalAlignment="Center"
+                               FontFamily="{DynamicResource Font.Mono}"
+                               FontSize="{DynamicResource Font.Size.Caption}"
+                               Foreground="{DynamicResource Brush.Text.Primary}"
+                               TextTrimming="CharacterEllipsis"
+                               ToolTip="{Binding Path}" />
+                </Grid>
+            </DataTemplate>
         </ResourceDictionary>
     </Window.Resources>
 
@@ -235,28 +260,119 @@
 
                     <!-- GIT: not built yet. An empty state that explains what will live
                          here beats a blank panel, which reads as a bug. -->
-                    <Border x:Name="GitPanel" Visibility="Collapsed" Padding="20,8,20,20">
-                        <StackPanel VerticalAlignment="Top">
-                            <TextBlock Text="{DynamicResource Icon.Link}"
-                                       FontFamily="{DynamicResource Font.Icon}" FontSize="26"
-                                       Foreground="{DynamicResource Brush.Text.Disabled}"
-                                       Margin="0,10,0,12" />
-                            <TextBlock Text="Git panel"
-                                       FontFamily="{DynamicResource Font.UI}"
-                                       FontSize="{DynamicResource Font.Size.Subtitle}"
-                                       Foreground="{DynamicResource Brush.Text.Primary}"
-                                       Margin="0,0,0,8" />
-                            <TextBlock TextWrapping="Wrap"
-                                       FontFamily="{DynamicResource Font.UI}"
-                                       FontSize="{DynamicResource Font.Size.Body}"
-                                       Foreground="{DynamicResource Brush.Text.Secondary}"
-                                       Text="Not built yet. This will hold staging, the commit message box, and pull / push / fetch / stash." />
-                            <TextBlock TextWrapping="Wrap" Margin="0,12,0,0"
-                                       FontFamily="{DynamicResource Font.UI}"
-                                       FontSize="{DynamicResource Font.Size.Caption}"
-                                       Foreground="{DynamicResource Brush.Text.Disabled}"
-                                       Text="The underlying git client already supports all of it — only the panel is missing." />
-                        </StackPanel>
+                    <!-- GIT: staging, the commit message, and the remote operations.
+                         Every button here goes dead while any operation runs - see
+                         ShellViewModel.Ready. Git serialises some of this itself with index
+                         and ref locks, but not a push racing a commit, and not a commit
+                         landing while the gate's export is still writing the mirror. -->
+                    <Border x:Name="GitPanel" Visibility="Collapsed" Padding="14,0,12,12">
+                        <DockPanel>
+                            <!-- Branch and divergence. The remote state is why somebody opens
+                                 this panel, so it leads. -->
+                            <Border DockPanel.Dock="Top"
+                                    Background="{DynamicResource Brush.Surface.Sunken}"
+                                    CornerRadius="{DynamicResource Radius.Control}"
+                                    Padding="10,8" Margin="0,0,0,10">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{DynamicResource Icon.Link}"
+                                                   Style="{StaticResource IconText}"
+                                                   FontSize="12" Margin="0,0,8,0"
+                                                   Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                        <TextBlock Text="{Binding BranchName}"
+                                                   FontFamily="{DynamicResource Font.Mono}"
+                                                   FontSize="{DynamicResource Font.Size.Body}"
+                                                   FontWeight="{DynamicResource Font.Weight.Medium}"
+                                                   Foreground="{DynamicResource Brush.Text.Primary}" />
+                                        <TextBlock Text="{Binding AheadBehind}" Margin="10,0,0,0"
+                                                   FontFamily="{DynamicResource Font.Mono}"
+                                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                                   Foreground="{DynamicResource Brush.Accent.Default}" />
+                                    </StackPanel>
+
+                                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                        <Button Content="Fetch" Style="{StaticResource GhostButton}"
+                                                Command="{Binding FetchCommand}" />
+                                        <Button Content="Pull" Margin="6,0,0,0"
+                                                Style="{StaticResource GhostButton}"
+                                                ToolTip="Fast-forward only; a divergence is surfaced, never auto-merged"
+                                                Command="{Binding PullCommand}" />
+                                        <Button Content="Push" Margin="6,0,0,0"
+                                                Style="{StaticResource GhostButton}"
+                                                ToolTip="Pushing is what releases the PLC direction locks"
+                                                Command="{Binding PushCommand}" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Commit box. Ctrl+Enter commits, because reaching for the
+                                 mouse after typing a message is the one interaction here
+                                 that happens dozens of times a day. -->
+                            <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
+                                <Grid Margin="0,0,0,4">
+                                    <TextBlock Text="COMMIT MESSAGE"
+                                               Style="{StaticResource SectionLabel}" />
+                                    <TextBlock HorizontalAlignment="Right"
+                                               Text="{Binding CommitSubjectLength}"
+                                               FontFamily="{DynamicResource Font.Mono}"
+                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                               Foreground="{DynamicResource Brush.Text.Disabled}"
+                                               ToolTip="Subject length. The convention is 50 characters, hard limit 72." />
+                                </Grid>
+
+                                <TextBox x:Name="CommitMessageBox" Height="72"
+                                         Style="{StaticResource FlatTextBox}"
+                                         Tag="Summary of the change…"
+                                         AcceptsReturn="True" TextWrapping="Wrap"
+                                         VerticalContentAlignment="Top"
+                                         KeyDown="OnCommitMessageKeyDown"
+                                         Text="{Binding CommitMessage, UpdateSourceTrigger=PropertyChanged}" />
+
+                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                    <Button Content="Commit" Style="{StaticResource AccentButton}"
+                                            Command="{Binding CommitCommand}" />
+                                    <Button Content="Commit &amp; Push" Margin="6,0,0,0"
+                                            Style="{StaticResource GhostButton}"
+                                            Command="{Binding CommitAndPushCommand}" />
+                                </StackPanel>
+
+                                <!-- The most surprising rule in the tool, stated where the
+                                     decision is made rather than discovered afterwards. -->
+                                <TextBlock TextWrapping="Wrap" Margin="0,8,0,0"
+                                           FontFamily="{DynamicResource Font.UI}"
+                                           FontSize="{DynamicResource Font.Size.Caption}"
+                                           Foreground="{DynamicResource Brush.Text.Disabled}"
+                                           Text="A stale PLC export is exported before the commit, and staged with it. Pushing is what releases the direction lock." />
+                            </StackPanel>
+
+                            <!-- Staged / unstaged -->
+                            <Grid DockPanel.Dock="Top" Margin="0,0,0,4">
+                                <TextBlock Text="STAGED" Style="{StaticResource SectionLabel}" />
+                                <Button HorizontalAlignment="Right" Content="Unstage all"
+                                        Style="{StaticResource GhostButton}" Padding="8,2"
+                                        Command="{Binding UnstageCommand}" />
+                            </Grid>
+                            <ListBox DockPanel.Dock="Top" ItemsSource="{Binding Staged}"
+                                     Background="Transparent" BorderThickness="0"
+                                     ItemContainerStyle="{StaticResource RowItem}"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     ItemTemplate="{StaticResource ChangeRowTemplate}"
+                                     MaxHeight="150" Margin="0,0,0,10" />
+
+                            <Grid DockPanel.Dock="Top" Margin="0,0,0,4">
+                                <TextBlock Text="NOT STAGED" Style="{StaticResource SectionLabel}" />
+                                <Button HorizontalAlignment="Right" Content="Stage all"
+                                        Style="{StaticResource GhostButton}" Padding="8,2"
+                                        Command="{Binding StageCommand}" />
+                            </Grid>
+                            <ListBox ItemsSource="{Binding Unstaged}"
+                                     Background="Transparent" BorderThickness="0"
+                                     ItemContainerStyle="{StaticResource RowItem}"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     ItemTemplate="{StaticResource ChangeRowTemplate}"
+                                     VirtualizingStackPanel.IsVirtualizing="True"
+                                     VirtualizingStackPanel.VirtualizationMode="Recycling" />
+                        </DockPanel>
                     </Border>
 
                     <!-- PLC SYNC: the feature Versio exists for. Real scan, real toolchain
@@ -495,31 +611,9 @@
                              Background="Transparent" BorderThickness="0"
                              ItemContainerStyle="{StaticResource RowItem}"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             ItemTemplate="{StaticResource ChangeRowTemplate}"
                              VirtualizingStackPanel.IsVirtualizing="True"
-                             VirtualizingStackPanel.VirtualizationMode="Recycling">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="18" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="{Binding Glyph}"
-                                               VerticalAlignment="Center"
-                                               FontFamily="{DynamicResource Font.Mono}"
-                                               FontSize="{DynamicResource Font.Size.Caption}"
-                                               FontWeight="{DynamicResource Font.Weight.Semibold}"
-                                               Foreground="{DynamicResource Brush.Status.Modified}" />
-                                    <TextBlock Grid.Column="1" Text="{Binding Path}"
-                                               VerticalAlignment="Center"
-                                               FontFamily="{DynamicResource Font.Mono}"
-                                               FontSize="{DynamicResource Font.Size.Caption}"
-                                               Foreground="{DynamicResource Brush.Text.Primary}"
-                                               TextTrimming="CharacterEllipsis" />
-                                </Grid>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
+                             VirtualizingStackPanel.VirtualizationMode="Recycling" />
                 </DockPanel>
             </Border>
 

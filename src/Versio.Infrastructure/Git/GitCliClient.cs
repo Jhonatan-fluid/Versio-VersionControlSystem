@@ -350,6 +350,18 @@ public sealed partial class GitCliClient(
         return renames;
     }
 
+    /// <summary>Commit id at HEAD, or empty on an unborn branch.</summary>
+    /// <remarks>
+    /// Empty rather than an exception on an unborn branch. A repository with no commits yet
+    /// is a perfectly ordinary state on the first day of a project, and the caller - a push
+    /// releasing the direction locks - has nothing sensible to do with a throw.
+    /// </remarks>
+    public async Task<string> HeadCommitAsync(CancellationToken ct)
+    {
+        var result = await RunAsync(["rev-parse", "HEAD"], null, ct).ConfigureAwait(false);
+        return result.Success ? result.StdOut.Trim() : string.Empty;
+    }
+
     /// <summary>Whether <c>git lfs</c> is installed and usable here.</summary>
     /// <remarks>
     /// <c>lfs version</c> rather than <c>lfs env</c> or a check for the binary on PATH: it

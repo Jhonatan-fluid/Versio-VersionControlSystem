@@ -5,6 +5,7 @@ using Versio.App.Mvvm;
 using Versio.Core.Abstractions;
 using Versio.Core.Git;
 using Versio.Core.Logging;
+using Versio.Core.Sync;
 using Versio.Core.Watching;
 using Versio.Infrastructure.Git;
 using Versio.Infrastructure.Logging;
@@ -180,8 +181,10 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         OpenRepositoryCommand = new AsyncCommand(OpenRepositoryAsync, onError: ReportError);
         OpenLogsFolderCommand = new RelayCommand(OpenLogsFolder);
-        RefreshCommand = new AsyncCommand(RefreshAsync, () => _git is not null,
+        RefreshCommand = new AsyncCommand(RefreshAsync, () => Ready,
                                           onError: ReportError);
+
+        BuildGitCommands();
 
         logger.Info(LogCategory.App, "Versio started");
     }
@@ -640,6 +643,347 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         _ui.Post(_ => action(), null);
     }
 
+    // ---------------------------------------------------------------- git panel
+
+    /// <summary>Files git will include in the next commit.</summary>
+    public ObservableCollection<ChangeRow> Staged { get; } = [];
+
+    /// <summary>Files changed in the working tree but not staged.</summary>
+    public ObservableCollection<ChangeRow> Unstaged { get; } = [];
+
+    public AsyncCommand StageCommand { get; private set; } = null!;
+    public AsyncCommand UnstageCommand { get; private set; } = null!;
+    public AsyncCommand CommitCommand { get; private set; } = null!;
+    public AsyncCommand CommitAndPushCommand { get; private set; } = null!;
+    public AsyncCommand PullCommand { get; private set; } = null!;
+    public AsyncCommand PushCommand { get; private set; } = null!;
+    public AsyncCommand FetchCommand { get; private set; } = null!;
+
+    private string _commitMessage = string.Empty;
+
+    /// <summary>
+    /// The commit message, subject on the first line.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not cleared when a commit fails. A rejected commit that also threw away
+    /// what the user typed is two losses for one mistake, and the message is usually the part
+    /// they cared about.
+    /// </remarks>
+    public string CommitMessage
+    {
+        get => _commitMessage;
+        set
+        {
+            if (SetProperty(ref _commitMessage, value))
+            {
+                OnPropertyChanged(nameof(CommitSubjectLength));
+                CommitCommand.RaiseCanExecuteChanged();
+                CommitAndPushCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    /// <summary>Length of the subject line, for the 50/72 guide.</summary>
+    public int CommitSubjectLength =>
+        (_commitMessage.Split('\n').FirstOrDefault() ?? string.Empty).TrimEnd('\r').Length;
+
+    private void BuildGitCommands()
+    {
+        StageCommand = new AsyncCommand(
+            () => StageAsync(Unstaged, stage: true),
+            () => Ready && Unstaged.Count > 0, ReportError);
+
+        UnstageCommand = new AsyncCommand(
+            () => StageAsync(Staged, stage: false),
+            () => Ready && Staged.Count > 0, ReportError);
+
+        CommitCommand = new AsyncCommand(
+            () => CommitAsync(push: false), CanCommit, ReportError);
+
+        CommitAndPushCommand = new AsyncCommand(
+            () => CommitAsync(push: true), CanCommit, ReportError);
+
+        PullCommand = new AsyncCommand(PullAsync, () => Ready, ReportError);
+        PushCommand = new AsyncCommand(() => PushAsync(afterCommit: false),
+                                       () => Ready, ReportError);
+        FetchCommand = new AsyncCommand(FetchAsync, () => Ready, ReportError);
+
+        // Every git button consults the same shared flag, so the moment one operation starts
+        // they all go dead together. AsyncCommand.IsRunning only disables the button that was
+        // pressed, which would leave Push live during a Pull.
+        Busy.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(BusyTracker.IsBusy))
+            {
+                OnUi(RaiseGitCommandStates);
+            }
+        };
+    }
+
+    /// <summary>
+    /// A git command may run: there is a repository, and nothing else is running.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>One operation at a time, across the whole application.</b> Git serialises some of
+    /// this itself with index and ref locks, but not all of it, and the failures it does not
+    /// prevent are the expensive ones: a push racing a commit, or a commit landing while the
+    /// gate's export is still writing the mirror it is supposed to be committing.
+    /// </para>
+    /// <para>
+    /// Deliberately the shared <see cref="BusyTracker"/> rather than a git-only flag, so a
+    /// 17-31 s CODESYS export also holds the git buttons. Those two overlapping is exactly
+    /// the case worth preventing - the export writes the files the commit is about to stage.
+    /// </para>
+    /// <para>
+    /// Automatic status refreshes do not raise the tracker, so the buttons do not flicker
+    /// every time the user saves a file in their editor.
+    /// </para>
+    /// </remarks>
+    private bool Ready => _git is not null && !Busy.IsBusy;
+
+    private bool CanCommit() =>
+        Ready && Staged.Count > 0 && !string.IsNullOrWhiteSpace(CommitMessage);
+
+    private void RaiseGitCommandStates()
+    {
+        StageCommand.RaiseCanExecuteChanged();
+        UnstageCommand.RaiseCanExecuteChanged();
+        CommitCommand.RaiseCanExecuteChanged();
+        CommitAndPushCommand.RaiseCanExecuteChanged();
+        PullCommand.RaiseCanExecuteChanged();
+        PushCommand.RaiseCanExecuteChanged();
+        FetchCommand.RaiseCanExecuteChanged();
+        RefreshCommand.RaiseCanExecuteChanged();
+    }
+
+    /// <summary>Stage or unstage every row in a list.</summary>
+    /// <remarks>
+    /// Whole-list rather than per-file selection for now. Partial staging is a real feature
+    /// and belongs with per-hunk staging, which needs the diff view to own a selection first;
+    /// half-offering it would be worse than not offering it.
+    /// </remarks>
+    private async Task StageAsync(IReadOnlyList<ChangeRow> rows, bool stage)
+    {
+        if (_git is null || rows.Count == 0)
+        {
+            return;
+        }
+
+        var paths = rows.Select(r => r.Path).ToList();
+        _logger.Click(stage ? "Git.Stage" : "Git.Unstage");
+
+        using var busy = Busy.Begin(stage ? "Staging…" : "Unstaging…");
+
+        var result = stage
+            ? await _git.StageAsync(paths, CancellationToken.None).ConfigureAwait(true)
+            : await _git.UnstageAsync(paths, CancellationToken.None).ConfigureAwait(true);
+
+        if (!result.Success)
+        {
+            StatusSummary = result.FailureReason ?? "git refused that";
+            return;
+        }
+
+        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Commit, running the export gate first.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The gate runs before the commit, and exports rather than merely refusing.</b> With
+    /// <c>On git action</c> as the default sync mode there is no export on save, so this is
+    /// the primary path by which the mirror gets written at all. Refusing here and leaving the
+    /// user to find the export button would make the default mode unusable.
+    /// </para>
+    /// <para>
+    /// The export writes files, so those files are staged afterwards and before the commit.
+    /// A commit recording the project without the mirror it exports to is the exact state the
+    /// gate exists to prevent, and exporting and then committing only what happened to be
+    /// staged beforehand would produce it silently.
+    /// </para>
+    /// </remarks>
+    private async Task CommitAsync(bool push)
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        _logger.Click(push ? "Git.CommitAndPush" : "Git.Commit");
+        using var scope = _logger.BeginOperation(Guid.NewGuid().ToString("N")[..8]);
+
+        var gate = await Sync.EvaluateGateAsync(CancellationToken.None).ConfigureAwait(true);
+        if (gate.Decision == GateDecision.Blocked)
+        {
+            // Something an export will not fix, such as a failed binding awaiting
+            // acknowledgement. Say so rather than running an export that cannot help.
+            _logger.Warn(LogCategory.Sync, $"commit blocked: {gate.Explanation}");
+            StatusSummary = gate.Explanation;
+            return;
+        }
+
+        if (gate.Decision == GateDecision.ExportRequired)
+        {
+            StatusSummary = "Exporting before the commit…";
+            var outcomes = await Sync.SatisfyGateAsync(CancellationToken.None).ConfigureAwait(true);
+
+            if (outcomes.Any(o => o.IsFailure))
+            {
+                var failure = outcomes.First(o => o.IsFailure);
+                StatusSummary = $"Export failed, so nothing was committed: {failure.Explanation}";
+                _logger.Error(LogCategory.Sync, StatusSummary);
+                return;
+            }
+
+            var staged = await StageExportedTreesAsync().ConfigureAwait(true);
+            _logger.Info(LogCategory.Git,
+                $"staged {staged} export path(s) before committing");
+        }
+
+        using var busy = Busy.Begin("Committing…");
+        var result = await _git.CommitAsync(CommitMessage, CancellationToken.None)
+            .ConfigureAwait(true);
+
+        if (!result.Success)
+        {
+            StatusSummary = result.FailureReason ?? "the commit failed";
+            _logger.Error(LogCategory.Git, StatusSummary);
+            return;
+        }
+
+        _logger.Info(LogCategory.Git, "commit created");
+        CommitMessage = string.Empty;
+        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+
+        if (push)
+        {
+            await PushAsync(afterCommit: true).ConfigureAwait(true);
+            return;
+        }
+
+        // Said plainly, because it is the most surprising rule in the tool: a commit does not
+        // release the direction lock. Until the work is pushed nobody else can see it.
+        StatusSummary = "Committed. Not pushed, so the direction lock is still held.";
+    }
+
+    /// <summary>Stage every tracked project's export directory.</summary>
+    /// <remarks>
+    /// By directory rather than by the file list the export reported. An export can delete an
+    /// object as well as write one, and staging only what was written would leave the deletion
+    /// out of the commit.
+    /// </remarks>
+    private async Task<int> StageExportedTreesAsync()
+    {
+        var paths = Sync.ExportPaths;
+        if (_git is null || paths.Count == 0)
+        {
+            return 0;
+        }
+
+        var result = await _git.StageAsync(paths, CancellationToken.None).ConfigureAwait(true);
+        if (!result.Success)
+        {
+            _logger.Warn(LogCategory.Git,
+                $"could not stage the export tree: {result.FailureReason}");
+        }
+
+        return paths.Count;
+    }
+
+    private async Task PullAsync()
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        _logger.Click("Git.Pull");
+        using var busy = Busy.Begin("Pulling…");
+
+        var result = await _git.PullAsync(null, CancellationToken.None).ConfigureAwait(true);
+        StatusSummary = result.Success ? "Pulled." : result.FailureReason ?? "the pull failed";
+
+        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Push, and release the direction locks if it worked.
+    /// </summary>
+    /// <remarks>
+    /// Push is what releases the lock, not commit: until work is pushed nobody else can see
+    /// it, so the direction is still meaningfully owned (plan section 6.5). Push is repo-wide,
+    /// so it releases every binding rather than the one last looked at.
+    /// </remarks>
+    private async Task PushAsync(bool afterCommit)
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        if (!afterCommit)
+        {
+            _logger.Click("Git.Push");
+        }
+
+        using var busy = Busy.Begin("Pushing…");
+        var result = await _git.PushAsync(null, CancellationToken.None).ConfigureAwait(true);
+
+        if (!result.Success)
+        {
+            StatusSummary = result.FailureReason ?? "the push failed";
+            _logger.Error(LogCategory.Git, StatusSummary);
+            return;
+        }
+
+        var head = await _git.HeadCommitAsync(CancellationToken.None).ConfigureAwait(true);
+        await Sync.ReleaseAfterPushAsync(head, CancellationToken.None).ConfigureAwait(true);
+
+        StatusSummary = "Pushed. Every direction lock is released.";
+        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+    }
+
+    private async Task FetchAsync()
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        _logger.Click("Git.Fetch");
+        using var busy = Busy.Begin("Fetching…");
+
+        var result = await _git.FetchAsync(null, CancellationToken.None).ConfigureAwait(true);
+        StatusSummary = result.Success ? "Fetched." : result.FailureReason ?? "the fetch failed";
+
+        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+    }
+
+    /// <summary>Keep the two staging lists in step with the status just read.</summary>
+    /// <remarks>
+    /// Rebuilt rather than reconciled, unlike the changed-files list. These are short, and
+    /// they carry no selection worth preserving: the buttons act on the whole list.
+    /// </remarks>
+    private void UpdateStagingLists(GitStatus status)
+    {
+        Staged.Clear();
+        foreach (var change in status.Staged.OrderBy(c => c.Path, StringComparer.Ordinal))
+        {
+            Staged.Add(new ChangeRow(change));
+        }
+
+        Unstaged.Clear();
+        foreach (var change in status.Unstaged.OrderBy(c => c.Path, StringComparer.Ordinal))
+        {
+            Unstaged.Add(new ChangeRow(change));
+        }
+
+        RaiseGitCommandStates();
+    }
+
     /// <summary>
     /// Open the log folder in Explorer, with today's file selected.
     /// </summary>
@@ -792,6 +1136,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 : $"↑{status.Branch.Ahead} ↓{status.Branch.Behind}";
 
             var changed = Reconcile(status.Changes);
+
+            UpdateStagingLists(status);
 
             StatusSummary = status.IsClean
                 ? "No changes"

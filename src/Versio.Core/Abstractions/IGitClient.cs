@@ -74,6 +74,15 @@ public interface IGitClient
     Task<IReadOnlyDictionary<string, string>> DetectRenamesAsync(CancellationToken ct);
 
     /// <summary>
+    /// Commit id at HEAD, or empty on an unborn branch.
+    /// </summary>
+    /// <remarks>
+    /// Recorded as the baseline when a push releases the direction locks: the lock records
+    /// what the world has seen, and "what the world has seen" is a commit, not a moment.
+    /// </remarks>
+    Task<string> HeadCommitAsync(CancellationToken ct);
+
+    /// <summary>
     /// Whether <c>git lfs</c> is installed and usable in this repository.
     /// </summary>
     /// <remarks>

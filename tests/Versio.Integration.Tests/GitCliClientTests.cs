@@ -77,6 +77,27 @@ public sealed class GitCliClientTests(ITestOutputHelper output) : IDisposable
         File.WriteAllText(full, content);
     }
 
+    [SkippableFact]
+    public async Task Head_is_empty_on_an_unborn_branch_and_a_sha_after_a_commit()
+    {
+        // A repository with no commits is an ordinary first-day state, and the caller - a
+        // push releasing the direction locks - has nothing sensible to do with a throw.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        Assert.Equal(string.Empty, await Client.HeadCommitAsync(CancellationToken.None));
+
+        Write("plc/A.st", "PROGRAM A END_PROGRAM");
+        await RunRawAsync("add", "-A");
+        await RunRawAsync("commit", "-m", "first");
+
+        var head = await Client.HeadCommitAsync(CancellationToken.None);
+        output.WriteLine($"head: {head}");
+
+        Assert.Equal(40, head.Length);
+        Assert.DoesNotContain(head, c => !Uri.IsHexDigit(c));
+    }
+
     // --- diff ---------------------------------------------------------------------
 
     [SkippableFact]

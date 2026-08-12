@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-12 · **Commits:** 12 · **Tests:** 603 unit + 62 integration, 0 skipped
+**Date:** 2026-08-12 · **Commits:** 12 · **Tests:** 603 unit + 63 integration, 0 skipped
 
 ---
 
@@ -356,6 +356,52 @@ rename or delete after the window closes.
 **Remaining on this path:** the commit gate has nothing to gate until there is a commit
 action, which is the git side panel.
 
+### Done — the git side panel, and the commit gate it makes possible
+
+Staging, the commit message box, and fetch / pull / push. The client already did all of it;
+only the panel was missing. What is new beyond the buttons is the rule they enforce.
+
+**The commit gate now has something to gate.** Pressing Commit evaluates every enabled
+binding, and where the mirror is stale it **exports first and stages the result**, then
+commits. It exports rather than merely refusing, because with `On git action` as the default
+sync mode this is the primary path by which the export tree is written at all — refusing here
+and leaving the user to find the export button would make the default mode unusable.
+
+Staging the export afterwards is not a detail. A commit recording the `.project` without the
+mirror it exports to is the exact state the gate exists to prevent, and exporting and then
+committing only what happened to be staged beforehand would produce it silently. The export
+directory is staged **as a directory**, because an export can delete an object as well as
+write one and staging only the writes would leave the deletion out of the commit.
+
+A blocked gate — a binding in the failed state, which an export will not clear — says so and
+commits nothing.
+
+**Push releases the direction locks, commit does not.** Push is repo-wide, so it releases
+every binding, and `HeadCommitAsync` supplies the commit the released baseline records: the
+lock records what the world has seen, and that is a commit rather than a moment. The panel
+says this in plain text under the buttons, because it is the most surprising rule in the tool
+and finding it out afterwards is worse than reading it.
+
+### One operation at a time
+
+Every git button consults one shared flag and they all go dead together. `AsyncCommand`
+already refused to double-invoke *itself*, which is not the same thing — it would have left
+Push live during a Pull.
+
+The flag is the shared `BusyTracker`, not a git-only one, so a 17–31 s CODESYS export also
+holds the git buttons. Those two overlapping is precisely the case worth preventing: the
+export writes the very files the commit is about to stage. Git serialises some of this itself
+with index and ref locks, but not a push racing a commit, and not a commit landing while the
+gate's export is still running.
+
+Automatic status refreshes deliberately do not raise the tracker, so the buttons do not
+flicker every time the user saves a file in their editor.
+
+**Not built yet:** stash, per-hunk staging, and the recent-commits list. Staging is
+whole-list rather than per-file, because partial staging belongs with per-hunk staging and
+needs the diff view to own a selection first — half-offering it would be worse than not
+offering it.
+
 ### Verifying the UI, not just the engine
 
 `Versio.exe --trace-bindings <file>` writes every WPF data-binding failure to a file. A broken
@@ -364,9 +410,10 @@ empty control and no error anywhere — which made it the one class of failure i
 that was not loud. The sync panel is verified clean through it, including the row template,
 and the instrument itself was proven able to fail before its clean result was believed.
 
-### 2. Complete the git surface
+### 2. Complete the git surface — *mostly done*
 
-- Git side panel: stage/unstage, commit message box, pull/push/fetch, stash
+- ~~Git side panel: stage/unstage, commit message box, pull/push/fetch~~ — done above
+- Stash, and the recent-commits list with click-to-diff
 - Branch creation, clone-with-verification dialog
 - Per-hunk staging
 

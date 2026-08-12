@@ -62,7 +62,10 @@ Export is automatic and deterministic. Import applies edited text back into the 
 | Side-by-side diff and word-level intra-line diff | ⛔ inline only |
 | A diff preview *inside* the import confirmation | ⛔ shows which files change, not what changes in them |
 | Template generation | ⛔ needs a new operation and script — not assembly |
-| Git side panel, project tree, packaging | ⛔ not built |
+| **Git side panel** — staging, commit message, fetch/pull/push | ✅ one operation at a time across every button |
+| **The commit gate, enforced** — a stale export is exported and staged first | ✅ push releases the direction locks, commit does not |
+| Stash, per-hunk staging, recent-commits list | ⛔ not built |
+| Project tree, packaging | ⛔ not built |
 
 **[docs/STATUS.md](docs/STATUS.md)** has the current state and the route to completion.
 **[docs/PHASE0-FINDINGS.md](docs/PHASE0-FINDINGS.md)** records the measurements and the known limitations — including one real CODESYS mutation (`Core2` in task configuration) that keeps task config **diff-only** for now.

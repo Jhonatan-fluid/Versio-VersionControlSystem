@@ -116,6 +116,33 @@ public partial class MainWindow : Window
     /// Visibility rather than a TabControl: the panels share the card and its header, and a
     /// TabControl would bring its own chrome that would then have to be styled away.
     /// </remarks>
+    /// <summary>
+    /// Ctrl+Enter commits from the message box.
+    /// </summary>
+    /// <remarks>
+    /// The box accepts newlines, so plain Enter has to keep inserting one - a commit body is
+    /// the whole reason the box is multi-line. Ctrl+Enter is the convention every git client
+    /// uses for this, and reaching for the mouse after typing a message is the interaction
+    /// here that happens dozens of times a day.
+    /// </remarks>
+    private void OnCommitMessageKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter ||
+            (Keyboard.Modifiers & ModifierKeys.Control) != ModifierKeys.Control)
+        {
+            return;
+        }
+
+        // Handled either way: a Ctrl+Enter that cannot commit must not fall through and
+        // insert a newline the user did not ask for.
+        e.Handled = true;
+
+        if (_shell.CommitCommand.CanExecute(null))
+        {
+            _shell.CommitCommand.Execute(null);
+        }
+    }
+
     private void OnRailChanged(object sender, RoutedEventArgs e)
     {
         if (sender is not RadioButton { Tag: string tag } ||
