@@ -22,10 +22,41 @@ public sealed record LockOwner
     public DateTimeOffset RenewedUtc { get; init; }
 }
 
-/// <summary>What the repo looked like when the lock was taken.</summary>
+/// <summary>
+/// The last <b>released</b> state — what the repository looked like at the most recent push
+/// or discard.
+/// </summary>
+/// <remarks>
+/// This answers "is there unsynced work?", which is the question lock recovery asks after a
+/// crash or a reboot. It deliberately does <b>not</b> move when an export succeeds: an
+/// export is not a release, and treating it as one would make a recovered session conclude
+/// there was nothing to guard.
+/// </remarks>
 public sealed record SyncBaseline
 {
     public string HeadCommit { get; init; } = string.Empty;
+    public string ProjectHash { get; init; } = string.Empty;
+    public string ManifestHash { get; init; } = string.Empty;
+}
+
+/// <summary>
+/// What the mirror last reflected.
+/// </summary>
+/// <remarks>
+/// A separate concept from <see cref="SyncBaseline"/>, and conflating the two was a real
+/// bug. Two different questions are being asked:
+/// <list type="bullet">
+///   <item><b>"Has anything changed since the last export?"</b> — the hash gate and the
+///     commit gate. Answered by this record, which moves on every successful sync.</item>
+///   <item><b>"Is there work that has not been pushed?"</b> — lock recovery. Answered by
+///     <see cref="SyncBaseline"/>, which moves only on release.</item>
+/// </list>
+/// With one field serving both, an export either broke the hash gate (re-exporting
+/// unchanged content forever) or broke recovery (releasing a lock that still guarded
+/// unpushed work).
+/// </remarks>
+public sealed record SyncedState
+{
     public string ProjectHash { get; init; } = string.Empty;
     public string ManifestHash { get; init; } = string.Empty;
 }
@@ -36,7 +67,12 @@ public sealed record BindingLock
     public required SyncDirection Direction { get; init; }
     public DateTimeOffset? AcquiredUtc { get; init; }
     public string Reason { get; init; } = string.Empty;
+
+    /// <summary>Last pushed/discarded state. Used by lock recovery.</summary>
     public SyncBaseline Baseline { get; init; } = new();
+
+    /// <summary>Last exported/imported state. Used by the hash gate and the commit gate.</summary>
+    public SyncedState LastSynced { get; init; } = new();
 }
 
 /// <summary>
