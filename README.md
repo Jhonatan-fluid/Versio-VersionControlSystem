@@ -65,6 +65,8 @@ Both directions run automatically and deterministically. A per-project **directi
 | Side-by-side diff and word-level intra-line diff | ⛔ inline only |
 | **One project view** — the full CODESYS tree with changes marked, plus every other changed file | ✅ replaced the PLC panel and the changed-files list |
 | **Lazy object rendering** — a row is built when something can reach it, not before | ✅ `TreeRow.Children` on first access; the tree survives a refresh without collapsing |
+| **Export coverage stated, not assumed** — `_coverage.md` + every skip in the manifest | ✅ a gap is distinguished from a deliberate omission; an old manifest reports "unknown", never "complete" |
+| **Library references exported** (`config/libraries.yaml`) | ⛔ **a real gap, now reported.** A library version bump changes nothing in the mirror |
 | Template generation | ⛔ needs a new operation and script — not assembly |
 | A second vendor (TwinCAT / Studio 5000 / TIA Portal) | ⛔ the seam is ready and unproven |
 | **Git side panel** — staging, commit message, fetch/pull/push | ✅ one operation at a time across every button |
@@ -74,7 +76,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | **Per-hunk stage and unstage** | ✅ the hunk is copied verbatim and applied to the index; the working tree is never touched |
 | Branch creation, clone-with-verification dialog, discard | ⛔ the client supports all three; none has a surface |
 | **Project tree** — CODESYS structure, roll-up badges, search | ✅ 28 unit tests + built from the export this repository commits |
-| Config nodes from `config/*.yaml`, layer switcher, context menu | ⛔ not built |
+| Config nodes from `config/*.yaml`, layer switcher, context menu | ⛔ not built — and the YAML it would read is not written yet either |
 | Packaging | ⛔ not built |
 
 **[docs/STATUS.md](docs/STATUS.md)** has the current state and the route to completion.
@@ -115,8 +117,8 @@ Versio.sln
 │  └─ Versio.Scripts.Codesys/   IronPython 2.7, run inside CODESYS. Embedded into
 │                               Versio.Infrastructure as resources.
 ├─ tests/
-│  ├─ Versio.Core.Tests/        679 unit tests — pure, no IO, ~300 ms
-│  └─ Versio.Integration.Tests/  83 tests against real CODESYS and real git, ~125 s
+│  ├─ Versio.Core.Tests/        688 unit tests — pure, no IO, ~300 ms
+│  └─ Versio.Integration.Tests/  90 tests against real CODESYS and real git, ~245 s
 ├─ tools/                       PowerShell harnesses used during Phase 0, plus
 │                               New-VersioIcon.ps1 which generates the app icon
 ├─ assets/                      versio.svg (reference drawing) and versio.ico
@@ -183,6 +185,12 @@ dotnet build
 dotnet test tests/Versio.Core.Tests
 ```
 
+> If `dotnet build` reports **"No .NET SDKs were found"** while an SDK is plainly installed,
+> the `dotnet` on `PATH` is the machine-wide host and the SDK is a **per-user** install. They
+> are separate directories and the host does not look in the other one. Use
+> `%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe`, or set `DOTNET_ROOT` to it — the same install
+> layout that makes a framework-dependent `Versio.exe` fail to start, noted again below.
+
 The unit suite is pure and runs anywhere. The integration suite drives a real CODESYS installation and a real `git.exe`, and **skips cleanly** when either is absent:
 
 ```bash
@@ -237,6 +245,7 @@ Each of these cost real debugging time and is now pinned by a test.
 | **`--noUI` requires `--profile`** | It is a hard precondition, not a preference. |
 | **`Mutex` has thread affinity** | It cannot be acquired and released across an `await`. A named `Semaphore` avoids that but loses abandonment recovery, which crash recovery depends on. |
 | **Import runs in two phases** | Creating objects then immediately calling `import_native` makes CODESYS enumerate a dictionary it is still mutating — and it **swallows the exception**, so the import silently does nothing and the run looks clean. |
+| **The export tree holds two kinds of file** | The project's objects, and Versio's own bookkeeping (`_manifest.json`, `_coverage.md`). The importer walks the tree and imports everything it finds, so a new bookkeeping file must be added to `VERSIO_FILES` in `versio_types.py` or CODESYS is handed markdown as native XML. It fails with a warning rather than loudly, which is worse. |
 | **Never rewrite GUIDs in an export** | Only `Timestamp` is scrubbed. Rewriting identity GUIDs breaks visualisations. Masking them for a *comparison* is fine; writing masked ones to disk is not. |
 | **`git apply --cached` reads the index, not the working tree** | It is the *index* that a patch's context is checked against, so a file saved between a diff being read and a hunk being staged does not invalidate the hunk — what gets staged is still what was on screen. The staleness that does matter is the index moving, and that is refused. Never pass `--unidiff-zero`: it disables the check that makes both true. |
 | **WPF `TreeView` does not virtualize by default** | Measured at 5,002 nodes: **94.7 ms virtualized vs 10,635 ms at the defaults**. Needs `IsVirtualizing`, `VirtualizationMode=Recycling` and a `VirtualizingStackPanel` items panel. |

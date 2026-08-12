@@ -1271,6 +1271,25 @@ Two implementation details that cost real debugging time and are now pinned by t
 
 ## 9. Front end specification
 
+> ### ⚠️ Rev 10 — what shipped differs from §9.1–9.5 below
+>
+> The shell as built has **two rail panels, not three**. The sync panel described in §9.5 was
+> folded into the project view: once tracking, export and import all ran on their own, every
+> button on it implied the automatic thing might not have happened, and its object tree was
+> answering the same question as the changed-file list one pane to the left.
+>
+> | §  | As planned | As built |
+> |---|---|---|
+> | 9.1 | Rail: Changed files · Git · Sync · Settings | Rail: **Project · Git**; settings is a popup on the top bar |
+> | 9.3 | `changed only` (default) / full tree toggle | **Always the full tree**, changes marked. The filter answered "what did I change"; as the only view it has to answer "where in the machine am I" |
+> | 9.3 | Config nodes parsed from `config/*.yaml` | **Not built, and blocked**: nothing writes that YAML yet. See STATUS item 1 |
+> | 9.4 | Stash ▾, recent commits with click-to-diff | **Built** |
+> | 9.5 | Sync panel with its own actions | **Folded away.** Its facts — toolchain, lock, staleness, heartbeat — live in the project panel; two actions survived, *Export now* and *Acknowledge failure* |
+>
+> The §9.3 tree design itself — one node per object, roll-up badges, GUID identity, virtualization
+> — shipped as specified and is the part worth reading. `docs/STATUS.md` is authoritative for
+> what exists today.
+
 ### 9.0 Design system — one stylesheet, no ad-hoc styling
 
 The app must look modern, clean and consistent, which is a discipline problem before it is a taste problem. **The rule: no view file ever contains a literal colour, font, size or margin.** Everything comes from a token. This is enforceable and will be enforced (§12.6).
@@ -1400,6 +1419,7 @@ The three states most tools forget, specified here so they get built: **empty**,
 ```
 
 Rail icons (top to bottom): 📄 Changed files · 🔀 Git · 🔄 Sync/CODESYS · ⚙ Settings.
+*(Rev 10: built as 📄 Project · 🔀 Git, with settings as a top-bar popup.)*
 
 ### 9.2 Top bar
 
@@ -1449,8 +1469,8 @@ Behaviour:
 | **Node identity** | The CODESYS object (GUID from the manifest), not the file. One node can map to several files — `.st`, `.xml` — surfaced as a layer switcher in the diff pane, not as extra tree rows. |
 | **Roll-up badges** | A folder shows `● 5` when five descendants changed; colour reflects the strongest child status. Changes are never hidden behind a collapsed node. |
 | **Status glyphs** | `A` added · `M` modified · `D` deleted · `R` renamed/moved, on the node itself |
-| **Filter** | `changed only` (default) / `full tree` toggle. Default keeps the tree small; the toggle gives context — *where* in the machine did this change? |
-| **Device & config nodes** | `config/*.yaml` is parsed back into tree nodes, so a changed EtherCAT cycle time appears **under the device that owns it**, not as "config/devices.yaml modified". This is the payoff for generating our own YAML. |
+| **Filter** | ~~`changed only` (default) / `full tree` toggle~~ **Rev 10: always the full tree**, with changes marked and rolled up. The toggle made sense while this was a secondary panel; as the only view, the context *is* the feature. Search remains, and `ProjectTreeOptions.ChangedOnly` still works and is still tested — the shell simply does not ask for it |
+| **Device & config nodes** | `config/*.yaml` is parsed back into tree nodes, so a changed EtherCAT cycle time appears **under the device that owns it**, not as "config/devices.yaml modified". This is the payoff for generating our own YAML. **Rev 10: not built, and blocked on the exporter — nothing writes that YAML.** The library manager is skipped outright, so library references reach no diff at all; the export now reports that in `_coverage.md` rather than leaving it silent. |
 | **Binary `.project`** | A single root-level node, "binary — see objects below" |
 | **Read-only (Tier 3) nodes** | Fixed devices, project settings/info, library manager, symbol config (§3.10) carry a 🔒 glyph and the tooltip "diff only — change this in CODESYS". Their diffs are shown normally; edits to their files are rejected with an explanation rather than attempted and silently lost. |
 | **Renames/moves** | Detected via GUID stability in the manifest, so moving a POU between folders shows as a move, not delete+add — something git alone cannot infer from PLCopenXML |
@@ -1473,9 +1493,9 @@ Opened from the rail; slides over the left region (the changed-file list is dupl
 - Buttons: Commit · Commit & Push · Pull · Push · Fetch · Stash ▾ (stash all / stash staged / apply / pop / drop)
 - Recent commits list with click-to-diff
 
-### 9.5 Sync panel (CODESYS)
+### 9.5 Sync panel (CODESYS) — *folded into the project view (Rev 10)*
 
-Not in your original description, but the lock model needs somewhere to live and be understood. Without it, the lock is invisible magic that blocks the user with no explanation:
+Not in your original description, but the lock model needs somewhere to live and be understood. Without it, the lock is invisible magic that blocks the user with no explanation. **The requirement below was met; the separate panel was not the way to meet it.** Every item that is state rather than a control now sits in the project panel, where the objects it describes are:
 
 - Current state with a plain-English sentence: *"The project file is authoritative. XML edits will not be imported until you push or discard."*
 - Last export / last import time, duration, object counts

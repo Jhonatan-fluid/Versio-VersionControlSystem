@@ -386,6 +386,64 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(SyncDirection.Failed, orchestrator.StateOf(binding.Id));
     }
 
+    [SkippableFact]
+    public async Task An_import_ignores_Versios_own_bookkeeping_files()
+    {
+        // A real defect, caught only because the coverage report was added and somebody
+        // looked. The importer walks the export tree and treats every file it finds as an
+        // object, knowing about "_manifest.json" by name in two places - so _coverage.md was
+        // handed to CODESYS as native XML and came back
+        // "Data at the root level is invalid. Line 1, position 1."
+        //
+        // Nothing was corrupted. The cost is worse than that: EVERY import would carry a
+        // failure warning that is always there and always meaningless, which is how a real
+        // native-import failure gets read past. The round-trip test passed throughout.
+        var install = Install;
+        Skip.If(install is null, "no CODESYS installation with a profile");
+        Skip.If(!File.Exists(FixtureProject), "fixture project missing");
+
+        await InitRepoAsync();
+        var git = new GitCliClient(_repo, logger: new TestLogger(output));
+        var setup = new RepoSetup(_repo, CodesysProjectFormat.Instance);
+
+        var adopted = await setup.AdoptAsync(
+            ProjectRelativePath, git, install!.Profiles[0], CancellationToken.None);
+        var binding = adopted.Config.Bindings[0];
+        var orchestrator = BuildOrchestrator(adopted.Config, install);
+
+        Assert.Equal(SyncVerdict.Completed, (await Export(orchestrator, binding.Id)).Verdict);
+
+        var exportRoot = Path.Combine(_repo, binding.ExportPath.Replace('/', Path.DirectorySeparatorChar));
+
+        // The export must actually have written the files this is about, or the assertion
+        // below would hold for the uninteresting reason.
+        Assert.True(File.Exists(Path.Combine(exportRoot, "_coverage.md")),
+                    "the export wrote no coverage report, so this proves nothing");
+        Assert.True(File.Exists(Path.Combine(exportRoot, "_manifest.json")));
+
+        await orchestrator.ReleaseAfterPushAsync("c1", CancellationToken.None);
+
+        // Touch a real object so the import has something to do and the hash gate lets it run.
+        var st = Directory.EnumerateFiles(exportRoot, "*.st", SearchOption.AllDirectories).First();
+        await File.AppendAllTextAsync(st, Environment.NewLine + "(* bookkeeping probe *)" + Environment.NewLine);
+
+        var outcome = await TextChanged(orchestrator, binding.Id);
+
+        foreach (var warning in outcome.Warnings)
+        {
+            output.WriteLine(warning);
+        }
+
+        Assert.Equal(SyncVerdict.Completed, outcome.Verdict);
+
+        // Named explicitly rather than asserting no warnings at all: a warning about a real
+        // object is information, and a test that forbade every warning would be reworded to
+        // death the first time the exporter legitimately had something to say.
+        Assert.DoesNotContain(outcome.Warnings,
+            w => w.Contains("_coverage.md", StringComparison.OrdinalIgnoreCase) ||
+                 w.Contains("_manifest.json", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static string FixtureProject =>
         Core.Tests.TestPaths.Project("RefrigeratorControl.project");
 

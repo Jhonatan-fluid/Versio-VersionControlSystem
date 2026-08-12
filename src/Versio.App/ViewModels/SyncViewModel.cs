@@ -151,6 +151,7 @@ public sealed class SyncViewModel : ObservableObject
     private int _unexportedCount;
     private string _treeSearch = string.Empty;
     private string _treeSummary = string.Empty;
+    private string _coverageSummary = string.Empty;
 
     public SyncViewModel(VersioLogger logger, IClock clock, BusyTracker? busy = null)
     {
@@ -370,6 +371,8 @@ public sealed class SyncViewModel : ObservableObject
         // repository because of a click in the old one.
         _expansion.Clear();
         _treeSignature = string.Empty;
+        _coverage.Clear();
+        CoverageSummary = string.Empty;
 
         SelectedProject = null;
         Summary = "No repository open";
@@ -757,6 +760,10 @@ public sealed class SyncViewModel : ObservableObject
     /// </remarks>
     private string _treeSignature = string.Empty;
 
+    /// <summary>What each project's export covers, keyed by its repo-relative path.</summary>
+    private readonly Dictionary<string, CoverageReport> _coverage =
+        new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>Filter the tree by object or file name.</summary>
     public string TreeSearch
     {
@@ -768,6 +775,21 @@ public sealed class SyncViewModel : ObservableObject
                 _ = RefreshTreeAsync();
             }
         }
+    }
+
+    /// <summary>
+    /// What the export does not carry, when that is anything.
+    /// </summary>
+    /// <remarks>
+    /// Empty for a clean export rather than a reassurance. The panel already tells the user
+    /// what is in sync; a second line saying the export is also complete, on every project,
+    /// every refresh, is the kind of standing green that gets read past — including the once
+    /// it changes.
+    /// </remarks>
+    public string CoverageSummary
+    {
+        get => _coverageSummary;
+        private set => SetProperty(ref _coverageSummary, value);
     }
 
     /// <summary>One sentence about the tree, or why there is not one.</summary>
@@ -899,23 +921,50 @@ public sealed class SyncViewModel : ObservableObject
 
         _treeSignature = signature;
 
-        var roots = await Task.Run(() =>
+        var built = await Task.Run(() =>
         {
-            var projects = sources
-                .Select(s => new WorkspaceProject
-                {
-                    ProjectPath = s.ProjectPath,
-                    ExportPath = s.ExportPath,
-                    Manifest = File.Exists(s.ManifestPath)
-                        ? ProjectManifest.Parse(File.ReadAllText(s.ManifestPath))
-                        : null,
-                    ExportState = s.State,
-                })
-                .ToList();
+            var coverage = new Dictionary<string, CoverageReport>(StringComparer.OrdinalIgnoreCase);
+            var projects = new List<WorkspaceProject>();
 
-            return WorkspaceTreeBuilder.Build(projects, status.Changes,
-                new ProjectTreeOptions { ChangedOnly = false, Search = search });
+            foreach (var source in sources)
+            {
+                var manifest = File.Exists(source.ManifestPath)
+                    ? ProjectManifest.Parse(File.ReadAllText(source.ManifestPath))
+                    : null;
+
+                var report = ExportCoverage.Of(manifest);
+                coverage[source.ProjectPath] = report;
+
+                projects.Add(new WorkspaceProject
+                {
+                    ProjectPath = source.ProjectPath,
+                    ExportPath = source.ExportPath,
+                    Manifest = manifest,
+
+                    // The gap rides along on the row itself. A project whose libraries are
+                    // not exported reads as "in sync", which is true of what was exported
+                    // and misleading about the project - so the row says both.
+                    ExportState = report.Label.Length == 0
+                        ? source.State
+                        : $"{source.State} · {report.Label}",
+                });
+            }
+
+            return (Roots: WorkspaceTreeBuilder.Build(projects, status.Changes,
+                        new ProjectTreeOptions { ChangedOnly = false, Search = search }),
+                    Coverage: coverage);
         }).ConfigureAwait(true);
+
+        var roots = built.Roots;
+
+        _coverage.Clear();
+        foreach (var (path, report) in built.Coverage)
+        {
+            _coverage[path] = report;
+        }
+
+        CoverageSummary = built.Coverage.Values.FirstOrDefault(c => c.HasGaps)?.Describe()
+                          ?? string.Empty;
 
         Tree.Clear();
         foreach (var node in roots)
@@ -960,6 +1009,10 @@ public sealed class SyncViewModel : ObservableObject
             return Guid.NewGuid().ToString("N");
         }
     }
+
+    /// <summary>What a project's export covers, or null when it is not a tracked project.</summary>
+    public CoverageReport? CoverageFor(string projectPath) =>
+        _coverage.TryGetValue(Normalize(projectPath), out var report) ? report : null;
 
     private static int CountObjects(ProjectTreeNode node) =>
         (node.Kind == ProjectNodeKind.Object ? 1 : 0) + node.Children.Sum(CountObjects);

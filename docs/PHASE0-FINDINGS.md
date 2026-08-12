@@ -79,6 +79,14 @@ skipped: VisualisationManager, Target/WebVisualisation, VisualisationStyle x2,
 
 The per-type dispatch was exercised for real: **2 of 3 POUs are graphical** and correctly fell back to native XML rather than being written as `.st` with their layout silently discarded.
 
+> **Later annotation (2026-08-12).** Read that skip list again: `LibraryManager x2`. The
+> evidence that library references never reach the mirror was sitting in this section on the
+> day the gate passed, and nobody drew the conclusion — because the list does not separate a
+> service object the template carries from an object nobody has written the code for. Both
+> read as "skipped". The export now records a reason per skip and writes `_coverage.md`, and
+> `docs/STATUS.md` carries the finding. Gate 0.6 was recorded as a pass, and on its own terms
+> it was one; it was measuring that the walk completed, not that the output was sufficient.
+
 Export size: 2.9 MB of text from a 383 KB binary — native visualisation XML dominates.
 
 ---

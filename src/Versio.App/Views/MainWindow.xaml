@@ -562,6 +562,29 @@
                                         </TextBlock.Style>
                                     </TextBlock>
 
+                                    <!-- What the export does not carry. Distinct from
+                                         staleness: stale means the mirror is behind the
+                                         project, this means the mirror could never hold it
+                                         in the first place. Empty on a clean export - a
+                                         standing green gets read past. -->
+                                    <TextBlock Text="{Binding Sync.CoverageSummary}"
+                                               TextWrapping="Wrap" Margin="15,6,0,0"
+                                               FontFamily="{DynamicResource Font.UI}"
+                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                               Foreground="{DynamicResource Brush.Status.Deleted}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Sync.CoverageSummary}"
+                                                                 Value="">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+
                                     <!-- With no export on save, a project can sit unexported
                                          all afternoon. Saying so is the whole reason the
                                          watcher is wired up: silence reads as "in sync". -->

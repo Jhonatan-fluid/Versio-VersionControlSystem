@@ -184,4 +184,56 @@ public sealed class WorkspaceTreeFromCommittedExportTests(ITestOutputHelper outp
         Assert.Equal("exported · 11 files", project.Detail);
         Assert.Equal(ProjectPath, Assert.Single(project.Files));
     }
+
+    [SkippableFact]
+    public void The_committed_export_reports_the_library_manager_as_a_gap()
+    {
+        // Runs without CODESYS, because the manifest is committed. That matters: the machine
+        // this is checked on is not necessarily the machine CODESYS is installed on, and a
+        // coverage regression that only a CODESYS box could notice would be noticed late.
+        Skip.If(!File.Exists(ManifestPath), "the fixture's export is not committed");
+
+        var manifest = ProjectManifest.Parse(File.ReadAllText(ManifestPath));
+        var report = ExportCoverage.Of(manifest);
+
+        output.WriteLine(report.Describe());
+        foreach (var skipped in manifest.Skipped)
+        {
+            output.WriteLine($"{skipped.Reason,-18} {skipped.Type,-22} {skipped.Path}");
+        }
+
+        Assert.Equal(ExportCoverage.ReportingSchema, manifest.Schema);
+        Assert.Equal(CoverageVerdict.HasGaps, report.Verdict);
+
+        // The fixture has two library managers - one on the project and one under the
+        // application - and neither reaches the mirror.
+        Assert.Equal(2, report.Gaps.Count);
+        Assert.All(report.Gaps, g => Assert.Equal("LIBRARY_MANAGER", g.Type));
+
+        // The deliberate skips are present and are NOT counted as gaps. If that distinction
+        // ever collapses, this repository's own panel starts crying wolf about a
+        // visualisation manager that is skipped on purpose.
+        Assert.Equal(4, report.DeliberateSkips);
+        Assert.DoesNotContain(report.Gaps, g => g.Reason != ExportCoverage.GapReason);
+    }
+
+    [SkippableFact]
+    public void The_coverage_report_is_committed_beside_the_manifest()
+    {
+        // It is a markdown file in the repository on purpose: a coverage regression then
+        // arrives as a reviewable diff in a pull request rather than as a number in a panel
+        // nobody had open.
+        var path = Path.Combine(
+            Core.Tests.TestPaths.Root,
+            ExportPath.Replace('/', Path.DirectorySeparatorChar),
+            "_coverage.md");
+
+        Skip.If(!File.Exists(ManifestPath), "the fixture's export is not committed");
+
+        Assert.True(File.Exists(path), "the committed export has no coverage report");
+
+        var text = File.ReadAllText(path);
+        Assert.Contains("LIBRARY_MANAGER", text, StringComparison.Ordinal);
+        Assert.DoesNotContain('\r', text);
+    }
 }

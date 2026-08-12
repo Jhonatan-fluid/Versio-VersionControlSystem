@@ -95,11 +95,98 @@ TYPE_FORM = {
     "TARGET_VISUALISATION": FORM_SKIP,
     "WEB_VISUALISATION": FORM_SKIP,
     "VISUALISATION_STYLE": FORM_SKIP,
-    "LIBRARY_MANAGER": FORM_SKIP,      # captured in config/libraries.yaml instead
+    "LIBRARY_MANAGER": FORM_SKIP,      # a GAP, not a decision - see SKIP_REASON
     "PROJECT_SETTINGS": FORM_SKIP,     # template-only (Tier 3, plan section 3.10)
     "TASK": FORM_SKIP,                 # covered by TASK_CONFIGURATION recursive export
     "CALL_TO_POU": FORM_SKIP,          # ditto
 }
+
+# Files Versio writes into an export tree that are ABOUT the export rather than part
+# of it.
+#
+# The importer walks the tree and treats every file it finds as an object to import,
+# so anything here that it does not skip is handed to CODESYS as though it were a
+# POU. That was a real defect the moment _coverage.md was added: the importer knew
+# only about _manifest.json, by name, in two places.
+#
+# Defined once, and beside the exporter's own table, so the two halves cannot drift -
+# the next file added here is added for both of them at the same time.
+VERSIO_FILES = frozenset(["_manifest.json", "_coverage.md"])
+
+
+def is_versio_file(file_name):
+    """True for a bookkeeping file that describes the export rather than the project."""
+    return file_name in VERSIO_FILES
+
+
+# Why a type is skipped, and whether that is a decision or a gap.
+#
+# The distinction is the entire point. "Not exported" covers two very different
+# situations, and collapsing them is how a hole stays invisible:
+#
+#   SERVICE_OBJECT / TEMPLATE_ONLY / COVERED_ELSEWHERE
+#       Deliberate. The object's content is either carried by the template, or
+#       already inside another object's recursive export. Nothing is lost.
+#
+#   NOT_IMPLEMENTED
+#       A real gap. The object holds state that no exported file records, so a
+#       change to it does not appear in the mirror, does not move the hash gate
+#       and does not reach a diff. This is the one somebody has to be told about.
+#
+# The codes are STABLE machine strings, like the warning codes: the manifest,
+# _coverage.md, the C# side and the tests all key off them, and prose alone could
+# be reworded and silently break every one of them.
+SKIP_DELIBERATE = "SERVICE_OBJECT"
+SKIP_TEMPLATE = "TEMPLATE_ONLY"
+SKIP_ELSEWHERE = "COVERED_ELSEWHERE"
+SKIP_GAP = "NOT_IMPLEMENTED"
+
+SKIP_REASON = {
+    # Exporting the visu manager makes every later import raise an interactive
+    # overwrite dialog (codescribe's finding). The template carries them.
+    "VISUALISATION_MANAGER": SKIP_DELIBERATE,
+    "TARGET_VISUALISATION": SKIP_DELIBERATE,
+    "WEB_VISUALISATION": SKIP_DELIBERATE,
+    "VISUALISATION_STYLE": SKIP_DELIBERATE,
+
+    "PROJECT_SETTINGS": SKIP_TEMPLATE,
+
+    "TASK": SKIP_ELSEWHERE,          # inside TASK_CONFIGURATION's recursive export
+    "CALL_TO_POU": SKIP_ELSEWHERE,   # ditto
+
+    # NOT a decision. The comment beside this entry used to read "captured in
+    # config/libraries.yaml instead", and nothing has ever written that file - so
+    # adding a library or bumping a version changes nothing in the mirror, and the
+    # tool's central claim quietly does not hold for library references.
+    "LIBRARY_MANAGER": SKIP_GAP,
+}
+
+# One sentence per code, for _coverage.md and for anyone reading the manifest.
+SKIP_EXPLANATION = {
+    SKIP_DELIBERATE:
+        "Service object. Exporting it makes every later import raise an interactive "
+        "overwrite dialog; the project template carries it instead.",
+    SKIP_TEMPLATE:
+        "Template-only (Tier 3). Diffable in principle, but changed in CODESYS rather "
+        "than in the mirror.",
+    SKIP_ELSEWHERE:
+        "Already covered by another object's recursive export, so exporting it again "
+        "would record the same content twice.",
+    SKIP_GAP:
+        "NOT EXPORTED YET. Changes to this object do not appear in the mirror, do not "
+        "move the change gate and will not show up in a diff or a commit.",
+}
+
+
+def skip_reason(obj_type):
+    """Why this type is not exported. Unknown skips are reported as a gap.
+
+    Defaulting to the gap rather than to a deliberate decision is the safe way
+    round: a type added to TYPE_FORM as SKIP without a reason beside it is far
+    more likely to be an oversight than a considered omission, and the cost of
+    saying so wrongly is a line in a report.
+    """
+    return SKIP_REASON.get(obj_type, SKIP_GAP)
 
 # Suffixes per form. Kept here so the C# PathMapper and the python exporter cannot drift.
 #

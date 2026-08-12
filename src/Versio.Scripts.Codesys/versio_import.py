@@ -39,7 +39,7 @@ from versio_decl import (DUT_ALIAS, DUT_ENUM, DUT_STRUCT, DUT_UNION,  # noqa: E4
                          KIND_DUT, KIND_FUNCTION, KIND_FUNCTION_BLOCK,
                          KIND_INTERFACE, KIND_PROGRAM, parse_declaration)
 from versio_text import normalize_decl_only, split_st  # noqa: E402
-from versio_types import type_of  # noqa: E402
+from versio_types import is_versio_file, type_of  # noqa: E402
 
 
 def emit(obj):
@@ -255,7 +255,7 @@ class Importer(object):
 
     def handle_file(self, abs_path, rel_path):
         file_name = os.path.basename(rel_path)
-        if file_name == "_manifest.json":
+        if is_versio_file(file_name):
             return
 
         rel_dir = os.path.dirname(rel_path).replace("\\", "/")
@@ -324,7 +324,10 @@ class Importer(object):
         native = []
         for dir_path, _dir_names, file_names in os.walk(self.src_root):
             for file_name in sorted(file_names):
-                if file_name == "_manifest.json":
+                # Versio's own bookkeeping - the manifest and the coverage report.
+                # They describe the export; they are not objects in it, and handing
+                # one to CODESYS as native XML is how a junk object gets created.
+                if is_versio_file(file_name):
                     continue
                 abs_path = os.path.join(dir_path, file_name)
                 rel_path = os.path.relpath(abs_path, self.src_root).replace("\\", "/")

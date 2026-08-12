@@ -1747,6 +1747,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             _selectedDiffStaged = false;
             CanStageHunks = false;
 
+            var coverage = Sync.CoverageFor(row.Node.Path);
+
             SelectedDiff = string.Join(Environment.NewLine,
             [
                 row.Node.Path,
@@ -1761,6 +1763,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                     1 => "1 exported file under it has changed.",
                     var n => $"{n} exported files under it have changed.",
                 },
+
+                // How far the tree below can be trusted. Selecting the project is the moment
+                // somebody asks "is this everything?", and it is the only place in the app
+                // where the honest answer is sometimes no.
+                .. coverage is null
+                    ? Array.Empty<string>()
+                    : new[] { string.Empty, "Coverage: " + coverage.Describe() },
             ]);
 
             return;

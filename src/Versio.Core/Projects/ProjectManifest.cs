@@ -29,15 +29,43 @@ public sealed record ProjectObject
     [JsonPropertyName("bytes")] public long Bytes { get; init; }
 }
 
+/// <summary>An object the export deliberately did not write, and why.</summary>
+/// <remarks>
+/// <see cref="Reason"/> is a stable machine string produced by the exporter, not prose:
+/// <c>SERVICE_OBJECT</c>, <c>TEMPLATE_ONLY</c>, <c>COVERED_ELSEWHERE</c> and
+/// <c>NOT_IMPLEMENTED</c>. Only the last of those is a hole; the others are decisions whose
+/// content is carried somewhere else. Collapsing them into one "skipped" count is how a hole
+/// stays invisible.
+/// </remarks>
+public sealed record SkippedObject
+{
+    [JsonPropertyName("guid")] public string Guid { get; init; } = string.Empty;
+    [JsonPropertyName("name")] public string Name { get; init; } = string.Empty;
+    [JsonPropertyName("type")] public string Type { get; init; } = string.Empty;
+    [JsonPropertyName("path")] public string Path { get; init; } = string.Empty;
+    [JsonPropertyName("reason")] public string Reason { get; init; } = string.Empty;
+}
+
 /// <summary>The contents of an export's <c>_manifest.json</c>.</summary>
 public sealed record ProjectManifest
 {
+    /// <summary>
+    /// Manifest format version. 2 added <see cref="Skipped"/>.
+    /// </summary>
+    /// <remarks>
+    /// Read rather than ignored, because an empty <see cref="Skipped"/> means two different
+    /// things: nothing was skipped, or nobody was counting yet. Treating a schema-1 manifest
+    /// as complete coverage would be the most comfortable possible lie.
+    /// </remarks>
     [JsonPropertyName("schema")] public int Schema { get; init; } = 1;
     [JsonPropertyName("bindingId")] public string BindingId { get; init; } = string.Empty;
     [JsonPropertyName("project")] public string Project { get; init; } = string.Empty;
     [JsonPropertyName("objectCount")] public int ObjectCount { get; init; }
     [JsonPropertyName("objects")] public IReadOnlyList<ProjectObject> Objects { get; init; } = [];
     [JsonPropertyName("warnings")] public IReadOnlyList<string> Warnings { get; init; } = [];
+
+    /// <summary>Objects the export did not write. Empty on a schema-1 manifest.</summary>
+    [JsonPropertyName("skipped")] public IReadOnlyList<SkippedObject> Skipped { get; init; } = [];
 
     public static readonly ProjectManifest Empty = new();
 

@@ -94,6 +94,50 @@
     }
   ], 
   "project": "RefrigeratorControl.project", 
-  "schema": 1, 
+  "schema": 2, 
+  "skipped": [
+    {
+      "guid": "63f43dce-203a-48c5-b1b9-4754ec306ed4", 
+      "name": "Library Manager", 
+      "path": "Device/Plc Logic/Application/Library Manager", 
+      "reason": "NOT_IMPLEMENTED", 
+      "type": "LIBRARY_MANAGER"
+    }, 
+    {
+      "guid": "6f432aba-1fee-465b-8e1d-c4ed198f08fe", 
+      "name": "Visualization Manager", 
+      "path": "Device/Plc Logic/Application/Visualization Manager", 
+      "reason": "SERVICE_OBJECT", 
+      "type": "VISUALISATION_MANAGER"
+    }, 
+    {
+      "guid": "94e6b988-2939-04db-1321-383f7acddb12", 
+      "name": "__VisualizationStyle", 
+      "path": "Device/Plc Logic/Application/__VisualizationStyle", 
+      "reason": "SERVICE_OBJECT", 
+      "type": "VISUALISATION_STYLE"
+    }, 
+    {
+      "guid": "a154b962-4c42-4c66-82dc-2eaa6ce24df5", 
+      "name": "Library Manager", 
+      "path": "Library Manager", 
+      "reason": "NOT_IMPLEMENTED", 
+      "type": "LIBRARY_MANAGER"
+    }, 
+    {
+      "guid": "6470a90f-b7cb-43ac-9ae5-94b2338b4573", 
+      "name": "Project Settings", 
+      "path": "Project Settings", 
+      "reason": "TEMPLATE_ONLY", 
+      "type": "PROJECT_SETTINGS"
+    }, 
+    {
+      "guid": "a360c8a3-d76c-4a39-8109-19f4e2a0e2a1", 
+      "name": "__VisualizationStyle", 
+      "path": "__VisualizationStyle", 
+      "reason": "SERVICE_OBJECT", 
+      "type": "VISUALISATION_STYLE"
+    }
+  ], 
   "warnings": []
 }
