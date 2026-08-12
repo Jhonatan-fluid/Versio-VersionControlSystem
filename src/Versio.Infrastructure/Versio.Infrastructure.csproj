@@ -21,7 +21,7 @@
     <!-- Scripts travel inside the assembly and are written to a temp directory at run time,
          so they always match the app version. A stale copy on disk would be very hard to
          diagnose from the symptoms. -->
-    <EmbeddedResource Include="..\Versio.Scripts\*.py" LinkBase="Scripts" />
+    <EmbeddedResource Include="..\Versio.Scripts.Codesys\*.py" LinkBase="Scripts" />
   </ItemGroup>
 
 </Project>

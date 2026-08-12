@@ -18,8 +18,8 @@
 
   <ItemGroup>
     <!-- The python type table is compared against the C# enum so the two cannot drift. -->
-    <None Include="..\..\src\Versio.Scripts\versio_types.py" Link="versio_types.py" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\src\Versio.Scripts\versio_text.py" Link="versio_text.py" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\Versio.Scripts.Codesys\versio_types.py" Link="versio_types.py" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\Versio.Scripts.Codesys\versio_text.py" Link="versio_text.py" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

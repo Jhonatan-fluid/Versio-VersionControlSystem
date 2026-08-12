@@ -1,4 +1,4 @@
-using Versio.Core.Codesys;
+using Versio.Core.Plc.Codesys;
 
 namespace Versio.Core.Abstractions;
 

@@ -1,6 +1,6 @@
 using System.Text;
 using Versio.Core.Abstractions;
-using Versio.Core.Codesys;
+using Versio.Core.Plc.Codesys;
 using Versio.Core.Locking;
 
 namespace Versio.Core.Tests.Fakes;

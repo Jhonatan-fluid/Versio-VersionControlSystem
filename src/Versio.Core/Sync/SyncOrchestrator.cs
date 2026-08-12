@@ -1,8 +1,8 @@
 using Versio.Core.Abstractions;
 using Versio.Core.Bindings;
-using Versio.Core.Codesys;
+using Versio.Core.Plc.Codesys;
 using Versio.Core.Locking;
-using Versio.Core.Serialization;
+using Versio.Core.Hashing;
 using Versio.Core.Watching;
 
 namespace Versio.Core.Sync;
@@ -510,7 +510,7 @@ public sealed class SyncOrchestrator
         }
 
         var bytes = await _fs.ReadAllBytesAsync(path, ct).ConfigureAwait(false);
-        return StTextCodec.ContentHash(bytes);
+        return ContentHash.Of(bytes);
     }
 
     /// <summary>
@@ -530,7 +530,7 @@ public sealed class SyncOrchestrator
         }
 
         var text = await _fs.ReadAllTextAsync(path, ct).ConfigureAwait(false);
-        return StTextCodec.ContentHash(text);
+        return ContentHash.Of(text);
     }
 
     private static IReadOnlyList<string> ChangedFiles(CodesysResult result) =>

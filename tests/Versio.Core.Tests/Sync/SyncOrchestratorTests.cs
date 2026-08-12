@@ -431,7 +431,7 @@ public class SyncOrchestratorTests
 
         Assert.Equal(SyncVerdict.Completed, outcome.Verdict);
         Assert.Equal(SyncDirection.TextAuthoritative, outcome.State);
-        Assert.Equal(Versio.Core.Codesys.CodesysOperation.Import,
+        Assert.Equal(Versio.Core.Plc.Codesys.CodesysOperation.Import,
             Assert.Single(h.Codesys.Jobs).Operation);
     }
 

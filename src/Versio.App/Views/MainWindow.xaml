@@ -43,65 +43,56 @@
                            FontWeight="{DynamicResource Font.Weight.Semibold}"
                            Foreground="{DynamicResource Brush.Accent.Default}" />
 
-                <!-- Repository dropdown: the MRU list, with the folder path underneath so
-                     two repos sharing a folder name stay distinguishable. -->
-                <ComboBox Grid.Column="1" Width="280"
+                <!-- Repository dropdown.
+                     The closed box shows the NAME only. The first pass also crammed the
+                     full path in there, which made both dropdowns read as dense strings of
+                     grey text. The path belongs in the open list, where there is room and
+                     where it is actually needed - to tell two repos of the same name apart. -->
+                <ComboBox Grid.Column="1" Width="230"
                           Style="{StaticResource FlatCombo}"
                           ItemContainerStyle="{StaticResource FlatComboItem}"
                           Tag="{DynamicResource Icon.Folder}"
                           ItemsSource="{Binding RecentRepositories}"
-                          SelectedItem="{Binding SelectedRepository}">
+                          SelectedItem="{Binding SelectedRepository}"
+                          ToolTip="{Binding RepositoryPath}">
                     <ComboBox.ItemTemplate>
                         <DataTemplate>
-                            <StackPanel>
-                                <TextBlock Text="{Binding Name}"
-                                           FontFamily="{DynamicResource Font.UI}"
-                                           FontSize="{DynamicResource Font.Size.Body}"
-                                           Foreground="{DynamicResource Brush.Text.Primary}" />
-                                <TextBlock Text="{Binding Location}"
-                                           FontFamily="{DynamicResource Font.Mono}"
-                                           FontSize="{DynamicResource Font.Size.Caption}"
-                                           Foreground="{DynamicResource Brush.Text.Disabled}"
-                                           TextTrimming="CharacterEllipsis" />
-                            </StackPanel>
+                            <TextBlock Text="{Binding Name}"
+                                       FontFamily="{DynamicResource Font.UI}"
+                                       FontSize="{DynamicResource Font.Size.Body}"
+                                       Foreground="{DynamicResource Brush.Text.Primary}"
+                                       TextTrimming="CharacterEllipsis" />
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
 
                 <Button Grid.Column="2" Style="{StaticResource IconButton}"
-                        Content="{DynamicResource Icon.Folder}" Margin="4,0,0,0"
+                        Content="{DynamicResource Icon.Folder}" Margin="6,0,0,0"
                         Click="OnOpenRepository" ToolTip="Open a repository…" />
 
-                <!-- Branch dropdown -->
-                <ComboBox Grid.Column="3" Width="230" Margin="14,0,0,0"
+                <!-- Branch dropdown. Closed: name and divergence only. Upstream tracking is
+                     only useful while comparing branches, so it lives in the open list. -->
+                <ComboBox Grid.Column="3" Width="200" Margin="20,0,0,0"
                           Style="{StaticResource FlatCombo}"
                           ItemContainerStyle="{StaticResource FlatComboItem}"
                           Tag="{DynamicResource Icon.Link}"
                           ItemsSource="{Binding Branches}"
-                          SelectedItem="{Binding SelectedBranch}">
+                          SelectedItem="{Binding SelectedBranch}"
+                          ToolTip="Switch branch">
                     <ComboBox.ItemTemplate>
                         <DataTemplate>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <StackPanel Grid.Column="0">
-                                    <TextBlock Text="{Binding Name}"
-                                               FontFamily="{DynamicResource Font.Mono}"
-                                               FontSize="{DynamicResource Font.Size.Body}"
-                                               Foreground="{DynamicResource Brush.Text.Primary}" />
-                                    <TextBlock Text="{Binding Tracking}"
-                                               FontFamily="{DynamicResource Font.Mono}"
-                                               FontSize="{DynamicResource Font.Size.Caption}"
-                                               Foreground="{DynamicResource Brush.Text.Disabled}" />
-                                </StackPanel>
-                                <TextBlock Grid.Column="1" Text="{Binding AheadBehind}"
-                                           VerticalAlignment="Center" Margin="10,0,0,0"
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding Name}"
+                                           FontFamily="{DynamicResource Font.Mono}"
+                                           FontSize="{DynamicResource Font.Size.Body}"
+                                           Foreground="{DynamicResource Brush.Text.Primary}"
+                                           TextTrimming="CharacterEllipsis" />
+                                <TextBlock Text="{Binding AheadBehind}" Margin="10,0,0,0"
+                                           VerticalAlignment="Center"
                                            FontFamily="{DynamicResource Font.Mono}"
                                            FontSize="{DynamicResource Font.Size.Caption}"
                                            Foreground="{DynamicResource Brush.Accent.Default}" />
-                            </Grid>
+                            </StackPanel>
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
@@ -172,28 +163,39 @@
                 <ColumnDefinition Width="*" MinWidth="340" />
             </Grid.ColumnDefinitions>
 
-            <!-- Rail. Selected state is an accent bar, not a border. -->
+            <!-- Rail. Selected state is an accent bar, not a border.
+                 These were dead placeholders; each now switches the panel beside it. A
+                 button that visibly does nothing is worse than one that says why. -->
             <Border Grid.Column="0" Width="52"
                     Background="{DynamicResource Brush.Surface.Base}">
                 <StackPanel Margin="6,10,6,0">
-                    <RadioButton Style="{StaticResource RailButton}" IsChecked="True"
+                    <RadioButton x:Name="RailChanges" Style="{StaticResource RailButton}"
+                                 IsChecked="True" Tag="Changes"
                                  Content="{DynamicResource Icon.Document}"
-                                 ToolTip="Changed files" />
-                    <RadioButton Style="{StaticResource RailButton}"
-                                 Content="{DynamicResource Icon.Link}" ToolTip="Git" />
-                    <RadioButton Style="{StaticResource RailButton}"
+                                 Checked="OnRailChanged"
+                                 ToolTip="Changed files — everything git reports as modified" />
+                    <RadioButton x:Name="RailGit" Style="{StaticResource RailButton}"
+                                 Tag="Git"
+                                 Content="{DynamicResource Icon.Link}"
+                                 Checked="OnRailChanged"
+                                 ToolTip="Git — staging, commit, pull and push" />
+                    <RadioButton x:Name="RailSync" Style="{StaticResource RailButton}"
+                                 Tag="Sync"
                                  Content="{DynamicResource Icon.Sync}"
-                                 ToolTip="Sync / CODESYS" />
+                                 Checked="OnRailChanged"
+                                 ToolTip="PLC sync — export and import between the project and its text mirror" />
                 </StackPanel>
             </Border>
 
-            <!-- Changed files -->
+            <!-- Left panel. One card; the rail swaps its contents. -->
             <Border Grid.Column="1" Background="{DynamicResource Brush.Surface.Base}"
                     Margin="8,8,0,8" CornerRadius="{DynamicResource Radius.Card}">
                 <DockPanel>
                     <Grid DockPanel.Dock="Top" Margin="14,12,12,8">
-                        <TextBlock Style="{StaticResource SectionLabel}" Text="CHANGED FILES" />
+                        <TextBlock Style="{StaticResource SectionLabel}"
+                                   Text="{Binding PanelTitle}" />
                         <Border HorizontalAlignment="Right"
+                                x:Name="ChangeCountBadge"
                                 Background="{DynamicResource Brush.Accent.Muted}"
                                 CornerRadius="9" Padding="8,1" MinWidth="22">
                             <TextBlock Text="{Binding Changes.Count}"
@@ -204,7 +206,63 @@
                         </Border>
                     </Grid>
 
-                    <ListBox ItemsSource="{Binding Changes}"
+                    <!-- GIT: not built yet. An empty state that explains what will live
+                         here beats a blank panel, which reads as a bug. -->
+                    <Border x:Name="GitPanel" Visibility="Collapsed" Padding="20,8,20,20">
+                        <StackPanel VerticalAlignment="Top">
+                            <TextBlock Text="{DynamicResource Icon.Link}"
+                                       FontFamily="{DynamicResource Font.Icon}" FontSize="26"
+                                       Foreground="{DynamicResource Brush.Text.Disabled}"
+                                       Margin="0,10,0,12" />
+                            <TextBlock Text="Git panel"
+                                       FontFamily="{DynamicResource Font.UI}"
+                                       FontSize="{DynamicResource Font.Size.Subtitle}"
+                                       Foreground="{DynamicResource Brush.Text.Primary}"
+                                       Margin="0,0,0,8" />
+                            <TextBlock TextWrapping="Wrap"
+                                       FontFamily="{DynamicResource Font.UI}"
+                                       FontSize="{DynamicResource Font.Size.Body}"
+                                       Foreground="{DynamicResource Brush.Text.Secondary}"
+                                       Text="Not built yet. This will hold staging, the commit message box, and pull / push / fetch / stash." />
+                            <TextBlock TextWrapping="Wrap" Margin="0,12,0,0"
+                                       FontFamily="{DynamicResource Font.UI}"
+                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                       Foreground="{DynamicResource Brush.Text.Disabled}"
+                                       Text="The underlying git client already supports all of it — only the panel is missing." />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- PLC SYNC: the feature Versio exists for. -->
+                    <Border x:Name="SyncPanel" Visibility="Collapsed" Padding="20,8,20,20">
+                        <StackPanel VerticalAlignment="Top">
+                            <TextBlock Text="{DynamicResource Icon.Sync}"
+                                       FontFamily="{DynamicResource Font.Icon}" FontSize="26"
+                                       Foreground="{DynamicResource Brush.Text.Disabled}"
+                                       Margin="0,10,0,12" />
+                            <TextBlock Text="PLC sync"
+                                       FontFamily="{DynamicResource Font.UI}"
+                                       FontSize="{DynamicResource Font.Size.Subtitle}"
+                                       Foreground="{DynamicResource Brush.Text.Primary}"
+                                       Margin="0,0,0,8" />
+                            <TextBlock TextWrapping="Wrap"
+                                       FontFamily="{DynamicResource Font.UI}"
+                                       FontSize="{DynamicResource Font.Size.Body}"
+                                       Foreground="{DynamicResource Brush.Text.Secondary}"
+                                       Text="A PLC project file is binary — git can store it but cannot diff it. Versio exports it to readable text beside the project so every change becomes reviewable, and imports edited text back." />
+                            <TextBlock TextWrapping="Wrap" Margin="0,14,0,0"
+                                       FontFamily="{DynamicResource Font.UI}"
+                                       FontSize="{DynamicResource Font.Size.Body}"
+                                       Foreground="{DynamicResource Brush.Text.Secondary}"
+                                       Text="This panel will show which side is currently authoritative, when the last export ran, what could not be exported, and manual export / import triggers." />
+                            <TextBlock TextWrapping="Wrap" Margin="0,14,0,0"
+                                       FontFamily="{DynamicResource Font.UI}"
+                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                       Foreground="{DynamicResource Brush.Text.Disabled}"
+                                       Text="The export, import and sync engine are built and tested against a real CODESYS project. Connecting them to this panel is the next milestone." />
+                        </StackPanel>
+                    </Border>
+
+                    <ListBox x:Name="ChangesList" ItemsSource="{Binding Changes}"
                              SelectedItem="{Binding SelectedChange}"
                              Background="Transparent" BorderThickness="0"
                              ItemContainerStyle="{StaticResource RowItem}"

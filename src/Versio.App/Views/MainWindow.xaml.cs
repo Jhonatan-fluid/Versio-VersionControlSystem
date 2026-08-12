@@ -111,6 +111,32 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>Switch the left panel from the rail.</summary>
+    /// <remarks>
+    /// Visibility rather than a TabControl: the panels share the card and its header, and a
+    /// TabControl would bring its own chrome that would then have to be styled away.
+    /// </remarks>
+    private void OnRailChanged(object sender, RoutedEventArgs e)
+    {
+        if (sender is not RadioButton { Tag: string tag } ||
+            !Enum.TryParse<ShellPanel>(tag, out var panel) ||
+            _shell is null)
+        {
+            return;
+        }
+
+        _shell.ActivePanel = panel;
+
+        ChangesList.Visibility = panel == ShellPanel.Changes ? Visibility.Visible : Visibility.Collapsed;
+        GitPanel.Visibility = panel == ShellPanel.Git ? Visibility.Visible : Visibility.Collapsed;
+        SyncPanel.Visibility = panel == ShellPanel.Sync ? Visibility.Visible : Visibility.Collapsed;
+
+        // The count badge belongs to the changed-files list only.
+        ChangeCountBadge.Visibility = panel == ShellPanel.Changes
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
+
     private void OnOpenSettings(object sender, RoutedEventArgs e)
     {
         SyncThemeRadios();

@@ -8,6 +8,19 @@ using Versio.Infrastructure.Git;
 
 namespace Versio.App.ViewModels;
 
+/// <summary>Which panel the left rail is showing.</summary>
+public enum ShellPanel
+{
+    /// <summary>Flat list of everything git reports as changed.</summary>
+    Changes,
+
+    /// <summary>Staging, commit, and the remote operations.</summary>
+    Git,
+
+    /// <summary>PLC export/import state: the direction lock, last sync, coverage.</summary>
+    Sync,
+}
+
 /// <summary>An entry in the repository dropdown.</summary>
 public sealed class RepoEntry(string path)
 {
@@ -89,6 +102,7 @@ public sealed class ShellViewModel : ObservableObject
     private string _selectedDiff = string.Empty;
     private ChangeRow? _selectedChange;
     private bool _isBusy;
+    private ShellPanel _activePanel = ShellPanel.Changes;
 
     public ShellViewModel(VersioLogger logger, LogViewModel log,
                           Func<string, GitCliClient>? gitFactory = null,
@@ -159,6 +173,28 @@ public sealed class ShellViewModel : ObservableObject
             }
         }
     }
+
+    /// <summary>Panel currently selected in the rail.</summary>
+    public ShellPanel ActivePanel
+    {
+        get => _activePanel;
+        set
+        {
+            if (SetProperty(ref _activePanel, value))
+            {
+                _logger.Click($"Rail.{value}");
+                OnPropertyChanged(nameof(PanelTitle));
+            }
+        }
+    }
+
+    public string PanelTitle => _activePanel switch
+    {
+        ShellPanel.Changes => "CHANGED FILES",
+        ShellPanel.Git => "GIT",
+        ShellPanel.Sync => "PLC SYNC",
+        _ => string.Empty,
+    };
 
     public string? RepositoryPath
     {

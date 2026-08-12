@@ -89,6 +89,26 @@ Versio.sln
 control styles, `ViewModels/`, `Views/`, and `Spikes/` for the tree performance harness
 (`Versio.exe --spike --measure`).
 
+### Vendor boundaries
+
+Versio started CODESYS-only and will grow to other PLC toolchains, so the code is split
+three ways and the namespaces say which is which:
+
+| Namespace | Scope | Example |
+|---|---|---|
+| `Versio.Core.Plc.Codesys` | **One vendor.** Object-type GUIDs, native XML shape, `CODESYS.exe` invocation, the ScriptEngine protocol | `CodesysObjectType`, `ProfileResolver` |
+| `Versio.Core.Iec` | **The IEC 61131-3 standard**, shared by every vendor | `StTextCodec`, `StDeclarationParser` |
+| everything else | **Vendor-neutral.** git, diff, sync, locking, watching, logging, bindings | `SyncOrchestrator`, `GitCliClient` |
+
+Structured Text is a *standard*, not a CODESYS feature — putting it under `Iec` means a
+second vendor inherits the codec, the declaration parser and the syntax highlighting rather
+than reimplementing them.
+
+**Adding a vendor** means implementing `IPlcToolchain` and `IPlcProjectFormat` in
+`Versio.Core/Plc/`, plus a runner in `Versio.Infrastructure`. Nothing in `Sync/`, `Git/`,
+`Locking/`, `Watching/` or `Diff/` should need to change — **if it does, vendor knowledge
+has leaked past the seam, and the leak is the bug.**
+
 ### The one architectural rule
 
 **`Versio.Core` never touches the outside world.** No `System.IO`, no `Process`, no `DateTimeOffset.Now`, no UI framework. Everything external sits behind an interface in `Abstractions/`, and `Versio.Infrastructure` is the only project that implements them.
