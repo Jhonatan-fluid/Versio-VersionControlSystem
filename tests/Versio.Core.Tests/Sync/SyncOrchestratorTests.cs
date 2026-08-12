@@ -2,7 +2,7 @@ using Versio.Core.Abstractions;
 using Versio.Core.Bindings;
 using Versio.Core.Locking;
 using Versio.Core.Logging;
-using Versio.Core.Plc.Codesys;
+using Versio.Core.Plc;
 using Versio.Core.Sync;
 using Versio.Core.Tests.Fakes;
 using Xunit;
@@ -219,7 +219,7 @@ public class SyncOrchestratorTests
 
         Assert.Equal(SyncVerdict.Failed, outcome.Verdict);
         Assert.Contains("back up", outcome.Explanation, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain(h.Codesys.Jobs, j => j.Operation == CodesysOperation.Import);
+        Assert.DoesNotContain(h.Codesys.Jobs, j => j.Operation == PlcOperation.Import);
         Assert.Equal(SyncDirection.Failed, h.Orchestrator.StateOf(BindingId));
     }
 
@@ -232,7 +232,7 @@ public class SyncOrchestratorTests
         var h = new Harness(new OrchestratorOptions { RequireImportConfirmation = false });
         h.Codesys.BeforeRun = job =>
         {
-            if (job.Operation == CodesysOperation.Export)
+            if (job.Operation == PlcOperation.Export)
             {
                 h.SetExportedText("written by the export");
             }
@@ -246,7 +246,7 @@ public class SyncOrchestratorTests
         var echo = await h.TextChanged();
 
         Assert.NotEqual(SyncVerdict.Completed, echo.Verdict);
-        Assert.DoesNotContain(h.Codesys.Jobs, j => j.Operation == CodesysOperation.Import);
+        Assert.DoesNotContain(h.Codesys.Jobs, j => j.Operation == PlcOperation.Import);
     }
 
     [Fact]
@@ -263,7 +263,7 @@ public class SyncOrchestratorTests
         var blocked = await h.TextChanged();
 
         Assert.Equal(SyncVerdict.BlockedByLock, blocked.Verdict);
-        Assert.DoesNotContain(h.Codesys.Jobs, j => j.Operation == CodesysOperation.Import);
+        Assert.DoesNotContain(h.Codesys.Jobs, j => j.Operation == PlcOperation.Import);
 
         // Released by a push, and the other direction becomes available again.
         await h.Orchestrator.ReleaseAfterPushAsync("c1", CancellationToken.None);
@@ -356,7 +356,7 @@ public class SyncOrchestratorTests
         // tree and the very next check would look like somebody had edited it.
         h.Codesys.BeforeRun = job =>
         {
-            if (job.Operation == CodesysOperation.Export)
+            if (job.Operation == PlcOperation.Export)
             {
                 h.SetExportedText("exported");
             }
@@ -646,7 +646,7 @@ public class SyncOrchestratorTests
 
         Assert.Equal(SyncVerdict.Completed, outcome.Verdict);
         Assert.Equal(SyncDirection.TextAuthoritative, outcome.State);
-        Assert.Equal(Versio.Core.Plc.Codesys.CodesysOperation.Import,
+        Assert.Equal(Versio.Core.Plc.PlcOperation.Import,
             Assert.Single(h.Codesys.Jobs).Operation);
     }
 

@@ -26,6 +26,17 @@ public sealed record ProjectBinding
     /// target different CODESYS service packs.</summary>
     public string? Profile { get; init; }
 
+    /// <summary>
+    /// Which toolchain owns this project.
+    /// </summary>
+    /// <remarks>
+    /// On the binding rather than the repository, because a systems integrator's repository
+    /// can hold a CODESYS machine beside a TwinCAT one. Defaults to CODESYS so bindings
+    /// written before this field are read as what they were, rather than as an unknown vendor
+    /// nothing can drive.
+    /// </remarks>
+    public Plc.PlcVendor Vendor { get; init; } = Plc.PlcVendor.Codesys;
+
     public bool Enabled { get; init; } = true;
 }
 

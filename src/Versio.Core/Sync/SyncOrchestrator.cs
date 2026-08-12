@@ -1,7 +1,7 @@
 using System.Globalization;
 using Versio.Core.Abstractions;
 using Versio.Core.Bindings;
-using Versio.Core.Plc.Codesys;
+using Versio.Core.Plc;
 using Versio.Core.Locking;
 using Versio.Core.Hashing;
 using Versio.Core.Logging;
@@ -51,13 +51,13 @@ public sealed record OrchestratorOptions
 public sealed class SyncOrchestrator
 {
     private readonly IClock _clock;
-    private readonly ICodesysRunner _codesys;
+    private readonly IPlcRunner _toolchain;
     private readonly IFileSystem _fs;
     private readonly ILockStore _lockStore;
     private readonly OrchestratorOptions _options;
     private readonly string _repoRoot;
     private readonly LockOwner _owner;
-    private readonly IProgress<CodesysProgress>? _progress;
+    private readonly IProgress<PlcProgress>? _progress;
 
     /// <summary>How many project backups to keep per binding before an import.</summary>
     private const int BackupsKept = 10;
@@ -78,10 +78,10 @@ public sealed class SyncOrchestrator
         LockOwner owner,
         IClock clock,
         IFileSystem fs,
-        ICodesysRunner codesys,
+        IPlcRunner toolchain,
         ILockStore lockStore,
         OrchestratorOptions? options = null,
-        IProgress<CodesysProgress>? progress = null,
+        IProgress<PlcProgress>? progress = null,
         IVersioLogger? logger = null)
     {
         _repoRoot = repoRoot;
@@ -89,7 +89,7 @@ public sealed class SyncOrchestrator
         _progress = progress;
         _clock = clock;
         _fs = fs;
-        _codesys = codesys;
+        _toolchain = toolchain;
         _lockStore = lockStore;
         _log = logger ?? NullLogger.Instance;
         _options = options ?? new OrchestratorOptions();
@@ -337,13 +337,13 @@ public sealed class SyncOrchestrator
         ProjectBinding binding, TransitionResult transition, CancellationToken ct)
     {
         var started = _clock.UtcNow;
-        var job = new CodesysJob
+        var job = new PlcJob
         {
-            Operation = CodesysOperation.Export,
+            Operation = PlcOperation.Export,
             Profile = binding.Profile ?? string.Empty,
             Projects =
             [
-                new ProjectJob
+                new PlcProjectJob
                 {
                     BindingId = binding.Id,
                     ProjectPath = Absolute(binding.ProjectPath),
@@ -356,7 +356,7 @@ public sealed class SyncOrchestrator
             $"{binding.Id}: exporting {binding.ProjectPath} → {binding.ExportPath}" +
             (string.IsNullOrEmpty(binding.Profile) ? string.Empty : $" [{binding.Profile}]"));
 
-        var result = await _codesys.RunAsync(job, _progress, ct).ConfigureAwait(false);
+        var result = await _toolchain.RunAsync(job, _progress, ct).ConfigureAwait(false);
         var elapsed = _clock.UtcNow - started;
 
         if (!result.Succeeded)
@@ -387,7 +387,7 @@ public sealed class SyncOrchestrator
         await ApplyAsync(binding.Id, SyncTrigger.ExportSucceeded, projectHash, ct)
             .ConfigureAwait(false);
 
-        var changed = ChangedFiles(result);
+        var changed = result.ChangedPaths;
         _log.Info(LogCategory.Sync,
             $"{binding.Id}: exported {changed.Count} object(s) in {elapsed.TotalSeconds:F1}s");
 
@@ -439,13 +439,13 @@ public sealed class SyncOrchestrator
             };
         }
 
-        var job = new CodesysJob
+        var job = new PlcJob
         {
-            Operation = CodesysOperation.Import,
+            Operation = PlcOperation.Import,
             Profile = binding.Profile ?? string.Empty,
             Projects =
             [
-                new ProjectJob
+                new PlcProjectJob
                 {
                     BindingId = binding.Id,
                     ProjectPath = Absolute(binding.ProjectPath),
@@ -461,7 +461,7 @@ public sealed class SyncOrchestrator
             $"{binding.Id}: importing {binding.ExportPath} → {binding.ProjectPath}" +
             (string.IsNullOrEmpty(binding.Profile) ? string.Empty : $" [{binding.Profile}]"));
 
-        var result = await _codesys.RunAsync(job, _progress, ct).ConfigureAwait(false);
+        var result = await _toolchain.RunAsync(job, _progress, ct).ConfigureAwait(false);
         var elapsed = _clock.UtcNow - started;
 
         if (!result.Succeeded)
@@ -864,34 +864,23 @@ public sealed class SyncOrchestrator
         return SyncOutcome.Refused(verdict, bindingId, why, state);
     }
 
-    private static IReadOnlyList<string> ChangedFiles(CodesysResult result) =>
-        result.Output.Events
-            .Where(e => e.Type == "object")
-            .Select(e => e.String("path"))
-            .Where(p => !string.IsNullOrEmpty(p))
-            .Select(p => p!)
-            .ToList();
-
     /// <summary>
-    /// Collect the run's warnings for the caller, and log each one.
+    /// Log the run's warnings, and hand them back for the caller to show.
     /// </summary>
     /// <remarks>
-    /// A CODESYS warning means an object was skipped or degraded — the export "succeeded"
-    /// but is not complete. The UI shows these, but the UI is transient and the log is what
-    /// survives to the bug report.
+    /// A warning means an object was skipped or degraded — the run "succeeded" but is not
+    /// complete. The UI shows these, but the UI is transient and the log is what survives to
+    /// the bug report. The adapter has already turned the vendor's own format into sentences;
+    /// nothing here knows what a CODESYS warning code looks like.
     /// </remarks>
-    private IReadOnlyList<string> LogWarnings(string bindingId, CodesysResult result)
+    private IReadOnlyList<string> LogWarnings(string bindingId, PlcResult result)
     {
-        var warnings = result.Output.Warnings
-            .Select(w => $"{w.String("code")}: {w.String("path")}")
-            .ToList();
-
-        foreach (var warning in warnings)
+        foreach (var warning in result.Warnings)
         {
-            _log.Warn(LogCategory.Codesys, $"{bindingId}: {warning}");
+            _log.Warn(LogCategory.Plc, $"{bindingId}: {warning}");
         }
 
-        return warnings;
+        return result.Warnings;
     }
 
     /// <summary>First 12 characters of a hash or commit id — enough to compare two by eye,

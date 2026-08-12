@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-12 · **Commits:** 12 · **Tests:** 622 unit + 64 integration, 0 skipped
+**Date:** 2026-08-12 · **Commits:** 12 · **Tests:** 644 unit + 64 integration, 0 skipped
 
 ---
 
@@ -14,7 +14,7 @@ The risky half is done. Every hard question the plan raised about CODESYS has be
 
 ```
   CODESYS pipeline    ████████████████████  proven on a real project
-  Domain core         ████████████████████  618 tests, 300 ms
+  Domain core         ████████████████████  644 tests, 290 ms
   Infrastructure      ████████████████████  drives real CODESYS + real git
   Desktop shell       █████████████████░░░  adopt, export and import wired end to end
   Packaging           ██░░░░░░░░░░░░░░░░░░  publish profile only
@@ -484,6 +484,63 @@ afternoon does not fill a disk.
 **A failed backup fails the import**, and is pinned by a test. Running the one operation that
 can destroy the project having skipped the step that makes it recoverable is the worst of both
 outcomes.
+
+### Fixed — the vendor seam was documented but not true
+
+The README has always said that adding a vendor must not require changing `Sync/`, `Git/`,
+`Locking/`, `Watching/` or `Diff/`, and that if it does, *the leak is the bug*. It was not
+true. `SyncOrchestrator` — the whole neutral engine — was built directly on `ICodesysRunner`,
+`CodesysJob`, `CodesysOperation`, `CodesysResult` and `CodesysProgress`. Rockwell, Siemens or
+TwinCAT would have meant rewriting the engine, which is exactly what the rule existed to
+prevent.
+
+`Versio.Core/Abstractions/` also carried `ICodesysRunner` and `ICodesysLocator`: a folder whose
+entire purpose is to be vendor-neutral, holding a brand name.
+
+**What the seam is now:**
+
+| Contract | Meaning |
+|---|---|
+| `IPlcRunner` | Drives a vendor's tool. `PlcJob` in, `PlcResult` out |
+| `IPlcProjectFormat` | Recognises that vendor's project files and its export convention |
+| `IPlcToolchain` | Whether the tool is installed, and what it can do |
+| `PlcFormats` | The registry of everything Versio can recognise |
+
+`PlcResult` is deliberately small — succeeded, why not, duration, changed paths, warnings.
+That is everything the sync engine needs to decide what happens next and nothing that would
+require it to understand a vendor's output format. The CODESYS JSON-lines protocol now stops
+at `LocalCodesysRunner`, which translates in both directions: object events become plain
+paths, warning events become sentences. `Abstractions/` holds three files and none of them
+names a brand.
+
+#### Accommodations for the vendors that do not exist yet
+
+- **`ProjectBinding.Vendor`**, defaulting to CODESYS so existing bindings read as what they
+  are. On the binding rather than the repository, because a systems integrator's repository
+  can hold a CODESYS machine beside a TwinCAT one.
+- **`RepoScanner` scans for every registered format**, not one. A mixed repository is two
+  tracked projects rather than one and a blind spot.
+- **Adoption resolves the format from the path**, so each binding records the right vendor.
+- **`.gitattributes` covers every registered vendor's extensions**, not just the one being
+  adopted. Writing them one vendor at a time would leave a TwinCAT project line-mergeable
+  until somebody happened to adopt one.
+- **A format may be registered without a runner.** Its projects are then detected, listed and
+  explained as unsupported rather than silently ignored — which is how somebody concludes the
+  tool is broken.
+
+#### The seam is now enforced, not described
+
+`VendorSeamTests` reads the assembly's own metadata and fails the build if any neutral
+namespace declares a vendor-named type or references one in a field, property, parameter or
+return. **Proven able to fail**: adding a `CodesysInstall` property to `SyncJob` turns it red,
+naming the exact leak.
+
+It also asserts that `PlcVendor` still lists TiaPortal, Studio5000 and TwinCat. Those cost
+nothing today and are the entire point — the abstraction is judged against real second vendors
+rather than a hypothetical one, and whoever adds TwinCAT should find a failing test before
+they get far enough to regret the design.
+
+A rule nothing checks is a rule that decays, and this one had already decayed silently.
 
 ### Verifying the UI, not just the engine
 

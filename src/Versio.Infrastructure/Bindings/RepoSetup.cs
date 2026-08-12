@@ -40,9 +40,14 @@ public sealed record AdoptionResult
 /// export costs 17–31 s of CODESYS and is the user's next, separate decision.
 /// </para>
 /// </remarks>
+/// <remarks>
+/// The format is resolved <b>from the path</b> rather than assumed, so adopting a TwinCAT
+/// project in a repository that also holds a CODESYS one records the right vendor on each
+/// binding. A caller may still pin one.
+/// </remarks>
 public sealed class RepoSetup(
     string repositoryRoot,
-    IPlcProjectFormat format,
+    IPlcProjectFormat? format = null,
     IVersioLogger? logger = null)
 {
     private readonly IVersioLogger _log = logger ?? NullLogger.Instance;
@@ -60,8 +65,22 @@ public sealed class RepoSetup(
         var store = new RepoConfigStore(repositoryRoot);
         var config = await store.LoadAsync(ct).ConfigureAwait(false);
 
+        // Whichever vendor claims the extension. A pinned format still wins, and nothing
+        // claiming it at all is an explicit refusal rather than a CODESYS assumption.
+        var resolved = format ?? PlcFormats.ForPath(projectPath);
+        if (resolved is null)
+        {
+            return new AdoptionResult
+            {
+                Decision = new AdoptionDecision(
+                    AdoptionVerdict.NotAProject,
+                    $"no registered toolchain recognises '{projectPath}'", null),
+                Config = config,
+            };
+        }
+
         var decision = Adoption.Plan(
-            projectPath, config, format, Guid.NewGuid().ToString("N")[..12], profile);
+            projectPath, config, resolved, Guid.NewGuid().ToString("N")[..12], profile);
 
         if (!decision.CanAdopt)
         {
@@ -101,7 +120,10 @@ public sealed class RepoSetup(
         // answer that breaks the repository.
         var lfs = git is not null && await git.IsLfsAvailableAsync(ct).ConfigureAwait(false);
 
-        var patterns = format.ProjectExtensions.Select(e => $"*{e}").ToList();
+        // Every registered vendor's extensions, not just the one being adopted: the rules are
+        // repository-wide, and writing them one vendor at a time would leave a TwinCAT project
+        // line-mergeable until somebody happened to adopt one.
+        var patterns = PlcFormats.AllExtensions.Select(e => $"*{e}").ToList();
         var plan = GitAttributes.Plan(existing, patterns, lfs);
 
         if (plan.ChangeNeeded)

@@ -1,5 +1,6 @@
 using System.Text;
 using Versio.Core.Abstractions;
+using Versio.Core.Plc;
 using Versio.Core.Plc.Codesys;
 using Versio.Core.Locking;
 
@@ -106,61 +107,46 @@ public sealed class InMemoryLockStore : ILockStore
 /// Scripted CODESYS. Records every job and replays a queued result, so a failing export or
 /// a timeout is a one-line setup rather than a real 20-second process.
 /// </summary>
-public sealed class FakeCodesysRunner : ICodesysRunner
+public sealed class FakeCodesysRunner : IPlcRunner
 {
-    private readonly Queue<CodesysResult> _queued = new();
+    private readonly Queue<PlcResult> _queued = new();
 
-    public List<CodesysJob> Jobs { get; } = [];
+    public List<PlcJob> Jobs { get; } = [];
 
-    public Func<CodesysJob, Task>? BeforeRun { get; set; }
+    public Func<PlcJob, Task>? BeforeRun { get; set; }
 
     public void EnqueueSuccess(params string[] changedPaths)
     {
-        var sb = new StringBuilder();
-        foreach (var path in changedPaths)
+        _queued.Enqueue(new PlcResult
         {
-            sb.AppendLine($"@@VERSIO@@{{\"t\":\"object\",\"path\":\"{path}\"}}");
-        }
-
-        sb.AppendLine("@@VERSIO@@{\"t\":\"summary\",\"written\":" + changedPaths.Length + "}");
-        sb.AppendLine("@@VERSIO@@{\"t\":\"done\"}");
-        sb.AppendLine("@@VERSIO@@{\"t\":\"exit\",\"rc\":0}");
-
-        _queued.Enqueue(new CodesysResult
-        {
-            ExitCode = 0,
-            TimedOut = false,
+            Succeeded = true,
             Duration = TimeSpan.FromSeconds(18),
-            Output = ScriptProtocol.Parse(sb.ToString()),
+            ChangedPaths = changedPaths,
         });
     }
 
     public void EnqueueFailure(string message = "boom")
     {
-        _queued.Enqueue(new CodesysResult
+        _queued.Enqueue(new PlcResult
         {
-            ExitCode = 1,
-            TimedOut = false,
+            Succeeded = false,
+            FailureReason = message,
             Duration = TimeSpan.FromSeconds(2),
-            Output = ScriptProtocol.Parse(
-                $"@@VERSIO@@{{\"t\":\"fatal\",\"msg\":\"{message}\"}}\n" +
-                "@@VERSIO@@{\"t\":\"exit\",\"rc\":1}"),
         });
     }
 
     public void EnqueueTimeout()
     {
-        _queued.Enqueue(new CodesysResult
+        _queued.Enqueue(new PlcResult
         {
-            ExitCode = -1,
-            TimedOut = true,
+            Succeeded = false,
+            FailureReason = "the toolchain did not finish within the timeout",
             Duration = TimeSpan.FromMinutes(10),
-            Output = ScriptProtocol.Parse(""),
         });
     }
 
-    public async Task<CodesysResult> RunAsync(
-        CodesysJob job, IProgress<CodesysProgress>? progress, CancellationToken ct)
+    public async Task<PlcResult> RunAsync(
+        PlcJob job, IProgress<PlcProgress>? progress, CancellationToken ct)
     {
         Jobs.Add(job);
         if (BeforeRun is not null)

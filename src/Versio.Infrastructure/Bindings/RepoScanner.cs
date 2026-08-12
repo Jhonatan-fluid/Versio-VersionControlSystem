@@ -17,17 +17,24 @@ namespace Versio.Infrastructure.Bindings;
 /// different problems.
 /// </para>
 /// <para>
-/// The walk skips <c>.git</c> and any export directory. A CODESYS export contains no
-/// <c>.project</c> files, but scanning megabytes of visualisation XML on every refresh is
-/// waste, and the whole scan runs on a background thread for the same reason.
+/// The walk skips <c>.git</c> and any export directory. An export contains no project files,
+/// but scanning megabytes of visualisation XML on every refresh is waste, and the whole scan
+/// runs on a background thread for the same reason.
 /// </para>
 /// </remarks>
 public sealed class RepoScanner(
     string repositoryRoot,
-    IPlcProjectFormat format,
+    IReadOnlyList<IPlcProjectFormat>? formats = null,
     IVersioLogger? logger = null)
 {
     private readonly IVersioLogger _log = logger ?? NullLogger.Instance;
+
+    private readonly IReadOnlyList<IPlcProjectFormat> _formats = formats ?? PlcFormats.All;
+
+    /// <summary>Every extension any registered format claims.</summary>
+    private IReadOnlyList<string> Extensions =>
+        [.. _formats.SelectMany(f => f.ProjectExtensions)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)];
 
     private static readonly string[] SkipDirectories =
         [".git", ".vs", "bin", "obj", "node_modules", ".versio"];
@@ -94,7 +101,7 @@ public sealed class RepoScanner(
         foreach (var file in entries)
         {
             var extension = Path.GetExtension(file);
-            if (format.ProjectExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase))
+            if (Extensions.Contains(extension, StringComparer.OrdinalIgnoreCase))
             {
                 projects.Add(Relative(file));
             }

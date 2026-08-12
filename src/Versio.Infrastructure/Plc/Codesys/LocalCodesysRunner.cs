@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text;
 using Versio.Core.Abstractions;
 using Versio.Core.Logging;
+using Versio.Core.Plc;
 using Versio.Core.Plc.Codesys;
 
 namespace Versio.Infrastructure.Plc.Codesys;
@@ -32,7 +33,7 @@ namespace Versio.Infrastructure.Plc.Codesys;
 public sealed class LocalCodesysRunner(
     string codesysExecutablePath,
     ScriptExtractor scripts,
-    IVersioLogger? logger = null) : ICodesysRunner
+    IVersioLogger? logger = null) : IPlcRunner
 {
     /// <summary>Global so two Versio windows cannot launch competing CODESYS instances.</summary>
     private const string GlobalMutexName = @"Global\Versio.Codesys.SingleInstance";
@@ -40,6 +41,74 @@ public sealed class LocalCodesysRunner(
     private static readonly TimeSpan MutexWait = TimeSpan.FromMinutes(15);
 
     private readonly IVersioLogger _log = logger ?? NullLogger.Instance;
+
+    /// <summary>
+    /// Run a vendor-neutral job by translating it into CODESYS's own terms.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This method is the vendor boundary.</b> Above it the sync engine speaks
+    /// <see cref="PlcJob"/> and knows nothing about profiles, script protocols or exit codes;
+    /// below it everything is CODESYS-specific. A Rockwell or TwinCAT runner implements the
+    /// same interface and translates into whatever its tool wants, and nothing in
+    /// <c>Sync/</c> changes.
+    /// </para>
+    /// <para>
+    /// The translation is where the JSON-lines protocol stops. Object events become plain
+    /// paths and warning events become sentences, so the orchestrator never learns what a
+    /// CODESYS warning code looks like.
+    /// </para>
+    /// </remarks>
+    public async Task<PlcResult> RunAsync(
+        PlcJob job, IProgress<PlcProgress>? progress, CancellationToken cancellationToken)
+    {
+        var native = new CodesysJob
+        {
+            Operation = job.Operation switch
+            {
+                PlcOperation.Export => CodesysOperation.Export,
+                PlcOperation.Import => CodesysOperation.Import,
+                _ => CodesysOperation.Probe,
+            },
+            Profile = job.Profile,
+            Projects = [.. job.Projects.Select(p => new ProjectJob
+            {
+                BindingId = p.BindingId,
+                ProjectPath = p.ProjectPath,
+                Path = p.Path,
+            })],
+            OperationId = job.OperationId,
+            Save = job.Save,
+            Timeout = job.Timeout,
+        };
+
+        // Progress crosses the boundary too, so the heartbeat above never sees a Codesys type.
+        var relay = progress is null
+            ? null
+            : new Progress<CodesysProgress>(p => progress.Report(
+                new PlcProgress(p.OperationId, p.Phase, p.Done, p.Total, p.Detail, p.Elapsed)));
+
+        var result = await RunAsync(native, relay, cancellationToken).ConfigureAwait(false);
+
+        return new PlcResult
+        {
+            Succeeded = result.Succeeded,
+            FailureReason = result.FailureReason,
+            Duration = result.Duration,
+            ChangedPaths =
+            [
+                .. result.Output.Events
+                    .Where(e => e.Type == "object")
+                    .Select(e => e.String("path"))
+                    .Where(p => !string.IsNullOrEmpty(p))
+                    .Select(p => p!),
+            ],
+            Warnings =
+            [
+                .. result.Output.Warnings.Select(w => $"{w.String("code")}: {w.String("path")}"),
+            ],
+        };
+    }
 
     public async Task<CodesysResult> RunAsync(
         CodesysJob job,

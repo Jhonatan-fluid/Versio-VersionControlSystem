@@ -12,6 +12,7 @@ using Versio.Core.Sync;
 using Versio.Infrastructure.Bindings;
 using Versio.Infrastructure.FileSystem;
 using Versio.Infrastructure.Platform;
+using Versio.Infrastructure.Plc;
 using Versio.Infrastructure.Plc.Codesys;
 using Versio.Infrastructure.Watching;
 
@@ -409,13 +410,13 @@ public sealed class SyncViewModel : ObservableObject
             return;
         }
 
-        ICodesysRunner runner = _install is not null && _profile is not null
+        IPlcRunner runner = _install is not null && _profile is not null
             ? new LocalCodesysRunner(_install.ExecutablePath, new ScriptExtractor(_logger), _logger)
             : new UnavailableToolchainRunner(ToolchainState);
 
         // Constructed on the UI thread, so Progress<T> captures this context and every
         // report lands back here without an explicit dispatch.
-        var progress = new Progress<CodesysProgress>(p =>
+        var progress = new Progress<PlcProgress>(p =>
             _heartbeat.Report(p.OperationId, p.Done, p.Total, p.Detail ?? p.Phase));
 
         _orchestrator = new SyncOrchestrator(
@@ -458,7 +459,7 @@ public sealed class SyncViewModel : ObservableObject
         using var busy = _busy.Begin("Scanning for PLC projects…");
         _logger.Info(LogCategory.Sync, "scanning for PLC projects");
 
-        var scanner = new RepoScanner(_repositoryRoot, _format, _logger);
+        var scanner = new RepoScanner(_repositoryRoot, PlcFormats.All, _logger);
         var snapshot = await scanner.ScanAsync(_git, CancellationToken.None).ConfigureAwait(true);
 
         // Detection and tracking are one step now: anything found is tracked, and the locks

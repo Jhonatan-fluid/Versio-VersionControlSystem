@@ -34,6 +34,27 @@
 | AvalonEdit for the diff view | **A tokenizer in `Versio.Core`** (§8.3) | Structured Text has no bundled definition, so a custom highlighter was needed regardless |
 | Inno Setup | **Velopack** (§13.5) | Delta updates on a ~110 MB app, plus an MSI for managed sites |
 
+### The vendor seam — enforced as of 2026-08-12
+
+Versio is not a CODESYS tool. It will detect and drive **Rockwell Studio 5000, Siemens TIA
+Portal and Beckhoff TwinCAT**, and the code is organised so that adding one is additive.
+
+| Namespace | Scope |
+|---|---|
+| `Versio.Core.Plc` | **Neutral contracts.** `IPlcRunner`, `IPlcProjectFormat`, `IPlcToolchain`, `PlcJob`, `PlcResult`, `PlcFormats` |
+| `Versio.Core.Plc.<Vendor>` | **One brand.** Object-type tables, native file shapes, tool invocation, its wire protocol |
+| `Versio.Core.Iec` | **The IEC 61131-3 standard**, shared by every vendor that speaks it |
+| everything else | **Vendor-neutral.** git, diff, sync, locking, watching, logging, bindings |
+
+Adding a vendor means implementing `IPlcRunner`, `IPlcProjectFormat` and `IPlcToolchain`, and
+registering the format with `PlcFormats`. **Nothing in `Sync/`, `Git/`, `Locking/`,
+`Watching/`, `Projects/` or `Diff/` may change.**
+
+> This was stated from the beginning and was **not true until 2026-08-12**: `SyncOrchestrator`
+> was built directly on `ICodesysRunner`, `CodesysJob` and `CodesysResult`, so a second vendor
+> would have meant rewriting the engine. `VendorSeamTests` now enforces it from assembly
+> metadata and has been proven able to fail. A rule nothing checks is a rule that decays.
+
 ### The disciplines that make the rest cheap
 
 1. **`Versio.Core` touches nothing external.** No `System.IO`, no `Process`, no `DateTimeOffset.Now`, no UI framework — everything sits behind an interface in `Abstractions/`. This is why the lock model, the loop defences and the state machine are tested in ~50 ms instead of by causing real crashes.

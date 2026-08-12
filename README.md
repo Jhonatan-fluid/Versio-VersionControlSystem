@@ -50,7 +50,8 @@ Export is automatic and deterministic. Import applies edited text back into the 
 | CODESYS runs with no visible window | ✅ `CREATE_NO_WINDOW` **and** `SW_HIDE` — different subsystems |
 | Repository validation — walks up to `.git`, refuses non-repos with a reason | ✅ handles subdirectories, bare repos and linked worktrees |
 | PLC sync panel — toolchain probe, project discovery, binding state | ✅ real scan, no sample data |
-| Vendor seam — `IPlcToolchain`, `Iec` vs `Plc.Codesys` vs neutral | ✅ 11 tests |
+| **Vendor seam** — `IPlcRunner`/`PlcJob`/`PlcResult`, enforced from assembly metadata | ✅ 22 architecture tests, proven able to fail |
+| Multi-vendor detection — registry, per-binding vendor, mixed repositories | ✅ `PlcFormats`; Rockwell/Siemens/TwinCAT are additive |
 | Application icon — 8 sizes, hand-tuned below 48px, embedded in the exe | ✅ 12 tests over the `.ico` itself |
 | **Adopt a project from the UI** — guards, `.gitattributes`/LFS rules, binding | ✅ 13 refusal tests + real-repo integration |
 | **Manual export from the UI**, driving `SyncOrchestrator` | ✅ 11 files in 16.7 s on the fixture, lock taken and persisted |
@@ -100,7 +101,7 @@ Versio.sln
 │  └─ Versio.Scripts/           IronPython 2.7, run inside CODESYS. Embedded into
 │                               Versio.Infrastructure as resources.
 ├─ tests/
-│  ├─ Versio.Core.Tests/        618 unit tests — pure, no IO, ~300 ms
+│  ├─ Versio.Core.Tests/        644 unit tests — pure, no IO, ~290 ms
 │  └─ Versio.Integration.Tests/  64 tests against real CODESYS and real git, ~120 s
 ├─ tools/                       PowerShell harnesses used during Phase 0, plus
 │                               New-VersioIcon.ps1 which generates the app icon
@@ -124,6 +125,7 @@ three ways and the namespaces say which is which:
 
 | Namespace | Scope | Example |
 |---|---|---|
+| `Versio.Core.Plc` | **Neutral contracts** every vendor implements | `IPlcRunner`, `PlcJob`, `PlcResult`, `PlcFormats` |
 | `Versio.Core.Plc.Codesys` | **One vendor.** Object-type GUIDs, native XML shape, `CODESYS.exe` invocation, the ScriptEngine protocol | `CodesysObjectType`, `ProfileResolver` |
 | `Versio.Core.Iec` | **The IEC 61131-3 standard**, shared by every vendor | `StTextCodec`, `StDeclarationParser` |
 | everything else | **Vendor-neutral.** git, diff, sync, locking, watching, logging, bindings | `SyncOrchestrator`, `GitCliClient` |
@@ -132,10 +134,14 @@ Structured Text is a *standard*, not a CODESYS feature — putting it under `Iec
 second vendor inherits the codec, the declaration parser and the syntax highlighting rather
 than reimplementing them.
 
-**Adding a vendor** means implementing `IPlcToolchain` and `IPlcProjectFormat` in
-`Versio.Core/Plc/`, plus a runner in `Versio.Infrastructure`. Nothing in `Sync/`, `Git/`,
-`Locking/`, `Watching/` or `Diff/` should need to change — **if it does, vendor knowledge
-has leaked past the seam, and the leak is the bug.**
+**Adding a vendor** means implementing `IPlcRunner`, `IPlcProjectFormat` and `IPlcToolchain`,
+and registering the format with `PlcFormats`. Nothing in `Sync/`, `Git/`, `Locking/`,
+`Watching/`, `Projects/` or `Diff/` may change — **if it does, vendor knowledge has leaked past
+the seam, and the leak is the bug.**
+
+That rule is now enforced by `VendorSeamTests`, which reads assembly metadata and fails the
+build on a leak. It had to be: the rule was stated from the start and was not true — the sync
+orchestrator was built directly on CODESYS types until 2026-08-12.
 
 ### The one architectural rule
 

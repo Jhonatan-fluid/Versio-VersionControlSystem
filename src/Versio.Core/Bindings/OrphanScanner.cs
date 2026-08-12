@@ -212,6 +212,7 @@ public sealed class OrphanScanner
                 ? BindingConventions.ConventionalExportPath(projectPath)
                 : format.ConventionalExportPath(projectPath)),
             Profile = profile,
+            Vendor = format?.Vendor ?? PlcVendor.Codesys,
             Enabled = true,
         };
 

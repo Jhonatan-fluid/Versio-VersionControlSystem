@@ -18,6 +18,20 @@ public sealed record CodesysInstall
 }
 
 /// <summary>How the search for a usable profile ended.</summary>
+/// <summary>
+/// Finds the CODESYS installations on this machine.
+/// </summary>
+/// <remarks>
+/// Vendor-specific by nature, and now lives with the rest of the CODESYS knowledge rather
+/// than in <c>Abstractions/</c>. It sat there beside <c>ICodesysRunner</c>, which meant the
+/// neutral folder carried a brand name — and the sync engine, which has no business knowing
+/// what a profile is, could see it.
+/// </remarks>
+public interface ICodesysLocator
+{
+    IReadOnlyList<CodesysInstall> FindInstalls();
+}
+
 public enum ProfileResolution
 {
     /// <summary>Exactly one profile — use it.</summary>

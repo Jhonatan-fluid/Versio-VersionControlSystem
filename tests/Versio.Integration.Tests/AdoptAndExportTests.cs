@@ -6,6 +6,7 @@ using Versio.Infrastructure.Bindings;
 using Versio.Infrastructure.FileSystem;
 using Versio.Infrastructure.Git;
 using Versio.Infrastructure.Platform;
+using Versio.Infrastructure.Plc;
 using Versio.Infrastructure.Plc.Codesys;
 using Xunit;
 using Xunit.Abstractions;
@@ -344,7 +345,7 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
         Core.Tests.TestPaths.Project("RefrigeratorControl.project");
 
     private SyncOrchestrator BuildOrchestrator(
-        RepoConfig config, CodesysInstall? install, Versio.Core.Abstractions.ICodesysRunner? runner = null)
+        RepoConfig config, CodesysInstall? install, Versio.Core.Plc.IPlcRunner? runner = null)
     {
         var machine = new MachineIdentity();
         return new SyncOrchestrator(
