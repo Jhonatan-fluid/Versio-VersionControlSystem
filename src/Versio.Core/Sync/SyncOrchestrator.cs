@@ -755,6 +755,11 @@ public sealed class SyncOrchestrator
     }
 
     /// <summary>Keep the most recent backups and drop the rest.</summary>
+    /// <remarks>
+    /// Each deletion is logged by name. These are somebody's undo history, and a backup that
+    /// vanished without a line saying so is indistinguishable from one that was never made -
+    /// which is the question being asked at precisely the moment they go looking.
+    /// </remarks>
     private void PruneBackups(string folder)
     {
         try
@@ -767,6 +772,7 @@ public sealed class SyncOrchestrator
             foreach (var stale in existing)
             {
                 _fs.DeleteFile(stale);
+                _log.Info(LogCategory.Sync, $"pruned old project backup {stale}");
             }
         }
         catch (IOException ex)

@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-12 · **Commits:** 24 · **Tests:** 694 unit + 90 integration, 0 skipped
+**Date:** 2026-08-12 · **Commits:** 25 · **Tests:** 694 unit + 91 integration, 0 skipped
 
 > One integration test, `RepositoryWatcherTests.A_deleted_file_is_reported`, is **flaky under
 > full-suite load** — see Findings. It passes in isolation and failed once during a complete
@@ -102,7 +102,7 @@ format; `.gitattributes` covers every registered vendor's extensions.
 | **PLC state** | Toolchain, direction lock, staleness and heartbeat, folded into the project panel as facts rather than controls. Two buttons survive: export what is stale, and acknowledge a failure |
 | **Export coverage** | What the export does *not* carry, said out loud: `_coverage.md` in the tree, every skip in the manifest with a stable reason, and a sentence in the panel naming what cannot be relied on. A gap is distinguished from a deliberate omission, and an old manifest reports "unknown" rather than "complete" |
 | **Chrome** | One app-wide progress bar with a caption, maximized on open, log console collapsed, heartbeat during long runs |
-| **Logging** | Ring buffer, correlation ids, rolling file from startup, crash handlers on all three .NET channels |
+| **Logging** | Ring buffer, correlation ids, rolling file from startup, crash handlers on all three .NET channels. The export narrates itself: the directory swap with both file counts, every skip with its reason, the summary, and a warning when a killed run left a staging folder behind |
 
 ---
 
@@ -123,7 +123,9 @@ tree. So export does not have to refuse at all.
 - **Export:** copy the project to `.versio/local/` — **keeping the same filename**, because the
   manifest records the basename — and export the copy. `.versio/local/` is already gitignored,
   so the copy never reaches git or the panel, and the exporter's existing staging swap already
-  puts the result in the right place
+  puts the result in the right place. **Log the copy the way the swap is now logged** — where
+  it went, how big, and that the export that follows is of a copy rather than of the project
+  itself, or the log will describe an export of a file the user cannot find
 - **Import:** must still refuse. Even if CODESYS allowed the write, the IDE holds its own copy
   in memory and the next Ctrl+S would silently revert it
 - Pre-flight `<project>.~u` rather than paying a 17–31 s launch to be told no, and probe the pid
@@ -186,6 +188,56 @@ More fixture projects. Every field bug becomes a fixture before it is fixed.
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### The export's own narrative never reached the log
+
+Asked directly whether the logs were sound for copying, exporting and replacing an export
+directory, the honest answer turned out to be no — and the gap was invisible from the code,
+because every line that existed was correct. The problem was the lines that did not exist.
+
+**The most destructive step in an export had no log line at all.** The staging swap deletes the
+entire export directory and renames a new one into its place:
+
+```python
+if os.path.isdir(out_root):
+    shutil.rmtree(out_root)
+os.rename(staging, out_root)
+```
+
+Nothing emitted, nothing logged. If it half-failed, the log would say the export succeeded and
+the directory on disk would disagree, with no line anywhere connecting the two.
+
+**And the script's protocol events were thrown away after being counted.** They drove progress,
+the changed-path list and the warnings, and were then summarised as `events=24` — a number that
+says something happened and nothing about what. So every skip, every object written and every
+summary the exporter produced was absent from the log in readable form, in a codebase whose
+stated rule is that a silent failure is a bug even when the code is correct.
+
+Both are fixed. An export now reads:
+
+```
+replacing the export directory …\RefrigeratorControl: 12 existing file(s) removed, 12 written in their place
+export directory now holds 12 file(s)
+walked 18, wrote 10, skipped 6 (of which 2 not implemented), 0 warning(s)
+not exported (NOT_IMPLEMENTED): Device/Plc Logic/Application/Library Manager [LIBRARY_MANAGER]
+```
+
+Levels are chosen by volume and by who needs them: one line per exported object is Debug,
+because a real project has thousands of them; skips, the summary and the filesystem swaps are
+Info, because they are bounded and each answers a question somebody asks afterwards. A leftover
+staging folder is a **Warn** — it means a previous export was killed, which is worth knowing at
+the moment it is discovered rather than never.
+
+Two smaller ones went with it. Pruned project backups are now named as they are deleted, because
+a backup that vanished with no line saying so is indistinguishable from one that was never made
+— exactly the question being asked when somebody goes looking for it. And the skip path is
+computed once and shared by the manifest and the log line, after the log showed
+`Device\Plc Logic\Application/Library Manager` with both separators in one path.
+
+The test asserts against the log a real export produces, and it asserts **both** runs: the first
+removes nothing because there was nothing there, the second removes what the first wrote. A
+count that did not track reality would print the same number twice. Verified to fail with the
+swap emit removed.
 
 ### Recording a GUID broke export determinism, hours after it was added
 

@@ -353,6 +353,12 @@ public sealed class LocalCodesysRunner(
                 @"install folder name — read it from …\CODESYS\Profiles\*.profile.xml");
         }
 
+        // What the script itself did, in order, before CODESYS's own chatter. This used to be
+        // a single count - "events=24" - which said that something happened and nothing about
+        // what. The export deletes an entire directory and writes a new one in its place; a
+        // log that cannot show that step is not a log of the export.
+        LogScriptEvents(output);
+
         // CODESYS's own output, kept at Debug. It is verbose and mostly uninteresting until
         // an export fails for a reason our protocol did not model, at which point it is the
         // only evidence there is.
@@ -395,6 +401,85 @@ public sealed class LocalCodesysRunner(
                 case "opened":
                     progress.Report(new CodesysProgress(job.OperationId, "opened",
                         null, null, evt.String("path"), elapsed));
+                    break;
+            }
+        }
+    }
+
+
+    /// <summary>
+    /// Write the script's protocol events into the log as readable lines.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The events already drove progress, the changed-path list and the warning list, and were
+    /// then thrown away. That left the two operations that can destroy work - swapping a new
+    /// export over the old directory, and clearing a staging folder a killed run left behind -
+    /// with no record anywhere, in a codebase whose stated rule is that a silent failure is a
+    /// bug even when the code is correct.
+    /// </para>
+    /// <para>
+    /// Levels are chosen by how many there are and who needs them. One line per exported
+    /// object is Debug, because a real project has thousands. Skips, the summary and the
+    /// filesystem swaps are Info: bounded in number, and each one answers a question somebody
+    /// actually asks afterwards.
+    /// </para>
+    /// </remarks>
+    private void LogScriptEvents(ScriptOutput output)
+    {
+        foreach (var evt in output.Events)
+        {
+            switch (evt.Type)
+            {
+                case "swap":
+                    _log.Info(LogCategory.Codesys,
+                        $"replacing the export directory {evt.String("out")}: " +
+                        $"{evt.Int("replacing")} existing file(s) removed, " +
+                        $"{evt.Int("with")} written in their place");
+                    break;
+
+                case "swapped":
+                    _log.Info(LogCategory.Codesys,
+                        $"export directory now holds {evt.Int("files")} file(s)");
+                    break;
+
+                case "staging-cleared":
+                    // A staging folder that survived means a previous export was killed.
+                    _log.Warn(LogCategory.Codesys,
+                        $"cleared {evt.Int("files")} file(s) from a leftover staging folder " +
+                        $"{evt.String("path")} — a previous export did not finish");
+                    break;
+
+                case "skip":
+                    _log.Info(LogCategory.Codesys,
+                        $"not exported ({evt.String("reason")}): {evt.String("path")} " +
+                        $"[{evt.String("type")}]");
+                    break;
+
+                case "summary":
+                    _log.Info(LogCategory.Codesys,
+                        $"walked {evt.Int("walked")}, wrote {evt.Int("written")}, " +
+                        $"skipped {evt.Int("skipped")} (of which {evt.Int("gaps")} " +
+                        $"not implemented), {evt.Int("warnings")} warning(s)");
+                    break;
+
+                case "fatal":
+                    _log.Error(LogCategory.Codesys, $"script failed: {evt.String("msg")}");
+                    break;
+
+                case "created":
+                    _log.Info(LogCategory.Codesys,
+                        $"created {evt.String("kind")} {evt.String("name")} " +
+                        $"in {evt.String("into")}");
+                    break;
+
+                case "object":
+                    _log.Debug(LogCategory.Codesys,
+                        $"wrote {evt.String("path")} [{evt.String("form")}]");
+                    break;
+
+                default:
+                    _log.Debug(LogCategory.Codesys, $"· {evt.Type}");
                     break;
             }
         }

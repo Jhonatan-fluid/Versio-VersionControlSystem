@@ -179,6 +179,12 @@ class Exporter(object):
             # or a hole; the reason is the whole information.
             reason = skip_reason(obj_type)
             self.skipped += 1
+
+            # One spelling of the path, shared by the manifest and the log line. Two would
+            # mean a reader comparing the log against _manifest.json sees different strings
+            # for the same object and has to work out whether that means anything.
+            skip_path = (rel_dir + "/" + name).replace("\\", "/").lstrip("/")
+
             self.skips.append({
                 # No guid. CODESYS re-mints the project-level __VisualizationStyle's guid on
                 # EVERY open, so recording it here made _manifest.json differ on every export
@@ -188,11 +194,10 @@ class Exporter(object):
                 # type are what the report is keyed on.
                 "name": name,
                 "type": obj_type,
-                "path": (rel_dir + "/" + name).replace("\\", "/").lstrip("/"),
+                "path": skip_path,
                 "reason": reason,
             })
-            emit({"t": "skip", "path": rel_dir + "/" + name,
-                  "type": obj_type, "reason": reason})
+            emit({"t": "skip", "path": skip_path, "type": obj_type, "reason": reason})
             return
 
         if form == FORM_CONTAINER:
@@ -243,6 +248,14 @@ class Exporter(object):
         if form != FORM_NATIVE_R:
             for child in safe(lambda: obj.get_children(), []) or []:
                 self.handle(child, rel_dir, name)
+
+
+def count_files(path):
+    """How many files are under a directory. Cheap, and only ever used for a log line."""
+    total = 0
+    for _dir_path, _dir_names, file_names in os.walk(path):
+        total += len(file_names)
+    return total
 
 
 def coverage_markdown(project, records, skips, warnings):
@@ -344,6 +357,9 @@ def main():
     # the existing on-disk copy.
     staging = out_root + ".versio_staging"
     if os.path.isdir(staging):
+        # Left behind by an export that was killed. Said out loud: it is evidence that a
+        # previous run did not finish, and finding out silently is finding out never.
+        emit({"t": "staging-cleared", "path": staging, "files": count_files(staging)})
         shutil.rmtree(staging)
     os.makedirs(staging)
 
@@ -381,9 +397,20 @@ def main():
                coverage_markdown(manifest["project"], ex.records, ex.skips, ex.warnings))
 
     # Swap staging into place only once the export completed.
+    #
+    # This is the most destructive thing an export does - it deletes the whole export
+    # directory and puts a new one in its place - and it used to happen with nothing
+    # written down at all. If it half-failed, the log said the export succeeded and the
+    # directory disagreed, with no line anywhere to connect the two.
+    replaced = count_files(out_root) if os.path.isdir(out_root) else 0
+    emit({"t": "swap", "out": out_root, "replacing": replaced,
+          "with": count_files(staging)})
+
     if os.path.isdir(out_root):
         shutil.rmtree(out_root)
     os.rename(staging, out_root)
+
+    emit({"t": "swapped", "out": out_root, "files": count_files(out_root)})
 
     proj.close()
     gaps = len([s for s in ex.skips if s["reason"] == SKIP_GAP])
