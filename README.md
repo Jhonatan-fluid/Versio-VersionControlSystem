@@ -39,11 +39,12 @@ Export is automatic and deterministic. Import applies edited text back into the 
 | Change detection — watcher + safety poll + overflow rescan | ✅ `FileChangeWatcher` |
 | Design system tokens, light and dark | ✅ `src/Versio.App/Theme/` |
 | Logging — ring buffer, correlation ids, heartbeat, rolling file | ✅ 20 tests |
-| Shell — top bar, rail, changed files, diff, log console | ✅ opens a real repo, shows real git state |
+| Shell — repo/branch dropdowns, rail, changed files, diff, collapsible log | ✅ opens a real repo, shows real git state |
 | **Shell wired to the sync engine** — export, import, commit gate | ⛔ not built |
-| Git side panel, project tree, splash screen | ⛔ not built |
+| Git side panel, project tree, diff highlighting, packaging | ⛔ not built |
 
-Known limitations are recorded honestly in [docs/PHASE0-FINDINGS.md](docs/PHASE0-FINDINGS.md) — including one real CODESYS mutation (`Core2` in task configuration) that keeps task config **diff-only** for now.
+**[docs/STATUS.md](docs/STATUS.md)** has the current state and the route to completion.
+**[docs/PHASE0-FINDINGS.md](docs/PHASE0-FINDINGS.md)** records the measurements and the known limitations — including one real CODESYS mutation (`Core2` in task configuration) that keeps task config **diff-only** for now.
 
 ---
 
@@ -78,8 +79,13 @@ Versio.sln
 ├─ fixtures/projects/           the CODESYS project the suite runs against
 └─ docs/
    ├─ PLAN.md                   the full architecture plan
+   ├─ STATUS.md                 where the project is and what remains
    └─ PHASE0-FINDINGS.md        measured results and known limitations
 ```
+
+`Versio.App` holds the WPF shell: `Theme/tokens/` for the design tokens, `Theme/controls/` for
+control styles, `ViewModels/`, `Views/`, and `Spikes/` for the tree performance harness
+(`Versio.exe --spike --measure`).
 
 ### The one architectural rule
 

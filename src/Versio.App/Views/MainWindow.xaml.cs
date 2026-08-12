@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using Versio.App.Theme;
 using Versio.App.ViewModels;
 
@@ -15,9 +16,8 @@ public partial class MainWindow : Window
         _shell = shell;
         DataContext = shell;
 
-        // Auto-scroll on append, unless the user paused it. Scrolling the log is done here
-        // rather than in the view model because it is a view concern - the view model has
-        // no business knowing a ScrollViewer exists.
+        // Auto-scroll on append, unless paused. Done here rather than in the view model
+        // because a ScrollViewer is a view concern.
         shell.Log.RowsAppended += () =>
         {
             if (!shell.Log.IsPaused && shell.Log.Rows.Count > 0)
@@ -25,6 +25,33 @@ public partial class MainWindow : Window
                 LogList.ScrollIntoView(shell.Log.Rows[^1]);
             }
         };
+
+        shell.Log.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(LogViewModel.IsExpanded))
+            {
+                ApplyLogVisibility();
+            }
+        };
+
+        ApplyLogVisibility();
+        SyncThemeRadios();
+
+        InputBindings.Add(new KeyBinding(shell.RefreshCommand, Key.F5, ModifierKeys.None));
+    }
+
+    /// <summary>
+    /// Collapse the log list, leaving its header in place.
+    /// </summary>
+    /// <remarks>
+    /// The header stays visible so the panel can be reopened and the entry count is still
+    /// readable — collapsing the whole thing to nothing leaves no obvious way back.
+    /// </remarks>
+    private void ApplyLogVisibility()
+    {
+        LogList.Visibility = _shell.Log.IsExpanded ? Visibility.Visible : Visibility.Collapsed;
+        LogChevron.Text = (string)FindResource(
+            _shell.Log.IsExpanded ? "Icon.ChevronDown" : "Icon.ChevronUp");
     }
 
     private async void OnOpenRepository(object sender, RoutedEventArgs e)
@@ -43,6 +70,34 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnToggleTheme(object sender, RoutedEventArgs e) =>
-        ThemeManager.Apply(ThemeManager.Current == AppTheme.Dark ? AppTheme.Light : AppTheme.Dark);
+    private void OnOpenSettings(object sender, RoutedEventArgs e)
+    {
+        SyncThemeRadios();
+        SettingsPopup.IsOpen = !SettingsPopup.IsOpen;
+    }
+
+    private void OnThemeChanged(object sender, RoutedEventArgs e)
+    {
+        if (sender is RadioButton { Tag: string tag } &&
+            Enum.TryParse<AppTheme>(tag, out var theme))
+        {
+            ThemeManager.Apply(theme);
+        }
+    }
+
+    /// <summary>Reflect the active theme without re-triggering Checked handlers.</summary>
+    private void SyncThemeRadios()
+    {
+        ThemeSystem.Checked -= OnThemeChanged;
+        ThemeLight.Checked -= OnThemeChanged;
+        ThemeDark.Checked -= OnThemeChanged;
+
+        ThemeSystem.IsChecked = ThemeManager.Current == AppTheme.System;
+        ThemeLight.IsChecked = ThemeManager.Current == AppTheme.Light;
+        ThemeDark.IsChecked = ThemeManager.Current == AppTheme.Dark;
+
+        ThemeSystem.Checked += OnThemeChanged;
+        ThemeLight.Checked += OnThemeChanged;
+        ThemeDark.Checked += OnThemeChanged;
+    }
 }

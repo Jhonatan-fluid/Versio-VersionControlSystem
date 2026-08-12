@@ -1991,6 +1991,16 @@ Pure Python + a throwaway console app. **No UI, no architecture.** Every one of 
 > - If the gap types (0.16) cannot be exported *or* carried by the template, "truly lossless" is not reachable and the contract in §3.9 must be renegotiated before any C# is written.
 > - Without the corpus (0.20) there is no way to know any of the above is still true next month.
 
+> ## 📍 Execution status — 2026-08-11
+>
+> **Phase 0 is complete and every gate passed.** The findings — including the ones that reversed decisions in this plan — are in [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md).
+>
+> **Phase 1 is largely complete.** `Versio.Core` (391 tests, 43 ms), `Versio.Infrastructure` driving real CODESYS and real `git.exe` (21 integration tests), the §9.0 design system, the §10 logging subsystem, and a shell that opens a repository and shows real git state. **R25 closed with a measurement**: 94.7 ms virtualized versus 10,635 ms at the WPF defaults.
+>
+> **Next milestone: wire the shell to `SyncOrchestrator`.** Everything beneath it exists, so this is assembly rather than invention. Current state and the full route to completion live in [`STATUS.md`](STATUS.md).
+>
+> Three decisions were reversed by measurement, each recorded where it was originally made: `On git action` became the default sync mode (§7.4.6), LibGit2Sharp was dropped for `git.exe` throughout (§8.1), and macOS was cut so WPF could stay (§13.7).
+
 ### Phase 1 — Foundations, shell + git (4–5 weeks)
 Solution skeleton with the dependency rules and arch tests in place **from commit one**; **pinned SDK, lock files and a self-contained single-file `Versio.exe` publish from the first week** (§13.6); **a virtualized-`TreeView` spike at 5,000 synthetic nodes before any other UI work** (R25); the §9.0 design system built before any screen; splash, shell, top bar with repo MRU / open / clone-with-verification, branch dropdown, **tree pane in path-hierarchy mode**, diff view, git side panel, full logging with heartbeat, collapsible log console. **No CODESYS at all.** You end with a usable git client — independently valuable, and it de-risks the UI before the hard sync logic lands. The tree is built against plain file paths now and re-pointed at the manifest in Phase 2, so the control is proven before the data model lands on it.
 

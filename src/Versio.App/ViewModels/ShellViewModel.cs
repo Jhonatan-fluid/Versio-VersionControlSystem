@@ -7,6 +7,31 @@ using Versio.Infrastructure.Git;
 
 namespace Versio.App.ViewModels;
 
+/// <summary>An entry in the repository dropdown.</summary>
+public sealed class RepoEntry(string path)
+{
+    public string Path { get; } = path;
+
+    public string Name { get; } = System.IO.Path.GetFileName(path.TrimEnd('\\', '/'));
+
+    /// <summary>Parent directory, shown beneath the name so two repos with the same folder
+    /// name are still distinguishable.</summary>
+    public string Location { get; } = System.IO.Path.GetDirectoryName(path) ?? path;
+}
+
+/// <summary>An entry in the branch dropdown.</summary>
+public sealed class BranchEntry(BranchInfo branch)
+{
+    public string Name { get; } = branch.Name;
+
+    public bool IsCurrent { get; } = branch.IsCurrent;
+
+    public string Tracking { get; } = branch.Upstream ?? "no upstream";
+
+    public string AheadBehind { get; } =
+        branch is { Ahead: 0, Behind: 0 } ? string.Empty : $"↑{branch.Ahead} ↓{branch.Behind}";
+}
+
 /// <summary>One row in the changed-files list.</summary>
 public sealed class ChangeRow(FileChange change)
 {
@@ -82,11 +107,54 @@ public sealed class ShellViewModel : ObservableObject
 
     public ObservableCollection<ChangeRow> Changes { get; } = [];
 
-    public ObservableCollection<string> RecentRepositories { get; } = [];
+    /// <summary>Most-recently-opened repositories, newest first. Backs the top-bar dropdown.</summary>
+    public ObservableCollection<RepoEntry> RecentRepositories { get; } = [];
+
+    public ObservableCollection<BranchEntry> Branches { get; } = [];
 
     public AsyncCommand OpenRepositoryCommand { get; }
 
     public AsyncCommand RefreshCommand { get; }
+
+    private RepoEntry? _selectedRepository;
+    private BranchEntry? _selectedBranch;
+    private bool _suppressSelectionSideEffects;
+
+    /// <summary>Selecting a different entry switches repository. Guarded, because
+    /// repopulating the list also fires this setter and would recurse.</summary>
+    public RepoEntry? SelectedRepository
+    {
+        get => _selectedRepository;
+        set
+        {
+            if (!SetProperty(ref _selectedRepository, value) || _suppressSelectionSideEffects)
+            {
+                return;
+            }
+
+            if (value is not null && value.Path != _repositoryPath)
+            {
+                _ = OpenAsync(value.Path);
+            }
+        }
+    }
+
+    public BranchEntry? SelectedBranch
+    {
+        get => _selectedBranch;
+        set
+        {
+            if (!SetProperty(ref _selectedBranch, value) || _suppressSelectionSideEffects)
+            {
+                return;
+            }
+
+            if (value is not null && !value.IsCurrent)
+            {
+                _ = CheckoutAsync(value.Name);
+            }
+        }
+    }
 
     public string? RepositoryPath
     {
@@ -162,12 +230,45 @@ public sealed class ShellViewModel : ObservableObject
         _git = client;
         RepositoryPath = path;
 
-        if (!RecentRepositories.Contains(path))
+        _suppressSelectionSideEffects = true;
+        try
         {
-            RecentRepositories.Insert(0, path);
+            var existing = RecentRepositories.FirstOrDefault(r => r.Path == path);
+            if (existing is null)
+            {
+                existing = new RepoEntry(path);
+                RecentRepositories.Insert(0, existing);
+            }
+
+            SelectedRepository = existing;
+        }
+        finally
+        {
+            _suppressSelectionSideEffects = false;
         }
 
         RefreshCommand.RaiseCanExecuteChanged();
+        await RefreshAsync().ConfigureAwait(true);
+    }
+
+    private async Task CheckoutAsync(string branch)
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        _logger.Info(LogCategory.Git, $"checkout {branch}");
+        var result = await _git.CheckoutAsync(branch, CancellationToken.None).ConfigureAwait(true);
+
+        if (!result.Success)
+        {
+            // Almost always a dirty working tree. Say so rather than failing silently and
+            // leaving the dropdown showing a branch we are not on.
+            _logger.Warn(LogCategory.Git, $"checkout failed: {result.FailureReason}");
+            StatusSummary = result.FailureReason ?? "checkout failed";
+        }
+
         await RefreshAsync().ConfigureAwait(true);
     }
 
@@ -211,12 +312,41 @@ public sealed class ShellViewModel : ObservableObject
                 ? "No changes"
                 : $"{status.Changes.Count} changed";
 
+            await LoadBranchesAsync().ConfigureAwait(true);
+
             _logger.Info(LogCategory.Git,
                 $"status: {status.Changes.Count} changed on {BranchName}");
         }
         finally
         {
             IsBusy = false;
+        }
+    }
+
+    private async Task LoadBranchesAsync()
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        var branches = await _git.BranchesAsync(CancellationToken.None).ConfigureAwait(true);
+
+        _suppressSelectionSideEffects = true;
+        try
+        {
+            Branches.Clear();
+            foreach (var branch in branches.OrderByDescending(b => b.IsCurrent)
+                                           .ThenBy(b => b.Name, StringComparer.Ordinal))
+            {
+                Branches.Add(new BranchEntry(branch));
+            }
+
+            SelectedBranch = Branches.FirstOrDefault(b => b.IsCurrent);
+        }
+        finally
+        {
+            _suppressSelectionSideEffects = false;
         }
     }
 
