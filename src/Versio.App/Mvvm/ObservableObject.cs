@@ -91,6 +91,62 @@ public sealed class AsyncCommand(
         CanExecuteChanged?.Invoke(this, EventArgs.Empty);
 }
 
+/// <summary>
+/// An async command that acts on the thing that invoked it.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The parameterless <see cref="AsyncCommand"/> covers a button whose meaning is fixed. This
+/// covers one repeated across rows, where the row is the argument — staging a particular hunk
+/// of a diff, which is the case it was written for.
+/// </para>
+/// <para>
+/// Sharing one instance across every row is the point: a command per row would mean building
+/// one per hunk of a 33,644-line diff, and the recycling the diff view depends on would then
+/// be handing containers commands that belonged to a line they no longer show.
+/// </para>
+/// </remarks>
+public sealed class AsyncCommand<T>(
+    Func<T, Task> execute,
+    Func<T, bool>? canExecute = null,
+    Action<Exception>? onError = null) : ICommand
+{
+    private bool _isRunning;
+
+    public event EventHandler? CanExecuteChanged;
+
+    public bool CanExecute(object? parameter) =>
+        !_isRunning && parameter is T typed && (canExecute?.Invoke(typed) ?? true);
+
+    public async void Execute(object? parameter)
+    {
+        if (parameter is not T typed || !CanExecute(parameter))
+        {
+            return;
+        }
+
+        _isRunning = true;
+        RaiseCanExecuteChanged();
+
+        try
+        {
+            await execute(typed).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            onError?.Invoke(ex);
+        }
+        finally
+        {
+            _isRunning = false;
+            RaiseCanExecuteChanged();
+        }
+    }
+
+    public void RaiseCanExecuteChanged() =>
+        CanExecuteChanged?.Invoke(this, EventArgs.Empty);
+}
+
 /// <summary>Synchronous command, for UI-only actions such as toggling a panel.</summary>
 public sealed class RelayCommand(Action execute, Func<bool>? canExecute = null) : ICommand
 {

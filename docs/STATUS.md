@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-12 · **Commits:** 20 · **Tests:** 644 unit + 65 integration, 0 skipped
+**Date:** 2026-08-12 · **Commits:** 20 · **Tests:** 679 unit + 83 integration, 0 skipped
 
 > One integration test, `RepositoryWatcherTests.A_deleted_file_is_reported`, is **flaky under
 > full-suite load** — see Findings. It passes in isolation and failed once during a complete
@@ -24,7 +24,7 @@ end against the real fixture with real CODESYS.
   Domain core         ████████████████████  644 tests, 290 ms
   Vendor seam         ████████████████████  enforced from assembly metadata
   Infrastructure      ████████████████████  drives real CODESYS + real git
-  Desktop shell       ████████████████░░░░  git, diff, tree, automatic sync
+  Desktop shell       ██████████████████░░  one project view, full git surface, diff
   Packaging           ██░░░░░░░░░░░░░░░░░░  icon and publish profile only
 ```
 
@@ -89,11 +89,11 @@ format; `.gitattributes` covers every registered vendor's extensions.
 
 | | |
 |---|---|
-| **Git panel** | Staging, commit message with a 50/72 guide, Ctrl+Enter, fetch / pull / push. One operation at a time across every button — a shared counted flag, so a 17–31 s export also holds them |
+| **Project view** | **One panel.** Every tracked project with its full CODESYS-shaped object tree beneath it, and every other changed file beside them. Changes marked and rolled up; search across both; a `.project` row reports its export rather than a diff it cannot have |
+| **Git panel** | Staging, commit message with a 50/72 guide, Ctrl+Enter, fetch / pull / push, stash, recent commits with click-to-diff. One operation at a time across every button — a shared counted flag, so a 17–31 s export also holds them |
 | **Commit gate** | A stale mirror is exported *and staged* before the commit. Push releases the direction locks; commit does not, and the panel says so |
-| **Project tree** | The project as CODESYS structures it. One node per object with its layers, roll-up badges over descendants, changed-only filter, search, selection driving the diff |
-| **Diff view** | Eleven languages, new files rendered entirely green, *Show full file*, rows built only when realised |
-| **Changed files** | Follows the working tree by itself; rows reconciled in place so the selection survives |
+| **Diff view** | Eleven languages, new files rendered entirely green, *Show full file*, rows built only when realised, **per-hunk stage and unstage** |
+| **PLC state** | Toolchain, direction lock, staleness and heartbeat, folded into the project panel as facts rather than controls. Two buttons survive: export what is stale, and acknowledge a failure |
 | **Chrome** | One app-wide progress bar with a caption, maximized on open, log console collapsed, heartbeat during long runs |
 | **Logging** | Ring buffer, correlation ids, rolling file from startup, crash handlers on all three .NET channels |
 
@@ -101,45 +101,34 @@ format; `.gitattributes` covers every registered vendor's extensions.
 
 ## What remains, in dependency order
 
-### 1. Fold the sync panel into the changed-files view
+### 1. Finish the git surface
 
-The panel is now a control surface for something that no longer needs controlling. The intended
-shape:
+- ~~Stash~~, ~~recent commits with click-to-diff~~, ~~per-hunk staging~~ — **done**
+- Branch creation, and the clone-with-verification dialog. `CreateBranchAsync` and
+  `VerifyRemoteAsync` are both written and tested; neither has a surface
+- Discard, with a confirmation. `DiscardAsync` exists and is deliberately unreachable until
+  there is a dialog worth trusting in front of it
 
-- The changed-files panel is the only view; the sync panel disappears from the rail
-- A `.project` row does not render a diff — it reports that its export succeeded
-- Its export directory renders as a **full** CODESYS-shaped tree: every object, with the
-  changed ones highlighted, rather than the changed-only filter that exists today
-- Objects render **lazily** — nothing built until the user opens it
-
-`TreeRow` currently builds its whole subtree in its constructor, so lazy expansion is a real
-change rather than a flag.
-
-### 2. Finish the git surface
-
-- Stash, and the recent-commits list with click-to-diff
-- Branch creation, clone-with-verification dialog
-- Per-hunk staging — needs the diff view to own a selection first
-
-### 3. Finish the project tree
+### 2. Finish the project tree
 
 - `config/*.yaml` parsed back into device nodes, so a changed EtherCAT cycle time appears under
   the device that owns it rather than as "config/devices.yaml modified"
 - A layer switcher in the diff pane (`ST | native`) — objects already carry several layers and
   there is no way to see the other one
-- Context menu, and expansion state persisted per repository
+- Context menu, and expansion state persisted per repository. It already survives a refresh;
+  it does not yet survive the window closing
 
-### 4. Diff view
+### 3. Diff view
 
 Side-by-side mode, and word-level intra-line diff.
 
-### 5. A second vendor
+### 4. A second vendor
 
 The seam is ready and unproven. The first real implementation is the only thing that will show
 whether `PlcJob` and `PlcResult` are the right shape — TwinCAT is the cheapest test of that,
 being CODESYS-derived, and Studio 5000 the harshest.
 
-### 6. Packaging
+### 5. Packaging
 
 - ~~Application icon~~ — **done.** `assets/versio.ico`, 8 sizes, generated by
   `tools/New-VersioIcon.ps1` and embedded via `<ApplicationIcon>`
@@ -147,7 +136,7 @@ being CODESYS-derived, and Studio 5000 the harshest.
 - Velopack: `Setup.exe`, MSI for managed sites, delta updates
 - Code signing — **procurement lead time, not engineering time; start early**
 
-### 7. Corpus breadth
+### 6. Corpus breadth
 
 More fixture projects. Every field bug becomes a fixture before it is fixed.
 
@@ -156,6 +145,65 @@ More fixture projects. Every field bug becomes a fixture before it is fixed.
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### `git apply --cached` reads the index, not the working tree
+
+Written down because the first test of per-hunk staging asserted the opposite, and **failed**.
+It edited a file after reading its diff, then expected git to refuse the now-stale hunk. Git
+applied it happily: `--cached` takes the *index* as the patch's pre-image, so a save landing
+between the diff being read and the button being pressed does not invalidate anything — what
+gets staged is still exactly the hunk that was on screen, which is the behaviour you want and
+not the one the test claimed to protect.
+
+The staleness that does matter is the index moving, and that is refused. Both are now pinned,
+and the pair is why `--unidiff-zero` is not passed: git's context check is the only thing
+standing between a patch and the wrong offset.
+
+Worth keeping as a finding rather than a fixed test, because a passing test would have
+documented a protection that does not exist.
+
+### Lazy tree rows are proportional to what is reachable, not to nothing
+
+`TreeRow` built its whole subtree in its constructor, which was affordable only while the tree
+was filtered to what had changed. Rendering the full CODESYS structure that way would build a
+row per object — thousands on a real machine — before the window drew anything.
+
+Children are now built on first access. **That is not zero cost, and it is worth being precise
+about why:** WPF evaluates `Children` when it realises a container, because it cannot decide
+whether to draw an expander without asking. A visible collapsed folder therefore still costs
+one row per child; its grandchildren cost nothing. The win is O(objects in the project) →
+O(visible rows × branching), which is the whole point, and claiming more than that would be
+the same kind of decorative virtualization the diff view already had once.
+
+### A view that rebuilds on every refresh drops the selection
+
+The project tree is rebuilt whenever git's status is re-read — which, now that it is the only
+view, is several times a minute while somebody works. Most of those refreshes find nothing:
+they fire because a file was saved in an editor.
+
+Rebuilding anyway would clear the TreeView's selection over and over, which is precisely the
+regression the changed-files list was reconciled in place to avoid; the fold would have
+reintroduced it one panel to the left. The tree is now derived from a signature — the changed
+paths, the search text, the bindings and each manifest's write time — and an identical
+signature rebuilds nothing. Measured live: **five refreshes, two rebuilds**, and the three
+no-op saves in between rebuilt nothing.
+
+Expansion state is kept separately, keyed by path, and records both what was opened and what
+was closed. One set cannot express "the user deliberately shut a folder the default rule wants
+open", and the default rule changes its mind every time that folder's change state moves.
+
+### A file under an export tree that the manifest does not describe
+
+`_manifest.json` changes on every export and describes the other files rather than appearing
+among them, so no object node claims it. Dropping it would have been worse than showing it: a
+file git reports as changed, in a directory Versio owns, appearing nowhere in the panel is
+indistinguishable from Versio having lost it. Such files hang off their project as plain rows.
+
+The unit test that asserts every changed path is represented exactly once did **not** fail when
+the rule was deliberately removed — the loose-file fallback caught the file at the top level
+instead, so coverage held by a second mechanism while placement was wrong. Placement is
+asserted separately, and the coverage test was re-verified against a different break (removing
+the claim on manifest files, which duplicates every object) before it was believed.
 
 ### The hash gate could not see a text edit
 
@@ -265,7 +313,8 @@ Both fixed and pinned by a test that reads the bytes back.
 ### A vacuous check, caught in the act
 
 While investigating whether the export's line endings would churn through git, the first
-measurement used `grep -c $''` and reported that all 34 lines of a `.st` file contained a
+measurement used `grep -c $'
+'` and reported that all 34 lines of a `.st` file contained a
 carriage return. They contain none: the pattern matched every line rather than CR-containing
 ones. Measured again with `tr -cd` **and a known-CRLF control file**, the export is LF
 throughout and round-trips through git unchanged.
@@ -321,13 +370,20 @@ state machine are tested in milliseconds rather than by causing real crashes.
 a paragraph in a README — because it was a paragraph in a README, and it had already stopped
 being true.
 
-**Green results are distrusted until they can fail.** Seven vacuous passes have been caught
+**Green results are distrusted until they can fail.** Eight vacuous passes have been caught
 this way: a round-trip that succeeded because the import silently did nothing; equivalence tests
 that "passed" by skipping; a tree spike that measured a collapsed tree; a `Core2` mutation that
 looked absent because the import had errored; a scenario suite that simulated text edits by
 rewriting the one file no human touches; a shell check that reported success because a
-process started rather than because it did its job; and a line-ending measurement whose pattern
-matched every line rather than the ones it claimed to count.
+process started rather than because it did its job; a line-ending measurement whose pattern
+matched every line rather than the ones it claimed to count; and a coverage assertion over the
+workspace tree that survived the deliberate removal of the rule it existed to protect, because
+a fallback one level up caught the file in the wrong place.
+
+The instruments get the same treatment. The clean `--trace-bindings` run over the folded panel
+was believed only after a deliberately misspelt binding was added, the app rerun, and the
+listener seen to write the error — because the tracer reports nothing at all when it is happy,
+and "no file" is otherwise indistinguishable from "no listener attached".
 
 **A silent failure is a bug even when the code is correct.** The rolling file sink was written,
 reviewed and tested by eye — and never instantiated, so nothing reached disk while the log

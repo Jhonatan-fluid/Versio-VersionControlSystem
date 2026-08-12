@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using Versio.App.Mvvm;
 using Versio.Core.Abstractions;
+using Versio.Core.Diff;
 using Versio.Core.Git;
 using Versio.Core.Logging;
 using Versio.Core.Sync;
@@ -16,16 +17,18 @@ using Versio.Infrastructure.Watching;
 namespace Versio.App.ViewModels;
 
 /// <summary>Which panel the left rail is showing.</summary>
+/// <remarks>
+/// Two, not three. The PLC panel was folded into the project view: it had become a row of
+/// buttons for operations that now run on their own, and its object tree was answering the
+/// same question as the changed-files list one pane to the left.
+/// </remarks>
 public enum ShellPanel
 {
-    /// <summary>Flat list of everything git reports as changed.</summary>
-    Changes,
+    /// <summary>The repository as CODESYS structures it, plus every other changed file.</summary>
+    Project,
 
-    /// <summary>Staging, commit, and the remote operations.</summary>
+    /// <summary>Staging, commit, stash, history, and the remote operations.</summary>
     Git,
-
-    /// <summary>PLC export/import state: the direction lock, last sync, coverage.</summary>
-    Sync,
 }
 
 /// <summary>An entry in the repository dropdown.</summary>
@@ -157,14 +160,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     private string _statusSummary = "No repository open";
     private string _aheadBehind = string.Empty;
     private string _selectedDiff = string.Empty;
-    private ChangeRow? _selectedChange;
     private bool _isBusy;
     private bool _showFullFile;
     private string? _fileLogDirectory;
     private string _watchState = string.Empty;
     private DateTimeOffset? _lastRefreshUtc;
     private string _lastRefreshText = string.Empty;
-    private ShellPanel _activePanel = ShellPanel.Changes;
+    private ShellPanel _activePanel = ShellPanel.Project;
 
     public ShellViewModel(VersioLogger logger, LogViewModel log,
                           Func<string, GitCliClient>? gitFactory = null,
@@ -186,16 +188,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         BuildGitCommands();
 
-        // Picking an object in the project tree shows its diff in the same pane the
-        // changed-files list uses. One diff pane, whichever way the file was reached.
-        Sync.NodeSelected += row =>
-        {
-            if (row.PrimaryFile is { } path)
-            {
-                SelectedDiffPath = path;
-                _ = LoadDiffForPathAsync(path);
-            }
-        };
+        // Picking a row in the project tree shows it in the diff pane. One pane, whichever
+        // way the row was reached.
+        Sync.NodeSelected += ShowNode;
 
         logger.Info(LogCategory.App, "Versio started");
     }
@@ -290,9 +285,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
     public string PanelTitle => _activePanel switch
     {
-        ShellPanel.Changes => "CHANGED FILES",
+        ShellPanel.Project => "PROJECT",
         ShellPanel.Git => "GIT",
-        ShellPanel.Sync => "PLC SYNC",
         _ => string.Empty,
     };
 
@@ -380,9 +374,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
             // Re-read rather than re-render: the extra context has to come from git, and the
             // currently displayed diff simply does not contain it.
-            if (SelectedChange is { } row)
+            if (!string.IsNullOrEmpty(SelectedDiffPath))
             {
-                _ = LoadDiffAsync(row);
+                _ = ShowPathAsync(SelectedDiffPath, _selectedDiffStaged);
             }
         }
     }
@@ -415,14 +409,38 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref _lastRefreshText, value);
     }
 
-    public ChangeRow? SelectedChange
+    private ChangeRow? _selectedStaged;
+    private ChangeRow? _selectedUnstaged;
+
+    /// <summary>
+    /// The row picked in the git panel's staged list.
+    /// </summary>
+    /// <remarks>
+    /// Two properties rather than one shared selection, because they are two list boxes and
+    /// WPF will not let them agree. The pair exists at all because the git panel used to be
+    /// the one place in the app where clicking a file did nothing — the changed-files list it
+    /// duplicates has always opened a diff, and the difference read as a dead control.
+    /// </remarks>
+    public ChangeRow? SelectedStaged
     {
-        get => _selectedChange;
+        get => _selectedStaged;
         set
         {
-            if (SetProperty(ref _selectedChange, value) && value is not null)
+            if (SetProperty(ref _selectedStaged, value) && value is not null)
             {
-                _ = LoadDiffAsync(value);
+                _ = ShowPathAsync(value.Path, staged: true);
+            }
+        }
+    }
+
+    public ChangeRow? SelectedUnstaged
+    {
+        get => _selectedUnstaged;
+        set
+        {
+            if (SetProperty(ref _selectedUnstaged, value) && value is not null)
+            {
+                _ = ShowPathAsync(value.Path, staged: false);
             }
         }
     }
@@ -714,6 +732,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         CommitAndPushCommand = new AsyncCommand(
             () => CommitAsync(push: true), CanCommit, ReportError);
 
+        BuildStashCommands();
+
         PullCommand = new AsyncCommand(PullAsync, () => Ready, ReportError);
         PushCommand = new AsyncCommand(() => PushAsync(afterCommit: false),
                                        () => Ready, ReportError);
@@ -766,6 +786,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         PushCommand.RaiseCanExecuteChanged();
         FetchCommand.RaiseCanExecuteChanged();
         RefreshCommand.RaiseCanExecuteChanged();
+        StashCommand.RaiseCanExecuteChanged();
+        ApplyStashCommand.RaiseCanExecuteChanged();
+        PopStashCommand.RaiseCanExecuteChanged();
+        DropStashCommand.RaiseCanExecuteChanged();
+        HunkCommand.RaiseCanExecuteChanged();
     }
 
     /// <summary>Stage or unstage every row in a list.</summary>
@@ -973,6 +998,336 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
     }
 
+    // ------------------------------------------------------- stash, history, hunks
+
+    /// <summary>Everything currently stashed, newest first.</summary>
+    public ObservableCollection<StashEntry> Stashes { get; } = [];
+
+    /// <summary>A window onto the branch's history, newest first.</summary>
+    public ObservableCollection<CommitEntry> Commits { get; } = [];
+
+    /// <summary>How much history the panel keeps. A window, not the log.</summary>
+    private const int HistoryDepth = 40;
+
+    private StashEntry? _selectedStash;
+    private CommitEntry? _selectedCommit;
+    private string _stashMessage = string.Empty;
+    private bool _stashUntracked;
+
+    public AsyncCommand StashCommand { get; private set; } = null!;
+    public AsyncCommand ApplyStashCommand { get; private set; } = null!;
+    public AsyncCommand PopStashCommand { get; private set; } = null!;
+    public AsyncCommand DropStashCommand { get; private set; } = null!;
+
+    /// <summary>Stage or unstage one hunk of the open diff, by its index.</summary>
+    public AsyncCommand<int> HunkCommand { get; private set; } = null!;
+
+    /// <summary>
+    /// Asked before anything destroys work git cannot give back.
+    /// </summary>
+    /// <remarks>
+    /// A delegate set by the view rather than a message box here, for the same reason
+    /// <see cref="RepositoryRejected"/> is an event: a modal in the view model makes this
+    /// untestable and blocks whichever thread happened to call it. Unset means "no", so a
+    /// host that forgets to wire it destroys nothing.
+    /// </remarks>
+    public Func<string, string, bool>? ConfirmDestructive { get; set; }
+
+    public StashEntry? SelectedStash
+    {
+        get => _selectedStash;
+        set
+        {
+            if (SetProperty(ref _selectedStash, value))
+            {
+                RaiseGitCommandStates();
+            }
+        }
+    }
+
+    /// <summary>Picking a commit shows its patch.</summary>
+    public CommitEntry? SelectedCommit
+    {
+        get => _selectedCommit;
+        set
+        {
+            if (SetProperty(ref _selectedCommit, value) && value is not null)
+            {
+                _ = ShowCommitAsync(value);
+            }
+        }
+    }
+
+    /// <summary>Optional label for the next stash.</summary>
+    public string StashMessage
+    {
+        get => _stashMessage;
+        set => SetProperty(ref _stashMessage, value);
+    }
+
+    /// <summary>
+    /// Whether a stash also sweeps up files git has never seen.
+    /// </summary>
+    /// <remarks>
+    /// Off by default. An export tree that has never been committed is untracked, and so is
+    /// every scratch file and build artefact beside it — stashing those by default would
+    /// make the tree vanish, and it would come back on the pop as a surprise.
+    /// </remarks>
+    public bool StashUntracked
+    {
+        get => _stashUntracked;
+        set => SetProperty(ref _stashUntracked, value);
+    }
+
+    private void BuildStashCommands()
+    {
+        StashCommand = new AsyncCommand(StashAsync, () => Ready, ReportError);
+        ApplyStashCommand = new AsyncCommand(
+            () => RestoreStashAsync(drop: false), () => Ready && SelectedStash is not null,
+            ReportError);
+        PopStashCommand = new AsyncCommand(
+            () => RestoreStashAsync(drop: true), () => Ready && SelectedStash is not null,
+            ReportError);
+        DropStashCommand = new AsyncCommand(
+            DropStashAsync, () => Ready && SelectedStash is not null, ReportError);
+
+        HunkCommand = new AsyncCommand<int>(ApplyHunkAsync, _ => Ready && CanStageHunks,
+                                            ReportError);
+    }
+
+    private async Task StashAsync()
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        _logger.Click("Git.Stash");
+        using var busy = Busy.Begin("Stashing…");
+
+        var result = await _git
+            .StashPushAsync(StashMessage, StashUntracked, CancellationToken.None)
+            .ConfigureAwait(true);
+
+        if (!result.Success)
+        {
+            StatusSummary = result.FailureReason ?? "the stash failed";
+            return;
+        }
+
+        // Cleared only on success, like the commit message: a refused stash that also threw
+        // away what the user typed is two losses for one mistake.
+        StashMessage = string.Empty;
+
+        // A stash reverts the working tree, which for a tracked project means the exported
+        // mirror is now behind the project again. Saying so beats letting the panel imply
+        // everything is level.
+        StatusSummary = "Stashed. The working tree is back to HEAD.";
+        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Restore a stash, optionally dropping it.
+    /// </summary>
+    /// <remarks>
+    /// The reference is re-read rather than remembered. Stash names are positional — dropping
+    /// <c>stash@{0}</c> renumbers everything below it — so a name held across a refresh can
+    /// point at a different entry than the row the user is looking at. Matching on the
+    /// subject and age finds the row again wherever it moved to.
+    /// </remarks>
+    private async Task RestoreStashAsync(bool drop)
+    {
+        if (_git is null || SelectedStash is not { } wanted)
+        {
+            return;
+        }
+
+        _logger.Click(drop ? "Git.StashPop" : "Git.StashApply");
+        using var busy = Busy.Begin(drop ? "Popping the stash…" : "Applying the stash…");
+
+        if (await ResolveStashAsync(wanted).ConfigureAwait(true) is not { } stashRef)
+        {
+            StatusSummary = "That stash is no longer there; nothing was applied.";
+            await LoadStashesAsync().ConfigureAwait(true);
+            return;
+        }
+
+        var result = await _git.StashApplyAsync(stashRef, drop, CancellationToken.None)
+            .ConfigureAwait(true);
+
+        StatusSummary = result.Success
+            ? drop ? "Popped." : "Applied. The stash is still there."
+            : result.FailureReason ?? "the stash could not be applied";
+
+        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+    }
+
+    private async Task DropStashAsync()
+    {
+        if (_git is null || SelectedStash is not { } wanted)
+        {
+            return;
+        }
+
+        // The one git operation in this panel that destroys work with no other copy of it.
+        var confirmed = ConfirmDestructive?.Invoke(
+            "Drop this stash?",
+            $"{wanted.Ref} — {wanted.Message}\n\n" +
+            "The contents are not recoverable afterwards.") ?? false;
+
+        if (!confirmed)
+        {
+            return;
+        }
+
+        _logger.Click("Git.StashDrop");
+        using var busy = Busy.Begin("Dropping the stash…");
+
+        if (await ResolveStashAsync(wanted).ConfigureAwait(true) is not { } stashRef)
+        {
+            StatusSummary = "That stash is no longer there.";
+            await LoadStashesAsync().ConfigureAwait(true);
+            return;
+        }
+
+        var result = await _git.StashDropAsync(stashRef, CancellationToken.None)
+            .ConfigureAwait(true);
+
+        StatusSummary = result.Success
+            ? "Dropped."
+            : result.FailureReason ?? "the stash could not be dropped";
+
+        await LoadStashesAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>Find a stash again by what it says rather than by where it was.</summary>
+    private async Task<string?> ResolveStashAsync(StashEntry wanted)
+    {
+        if (_git is null)
+        {
+            return null;
+        }
+
+        var current = await _git.StashListAsync(CancellationToken.None).ConfigureAwait(true);
+
+        return current.FirstOrDefault(s =>
+            string.Equals(s.Subject, wanted.Subject, StringComparison.Ordinal) &&
+            string.Equals(s.Age, wanted.Age, StringComparison.Ordinal))?.Ref;
+    }
+
+    private async Task LoadStashesAsync()
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        var stashes = await _git.StashListAsync(CancellationToken.None).ConfigureAwait(true);
+
+        Stashes.Clear();
+        foreach (var stash in stashes)
+        {
+            Stashes.Add(stash);
+        }
+
+        SelectedStash = null;
+    }
+
+    private async Task LoadCommitsAsync()
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        var commits = await _git.RecentCommitsAsync(HistoryDepth, CancellationToken.None)
+            .ConfigureAwait(true);
+
+        Commits.Clear();
+        foreach (var commit in commits)
+        {
+            Commits.Add(commit);
+        }
+    }
+
+    /// <summary>Show one commit's patch in the same pane everything else uses.</summary>
+    private async Task ShowCommitAsync(CommitEntry commit)
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        SelectedDiffPath = $"{commit.ShortId} {commit.Subject}";
+        _selectedDiffStaged = false;
+
+        // A commit is history: it is already staged, already committed, and there is nothing
+        // to move in or out of the index. Offering to stage a hunk of it would be offering
+        // something git cannot do.
+        CanStageHunks = false;
+
+        var patch = await _git.CommitPatchAsync(commit.Id, CancellationToken.None)
+            .ConfigureAwait(true);
+
+        SelectedDiff = string.IsNullOrWhiteSpace(patch)
+            ? $"{commit.ShortId} {commit.Subject}" + Environment.NewLine + Environment.NewLine +
+              "No patch to show. This is usually a merge commit, whose changes are a diff " +
+              "against several parents rather than one patch."
+            : patch;
+    }
+
+    /// <summary>
+    /// Stage or unstage one hunk of the open diff.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The patch is cut from the diff currently on screen, so what is staged is exactly what
+    /// the user is looking at. Re-reading the file here would open a window in which the two
+    /// disagreed, and the visible symptom would be a button that staged something else.
+    /// </para>
+    /// <para>
+    /// Direction follows the side the diff came from: a working-tree hunk goes into the index,
+    /// and an index hunk is reversed back out of it. <see cref="_selectedDiffStaged"/> is
+    /// remembered for exactly this, because guessing it would silently do the opposite of
+    /// what the button said.
+    /// </para>
+    /// </remarks>
+    private async Task ApplyHunkAsync(int hunkIndex)
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        var patch = HunkPatchBuilder.Build(SelectedDiff, hunkIndex);
+        if (patch is null)
+        {
+            StatusSummary = "That hunk is no longer in the diff on screen.";
+            return;
+        }
+
+        var unstaging = _selectedDiffStaged;
+        _logger.Click(unstaging ? "Diff.UnstageHunk" : "Diff.StageHunk");
+
+        using var busy = Busy.Begin(unstaging ? "Unstaging a hunk…" : "Staging a hunk…");
+
+        var result = await _git
+            .ApplyToIndexAsync(patch, reverse: unstaging, CancellationToken.None)
+            .ConfigureAwait(true);
+
+        if (!result.Success)
+        {
+            // Almost always a context mismatch: the file moved on under a diff that was read
+            // a moment ago. Git's own wording is the diagnosis, so it is passed through.
+            StatusSummary = result.FailureReason ?? "git would not apply that hunk";
+            _logger.Warn(LogCategory.Git, StatusSummary);
+            return;
+        }
+
+        StatusSummary = unstaging ? "Hunk unstaged." : "Hunk staged.";
+        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+    }
+
     /// <summary>Keep the two staging lists in step with the status just read.</summary>
     /// <remarks>
     /// Rebuilt rather than reconciled, unlike the changed-files list. These are short, and
@@ -1150,6 +1505,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
             UpdateStagingLists(status);
 
+            // The project tree is now the primary view, so it follows git the way the file
+            // list does. Handed the status just read rather than reading its own: a second
+            // `git status` per refresh is a process spawn for an answer we already have, and
+            // two reads a moment apart can disagree.
+            await Sync.RefreshTreeAsync(status).ConfigureAwait(true);
+
             StatusSummary = status.IsClean
                 ? "No changes"
                 : $"{status.Changes.Count} changed";
@@ -1157,19 +1518,22 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             _lastRefreshUtc = _clock.UtcNow;
             UpdateLastRefreshText();
 
-            // Branches cost a second git process and almost never move. Reload them only
-            // when something could plausibly have changed them.
+            // Branches, history and the stash each cost a git process and almost never move.
+            // Reload them only when something could plausibly have changed them - which a
+            // working-tree save, the common automatic refresh, cannot.
             if (manual || trigger == RefreshTrigger.GitMetadata || BranchName != previousBranch)
             {
                 await LoadBranchesAsync().ConfigureAwait(true);
+                await LoadCommitsAsync().ConfigureAwait(true);
+                await LoadStashesAsync().ConfigureAwait(true);
             }
 
-            // The open diff is as stale as the list was. Reload it when the selected row's
+            // The open diff is as stale as the list was. Reload it when the shown path's
             // status moved, or when the refresh was triggered by a write to that very file.
-            if (SelectedChange is { } selected &&
-                (changed.Contains(selected.Path) || Touches(paths, selected.Path)))
+            if (SelectedDiffPath is { Length: > 0 } shown &&
+                (changed.Contains(shown) || Touches(paths, shown)))
             {
-                await LoadDiffAsync(selected).ConfigureAwait(true);
+                await ShowPathAsync(shown, _selectedDiffStaged).ConfigureAwait(true);
             }
 
             // Automatic refreshes are the common case and mostly find nothing. Logging every
@@ -1309,9 +1673,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// Path the diff pane is showing, whichever list it was chosen from.
     /// </summary>
     /// <remarks>
-    /// The header used to read <c>SelectedChange.Path</c>, which is only ever set by the
-    /// changed-files list - so an object picked in the project tree showed its diff under the
-    /// previous file's name.
+    /// The header used to read the selected row's path, which only the changed-files list
+    /// ever set - so an object picked in the project tree showed its diff under the previous
+    /// file's name.
     /// </remarks>
     public string SelectedDiffPath
     {
@@ -1319,64 +1683,143 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref _selectedDiffPath, value);
     }
 
-    /// <summary>Load the diff for a path that did not come from a ChangeRow.</summary>
-    private async Task LoadDiffForPathAsync(string path)
+    private bool _canStageHunks;
+
+    /// <summary>
+    /// Whether the open diff is one git could apply a hunk from.
+    /// </summary>
+    /// <remarks>
+    /// False for an untracked file, whose diff came from <c>--no-index</c> against
+    /// <c>/dev/null</c>. <c>git apply --cached</c> refuses that patch, and a button that
+    /// produced an error every time would be worse than no button - <c>git add</c> is how a
+    /// new file is staged, and there are no partial additions to choose between anyway.
+    /// </remarks>
+    public bool CanStageHunks
+    {
+        get => _canStageHunks;
+        private set
+        {
+            if (SetProperty(ref _canStageHunks, value))
+            {
+                HunkCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    private string _hunkAction = "Stage hunk";
+
+    /// <summary>
+    /// What the per-hunk button says, which is also what it will do.
+    /// </summary>
+    /// <remarks>
+    /// One button rather than two, labelled by the side the diff came from. Showing both
+    /// would mean showing one that cannot apply — there is nothing to unstage in a
+    /// working-tree hunk — and a disabled button beside a live one on every hunk of a long
+    /// diff is a lot of furniture for no information.
+    /// </remarks>
+    public string HunkAction
+    {
+        get => _hunkAction;
+        private set => SetProperty(ref _hunkAction, value);
+    }
+
+    /// <summary>
+    /// Which side of the index the open diff came from.
+    /// </summary>
+    /// <remarks>
+    /// Remembered rather than re-derived, because it decides where a staged hunk goes: a
+    /// working-tree hunk is applied to the index, and an index hunk is reversed out of it.
+    /// Guessing wrong would silently do the opposite of what the button said.
+    /// </remarks>
+    private bool _selectedDiffStaged;
+
+    /// <summary>Show whatever a tree row has to show.</summary>
+    /// <remarks>
+    /// A <c>.project</c> row reports its export instead of a diff. That is the whole premise
+    /// of the tool stated in the one place somebody is most likely to test it: the binary
+    /// file has nothing to compare, and the text beside it does.
+    /// </remarks>
+    private void ShowNode(TreeRow row)
+    {
+        if (row.IsProject)
+        {
+            SelectedDiffPath = row.Node.Path;
+            _selectedDiffStaged = false;
+            CanStageHunks = false;
+
+            SelectedDiff = string.Join(Environment.NewLine,
+            [
+                row.Node.Path,
+                string.Empty,
+                "This is a binary project file, so there is no diff to show — which is the",
+                "reason Versio exists. Its reviewable text is the tree underneath this row.",
+                string.Empty,
+                $"Export state: {(string.IsNullOrEmpty(row.Detail) ? "unknown" : row.Detail)}",
+                row.Node.ChangedDescendants switch
+                {
+                    0 => "Nothing under it has changed.",
+                    1 => "1 exported file under it has changed.",
+                    var n => $"{n} exported files under it have changed.",
+                },
+            ]);
+
+            return;
+        }
+
+        if (row.PrimaryFile is { } path)
+        {
+            _ = ShowPathAsync(path, staged: null);
+        }
+    }
+
+    /// <summary>
+    /// Load a diff for one path.
+    /// </summary>
+    /// <param name="staged">
+    /// Which side to read, or null to work it out. Unstaged wins when both differ: a file
+    /// staged and then edited again differs on both sides, and the working-tree change is the
+    /// one the engineer just made and is looking for.
+    /// </param>
+    private async Task ShowPathAsync(string path, bool? staged)
     {
         if (_git is null)
         {
             return;
         }
 
+        SelectedDiffPath = path;
+
         try
         {
             var context = ShowFullFile ? GitDiff.FullFileContext : GitDiff.DefaultContext;
 
-            // Unstaged first: it is what the engineer just edited. A file staged and then
-            // edited again differs on both sides, and the working-tree change is the one they
-            // are looking for.
-            var diff = await _git.DiffAsync(path, staged: false, CancellationToken.None, context)
+            var fromIndex = staged ?? false;
+            var diff = await _git.DiffAsync(path, fromIndex, CancellationToken.None, context)
                 .ConfigureAwait(true);
 
-            if (string.IsNullOrWhiteSpace(diff))
+            if (staged is null && string.IsNullOrWhiteSpace(diff))
             {
+                fromIndex = true;
                 diff = await _git.DiffAsync(path, staged: true, CancellationToken.None, context)
                     .ConfigureAwait(true);
             }
 
+            _selectedDiffStaged = fromIndex;
+            HunkAction = fromIndex ? "Unstage hunk" : "Stage hunk";
+
+            // Untracked files arrive here as a real all-additions diff, so the only things
+            // left with nothing to show are genuinely binary or genuinely unchanged. Saying
+            // which beats a catch-all that blames untracked files for a gap that was ours.
             SelectedDiff = string.IsNullOrWhiteSpace(diff)
-                ? $"{path}" + Environment.NewLine + Environment.NewLine +
-                  "No changes to show for this object."
+                ? path + Environment.NewLine + Environment.NewLine +
+                  "Nothing to compare: this file is unchanged, or git reports it as binary."
                 : diff;
-        }
-        catch (Exception ex)
-        {
-            ReportError(ex);
-        }
-    }
 
-    private async Task LoadDiffAsync(ChangeRow row)
-    {
-        if (_git is null)
-        {
-            return;
-        }
-
-        SelectedDiffPath = row.Path;
-
-        try
-        {
-            var context = ShowFullFile ? GitDiff.FullFileContext : GitDiff.DefaultContext;
-            var diff = await _git
-                .DiffAsync(row.Path, row.IsStaged, CancellationToken.None, context)
-                .ConfigureAwait(true);
-
-            // Untracked files now arrive here as a real all-additions diff, so the only
-            // things left with nothing to show are genuinely binary. Saying that precisely
-            // beats the old catch-all, which blamed untracked files for a gap that was ours.
-            SelectedDiff = string.IsNullOrWhiteSpace(diff)
-                ? $"No textual diff for {row.Path}." + Environment.NewLine + Environment.NewLine +
-                  "Git reports this file as binary, so there are no lines to compare."
-                : diff;
+            // A hunk can only be applied to a patch git produced against the index. An
+            // untracked file's diff came from --no-index against /dev/null, and git apply
+            // --cached would refuse it; `git add` is how a new file is staged.
+            CanStageHunks = !string.IsNullOrWhiteSpace(diff) &&
+                            !diff.Contains("--- /dev/null", StringComparison.Ordinal);
         }
         catch (Exception ex)
         {

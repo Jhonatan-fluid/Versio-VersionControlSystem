@@ -221,21 +221,16 @@
             <Border Grid.Column="0" Width="52"
                     Background="{DynamicResource Brush.Surface.Base}">
                 <StackPanel Margin="6,10,6,0">
-                    <RadioButton x:Name="RailChanges" Style="{StaticResource RailButton}"
-                                 IsChecked="True" Tag="Changes"
+                    <RadioButton x:Name="RailProject" Style="{StaticResource RailButton}"
+                                 IsChecked="True" Tag="Project"
                                  Content="{DynamicResource Icon.Document}"
                                  Checked="OnRailChanged"
-                                 ToolTip="Changed files — everything git reports as modified" />
+                                 ToolTip="Project — the repository as CODESYS structures it, with every change marked" />
                     <RadioButton x:Name="RailGit" Style="{StaticResource RailButton}"
                                  Tag="Git"
                                  Content="{DynamicResource Icon.Link}"
                                  Checked="OnRailChanged"
-                                 ToolTip="Git — staging, commit, pull and push" />
-                    <RadioButton x:Name="RailSync" Style="{StaticResource RailButton}"
-                                 Tag="Sync"
-                                 Content="{DynamicResource Icon.Sync}"
-                                 Checked="OnRailChanged"
-                                 ToolTip="PLC sync — export and import between the project and its text mirror" />
+                                 ToolTip="Git — staging, commit, stash, history, pull and push" />
                 </StackPanel>
             </Border>
 
@@ -345,6 +340,121 @@
                                            Text="A stale PLC export is exported before the commit, and staged with it. Pushing is what releases the direction lock." />
                             </StackPanel>
 
+                            <!-- STASH. Put below the commit box rather than above the file
+                                 lists because it is the escape hatch, not the daily path:
+                                 somebody reaches for it when they have to switch to something
+                                 else and cannot commit what they have. -->
+                            <Grid DockPanel.Dock="Bottom" Margin="0,12,0,0">
+                                <TextBlock Text="STASH" Style="{StaticResource SectionLabel}" />
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                    <CheckBox Content="+ untracked" VerticalAlignment="Center"
+                                              Margin="0,0,8,0"
+                                              IsChecked="{Binding StashUntracked}"
+                                              Foreground="{DynamicResource Brush.Text.Secondary}"
+                                              FontFamily="{DynamicResource Font.UI}"
+                                              FontSize="{DynamicResource Font.Size.Caption}"
+                                              ToolTip="Also stash files git has never seen — including an export tree that was never committed" />
+                                    <Button Content="Stash" Style="{StaticResource GhostButton}"
+                                            Padding="8,2"
+                                            Command="{Binding StashCommand}" />
+                                </StackPanel>
+                            </Grid>
+
+                            <TextBox DockPanel.Dock="Bottom" Margin="0,4,0,0"
+                                     Style="{StaticResource FlatTextBox}"
+                                     Tag="Stash message (optional)…"
+                                     Text="{Binding StashMessage, UpdateSourceTrigger=PropertyChanged}" />
+
+                            <ListBox DockPanel.Dock="Bottom" ItemsSource="{Binding Stashes}"
+                                     SelectedItem="{Binding SelectedStash}"
+                                     Background="Transparent" BorderThickness="0"
+                                     ItemContainerStyle="{StaticResource RowItem}"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     MaxHeight="90" Margin="0,4,0,0">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{Binding Message}"
+                                                       FontFamily="{DynamicResource Font.UI}"
+                                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                                       Foreground="{DynamicResource Brush.Text.Primary}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding Subject}" />
+                                            <TextBlock Grid.Column="1" Text="{Binding Age}"
+                                                       Margin="10,0,0,0" VerticalAlignment="Center"
+                                                       FontFamily="{DynamicResource Font.Mono}"
+                                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                                       Foreground="{DynamicResource Brush.Text.Disabled}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+
+                            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
+                                        Margin="0,4,0,0">
+                                <Button Content="Apply" Style="{StaticResource GhostButton}"
+                                        Padding="8,2"
+                                        ToolTip="Restore it and keep the stash"
+                                        Command="{Binding ApplyStashCommand}" />
+                                <Button Content="Pop" Margin="6,0,0,0" Padding="8,2"
+                                        Style="{StaticResource GhostButton}"
+                                        ToolTip="Restore it and remove the stash, only if the restore succeeds"
+                                        Command="{Binding PopStashCommand}" />
+                                <Button Content="Drop" Margin="6,0,0,0" Padding="8,2"
+                                        Style="{StaticResource GhostButton}"
+                                        ToolTip="Delete it without restoring. The contents are not recoverable"
+                                        Command="{Binding DropStashCommand}" />
+                            </StackPanel>
+
+                            <!-- HISTORY. Click a commit to read its patch in the same pane
+                                 everything else uses - the point of one diff pane is that a
+                                 change reads the same whether it is on disk, in the index or
+                                 already committed. -->
+                            <TextBlock DockPanel.Dock="Bottom" Text="RECENT COMMITS"
+                                       Style="{StaticResource SectionLabel}" Margin="0,12,0,4" />
+
+                            <ListBox DockPanel.Dock="Bottom" ItemsSource="{Binding Commits}"
+                                     SelectedItem="{Binding SelectedCommit}"
+                                     Background="Transparent" BorderThickness="0"
+                                     ItemContainerStyle="{StaticResource RowItem}"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     VirtualizingStackPanel.IsVirtualizing="True"
+                                     VirtualizingStackPanel.VirtualizationMode="Recycling"
+                                     MaxHeight="150">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{Binding ShortId}"
+                                                       VerticalAlignment="Center"
+                                                       FontFamily="{DynamicResource Font.Mono}"
+                                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                                       Foreground="{DynamicResource Brush.Accent.Default}" />
+                                            <TextBlock Grid.Column="1" Text="{Binding Subject}"
+                                                       Margin="8,0,0,0" VerticalAlignment="Center"
+                                                       FontFamily="{DynamicResource Font.UI}"
+                                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                                       Foreground="{DynamicResource Brush.Text.Primary}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding Subject}" />
+                                            <TextBlock Grid.Column="2" Text="{Binding Age}"
+                                                       Margin="10,0,0,0" VerticalAlignment="Center"
+                                                       FontFamily="{DynamicResource Font.Mono}"
+                                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                                       Foreground="{DynamicResource Brush.Text.Disabled}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+
                             <!-- Staged / unstaged -->
                             <Grid DockPanel.Dock="Top" Margin="0,0,0,4">
                                 <TextBlock Text="STAGED" Style="{StaticResource SectionLabel}" />
@@ -353,6 +463,7 @@
                                         Command="{Binding UnstageCommand}" />
                             </Grid>
                             <ListBox DockPanel.Dock="Top" ItemsSource="{Binding Staged}"
+                                     SelectedItem="{Binding SelectedStaged}"
                                      Background="Transparent" BorderThickness="0"
                                      ItemContainerStyle="{StaticResource RowItem}"
                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -366,6 +477,7 @@
                                         Command="{Binding StageCommand}" />
                             </Grid>
                             <ListBox ItemsSource="{Binding Unstaged}"
+                                     SelectedItem="{Binding SelectedUnstaged}"
                                      Background="Transparent" BorderThickness="0"
                                      ItemContainerStyle="{StaticResource RowItem}"
                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -375,17 +487,24 @@
                         </DockPanel>
                     </Border>
 
-                    <!-- PLC SYNC: the feature Versio exists for. Real scan, real toolchain
-                         probe, no sample data. -->
-                    <Border x:Name="SyncPanel" Visibility="Collapsed" Padding="14,0,12,12">
+                    <!-- PROJECT: the one view. Every tracked project with its objects
+                         underneath it, and every other changed file beside them.
+
+                         This replaced two panels that were answering the same question and
+                         disagreeing about the answer: a changed .st appeared in the file list
+                         as a path and in the sync panel as an object, with nothing saying they
+                         were the same edit. -->
+                    <Border x:Name="ProjectPanel" Padding="14,0,12,12">
                         <DockPanel>
-                            <!-- Toolchain state. Its absence is reported, not thrown: a repo
-                                 full of CODESYS projects is still a perfectly usable git repo
-                                 on a machine without CODESYS. -->
+                            <!-- PLC state. Not controls - the export, the import and the
+                                 tracking all run on their own now, so what is left is the
+                                 handful of facts somebody cannot infer from the tree: whether
+                                 the toolchain is there, which way the lock points, and whether
+                                 anything is behind. -->
                             <Border DockPanel.Dock="Top"
                                     Background="{DynamicResource Brush.Surface.Sunken}"
                                     CornerRadius="{DynamicResource Radius.Control}"
-                                    Padding="10,8" Margin="0,0,0,12">
+                                    Padding="10,8" Margin="0,0,0,10">
                                 <StackPanel>
                                     <StackPanel Orientation="Horizontal">
                                         <Ellipse Width="7" Height="7" VerticalAlignment="Center"
@@ -409,218 +528,101 @@
                                                    FontSize="{DynamicResource Font.Size.Body}"
                                                    FontWeight="{DynamicResource Font.Weight.Medium}"
                                                    Foreground="{DynamicResource Brush.Text.Primary}" />
+                                        <TextBlock Text="{Binding Sync.Summary}" Margin="10,0,0,0"
+                                                   VerticalAlignment="Center"
+                                                   FontFamily="{DynamicResource Font.UI}"
+                                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                                   Foreground="{DynamicResource Brush.Text.Secondary}"
+                                                   TextTrimming="CharacterEllipsis" />
                                     </StackPanel>
+
                                     <TextBlock Text="{Binding Sync.ToolchainState}"
                                                TextWrapping="Wrap" Margin="15,3,0,0"
                                                FontFamily="{DynamicResource Font.Mono}"
                                                FontSize="{DynamicResource Font.Size.Caption}"
                                                Foreground="{DynamicResource Brush.Text.Secondary}" />
-                                </StackPanel>
-                            </Border>
 
-                            <StackPanel DockPanel.Dock="Top" Margin="0,0,0,10">
-                                <TextBlock Text="{Binding Sync.Summary}" TextWrapping="Wrap"
-                                           FontFamily="{DynamicResource Font.UI}"
-                                           FontSize="{DynamicResource Font.Size.Body}"
-                                           Foreground="{DynamicResource Brush.Text.Secondary}" />
-
-                                <!-- With On git action as the default sync mode there is no
-                                     export on save, so a project can sit unexported all
-                                     afternoon. Saying so is the whole reason the watcher is
-                                     wired up: silence here would read as "in sync". -->
-                                <TextBlock Text="{Binding Sync.StalenessSummary}"
-                                           TextWrapping="Wrap" Margin="0,6,0,0"
-                                           FontFamily="{DynamicResource Font.UI}"
-                                           FontSize="{DynamicResource Font.Size.Caption}"
-                                           Foreground="{DynamicResource Brush.Status.Modified}">
-                                    <TextBlock.Style>
-                                        <Style TargetType="TextBlock">
-                                            <Setter Property="Visibility" Value="Visible" />
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding Sync.StalenessSummary}"
-                                                             Value="">
-                                                    <Setter Property="Visibility" Value="Collapsed" />
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </TextBlock.Style>
-                                </TextBlock>
-
-                                <!-- The three actions, in the order they are used: track a
-                                     project, export it, clear a failure if one happened.
-                                     Each disables itself when it cannot apply, and the
-                                     sentence above says why. -->
-                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                                    <Button Content="Track project"
-                                            Style="{StaticResource AccentButton}"
-                                            Command="{Binding Sync.AdoptCommand}" />
-                                    <Button Content="Export now" Margin="6,0,0,0"
-                                            Style="{StaticResource GhostButton}"
-                                            Command="{Binding Sync.ExportCommand}" />
-                                    <Button Content="Import now" Margin="6,0,0,0"
-                                            Style="{StaticResource GhostButton}"
-                                            ToolTip="Write the edited text back into the project"
-                                            Command="{Binding Sync.ImportCommand}" />
-                                    <Button Content="Rescan" Margin="6,0,0,0"
-                                            Style="{StaticResource GhostButton}"
-                                            Command="{Binding Sync.RescanCommand}" />
-                                </StackPanel>
-                            </StackPanel>
-
-                            <!-- Import confirmation. Import writes into the .project itself -
-                                 the one file the engineer cannot rebuild by hand - so it is
-                                 proposed, reviewed and then applied, never done on one press.
-                                 The gate itself is the orchestrator's; this only shows it. -->
-                            <Border DockPanel.Dock="Top"
-                                    Background="{DynamicResource Brush.Surface.Sunken}"
-                                    BorderBrush="{DynamicResource Brush.Status.Modified}"
-                                    BorderThickness="1"
-                                    CornerRadius="{DynamicResource Radius.Control}"
-                                    Padding="10,8" Margin="0,0,0,10"
-                                    Visibility="{Binding Sync.ImportPending,
-                                        Converter={StaticResource BoolToVisibility}}">
-                                <StackPanel>
-                                    <TextBlock Text="{Binding Sync.ImportPrompt}"
-                                               TextWrapping="Wrap"
+                                    <!-- The direction lock in plain English. Without it the
+                                         lock is invisible magic that blocks the user with no
+                                         explanation (plan section 9.5). -->
+                                    <TextBlock Text="{Binding Sync.LockState}" TextWrapping="Wrap"
+                                               Margin="15,6,0,0"
                                                FontFamily="{DynamicResource Font.UI}"
-                                               FontSize="{DynamicResource Font.Size.Body}"
-                                               Foreground="{DynamicResource Brush.Text.Primary}" />
+                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                               Foreground="{DynamicResource Brush.Text.Secondary}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Sync.LockState}" Value="">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
 
-                                    <ItemsControl ItemsSource="{Binding Sync.ImportPreview}"
-                                                  Margin="0,8,0,0" MaxHeight="120">
-                                        <ItemsControl.Template>
-                                            <ControlTemplate TargetType="ItemsControl">
-                                                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                                    <ItemsPresenter />
-                                                </ScrollViewer>
-                                            </ControlTemplate>
-                                        </ItemsControl.Template>
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <TextBlock Text="{Binding}"
-                                                           FontFamily="{DynamicResource Font.Mono}"
-                                                           FontSize="{DynamicResource Font.Size.Caption}"
-                                                           Foreground="{DynamicResource Brush.Text.Secondary}"
-                                                           TextTrimming="CharacterEllipsis" />
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
+                                    <!-- With no export on save, a project can sit unexported
+                                         all afternoon. Saying so is the whole reason the
+                                         watcher is wired up: silence reads as "in sync". -->
+                                    <TextBlock Text="{Binding Sync.StalenessSummary}"
+                                               TextWrapping="Wrap" Margin="15,6,0,0"
+                                               FontFamily="{DynamicResource Font.UI}"
+                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                               Foreground="{DynamicResource Brush.Status.Modified}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Sync.StalenessSummary}"
+                                                                 Value="">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
 
-                                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                                        <Button Content="Confirm import"
-                                                Style="{StaticResource AccentButton}"
-                                                Command="{Binding Sync.ConfirmImportCommand}" />
-                                        <Button Content="Cancel" Margin="6,0,0,0"
+                                    <!-- A CODESYS launch is 17-31 s with nothing on screen to
+                                         show for it, and silence is indistinguishable from a
+                                         hang. -->
+                                    <TextBlock Text="{Binding Sync.Activity}" TextWrapping="Wrap"
+                                               Margin="15,6,0,0"
+                                               FontFamily="{DynamicResource Font.Mono}"
+                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                               Foreground="{DynamicResource Brush.Status.Modified}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Sync.Activity}" Value="">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+
+                                    <!-- Both buttons disable themselves when they have nothing
+                                         to do, which is almost always. They exist for the two
+                                         states automation cannot leave: a project changed while
+                                         Versio was closed, and a failure nothing has cleared. -->
+                                    <StackPanel Orientation="Horizontal" Margin="15,8,0,0">
+                                        <Button Content="Export now"
                                                 Style="{StaticResource GhostButton}"
-                                                Command="{Binding Sync.CancelImportCommand}" />
+                                                ToolTip="Export every project whose mirror is behind"
+                                                Command="{Binding Sync.ExportStaleCommand}" />
+                                        <Button Content="Acknowledge failure" Margin="6,0,0,0"
+                                                Style="{StaticResource GhostButton}"
+                                                ToolTip="Nothing syncs for a failed project until the failure is acknowledged"
+                                                Command="{Binding Sync.AcknowledgeCommand}" />
                                     </StackPanel>
                                 </StackPanel>
                             </Border>
 
-                            <!-- The direction lock, in plain English. Without this the lock
-                                 is invisible magic that blocks the user with no explanation
-                                 (plan section 9.5). -->
-                            <Border DockPanel.Dock="Top"
-                                    Background="{DynamicResource Brush.Surface.Sunken}"
-                                    CornerRadius="{DynamicResource Radius.Control}"
-                                    Padding="10,8" Margin="0,0,0,10">
-                                <Border.Style>
-                                    <Style TargetType="Border">
-                                        <Setter Property="Visibility" Value="Visible" />
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding Sync.LockState}"
-                                                         Value="">
-                                                <Setter Property="Visibility" Value="Collapsed" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Border.Style>
-                                <StackPanel>
-                                    <TextBlock Text="{Binding Sync.LockState}" TextWrapping="Wrap"
-                                               FontFamily="{DynamicResource Font.UI}"
-                                               FontSize="{DynamicResource Font.Size.Caption}"
-                                               Foreground="{DynamicResource Brush.Text.Secondary}" />
-                                    <Button Content="Acknowledge failure"
-                                            HorizontalAlignment="Left" Margin="0,8,0,0"
-                                            Style="{StaticResource GhostButton}"
-                                            Command="{Binding Sync.AcknowledgeCommand}" />
-                                </StackPanel>
-                            </Border>
-
-                            <!-- Heartbeat. A CODESYS launch is 17-31 s with nothing on screen
-                                 to show for it, and silence is indistinguishable from a hang. -->
-                            <TextBlock DockPanel.Dock="Top" Text="{Binding Sync.Activity}"
-                                       TextWrapping="Wrap" Margin="0,0,0,10"
-                                       FontFamily="{DynamicResource Font.Mono}"
-                                       FontSize="{DynamicResource Font.Size.Caption}"
-                                       Foreground="{DynamicResource Brush.Status.Modified}">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="Visibility" Value="Visible" />
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding Sync.Activity}" Value="">
-                                                <Setter Property="Visibility" Value="Collapsed" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
-
-                            <TextBlock DockPanel.Dock="Top" Text="PROJECTS"
-                                       Style="{StaticResource SectionLabel}" Margin="0,4,0,6" />
-
-                            <ListBox DockPanel.Dock="Top" ItemsSource="{Binding Sync.Projects}"
-                                     SelectedItem="{Binding Sync.SelectedProject}"
-                                     Background="Transparent" BorderThickness="0"
-                                     ItemContainerStyle="{StaticResource RowItem}"
-                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                     MaxHeight="260">
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0">
-                                                <TextBlock Text="{Binding Name}"
-                                                           FontFamily="{DynamicResource Font.UI}"
-                                                           FontSize="{DynamicResource Font.Size.Body}"
-                                                           Foreground="{DynamicResource Brush.Text.Primary}" />
-                                                <TextBlock Text="{Binding Folder}"
-                                                           FontFamily="{DynamicResource Font.Mono}"
-                                                           FontSize="{DynamicResource Font.Size.Caption}"
-                                                           Foreground="{DynamicResource Brush.Text.Disabled}"
-                                                           TextTrimming="CharacterEllipsis" />
-                                            </StackPanel>
-                                            <TextBlock Grid.Column="1" Text="{Binding State}"
-                                                       VerticalAlignment="Center" Margin="10,0,0,0"
-                                                       FontFamily="{DynamicResource Font.Mono}"
-                                                       FontSize="{DynamicResource Font.Size.Caption}"
-                                                       Foreground="{Binding BrushKey,
-                                                           Converter={StaticResource ResourceKey}}" />
-                                        </Grid>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-                            <!-- OBJECTS: the project as CODESYS structures it, not as paths
-                                 on disk. A flat list of
-                                 plc/Machine/Device/Plc Logic/Application/Main.st is a
-                                 regression from what the engineer looks at all day. -->
-                            <Grid DockPanel.Dock="Top" Margin="0,10,0,4">
-                                <TextBlock Text="OBJECTS" Style="{StaticResource SectionLabel}" />
-                                <CheckBox HorizontalAlignment="Right" Content="Changed only"
-                                          VerticalAlignment="Center"
-                                          IsChecked="{Binding Sync.ChangedOnly}"
-                                          Foreground="{DynamicResource Brush.Text.Secondary}"
-                                          FontFamily="{DynamicResource Font.UI}"
-                                          FontSize="{DynamicResource Font.Size.Caption}"
-                                          ToolTip="Untick to see where in the machine the change sits" />
-                            </Grid>
-
                             <TextBox DockPanel.Dock="Top" Margin="0,0,0,6"
                                      Style="{StaticResource FlatTextBox}"
-                                     Tag="Find an object…"
+                                     Tag="Find an object or a file…"
                                      Text="{Binding Sync.TreeSearch, UpdateSourceTrigger=PropertyChanged, Delay=200}" />
 
                             <TextBlock DockPanel.Dock="Bottom" Text="{Binding Sync.TreeSummary}"
@@ -634,7 +636,13 @@
                                  10,635 ms at the defaults on a 5,002-node CODESYS-shaped tree.
                                  All three attributes are required, and so is the
                                  VirtualizingStackPanel items panel. The spike that measured
-                                 it lives in Spikes/ and runs from the command line. -->
+                                 it lives in Spikes/ and runs from the command line.
+
+                                 It matters more here than it did in the old panel: the tree
+                                 renders every object rather than only the changed ones.
+                                 Virtualization is what keeps that affordable on screen, and
+                                 TreeRow's lazy Children is what keeps it affordable in
+                                 memory. -->
                             <TreeView ItemsSource="{Binding Sync.Tree}"
                                       Background="Transparent" BorderThickness="0"
                                       VirtualizingStackPanel.IsVirtualizing="True"
@@ -675,16 +683,37 @@
                                                        Foreground="{Binding BrushKey,
                                                            Converter={StaticResource ResourceKey}}" />
 
+                                            <!-- A file row's name is a whole repo-relative
+                                                 path, and paths read in the monospaced face. -->
                                             <TextBlock Grid.Column="1" Text="{Binding Name}"
                                                        VerticalAlignment="Center"
-                                                       FontFamily="{DynamicResource Font.UI}"
                                                        FontSize="{DynamicResource Font.Size.Body}"
                                                        Foreground="{DynamicResource Brush.Text.Primary}"
-                                                       TextTrimming="CharacterEllipsis" />
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding Node.Path}">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="FontFamily"
+                                                                Value="{DynamicResource Font.UI}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsFile}" Value="True">
+                                                                <Setter Property="FontFamily"
+                                                                        Value="{DynamicResource Font.Mono}" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding IsProject}" Value="True">
+                                                                <Setter Property="FontWeight"
+                                                                        Value="{DynamicResource Font.Weight.Semibold}" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
 
-                                            <!-- The CODESYS type, so a POU and a visualisation
-                                                 with the same name are told apart. -->
-                                            <TextBlock Grid.Column="2" Text="{Binding TypeLabel}"
+                                            <!-- A project reports its export state here; an
+                                                 object reports its CODESYS type, so a POU and
+                                                 a visualisation of the same name are told
+                                                 apart. No row ever has both. -->
+                                            <TextBlock Grid.Column="2" Text="{Binding Annotation}"
                                                        VerticalAlignment="Center" Margin="8,0,0,0"
                                                        FontFamily="{DynamicResource Font.Mono}"
                                                        FontSize="{DynamicResource Font.Size.Caption}"
@@ -716,18 +745,9 @@
                                     </HierarchicalDataTemplate>
                                 </TreeView.ItemTemplate>
                             </TreeView>
-
                         </DockPanel>
                     </Border>
 
-                    <ListBox x:Name="ChangesList" ItemsSource="{Binding Changes}"
-                             SelectedItem="{Binding SelectedChange}"
-                             Background="Transparent" BorderThickness="0"
-                             ItemContainerStyle="{StaticResource RowItem}"
-                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                             ItemTemplate="{StaticResource ChangeRowTemplate}"
-                             VirtualizingStackPanel.IsVirtualizing="True"
-                             VirtualizingStackPanel.VirtualizationMode="Recycling" />
                 </DockPanel>
             </Border>
 
@@ -761,6 +781,9 @@
                     </Grid>
                     <views:DiffView DiffText="{Binding SelectedDiff}"
                                     FilePath="{Binding SelectedDiffPath}"
+                                    HunkCommand="{Binding HunkCommand}"
+                                    ShowHunkActions="{Binding CanStageHunks}"
+                                    HunkActionLabel="{Binding HunkAction}"
                                     Margin="6,0,6,8">
                         <ListBox.ItemContainerStyle>
                             <Style TargetType="ListBoxItem">

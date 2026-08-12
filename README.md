@@ -40,7 +40,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | Sync orchestrator — locks, loop defences, commit gate | ✅ 24 scenario tests |
 | Change detection — watcher + safety poll + overflow rescan | ✅ `FileChangeWatcher`, driving the sync engine |
 | Staleness stated, not implied — "2 projects not yet exported" | ✅ answered by the commit gate, so the two cannot disagree |
-| **Changed-files panel follows the repository by itself** | ✅ 18 policy tests + 9 against a real filesystem |
+| **The project view follows the repository by itself** | ✅ 18 policy tests + 9 against a real filesystem; rebuilt only when something it shows changed |
 | Design system tokens, light and dark | ✅ `src/Versio.App/Theme/` |
 | Logging — ring buffer, correlation ids, heartbeat, rolling file | ✅ 20 tests; "Open logs folder" selects today's file |
 | Shell — repo/branch dropdowns, rail, changed files, diff, collapsible log | ✅ opens a real repo, shows real git state |
@@ -51,7 +51,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | **App-wide progress bar** — one signal for git, export and import alike | ✅ counted `BusyTracker`, indeterminate, with a caption |
 | CODESYS runs with no visible window | ✅ `CREATE_NO_WINDOW` **and** `SW_HIDE` — different subsystems |
 | Repository validation — walks up to `.git`, refuses non-repos with a reason | ✅ handles subdirectories, bare repos and linked worktrees |
-| PLC panel — toolchain probe, project discovery, lock state in plain English | ✅ real scan, no sample data; folding into the changed-files view is next |
+| PLC state — toolchain, lock, staleness and heartbeat, folded into the project view | ✅ facts, not controls: the export, import and tracking all run on their own |
 | **Vendor seam** — `IPlcRunner`/`PlcJob`/`PlcResult`, enforced from assembly metadata | ✅ 22 architecture tests, proven able to fail |
 | Multi-vendor detection — registry, per-binding vendor, mixed repositories | ✅ `PlcFormats`; Rockwell/Siemens/TwinCAT are additive |
 | Application icon — 8 sizes, hand-tuned below 48px, embedded in the exe | ✅ 12 tests over the `.ico` itself |
@@ -63,13 +63,17 @@ Both directions run automatically and deterministically. A per-project **directi
 | **Automatic import** when the mirror changes and no lock forbids it | ✅ the project is copied aside first; a failed backup fails the import |
 | Change detection over the mirror's real contents | ✅ `ContentHash.OfTree`; a hand-edited `.st` is seen, an untouched tree is not |
 | Side-by-side diff and word-level intra-line diff | ⛔ inline only |
-| Fold the PLC panel into the changed-files view, with lazy object rendering | ⛔ next milestone |
+| **One project view** — the full CODESYS tree with changes marked, plus every other changed file | ✅ replaced the PLC panel and the changed-files list |
+| **Lazy object rendering** — a row is built when something can reach it, not before | ✅ `TreeRow.Children` on first access; the tree survives a refresh without collapsing |
 | Template generation | ⛔ needs a new operation and script — not assembly |
 | A second vendor (TwinCAT / Studio 5000 / TIA Portal) | ⛔ the seam is ready and unproven |
 | **Git side panel** — staging, commit message, fetch/pull/push | ✅ one operation at a time across every button |
 | **The commit gate, enforced** — a stale export is exported and staged first | ✅ push releases the direction locks, commit does not |
-| Stash, per-hunk staging, recent-commits list | ⛔ not built |
-| **Project tree** — CODESYS structure, roll-up badges, changed-only, search | ✅ 15 unit tests + built from a real export |
+| **Stash** — push with a message, apply, pop, drop with a confirmation | ✅ parsed from git's own format; 6 integration tests against real git |
+| **Recent commits with click-to-diff** | ✅ the commit's patch opens in the same pane as everything else |
+| **Per-hunk stage and unstage** | ✅ the hunk is copied verbatim and applied to the index; the working tree is never touched |
+| Branch creation, clone-with-verification dialog, discard | ⛔ the client supports all three; none has a surface |
+| **Project tree** — CODESYS structure, roll-up badges, search | ✅ 28 unit tests + built from the export this repository commits |
 | Config nodes from `config/*.yaml`, layer switcher, context menu | ⛔ not built |
 | Packaging | ⛔ not built |
 
@@ -111,8 +115,8 @@ Versio.sln
 │  └─ Versio.Scripts.Codesys/   IronPython 2.7, run inside CODESYS. Embedded into
 │                               Versio.Infrastructure as resources.
 ├─ tests/
-│  ├─ Versio.Core.Tests/        644 unit tests — pure, no IO, ~290 ms
-│  └─ Versio.Integration.Tests/  64 tests against real CODESYS and real git, ~120 s
+│  ├─ Versio.Core.Tests/        679 unit tests — pure, no IO, ~300 ms
+│  └─ Versio.Integration.Tests/  83 tests against real CODESYS and real git, ~125 s
 ├─ tools/                       PowerShell harnesses used during Phase 0, plus
 │                               New-VersioIcon.ps1 which generates the app icon
 ├─ assets/                      versio.svg (reference drawing) and versio.ico
@@ -234,6 +238,7 @@ Each of these cost real debugging time and is now pinned by a test.
 | **`Mutex` has thread affinity** | It cannot be acquired and released across an `await`. A named `Semaphore` avoids that but loses abandonment recovery, which crash recovery depends on. |
 | **Import runs in two phases** | Creating objects then immediately calling `import_native` makes CODESYS enumerate a dictionary it is still mutating — and it **swallows the exception**, so the import silently does nothing and the run looks clean. |
 | **Never rewrite GUIDs in an export** | Only `Timestamp` is scrubbed. Rewriting identity GUIDs breaks visualisations. Masking them for a *comparison* is fine; writing masked ones to disk is not. |
+| **`git apply --cached` reads the index, not the working tree** | It is the *index* that a patch's context is checked against, so a file saved between a diff being read and a hunk being staged does not invalidate the hunk — what gets staged is still what was on screen. The staleness that does matter is the index moving, and that is refused. Never pass `--unidiff-zero`: it disables the check that makes both true. |
 | **WPF `TreeView` does not virtualize by default** | Measured at 5,002 nodes: **94.7 ms virtualized vs 10,635 ms at the defaults**. Needs `IsVirtualizing`, `VirtualizationMode=Recycling` and a `VirtualizingStackPanel` items panel. |
 | **An `.ico` is eight drawings, not one** | Windows does not downscale gracefully. The mark is redrawn per size, with a simplified variant below 48px — the 1-unit plate stagger is half a pixel at 32px, too small to see and large enough to smear every edge. Run `tools/New-VersioIcon.ps1 -PreviewDirectory …` and **look at the 16px output** before believing a change. |
 | **A framework-dependent exe needs `DOTNET_ROOT`** | If the SDK is installed per-user rather than machine-wide, `Versio.exe` cannot find the runtime and shows a "must install .NET" dialog. Self-contained publish removes this entirely — which is why §13.2 specifies it. |

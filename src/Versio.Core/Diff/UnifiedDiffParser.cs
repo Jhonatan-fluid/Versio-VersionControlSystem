@@ -29,6 +29,17 @@ public sealed record DiffLine
     /// <summary>Line number in the new file, when the line exists there.</summary>
     public int? NewLine { get; init; }
 
+    /// <summary>
+    /// Which hunk this line belongs to, counting from zero, or -1 for a file header.
+    /// </summary>
+    /// <remarks>
+    /// Carried on the line because the view renders lines and nothing else — a row that
+    /// offers to stage a hunk has to know which one it is standing in, and asking the document
+    /// to work it out by position would mean the answer depended on a search every time a
+    /// container was recycled.
+    /// </remarks>
+    public int HunkIndex { get; init; } = -1;
+
     public string Marker => Kind switch
     {
         DiffLineKind.Added => "+",
@@ -44,6 +55,10 @@ public sealed record DiffDocument
     public int Added { get; init; }
     public int Removed { get; init; }
     public bool IsBinary { get; init; }
+
+    /// <summary>How many hunks the diff contains, across every file in it.</summary>
+    public int Hunks { get; init; }
+
     public bool IsEmpty => Lines.Count == 0;
 
     public string Summary => IsBinary
@@ -81,6 +96,7 @@ public static class UnifiedDiffParser
         var binary = false;
         var oldLine = 0;
         var newLine = 0;
+        var hunk = -1;
 
         foreach (var raw in diff.Replace("\r\n", "\n").Split('\n'))
         {
@@ -92,7 +108,13 @@ public static class UnifiedDiffParser
             if (raw.StartsWith("@@", StringComparison.Ordinal))
             {
                 (oldLine, newLine) = ParseHunkHeader(raw);
-                lines.Add(new DiffLine { Kind = DiffLineKind.HunkHeader, Text = raw });
+                hunk++;
+                lines.Add(new DiffLine
+                {
+                    Kind = DiffLineKind.HunkHeader,
+                    Text = raw,
+                    HunkIndex = hunk,
+                });
                 continue;
             }
 
@@ -110,7 +132,12 @@ public static class UnifiedDiffParser
 
             if (raw.StartsWith('\\'))
             {
-                lines.Add(new DiffLine { Kind = DiffLineKind.NoNewline, Text = raw });
+                lines.Add(new DiffLine
+                {
+                    Kind = DiffLineKind.NoNewline,
+                    Text = raw,
+                    HunkIndex = hunk,
+                });
                 continue;
             }
 
@@ -123,6 +150,7 @@ public static class UnifiedDiffParser
                         Kind = DiffLineKind.Added,
                         Text = raw[1..],
                         NewLine = newLine++,
+                        HunkIndex = hunk,
                     });
                     break;
 
@@ -133,6 +161,7 @@ public static class UnifiedDiffParser
                         Kind = DiffLineKind.Removed,
                         Text = raw[1..],
                         OldLine = oldLine++,
+                        HunkIndex = hunk,
                     });
                     break;
 
@@ -145,6 +174,7 @@ public static class UnifiedDiffParser
                         Text = raw.Length > 0 && raw[0] == ' ' ? raw[1..] : raw,
                         OldLine = oldLine++,
                         NewLine = newLine++,
+                        HunkIndex = hunk,
                     });
                     break;
             }
@@ -156,6 +186,7 @@ public static class UnifiedDiffParser
             Added = added,
             Removed = removed,
             IsBinary = binary,
+            Hunks = hunk + 1,
         };
     }
 

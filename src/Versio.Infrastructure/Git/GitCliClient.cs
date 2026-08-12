@@ -362,6 +362,127 @@ public sealed partial class GitCliClient(
         return result.Success ? result.StdOut.Trim() : string.Empty;
     }
 
+    /// <summary>Newest commits first.</summary>
+    /// <remarks>
+    /// <c>--no-merges</c> is deliberately absent: a merge is part of the history somebody is
+    /// scrolling, and hiding it would make the list disagree with the branch it describes.
+    /// Its patch is the thing that cannot be shown, and that is said when it is asked for.
+    /// </remarks>
+    public async Task<IReadOnlyList<CommitEntry>> RecentCommitsAsync(int count, CancellationToken ct)
+    {
+        var result = await RunAsync(
+            ["log", $"--max-count={Math.Max(1, count)}", GitLogParser.CommitFormat], null, ct)
+            .ConfigureAwait(false);
+
+        // An unborn branch has no HEAD to walk, and git says so on stderr. That is the first
+        // day of a repository, not a failure worth reporting.
+        return result.Success ? GitLogParser.ParseCommits(result.StdOut) : [];
+    }
+
+    /// <summary>The patch of one commit, with no commit header of its own.</summary>
+    /// <remarks>
+    /// <c>--format=</c> empties the header so the output is a plain unified diff the existing
+    /// parser and the existing highlighting handle unchanged. A merge commit produces nothing
+    /// under these switches — that is git's answer, not a failure, and it is reported as such
+    /// rather than papered over with <c>-m</c>, which would show one parent's diff as though
+    /// it were the merge.
+    /// </remarks>
+    public async Task<string> CommitPatchAsync(string commit, CancellationToken ct)
+    {
+        var result = await RunAsync(["show", "--format=", "--patch", commit], null, ct)
+            .ConfigureAwait(false);
+
+        return result.Success ? result.StdOut : string.Empty;
+    }
+
+    public async Task<IReadOnlyList<StashEntry>> StashListAsync(CancellationToken ct)
+    {
+        var result = await RunAsync(["stash", "list", GitLogParser.StashFormat], null, ct)
+            .ConfigureAwait(false);
+
+        return result.Success ? GitLogParser.ParseStashes(result.StdOut) : [];
+    }
+
+    /// <summary>Stash the working tree.</summary>
+    /// <remarks>
+    /// <c>push</c> rather than the older <c>save</c>: <c>save</c> is deprecated and treats its
+    /// argument list differently, which is a trap for a message that begins with a dash.
+    /// </remarks>
+    public Task<GitResult> StashPushAsync(
+        string? message, bool includeUntracked, CancellationToken ct)
+    {
+        List<string> args = ["stash", "push"];
+
+        if (includeUntracked)
+        {
+            args.Add("--include-untracked");
+        }
+
+        if (!string.IsNullOrWhiteSpace(message))
+        {
+            args.Add("-m");
+            args.Add(message);
+        }
+
+        _log.Info(LogCategory.Git,
+            includeUntracked ? "stashing, including untracked files" : "stashing");
+
+        return RunAsync([.. args], null, ct);
+    }
+
+    /// <summary>Restore a stash, optionally dropping it afterwards.</summary>
+    /// <remarks>
+    /// <b>Pop drops only when the restore succeeded</b> — that is git's own behaviour for
+    /// <c>stash pop</c>, and the reason this delegates to it rather than running apply and
+    /// then drop. Doing it in two commands here would drop the entry after a restore that
+    /// conflicted, which destroys the only copy of the work.
+    /// </remarks>
+    public Task<GitResult> StashApplyAsync(string stashRef, bool drop, CancellationToken ct)
+    {
+        _log.Info(LogCategory.Git, $"{(drop ? "popping" : "applying")} {stashRef}");
+        return RunAsync(["stash", drop ? "pop" : "apply", stashRef], null, ct);
+    }
+
+    /// <summary>Delete a stash without restoring it.</summary>
+    /// <remarks>
+    /// <b>Destructive.</b> Logged by name at Warn for the same reason discard is: if somebody
+    /// comes back asking where their work went, this line is the answer.
+    /// </remarks>
+    public Task<GitResult> StashDropAsync(string stashRef, CancellationToken ct)
+    {
+        _log.Warn(LogCategory.Git, $"dropping {stashRef}; its contents are not recoverable");
+        return RunAsync(["stash", "drop", stashRef], null, ct);
+    }
+
+    /// <summary>Apply a patch to the index alone.</summary>
+    /// <remarks>
+    /// <para>
+    /// <c>--cached</c> is what makes this a staging operation: the index moves and the working
+    /// tree does not, so the file on disk still says what the engineer wrote. Applying to the
+    /// working tree as well would silently rewrite the file they are looking at.
+    /// </para>
+    /// <para>
+    /// <c>--unidiff-zero</c> is deliberately <b>not</b> passed. It disables the context check,
+    /// which is the only thing standing between a hunk built from a stale diff and a patch
+    /// applied at the wrong offset.
+    /// </para>
+    /// </remarks>
+    public Task<GitResult> ApplyToIndexAsync(string patch, bool reverse, CancellationToken ct)
+    {
+        List<string> args = ["apply", "--cached"];
+        if (reverse)
+        {
+            args.Add("--reverse");
+        }
+
+        args.Add("-");
+
+        _log.Info(LogCategory.Git,
+            $"applying a {patch.Length}-char patch to the index{(reverse ? " in reverse" : "")}");
+
+        return RunAsync([.. args], null, ct, stdin: patch);
+    }
+
     /// <summary>Whether <c>git lfs</c> is installed and usable here.</summary>
     /// <remarks>
     /// <c>lfs version</c> rather than <c>lfs env</c> or a check for the binary on PATH: it
@@ -394,9 +515,13 @@ public sealed partial class GitCliClient(
     private static GitResult NoOp() =>
         new() { Success = true, ExitCode = 0 };
 
+    /// <param name="stdin">
+    /// Written to the child's standard input and then closed, for the commands that read a
+    /// patch rather than take one as an argument.
+    /// </param>
     private async Task<GitResult> RunAsync(
         string[] args, IProgress<GitProgress>? progress, CancellationToken ct,
-        TimeSpan? timeout = null)
+        TimeSpan? timeout = null, string? stdin = null)
     {
         var psi = new ProcessStartInfo
         {
@@ -404,6 +529,7 @@ public sealed partial class GitCliClient(
             WorkingDirectory = repositoryPath,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            RedirectStandardInput = stdin is not null,
             UseShellExecute = false,
             CreateNoWindow = true,
 
@@ -414,6 +540,11 @@ public sealed partial class GitCliClient(
             // IronPython's json.load: an encoding assumption at a process boundary.
             StandardOutputEncoding = new UTF8Encoding(false),
             StandardErrorEncoding = new UTF8Encoding(false),
+
+            // And the same on the way in. A patch carries whatever was in the file - a
+            // German object name, a comment with an accent - and encoding it with the console
+            // codepage would hand git a patch that no longer matches the file it came from.
+            StandardInputEncoding = stdin is null ? null : new UTF8Encoding(false),
         };
 
         foreach (var arg in args)
@@ -475,6 +606,15 @@ public sealed partial class GitCliClient(
         process.Start();
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
+
+        if (stdin is not null)
+        {
+            // Written before the wait, and closed rather than left open: git reads a patch
+            // from "-" until end of file, so a stream that is never closed is a process that
+            // never exits and a UI that waits out the two-minute timeout for nothing.
+            await process.StandardInput.WriteAsync(stdin.AsMemory(), ct).ConfigureAwait(false);
+            process.StandardInput.Close();
+        }
 
         using var timeoutCts = new CancellationTokenSource(timeout ?? TimeSpan.FromMinutes(2));
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);

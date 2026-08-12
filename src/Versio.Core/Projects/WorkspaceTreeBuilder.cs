@@ -1,0 +1,191 @@
+using Versio.Core.Git;
+
+namespace Versio.Core.Projects;
+
+/// <summary>One tracked project, as the workspace tree needs to see it.</summary>
+/// <remarks>
+/// The manifest is handed in already parsed rather than read here, because reading it is IO
+/// and this assembly does none. A null manifest is the ordinary state of a project that is
+/// tracked and has never been exported, not an error.
+/// </remarks>
+public sealed record WorkspaceProject
+{
+    /// <summary>Repo-relative path of the <c>.project</c> file.</summary>
+    public required string ProjectPath { get; init; }
+
+    /// <summary>Repo-relative root of its export tree.</summary>
+    public required string ExportPath { get; init; }
+
+    /// <summary>The export's manifest, or null when it has never been exported.</summary>
+    public ProjectManifest? Manifest { get; init; }
+
+    /// <summary>Export state in a few words, shown on the project row instead of a diff.</summary>
+    public string ExportState { get; init; } = string.Empty;
+}
+
+/// <summary>
+/// Assembles the one tree the left panel shows: every tracked project with its objects
+/// underneath it, and every other changed file beside them.
+/// </summary>
+/// <remarks>
+/// <para>
+/// This exists because the sync panel and the changed-files panel were answering the same
+/// question twice and disagreeing about the answer. A changed <c>.st</c> appeared in the file
+/// list as <c>fixtures/projects/RefrigeratorControl/Device/Plc Logic/Application/Simulation.st</c>
+/// and in the sync panel as <c>Simulation</c> under <c>Application</c>, and nothing said they
+/// were the same edit. One tree, and the question does not arise.
+/// </para>
+/// <para>
+/// <b>The object tree is full, not filtered to what changed.</b> The changed-only filter made
+/// sense when the tree was a secondary view somebody opened to answer "what did I change";
+/// as the primary view it has to answer "where in the machine am I", which needs every object
+/// present and the changed ones marked. <see cref="ProjectTreeOptions.ChangedOnly"/> still
+/// works and is still tested — the shell simply does not ask for it.
+/// </para>
+/// <para>
+/// Pure, so the rules below are tested without a repository, an export or a UI.
+/// </para>
+/// </remarks>
+public static class WorkspaceTreeBuilder
+{
+    /// <param name="projects">Every tracked project, with whatever manifest it has.</param>
+    /// <param name="changes">What git reports for the working tree.</param>
+    /// <param name="options">Search and, if anyone still wants it, the changed-only filter.</param>
+    public static IReadOnlyList<ProjectTreeNode> Build(
+        IReadOnlyList<WorkspaceProject> projects,
+        IReadOnlyList<FileChange> changes,
+        ProjectTreeOptions? options = null)
+    {
+        var opts = options ?? new ProjectTreeOptions { ChangedOnly = false };
+
+        var status = new Dictionary<string, ChangeKind>(StringComparer.OrdinalIgnoreCase);
+        foreach (var change in changes)
+        {
+            status[Normalize(change.Path)] = change.Effective;
+        }
+
+        var roots = new List<ProjectTreeNode>();
+        var claimed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var project in projects.OrderBy(p => p.ProjectPath, StringComparer.OrdinalIgnoreCase))
+        {
+            roots.Add(BuildProject(project, changes, status, opts, claimed));
+        }
+
+        // Everything git reports that no project accounted for. Sorted by path because that
+        // is the only ordering a flat list of unrelated files has.
+        foreach (var change in changes
+                     .Where(c => !claimed.Contains(Normalize(c.Path)))
+                     .OrderBy(c => c.Path, StringComparer.OrdinalIgnoreCase))
+        {
+            var path = Normalize(change.Path);
+            if (!ProjectTreeBuilder.Matches(path, opts.Search))
+            {
+                continue;
+            }
+
+            roots.Add(new ProjectTreeNode
+            {
+                Name = path,
+                Path = path,
+                Kind = ProjectNodeKind.File,
+                Files = [path],
+                Status = change.Effective,
+            });
+        }
+
+        return roots;
+    }
+
+    /// <summary>One project row: the <c>.project</c> itself, with its export tree beneath it.</summary>
+    private static ProjectTreeNode BuildProject(
+        WorkspaceProject project,
+        IReadOnlyList<FileChange> changes,
+        IReadOnlyDictionary<string, ChangeKind> status,
+        ProjectTreeOptions options,
+        HashSet<string> claimed)
+    {
+        var projectPath = Normalize(project.ProjectPath);
+        var exportRoot = Normalize(project.ExportPath).TrimEnd('/');
+
+        claimed.Add(projectPath);
+
+        var manifest = project.Manifest ?? ProjectManifest.Empty;
+        var tree = ProjectTreeBuilder.Build(manifest, exportRoot, changes, options);
+
+        // Everything the manifest accounted for is now represented by an object node.
+        foreach (var file in manifest.Objects
+                     .Where(o => !string.IsNullOrEmpty(o.Path))
+                     .Select(o => ProjectTreeBuilder.Combine(exportRoot, Normalize(o.Path))))
+        {
+            claimed.Add(file);
+        }
+
+        var children = new List<ProjectTreeNode>(tree.Children);
+        children.AddRange(UnmappedExportFiles(changes, exportRoot, options, claimed));
+
+        // Counted over the whole subtree rather than taken from the export tree alone, so a
+        // stray file under the export root still raises the project's badge.
+        var changedDescendants = children.Sum(
+            c => c.ChangedDescendants + (c.Status != ChangeKind.Unmodified ? 1 : 0));
+
+        return new ProjectTreeNode
+        {
+            Name = FileName(projectPath),
+            Path = projectPath,
+            Kind = ProjectNodeKind.Project,
+            Detail = project.ExportState,
+
+            // The .project is binary, so this is never opened as a diff — but it is still a
+            // changed file, and a project row that did not say so would be the one place in
+            // the panel where a change was invisible.
+            Status = status.TryGetValue(projectPath, out var own) ? own : ChangeKind.Unmodified,
+            Files = [projectPath],
+            Children = children,
+            ChangedDescendants = changedDescendants,
+            RollUp = children
+                .Select(c => ProjectTreeBuilder.Stronger(c.Status, c.RollUp))
+                .Aggregate(ChangeKind.Unmodified, ProjectTreeBuilder.Stronger),
+        };
+    }
+
+    /// <summary>
+    /// Changed files under the export root that the manifest does not describe.
+    /// </summary>
+    /// <remarks>
+    /// <c>_manifest.json</c> is the obvious one — it changes on every export and describes the
+    /// others rather than appearing among them. Dropping these would be worse than showing
+    /// them: a file git reports as changed, in a directory Versio owns, that appears nowhere
+    /// in the panel is indistinguishable from Versio having lost it.
+    /// </remarks>
+    private static IEnumerable<ProjectTreeNode> UnmappedExportFiles(
+        IReadOnlyList<FileChange> changes,
+        string exportRoot,
+        ProjectTreeOptions options,
+        HashSet<string> claimed)
+    {
+        var prefix = exportRoot + "/";
+
+        return changes
+            .Select(c => (Path: Normalize(c.Path), c.Effective))
+            .Where(c => c.Path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            .Where(c => claimed.Add(c.Path))
+            .Select(c => (Name: c.Path[prefix.Length..], c.Path, c.Effective))
+            .Where(c => ProjectTreeBuilder.Matches(c.Name, options.Search))
+            .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(c => new ProjectTreeNode
+            {
+                Name = c.Name,
+                Path = c.Path,
+                Kind = ProjectNodeKind.File,
+                Files = [c.Path],
+                Status = c.Effective,
+            })
+            .ToList();
+    }
+
+    private static string Normalize(string path) => path.Replace('\\', '/').TrimStart('/');
+
+    private static string FileName(string path) =>
+        path.Split('/').LastOrDefault() is { Length: > 0 } name ? name : path;
+}

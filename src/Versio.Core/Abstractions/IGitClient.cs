@@ -82,6 +82,63 @@ public interface IGitClient
     /// </remarks>
     Task<string> HeadCommitAsync(CancellationToken ct);
 
+    /// <summary>Newest commits first, subject and author only.</summary>
+    /// <param name="count">How many to read. The panel shows a window, not the history.</param>
+    Task<IReadOnlyList<CommitEntry>> RecentCommitsAsync(int count, CancellationToken ct);
+
+    /// <summary>The full patch of one commit, for click-to-diff.</summary>
+    /// <remarks>
+    /// A merge commit yields nothing here, because a diff against several parents is not one
+    /// patch. Saying so beats picking a parent on the user's behalf and showing them a diff
+    /// that is true against one side of a merge and misleading about the merge itself.
+    /// </remarks>
+    Task<string> CommitPatchAsync(string commit, CancellationToken ct);
+
+    /// <summary>Everything currently stashed, newest first.</summary>
+    Task<IReadOnlyList<StashEntry>> StashListAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Stash the working tree.
+    /// </summary>
+    /// <param name="includeUntracked">
+    /// Also stash files git has never seen. Off by default because it sweeps up build output
+    /// and scratch files that were never meant to be kept, and they come back on the pop.
+    /// </param>
+    Task<GitResult> StashPushAsync(string? message, bool includeUntracked, CancellationToken ct);
+
+    /// <summary>
+    /// Restore a stash, optionally dropping it afterwards.
+    /// </summary>
+    /// <remarks>
+    /// Apply and pop are one call with a flag rather than two methods, because they are the
+    /// same operation and differ only in whether the entry survives it — which is exactly the
+    /// decision the caller is making.
+    /// </remarks>
+    Task<GitResult> StashApplyAsync(string stashRef, bool drop, CancellationToken ct);
+
+    /// <summary>
+    /// Delete a stash without restoring it.
+    /// </summary>
+    /// <remarks>
+    /// <b>Destructive.</b> The work is unreachable afterwards by any ordinary means, so
+    /// callers confirm first.
+    /// </remarks>
+    Task<GitResult> StashDropAsync(string stashRef, CancellationToken ct);
+
+    /// <summary>
+    /// Apply a patch to the index only, leaving the working tree untouched.
+    /// </summary>
+    /// <param name="reverse">
+    /// Take the change back out of the index rather than putting it in — which is what
+    /// unstaging one hunk is.
+    /// </param>
+    /// <remarks>
+    /// The patch arrives on standard input rather than through a temporary file. A temp file
+    /// is one more thing to fail to clean up, and one more place a fragment of somebody's
+    /// source could be left readable.
+    /// </remarks>
+    Task<GitResult> ApplyToIndexAsync(string patch, bool reverse, CancellationToken ct);
+
     /// <summary>
     /// Whether <c>git lfs</c> is installed and usable in this repository.
     /// </summary>

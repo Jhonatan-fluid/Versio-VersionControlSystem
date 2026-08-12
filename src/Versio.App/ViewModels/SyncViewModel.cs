@@ -3,6 +3,7 @@ using System.IO;
 using Versio.App.Mvvm;
 using Versio.Core.Abstractions;
 using Versio.Core.Bindings;
+using Versio.Core.Git;
 using Versio.Core.Locking;
 using Versio.Core.Logging;
 using Versio.Core.Plc;
@@ -86,11 +87,21 @@ public sealed class ProjectRow(string path, string? bindingId) : ObservableObjec
 /// CODESYS installed; the panel just has to say why it cannot export.
 /// </para>
 /// <para>
-/// <b>Adoption and export are separate actions on purpose.</b> Adopting writes two text
-/// files and is instantly reversible. The first export launches CODESYS for the better part
-/// of half a minute and writes a directory tree — doing that unprompted, on a file that may
-/// be a vendor sample or a scratch copy, is how a tool earns a reputation for surprising
-/// people (plan §5.3).
+/// <b>This stopped being a panel and became state.</b> It used to carry a button for every
+/// step — track, export, import, propose, confirm, rescan — from when each was something a
+/// person decided. All of them now happen on their own: every project found is tracked, a
+/// settled change exports, a settled mirror edit imports, and the commit gate catches
+/// whatever the watcher missed. A control surface for something that no longer needs
+/// controlling is worse than no surface at all, because every button on it implies the
+/// automatic thing might not have happened.
+/// </para>
+/// <para>
+/// Two actions survived, and both survived for a reason rather than by omission.
+/// <see cref="ExportStaleCommand"/> exists because a project changed while Versio was closed
+/// was never seen by the watcher, and without it the only way out of "not exported" is to
+/// commit. <see cref="AcknowledgeCommand"/> exists because a failed binding syncs no further
+/// until somebody says they have seen the failure — that is the design, and a state nothing
+/// can clear is a dead end.
 /// </para>
 /// </remarks>
 public sealed class SyncViewModel : ObservableObject
@@ -138,11 +149,8 @@ public sealed class SyncViewModel : ObservableObject
 
     private string _stalenessSummary = string.Empty;
     private int _unexportedCount;
-    private bool _changedOnly = true;
     private string _treeSearch = string.Empty;
     private string _treeSummary = string.Empty;
-    private string? _pendingImportBindingId;
-    private string _importPrompt = string.Empty;
 
     public SyncViewModel(VersioLogger logger, IClock clock, BusyTracker? busy = null)
     {
@@ -156,53 +164,35 @@ public sealed class SyncViewModel : ObservableObject
         // nothing else is touched here.
         _heartbeat.Beat += op => Activity = op.Describe(clock);
 
-        RescanCommand = new AsyncCommand(RescanAsync, () => _repositoryRoot is not null,
-                                         onError: Report);
-        AdoptCommand = new AsyncCommand(AdoptAsync, CanAdopt, onError: Report);
-        ExportCommand = new AsyncCommand(ExportAsync, CanExport, onError: Report);
+        ExportStaleCommand = new AsyncCommand(ExportStaleAsync, CanExportStale, onError: Report);
         AcknowledgeCommand = new AsyncCommand(AcknowledgeAsync, CanAcknowledge, onError: Report);
-        ImportCommand = new AsyncCommand(ProposeImportAsync, CanImport, onError: Report);
-        ConfirmImportCommand = new AsyncCommand(ConfirmImportAsync, () => ImportPending,
-                                                onError: Report);
-        CancelImportCommand = new RelayCommand(ClearPendingImport, () => ImportPending);
     }
 
+    /// <summary>
+    /// Every project found, with the state its row reports.
+    /// </summary>
+    /// <remarks>
+    /// No longer bound to a list of its own — the projects are rows in the one tree now. It
+    /// survives as the place a project's state is worked out and held between refreshes, so
+    /// the tree builder can be handed a sentence rather than an orchestrator.
+    /// </remarks>
     public ObservableCollection<ProjectRow> Projects { get; } = [];
 
     public ObservableCollection<string> Findings { get; } = [];
 
-    public AsyncCommand RescanCommand { get; }
+    /// <summary>
+    /// Export every project whose mirror is behind, without waiting for a commit.
+    /// </summary>
+    /// <remarks>
+    /// The one export button left. A project edited while Versio was closed was never seen by
+    /// the watcher, so it sits stale until something asks for it; without this the only way
+    /// out of that state is to start a commit, which is a strange thing to have to do to
+    /// refresh a mirror.
+    /// </remarks>
+    public AsyncCommand ExportStaleCommand { get; }
 
-    /// <summary>Write a binding for the selected project. Cheap and reversible; no export.</summary>
-    public AsyncCommand AdoptCommand { get; }
-
-    /// <summary>Run an export now, bypassing the coalescer but not the lock.</summary>
-    public AsyncCommand ExportCommand { get; }
-
-    /// <summary>Clear a failed state so the project can sync again.</summary>
+    /// <summary>Clear every failed binding so those projects can sync again.</summary>
     public AsyncCommand AcknowledgeCommand { get; }
-
-    /// <summary>Ask what an import would do. Writes nothing.</summary>
-    public AsyncCommand ImportCommand { get; }
-
-    /// <summary>Apply the import that was proposed.</summary>
-    public AsyncCommand ConfirmImportCommand { get; }
-
-    /// <summary>Walk away from a proposed import.</summary>
-    public RelayCommand CancelImportCommand { get; }
-
-    /// <summary>Files the import would write into the project. Empty unless one is pending.</summary>
-    public ObservableCollection<string> ImportPreview { get; } = [];
-
-    /// <summary>Whether an import has been proposed and is waiting on the user.</summary>
-    public bool ImportPending => _pendingImportBindingId is not null;
-
-    /// <summary>What the pending import would do, in one sentence. Empty when none is.</summary>
-    public string ImportPrompt
-    {
-        get => _importPrompt;
-        private set => SetProperty(ref _importPrompt, value);
-    }
 
     /// <summary>Display name of the toolchain this repository targets.</summary>
     public string VendorName => _format.DisplayName;
@@ -251,7 +241,15 @@ public sealed class SyncViewModel : ObservableObject
     public int UnexportedCount
     {
         get => _unexportedCount;
-        private set => SetProperty(ref _unexportedCount, value);
+        private set
+        {
+            if (SetProperty(ref _unexportedCount, value))
+            {
+                // "Export now" is enabled by this number and nothing else, so the button
+                // would stay dead after the count first rose without the nudge.
+                RaiseCommandStates();
+            }
+        }
     }
 
     /// <summary>
@@ -283,10 +281,19 @@ public sealed class SyncViewModel : ObservableObject
         private set => SetProperty(ref _activity, value);
     }
 
+    /// <summary>
+    /// The project the panel is currently talking about.
+    /// </summary>
+    /// <remarks>
+    /// Driven by the tree rather than by a list of its own: whichever object is selected, the
+    /// lock sentence beside it should be the lock on <i>that</i> object's project. With one
+    /// project in the repository this never moves; with three it is the difference between a
+    /// sentence and a guess.
+    /// </remarks>
     public ProjectRow? SelectedProject
     {
         get => _selectedProject;
-        set
+        private set
         {
             if (!SetProperty(ref _selectedProject, value))
             {
@@ -297,15 +304,35 @@ public sealed class SyncViewModel : ObservableObject
                 ? SyncNarrative.Describe(_orchestrator.StateOf(value.BindingId!))
                 : string.Empty;
 
-            _ = RebuildTreeAsync();
-
-            // A proposal belongs to the project it was made for. Leaving it up while the
-            // selection moves is how somebody confirms an import against the wrong project
-            // while reading a file list that describes a different one.
-            ClearPendingImport();
-
             RaiseCommandStates();
         }
+    }
+
+    /// <summary>
+    /// Point the panel at whichever project owns a selected path.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Locate"/> is reused rather than matching the path here, so the panel and the
+    /// sync engine can never disagree about which binding a file belongs to — including the
+    /// awkward case it exists for, a project sitting beside its own export directory.
+    /// </remarks>
+    public void NoteSelection(string? repoRelativePath)
+    {
+        if (repoRelativePath is null)
+        {
+            return;
+        }
+
+        var (binding, _) = Locate(Normalize(repoRelativePath));
+        if (binding is null)
+        {
+            // A file outside every export tree — a document, a script. It belongs to no
+            // project, so the previous project's lock sentence would be about something else.
+            SelectedProject = null;
+            return;
+        }
+
+        SelectedProject = Projects.FirstOrDefault(p => p.BindingId == binding.Id);
     }
 
     /// <summary>Called when the shell opens a repository.</summary>
@@ -336,8 +363,17 @@ public sealed class SyncViewModel : ObservableObject
         _config = new RepoConfig();
         Projects.Clear();
         Findings.Clear();
+        Tree.Clear();
+
+        // The expanded set is keyed by repo-relative path, and two repositories share those
+        // freely - "docs" is open in both. Carrying it across would open folders in the new
+        // repository because of a click in the old one.
+        _expansion.Clear();
+        _treeSignature = string.Empty;
+
         SelectedProject = null;
         Summary = "No repository open";
+        TreeSummary = string.Empty;
         StalenessSummary = string.Empty;
         UnexportedCount = 0;
         LockState = string.Empty;
@@ -509,12 +545,9 @@ public sealed class SyncViewModel : ObservableObject
             Findings.Add($"{finding.Health}: {finding.Path} — {finding.Explanation}");
         }
 
-        // Restore the selection by path. A rescan after an adopt replaces every row, and
-        // dropping the user back to nothing selected right when they are about to export is
-        // a small thing that feels broken.
         // Restore the selection by path, and fall back to something sensible rather than
-        // nothing. A repository with one tracked project opening on an empty tree reads as a
-        // broken panel, when all that happened is that nobody had clicked the single row yet.
+        // nothing. A repository with one tracked project opening on an empty panel reads as a
+        // broken scan, when all that happened is that nobody had clicked a row yet.
         SelectedProject =
             Projects.FirstOrDefault(p => p.Path == selectedPath)
             ?? Projects.FirstOrDefault(p => p.Tracked)
@@ -530,7 +563,7 @@ public sealed class SyncViewModel : ObservableObject
         };
 
         RaiseCommandStates();
-        await RebuildTreeAsync().ConfigureAwait(true);
+        await RefreshTreeAsync().ConfigureAwait(true);
 
         _logger.Info(LogCategory.Sync,
             $"scan: {Projects.Count} project(s), {Findings.Count} finding(s)");
@@ -704,24 +737,27 @@ public sealed class SyncViewModel : ObservableObject
         _ui.Post(_ => action(), null);
     }
 
-    /// <summary>The selected project's object tree, as CODESYS structures it.</summary>
+    /// <summary>
+    /// The whole working tree: every tracked project with its objects, and every other
+    /// changed file beside them.
+    /// </summary>
     public ObservableCollection<TreeRow> Tree { get; } = [];
 
-    /// <summary>Show only changed objects, with the folders needed to reach them.</summary>
-    public bool ChangedOnly
-    {
-        get => _changedOnly;
-        set
-        {
-            if (SetProperty(ref _changedOnly, value))
-            {
-                _logger.Click($"Tree.ChangedOnly={value}");
-                _ = RebuildTreeAsync();
-            }
-        }
-    }
+    /// <summary>Which rows are open, kept across rebuilds.</summary>
+    private readonly TreeExpansion _expansion = new();
 
-    /// <summary>Filter the tree by object name.</summary>
+    /// <summary>
+    /// What the tree was last built from, so an unchanged refresh rebuilds nothing.
+    /// </summary>
+    /// <remarks>
+    /// The tree is rebuilt whenever git's status is re-read, and most of those re-reads find
+    /// nothing — they fire because somebody saved a file in their editor. Rebuilding anyway
+    /// would clear the TreeView's selection several times a minute, which is precisely the
+    /// regression the changed-files list was reconciled in place to avoid.
+    /// </remarks>
+    private string _treeSignature = string.Empty;
+
+    /// <summary>Filter the tree by object or file name.</summary>
     public string TreeSearch
     {
         get => _treeSearch;
@@ -729,7 +765,7 @@ public sealed class SyncViewModel : ObservableObject
         {
             if (SetProperty(ref _treeSearch, value))
             {
-                _ = RebuildTreeAsync();
+                _ = RefreshTreeAsync();
             }
         }
     }
@@ -743,13 +779,27 @@ public sealed class SyncViewModel : ObservableObject
 
     private TreeRow? _selectedNode;
 
-    /// <summary>Selecting an object opens its diff.</summary>
+    /// <summary>
+    /// Selecting a row opens whatever it has to show.
+    /// </summary>
+    /// <remarks>
+    /// Folders are skipped — they stand for a grouping, not a thing. Projects are not: a
+    /// <c>.project</c> row has no diff, and the pane says what its export did instead, which
+    /// is the one answer somebody clicking a binary file actually wants.
+    /// </remarks>
     public TreeRow? SelectedNode
     {
         get => _selectedNode;
         set
         {
-            if (SetProperty(ref _selectedNode, value) && value is { IsFolder: false })
+            if (!SetProperty(ref _selectedNode, value) || value is null)
+            {
+                return;
+            }
+
+            NoteSelection(value.Node.Path);
+
+            if (!value.IsFolder)
             {
                 NodeSelected?.Invoke(value);
             }
@@ -766,79 +816,153 @@ public sealed class SyncViewModel : ObservableObject
     /// </remarks>
     public event Action<TreeRow>? NodeSelected;
 
-    /// <summary>
-    /// Rebuild the tree for the selected project from its manifest and git's status.
-    /// </summary>
+    /// <summary>Rebuild the tree, reading git's status first.</summary>
     /// <remarks>
-    /// <para>
-    /// Read and built on a background thread, then handed over as a finished list. Rebuilding
-    /// a whole tree on the UI thread on every status refresh is the most likely source of jank
-    /// in this app - the plan says so, and the 5,002-node spike is why it is believed.
-    /// </para>
-    /// <para>
-    /// A missing manifest is a normal state, not an error: the project is tracked but has
-    /// never been exported. It says so rather than showing an empty box.
-    /// </para>
+    /// For the callers inside this class, which have just changed the working tree and have no
+    /// status to hand. The shell uses the overload — it has one already, and a second
+    /// <c>git status</c> per refresh is a process spawn for an answer we were just given.
     /// </remarks>
-    private async Task RebuildTreeAsync()
+    private async Task RefreshTreeAsync()
     {
-        var row = SelectedProject;
-        if (_repositoryRoot is null || _git is null || row is not { Tracked: true })
+        if (_git is null)
         {
             Tree.Clear();
-            TreeSummary = row is { Tracked: false }
-                ? "Track this project to see its objects."
-                : string.Empty;
-            return;
-        }
-
-        var binding = _config.Bindings.FirstOrDefault(b => b.Id == row.BindingId);
-        if (binding is null)
-        {
-            Tree.Clear();
-            return;
-        }
-
-        var manifestPath = System.IO.Path.Combine(
-            AbsolutePath(binding.ExportPath), BindingConventions.ManifestFileName);
-
-        if (!File.Exists(manifestPath))
-        {
-            Tree.Clear();
-            TreeSummary = $"{row.Name} has not been exported yet.";
             return;
         }
 
         var status = await _git.StatusAsync(CancellationToken.None).ConfigureAwait(true);
-        var options = new ProjectTreeOptions { ChangedOnly = ChangedOnly, Search = TreeSearch };
-        var exportPath = binding.ExportPath;
+        await RefreshTreeAsync(status).ConfigureAwait(true);
+    }
 
-        var built = await Task.Run(async () =>
+    /// <summary>
+    /// Rebuild the one tree from the bindings, their manifests and git's status.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The manifests are read and the node graph assembled on a background thread, then handed
+    /// over as a finished snapshot. Rebuilding a whole tree on the UI thread on every status
+    /// refresh is the most likely source of jank in this app — the plan says so, and the
+    /// 5,002-node spike is why it is believed. This now runs on every refresh rather than only
+    /// when somebody picked a project, so that stopped being theoretical.
+    /// </para>
+    /// <para>
+    /// <b>The rows are built on the UI thread and the nodes are not.</b> That split looks
+    /// backwards until you notice <see cref="TreeExpansion"/> is written from the UI thread
+    /// every time somebody opens a folder: constructing rows off-thread would read that set
+    /// while a click writes it. There is one row per project and one per loose changed file,
+    /// so the cost is trivial — and the thousands of object rows are not built here at all,
+    /// because <see cref="TreeRow.Children"/> defers them until something asks.
+    /// </para>
+    /// <para>
+    /// A missing manifest is a normal state, not an error: the project is tracked and has
+    /// never been exported. Its row says so instead of vanishing.
+    /// </para>
+    /// </remarks>
+    public async Task RefreshTreeAsync(GitStatus status)
+    {
+        if (_repositoryRoot is null)
         {
-            var json = await File.ReadAllTextAsync(manifestPath).ConfigureAwait(false);
-            var manifest = ProjectManifest.Parse(json);
-            var tree = ProjectTreeBuilder.Build(manifest, exportPath, status.Changes, options);
+            Tree.Clear();
+            TreeSummary = string.Empty;
+            return;
+        }
 
-            // The rows are constructed here too, off the dispatcher: on a real project that
-            // is thousands of small objects, and none of it needs the UI thread.
-            return (Manifest: manifest, Rows: tree.Children.Select(c => new TreeRow(c, 0)).ToList());
+        var search = TreeSearch;
+        var sources = _config.Bindings
+            .Where(b => b.Enabled)
+            .Select(b => (
+                b.ProjectPath,
+                b.ExportPath,
+                ManifestPath: System.IO.Path.Combine(
+                    AbsolutePath(b.ExportPath), BindingConventions.ManifestFileName),
+                State: Projects.FirstOrDefault(p => p.BindingId == b.Id)?.State ?? "tracked"))
+            .ToList();
+
+        // Everything the tree is derived from, in one string. A manifest's write time stands
+        // in for its contents: it is written by an export and by nothing else, so a changed
+        // timestamp means a changed export, and hashing eleven files on every keystroke to
+        // learn the same thing would be a poor trade.
+        var signature = string.Join('',
+        [
+            search,
+            .. sources.Select(x =>
+                $"{x.ProjectPath}|{x.ExportPath}|{x.State}|{ManifestStamp(x.ManifestPath)}"),
+            .. status.Changes
+                .OrderBy(c => c.Path, StringComparer.Ordinal)
+                .Select(c => $"{c.Path}|{c.Effective}|{c.IsStaged}"),
+        ]);
+
+        if (signature == _treeSignature && Tree.Count > 0)
+        {
+            return;
+        }
+
+        _treeSignature = signature;
+
+        var roots = await Task.Run(() =>
+        {
+            var projects = sources
+                .Select(s => new WorkspaceProject
+                {
+                    ProjectPath = s.ProjectPath,
+                    ExportPath = s.ExportPath,
+                    Manifest = File.Exists(s.ManifestPath)
+                        ? ProjectManifest.Parse(File.ReadAllText(s.ManifestPath))
+                        : null,
+                    ExportState = s.State,
+                })
+                .ToList();
+
+            return WorkspaceTreeBuilder.Build(projects, status.Changes,
+                new ProjectTreeOptions { ChangedOnly = false, Search = search });
         }).ConfigureAwait(true);
 
         Tree.Clear();
-        foreach (var node in built.Rows)
+        foreach (var node in roots)
         {
-            Tree.Add(node);
+            Tree.Add(new TreeRow(node, 0, _expansion));
         }
 
-        TreeSummary = Tree.Count == 0
-            ? ChangedOnly
-                ? $"Nothing changed in {row.Name}."
-                : $"{row.Name} exported no objects."
-            : $"{built.Manifest.Objects.Count} file(s) across {built.Manifest.ObjectCount} object(s).";
+        var objects = roots.Sum(CountObjects);
+        var changed = status.Changes.Count;
+
+        TreeSummary = (objects, changed) switch
+        {
+            (0, 0) when sources.Count == 0 => "No PLC projects tracked in this repository.",
+            (0, 0) => "Nothing changed, and no objects exported yet.",
+            (0, var c) => $"{c} changed file(s).",
+            (var o, 0) => $"{o} object(s), nothing changed.",
+            var (o, c) => $"{o} object(s) · {c} changed file(s).",
+        };
 
         _logger.Debug(LogCategory.Sync,
-            $"tree for {row.Name}: {Tree.Count} root node(s), changedOnly={ChangedOnly}");
+            $"tree: {Tree.Count} root(s), {objects} object(s), {changed} changed file(s)");
     }
+
+    /// <summary>A manifest's identity for change detection: when it was written, and how big.</summary>
+    /// <remarks>
+    /// Missing is a value too — "never exported" is a state the tree renders, and it has to be
+    /// distinguishable from an export that has since appeared.
+    /// </remarks>
+    private static string ManifestStamp(string path)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            return info.Exists
+                ? $"{info.LastWriteTimeUtc.Ticks}:{info.Length}"
+                : "none";
+        }
+        catch (IOException)
+        {
+            // Mid-write, or on a share that just went away. Treat it as changed rather than
+            // taking the panel down over a file that is only ever a convenience.
+            return Guid.NewGuid().ToString("N");
+        }
+    }
+
+    private static int CountObjects(ProjectTreeNode node) =>
+        (node.Kind == ProjectNodeKind.Object ? 1 : 0) + node.Children.Sum(CountObjects);
 
     /// <summary>
     /// Whether every tracked project's mirror is current enough to commit.
@@ -1090,355 +1214,81 @@ public sealed class SyncViewModel : ObservableObject
     private string Relative(string absolute) =>
         Normalize(System.IO.Path.GetRelativePath(_repositoryRoot!, absolute));
 
-    private bool CanAdopt() => _repositoryRoot is not null && SelectedProject is { Tracked: false };
-
-    /// <summary>Track the selected project: guard it, write the rules, write the binding.</summary>
-    private async Task AdoptAsync()
-    {
-        if (_repositoryRoot is null || SelectedProject is not { Tracked: false } row)
-        {
-            return;
-        }
-
-        _logger.Click("Sync.Adopt");
-        using var scope = _logger.BeginOperation(Guid.NewGuid().ToString("N")[..8]);
-
-        var setup = new RepoSetup(_repositoryRoot, _format, _logger);
-        var result = await setup.AdoptAsync(row.Path, _git, _profile, CancellationToken.None)
-            .ConfigureAwait(true);
-
-        if (!result.Adopted)
-        {
-            // A refusal is a decision with a reason, not an error. Say the reason where the
-            // user is looking rather than only in the log.
-            _logger.Warn(LogCategory.Sync,
-                $"cannot track {row.Path}: {result.Decision.Explanation}");
-            Summary = result.Decision.Explanation;
-            return;
-        }
-
-        _logger.Info(LogCategory.Sync, $"tracking {row.Path} as {result.Decision.Binding!.Id}");
-
-        if (result.GitAttributePatterns.Count > 0)
-        {
-            _logger.Info(LogCategory.Git,
-                $".gitattributes: added {string.Join(", ", result.GitAttributePatterns)}" +
-                (result.LfsConfigured ? " with LFS" : " without LFS (git-lfs not available)"));
-        }
-
-        await BuildOrchestratorAsync(CancellationToken.None).ConfigureAwait(true);
-        await RescanAsync().ConfigureAwait(true);
-
-        // The binding set changed, so the watch set has to change with it - otherwise the
-        // project just adopted is the one project nobody is watching.
-        StartWatching();
-        await RefreshStalenessAsync().ConfigureAwait(true);
-
-        Summary = ToolchainAvailable
-            ? $"{row.Name} is now tracked. Export it to create the reviewable mirror."
-            : $"{row.Name} is now tracked, but {VendorName} is not available to export it.";
-    }
-
-    private bool CanExport() =>
-        _orchestrator is not null && SelectedProject is { Tracked: true, Busy: false };
+    /// <summary>Something is behind and an export could fix it.</summary>
+    private bool CanExportStale() => _orchestrator is not null && UnexportedCount > 0;
 
     /// <summary>
-    /// Export the selected project now.
+    /// Export every stale binding now.
     /// </summary>
     /// <remarks>
-    /// Runs as a <see cref="SyncJob.Synchronous"/> job, which is what bypasses the coalescer
-    /// and the 30-second throttle: somebody who presses <i>Export now</i> means now, and
-    /// "queued behind the running sync" is not an answer to a button press. It does
-    /// <b>not</b> bypass the circuit breaker, the hash gate or the direction lock — those
-    /// protect the user's work, and a manual trigger is not a reason to trust the request
-    /// more than the state machine.
+    /// The same call the commit gate makes, deliberately: two ways of deciding what is stale
+    /// would eventually disagree, and the moment they did would be a commit that recorded a
+    /// project without the mirror it exports to. The jobs run synchronously so they bypass the
+    /// coalescer's queue - somebody who presses this means now - but not the circuit breaker,
+    /// the hash gate or the direction lock, which protect work rather than pace it.
     /// </remarks>
-    private async Task ExportAsync()
+    private async Task ExportStaleAsync()
     {
-        if (_orchestrator is null || SelectedProject is not { Tracked: true } row)
+        _logger.Click("Sync.ExportStale");
+
+        var outcomes = await SatisfyGateAsync(CancellationToken.None).ConfigureAwait(true);
+        if (outcomes.Count == 0)
         {
+            Summary = "Nothing was stale.";
             return;
         }
 
-        _logger.Click("Sync.Export");
-        var operationId = Guid.NewGuid().ToString("N")[..8];
-        using var scope = _logger.BeginOperation(operationId);
-
-        row.Busy = true;
-        row.State = "exporting…";
-        RaiseCommandStates();
-
-        using var busy = _busy.Begin($"Exporting {row.Name} with {VendorName}…");
-        using var beat = _heartbeat.Track(operationId, $"exporting {row.Name}");
-
-        try
-        {
-            var outcome = await _orchestrator.HandleChangeAsync(new SyncJob
-            {
-                BindingId = row.BindingId!,
-                Source = ChangeSource.Project,
-                Synchronous = true,
-                Reason = "manual export",
-            }, CancellationToken.None).ConfigureAwait(true);
-
-            var sentence = SyncNarrative.Describe(outcome);
-
-            if (outcome.IsFailure)
-            {
-                _logger.Error(LogCategory.Plc, sentence);
-            }
-            else
-            {
-                _logger.Info(LogCategory.Sync, sentence);
-            }
-
-            foreach (var warning in outcome.Warnings)
-            {
-                _logger.Warn(LogCategory.Plc, warning);
-            }
-
-            // The export wrote into the working tree, so every row was computed from a scan
-            // that is now stale. Rescan first, then say what happened — the other way round
-            // and the rescan's own summary would immediately overwrite the outcome the user
-            // is waiting to read.
-            row.Busy = false;
-            await RescanAsync().ConfigureAwait(true);
-            await RefreshStalenessAsync().ConfigureAwait(true);
-
-            Summary = sentence;
-            LockState = SyncNarrative.Describe(outcome.State);
-        }
-        finally
-        {
-            row.Busy = false;
-            Activity = string.Empty;
-            RaiseCommandStates();
-        }
-    }
-
-    private bool CanImport() =>
-        _orchestrator is not null && !ImportPending &&
-        SelectedProject is { Tracked: true, Busy: false };
-
-    /// <summary>
-    /// Ask what an import would do, without doing any of it.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Import is the strictly more dangerous direction: an export writes text beside the
-    /// project, while an import writes into the <c>.project</c> itself — the file the
-    /// engineer cannot reconstruct by hand. So it is proposed and then confirmed, never
-    /// applied on one press.
-    /// </para>
-    /// <para>
-    /// <b>The confirmation is the orchestrator's own gate, not a second one bolted on here.</b>
-    /// Running the job unconfirmed puts it through the circuit breaker, the hash gate and the
-    /// direction lock exactly as the real thing would, and returns
-    /// <see cref="SyncVerdict.AwaitingConfirmation"/> only when everything else has already
-    /// agreed to proceed. A dialog written in the view model would have to duplicate all of
-    /// that reasoning and would drift out of step with it.
-    /// </para>
-    /// </remarks>
-    private async Task ProposeImportAsync()
-    {
-        if (_orchestrator is null || SelectedProject is not { Tracked: true } row)
-        {
-            return;
-        }
-
-        _logger.Click("Sync.Import");
-        using var scope = _logger.BeginOperation(Guid.NewGuid().ToString("N")[..8]);
-
-        var outcome = await _orchestrator.HandleChangeAsync(new SyncJob
-        {
-            BindingId = row.BindingId!,
-            Source = ChangeSource.ExportedText,
-            Confirmed = false,
-            Synchronous = true,
-            Reason = "manual import, proposed",
-        }, CancellationToken.None).ConfigureAwait(true);
-
-        if (outcome.Verdict != SyncVerdict.AwaitingConfirmation)
-        {
-            // Refused for some other reason - nothing changed, the lock is held the other
-            // way, the breaker has tripped. Say which, and propose nothing.
-            Summary = SyncNarrative.Describe(outcome);
-            LockState = SyncNarrative.Describe(outcome.State);
-            _logger.Info(LogCategory.Sync, Summary);
-            return;
-        }
-
-        await BuildImportPreviewAsync(row).ConfigureAwait(true);
-
-        _pendingImportBindingId = row.BindingId;
-        OnPropertyChanged(nameof(ImportPending));
-
-        ImportPrompt = ImportPreview.Count switch
-        {
-            0 => $"Import into {row.Name}. The exported text has changed; git reports no " +
-                 "changed files, so review the tree before continuing.",
-            1 => $"Import 1 changed file into {row.Name}. This writes into the project file " +
-                 "itself and cannot be undone from Versio.",
-            var n => $"Import {n} changed files into {row.Name}. This writes into the project " +
-                     "file itself and cannot be undone from Versio.",
-        };
-
-        _logger.Info(LogCategory.Sync,
-            $"import proposed for {row.Name}: {ImportPreview.Count} changed file(s)");
-        RaiseCommandStates();
-    }
-
-    /// <summary>
-    /// What the import would write, according to git.
-    /// </summary>
-    /// <remarks>
-    /// Git rather than a diff of our own: the export tree is committed history, so git already
-    /// knows precisely which of its files differ from the last commit, and it is the same
-    /// answer the engineer sees in the changed-files panel. Deriving a second opinion here
-    /// would give two lists that disagree at the worst possible moment.
-    /// </remarks>
-    private async Task BuildImportPreviewAsync(ProjectRow row)
-    {
-        ImportPreview.Clear();
-        if (_git is null)
-        {
-            return;
-        }
-
-        var binding = _config.Bindings.FirstOrDefault(b => b.Id == row.BindingId);
-        if (binding is null)
-        {
-            return;
-        }
-
-        var prefix = binding.ExportPath.Replace('\\', '/').TrimEnd('/') + "/";
-        var status = await _git.StatusAsync(CancellationToken.None).ConfigureAwait(true);
-
-        foreach (var change in status.Changes
-                     .Where(c => c.Path.Replace('\\', '/')
-                                  .StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                     .OrderBy(c => c.Path, StringComparer.Ordinal))
-        {
-            ImportPreview.Add(change.Path);
-        }
-    }
-
-    /// <summary>Apply the import that was proposed, and only that one.</summary>
-    private async Task ConfirmImportAsync()
-    {
-        if (_orchestrator is null || _pendingImportBindingId is not { } bindingId)
-        {
-            return;
-        }
-
-        var row = Projects.FirstOrDefault(p => p.BindingId == bindingId);
-        if (row is null)
-        {
-            // The project moved out from under the proposal - a rescan, a rename, a branch
-            // switch. Importing anyway would apply it to something the user never saw.
-            ClearPendingImport();
-            Summary = "That project is no longer listed; the import was not applied.";
-            return;
-        }
-
-        _logger.Click("Sync.ConfirmImport");
-        var operationId = Guid.NewGuid().ToString("N")[..8];
-        using var scope = _logger.BeginOperation(operationId);
-
-        row.Busy = true;
-        row.State = "importing…";
-        ClearPendingImport();
-        RaiseCommandStates();
-
-        using var busy = _busy.Begin($"Importing {row.Name} into the project…");
-        using var beat = _heartbeat.Track(operationId, $"importing {row.Name}");
-
-        try
-        {
-            var outcome = await _orchestrator.HandleChangeAsync(new SyncJob
-            {
-                BindingId = bindingId,
-                Source = ChangeSource.ExportedText,
-                Confirmed = true,
-                Synchronous = true,
-                Reason = "manual import, confirmed",
-            }, CancellationToken.None).ConfigureAwait(true);
-
-            var sentence = SyncNarrative.Describe(outcome);
-
-            if (outcome.IsFailure)
-            {
-                _logger.Error(LogCategory.Plc, sentence);
-            }
-            else
-            {
-                _logger.Info(LogCategory.Sync, sentence);
-            }
-
-            foreach (var warning in outcome.Warnings)
-            {
-                _logger.Warn(LogCategory.Plc, warning);
-            }
-
-            // The import rewrote the .project, so git sees a different working tree. Rescan
-            // before reporting, or the rescan's own summary overwrites the outcome.
-            row.Busy = false;
-            await RescanAsync().ConfigureAwait(true);
-            await RefreshStalenessAsync().ConfigureAwait(true);
-
-            Summary = sentence;
-            LockState = SyncNarrative.Describe(outcome.State);
-        }
-        finally
-        {
-            row.Busy = false;
-            Activity = string.Empty;
-            RaiseCommandStates();
-        }
-    }
-
-    private void ClearPendingImport()
-    {
-        if (_pendingImportBindingId is null)
-        {
-            return;
-        }
-
-        _pendingImportBindingId = null;
-        ImportPreview.Clear();
-        ImportPrompt = string.Empty;
-        OnPropertyChanged(nameof(ImportPending));
+        var failure = outcomes.FirstOrDefault(o => o.IsFailure);
+        Summary = failure is null
+            ? SyncNarrative.Describe(outcomes[^1])
+            : $"Export failed: {failure.Explanation}";
     }
 
     private bool CanAcknowledge() =>
-        _orchestrator is not null && SelectedProject is { Tracked: true } row &&
-        _orchestrator.StateOf(row.BindingId!) == SyncDirection.Failed;
+        _orchestrator is not null &&
+        Projects.Any(p => p.Tracked &&
+                          _orchestrator.StateOf(p.BindingId!) == SyncDirection.Failed);
 
+    /// <summary>
+    /// Clear every failed binding.
+    /// </summary>
+    /// <remarks>
+    /// Repo-wide rather than per-row, because there is no longer a row to press it against -
+    /// and because a failure nothing can clear is a dead end: a failed binding syncs no
+    /// further until somebody acknowledges it, by design.
+    /// </remarks>
     private async Task AcknowledgeAsync()
     {
-        if (_orchestrator is null || SelectedProject is not { Tracked: true } row)
+        if (_orchestrator is null)
         {
             return;
         }
 
         _logger.Click("Sync.Acknowledge");
-        await _orchestrator.AcknowledgeFailureAsync(row.BindingId!, CancellationToken.None)
-            .ConfigureAwait(true);
 
-        _logger.Info(LogCategory.Sync, $"{row.Name}: failure acknowledged");
-        LockState = SyncNarrative.Describe(_orchestrator.StateOf(row.BindingId!));
+        var failed = Projects
+            .Where(p => p.Tracked && _orchestrator.StateOf(p.BindingId!) == SyncDirection.Failed)
+            .ToList();
+
+        foreach (var row in failed)
+        {
+            await _orchestrator.AcknowledgeFailureAsync(row.BindingId!, CancellationToken.None)
+                .ConfigureAwait(true);
+            _logger.Info(LogCategory.Sync, $"{row.Name}: failure acknowledged");
+        }
+
+        LockState = SelectedProject is { Tracked: true } selected
+            ? SyncNarrative.Describe(_orchestrator.StateOf(selected.BindingId!))
+            : string.Empty;
+
         await RescanAsync().ConfigureAwait(true);
+        await RefreshStalenessAsync().ConfigureAwait(true);
     }
 
     private void RaiseCommandStates()
     {
-        RescanCommand.RaiseCanExecuteChanged();
-        AdoptCommand.RaiseCanExecuteChanged();
-        ExportCommand.RaiseCanExecuteChanged();
+        ExportStaleCommand.RaiseCanExecuteChanged();
         AcknowledgeCommand.RaiseCanExecuteChanged();
-        ImportCommand.RaiseCanExecuteChanged();
-        ConfirmImportCommand.RaiseCanExecuteChanged();
-        CancelImportCommand.RaiseCanExecuteChanged();
     }
 
     private void Report(Exception ex)

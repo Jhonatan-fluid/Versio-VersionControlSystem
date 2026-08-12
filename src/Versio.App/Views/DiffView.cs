@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Documents;
 using System.Windows.Media;
 using Versio.Core.Diff;
@@ -40,6 +41,21 @@ public sealed class DiffView : ListBox
         DependencyProperty.Register(nameof(FilePath), typeof(string), typeof(DiffView),
             new PropertyMetadata(string.Empty, OnInputChanged));
 
+    /// <summary>Invoked with a hunk index when its button is pressed.</summary>
+    public static readonly DependencyProperty HunkCommandProperty =
+        DependencyProperty.Register(nameof(HunkCommand), typeof(ICommand), typeof(DiffView),
+            new PropertyMetadata(null));
+
+    /// <summary>Whether a hunk button appears at all.</summary>
+    public static readonly DependencyProperty ShowHunkActionsProperty =
+        DependencyProperty.Register(nameof(ShowHunkActions), typeof(bool), typeof(DiffView),
+            new PropertyMetadata(false, OnInputChanged));
+
+    /// <summary>What the button says, and therefore what it does.</summary>
+    public static readonly DependencyProperty HunkActionLabelProperty =
+        DependencyProperty.Register(nameof(HunkActionLabel), typeof(string), typeof(DiffView),
+            new PropertyMetadata("Stage hunk", OnInputChanged));
+
     public string DiffText
     {
         get => (string)GetValue(DiffTextProperty);
@@ -50,6 +66,24 @@ public sealed class DiffView : ListBox
     {
         get => (string)GetValue(FilePathProperty);
         set => SetValue(FilePathProperty, value);
+    }
+
+    public ICommand? HunkCommand
+    {
+        get => (ICommand?)GetValue(HunkCommandProperty);
+        set => SetValue(HunkCommandProperty, value);
+    }
+
+    public bool ShowHunkActions
+    {
+        get => (bool)GetValue(ShowHunkActionsProperty);
+        set => SetValue(ShowHunkActionsProperty, value);
+    }
+
+    public string HunkActionLabel
+    {
+        get => (string)GetValue(HunkActionLabelProperty);
+        set => SetValue(HunkActionLabelProperty, value);
     }
 
     public DiffView()
@@ -137,7 +171,7 @@ public sealed class DiffView : ListBox
 
         var content = line.Kind switch
         {
-            DiffLineKind.HunkHeader => Mono(line.Text, Resolve("Brush.Accent.Default")),
+            DiffLineKind.HunkHeader => HunkHeaderContent(line),
             DiffLineKind.FileHeader or DiffLineKind.NoNewline =>
                 Mono(line.Text, Resolve("Brush.Text.Disabled")),
             _ => Highlighted(line.Text, language),
@@ -148,6 +182,56 @@ public sealed class DiffView : ListBox
         grid.Children.Add(content);
 
         return grid;
+    }
+
+    /// <summary>
+    /// The <c>@@</c> line, with its stage button when there is one to offer.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The button lives on the hunk header because that is the row that <i>is</i> the hunk —
+    /// a control per changed line would be a control every second row, and there is no such
+    /// thing as staging half a hunk anyway.
+    /// </para>
+    /// <para>
+    /// It carries its own index as the command parameter rather than relying on where it sits
+    /// in the list. With recycling on, the container this row is built into will later hold a
+    /// different line, and a button that worked out its hunk from its position would by then
+    /// be pointing at somebody else's.
+    /// </para>
+    /// </remarks>
+    private TextBlock HunkHeaderContent(DiffLine line)
+    {
+        var header = Mono(line.Text, Resolve("Brush.Accent.Default"));
+
+        if (!ShowHunkActions || HunkCommand is null || line.HunkIndex < 0)
+        {
+            return header;
+        }
+
+        var button = new Button
+        {
+            Content = HunkActionLabel,
+            Command = HunkCommand,
+            CommandParameter = line.HunkIndex,
+            Margin = new Thickness(12, 0, 0, 0),
+            Padding = new Thickness(8, 0, 8, 0),
+            FontSize = (double)FindResource("Font.Size.Caption"),
+            FontFamily = (FontFamily)FindResource("Font.UI"),
+            Cursor = System.Windows.Input.Cursors.Hand,
+        };
+
+        if (TryFindResource("GhostButton") is Style ghost)
+        {
+            button.Style = ghost;
+        }
+
+        header.Inlines.Add(new InlineUIContainer(button)
+        {
+            BaselineAlignment = BaselineAlignment.Center,
+        });
+
+        return header;
     }
 
     /// <summary>Build one code line as coloured runs.</summary>

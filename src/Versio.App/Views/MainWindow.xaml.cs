@@ -39,6 +39,14 @@ public partial class MainWindow : Window
         // event rather than showing one itself, so opening a repository stays testable.
         shell.RepositoryRejected += ShowRepositoryRejected;
 
+        // Dropping a stash destroys work git cannot give back, so it is asked about here
+        // rather than assumed. Unset would mean "no", which is the right way round for a
+        // wiring mistake to fail.
+        shell.ConfirmDestructive = (caption, body) =>
+            MessageBox.Show(this, body, caption, MessageBoxButton.OKCancel,
+                            MessageBoxImage.Warning, MessageBoxResult.Cancel)
+            == MessageBoxResult.OK;
+
         ApplyLogVisibility();
         SyncThemeRadios();
 
@@ -144,7 +152,7 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Selecting an object in the tree shows its diff.
+    /// Selecting a row in the tree shows whatever it has to show.
     /// </summary>
     /// <remarks>
     /// A code-behind handler because <c>TreeView.SelectedItem</c> is read-only and cannot be
@@ -170,12 +178,11 @@ public partial class MainWindow : Window
 
         _shell.ActivePanel = panel;
 
-        ChangesList.Visibility = panel == ShellPanel.Changes ? Visibility.Visible : Visibility.Collapsed;
+        ProjectPanel.Visibility = panel == ShellPanel.Project ? Visibility.Visible : Visibility.Collapsed;
         GitPanel.Visibility = panel == ShellPanel.Git ? Visibility.Visible : Visibility.Collapsed;
-        SyncPanel.Visibility = panel == ShellPanel.Sync ? Visibility.Visible : Visibility.Collapsed;
 
-        // The count badge belongs to the changed-files list only.
-        ChangeCountBadge.Visibility = panel == ShellPanel.Changes
+        // The count badge is about the working tree, which is what the project panel shows.
+        ChangeCountBadge.Visibility = panel == ShellPanel.Project
             ? Visibility.Visible
             : Visibility.Collapsed;
     }
