@@ -269,6 +269,29 @@ does not record them has to be run again.
 
 Written down with their evidence, because the reasoning is worth more than the fix.
 
+### Two of the three panels used half the card they sat in, because Dock defaults to Left
+
+Reported from the app: *"the git still, notice how is not using the full panel."* The git panel's
+rows stopped about 310 px into a 557 px card, leaving a column of dead surface down the right of
+every row in it.
+
+One default did it. The card held a `DockPanel`; **`DockPanel.Dock` defaults to `Left`**, and only
+the last child fills. The three panels are listed git, history, project — so the *project* panel
+filled the card and the other two were docked left at whatever width their content happened to
+want. The git panel was 310 px wide because that is what a branch card and two button rows add up
+to.
+
+Nothing about it looked broken from the inside: nothing was misaligned, nothing overflowed,
+nothing threw, and every test passed. It is a panel correctly sized to the wrong thing — and it
+had been that way since the panels were split, hidden while the git panel still carried the stash
+controls and enough width to look deliberate.
+
+The card is a two-row `Grid` now: the title, then one filling row that all three panels share,
+with exactly one visible at a time. The test arranges each panel *through its rail button* and
+asserts the width the panel renders at equals the card's, which is the assertion that would have
+caught this at any point in its life. Checked by pinning the git panel back to its content width,
+where it fails.
+
 ### Two things overlapping, and a test suite that could not see either
 
 Both reported from the running app, and neither was reachable by anything in the suite: it

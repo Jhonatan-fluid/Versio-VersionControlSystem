@@ -110,6 +110,52 @@ public sealed class ShellLayoutTests
     }
 
     [Theory]
+    [InlineData("RailProject", "ProjectPanel")]
+    [InlineData("RailGit", "GitPanel")]
+    [InlineData("RailHistory", "HistoryPanel")]
+    public void Every_panel_fills_the_card_it_lives_in(string rail, string panel)
+    {
+        // Reported from the app: "notice how it is not using the full panel" - the git panel's
+        // rows stopped about 310 px into a 557 px card, leaving a column of dead surface down
+        // the right of every row in it.
+        //
+        // The cause was one default. The card held a DockPanel, DockPanel.Dock DEFAULTS TO
+        // LEFT, and only the last child fills - so of the three panels listed git, history,
+        // project, only the project panel ever filled the card. The other two were docked left
+        // at whatever width their content happened to want. Nothing was misaligned, nothing
+        // overflowed, and every existing test passed: it is a panel correctly sized to the
+        // wrong thing.
+        //
+        // A Grid row fixes it, and this is what keeps all three honest - including the two
+        // that need a repository open before they show a single row.
+        StaHarness.Run(() =>
+        {
+            var window = Build();
+
+            var button = Assert.IsType<RadioButton>(window.FindName(rail));
+            button.IsChecked = true;
+
+            var content = Arrange(window, width: 1400);
+            var border = Assert.IsType<Border>(window.FindName(panel));
+
+            Assert.Equal(Visibility.Visible, border.Visibility);
+
+            // The card is the panel's parent Border, the one the rail swaps contents inside.
+            var card = Assert.IsAssignableFrom<Border>(
+                VisualTreeHelper.GetParent(VisualTreeHelper.GetParent(border)!));
+
+            Assert.True(card.ActualWidth > 0, "the card did not render");
+
+            // The panel's own padding is 14 + 12, and that is all it may give away.
+            var slack = card.ActualWidth - border.ActualWidth;
+
+            Assert.True(slack < 1,
+                        $"{panel} rendered {border.ActualWidth:F0} px wide inside a " +
+                        $"{card.ActualWidth:F0} px card, leaving {slack:F0} px of it unused");
+        });
+    }
+
+    [Theory]
     [InlineData("STAGED", "Unstage all")]
     [InlineData("NOT STAGED", "Discard")]
     [InlineData("NOT STAGED", "Stage all")]

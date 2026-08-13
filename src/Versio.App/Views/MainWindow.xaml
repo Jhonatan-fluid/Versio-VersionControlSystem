@@ -327,11 +327,24 @@
                 <ColumnDefinition Width="*" MinWidth="340" />
             </Grid.ColumnDefinitions>
 
-            <!-- Left panel. One card; the rail swaps its contents. -->
+            <!-- Left panel. One card; the rail swaps its contents.
+                 A Grid, not a DockPanel, and that is the whole fix for a panel that used
+                 only half its own card: DockPanel.Dock DEFAULTS TO LEFT, and only the last
+                 child fills. The three panels are listed git, history, project - so the
+                 project panel filled the card and the other two were docked left at
+                 whatever width their content happened to want, leaving 200-odd pixels of
+                 dead card to the right of every row in them.
+                 Both rows here are explicit, all three panels share row 1, and exactly one
+                 of them is visible at a time. -->
             <Border Grid.Column="0" Background="{DynamicResource Brush.Surface.Base}"
                     Margin="8,8,0,8" CornerRadius="{DynamicResource Radius.Card}">
-                <DockPanel>
-                    <Grid DockPanel.Dock="Top" Margin="14,12,12,8">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />   <!-- title -->
+                        <RowDefinition Height="*" />      <!-- panel -->
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0" Margin="14,12,12,8">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
@@ -359,7 +372,7 @@
                          ShellViewModel.Ready. Git serialises some of this itself with index
                          and ref locks, but not a push racing a commit, and not a commit
                          landing while the gate's export is still writing the mirror. -->
-                    <Border x:Name="GitPanel" Visibility="Collapsed" Padding="14,0,12,12">
+                    <Border Grid.Row="1" x:Name="GitPanel" Visibility="Collapsed" Padding="14,0,12,12">
                         <DockPanel>
                             <!-- Branch and divergence. The remote state is why somebody opens
                                  this panel, so it leads. -->
@@ -548,7 +561,7 @@
                          a commit's files are fetched when it is expanded; and a patch when a
                          file is clicked. The panel this replaced re-read the whole log on
                          every refresh that touched git's metadata, open or not. -->
-                    <Border x:Name="HistoryPanel" Visibility="Collapsed" Padding="14,0,12,12">
+                    <Border Grid.Row="1" x:Name="HistoryPanel" Visibility="Collapsed" Padding="14,0,12,12">
                         <DockPanel>
                             <!-- One page back at a time. Hidden once the branch runs out,
                                  rather than greyed: there is nothing further to say about a
@@ -662,7 +675,7 @@
                          disagreeing about the answer: a changed .st appeared in the file list
                          as a path and in the sync panel as an object, with nothing saying they
                          were the same edit. -->
-                    <Border x:Name="ProjectPanel" Padding="14,0,12,12">
+                    <Border Grid.Row="1" x:Name="ProjectPanel" Padding="14,0,12,12">
                         <DockPanel>
                             <!-- What used to be a PLC status card is gone.
                                  It carried the toolchain name, its version and its profile -
@@ -895,7 +908,7 @@
                         </DockPanel>
                     </Border>
 
-                </DockPanel>
+                </Grid>
             </Border>
 
             <GridSplitter Grid.Column="1" Width="8" HorizontalAlignment="Stretch"
