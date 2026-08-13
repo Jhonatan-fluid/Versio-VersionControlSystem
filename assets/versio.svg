@@ -16,8 +16,18 @@
   This file is the reference drawing, NOT the build input. The shipped icon is
   assets/versio.ico, produced by tools/New-VersioIcon.ps1, which redraws this
   geometry per size and uses a simplified variant below 32 px - the stagger and
-  the notch turn to mush at 16 px. Change the geometry in BOTH places, or run
-  the script and look at the 16 px output before believing it.
+  the notch turn to mush at 16 px.
+
+  THREE PLACES CARRY THIS GEOMETRY. Change one, change all three:
+
+      assets/versio.svg                        this reference drawing
+      tools/New-VersioIcon.ps1                 redraws it per icon size
+      src/Versio.App/Theme/controls/Brand.xaml  the mark in the top bar, at 20 px
+
+  Brand.xaml drops the tile and punches the badge notch in Surface.Base instead:
+  inside a bar that is already that colour, the tile would be an invisible square
+  with a visible edge. Run the script and look at the 16 px output, and open the
+  app and look at the top bar, before believing a change to any of the three.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 64 64"
      role="img" aria-label="Versio">

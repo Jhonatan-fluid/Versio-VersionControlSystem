@@ -1,4 +1,4 @@
-<!--
+﻿<!--
     Spacing, shape and motion.
 
     Density is deliberate: this is a data-dense engineering tool, not a marketing site.
@@ -29,7 +29,20 @@
     <!-- Density -->
     <sys:Double x:Key="Size.Row.Tree">24</sys:Double>
     <sys:Double x:Key="Size.Row.Log">20</sys:Double>
-    <sys:Double x:Key="Size.Control.Height">28</sys:Double>
+    <!--
+        One height for everything that sits in a row together. It was 28 while IconButton
+        hardcoded 32, so the top bar had 28 px dropdowns beside 32 px buttons and a ragged
+        baseline nobody could name but everybody could see. Both read this now.
+    -->
+    <sys:Double x:Key="Size.Control.Height">32</sys:Double>
+
+    <!--
+        The exception, stated once rather than re-invented per view: controls inside a strip
+        that is itself dense - the log header, a filter row - where a 32 px control would set
+        the height of the whole strip. Not a licence to pick a third value.
+    -->
+    <sys:Double x:Key="Size.Control.Compact">24</sys:Double>
+
     <sys:Double x:Key="Size.Rail.Width">44</sys:Double>
 
     <!-- Motion. Nothing over 200 ms: animation in a tool is feedback, not decoration. -->

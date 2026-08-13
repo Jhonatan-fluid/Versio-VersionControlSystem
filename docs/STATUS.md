@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-12 · **Commits:** 40 · **Tests:** 800 unit + 45 UI + 102 integration, 0 skipped
+**Date:** 2026-08-12 · **Commits:** 47 · **Tests:** 838 unit + 92 UI + 107 integration, 0 skipped
 
 > Both numbers are re-derivable rather than remembered: `git rev-list --count HEAD`, and
 > `dotnet test` prints a total per suite. The commit count in this header was wrong by twelve
@@ -115,7 +115,8 @@ format; `.gitattributes` covers every registered vendor's extensions.
 | | |
 |---|---|
 | **Project view** | **One panel.** Every project *with something to review* — a change, a mirror behind, a lock held, a failure, or never exported — carrying its full CODESYS-shaped object tree, with every other changed file beside them. A project whose mirror is clean is not listed, and the empty state says so rather than going blank. Search still reaches into a clean project, because the box searches the project and not the diff |
-| **Git panel** | Staging, commit message with a 50/72 guide, Ctrl+Enter, fetch / pull / push, stash, recent commits with click-to-diff, **discard**. One operation at a time across every button — a shared counted flag, so a 17–31 s export also holds them |
+| **Git panel** | Staging, commit message with a 50/72 guide, Ctrl+Enter, fetch / pull / push, **discard**. One operation at a time across every button — a shared counted flag, so a 17–31 s export also holds them. **No stash**: the controls were removed pending a different design, and the client-side operations are kept and still tested |
+| **History panel** | **Its own rail button**, not a strip inside the git panel. Every commit with its hash, local date and time, author and subject; expand one for the files it touched; click a file for what that commit did to it, in the shared diff pane. Lazy at four levels — the log is not walked until the panel is first shown, then one page of 50 at a time; a commit's files are read when it is expanded and cached for the session, because a commit's contents cannot change; a patch is read only when a file is clicked, and never cached. A merge says so rather than showing an empty list |
 | **PLC state** | **No card, and no buttons.** Toolchain, version and profile were environment rather than repository state and moved to Settings → Help → System information. "Export now" is gone because a stale mirror needs no decision — it is exported when the repository opens. "Acknowledge failure" is gone as a panel-wide control: a failure belongs to one project, so it is reported on that project's row with the reason and a *Try again* beside it. What is left in the panel is transient and hides itself: the coverage warning and the live heartbeat |
 | **Branch and clone** | Create a branch from HEAD and switch to it, with the name checked against git's rules while it is typed; clone a repository after verifying the remote, then open it. Both are modal dialogs built from the one stylesheet, and both are covered by tests that construct them against the real theme |
 | **Commit gate** | A stale mirror is exported *and staged* before the commit. Push releases the direction locks; commit does not, and the panel says so |
@@ -124,8 +125,10 @@ format; `.gitattributes` covers every registered vendor's extensions.
 | **Adoption writes `.gitignore`** | Created when absent, appended when present, never overriding an existing decision. Covers `.versio/local/` — locks, backups, scratch copies — and the toolchain's `-AllUsers.opt` and `-<user>-<machine>.opt`, the second of which carries a username and machine name in its filename |
 | **Export coverage** | What the export does *not* carry, said out loud: `_coverage.md` in the tree, every skip in the manifest with a stable reason, and a sentence in the panel naming what cannot be relied on. A gap is distinguished from a deliberate omission, from a file that is exported one way, and an old manifest reports "unknown" rather than "complete" |
 | **Library references** | One `<manager>.libraries.yaml` per library manager, beside the object that owns it — what the project asks for, never how it resolved here. Hand-written YAML on both sides, no dependency added to either. **Export-only**, and stated where a reader will meet it: the file's own header, `_coverage.md`, and the manifest's `form`. **Not yet in the panel** — `CoverageSummary` speaks only when there are gaps, deliberately, and the row-level 🔒 glyph the plan asks for (§9.3) is part of the unbuilt tree work |
-| **Chrome** | One app-wide progress bar with a caption, maximized on open, log console collapsed, heartbeat during long runs |
-| **Logging** | Ring buffer, correlation ids, rolling file from startup, crash handlers on all three .NET channels. The export narrates itself: the directory swap with both file counts, every skip with its reason, the summary, and a warning when a killed run left a staging folder behind |
+| **Chrome** | One app-wide progress bar with a caption, maximized on open, log console collapsed, heartbeat during long runs. **The title bar follows the theme** — painted with `Color.Surface.Base` through DWM, on every window the app opens and again on every theme switch, so the caption and the top bar are one surface rather than two. Tooltips are themed too, by an implicit style, because there are dozens of them and not one named a style |
+| **Saying it is working** | A toolchain run announces itself the moment it passes the last gate, and three surfaces answer three different questions: the **bar** that the app is busy, the **row** which project it is busy with (`exporting…`, in the accent colour), and the **heartbeat** that it is still alive and how far along. A refused, coalesced or throttled save announces nothing, because it is not working |
+| **Log panel** | Level as four chips (click to drop, click to restore) and category as a multi-select dropdown carrying a live count each, because the counts are what say where the volume is. **Pause freezes the feed** rather than the scroll, says so in the header, and shows what is queued behind it. The controls appear with the list they filter: collapsed, the strip is a chevron, a count and the paused pill |
+| **Logging** | Ring buffer, correlation ids, rolling file from startup, crash handlers on all three .NET channels. An idle app is quiet: a completed git command writes one line, not two, and runs of unchanged status polls are summarised every five minutes instead of three lines per poll. The export narrates itself: the directory swap with both file counts, every skip with its reason, the summary, and a warning when a killed run left a staging folder behind |
 
 ---
 
@@ -152,7 +155,13 @@ fixture: two library managers, **both exported now**, and `_coverage.md` reports
 
 ### 2. ~~Finish the git surface~~ — **done**
 
-- ~~Stash~~, ~~recent commits with click-to-diff~~, ~~per-hunk staging~~ — **done**
+- ~~Recent commits with click-to-diff~~, ~~per-hunk staging~~ — **done**. History has since
+  moved to a **panel of its own** with per-file diffs and lazy loading throughout; see the
+  finding on what the old list cost on every refresh
+- **Stash is withdrawn from the UI**, not finished. `StashPushAsync` / `StashApplyAsync` /
+  `StashDropAsync` and the list parser are kept, tested and unused: what was wrong was six
+  permanent controls in the narrowest column for something reached a few times a month. A
+  different design is owed
 - ~~Branch creation~~ — a dialog that validates the name **as it is typed**, against git's own
   rules, and creates-and-switches. `BranchName` is 35 unit tests in Core, because the useful
   half is the *reason* a name is refused, and git's own refusal arrives after a process spawn
@@ -220,6 +229,10 @@ More fixture projects. Every field bug becomes a fixture before it is fixed.
 Small, specific, and none of them blocking. Written down because an audit that finds things and
 does not record them has to be run again.
 
+- **Cancelling a running toolchain job is not implemented.** A change arriving mid-run is
+  queued, which is correct and cheap; restarting instead would be better when the run has
+  barely begun, and needs process cancellation plus cleanup of the staging folder a killed
+  export leaves behind.
 - **Orphan findings are computed and shown nowhere.** `OrphanScanner` runs on every scan and
   `SyncViewModel.Findings` is populated from it — an export tree whose project was deleted, a
   binding pointing at nothing — and no view binds that collection. It reaches the log as a
@@ -241,12 +254,509 @@ does not record them has to be run again.
   and `dotnet test --filter FullyQualifiedName~<TestClass>` for a per-area figure.
 - **One integration test is flaky under full-suite load** — see the finding below. Diagnosed,
   two fixes attempted and reverted, left alone deliberately.
+- **`RefrigeratorControl.~u` is in pushed history.** Untracked and ignored now, but the commit
+  that carried a username, machine name and pid to `origin/main` is still there. Removing it
+  means rewriting a pushed commit — the owner's call, not a maintenance task.
+- **Only four windows are constructed by a test**: the two prompt dialogs, `MainWindow` and
+  `SystemInfoWindow`. That is currently all of them, and the rule worth keeping is that **a new
+  window ships with a test that constructs and measures it** — twice now a window has been added
+  without one and twice it threw in front of somebody. The next `Popup` needs the same: its
+  content is not built until it opens, so a test that constructs the parent does not reach it.
 
 ---
 
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### Two of the three panels used half the card they sat in, because Dock defaults to Left
+
+Reported from the app: *"the git still, notice how is not using the full panel."* The git panel's
+rows stopped about 310 px into a 557 px card, leaving a column of dead surface down the right of
+every row in it.
+
+One default did it. The card held a `DockPanel`; **`DockPanel.Dock` defaults to `Left`**, and only
+the last child fills. The three panels are listed git, history, project — so the *project* panel
+filled the card and the other two were docked left at whatever width their content happened to
+want. The git panel was 310 px wide because that is what a branch card and two button rows add up
+to.
+
+Nothing about it looked broken from the inside: nothing was misaligned, nothing overflowed,
+nothing threw, and every test passed. It is a panel correctly sized to the wrong thing — and it
+had been that way since the panels were split, hidden while the git panel still carried the stash
+controls and enough width to look deliberate.
+
+The card is a two-row `Grid` now: the title, then one filling row that all three panels share,
+with exactly one visible at a time. The test arranges each panel *through its rail button* and
+asserts the width the panel renders at equals the card's, which is the assertion that would have
+caught this at any point in its life. Checked by pinning the git panel back to its content width,
+where it fails.
+
+### Two things overlapping, and a test suite that could not see either
+
+Both reported from the running app, and neither was reachable by anything in the suite: it
+constructed the window and measured it once, at a comfortable width. **An overlap is not a
+failure in WPF.** Two controls sitting on top of each other measure and arrange perfectly well —
+the layout did exactly what it was told.
+
+**The log console ran underneath the rail.** The rail lived inside the body *row*, so it stopped
+at the bottom of the panels, while the log console — a sibling row — spanned the full width of
+the window beneath it. Two surfaces of the same `Surface.Base` meeting at a T-junction under the
+rail icons, which is precisely what "the logs bar overlapping the left side bar" describes. The
+rail is app-level navigation, so it now lives in the outer grid and spans the body and the log;
+the log starts where the content starts. The status bar still spans the full width, which is
+where a status bar belongs.
+
+**A section label and its buttons shared one Grid cell.** `NOT STAGED` with `Discard` and `Stage
+all`, `STAGED` with `Unstage all`, the panel title with its count badge, `COMMIT MESSAGE` with
+its length counter, and `DIFF` with a checkbox and a 420 px path. A right-aligned child in a
+shared cell grows *leftwards across* the label rather than pushing it, and neither knows the
+other is there — so in a 380 px panel the label and the first button touched. Every one of those
+headers is two columns now: the label takes what is left and trims, the buttons keep their width.
+
+The tests assert **rendered geometry** — bounds transformed into a common ancestor, at a 1000 px
+window — because that is the only form in which "these two things are on top of each other" can
+be written down. They also select the git panel through the rail first: a collapsed panel
+arranges to nothing, which would have made every assertion vacuously true. All three fixes were
+checked by putting the old layout back, where each fails.
+
+Two smaller things went with it. The branch card's *Fetch / Pull / Push* are compact: at the full
+32 px they set the height of the whole card and pushed the file lists down for nothing. And
+`Size.Rail.Width` is finally what sets the rail's width, instead of a hardcoded 52 sitting beside
+an unused token.
+
+### An editor that corrupted every em-dash in a file it was only reformatting
+
+Not a design finding, and worth recording anyway because the damage was invisible in the diff
+that mattered and glaring on screen: the commit-box placeholder rendered as
+`Summary of the changeâ€¦`.
+
+`MainWindow.xaml` was edited in a few places with PowerShell's `Get-Content -Raw` /
+`Set-Content`, which reads with the system's ANSI codepage and writes UTF-8. Every one of the
+file's 18 em-dashes and ellipses — all of them in tooltips and comments — round-tripped into
+mojibake, and a BOM was added to a file that never had one. **Nothing caught it.** The build was
+clean, all 116 tests passed, the binding tracer was empty, and XAML is perfectly happy to render
+a corrupted string. It took a screenshot of the app.
+
+Repaired by re-decoding: the file's only non-ASCII characters were the mojibake sequences
+themselves, so reading the UTF-8 bytes back through CP1252 is exact rather than a guess. Verified
+by counting `…` and `—` against the previous commit — 18 in both — and by checking the first three
+bytes are `3C 57 69` rather than a BOM.
+
+The lesson is narrow and worth keeping: **edit source files with an editor that preserves
+encoding, not with a shell round-trip.** If a shell must do it, `[IO.File]::ReadAllText` /
+`WriteAllText` with an explicit `UTF8Encoding($false)` is the pair that does not corrupt anything.
+
+### The stylesheet's own argument, not applied to four controls
+
+`Controls.xaml` opens by naming the four things that made the first pass look like a Win32 app:
+visible borders on every control, the system highlight brush for selection, hard dividers, and
+colour emoji. It then fixes all four — for the controls it retemplates. Four it never touched
+kept every one of the problems the header describes.
+
+**Checkboxes and radio buttons were WPF's own.** The settings popup's three theme radios, *Show
+full file*, *+ untracked*, and every row of the category dropdown were drawing Aero's shaded
+square and shaded circle — sized for a 2009 desktop, lit as though from above — on a dark
+surface. Sixty lines each: a 16 px box with `Radius.Control` and the icon font's check glyph, a
+16 px ring with an accent dot. The label is inside the hit area now too, so a click no longer
+has to find a 13 px square.
+
+**Both TreeViews painted selection in Windows' highlight blue.** `ListBoxItem` was retemplated
+in the first pass *because* the system highlight is the loudest tell — and the project tree, the
+surface somebody looks at all day, was not a ListBox. It was a TreeView, so it kept the stock
+template: highlight-blue selection and the Aero expander triangle. When the history panel was
+added it inherited exactly the same thing. `TreeRowItem` is what `RowItem` already is for the
+lists — a tinted fill plus an accent bar — with a chevron rotated by a trigger rather than two
+glyph keys that can drift apart.
+
+Two details in it are deliberate and worth keeping:
+
+- **`IsSelected`, not `IsSelectionActive`.** The stock template greys the selection out when
+  focus leaves the tree, which happens the moment somebody clicks a file to read its diff — so
+  the file whose diff is on screen looked unselected. The row stays lit here.
+- **`IsExpanded` is not set by the style.** Both trees bind it two-way per row, and that binding
+  is what drives the project tree's lazy children and the history's demand-driven file lists. The
+  retemplate puts a `ToggleButton` on the same property, so the test that matters asserts the
+  round trip in both directions: expanding a node in the UI must still reach the row, or the
+  panels quietly stop loading anything and nothing else looks wrong.
+
+**And a style can be right and unused.** The tree tests build their own `TreeViewItem`, which
+proves the template and nothing about the app. A second test asserts both TreeViews actually
+name it — because the project tree needs a repository open before it has a single row, so a
+missing `BasedOn` would have shipped with every test still green. Checked by removing it from
+one of the two, where it fails. Same for the implicit styles: they are keyed by type, nothing in
+any view refers to them, and deleting one changes dozens of controls without a single lookup
+failing.
+
+### A top bar crowded into its left third, with two control heights in one row
+
+Reported from use: *"the repo and branch bars should cover more real estate horizontally so it
+looks more balanced, currently very heavy to the left."* Three separate causes, all visible at
+once and none of them nameable without opening the file.
+
+**One flexible column, in the wrong place.** Six columns, five of them `Auto`, and the single
+`*` sat on the *branch buttons* — so on a 2560 px window the slack piled up in the middle while
+both dropdowns stayed pinned at their hardcoded 230 px and 200 px. Two `*` columns now carry
+the dropdowns, bounded with `MaxWidth` so a wide window widens them without handing one of them
+half the screen, and a third `*` before Settings is what holds the right-hand cluster right.
+
+**Two heights in one row.** `Size.Control.Height` was 28 and `IconButton` hardcoded 32, so every
+dropdown in the bar sat four pixels shorter than the buttons beside it. That is the ragged
+baseline, and it is the reason the bar read as unfinished even where the spacing was right. Both
+read the token now, at 32, with `Size.Control.Compact` (24) named once for controls inside a
+strip that is itself dense — the log header, the section-label rows — rather than a third value
+picked per view.
+
+The test measures both controls after `Arrange` instead of reading the styles, because two
+controls can name the same token and still render differently if one of them also sets a padding
+or a border. Checked by putting the old values back: it fails.
+
+**The mark existed and was nowhere.** `assets/versio.svg` — three plates and a status badge — was
+drawn for the `.ico` and never appeared in the app, which showed the word "Versio" in accent
+blue instead. The geometry is now also `Theme/controls/Brand.xaml` at 20 px, and the SVG's header
+names all three places that carry it. A `ControlTemplate` rather than a `DrawingImage`, and not
+as a matter of taste: a `Freezable` in a resource dictionary resolves its `DynamicResource` once
+and is not re-resolved when the palette underneath is replaced — the trap `ThemeManager` already
+documents — so a `DrawingImage` mark would have kept the colours of whichever theme started
+first.
+
+**And accent was doing six jobs.** Brand, commit hashes, ahead/behind, watch state, the busy
+caption and every category in a scrolling log. A colour that marks six things marks none of
+them, so it is now spent on selection, the primary action, the count badge and the progress bar,
+and the rest moved to `Text.Secondary` or `Text.Disabled`. The one that gained meaning rather
+than losing colour is divergence: `BranchEntry.BrushKey` says `Status.Modified` when a branch is
+*behind*, because that is the state a pull answers, and secondary when it is merely ahead —
+which is normal and should not be painted like a problem.
+
+### The app themed everything except the strip Windows draws, and every tooltip in it
+
+Reported from use, and it is the first thing anybody sees: *"the top windows bar should follow
+color theme, so if its dark theme then it goes dark as well."* A dark shell under a white
+caption, with the app's own top bar — `Surface.Base`, an exact colour — immediately below it.
+
+Two surfaces were unreachable from the stylesheet, for two different reasons:
+
+**The caption belongs to the window manager.** No style, template or brush reaches the
+non-client area; the only way in is `DwmSetWindowAttribute`. So the colours are handed over
+directly — `CAPTION_COLOR`, `TEXT_COLOR` and `BORDER_COLOR`, with `USE_IMMERSIVE_DARK_MODE`
+behind them for Windows 10, where the three colour attributes fail and dark mode is the whole
+effect. `Surface.Base` is passed rather than settling for immersive dark mode alone, because
+that gives a generic dark grey that is *close* to the top bar and not equal to it, and a seam
+one shade off looks worse than an honest contrast.
+
+**Tooltips are popups, and there are dozens of them.** Every one is a plain string on the
+element it explains, and not one named a style — so every one was the stock WPF tooltip: a
+near-white slab with a hard border, opening over a dark application. An implicit style dresses
+all of them at once, including the ones nobody has written yet. That is also why the style is
+pinned by a test: nothing in any view refers to it, so deleting it changes the look of dozens
+of controls and no lookup anywhere fails.
+
+**Two halves, and the second is the one that gets forgotten.** Painting on load is correct
+until the user switches theme with windows open, at which point every caption keeps the colour
+it was born with until the app restarts — the same shape of half-working theme switch already
+recorded below, one strip further out. So `ThemeManager.Apply` repaints every open window as
+part of the swap, and a test asserts it: two windows built, theme switched, both repainted.
+
+**The reach is what is tested, not the paint.** The DWM call needs a shown window with an HWND,
+and this suite deliberately shows nothing. What the tests assert instead is that every window
+which loads gets to the painter — a plain `Window` and a real dialog, separately, because "it
+works on the main window" is exactly how this fails — and they do it by raising `Loaded` by
+hand, since a class handler fires on `RaiseEvent` whether or not anything is on screen. The
+byte order gets its own test: COLORREF is `0x00BBGGRR`, and reversed, the caption comes out a
+warm brown that reads as somebody's decision rather than a bug. The interop itself was
+confirmed separately against the running app: all four attributes return `S_OK` on 10.0.26200.
+
+**A class handler rather than four constructors.** `EventManager.RegisterClassHandler` on
+`Window.Loaded`, registered once at startup, covers the shell, all three dialogs, the spike
+window, and the fifth window that would otherwise have been the one somebody forgot. Two
+surfaces remain honestly out of reach and are listed rather than hidden: `MessageBox` is a
+Win32 dialog, and `OpenFolderDialog` is the shell's own.
+
+### Twenty seconds of work with nothing on screen, and four separate reasons for it
+
+Reported from use, and precisely: *"I save, the PLC tree immediately shows the changed file,
+and after a few seconds the changes get highlighted. I'm assuming the export is running, but
+there is no visual indication of this."*
+
+The reading was exactly right. The `.project` appears the instant git notices it — about 300 ms
+— and the diff people are actually waiting for appears when CODESYS finishes, 17–31 seconds
+later. In between, the app looked idle while doing the most expensive thing it ever does.
+
+What made it worth a full investigation is that **every mechanism for showing it already
+existed, and all four were disconnected.** None of them was missing; each was wired to
+something that could not deliver it.
+
+| Mechanism | Why nothing appeared |
+|---|---|
+| The app-wide progress bar | `SyncViewModel` takes a `BusyTracker` and **defaults to constructing its own**. The bar binds to the shell's. So the bar never moved for *any* sync work — including the catch-up and commit-gate exports, which both carefully open a scope for it |
+| `ProjectRow.Busy` and the `"exporting…"` state | Documented in the class — *"it says exporting… for 17–31 seconds"* — and **assigned by nothing**. `RefreshStalenessAsync` even guards with `!p.Busy`, a condition that could never be true |
+| The heartbeat | `HeartbeatService.Track` was called from exactly one place, the commit-gate path. The automatic save path started no tracker, so `Report` found nothing to attach to and returned |
+| The progress detail itself | `PlcJob.OperationId` defaulted to a **fresh random value**. The runner tags its phases and counts with the job's id; the heartbeat is keyed by the operation's. Two unrelated strings, so every phase the toolchain reported was dropped — on *every* path, including the one that did start a heartbeat, which could therefore only ever show elapsed seconds |
+
+The last one is the most instructive: an end-to-end pipeline, complete at both ends, discarding
+its payload at the final hop because two ids that had to be equal were each independently
+correct.
+
+**The announcement is a notification, not a wrapper.** It would be simpler for the caller to
+put a bar around its call to `HandleChangeAsync`, and it would be wrong: the overwhelming
+majority of calls are refused by a gate in milliseconds — a save that changed nothing, a
+coalesced burst, a throttled repeat — and a bar flashing on every settle is worse than no bar
+at all. `RunStarted` fires after the last gate, `RunFinished` from a `finally` so a failure or
+a throw cannot leave the bar up. A bar that never goes away is indistinguishable from a hang,
+which is the very confusion being fixed.
+
+**The row is shown and marked, not hidden.** Hiding it until the export finished was the other
+option and it is the wrong one: the `.project` really is modified in git the moment you save,
+and a panel that disagrees with `git status` is how somebody concludes Versio lost their work.
+One further defect fell out of choosing that: re-exporting a project whose file matches HEAD
+made its row **vanish for the whole run**, because the "show what has something to review" rule
+had nothing to show. The tree said so in its own log — `1 project(s) hidden as in sync` — while
+CODESYS was running against it. A run in flight now counts as a reason to be visible.
+
+### Two loop defences that had never actually run
+
+Found while tracing the above. Both are in the coalescer, both were written correctly, and
+neither had anything driving it.
+
+**A queued follow-up was dropped, and the coalescer was left believing a job was running.**
+`OnJobCompleted()` returns `true` to mean *a change arrived while that run was going and must
+be handled now*, and sets the slot as running again on the strength of the caller obeying it.
+The caller discarded the result. So the follow-up never ran — and worse, from that moment every
+later change on that binding answered `Queue`, then `Coalesced`, for the rest of the session.
+
+It stayed invisible because **the commit gate is synchronous and skips the coalescer entirely**,
+so exporting still worked at the one moment anybody checked. The plan's worked example — four
+saves during one export producing two exports — produced one.
+
+**A throttled change waited for something that did not exist.** `TryStartThrottled()` is
+documented as *"used by the idle tick"*; there was no idle tick and no caller anywhere. The
+pending flag that "guarantees a final export once things go quiet" guaranteed nothing precisely
+when things went quiet: the change waited for the next save, or for somebody to commit. There
+is a five-second tick now, and the deferred job re-enters the whole pipeline rather than being
+replayed, so the hash gate can say the reason to run has gone.
+
+### "Cancel and restart" cancelled nothing, and ran two CODESYS instances instead
+
+The most consequential of the three, and it was found by watching, not by reading.
+
+A save arriving in the first five seconds of a run returned `CancelAndRestart` — *"cheap to
+restart this early, and it avoids 40 s of work we know is stale"*. Sound reasoning, and the
+mechanism was never built: **no cancellation is plumbed through to a running toolchain job**.
+The orchestrator's only way to act on the instruction was to start a second export beside the
+first.
+
+Observed doing exactly that. One `git checkout` of the project file produced two settled
+changes 1.8 s apart, both inside the window, and the log shows two exports running
+concurrently against one project:
+
+```
+23:11:23.548  {4da031c5} Project change (automatic, Project)
+23:11:25.351  {81e9666a} Project change (automatic, Project)
+…
+23:12:09.269  {4da031c5} exported 12 object(s) in 45.6s
+23:12:32.748  {81e9666a} ExportSucceeded accepted
+```
+
+**45.6 s for a job that takes 17–31 s alone** — the two instances contending for the profile
+and the shared temp state, which is the same contention already documented for the integration
+suite.
+
+The branch is gone. A change arriving during a run is always queued, and the `cancelWindow`
+option went with it rather than being left as a knob that does nothing. Queueing costs almost
+nothing in return: an export reads the file as it opens it, so a save landing mid-run is
+usually captured by that very run, and the follow-up then finds nothing at the hash gate and
+costs a file read instead of a toolchain launch. **Restarting is still worth having** — it just
+has to cancel the process first, and killing CODESYS mid-export leaves a staging folder the
+exporter already warns about. That is a separate piece of work, not a comment.
+
+**The unit test passed throughout.** It asserted that the coalescer *returns* `CancelAndRestart`
+in the window, which it faithfully did. A component tested alone cannot see what its caller does
+with the answer, and "the caller cannot honour this verdict" is not a property any test of that
+component can express. The test now asserts the property that matters and could have caught it:
+**a second job is never started while one is in flight.**
+
+### The history was re-read on every refresh, into a panel four rows tall
+
+The commit list lived at the bottom of the git panel, under the stash, with `MaxHeight="150"`
+in a 380 px column that also carried the branch card, the commit box, two file lists and six
+stash controls. Four rows, and every one of them a single line holding a hash, a subject and a
+relative age — the date and time the commit was actually made were not on screen anywhere.
+
+What it cost is the part worth writing down. This ran on every manual refresh, every refresh
+triggered by git's own metadata moving, and every branch change:
+
+```csharp
+await LoadBranchesAsync();
+await LoadCommitsAsync();     // git log
+await LoadStashesAsync();     // git stash list
+```
+
+**No part of that asked whether anybody was looking.** The rail could be on the project panel —
+it is the default, and it is where the work happens — and a commit, a checkout or a fetch still
+spawned two git processes to refill a list that was not on screen. The one interaction the list
+did offer, clicking a commit, fetched the commit's *entire* patch, because whole-commit was the
+only granularity there was. On a commit touching an exported CODESYS tree that is hundreds of
+files in one string, to read one of them.
+
+So history moved out to its own rail button, and everything about it is now demand-driven at
+four separate levels: the log is not walked until the panel is first shown, and then one page
+of fifty at a time; a commit's files are read when it is expanded; a patch is read when a file
+is clicked. A refresh behind a hidden panel *marks* it and reads nothing — deferring the cost
+without deferring the correctness, which is the only version of lazy that is safe here. A
+commit that did not appear the moment it was made would look like a commit that had failed.
+
+The file lists are cached and the patches deliberately are not. **A commit's hash is its
+content**, so its file list cannot go stale and may be held for the session; its patches are
+unbounded in size and are held only by the diff pane, one at a time. The same caching would be
+wrong one panel to the left, where the working tree changes under you.
+
+Three things surfaced while building it:
+
+| Found | Why it mattered |
+|---|---|
+| `--name-status` quotes paths | Without `-z`, git renders `Kühlschrank Regelung.st` as `"K\303\274hlschrank Regelung.st"` — quotes and octal escapes included. This repository's own fixture corpus has both spaces and umlauts in its object names, so the panel would have asked git for the diff of a path that does not exist. The same class of bug as the mangled subprocess output already recorded here: an encoding assumption at a process boundary |
+| *Show full file* would have swapped what the pane was answering | Its re-read keys off the shown path, which for a historical diff is a caption — `PLC_PRG.st @ 1a2b3c4` — not a path. Left alone it would have quietly re-read the *working tree* version of that file and rendered it under a header naming a commit. Caught before it shipped; the pane now records which source it is showing, and a refresh leaves a historical diff alone entirely |
+| A collapsed panel passes the window test | `MainWindowTests` constructs and measures the whole window, and would still have passed with a broken `DataTemplate` in it: a `StaticResource` inside a template is resolved when a row is *realised*, not when the XAML is parsed. The new test switches to the panel through the rail button, fills it, expands a commit and asserts a real `TreeViewItem` came out with a height. Written the obvious way it would have been one more vacuous pass on the pile below |
+
+The stash controls came out at the same time and are not replaced: six controls for something
+reached for a few times a month, in the column that most needed the room. The client-side
+operations — push, apply, pop, drop, and the list parser — are kept and still covered, because
+what was wrong with the stash was the shelf it sat on, not the operations.
+
+### A window that never opened, and three instruments that called it clean
+
+The log panel gained a category dropdown - a `ToggleButton`, because it has to stay pressed
+while its popup is open - wearing `GhostButton`, whose `TargetType` was `Button`. WPF refuses
+that at the moment the style is set:
+
+```
+'Button' TargetType does not match type of element 'ToggleButton'
+MainWindow.xaml line 1005
+```
+
+So `MainWindow`'s constructor threw, and **the application started, opened its log file, probed
+the toolchain and never showed a window**. The build was clean and 883 tests were green while it
+did that.
+
+What makes it worth writing down is not the mistake, which is ordinary, but that **every
+instrument in place reported success**, each for a different reason:
+
+| Instrument | Why it said nothing |
+|---|---|
+| The compiler | XAML becomes BAML without resolving a single `StaticResource`. A style reference is a key until something asks for it |
+| `Versio.App.Tests` | Covered the two prompt dialogs and the stylesheet. `MainWindow` was the one window nothing constructed - on the reasoning that it opens on every launch and could not go unnoticed |
+| The resource-key tests | Assert `GhostButton` **exists**, which it did. The defect was a key that does not *fit* the element asking for it, which no lookup can see |
+| `--trace-bindings` | Reported nothing, twice, and it was believed. **A window that never opens evaluates no bindings**, so the trace is empty for the same reason it is empty when everything is correct |
+
+That last row is the thirteenth vacuous pass in this document, and the most embarrassing one,
+because it was read as evidence *while the app was failing to start*. The diagnosis offered
+first was also wrong: the empty trace was blamed on the MSIX filesystem-virtualization finding
+already recorded here, on the strength of it being a documented gotcha in the same area. It was
+not that - the app's own log was landing at the real path the whole time. **A documented
+explanation that fits is still a guess until it is checked**, and checking cost one command:
+
+```
+MainWindowTitle  :
+MainWindowHandle : 0
+```
+
+The fix is one word - `GhostButton` targets `ButtonBase`, so it dresses a `ToggleButton` and a
+`Button` alike - and everything derived from it still targets `Button`, which stays legal.
+
+The real fix is `MainWindowTests`: one construction of the real window, measured so templates
+are applied, verified to fail on the reverted bug. It is the cheapest possible regression test
+for the whole file - every `StaticResource` in `MainWindow.xaml` resolved on every run, in
+200 ms - and it should have existed from the day the two dialogs got theirs.
+
+### The same blind spot again, in the dialog added after it was written up
+
+Found only because the crash above forced a real launch. `SystemInfoWindow` uses
+`{StaticResource BoolToVisibility}` inside its row `DataTemplate`, and the converter was
+declared in **`MainWindow.Resources`** - a different window, which cannot see it. Opening
+Settings > Help > System information threw:
+
+```
+Cannot find resource named 'BoolToVisibility'. Resource names are case sensitive.
+  at FrameworkTemplate.LoadTemplateXaml ... at FrameworkElement.MeasureCore
+```
+
+**This one was not introduced by the change that found it.** It shipped with the dialog, and
+`Versio.App.Tests` covered the two prompt dialogs and not this one - so the lesson "a modal
+nobody has clicked has never been parsed" was recorded, and then the next modal was added
+without applying it. A blind spot named in a document is still a blind spot.
+
+Two things it teaches beyond the fix:
+
+- **A resource referenced from inside a template is not resolved until the template is
+  applied**, which is Measure, not construction. A test that only constructed the window would
+  have passed with the bug in place, so the tests measure and arrange.
+- The converter now lives in the stylesheet, declared once, and `MainWindow`'s private copy is
+  gone. A shared resource kept in one window's `Resources` is the same shape of bug as the
+  private `Theme.xaml` merge that broke the theme switch - resolution finds it from one place
+  and nowhere else, and the failure is invisible from the file that looks correct.
+
+### An idle log that was mostly its own noise
+
+Reported from use: the panel was drowning in `git status`. Measured from the log rather than
+argued about - the status backstop runs every 20 s forever, and each run wrote **three** Debug
+lines: the command, its duration, and a verdict of `status unchanged`.
+
+```
+17:29:29.287 DBG [Git] git status --porcelain=v2 --branch --untracked-files=all -z
+17:29:29.333 DBG [Git] git status --porcelain=v2 --branch --untracked-files=all -z ok in 0.0s
+17:29:29.335 DBG [Git] status unchanged (Backstop)
+```
+
+That is **about 540 lines an hour from an app with nothing to do**, and the entries that matter
+scroll out behind them. The panel keeps 5,000 rows, so roughly nine hours of idling evicts
+everything real.
+
+Both halves were already trying to be quiet and both had picked the wrong lever. The verdict
+line had been *demoted to Debug* - which is not the same as not writing it - and the command
+pair had never been questioned at all.
+
+- **A completed command needs one line, not two.** The pre-command line only ever earned its
+  place for a command that hangs, so that is now the only case that gets it: after one second,
+  `git fetch ... - still running`. Every routine call in this app finishes in tens of
+  milliseconds, so in normal use it writes nothing.
+- **A run of nothing is one fact, not N.** `QuietRunTracker` counts the quiet polls and says so
+  every five minutes: `no change in 15 checks over 5m (12 Backstop, 3 WorkingTree)`. An idle
+  hour goes from ~540 lines to 11.
+
+**The per-trigger counts are the part worth keeping.** A *Backstop* poll finding nothing is the
+definition of routine; a *WorkingTree* poll finding nothing means `RepositoryChangeFilter`
+passed an event git does not care about, which is the only signal for tuning it - and it is
+visible only in aggregate. A generic "collapse repeated lines" rule in the sink would have cut
+the same volume and thrown that away.
+
+Fourteen tests, and deleting the interval gate fails four of them, including both that assert
+silence - the property most easily made vacuous, since a tracker returning `null` unconditionally
+passes any test that only counts what it suppressed.
+
+### The CODESYS lock marker was committed, and the ignore rule had guessed its name
+
+Reported from use as "why is `control ~u` in my changes?". Three separate things, and only the
+first is cosmetic.
+
+**The rule matched nothing.** This repository's hand-written `.gitignore` carried
+`*.project.~*`, which is the plausible reading. CODESYS **replaces** the extension:
+`RefrigeratorControl.project` is held by `RefrigeratorControl.~u`. The product code has always
+had this right - `CodesysProjectFormat.OccupancyMarkerFor` uses `ChangeExtension`, with the
+measurement in its remarks, and adoption writes the scoped form for repositories it sets up.
+Only this repository was wrong, because its file was typed by hand before that code existed.
+Exactly the shape already recorded for `.versio/local/`: **a rule that is true only where
+somebody arranged it separately.**
+
+**The file was tracked, so the rule was irrelevant anyway.** `git check-ignore` reported no
+match even after the pattern was fixed - ignore rules do not apply to tracked files, and
+`git rm --cached` is the other half of the fix. Worth remembering: a corrected `.gitignore` that
+appears to do nothing is usually this.
+
+**It had been committed and pushed.** The marker's contents are a username, a machine name and a
+pid, and it went to `origin/main` in a commit made while testing. That is the same harm already
+documented for the `.opt` files, arriving by a route nobody had guarded. Removing it from
+history means rewriting a pushed commit, so it is left as the owner's call - but the guard is
+now in place for the next one.
 
 ### A panel about changed files, opening with a version number and two dead buttons
 
@@ -385,7 +895,8 @@ them.
 
 ### A diagnostic that verified an empty window
 
-`Versio.exe --trace-bindings <file> C:epo` never opened the repository. The startup code
+`Versio.exe --trace-bindings <file> C:
+epo` never opened the repository. The startup code
 took "the first argument that does not start with `--`" as the repository path, which is the
 trace file.
 
@@ -397,7 +908,8 @@ than no verification, because it gets reported as a pass. Both of this session's
 "clean trace" runs were exactly that, and were re-run properly afterwards.
 
 Flags that consume a value are listed rather than inferred: "skip whatever follows a flag"
-breaks on `--spike C:epo`, which is how the spike is actually run.
+breaks on `--spike C:
+epo`, which is how the spike is actually run.
 
 ### A project with nothing to review stayed on screen
 
@@ -1089,8 +1601,21 @@ the two dialogs, and a deliberately broken style reference fails every one of th
 **`Versio.exe --trace-bindings <file>`** writes every WPF data-binding failure to a file. A
 broken binding in WPF is otherwise **silent** — a mistyped path or a missing converter produces an
 empty control and no error anywhere — which made it the one class of failure in this codebase
-that was not loud. Every panel is verified clean through it, and the instrument itself was
-proven able to fail before its clean result was believed.
+that was not loud.
+
+> ⚠️ **Its clean result means nothing unless a window actually opened.** The tracer writes only
+> when a binding fails, so "no file" is produced both by a clean window and by *no window at
+> all* — and the second case happened: with `MainWindow` throwing during construction, two
+> consecutive runs produced an empty trace that was read as a pass. Check that the process has
+> a window before believing it:
+>
+> ```powershell
+> Get-Process Versio | Select-Object MainWindowTitle, MainWindowHandle
+> ```
+>
+> A handle of `0` means the window never opened and the trace is worthless. **Launch with
+> `Start-Process`**, not from a detached shell — a background-launched instance was alive,
+> logging and window-less, which is the same empty trace for a third reason.
 
 The app must be launched **outside** the tooling container for UI work; see the virtualization
 finding above.
@@ -1123,8 +1648,10 @@ state machine are tested in milliseconds rather than by causing real crashes.
 a paragraph in a README — because it was a paragraph in a README, and it had already stopped
 being true.
 
-**Green results are distrusted until they can fail.** Thirteen vacuous passes have been caught
-this way — counting the determinism test that compared the one file with no GUIDs in it, and
+**Green results are distrusted until they can fail.** Fifteen vacuous passes have been caught
+this way — most recently an empty `--trace-bindings` file read as a clean UI while the window was
+failing to construct at all, and a style-instantiation test that passed with the style deleted,
+because a missing resource casts to a null `Style` and assigning null is legal — counting the determinism test that compared the one file with no GUIDs in it, and
 the two the library reader gave up when it was broken on purpose: a parameters test that could
 not have failed because a list dash already prevented the leak it asserted, and a
 drop-the-nameless-entry rule that survived deletion because the fixture cannot produce a

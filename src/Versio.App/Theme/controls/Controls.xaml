@@ -7,10 +7,41 @@
     opposite of all four - borderless surfaces separated by tone rather than lines,
     selection expressed as a tinted fill plus an accent bar, and a single monochrome icon
     font that inherits the foreground colour.
+
+    Four controls were left out of that argument and kept every problem it describes, which is
+    worth stating because the omission was invisible: nothing fails when a control is simply
+    never styled.
+
+    - CheckBox and RadioButton were WPF's own Aero glyphs, on a dark surface, in the settings
+      popup and beside "Show full file". Both are implicit styles now - keyed by type, named by
+      nothing, which is the only way to reach controls whose call sites do not mention a style.
+    - TreeViewItem, twice. ListBoxItem was retemplated here BECAUSE the system highlight is the
+      loudest tell, and the project tree is not a ListBox - so it kept highlight-blue selection
+      and the Aero expander triangle, and the history tree inherited the same the day it was
+      added. TreeRowItem is RowItem's equivalent for both.
+    - ToolTip, which is a Popup and therefore reachable from no window's visual tree at all.
+
+    The pattern in all four: an implicit style, or a keyed one a container asks for, and a test
+    that applies and MEASURES it - a key can hold a template that resolves fine and throws the
+    first time something renders it.
 -->
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+
+    <!--
+        Declared once, here, because every window needs it and a window cannot see another
+        window's resources.
+
+        It lived in MainWindow.Resources, and SystemInfoWindow used the same key without
+        declaring it - so opening Settings → System information threw
+        "Cannot find resource named 'BoolToVisibility'" from inside the row DataTemplate,
+        during Measure. Nothing caught it: the reference compiles, the window is the one
+        dialog with no test constructing it, and the throw only happens when somebody opens
+        it. The same blind spot already written up for modal dialogs, found again in the
+        modal that was added after the write-up.
+    -->
+    <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
 
     <!-- Segoe Fluent Icons is the Windows 11 system icon font; Segoe MDL2 covers Windows 10.
          Monochrome, so glyphs inherit Foreground and re-theme for free - which colour emoji
@@ -30,7 +61,10 @@
     <sys:String x:Key="Icon.Undo">&#xE7A7;</sys:String>
     <sys:String x:Key="Icon.Download">&#xE896;</sys:String>
     <sys:String x:Key="Icon.Pause">&#xE769;</sys:String>
+    <sys:String x:Key="Icon.Play">&#xE768;</sys:String>
     <sys:String x:Key="Icon.Filter">&#xE71C;</sys:String>
+    <sys:String x:Key="Icon.Check">&#xE73E;</sys:String>
+    <sys:String x:Key="Icon.History">&#xE81C;</sys:String>
 
     <!-- ==================================================================== ICON -->
     <Style x:Key="IconText" TargetType="TextBlock">
@@ -44,7 +78,18 @@
     <!-- ================================================================== BUTTON -->
     <!-- Ghost by default: no border, no fill until hovered. Borders on every control are
          the single strongest "old app" signal. -->
-    <Style x:Key="GhostButton" TargetType="Button">
+    <!--
+        TargetType is ButtonBase, not Button, so this also styles a ToggleButton.
+
+        It targeted Button until the log panel's category dropdown - a ToggleButton, because
+        it has to stay pressed while its popup is open - asked for it and WPF threw
+        "'Button' TargetType does not match type of element 'ToggleButton'" at window
+        construction. That is a runtime failure with a clean build behind it: BAML compiles
+        the reference happily, and nothing looks at it again until somebody opens the window.
+        Everything derived from this still targets Button, which stays legal because Button
+        is a ButtonBase.
+    -->
+    <Style x:Key="GhostButton" TargetType="ButtonBase">
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
         <Setter Property="BorderThickness" Value="0" />
@@ -56,7 +101,7 @@
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="Template">
             <Setter.Value>
-                <ControlTemplate TargetType="Button">
+                <ControlTemplate TargetType="ButtonBase">
                     <Border x:Name="Root"
                             Background="{TemplateBinding Background}"
                             CornerRadius="{DynamicResource Radius.Control}"
@@ -83,9 +128,12 @@
         </Setter>
     </Style>
 
+    <!-- Square, and the same height as everything else in its row. It used to hardcode 32
+         against a 28 px Size.Control.Height, which is why the top bar's buttons stood taller
+         than the dropdowns beside them. -->
     <Style x:Key="IconButton" TargetType="Button" BasedOn="{StaticResource GhostButton}">
-        <Setter Property="Width" Value="32" />
-        <Setter Property="Height" Value="32" />
+        <Setter Property="Width" Value="{DynamicResource Size.Control.Height}" />
+        <Setter Property="Height" Value="{DynamicResource Size.Control.Height}" />
         <Setter Property="Padding" Value="0" />
         <Setter Property="FontFamily" Value="{DynamicResource Font.Icon}" />
         <Setter Property="FontSize" Value="14" />
@@ -377,6 +425,398 @@
         <Setter Property="FontSize" Value="{DynamicResource Font.Size.Caption}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
         <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!-- ================================================================= TOOLTIP -->
+    <!--
+        Implicit, and that is the point: there are dozens of ToolTips across the shell and the
+        dialogs, every one of them written as a plain string on the element it explains. Not
+        one of them named a style, so every one of them was the stock WPF tooltip - a
+        near-white slab with a hard border and a square drop shadow - opening on top of a dark
+        application. Retemplating them one by one would have meant touching dozens of call
+        sites and missing the next one; an implicit style dresses the ones that exist and the
+        ones nobody has written yet.
+
+        A ToolTip is a Popup with its own HWND, so it is the other reason this file has to be
+        honest about surfaces: nothing in the window's visual tree reaches it.
+    -->
+    <Style TargetType="ToolTip">
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+        <Setter Property="FontFamily" Value="{DynamicResource Font.UI}" />
+        <Setter Property="FontSize" Value="{DynamicResource Font.Size.Caption}" />
+        <Setter Property="MaxWidth" Value="340" />
+        <Setter Property="HasDropShadow" Value="False" />
+        <Setter Property="Placement" Value="Bottom" />
+        <Setter Property="HorizontalOffset" Value="0" />
+        <Setter Property="VerticalOffset" Value="4" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToolTip">
+                    <Border Background="{DynamicResource Brush.Surface.Raised}"
+                            BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                            BorderThickness="1"
+                            CornerRadius="{DynamicResource Radius.Control}"
+                            Padding="10,6">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="12" ShadowDepth="2" Opacity="0.28"
+                                              Direction="270" />
+                        </Border.Effect>
+
+                        <!-- Wrapping, because several of these are whole sentences: the
+                             direction-lock rule, what Discard cannot undo, why a stash keeps
+                             untracked files. A tooltip that ran off the screen edge would
+                             lose the half that matters. -->
+                        <ContentPresenter>
+                            <ContentPresenter.Resources>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="TextWrapping" Value="Wrap" />
+                                </Style>
+                            </ContentPresenter.Resources>
+                        </ContentPresenter>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- =================================================================== CHIPS -->
+    <!--
+        A filter toggle that reads as on or off at a glance and in peripheral vision.
+
+        ON is a filled pill; OFF is the same pill emptied out and dimmed. Deliberately NOT
+        a border-only difference: the log header carries four of these side by side, and a
+        one-pixel outline is not a state anybody reads while scanning for a warning.
+
+        The unchecked state keeps the text visible rather than hiding it, because the label
+        IS the affordance - a chip that dropped its own name when switched off would leave
+        four unlabelled buttons and no way to guess which one to press.
+    -->
+    <Style x:Key="FilterChip" TargetType="ToggleButton">
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Height" Value="20" />
+        <Setter Property="Margin" Value="0,0,4,0" />
+        <Setter Property="FontFamily" Value="{DynamicResource Font.Mono}" />
+        <Setter Property="FontSize" Value="{DynamicResource Font.Size.Caption}" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToggleButton">
+                    <Border x:Name="Root" CornerRadius="10" Padding="8,0"
+                            Background="{DynamicResource Brush.Surface.Sunken}">
+                        <ContentPresenter x:Name="Label"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="False">
+                            <Setter TargetName="Root" Property="Background" Value="Transparent" />
+                            <Setter TargetName="Label" Property="Opacity" Value="0.35" />
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Root" Property="Background"
+                                    Value="{DynamicResource Brush.Surface.Hover}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!--
+        A small stated fact: a count, a state, a mode. Not clickable, and shaped so it does
+        not read as a button somebody is failing to press.
+    -->
+    <Style x:Key="Pill" TargetType="Border">
+        <Setter Property="CornerRadius" Value="9" />
+        <Setter Property="Padding" Value="8,1" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Background" Value="{DynamicResource Brush.Surface.Sunken}" />
+    </Style>
+
+    <Style x:Key="PillText" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource Font.Mono}" />
+        <Setter Property="FontSize" Value="{DynamicResource Font.Size.Caption}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Secondary}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!-- A checkable row inside a dropdown: the category list, and anything like it. -->
+    <Style x:Key="MenuCheck" TargetType="CheckBox"
+           BasedOn="{StaticResource {x:Type CheckBox}}">
+        <Setter Property="Padding" Value="6,0,0,0" />
+        <Setter Property="Margin" Value="0,2" />
+        <Setter Property="FontSize" Value="{DynamicResource Font.Size.Caption}" />
+    </Style>
+
+    <!-- ========================================================= CHECK AND RADIO -->
+    <!--
+        Implicit, both of them, and they are the last stock chrome in the app.
+
+        Every other control here was retemplated in the first pass; these two were not, so the
+        settings popup's theme radios, "Show full file", "+ untracked" and every row of the
+        category dropdown were drawing WPF's own Aero glyphs - a shaded square and a shaded
+        circle, sized for a 2009 desktop, lit as though the light were coming from above - on a
+        dark surface. It is the loudest remaining "old app" tell in the product and it costs
+        sixty lines to remove.
+
+        Box and glyph rather than box and tick-shaped Path: the icon font is already the app's
+        one source of glyphs, it inherits Foreground, and it re-themes for free.
+    -->
+    <Style TargetType="CheckBox">
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="FontFamily" Value="{DynamicResource Font.UI}" />
+        <Setter Property="FontSize" Value="{DynamicResource Font.Size.Body}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <!-- Transparent background across the whole row, so the label is part of
+                         the hit area rather than a 13 px square being the only target. -->
+                    <Border Background="Transparent" Padding="{TemplateBinding Padding}">
+                        <StackPanel Orientation="Horizontal">
+                            <Border x:Name="Box" Width="16" Height="16"
+                                    CornerRadius="{DynamicResource Radius.Control}"
+                                    BorderThickness="1"
+                                    BorderBrush="{DynamicResource Brush.Border.Strong}"
+                                    Background="Transparent"
+                                    VerticalAlignment="Center">
+                                <TextBlock x:Name="Glyph"
+                                           Style="{StaticResource IconText}"
+                                           FontSize="11" Opacity="0"
+                                           Text="{DynamicResource Icon.Check}"
+                                           Foreground="{DynamicResource Brush.Text.OnAccent}" />
+                            </Border>
+
+                            <ContentPresenter x:Name="Label" Margin="8,0,0,0"
+                                              VerticalAlignment="Center"
+                                              RecognizesAccessKey="True" />
+                        </StackPanel>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Box" Property="Background"
+                                    Value="{DynamicResource Brush.Accent.Default}" />
+                            <Setter TargetName="Box" Property="BorderBrush"
+                                    Value="{DynamicResource Brush.Accent.Default}" />
+                            <Setter TargetName="Glyph" Property="Opacity" Value="1" />
+                        </Trigger>
+
+                        <!-- Indeterminate is not used anywhere yet. Given a state rather than
+                             left to render as unchecked, so the first three-state checkbox
+                             does not silently lie about itself. -->
+                        <Trigger Property="IsChecked" Value="{x:Null}">
+                            <Setter TargetName="Box" Property="Background"
+                                    Value="{DynamicResource Brush.Accent.Muted}" />
+                            <Setter TargetName="Box" Property="BorderBrush"
+                                    Value="{DynamicResource Brush.Accent.Default}" />
+                        </Trigger>
+
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Box" Property="BorderBrush"
+                                    Value="{DynamicResource Brush.Accent.Default}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Foreground"
+                                    Value="{DynamicResource Brush.Text.Disabled}" />
+                            <Setter TargetName="Box" Property="BorderBrush"
+                                    Value="{DynamicResource Brush.Border.Subtle}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!--
+        Implicit, and safe for the rail: RailButton sets Style explicitly, and an explicit
+        style always beats an implicit one. Asserted by a test rather than trusted, because
+        "it only applies where nothing else does" is the kind of rule that is obvious right up
+        until it isn't.
+    -->
+    <Style TargetType="RadioButton">
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="FontFamily" Value="{DynamicResource Font.UI}" />
+        <Setter Property="FontSize" Value="{DynamicResource Font.Size.Body}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RadioButton">
+                    <Border Background="Transparent" Padding="{TemplateBinding Padding}">
+                        <StackPanel Orientation="Horizontal">
+                            <Grid Width="16" Height="16" VerticalAlignment="Center">
+                                <Ellipse x:Name="Ring" StrokeThickness="1"
+                                         Stroke="{DynamicResource Brush.Border.Strong}"
+                                         Fill="Transparent" />
+                                <Ellipse x:Name="Dot" Width="8" Height="8" Opacity="0"
+                                         Fill="{DynamicResource Brush.Accent.Default}" />
+                            </Grid>
+
+                            <ContentPresenter Margin="8,0,0,0" VerticalAlignment="Center"
+                                              RecognizesAccessKey="True" />
+                        </StackPanel>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Ring" Property="Stroke"
+                                    Value="{DynamicResource Brush.Accent.Default}" />
+                            <Setter TargetName="Dot" Property="Opacity" Value="1" />
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Ring" Property="Stroke"
+                                    Value="{DynamicResource Brush.Accent.Default}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Foreground"
+                                    Value="{DynamicResource Brush.Text.Disabled}" />
+                            <Setter TargetName="Ring" Property="Stroke"
+                                    Value="{DynamicResource Brush.Border.Subtle}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ================================================================ TREE ROW -->
+    <!--
+        What RowItem does for lists, for the two TreeViews.
+
+        This file's own header says the system highlight brush is the loudest "old app" tell,
+        and that is why ListBoxItem was retemplated in the first pass. The TreeViews were not,
+        so the project tree - the app's primary surface, and the one somebody looks at all day -
+        painted its selected row in Windows' own highlight blue and drew the Aero expander
+        triangle beside it. The second TreeView, the history, inherited the same thing the day
+        it was added.
+
+        The expander is a chevron from the icon font, rotated rather than swapped, so the two
+        states cannot drift apart the way two glyph keys can.
+
+        IsExpanded is NOT set here. Both TreeViews bind it two-way to the row - which is what
+        drives the project tree's lazy children and the history's demand-driven file lists - and
+        a Setter here would fight that binding. The test that matters for this style asserts the
+        round-trip still works.
+    -->
+    <Style x:Key="TreeRowItem" TargetType="TreeViewItem">
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TreeViewItem">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <!-- The row: fill, selection bar, expander, content. Indentation comes
+                             from the ItemsPresenter's margin below rather than from a
+                             per-level template, so a row's fill spans the full width and a
+                             selected child is not a stripe floating in the middle. -->
+                        <Grid Grid.Row="0">
+                            <Border x:Name="Fill" Background="Transparent"
+                                    CornerRadius="{DynamicResource Radius.Control}"
+                                    Margin="2,0" />
+                            <Border x:Name="Bar" Width="3" HorizontalAlignment="Left"
+                                    Margin="2,3,0,3" CornerRadius="2"
+                                    Background="{DynamicResource Brush.Accent.Default}"
+                                    Opacity="0" />
+
+                            <Grid Margin="8,0,4,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="16" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <ToggleButton x:Name="Expander" Grid.Column="0"
+                                              Focusable="False" ClickMode="Press"
+                                              IsChecked="{Binding IsExpanded,
+                                                  RelativeSource={RelativeSource TemplatedParent},
+                                                  Mode=TwoWay}">
+                                    <ToggleButton.Template>
+                                        <ControlTemplate TargetType="ToggleButton">
+                                            <Border Background="Transparent" Width="16" Height="16">
+                                                <!-- One glyph, rotated, rather than two glyph
+                                                     keys that can drift apart. The transform
+                                                     is replaced wholesale in the trigger: a
+                                                     RotateTransform is a Freezable and cannot
+                                                     be reached by TargetName from inside a
+                                                     template. -->
+                                                <TextBlock x:Name="Chevron"
+                                                           Style="{StaticResource IconText}"
+                                                           FontSize="8"
+                                                           Text="{DynamicResource Icon.ChevronDown}"
+                                                           Foreground="{DynamicResource Brush.Text.Secondary}"
+                                                           RenderTransformOrigin="0.5,0.5">
+                                                    <TextBlock.RenderTransform>
+                                                        <RotateTransform Angle="-90" />
+                                                    </TextBlock.RenderTransform>
+                                                </TextBlock>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsChecked" Value="True">
+                                                    <Setter TargetName="Chevron"
+                                                            Property="RenderTransform">
+                                                        <Setter.Value>
+                                                            <RotateTransform Angle="0" />
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                </Trigger>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="Chevron" Property="Foreground"
+                                                            Value="{DynamicResource Brush.Text.Primary}" />
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </ToggleButton.Template>
+                                </ToggleButton>
+
+                                <ContentPresenter Grid.Column="1" ContentSource="Header"
+                                                  VerticalAlignment="Center" />
+                            </Grid>
+                        </Grid>
+
+                        <!-- 16 px, matching the expander column, so a child's glyph lands
+                             under its parent's rather than at an arbitrary offset. -->
+                        <ItemsPresenter x:Name="Children" Grid.Row="1" Margin="16,0,0,0" />
+                    </Grid>
+
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsExpanded" Value="False">
+                            <Setter TargetName="Children" Property="Visibility"
+                                    Value="Collapsed" />
+                        </Trigger>
+
+                        <!-- A leaf has no expander. Hidden rather than collapsed, so its
+                             16 px column still lines the row up with its siblings. -->
+                        <Trigger Property="HasItems" Value="False">
+                            <Setter TargetName="Expander" Property="Visibility"
+                                    Value="Hidden" />
+                        </Trigger>
+
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Fill" Property="Background"
+                                    Value="{DynamicResource Brush.Surface.Hover}" />
+                        </Trigger>
+
+                        <!-- IsSelected, not IsSelectionActive: the row stays visibly selected
+                             when focus moves to the diff pane, which is exactly what happens
+                             the moment somebody clicks a file to read it. The stock template
+                             greys the selection out at that point, which is how a selected
+                             file ends up looking unselected while its diff is on screen. -->
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Fill" Property="Background"
+                                    Value="{DynamicResource Brush.Surface.Selected}" />
+                            <Setter TargetName="Bar" Property="Opacity" Value="1" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
 </ResourceDictionary>

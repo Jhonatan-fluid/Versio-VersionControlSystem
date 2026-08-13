@@ -40,7 +40,7 @@ public partial class MainWindow : Window
         // event rather than showing one itself, so opening a repository stays testable.
         shell.RepositoryRejected += ShowRepositoryRejected;
 
-        // Dropping a stash destroys work git cannot give back, so it is asked about here
+        // Discarding a file destroys work git cannot give back, so it is asked about here
         // rather than assumed. Unset would mean "no", which is the right way round for a
         // wiring mistake to fail.
         shell.ConfirmDestructive = (caption, body) =>
@@ -144,11 +144,6 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>Switch the left panel from the rail.</summary>
-    /// <remarks>
-    /// Visibility rather than a TabControl: the panels share the card and its header, and a
-    /// TabControl would bring its own chrome that would then have to be styled away.
-    /// </remarks>
     /// <summary>
     /// Ctrl+Enter commits from the message box.
     /// </summary>
@@ -192,6 +187,11 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>Switch the left panel from the rail.</summary>
+    /// <remarks>
+    /// Visibility rather than a TabControl: the panels share the card and its header, and a
+    /// TabControl would bring its own chrome that would then have to be styled away.
+    /// </remarks>
     private void OnRailChanged(object sender, RoutedEventArgs e)
     {
         if (sender is not RadioButton { Tag: string tag } ||
@@ -201,16 +201,31 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Set first. The history reads its first page off the back of this, and doing it
+        // before the panel is shown means the list is already filling as it appears.
         _shell.ActivePanel = panel;
 
-        ProjectPanel.Visibility = panel == ShellPanel.Project ? Visibility.Visible : Visibility.Collapsed;
-        GitPanel.Visibility = panel == ShellPanel.Git ? Visibility.Visible : Visibility.Collapsed;
+        ProjectPanel.Visibility = Show(panel == ShellPanel.Project);
+        GitPanel.Visibility = Show(panel == ShellPanel.Git);
+        HistoryPanel.Visibility = Show(panel == ShellPanel.History);
 
         // The count badge is about the working tree, which is what the project panel shows.
-        ChangeCountBadge.Visibility = panel == ShellPanel.Project
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+        ChangeCountBadge.Visibility = Show(panel == ShellPanel.Project);
+
+        static Visibility Show(bool visible) =>
+            visible ? Visibility.Visible : Visibility.Collapsed;
     }
+
+    /// <summary>
+    /// Selecting a row in the history shows it.
+    /// </summary>
+    /// <remarks>
+    /// Code-behind for the same reason the project tree needs it: <c>TreeView.SelectedItem</c>
+    /// is read-only and cannot be bound. What was picked - a commit or one file inside it - is
+    /// the view model's decision, not this handler's.
+    /// </remarks>
+    private void OnHistoryRowSelected(object sender, RoutedPropertyChangedEventArgs<object> e) =>
+        _shell.History.Select(e.NewValue);
 
     /// <summary>
     /// Show what this machine has: toolchains, versions, paths.

@@ -42,11 +42,14 @@ Both directions run automatically and deterministically. A per-project **directi
 | **Import while it is open** — waits and names who has it | ✅ it cannot be made to work: the IDE would revert it on the next save. Neither direction marks the binding failed, and the breaker is never fed |
 | Retry automatically when the IDE closes | ⛔ the lock file vanishing is a watchable event; today the next save retries |
 | Sync orchestrator — locks, loop defences, commit gate | ✅ 46 scenario tests |
+| **The app says when it is working** — progress bar, live heartbeat, and the row reading `exporting…` | ✅ a run announces itself when it passes the last gate, so a refused or coalesced save never flashes a bar |
 | Change detection — watcher + safety poll + overflow rescan | ✅ `FileChangeWatcher`, driving the sync engine |
 | Staleness stated, not implied — "2 projects not yet exported" | ✅ answered by the commit gate, so the two cannot disagree |
 | **The project view follows the repository by itself** | ✅ 18 policy tests + 9 against a real filesystem; rebuilt only when something it shows changed |
 | Design system tokens, light and dark | ✅ `src/Versio.App/Theme/`; switching at runtime repaints open windows, which it never did until it was measured |
 | Logging — ring buffer, correlation ids, heartbeat, rolling file | ✅ 21 tests; timestamps are local and the file rolls on the local day, so the panel and the file agree; "Open logs folder" selects today's file |
+| **The log panel filters** — level as four chips, category as a multi-select with live counts | ✅ a set rather than a minimum level, because "warnings and errors only" is the request a threshold cannot express |
+| **An idle app stops writing about it** — quiet status polls are summarised, not logged one by one | ✅ ~540 lines an hour became 11; the per-trigger counts survive, since a working-tree poll finding nothing is the only signal for tuning the change filter |
 | **The export narrates itself** — directory swap with both file counts, every skip and its reason | ✅ asserted against the log a real export produces, across two runs |
 | Shell — repo/branch dropdowns, rail, changed files, diff, collapsible log | ✅ opens a real repo, shows real git state |
 | Diff view — gutter, line numbers, syntax highlighting for 11 languages | ✅ ST, C#, Python, XML, JSON, YAML, Markdown, PowerShell, JS/TS, SQL |
@@ -79,8 +82,8 @@ Both directions run automatically and deterministically. A per-project **directi
 | A second vendor (TwinCAT / Studio 5000 / TIA Portal) | ⛔ the seam is ready and unproven |
 | **Git side panel** — staging, commit message, fetch/pull/push | ✅ one operation at a time across every button |
 | **The commit gate, enforced** — a stale export is exported and staged first | ✅ push releases the direction locks, commit does not |
-| **Stash** — push with a message, apply, pop, drop with a confirmation | ✅ parsed from git's own format; 6 integration tests against real git |
-| **Recent commits with click-to-diff** | ✅ the commit's patch opens in the same pane as everything else |
+| **History panel** — commits with hash, local date and time, author and subject; expand for the files, click a file for its diff | ✅ its own rail button, and lazy at four levels: the log is not read until the panel is opened, then a page at a time; a commit's files when it is expanded; a patch when a file is clicked |
+| **Stash** — push, apply, pop, drop | ⛔ **withdrawn from the UI**, pending a different design. The client operations and their 6 integration tests are kept |
 | **Per-hunk stage and unstage** | ✅ the hunk is copied verbatim and applied to the index; the working tree is never touched |
 | **Branch creation** — validated against git's own rules as you type | ✅ creates from HEAD and switches; 35 unit tests over the rules, and the dialog says *which* rule was broken |
 | **Clone with verification** — URL, Verify, destination, progress | ✅ Clone stays dead until `ls-remote` passes, and editing the URL shuts it again |

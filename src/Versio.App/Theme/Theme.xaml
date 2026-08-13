@@ -14,6 +14,7 @@
         <ResourceDictionary Source="tokens/Spacing.xaml" />
         <!-- Last: control styles consume the tokens above. -->
         <ResourceDictionary Source="controls/Controls.xaml" />
+        <ResourceDictionary Source="controls/Brand.xaml" />
     </ResourceDictionary.MergedDictionaries>
 
 </ResourceDictionary>

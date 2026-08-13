@@ -91,8 +91,12 @@ public interface IGitClient
     Task<string> HeadCommitAsync(CancellationToken ct);
 
     /// <summary>Newest commits first, subject and author only.</summary>
-    /// <param name="count">How many to read. The panel shows a window, not the history.</param>
-    Task<IReadOnlyList<CommitEntry>> RecentCommitsAsync(int count, CancellationToken ct);
+    /// <param name="count">How many to read. The panel shows a page, not the history.</param>
+    /// <param name="skip">
+    /// How many newer commits to step over first, so the panel can ask for the next page
+    /// rather than re-reading a longer prefix of the same log each time.
+    /// </param>
+    Task<IReadOnlyList<CommitEntry>> RecentCommitsAsync(int count, int skip, CancellationToken ct);
 
     /// <summary>The full patch of one commit, for click-to-diff.</summary>
     /// <remarks>
@@ -100,7 +104,33 @@ public interface IGitClient
     /// patch. Saying so beats picking a parent on the user's behalf and showing them a diff
     /// that is true against one side of a merge and misleading about the merge itself.
     /// </remarks>
-    Task<string> CommitPatchAsync(string commit, CancellationToken ct);
+    Task<string> CommitPatchAsync(string commit, CancellationToken ct,
+                                  int contextLines = 3);
+
+    /// <summary>
+    /// Which files one commit touched, and what it did to each.
+    /// </summary>
+    /// <remarks>
+    /// Asked separately from the patch, and only when somebody expands that commit. The list
+    /// is what the history panel shows; the patches behind it are the expensive part, and a
+    /// commit that touches an exported project tree can carry hundreds of them.
+    /// <para>
+    /// A merge yields nothing, for the same reason <see cref="CommitPatchAsync"/> does — git
+    /// suppresses the combined diff, and inventing one by picking a parent would describe a
+    /// change that nobody made.
+    /// </para>
+    /// </remarks>
+    Task<IReadOnlyList<CommitFile>> CommitFilesAsync(string commit, CancellationToken ct);
+
+    /// <summary>
+    /// The patch one commit applied to one file.
+    /// </summary>
+    /// <param name="contextLines">
+    /// As <see cref="DiffAsync"/>: raise it to <see cref="GitDiff.FullFileContext"/> to read
+    /// the whole file with the commit's changes still marked.
+    /// </param>
+    Task<string> CommitFileDiffAsync(string commit, string path, CancellationToken ct,
+                                     int contextLines = 3);
 
     /// <summary>Everything currently stashed, newest first.</summary>
     Task<IReadOnlyList<StashEntry>> StashListAsync(CancellationToken ct);

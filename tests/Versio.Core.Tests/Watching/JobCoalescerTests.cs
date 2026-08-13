@@ -10,7 +10,7 @@ namespace Versio.Core.Tests.Watching;
 public class JobCoalescerTests
 {
     private static JobCoalescer Make(FakeClock clock) =>
-        new(clock, cancelWindow: TimeSpan.FromSeconds(5), minimumInterval: TimeSpan.FromSeconds(30));
+        new(clock, minimumInterval: TimeSpan.FromSeconds(30));
 
     [Fact]
     public void First_change_starts_immediately()
@@ -22,17 +22,40 @@ public class JobCoalescerTests
     }
 
     [Fact]
-    public void A_save_early_in_a_run_cancels_and_restarts()
+    public void A_save_early_in_a_run_is_queued_rather_than_restarting_it()
     {
-        // Restarting is cheap in the first few seconds, and avoids finishing 40 s of work
-        // we already know is stale.
+        // This asserted CancelAndRestart, on the reasoning that restarting is cheap in the
+        // first few seconds and avoids finishing work already known to be stale. The
+        // reasoning was sound and the mechanism did not exist: nothing cancels a running
+        // toolchain job, so "restart" meant the orchestrator launched a second CODESYS
+        // beside the first. Caught in the field, not here — this test passed throughout,
+        // because a coalescer answering on its own cannot see what the caller does with
+        // the answer.
         var clock = new FakeClock();
         var c = Make(clock);
         c.OnChangeSettled();
 
         clock.AdvanceSeconds(3);
 
-        Assert.Equal(CoalesceAction.CancelAndRestart, c.OnChangeSettled());
+        Assert.Equal(CoalesceAction.Queue, c.OnChangeSettled());
+        Assert.True(c.HasPending);
+    }
+
+    [Fact]
+    public void Only_one_job_is_ever_running()
+    {
+        // The property the removed branch broke, stated directly: however many changes
+        // arrive and however fast, a second job is never started while one is in flight.
+        var clock = new FakeClock();
+        var c = Make(clock);
+
+        Assert.Equal(CoalesceAction.StartNow, c.OnChangeSettled());
+
+        for (var i = 0; i < 20; i++)
+        {
+            clock.AdvanceSeconds(1);
+            Assert.NotEqual(CoalesceAction.StartNow, c.OnChangeSettled());
+        }
     }
 
     [Fact]
@@ -158,27 +181,26 @@ public class JobCoalescerTests
     }
 
     [Fact]
-    public void Saves_arriving_faster_than_the_cancel_window_do_not_livelock()
+    public void A_save_storm_during_a_run_produces_exactly_one_follow_up()
     {
-        // Regression. The cancel window is measured from the start of the BURST, not from
-        // the last restart. Measured from the restart, a save every second with a five
-        // second window cancels and restarts forever and the export never completes.
+        // The livelock this replaces was real and is now structurally impossible: with no
+        // restart there is nothing to thrash. Sixty saves during one run leave one queued
+        // job, which is the coalescer's whole premise — an export reads the current file,
+        // so N saves need one export and not N.
         var clock = new FakeClock();
         var c = Make(clock);
         c.OnChangeSettled();
 
-        var restarts = 0;
         for (var i = 0; i < 60; i++)
         {
             clock.AdvanceSeconds(1);
-            if (c.OnChangeSettled() == CoalesceAction.CancelAndRestart)
-            {
-                restarts++;
-            }
+            c.OnChangeSettled();
         }
 
-        // Thrash is bounded by the cancel window; after that it settles into queueing.
-        Assert.True(restarts <= 5, $"expected at most 5 restarts, got {restarts}");
         Assert.True(c.HasPending);
+
+        // One follow-up, and then nothing left over.
+        Assert.True(c.OnJobCompleted());
+        Assert.False(c.OnJobCompleted());
     }
 }

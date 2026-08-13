@@ -8,10 +8,6 @@ public enum CoalesceAction
     /// <summary>Nothing running — start now.</summary>
     StartNow,
 
-    /// <summary>A job is running but only just; cancel and restart rather than doing
-    /// work we already know is stale.</summary>
-    CancelAndRestart,
-
     /// <summary>A job is running and has done real work; let it finish and queue one
     /// follow-up.</summary>
     Queue,
@@ -38,14 +34,11 @@ public enum CoalesceAction
 /// </remarks>
 public sealed class JobCoalescer(
     IClock clock,
-    TimeSpan? cancelWindow = null,
     TimeSpan? minimumInterval = null)
 {
-    private readonly TimeSpan _cancelWindow = cancelWindow ?? TimeSpan.FromSeconds(5);
     private readonly TimeSpan _minimumInterval = minimumInterval ?? TimeSpan.FromSeconds(30);
 
     private DateTimeOffset? _runningSince;
-    private DateTimeOffset? _burstStartedAt;
     private DateTimeOffset? _lastStart;
     private bool _pending;
 
@@ -59,25 +52,32 @@ public sealed class JobCoalescer(
 
         if (_runningSince is not null)
         {
-            if (_pending)
+            // A change arriving during a run is ALWAYS queued, however early it arrives.
+            //
+            // There used to be a "cancel and restart" answer for the first five seconds,
+            // on the reasoning that restarting is cheap that early and avoids finishing
+            // work already known to be stale. It was never true, because nothing cancels:
+            // no cancellation was ever plumbed through to a running toolchain job, so the
+            // orchestrator's only way to obey the instruction was to start a SECOND export
+            // beside the first. Observed doing exactly that — two CODESYS instances on one
+            // project, each taking 45 s instead of the usual 17-31 because they were
+            // contending for the profile and the shared temp state.
+            //
+            // Queueing loses almost nothing in return: an export reads the file as it is
+            // when it opens it, so a save landing during a run is usually captured by that
+            // very run, and the follow-up then finds nothing to do at the hash gate and
+            // costs a file read rather than a toolchain launch.
+            //
+            // Restarting could be made real by cancelling the process, and would then be
+            // worth having. It is a different piece of work: killing CODESYS mid-export
+            // leaves a staging folder behind, which the exporter already warns about.
+            if (!_pending)
             {
-                return CoalesceAction.Coalesced;
+                _pending = true;
+                return CoalesceAction.Queue;
             }
 
-            // The cancel window is measured from the START OF THE BURST, not from the last
-            // restart. Measuring from the restart livelocks: saves arriving every second
-            // with a five second window would cancel and restart forever, and the export
-            // would never complete. Found by a 200-save storm test.
-            if (now - (_burstStartedAt ?? now) <= _cancelWindow)
-            {
-                // Cheap to restart this early, and it avoids 40 s of work we know is stale.
-                _runningSince = now;
-                _lastStart = now;
-                return CoalesceAction.CancelAndRestart;
-            }
-
-            _pending = true;
-            return CoalesceAction.Queue;
+            return CoalesceAction.Coalesced;
         }
 
         if (_lastStart is { } last && now - last < _minimumInterval)
@@ -89,7 +89,6 @@ public sealed class JobCoalescer(
         }
 
         _runningSince = now;
-        _burstStartedAt = now;
         _lastStart = now;
         return CoalesceAction.StartNow;
     }
@@ -100,13 +99,11 @@ public sealed class JobCoalescer(
         _runningSince = null;
         if (!_pending)
         {
-            _burstStartedAt = null;
             return false;
         }
 
         _pending = false;
         _runningSince = clock.UtcNow;
-        _burstStartedAt = _runningSince;
         _lastStart = _runningSince;
         return true;
     }
@@ -127,7 +124,6 @@ public sealed class JobCoalescer(
 
         _pending = false;
         _runningSince = now;
-        _burstStartedAt = now;
         _lastStart = now;
         return true;
     }
@@ -135,7 +131,6 @@ public sealed class JobCoalescer(
     public void Reset()
     {
         _runningSince = null;
-        _burstStartedAt = null;
         _lastStart = null;
         _pending = false;
     }

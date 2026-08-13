@@ -1,3 +1,4 @@
+using System.Windows.Threading;
 using System.Collections.ObjectModel;
 using System.IO;
 using Versio.App.Mvvm;
@@ -144,6 +145,7 @@ public sealed class SyncViewModel : ObservableObject
     private string _activity = string.Empty;
     private ProjectRow? _selectedProject;
     private FileChangeWatcher? _watcher;
+    private DispatcherTimer? _deferredTick;
 
     /// <summary>Captured at construction, which happens on the UI thread.</summary>
     private readonly SynchronizationContext? _ui = SynchronizationContext.Current;
@@ -178,6 +180,17 @@ public sealed class SyncViewModel : ObservableObject
     /// the tree builder can be handed a sentence rather than an orchestrator.
     /// </remarks>
     public ObservableCollection<ProjectRow> Projects { get; } = [];
+
+    /// <summary>
+    /// The tracker this panel opens its progress scopes on.
+    /// </summary>
+    /// <remarks>
+    /// Exposed so a test can assert it is the <i>same instance</i> the shell binds its bar
+    /// to. It was not: this class accepted one and defaulted to building its own, and
+    /// nothing anywhere could tell the difference except a user watching for a bar that
+    /// never came.
+    /// </remarks>
+    public BusyTracker Busy => _busy;
 
     public ObservableCollection<string> Findings { get; } = [];
 
@@ -638,6 +651,10 @@ public sealed class SyncViewModel : ObservableObject
         var progress = new Progress<PlcProgress>(p =>
             _heartbeat.Report(p.OperationId, p.Done, p.Total, p.Detail ?? p.Phase));
 
+        // A previous orchestrator's notifications would otherwise keep arriving after the
+        // repository was swapped, lighting up rows that belong to a different tree.
+        DetachRunSignals();
+
         _orchestrator = new SyncOrchestrator(
             _repositoryRoot,
             _config.Bindings,
@@ -661,6 +678,8 @@ public sealed class SyncViewModel : ObservableObject
             occupancy: new ProjectOccupancyProbe(
                 new WindowsFileSystem(), _machine, new ProcessProbe()));
 
+        AttachRunSignals(_orchestrator);
+
         var decisions = await _orchestrator
             .RecoverAsync(new LockRecoveryPolicy(_machine, new ProcessProbe()), ct)
             .ConfigureAwait(true);
@@ -670,6 +689,144 @@ public sealed class SyncViewModel : ObservableObject
             _logger.Info(LogCategory.Lock, $"{decision.BindingId}: {decision.Explanation}");
         }
     }
+
+    /// <summary>
+    /// Everything a running toolchain job is currently holding open on its behalf.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Keyed by the run's <b>operation id</b>, not by its binding. Keying by binding is the
+    /// obvious choice and it is wrong: two runs for one project can overlap — a synchronous
+    /// commit-gate export skips the coalescer entirely and can start while a background one
+    /// is still going — and the second would then overwrite the first's entry, leaving the
+    /// first's progress-bar scope and heartbeat undisposed for the life of the session. A bar
+    /// that never goes away is exactly the symptom this whole change set exists to remove.
+    /// </para>
+    /// <para>
+    /// The row is keyed by binding, because a row is per project and "busy" is a fact about
+    /// the project rather than about one run — hence the separate count below.
+    /// </para>
+    /// </remarks>
+    private readonly Dictionary<string, IDisposable[]> _runScopes =
+        new(StringComparer.Ordinal);
+
+    /// <summary>How many runs are in flight per binding, so the row clears on the last one.</summary>
+    private readonly Dictionary<string, int> _runsPerBinding = new(StringComparer.Ordinal);
+
+    private void AttachRunSignals(SyncOrchestrator orchestrator)
+    {
+        orchestrator.RunStarted += OnRunStarted;
+        orchestrator.RunFinished += OnRunFinished;
+        _attachedTo = orchestrator;
+    }
+
+    private void DetachRunSignals()
+    {
+        if (_attachedTo is null)
+        {
+            return;
+        }
+
+        _attachedTo.RunStarted -= OnRunStarted;
+        _attachedTo.RunFinished -= OnRunFinished;
+        _attachedTo = null;
+    }
+
+    private SyncOrchestrator? _attachedTo;
+
+    /// <summary>
+    /// A toolchain run has begun: say so everywhere somebody might be looking.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is the fix for the complaint that started it: saving a project made it appear in
+    /// the changed files immediately — that is git noticing the <c>.project</c> — and then
+    /// nothing visible happened for the 17–31 seconds CODESYS took to produce the diff people
+    /// were waiting to read. The app was working the entire time and had no way to say so.
+    /// </para>
+    /// <para>
+    /// Three surfaces, because they answer different questions: the <b>bar</b> says the app
+    /// is busy, the <b>row</b> says which project it is busy with, and the <b>heartbeat</b>
+    /// says it is still alive and how far along. Only the first existed, and only for
+    /// operations somebody had clicked.
+    /// </para>
+    /// <para>
+    /// Raised on a watcher's thread, so everything here is marshalled first: <c>Projects</c>
+    /// is bound to a list, and touching it off the UI thread throws.
+    /// </para>
+    /// </remarks>
+    private void OnRunStarted(SyncRunNotice notice) => OnUi(() =>
+    {
+        var row = Projects.FirstOrDefault(p => p.BindingId == notice.BindingId);
+        var name = row?.Name ?? notice.BindingId;
+
+        var exporting = notice.Operation == PlcOperation.Export;
+        var what = exporting
+            ? $"Exporting {name}…"
+            : $"Importing into {name}…";
+
+        if (row is not null)
+        {
+            row.Busy = true;
+
+            // The two words the row has always claimed it would say. Nothing assigned them:
+            // `ProjectRow.Busy` and the "exporting…" state were both documented in the
+            // class and written by nothing, so the row sat on its previous state for the
+            // whole run.
+            row.State = exporting ? "exporting…" : "importing…";
+        }
+
+        // Keyed by the run's own operation id, which the job now carries, so the phases and
+        // counts the toolchain reports actually land on this tracker instead of being
+        // dropped for want of a matching key.
+        _runsPerBinding[notice.BindingId] =
+            _runsPerBinding.GetValueOrDefault(notice.BindingId) + 1;
+
+        _runScopes[notice.OperationId] =
+        [
+            _busy.Begin(what),
+            _heartbeat.Track(notice.OperationId, what.TrimEnd('…')),
+        ];
+
+        // The row's text lives in the tree, which is derived from a signature that includes
+        // the state just set — so this rebuilds, and rebuilds only because that state moved.
+        if (_lastStatus is { } status)
+        {
+            _ = RefreshTreeAsync(status);
+        }
+    });
+
+    private void OnRunFinished(SyncRunNotice notice) => OnUi(() =>
+    {
+        if (_runScopes.Remove(notice.OperationId, out var scopes))
+        {
+            foreach (var scope in scopes)
+            {
+                scope.Dispose();
+            }
+        }
+
+        var left = _runsPerBinding.GetValueOrDefault(notice.BindingId) - 1;
+
+        if (left > 0)
+        {
+            // Another run for this project is still going, so the row keeps saying so.
+            _runsPerBinding[notice.BindingId] = left;
+            return;
+        }
+
+        _runsPerBinding.Remove(notice.BindingId);
+
+        if (Projects.FirstOrDefault(p => p.BindingId == notice.BindingId) is { } row)
+        {
+            row.Busy = false;
+        }
+
+        // The row's state is left to the rescan that follows, which reads it from the lock
+        // rather than guessing. Clearing it here would blank the row for the moment between
+        // the run ending and the scan finishing.
+        Activity = string.Empty;
+    });
 
     /// <summary>Scan the repository for PLC projects and classify what was found.</summary>
     private async Task RescanAsync()
@@ -801,6 +958,20 @@ public sealed class SyncViewModel : ObservableObject
             return;
         }
 
+        // The idle tick the coalescer's throttle was written for and never got.
+        //
+        // A save inside the 30-second minimum interval is recorded as pending and refused,
+        // and the pending flag is documented to "guarantee a final export once things go
+        // quiet". Nothing was asking, so quiet is exactly when it did not happen: the change
+        // waited for the next save, or for somebody to commit. Five seconds is well inside
+        // the interval it is waiting on and costs nothing when there is nothing deferred.
+        _deferredTick = new DispatcherTimer(DispatcherPriority.Background)
+        {
+            Interval = TimeSpan.FromSeconds(5),
+        };
+        _deferredTick.Tick += (_, _) => _ = RunDeferredAsync();
+        _deferredTick.Start();
+
         _watcher = new FileChangeWatcher(_clock, logger: _logger);
         _watcher.Settled += OnFileSettled;
 
@@ -819,6 +990,9 @@ public sealed class SyncViewModel : ObservableObject
 
     private void StopWatching()
     {
+        _deferredTick?.Stop();
+        _deferredTick = null;
+
         if (_watcher is null)
         {
             return;
@@ -827,6 +1001,38 @@ public sealed class SyncViewModel : ObservableObject
         _watcher.Settled -= OnFileSettled;
         _watcher.Dispose();
         _watcher = null;
+    }
+
+    /// <summary>
+    /// Ask the engine whether a throttled change is now due, and run it if so.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately silent when there is nothing to do — it fires every five seconds for as
+    /// long as a repository is open, and a line per tick is how the log panel got drowned
+    /// the first time.
+    /// </remarks>
+    private async Task RunDeferredAsync()
+    {
+        if (_orchestrator is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var outcomes = await _orchestrator.RunDeferredAsync(CancellationToken.None)
+                .ConfigureAwait(true);
+
+            if (outcomes.Any(o => o.DidWork || o.IsFailure))
+            {
+                await RescanAsync().ConfigureAwait(true);
+                await RefreshStalenessAsync().ConfigureAwait(true);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(LogCategory.Sync, "could not run the deferred sync", ex);
+        }
     }
 
     /// <summary>
@@ -943,6 +1149,7 @@ public sealed class SyncViewModel : ObservableObject
     /// regression the changed-files list was reconciled in place to avoid.
     /// </remarks>
     private string _treeSignature = string.Empty;
+    private GitStatus? _lastStatus;
 
     /// <summary>What each project's export covers, keyed by its repo-relative path.</summary>
     private readonly Dictionary<string, CoverageReport> _coverage =
@@ -1072,6 +1279,13 @@ public sealed class SyncViewModel : ObservableObject
     /// </remarks>
     public async Task RefreshTreeAsync(GitStatus status)
     {
+        // Kept so a toolchain run can refresh the tree on its own. A run starts about a
+        // second after the save that caused it, by which time the refresh triggered by that
+        // same save has already been and gone — so without this the row would not say
+        // "exporting…" until the next backstop, up to twenty seconds into a run that only
+        // lasts seventeen.
+        _lastStatus = status;
+
         if (_repositoryRoot is null)
         {
             Tree.Clear();
@@ -1088,6 +1302,7 @@ public sealed class SyncViewModel : ObservableObject
                 ManifestPath: System.IO.Path.Combine(
                     AbsolutePath(b.ExportPath), BindingConventions.ManifestFileName),
                 State: Projects.FirstOrDefault(p => p.BindingId == b.Id)?.State ?? "tracked",
+                Busy: Projects.FirstOrDefault(p => p.BindingId == b.Id)?.Busy ?? false,
 
                 // Visible when there is something to DO, not merely something to report.
                 //
@@ -1107,7 +1322,17 @@ public sealed class SyncViewModel : ObservableObject
                                     is SyncDirection.Failed
                                     or SyncDirection.Conflict
                                     or SyncDirection.TextAuthoritative
-                                || _staleBindings.Contains(b.Id)))
+                                || _staleBindings.Contains(b.Id)
+
+                                // A project being exported RIGHT NOW is the one thing the
+                                // user is waiting on, and the rule above would hide it: git
+                                // reports nothing about a project whose file matches HEAD,
+                                // so re-exporting an unchanged project made its row vanish
+                                // for the twenty seconds it was working. Observed - the
+                                // tree logged "1 project(s) hidden as in sync" while
+                                // CODESYS was running against it.
+                                || (Projects.FirstOrDefault(p => p.BindingId == b.Id)
+                                        ?.Busy ?? false)))
             .ToList();
 
         // Everything the tree is derived from, in one string. A manifest's write time stands
@@ -1118,7 +1343,7 @@ public sealed class SyncViewModel : ObservableObject
         [
             search,
             .. sources.Select(x =>
-                $"{x.ProjectPath}|{x.ExportPath}|{x.State}|{ManifestStamp(x.ManifestPath)}"),
+                $"{x.ProjectPath}|{x.ExportPath}|{x.State}|{x.Busy}|{ManifestStamp(x.ManifestPath)}"),
             .. status.Changes
                 .OrderBy(c => c.Path, StringComparer.Ordinal)
                 .Select(c => $"{c.Path}|{c.Effective}|{c.IsStaged}"),
@@ -1162,6 +1387,7 @@ public sealed class SyncViewModel : ObservableObject
                     ExportState = report.Label.Length == 0
                         ? source.State
                         : $"{source.State} · {report.Label}",
+                    Busy = source.Busy,
                 });
             }
 
@@ -1483,6 +1709,16 @@ public sealed class SyncViewModel : ObservableObject
         {
             // Coalesced, throttled, unchanged, or blocked by the lock. All routine.
             _logger.Debug(LogCategory.Sync, sentence);
+
+            // Queued and throttled are not "nothing happened": an export IS going to run,
+            // just not this instant, and the row would otherwise sit on its old state while
+            // the user waits for a diff. Said in the row rather than the bar, because the
+            // app is not busy - it is waiting on purpose.
+            if (outcome.Verdict is SyncVerdict.Coalesced or SyncVerdict.Throttled &&
+                Projects.FirstOrDefault(p => p.BindingId == binding.Id) is { Busy: false } row)
+            {
+                row.State = "queued…";
+            }
         }
 
         if (outcome.DidWork || outcome.IsFailure)

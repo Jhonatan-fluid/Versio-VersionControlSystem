@@ -458,10 +458,12 @@ public sealed partial class GitCliClient(
     /// scrolling, and hiding it would make the list disagree with the branch it describes.
     /// Its patch is the thing that cannot be shown, and that is said when it is asked for.
     /// </remarks>
-    public async Task<IReadOnlyList<CommitEntry>> RecentCommitsAsync(int count, CancellationToken ct)
+    public async Task<IReadOnlyList<CommitEntry>> RecentCommitsAsync(
+        int count, int skip, CancellationToken ct)
     {
         var result = await RunAsync(
-            ["log", $"--max-count={Math.Max(1, count)}", GitLogParser.CommitFormat], null, ct)
+            ["log", $"--max-count={Math.Max(1, count)}", $"--skip={Math.Max(0, skip)}",
+             GitLogParser.CommitFormat], null, ct)
             .ConfigureAwait(false);
 
         // An unborn branch has no HEAD to walk, and git says so on stderr. That is the first
@@ -477,9 +479,54 @@ public sealed partial class GitCliClient(
     /// rather than papered over with <c>-m</c>, which would show one parent's diff as though
     /// it were the merge.
     /// </remarks>
-    public async Task<string> CommitPatchAsync(string commit, CancellationToken ct)
+    public async Task<string> CommitPatchAsync(
+        string commit, CancellationToken ct, int contextLines = GitDiff.DefaultContext)
     {
-        var result = await RunAsync(["show", "--format=", "--patch", commit], null, ct)
+        var result = await RunAsync(
+            ["show", "--format=", "--patch", $"-U{Math.Max(0, contextLines)}", commit], null, ct)
+            .ConfigureAwait(false);
+
+        return result.Success ? result.StdOut : string.Empty;
+    }
+
+    /// <summary>Which files one commit touched.</summary>
+    /// <remarks>
+    /// <para>
+    /// <c>-z</c> is load-bearing rather than tidiness. Without it git quotes any path holding
+    /// a byte it considers unusual, so <c>Kühlschrank Regelung.st</c> — a real shape in this
+    /// repository's own fixtures — comes back wrapped in quotes with its umlaut as octal
+    /// escapes, and the panel would then ask git for a diff of a path that does not exist.
+    /// </para>
+    /// <para>
+    /// The NUL-separated stream survives <see cref="RunAsync"/> intact: the reader there
+    /// splits on line breaks, of which this output has none, so the whole listing arrives as
+    /// a single line with its separators untouched.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<CommitFile>> CommitFilesAsync(
+        string commit, CancellationToken ct)
+    {
+        var result = await RunAsync(
+            ["show", "--format=", "--name-status", "-z", commit], null, ct)
+            .ConfigureAwait(false);
+
+        return result.Success ? GitNameStatusParser.Parse(result.StdOut) : [];
+    }
+
+    /// <summary>The patch one commit applied to one file.</summary>
+    /// <remarks>
+    /// <c>git show</c> with a pathspec rather than a diff between the commit and its parent.
+    /// The two agree everywhere except on a root commit, which has no parent to name — and
+    /// the first commit of a repository is exactly the one somebody scrolls to the bottom of
+    /// the history to look at.
+    /// </remarks>
+    public async Task<string> CommitFileDiffAsync(
+        string commit, string path, CancellationToken ct,
+        int contextLines = GitDiff.DefaultContext)
+    {
+        var result = await RunAsync(
+            ["show", "--format=", "--patch", $"-U{Math.Max(0, contextLines)}",
+             commit, "--", path], null, ct)
             .ConfigureAwait(false);
 
         return result.Success ? result.StdOut : string.Empty;
@@ -691,7 +738,17 @@ public sealed partial class GitCliClient(
         };
 
         var display = $"git {string.Join(' ', args.Select(Redact))}";
-        _log.Debug(LogCategory.Git, display);
+
+        // Announced only if it is still running when the reader would start to wonder.
+        //
+        // This used to log unconditionally before the process started, so every git call
+        // cost two lines - the command, then the same command again with a duration. On the
+        // status backstop, which runs every 20 s forever, that is the bulk of an idle log.
+        // The pair only ever earned its keep for a command that hangs or never returns, so
+        // that is now the only case that gets it, and the completion lines below are
+        // unchanged: a command that finished says so once, with its duration.
+        using var announce = new CancellationTokenSource();
+        var announced = AnnounceIfSlowAsync(display, announce.Token);
 
         process.Start();
         process.BeginOutputReadLine();
@@ -735,6 +792,12 @@ public sealed partial class GitCliClient(
         await Task.Run(() => process.WaitForExit(), CancellationToken.None).ConfigureAwait(false);
         stopwatch.Stop();
 
+        // Whatever happened, the command is no longer in flight, so the announcement is
+        // cancelled before any outcome is logged - otherwise a command finishing at the
+        // threshold could report itself as still running after its own result.
+        await announce.CancelAsync().ConfigureAwait(false);
+        await announced.ConfigureAwait(false);
+
         string outText, errText;
         lock (gate)
         {
@@ -771,6 +834,30 @@ public sealed partial class GitCliClient(
             StdErr = errText,
             Duration = stopwatch.Elapsed,
         };
+    }
+
+    /// <summary>
+    /// Say what is running, but only once it has run long enough to be worth saying.
+    /// </summary>
+    /// <remarks>
+    /// One second is the threshold because it is roughly where a person stops reading a
+    /// pause as instant. Every routine git call in this app finishes in tens of
+    /// milliseconds, so in normal use this writes nothing at all; a fetch against an
+    /// unreachable remote, an auth prompt that cannot open, or a hung index lock all cross
+    /// it, and those are precisely the cases where knowing which command is outstanding is
+    /// the whole diagnosis.
+    /// </remarks>
+    private async Task AnnounceIfSlowAsync(string display, CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(1), ct).ConfigureAwait(false);
+            _log.Debug(LogCategory.Git, $"{display} — still running");
+        }
+        catch (OperationCanceledException)
+        {
+            // Finished before the threshold. The completion line covers it.
+        }
     }
 
     private static int SafeExitCode(Process process)

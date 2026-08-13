@@ -1304,10 +1304,10 @@ Two implementation details that cost real debugging time and are now pinned by t
 >
 > | §  | As planned | As built |
 > |---|---|---|
-> | 9.1 | Rail: Changed files · Git · Sync · Settings | Rail: **Project · Git**; settings is a popup on the top bar |
+> | 9.1 | Rail: Changed files · Git · Sync · Settings | Rail: **Project · Git · History**; settings is a popup on the top bar |
 > | 9.3 | `changed only` (default) / full tree toggle | **Always the full tree**, changes marked. The filter answered "what did I change"; as the only view it has to answer "where in the machine am I" |
 > | 9.3 | Config nodes parsed from `config/*.yaml` | **Not built, and blocked**: nothing writes that YAML yet. See STATUS item 1 |
-> | 9.4 | Stash ▾, recent commits with click-to-diff | **Built** |
+> | 9.4 | Stash ▾, recent commits with click-to-diff | **Split, and half withdrawn (Rev 13).** History is a rail panel of its own: a commit expands to the files it touched, and a file opens what that commit did to it. Nothing is read until it is asked for — no log walk until the panel is shown, no file list until a commit is expanded, no patch until a file is clicked. **Stash is out of the UI** pending a different design; the client operations remain and are still tested |
 > | 9.5 | Sync panel with its own actions | **Folded away, then emptied (Rev 12).** The toolchain, its version and its profile are environment and live in Settings → Help → System information. *Export now* is gone: the mirror is exported when the repository opens. *Acknowledge failure* is gone as a panel control and lives on the failing project's own row. What is left in the panel is transient — coverage, staleness, heartbeat — and hides itself when empty |
 >
 > The §9.3 tree design itself — one node per object, roll-up badges, GUID identity, virtualization
@@ -1453,6 +1453,16 @@ Rail icons (top to bottom): 📄 Changed files · 🔀 Git · 🔄 Sync/CODESYS 
 - **Branch dropdown** — local branches with ahead/behind; switching is disabled with a tooltip explaining why when **any** direction lock is held. **Rev 11: not built** — git refuses a dirty-tree checkout by itself, which covers the dangerous case without explaining it.
   - ~~*Create new branch…* inline at the bottom~~ → **a button beside the dropdown** (Rev 11). That list's selection means "switch to this branch", so a row meaning something else would sit one arrow-key away from a checkout. The dialog validates the name against `git check-ref-format`'s rules while it is typed, and says which rule a refusal broke.
 - **⟳ Refresh** — forces a full rescan (status + hash + orphan scan).
+
+> **Rev 14 — the bar's own layout.** Every column was `Auto` except the one holding the branch
+> buttons, and both dropdowns were pinned (230 px and 200 px), so the whole bar crowded into the
+> left 700 px of a 2560 px window while the slack piled up in the middle. The dropdowns now take
+> the slack, bounded at 420 px and 360 px, and a spacer before Settings holds the right-hand
+> cluster to the right. `Size.Control.Height` was 28 while `IconButton` hardcoded 32, so every
+> dropdown sat 4 px shorter than the buttons beside it; both read the token now, at 32, with
+> `Size.Control.Compact` (24) for the controls inside a dense strip. The brand is the app's own
+> mark — `Theme/controls/Brand.xaml`, the geometry from `assets/versio.svg` — beside a wordmark
+> that is no longer accent-coloured, because accent had been spent on six things at once.
 
 ### 9.3 Main split — the project tree, not a flat file list
 

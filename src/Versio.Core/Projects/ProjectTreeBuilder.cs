@@ -73,6 +73,14 @@ public sealed record ProjectTreeNode
     /// </remarks>
     public IReadOnlyList<string> Files { get; init; } = [];
 
+    /// <summary>Something is running for this node right now — a toolchain job, today.</summary>
+    /// <remarks>
+    /// Only a project node ever sets this. It is on the node rather than on a view model so
+    /// the tree snapshot handed to the UI is complete on its own: the rows are rebuilt from
+    /// the snapshot, and a flag living beside it would be lost on every rebuild.
+    /// </remarks>
+    public bool Busy { get; init; }
+
     /// <summary>This node's own change state.</summary>
     public ChangeKind Status { get; init; } = ChangeKind.Unmodified;
 
