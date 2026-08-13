@@ -59,7 +59,7 @@ public static class ExportCoverage
 
     /// <summary>The schema today's exporter writes.</summary>
     /// <seealso cref="ProjectManifest.Schema"/>
-    public const int CurrentSchema = 3;
+    public const int CurrentSchema = 4;
 
     /// <summary>The exporter's code for a skip that loses something.</summary>
     public const string GapReason = "NOT_IMPLEMENTED";

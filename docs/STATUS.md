@@ -1,10 +1,11 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-13 · **Commits:** 61 · **Tests:** 939 unit + 190 UI + 111 integration, 0 skipped
+**Date:** 2026-08-13 · **Commits:** 66 · **Tests:** 955 unit + 190 UI + 111 integration, 0 skipped
 
-> All three measured on 2026-08-13. The integration suite was re-run in full against real
-> CODESYS 3.5.22.20 after the safeguards work — 107 passed, 0 skipped, 6 m 15 s — including
-> `RepositoryWatcherTests.A_deleted_file_is_reported`, the one noted below as flaky.
+> All three measured on 2026-08-13, on branch `Clean-up-and-continue-dev`. The integration
+> suite was re-run in full against real CODESYS 3.5.22.20 after the manifest work — 111
+> passed, 0 skipped, 6 m 11 s — including `RepositoryWatcherTests.A_deleted_file_is_reported`,
+> the one noted below as flaky.
 
 > Both numbers are re-derivable rather than remembered: `git rev-list --count HEAD`, and
 > `dotnet test` prints a total per suite. The commit count in this header was wrong by twelve
@@ -205,6 +206,9 @@ nothing notices until the next save. The panel says so rather than going quiet, 
 
 ### 4. Finish the project tree
 
+- ~~**Methods and properties under the object that owns them**~~ — **done.** Manifest schema 4
+  records each member's owner GUID and the tree nests by it; see the finding. A mirror
+  exported before this stays flat until its project is next exported
 - **One node per library**, under its manager, parsed from the exported YAML. `LibraryCatalog`
   already reads the file; what is missing is the tree builder taking a catalog and the shell
   handing it one. This is the first piece of the plan's "config nodes parsed from YAML", and
@@ -282,6 +286,92 @@ does not record them has to be run again.
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### One field's type disagreed, and the panel lost fifty-six objects without saying so
+
+Reported from the app against a real customer project, with a screenshot of the CODESYS Devices
+tree beside a screenshot of Versio: *"is not rendering at all in a correct format."* The panel
+showed `0 object(s) · 60 changed file(s)`, `coverage unknown`, and sixty rows of raw
+`Device/Plc Logic/BuildingApplication/…` paths where a tree belonged.
+
+`versio_export.py` has always written `warnings` as records — `{"code": …, "path": …,
+"detail": …}` — and `ProjectManifest.Warnings` was declared `IReadOnlyList<string>`.
+`JsonSerializer.Deserialize` threw on the first record, `Parse` caught the `JsonException` and
+returned `Empty` exactly as its own documentation promised, and **one field's type disagreeing
+discarded all fifty-six objects**. Everything downstream then behaved correctly on an empty
+manifest: no object nodes, so every exported file fell through to the unmapped-file list as a
+raw path, and `ExportCoverage.Of` reported schema 1 and answered "unknown".
+
+Three things had to line up for this to survive a whole feature:
+
+- **The fixture produces no warnings.** `RefrigeratorControl` has none, so `"warnings": []`
+  is what every test used — and an empty array is valid for both shapes. `_manifest.json` is
+  written by IronPython inside CODESYS and read by System.Text.Json, and nothing on either
+  side of that boundary had ever seen a non-empty one.
+- **The property was read by nothing.** `Warnings` was populated, exposed, and consumed
+  nowhere in the app, so no test, no view and no log line ever looked at it. It could only
+  ever cost something, never earn it.
+- **The failure was silent by design.** Returning `Empty` for an unreadable manifest is the
+  right instinct — the window must not come down over a convenience file — but `Empty` is
+  indistinguishable from a manifest that genuinely describes nothing, so the panel had nothing
+  to report and reported nothing.
+
+Fixed in three parts, and the third is the one that matters. `ExportWarning` is now the record
+the exporter writes. `Parse` reads **field by field and element by element**, so a field this
+build cannot make sense of costs that field and leaves the rest standing — a killed export that
+truncates one object record loses one row rather than the tree. And `Parse(json, out problems)`
+names what it skipped, which `SyncViewModel` logs at Warning, gated by the tree signature so a
+broken export says so once rather than per refresh.
+
+Verified against the reporter's own manifest: `schema=3 objects=56 skipped=4 warnings=2
+problems=[]`, coverage `CompleteByDesign` rather than `unknown`. Seven new tests, each checked
+against the mutation that should break it — reverting to a whole-array parse fails the
+per-element test, removing the per-field `catch` fails the per-field test.
+
+### A function block's methods were drawn as its siblings, and four InitRooms sat in one folder
+
+Same report, one level down. CODESYS draws `clsLight (FB)` with an expander and its methods
+inside it; Versio drew `clsLight`, `Light`, `SetLifeTime` and — in the rooms folder — four
+separate rows called `InitRoom`, with nothing saying which room each belonged to.
+
+The export writes a member **beside** its owner, as `clsLight.Light.xml` next to `clsLight.st`,
+so ownership was expressed in a filename and nowhere else. The manifest recorded where a
+method's *file* sat and not what the method *belonged to*, and a tree assembled from paths
+therefore could not have got this right.
+
+The fix is manifest **schema 4**: `record()` writes the owner's GUID as `parent`, and the tree
+builder nests by it. A GUID rather than the owner's name or its path, for the reason identity is
+a GUID everywhere else here — a rename must not re-parent anything, and reading ownership back
+out of `clsLight.Light.xml` is a guess that any name containing a dot defeats. It is a chain
+rather than one level, because a property owns its accessors.
+
+Three consequences were not obvious and are each pinned by a test:
+
+- **`PruneUnchanged` tested `IsFolder`.** Objects had no children until now, so an unchanged
+  function block was treated as a leaf and dropped — taking an edited method with it. It tests
+  for children now.
+- **The search had to move after the nesting.** Filtering leaves first would match a method and
+  drop the block that leads to it, leaving the match unreachable. A node that matches keeps all
+  its members; one that does not survives only for the members that do.
+- **A cycle in a manifest is possible.** It is a file on disk and can say anything, and an
+  object claiming its own descendant as its owner would recurse forever inside a background
+  build — which presents as the panel simply never appearing again. The walk carries a visited
+  set.
+
+An older manifest carries no parents, and that reads as a flat project rather than as an error:
+a mirror starts nesting when its project is next exported. Verified by exporting the reporter's
+project with real CODESYS — `schema=4 objects=56 withParent=22`, every parent GUID resolving to
+an object in the same manifest, `InitRoom` owned by `clsBetterRoom`, `clsCellarRoom` and
+`clsCheapRoom` respectively.
+
+The committed fixture was re-exported rather than hand-edited, and the fresh export was compared
+byte for byte against the committed one: **`_manifest.json` alone differs, by the schema line**.
+That is also the strongest determinism check the export has had — eleven files, two runs,
+months apart, identical.
+
+**The corpus is the finding underneath both of these.** One fixture project, with no members and
+no warnings, cannot see either bug. Every field report should become a fixture, and this one is
+the first candidate.
 
 ### Two of the three panels used half the card they sat in, because Dock defaults to Left
 

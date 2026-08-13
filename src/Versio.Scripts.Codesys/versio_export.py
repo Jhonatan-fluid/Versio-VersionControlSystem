@@ -108,15 +108,25 @@ class Exporter(object):
         self.warnings.append(w)
         emit({"t": "warning", "code": code, "path": path, "detail": detail})
 
-    def record(self, obj, obj_type, form, rel_path, text):
+    def record(self, obj, obj_type, form, rel_path, text, parent_guid=None):
         """Note one written file in the manifest, keyed by the object's GUID.
 
         The GUID is the identity, not the path: it is what lets a moved object be
         recognised as a move rather than a delete plus an add, and it survives a
         rename that the filename cannot.
+
+        `parent_guid` is the owner for a sub-POU member - a method, action,
+        transition or property - and absent for everything else. It is what lets
+        the panel draw clsLight's methods UNDER clsLight, the way CODESYS does.
+
+        Written as the parent's GUID rather than as its name or its path, for the
+        same reason identity is a GUID everywhere else here: the export puts a
+        member beside its owner as `clsLight.Light.xml`, and reading ownership back
+        out of that filename is a guess that a name containing a dot defeats. A
+        property's own accessors nest again, so this is a chain and not one level.
         """
         h = content_hash(text)
-        self.records.append({
+        rec = {
             "guid": safe(lambda: str(obj.guid), ""),
             "name": safe(lambda: obj.get_name(), ""),
             "type": obj_type,
@@ -124,7 +134,16 @@ class Exporter(object):
             "path": rel_path.replace("\\", "/"),
             "hash": h,
             "bytes": len(text.encode("utf-8")),
-        })
+        }
+
+        # Omitted rather than written empty, so a top-level object's record is
+        # byte-identical to what schema 3 wrote. An export that changed every line
+        # of the manifest for objects that did not move would put a diff in front
+        # of somebody with nothing in it to read.
+        if parent_guid:
+            rec["parent"] = parent_guid
+
+        self.records.append(rec)
         emit({"t": "object", "path": rel_path.replace("\\", "/"),
               "type": obj_type, "form": form, "hash": h})
 
@@ -177,13 +196,18 @@ class Exporter(object):
               "system": len([r for r in refs if r.get("systemLibrary")])})
         return text
 
-    def handle(self, obj, rel_dir, parent_name):
+    def handle(self, obj, rel_dir, parent_name, parent_guid=None):
         """Export one object and recurse into its children.
 
         `rel_dir` is the folder mirroring this object's place in the CODESYS tree.
         `parent_name` is set only for sub-POU members - methods, actions,
         transitions, properties - whose filenames are prefixed with their owner so
         a flat folder can still reconstruct ownership on import.
+
+        `parent_guid` is the same relationship written down for a reader rather
+        than for the importer: it goes into the manifest, and it is what the panel
+        nests by. Both are passed because they answer different questions - the
+        name shapes the file on disk, the GUID survives that file being renamed.
 
         Unmapped type GUIDs are exported natively and warned about, never dropped:
         a newer CODESYS adding a type must not silently lose objects.
@@ -246,35 +270,35 @@ class Exporter(object):
             if form == FORM_ST_FULL:
                 text = join_st(obj.textual_declaration.text, obj.textual_implementation.text)
                 write_text(abs_path, text)
-                self.record(obj, obj_type, form, rel_path, text)
+                self.record(obj, obj_type, form, rel_path, text, parent_guid)
 
             elif form == FORM_ST_DECL:
                 text = normalize_decl_only(obj.textual_declaration.text)
                 write_text(abs_path, text)
-                self.record(obj, obj_type, form, rel_path, text)
+                self.record(obj, obj_type, form, rel_path, text, parent_guid)
 
             elif form == FORM_ST_IMPL:
                 text = normalize_decl_only(obj.textual_implementation.text)
                 write_text(abs_path, text)
-                self.record(obj, obj_type, form, rel_path, text)
+                self.record(obj, obj_type, form, rel_path, text, parent_guid)
 
             elif form == FORM_GVL_BOTH:
                 xml_path = os.path.join(rel_dir, stem_name + ".gvl.xml")
                 xml_text, _ = self.export_native(obj, os.path.join(self.out_root, xml_path), False)
-                self.record(obj, obj_type, FORM_NATIVE, xml_path, xml_text)
+                self.record(obj, obj_type, FORM_NATIVE, xml_path, xml_text, parent_guid)
                 st_text = normalize_decl_only(obj.textual_declaration.text)
                 write_text(abs_path, st_text)
-                self.record(obj, obj_type, FORM_ST_DECL, rel_path, st_text)
+                self.record(obj, obj_type, FORM_ST_DECL, rel_path, st_text, parent_guid)
 
             elif form == FORM_LIBRARIES:
                 object_path = (rel_dir + "/" + name).replace("\\", "/").lstrip("/")
                 text = self.export_libraries(obj, object_path, rel_path)
                 write_text(abs_path, text)
-                self.record(obj, obj_type, form, rel_path, text)
+                self.record(obj, obj_type, form, rel_path, text, parent_guid)
 
             elif form in (FORM_NATIVE, FORM_NATIVE_R):
                 text, _ = self.export_native(obj, abs_path, form == FORM_NATIVE_R)
-                self.record(obj, obj_type, form, rel_path, text)
+                self.record(obj, obj_type, form, rel_path, text, parent_guid)
         except Exception as e:
             self.warn("EXPORT_FAILED", rel_dir + "/" + name, str(e))
             return
@@ -282,8 +306,9 @@ class Exporter(object):
         # Children of a leaf object (methods, actions, properties on a POU) live
         # alongside it in the same folder, prefixed with the parent name.
         if form != FORM_NATIVE_R:
+            own_guid = safe(lambda: str(obj.guid), "")
             for child in safe(lambda: obj.get_children(), []) or []:
-                self.handle(child, rel_dir, name)
+                self.handle(child, rel_dir, name, own_guid)
 
 
 def count_files(path):
@@ -436,7 +461,15 @@ def main():
         # schema-3 one it means the project genuinely has no library manager. Reading
         # the first as the second would report full coverage over the exact hole this
         # work was done to close.
-        "schema": 3,
+        #
+        # 4: a member records its owner's GUID in "parent". Before this the manifest
+        # said where a method's FILE sat and not what the method belonged to, so the
+        # panel drew clsLight, Light, SetLifeTime and four InitRooms as siblings in
+        # one folder, where CODESYS draws each method under the function block that
+        # owns it. A schema-3 manifest carries no parents at all, which is why the
+        # reader falls back to the flat shape rather than treating "no parents" as
+        # "nothing is a member".
+        "schema": 4,
         "bindingId": job.get("bindingId", ""),
         "project": os.path.basename(job["project"]),
         "objectCount": len(ex.records),

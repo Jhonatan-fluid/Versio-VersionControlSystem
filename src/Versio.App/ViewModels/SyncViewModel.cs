@@ -1693,12 +1693,27 @@ public sealed class SyncViewModel : ObservableObject
         {
             var coverage = new Dictionary<string, CoverageReport>(StringComparer.OrdinalIgnoreCase);
             var projects = new List<WorkspaceProject>();
+            var unreadable = new List<string>();
 
             foreach (var source in sources)
             {
+                IReadOnlyList<string> problems = [];
                 var manifest = File.Exists(source.ManifestPath)
-                    ? ProjectManifest.Parse(File.ReadAllText(source.ManifestPath))
+                    ? ProjectManifest.Parse(File.ReadAllText(source.ManifestPath), out problems)
                     : null;
+
+                // Said out loud, because the tree cannot say it.
+                //
+                // A manifest that half-read draws a project with objects missing, and one
+                // that did not read at all draws it as a flat list of raw paths - both of
+                // which look like Versio's own tree rendering being wrong rather than like a
+                // file it could not use. That is exactly how the warnings/strings mismatch
+                // survived a whole feature. The signature above already gates this on the
+                // manifest having changed, so a broken export logs once and not per refresh.
+                if (manifest is not null && problems.Count > 0)
+                {
+                    unreadable.AddRange(problems.Select(p => $"{source.ProjectPath}: {p}"));
+                }
 
                 var report = ExportCoverage.Of(manifest);
                 coverage[source.ProjectPath] = report;
@@ -1727,8 +1742,14 @@ public sealed class SyncViewModel : ObservableObject
             return (Roots: WorkspaceTreeBuilder.Build(projects, status.Changes,
                         new ProjectTreeOptions { ChangedOnly = false, Search = search }),
                     Coverage: coverage,
-                    Tracked: projects.Count);
+                    Tracked: projects.Count,
+                    Unreadable: unreadable);
         }).ConfigureAwait(true);
+
+        foreach (var problem in built.Unreadable)
+        {
+            _logger.Warn(LogCategory.Sync, $"manifest not fully readable - {problem}");
+        }
 
         var roots = built.Roots;
 

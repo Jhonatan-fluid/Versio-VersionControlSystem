@@ -112,7 +112,7 @@
     }
   ], 
   "project": "RefrigeratorControl.project", 
-  "schema": 3, 
+  "schema": 4, 
   "skipped": [
     {
       "name": "Visualization Manager", 
