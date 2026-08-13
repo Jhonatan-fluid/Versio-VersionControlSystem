@@ -196,6 +196,46 @@ public sealed class RepositoryChangeResetTests
         Assert.Equal("interlock", shell.Sync.TreeSearch);
     }
 
+    // ------------------------------------------------------------------ what the scan found
+
+    [Fact]
+    public void The_findings_summary_says_nothing_when_the_scan_found_nothing()
+    {
+        // It shares a slot with the coverage warning and hides itself the same way. A panel
+        // that announced "0 problems" on every repository would be read past within a day.
+        var shell = Build();
+
+        Assert.Equal(string.Empty, shell.Sync.FindingsSummary);
+    }
+
+    [Fact]
+    public void One_finding_is_shown_whole()
+    {
+        // These are rare and each needs a person, so the single case says the whole sentence
+        // rather than a count somebody has to go and look up.
+        var shell = Build();
+        shell.Sync.Findings.Add("Orphan: plc/Gone - the project this export tree describes is missing");
+
+        Assert.Equal(
+            "Orphan: plc/Gone - the project this export tree describes is missing",
+            shell.Sync.FindingsSummary);
+    }
+
+    [Fact]
+    public void Several_findings_count_rather_than_scroll()
+    {
+        // The panel's subject is the project tree; these are a banner above it. The detail is
+        // in the log, which is where a list belongs.
+        var shell = Build();
+        shell.Sync.Findings.Add("first");
+        shell.Sync.Findings.Add("second");
+        shell.Sync.Findings.Add("third");
+
+        Assert.Contains("3 things need attention", shell.Sync.FindingsSummary, StringComparison.Ordinal);
+        Assert.Contains("first", shell.Sync.FindingsSummary, StringComparison.Ordinal);
+        Assert.Contains("see the log", shell.Sync.FindingsSummary, StringComparison.Ordinal);
+    }
+
     // ---------------------------------------------------------------- proving it is CALLED
 
     /// <summary>A throwaway git repository, deleted when the test ends.</summary>
