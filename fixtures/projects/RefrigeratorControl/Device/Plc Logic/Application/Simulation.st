@@ -8,6 +8,7 @@ VAR
 	P_EnvironmentDoorOpen: TIME:=T#1S;	//Delay time when the door is open
 	xRaiseTemp: BOOL;					//Signal for increasing the temperature
 	tTemp: TIME;						//Delay time
+	TestTag : BOOL;
 END_VAR
 
 // --- BEGIN IMPLEMENTATION ---

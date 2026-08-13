@@ -48,10 +48,10 @@
       "type": "VISUALISATION"
     }, 
     {
-      "bytes": 79078, 
+      "bytes": 80028, 
       "form": "NATIVE", 
       "guid": "6247544f-164d-4cdc-b8f8-6177e40d8dd8", 
-      "hash": "sha256:d58c226b1ce22654dbefc7c9d3e474880d54f436366936fa2a9ae44f2f1fb348", 
+      "hash": "sha256:11363315357e57973f91cca9562f02864b703390ef5ece6e606093e97343c5f6", 
       "name": "PLC_PRG", 
       "path": "Device/Plc Logic/Application/PLC_PRG.xml", 
       "type": "POU"
@@ -66,10 +66,10 @@
       "type": "POU"
     }, 
     {
-      "bytes": 1422, 
+      "bytes": 1439, 
       "form": "ST_FULL", 
       "guid": "980a4bef-b0b7-4f16-816b-1f41192a0ee0", 
-      "hash": "sha256:33eea7061c2e3c2f4f1bd468046d266247fe7990ed2410243131d455fabea5a8", 
+      "hash": "sha256:c9d1c9f4866842d720324eb9700586fdbadfe4208052b0f872a82487ad17a5d0", 
       "name": "Simulation", 
       "path": "Device/Plc Logic/Application/Simulation.st", 
       "type": "POU"
