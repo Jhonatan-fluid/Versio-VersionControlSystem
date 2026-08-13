@@ -20,10 +20,21 @@ namespace Versio.Core.Tests.Sync;
 public class SyncOrchestratorTests
 {
     private const string Root = @"C:\repo";
-    private const string BindingId = "b-1";
+    /// <summary>
+    /// Shared with the other suites built on this harness — see <c>ConflictGateTests</c>.
+    /// </summary>
+    internal const string BindingId = "b-1";
     private static readonly DateTimeOffset Boot = new(2026, 8, 11, 6, 0, 0, TimeSpan.Zero);
 
-    private sealed class Harness
+    /// <summary>
+    /// The orchestrator wired to fakes, shared rather than copied.
+    /// </summary>
+    /// <remarks>
+    /// Internal because a second suite grew that needs exactly this arrangement, and two
+    /// harnesses drifting apart is how one of them ends up testing a configuration nothing
+    /// ships. Still nested here: this is the file that owns it.
+    /// </remarks>
+    internal sealed class Harness
     {
         public FakeClock Clock { get; } = new();
         public FakeFileSystem Fs { get; } = new();
@@ -44,6 +55,10 @@ public class SyncOrchestratorTests
 
         /// <summary>What the IDE is doing with the project, as the engine sees it.</summary>
         public StubOccupancy Occupancy { get; } = new();
+
+        /// <summary>What git says is unmerged. Null until a test cares, which keeps the
+        /// engine's default — nothing is ever conflicted — under test as well.</summary>
+        public IConflictProbe? Conflicts { get; set; }
 
         public Harness(OrchestratorOptions? options = null, params ProjectBinding[] extra)
         {
@@ -74,7 +89,8 @@ public class SyncOrchestratorTests
                 Clock, Fs, Codesys, Locks,
                 options ?? new OrchestratorOptions { RequireImportConfirmation = false },
                 logger: LoggerOverride ?? new VersioLogger(Clock).AddSink(Sink),
-                occupancy: Occupancy);
+                occupancy: Occupancy,
+                conflicts: Conflicts);
 
         public void SetProject(string content) =>
             Fs.Write(Path.Combine(Root, "plc", "A.project"), content);
@@ -884,7 +900,7 @@ public class SyncOrchestratorTests
     }
 
     /// <summary>An IDE that is holding the project, or is not, as the test requires.</summary>
-    private sealed class StubOccupancy : IProjectOccupancyProbe
+    internal sealed class StubOccupancy : IProjectOccupancyProbe
     {
         public ProjectOccupancy Answer { get; set; } = ProjectOccupancy.Free;
 

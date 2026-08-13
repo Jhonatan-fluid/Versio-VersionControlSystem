@@ -76,6 +76,9 @@ public static class SyncNarrative
         SyncVerdict.SelfWriteSuppressed =>
             "Ignored: that change was the echo of Versio's own export.",
 
+        SyncVerdict.GitWriteSuppressed =>
+            "Ignored: git was rewriting the working tree, so that was not an edit.",
+
         SyncVerdict.BlockedByLock =>
             $"Blocked by the direction lock. {outcome.Explanation}",
 
@@ -92,6 +95,12 @@ public static class SyncNarrative
             "The exported text changed. Review the diff and confirm before importing.",
 
         SyncVerdict.BlockedByOpenProject => outcome.Explanation,
+
+        // The explanation names the files, which is the part worth reading. The leading clause
+        // says why nothing happened, since a refusal is otherwise invisible: the user saves,
+        // and no diff appears.
+        SyncVerdict.BlockedByConflict =>
+            $"Waiting for the merge to be finished. {outcome.Explanation}",
 
         SyncVerdict.Failed =>
             $"The operation failed: {outcome.Explanation}",

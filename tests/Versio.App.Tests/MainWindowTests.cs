@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using Versio.App.ViewModels;
+using Versio.Core.Guarding;
 using Versio.App.Views;
 using Versio.Core.Logging;
 using Versio.Infrastructure.Platform;
@@ -434,7 +435,7 @@ public sealed class MainWindowTests
 
         Assert.False(shell.Busy.IsBusy);
 
-        using (shell.Sync.Busy.Begin("Exporting something…"))
+        using (shell.Sync.Busy.Begin(WorkKind.Export, "Exporting something…"))
         {
             Assert.True(shell.Busy.IsBusy);
             Assert.Equal("Exporting something…", shell.Busy.Message);

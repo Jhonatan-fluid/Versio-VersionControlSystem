@@ -1,6 +1,10 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-12 · **Commits:** 47 · **Tests:** 838 unit + 92 UI + 107 integration, 0 skipped
+**Date:** 2026-08-13 · **Commits:** 61 · **Tests:** 939 unit + 190 UI + 111 integration, 0 skipped
+
+> All three measured on 2026-08-13. The integration suite was re-run in full against real
+> CODESYS 3.5.22.20 after the safeguards work — 107 passed, 0 skipped, 6 m 15 s — including
+> `RepositoryWatcherTests.A_deleted_file_is_reported`, the one noted below as flaky.
 
 > Both numbers are re-derivable rather than remembered: `git rev-list --count HEAD`, and
 > `dotnet test` prints a total per suite. The commit count in this header was wrong by twelve
@@ -138,6 +142,16 @@ format; `.gitattributes` covers every registered vendor's extensions.
 > it is small, self-contained, and finishes a feature that is already 90% built. Item 4 is the
 > largest piece of user-visible value left. Nothing below depends on anything above it except
 > where it says so.
+
+> **Safeguards work is tracked separately** in **[`SAFEGUARDS.md`](SAFEGUARDS.md)** — what Versio
+> refuses, asks about or waits for when something is running or unsaved. Phases 1–6 of it are
+> built and verified against real CODESYS; **§0 of that document is the handover note**, and
+> phase 7 (the auto-stash) is the next piece and is unblocked.
+>
+> It also carries a correction worth reading before touching the sync engine: **`On git action` is
+> not the default sync mode** and had not been since 2026-08-12. Exports follow a detected change,
+> because the mirror exists to be reviewed *before* a commit. Eleven places still said otherwise
+> and now say so; the commit gate is a backstop, not the trigger.
 
 ### 1. ~~Export what is currently missing~~ — **done**
 

@@ -54,9 +54,11 @@ public sealed record BindingFreshness
 /// "the diff appears when I commit rather than when I saved": annoying, never wrong.
 /// </para>
 /// <para>
-/// It matters more since <c>On git action</c> became the default sync mode: with no
-/// export-on-save, this is not a safety net but the <b>primary</b> path by which the export
-/// tree gets written at all.
+/// A <b>backstop</b>, and deliberately not the trigger. Exports follow a detected change, so
+/// the mirror is normally current long before a commit — reviewing a diff that only appears
+/// once you have committed is reviewing it too late. What this catches is the residue: a
+/// dropped watcher event, a save still inside the throttle window, a project adopted while no
+/// toolchain was available.
 /// </para>
 /// <para>
 /// It checks <b>every enabled binding</b>, not just the one last looked at. Committing with

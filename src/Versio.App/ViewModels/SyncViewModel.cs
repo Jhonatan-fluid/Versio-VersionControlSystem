@@ -5,6 +5,7 @@ using Versio.App.Mvvm;
 using Versio.Core.Abstractions;
 using Versio.Core.Bindings;
 using Versio.Core.Git;
+using Versio.Core.Guarding;
 using Versio.Core.Locking;
 using Versio.Core.Logging;
 using Versio.Core.Plc;
@@ -12,6 +13,7 @@ using Versio.Core.Projects;
 using Versio.Core.Sync;
 using Versio.Infrastructure.Bindings;
 using Versio.Infrastructure.FileSystem;
+using Versio.Infrastructure.Git;
 using Versio.Infrastructure.Platform;
 using Versio.Infrastructure.Plc;
 using Versio.Infrastructure.Watching;
@@ -156,11 +158,29 @@ public sealed class SyncViewModel : ObservableObject
     private string _treeSummary = string.Empty;
     private string _coverageSummary = string.Empty;
 
-    public SyncViewModel(VersioLogger logger, IClock clock, BusyTracker? busy = null)
+    /// <summary>
+    /// How a vendor's toolchain is obtained. The registry, unless a caller says otherwise.
+    /// </summary>
+    /// <remarks>
+    /// <b>A seam, and it had to exist.</b> Adopting a project now exports it straight away —
+    /// which is right for a user and wrong for a test suite, because a test that drops a
+    /// <c>.project</c> into a temp repository was launching the real CODESYS and waiting for it
+    /// to fail. One test went from one second to eight, and the suite from four to fourteen.
+    /// A view model that can only ever reach the machine's actual toolchain is a view model
+    /// whose behaviour cannot be exercised without it.
+    /// </remarks>
+    private readonly Func<PlcVendor, IVersioLogger, IPlcToolchain?> _toolchains;
+
+    public SyncViewModel(
+        VersioLogger logger,
+        IClock clock,
+        BusyTracker? busy = null,
+        Func<PlcVendor, IVersioLogger, IPlcToolchain?>? toolchains = null)
     {
+        _toolchains = toolchains ?? PlcToolchains.For;
         _logger = logger;
         _clock = clock;
-        _busy = busy ?? new BusyTracker();
+        _busy = busy ?? new BusyTracker(clock, logger);
         _heartbeat = new HeartbeatService(clock, logger);
 
         // The beat fires on a timer thread. Assigning a string property from there is safe —
@@ -252,9 +272,10 @@ public sealed class SyncViewModel : ObservableObject
     /// How many tracked projects have changes that were never exported.
     /// </summary>
     /// <remarks>
-    /// With <c>On git action</c> as the default sync mode there is deliberately no
-    /// export-on-save, so a project can sit unexported all afternoon. Counting it is what
-    /// stops the panel from implying everything is in sync.
+    /// Normally zero, because an export follows a detected change. It goes above zero while
+    /// one is queued behind the minimum interval, when no toolchain is available, and when a
+    /// gate refused — a merge in progress, a project open in the IDE. Counting it is what
+    /// stops the panel from implying everything is in sync when it is not.
     /// </remarks>
     public int UnexportedCount
     {
@@ -283,6 +304,33 @@ public sealed class SyncViewModel : ObservableObject
 
     /// <summary>Whether the once-per-repository catch-up export has already run.</summary>
     private bool _caughtUp;
+
+    /// <summary>
+    /// Every binding whose direction lock is currently held, for the guard.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Asked of the orchestrator rather than of the rows, so the guard and the sync engine can
+    /// never disagree about whether work is outstanding. A row's <c>State</c> is a sentence
+    /// produced for a human at the time of the last scan; this is the lock itself, now.
+    /// </para>
+    /// <para>
+    /// <see cref="SyncStateMachine.HoldsLock"/> decides what counts as held — the same
+    /// predicate lock recovery uses, so "a lock worth refusing a branch switch over" and "a
+    /// lock worth re-adopting after a reboot" cannot drift apart.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<HeldLock> HeldLocks =>
+        _orchestrator is null
+            ? []
+            : [.. _config.Bindings
+                .Where(b => b.Enabled)
+                .Select(b => (Binding: b, Direction: _orchestrator.StateOf(b.Id)))
+                .Where(x => SyncStateMachine.HoldsLock(x.Direction))
+                .Select(x => new HeldLock(
+                    x.Binding.Id,
+                    System.IO.Path.GetFileNameWithoutExtension(x.Binding.ProjectPath),
+                    x.Direction))];
 
     public IReadOnlyList<string> ExportPaths =>
         [.. _config.Bindings.Where(b => b.Enabled).Select(b => b.ExportPath)];
@@ -437,11 +485,16 @@ public sealed class SyncViewModel : ObservableObject
         _logger.Info(LogCategory.Sync,
             $"catch-up: {behind} project(s) changed while Versio was not running; exporting");
 
-        using var busy = _busy.Begin(behind == 1
+        using var busy = _busy.Begin(WorkKind.Export, behind == 1
             ? "Exporting 1 project that changed while Versio was closed…"
             : $"Exporting {behind} projects that changed while Versio was closed…");
 
-        var outcomes = await SatisfyGateAsync(ct).ConfigureAwait(true);
+        // Both tokens: the caller's, and the one belonging to the bar the user is looking at.
+        // The catch-up runs unattended at open and is the longest thing Versio ever does
+        // without being asked, so it has to answer to whoever wants to stop it.
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, busy.Token);
+
+        var outcomes = await SatisfyGateAsync(linked.Token).ConfigureAwait(true);
 
         var failure = outcomes.FirstOrDefault(o => o.IsFailure);
         Summary = failure is null
@@ -530,6 +583,29 @@ public sealed class SyncViewModel : ObservableObject
         return rows;
     }
 
+    /// <summary>
+    /// Stop noticing changes, without forgetting anything.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// For the moment a close has been agreed to but the work in flight has not finished yet.
+    /// Releasing the watchers stops the five-second deferred tick and any settling save from
+    /// starting a <i>new</i> export while we are waiting for the current one — without which
+    /// "wait for it to finish" could wait for a queue it keeps refilling, and an app the user
+    /// asked to close would sit there exporting.
+    /// </para>
+    /// <para>
+    /// Deliberately not <see cref="Detach"/>. That nulls the orchestrator and clears the panel,
+    /// which is right when a repository is being swapped and wrong here: a run is still going,
+    /// its completion still has to be reported, and the user is still looking at the window.
+    /// </para>
+    /// </remarks>
+    public void Quiesce()
+    {
+        StopWatching();
+        _logger.Info(LogCategory.Watch, "stopped watching; no new sync will be started");
+    }
+
     /// <summary>Clear state when the repository closes, so a stale scan is never shown.</summary>
     public void Detach()
     {
@@ -537,6 +613,14 @@ public sealed class SyncViewModel : ObservableObject
         // leaking one keeps the folder locked against rename or delete for the life of the
         // process - on a repository somebody is trying to move, a visible bug.
         StopWatching();
+
+        // The orchestrator's events, before the reference to it is dropped. Without this the
+        // old orchestrator keeps handlers pointing into this view model, and this view model
+        // keeps `_attachedTo` pointing at an orchestrator for a repository nobody is looking
+        // at any more — so a run finishing late would report itself into the new repository's
+        // panel. BuildOrchestratorAsync detaches before it attaches, which hid this: the leak
+        // only shows on a Detach that is not followed by a rebuild.
+        DetachRunSignals();
 
         _repositoryRoot = null;
         _git = null;
@@ -547,6 +631,25 @@ public sealed class SyncViewModel : ObservableObject
         Projects.Clear();
         Findings.Clear();
         Tree.Clear();
+
+        // The last git status this panel was built from. Left behind, the next tree rebuild
+        // would be handed the previous repository's file list to mark changes against.
+        _lastStatus = null;
+
+        // A search typed about one repository's objects, applied to another's.
+        TreeSearch = string.Empty;
+
+        SelectedNode = null;
+
+        // A failure belongs to the binding that failed, in the repository that held it. Carried
+        // across, the panel would offer "Try again" for a project the new repository does not
+        // have — and the retry would run against a binding id that no longer resolves.
+        //
+        // Through RefreshFailure rather than by assigning the two properties, so the
+        // HasFailure notification and the command states are raised by the one method that
+        // owns them. With Projects already cleared and the orchestrator gone, it can only
+        // resolve to "nothing has failed".
+        RefreshFailure(null);
 
         // The expanded set is keyed by repo-relative path, and two repositories share those
         // freely - "docs" is open in both. Carrying it across would open folders in the new
@@ -585,7 +688,7 @@ public sealed class SyncViewModel : ObservableObject
     /// </remarks>
     private async Task ProbeToolchainAsync(CancellationToken ct)
     {
-        _toolchain = PlcToolchains.For(_vendor, _logger);
+        _toolchain = _toolchains(_vendor, _logger);
 
         if (_toolchain is null)
         {
@@ -676,7 +779,16 @@ public sealed class SyncViewModel : ObservableObject
             // Lets the engine find out that CODESYS has the project open before it spends
             // 17-31 s being told so - and, for an export, work around it by reading a copy.
             occupancy: new ProjectOccupancyProbe(
-                new WindowsFileSystem(), _machine, new ProcessProbe()));
+                new WindowsFileSystem(), _machine, new ProcessProbe()),
+
+            // And whether the tree is mid-merge. Without this the engine cannot tell, and
+            // an import would write conflict markers into a project that then stops
+            // compiling - git's own status has reported them all along and nothing asked.
+            //
+            // Null when there is somehow no client, which leaves the engine on its previous
+            // assumption that nothing is ever conflicted rather than crashing over a question
+            // it only recently learned to ask.
+            conflicts: _git is null ? null : new GitConflictProbe(_git));
 
         AttachRunSignals(_orchestrator);
 
@@ -712,6 +824,35 @@ public sealed class SyncViewModel : ObservableObject
 
     /// <summary>How many runs are in flight per binding, so the row clears on the last one.</summary>
     private readonly Dictionary<string, int> _runsPerBinding = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The token source for the run currently under way on each binding.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Owned by whoever <i>started</i> the run, and looked up by <see cref="OnRunStarted"/> so
+    /// the progress scope adopts it rather than minting one connected to nothing. The two
+    /// happen at different moments on purpose — a run announces itself only once it is past
+    /// the last gate, so the caller is already several method frames away by then.
+    /// </para>
+    /// <para>
+    /// Keyed by binding rather than by operation id because the caller does not know the
+    /// operation id: it is assigned inside the orchestrator, after the call.
+    /// </para>
+    /// </remarks>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, CancellationTokenSource>
+        _runCancellation = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The token for a run nobody registered against a particular binding.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="RunDeferredAsync"/> releases whatever the throttle held back, and cannot say
+    /// in advance which bindings that will turn out to be — so it registers here instead, and
+    /// <see cref="OnRunStarted"/> falls back to it. Without the fallback the five-second tick
+    /// would be the one path that produced a run with no reachable token.
+    /// </remarks>
+    private CancellationTokenSource? _deferredCancellation;
 
     private void AttachRunSignals(SyncOrchestrator orchestrator)
     {
@@ -784,7 +925,9 @@ public sealed class SyncViewModel : ObservableObject
 
         _runScopes[notice.OperationId] =
         [
-            _busy.Begin(what),
+            _busy.Begin(exporting ? WorkKind.Export : WorkKind.Import, what,
+                        _runCancellation.GetValueOrDefault(notice.BindingId)
+                            ?? _deferredCancellation),
             _heartbeat.Track(notice.OperationId, what.TrimEnd('…')),
         ];
 
@@ -828,6 +971,169 @@ public sealed class SyncViewModel : ObservableObject
         Activity = string.Empty;
     });
 
+    /// <summary>
+    /// The working tree moved. Look for projects again if what moved could be one.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A project added while Versio is running was invisible until the repository was
+    /// reopened.</b> The scan ran on open, after a sync did work, and after a push, discard or
+    /// retry — never because a file appeared. Git noticed it immediately, so it showed in the
+    /// changed-file list as untracked and sat there, which reads as the tool having seen it and
+    /// decided to do nothing.
+    /// </para>
+    /// <para>
+    /// The watcher could not have caught it either: it follows the project file and mirror of
+    /// each <i>existing</i> binding, so a file nobody tracks yet is watched by nothing — and in
+    /// a repository with no bindings at all, <see cref="StartWatching"/> returns early and there
+    /// is no watcher whatsoever. That is exactly the state somebody is in when they add their
+    /// first project.
+    /// </para>
+    /// <para>
+    /// Gated on a path that <b>looks like a project and is not already known</b>, so the ordinary
+    /// case — saving a project that is already tracked — costs a set lookup rather than a
+    /// filesystem walk and a git call on every refresh.
+    /// </para>
+    /// </remarks>
+    /// <param name="changedPaths">Repo-relative paths whose git state moved in the last refresh.</param>
+    public async Task NoticeWorkingTreeAsync(IReadOnlyCollection<string> changedPaths)
+    {
+        if (_repositoryRoot is null || changedPaths.Count == 0)
+        {
+            return;
+        }
+
+        var known = Projects.Select(p => p.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var appeared = changedPaths
+            .Where(p => LooksLikeAProject(p) && !known.Contains(p))
+            .ToList();
+
+        if (appeared.Count == 0)
+        {
+            return;
+        }
+
+        _logger.Info(LogCategory.Sync,
+            $"a project appeared in the working tree ({string.Join(", ", appeared.Take(3))}" +
+            (appeared.Count > 3 ? ", …" : string.Empty) + "); scanning again");
+
+        await RescanAsync().ConfigureAwait(true);
+        await RefreshStalenessAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Hold syncing off while git rewrites the working tree, and adopt what it leaves.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Wrapped around a checkout or a pull. Both rewrite the project <i>and</i> its mirror at
+    /// once, and the watcher cannot tell those writes from an engineer's — the hash gate agrees
+    /// something changed, because it did, and the self-write suppressor only recognises hashes
+    /// Versio's own export produced. Left alone, a pull lands a new mirror and the engine
+    /// imports it into the project: the one failure in this design that needs no user error.
+    /// </para>
+    /// <para>
+    /// Adopting afterwards is the other half. The project and mirror git left behind agree with
+    /// each other — the commit gate is what guarantees a commit never records one without the
+    /// other — so the right answer is to believe them, not to sync. Without it the engine would
+    /// keep measuring against the previous commit's hashes and export on the next real save for
+    /// a change nobody made.
+    /// </para>
+    /// </remarks>
+    public async Task WhileGitRewritesTheTreeAsync(string what, Func<Task> operation)
+    {
+        if (_orchestrator is null)
+        {
+            await operation().ConfigureAwait(true);
+            return;
+        }
+
+        using (_orchestrator.BeginExternalWrite(what))
+        {
+            await operation().ConfigureAwait(true);
+        }
+
+        var adopted = await _orchestrator
+            .AdoptExternalStateAsync(CancellationToken.None)
+            .ConfigureAwait(true);
+
+        if (adopted.Count > 0)
+        {
+            _logger.Info(LogCategory.Sync,
+                $"{what}: adopted the state of {adopted.Count} binding(s) without syncing");
+        }
+
+        await RescanAsync().ConfigureAwait(true);
+        await RefreshStalenessAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Give a project that has just been adopted its first mirror.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Versio does not export on save</b>, and that is deliberate: a CODESYS cold start is
+    /// 17-31 s, so exporting after every settled change would run the toolchain most of the
+    /// working day for diffs nobody looks at until they commit. Exports happen on a git action,
+    /// and on open for whatever changed while Versio was closed.
+    /// </para>
+    /// <para>
+    /// <b>Adoption is the case that fell between those two.</b> The catch-up on open is armed
+    /// once per repository, so a project dropped in afterwards missed it, and the panel would
+    /// sit reading "not exported · coverage unknown" until somebody committed or reopened —
+    /// with nothing on screen suggesting either. A project that has never been exported has no
+    /// mirror to diff, review or import from, which is the whole of what tracking it is for.
+    /// </para>
+    /// <para>
+    /// Through <see cref="SatisfyGateAsync"/>, the same path the catch-up and the commit gate
+    /// use, so the direction lock, the hash gate, the conflict gate and the open-project check
+    /// all apply exactly as they do everywhere else. A project someone has open in the IDE is a
+    /// wait, not a failure, and this leaves it alone.
+    /// </para>
+    /// </remarks>
+    private async Task ExportNewlyAdoptedAsync(int adopted)
+    {
+        if (_orchestrator is null || !ToolchainAvailable)
+        {
+            // A repository of PLC projects on a machine with no toolchain is still a perfectly
+            // good repository, and the panel already reports why it cannot export.
+            _logger.Info(LogCategory.Sync,
+                "newly tracked project(s) will be exported when a toolchain is available");
+            return;
+        }
+
+        _logger.Info(LogCategory.Sync,
+            $"{adopted} newly tracked project(s) have never been exported; exporting now");
+
+        using var busy = _busy.Begin(
+            WorkKind.Export,
+            adopted == 1
+                ? "Exporting a newly tracked project…"
+                : $"Exporting {adopted} newly tracked projects…");
+
+        var outcomes = await SatisfyGateAsync(busy.Token).ConfigureAwait(true);
+
+        var failure = outcomes.FirstOrDefault(o => o.IsFailure);
+
+        Summary = failure is null
+            ? outcomes.Count == 0 ? Summary : SyncNarrative.Describe(outcomes[^1])
+            : $"Export failed: {failure.Explanation}";
+
+        await RefreshStalenessAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>Does this path carry an extension some registered vendor claims?</summary>
+    /// <remarks>
+    /// Asked of the registry rather than hardcoded, so the day a second vendor is implemented
+    /// this needs no edit — the same rule the scanner itself follows.
+    /// </remarks>
+    private static bool LooksLikeAProject(string repoRelativePath) =>
+        PlcFormats.All
+            .SelectMany(f => f.ProjectExtensions)
+            .Any(extension =>
+                repoRelativePath.EndsWith(extension, StringComparison.OrdinalIgnoreCase));
+
     /// <summary>Scan the repository for PLC projects and classify what was found.</summary>
     private async Task RescanAsync()
     {
@@ -837,17 +1143,19 @@ public sealed class SyncViewModel : ObservableObject
         }
 
         using var scope = _logger.BeginOperation(Guid.NewGuid().ToString("N")[..8]);
-        using var busy = _busy.Begin("Scanning for PLC projects…");
+        using var busy = _busy.Begin(WorkKind.Scan, "Scanning for PLC projects…");
         _logger.Info(LogCategory.Sync, "scanning for PLC projects");
 
         var scanner = new RepoScanner(_repositoryRoot, PlcFormats.All, _logger);
-        var snapshot = await scanner.ScanAsync(_git, CancellationToken.None).ConfigureAwait(true);
+        var snapshot = await scanner.ScanAsync(_git, busy.Token).ConfigureAwait(true);
 
         // Detection and tracking are one step now: anything found is tracked, and the locks
         // take it from there.
-        if (await AutoAdoptAsync(snapshot, CancellationToken.None).ConfigureAwait(true) > 0)
+        var adopted = await AutoAdoptAsync(snapshot, busy.Token).ConfigureAwait(true);
+
+        if (adopted > 0)
         {
-            await BuildOrchestratorAsync(CancellationToken.None).ConfigureAwait(true);
+            await BuildOrchestratorAsync(busy.Token).ConfigureAwait(true);
             StartWatching();
         }
 
@@ -901,6 +1209,11 @@ public sealed class SyncViewModel : ObservableObject
 
         _logger.Info(LogCategory.Sync,
             $"scan: {Projects.Count} project(s), {Findings.Count} finding(s)");
+
+        if (adopted > 0)
+        {
+            await ExportNewlyAdoptedAsync(adopted).ConfigureAwait(true);
+        }
     }
 
     /// <summary>The short phrase for one row.</summary>
@@ -935,12 +1248,16 @@ public sealed class SyncViewModel : ObservableObject
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>This deliberately does not export anything.</b> The default sync mode is
-    /// <c>On git action</c>, decided by measurement: a CODESYS cold start is 17-31 s, so
-    /// exporting after every settled save would run the toolchain most of the working day for
-    /// changes nobody looks at until they commit. What the watcher buys is <i>awareness</i> -
-    /// the panel can say "2 projects not yet exported" instead of implying everything is in
-    /// sync, which the plan calls out explicitly as the thing the status bar must not do.
+    /// <b>This is what triggers an export.</b> A settled change runs the sync pipeline, so the
+    /// mirror is written while somebody is still deciding what to commit — which is the whole
+    /// point of having one. Reviewing a diff that only appears once you have committed is
+    /// reviewing it too late.
+    /// </para>
+    /// <para>
+    /// A CODESYS cold start is 17-31 s, so the cost is managed rather than avoided: the
+    /// coalescer holds the queue at one job per project and the minimum interval floors how
+    /// often the toolchain starts. Saves inside the window are recorded as pending and run once
+    /// things go quiet - none is lost, and N saves cost one export rather than N.
     /// </para>
     /// <para>
     /// Nothing depends on the watcher being reliable. It drops events - buffers overflow,
@@ -1018,9 +1335,12 @@ public sealed class SyncViewModel : ObservableObject
             return;
         }
 
+        using var cancel = new CancellationTokenSource();
+        _deferredCancellation = cancel;
+
         try
         {
-            var outcomes = await _orchestrator.RunDeferredAsync(CancellationToken.None)
+            var outcomes = await _orchestrator.RunDeferredAsync(cancel.Token)
                 .ConfigureAwait(true);
 
             if (outcomes.Any(o => o.DidWork || o.IsFailure))
@@ -1029,9 +1349,22 @@ public sealed class SyncViewModel : ObservableObject
                 await RefreshStalenessAsync().ConfigureAwait(true);
             }
         }
+        catch (OperationCanceledException)
+        {
+            // Asked to stop, by somebody switching branch or closing the window. Not a
+            // failure, and not worth an error line for something they just requested.
+            _logger.Info(LogCategory.Sync, "the deferred sync was cancelled");
+        }
         catch (Exception ex)
         {
             _logger.Error(LogCategory.Sync, "could not run the deferred sync", ex);
+        }
+        finally
+        {
+            if (ReferenceEquals(_deferredCancellation, cancel))
+            {
+                _deferredCancellation = null;
+            }
         }
     }
 
@@ -1408,11 +1741,14 @@ public sealed class SyncViewModel : ObservableObject
         CoverageSummary = built.Coverage.Values.FirstOrDefault(c => c.HasGaps)?.Describe()
                           ?? string.Empty;
 
-        Tree.Clear();
-        foreach (var node in roots)
-        {
-            Tree.Add(new TreeRow(node, 0, _expansion));
-        }
+        // Reconciled, not rebuilt.
+        //
+        // Exporting on every change is what lets somebody review a diff before committing —
+        // and it means an export lands while they are reading the tree. Clearing the
+        // collection and refilling it dropped the selection, closed whatever WPF had realised,
+        // and threw the reader back to the top on every save. The changed-files list was fixed
+        // this way for the same reason; the tree is the primary view now and had not been.
+        TreeRow.Reconcile(Tree, roots, 0, _expansion);
 
         var objects = roots.Sum(CountObjects);
         var changed = status.Changes.Count;
@@ -1490,10 +1826,11 @@ public sealed class SyncViewModel : ObservableObject
     /// </summary>
     /// <remarks>
     /// <para>
-    /// This is the primary path by which the export tree is written at all, not a safety net.
-    /// With <c>On git action</c> as the default sync mode there is no export on save, so the
-    /// commit is where the mirror catches up - which is why it runs rather than merely
-    /// refusing, and why it is worth the 17-31 s it costs.
+    /// A backstop rather than the primary path: exports follow a detected change, so the
+    /// mirror is usually current well before anybody commits. This covers what the watcher
+    /// missed - a dropped event, a save still inside the throttle window, a project adopted
+    /// while no toolchain was available - which is why it exports rather than merely refusing,
+    /// and why it is worth the 17-31 s on the occasions it is needed.
     /// </para>
     /// <para>
     /// Each job is synchronous, so it bypasses the coalescer and runs now rather than queueing
@@ -1510,7 +1847,7 @@ public sealed class SyncViewModel : ObservableObject
 
         var operationId = Guid.NewGuid().ToString("N")[..8];
         using var scope = _logger.BeginOperation(operationId);
-        using var busy = _busy.Begin("Exporting before commit…");
+        using var busy = _busy.Begin(WorkKind.Export, "Exporting before commit…");
         using var beat = _heartbeat.Track(operationId, "commit gate export");
 
         // Says what it is doing, not why the caller asked. This same path now serves the
@@ -1684,49 +2021,67 @@ public sealed class SyncViewModel : ObservableObject
         _logger.Debug(LogCategory.Sync,
             $"{binding.Id}: {source} change settled at {path}");
 
-        var outcome = await _orchestrator.HandleChangeAsync(new SyncJob
-        {
-            BindingId = binding.Id,
-            Source = source,
+        // The run's own token, registered before the call so the progress scope opened from
+        // inside the orchestrator can find and adopt it. Without this the automatic export -
+        // by far the most common thing to be running when somebody switches branch or closes
+        // the window - would have no reachable token, and "stop it and continue" would be a
+        // button that did nothing.
+        using var cancel = new CancellationTokenSource();
+        _runCancellation[binding.Id] = cancel;
 
-            // Confirmed, because there is nobody to ask. The project is copied aside before
-            // an import writes into it, which is what makes that answer defensible.
-            Confirmed = true,
-            Reason = $"automatic, {source}",
-        }, CancellationToken.None).ConfigureAwait(true);
-
-        var sentence = SyncNarrative.Describe(outcome);
-
-        if (outcome.IsFailure)
+        try
         {
-            _logger.Error(LogCategory.Sync, sentence);
-        }
-        else if (outcome.DidWork)
-        {
-            _logger.Info(LogCategory.Sync, sentence);
-        }
-        else
-        {
-            // Coalesced, throttled, unchanged, or blocked by the lock. All routine.
-            _logger.Debug(LogCategory.Sync, sentence);
-
-            // Queued and throttled are not "nothing happened": an export IS going to run,
-            // just not this instant, and the row would otherwise sit on its old state while
-            // the user waits for a diff. Said in the row rather than the bar, because the
-            // app is not busy - it is waiting on purpose.
-            if (outcome.Verdict is SyncVerdict.Coalesced or SyncVerdict.Throttled &&
-                Projects.FirstOrDefault(p => p.BindingId == binding.Id) is { Busy: false } row)
+            var outcome = await _orchestrator.HandleChangeAsync(new SyncJob
             {
-                row.State = "queued…";
+                BindingId = binding.Id,
+                Source = source,
+
+                // Confirmed, because there is nobody to ask. The project is copied aside before
+                // an import writes into it, which is what makes that answer defensible.
+                Confirmed = true,
+                Reason = $"automatic, {source}",
+            }, cancel.Token).ConfigureAwait(true);
+
+            var sentence = SyncNarrative.Describe(outcome);
+
+            if (outcome.IsFailure)
+            {
+                _logger.Error(LogCategory.Sync, sentence);
+            }
+            else if (outcome.DidWork)
+            {
+                _logger.Info(LogCategory.Sync, sentence);
+            }
+            else
+            {
+                // Coalesced, throttled, unchanged, or blocked by the lock. All routine.
+                _logger.Debug(LogCategory.Sync, sentence);
+
+                // Queued and throttled are not "nothing happened": an export IS going to run,
+                // just not this instant, and the row would otherwise sit on its old state while
+                // the user waits for a diff. Said in the row rather than the bar, because the
+                // app is not busy - it is waiting on purpose.
+                if (outcome.Verdict is SyncVerdict.Coalesced or SyncVerdict.Throttled &&
+                    Projects.FirstOrDefault(p => p.BindingId == binding.Id) is { Busy: false } row)
+                {
+                    row.State = "queued…";
+                }
+            }
+
+            if (outcome.DidWork || outcome.IsFailure)
+            {
+                Summary = sentence;
+                LockState = SyncNarrative.Describe(outcome.State);
+                await RescanAsync().ConfigureAwait(true);
+                await RefreshStalenessAsync().ConfigureAwait(true);
             }
         }
-
-        if (outcome.DidWork || outcome.IsFailure)
+        finally
         {
-            Summary = sentence;
-            LockState = SyncNarrative.Describe(outcome.State);
-            await RescanAsync().ConfigureAwait(true);
-            await RefreshStalenessAsync().ConfigureAwait(true);
+            // Removed by identity: a later change on this binding may already have replaced
+            // the entry, and clearing it blindly would unregister somebody else's live run.
+            _runCancellation.TryRemove(
+                new KeyValuePair<string, CancellationTokenSource>(binding.Id, cancel));
         }
     }
 
@@ -1842,15 +2197,15 @@ public sealed class SyncViewModel : ObservableObject
         _logger.Click("Sync.Retry");
         _logger.Info(LogCategory.Sync, $"{row.Name}: failure acknowledged; retrying");
 
-        using var busy = _busy.Begin($"Retrying {row.Name}…");
+        using var busy = _busy.Begin(WorkKind.Export, $"Retrying {row.Name}…");
 
-        await _orchestrator.AcknowledgeFailureAsync(row.BindingId!, CancellationToken.None)
+        await _orchestrator.AcknowledgeFailureAsync(row.BindingId!, busy.Token)
             .ConfigureAwait(true);
 
         // The acknowledgement only clears the gate. Without this the project would sit in
         // exactly the state it was in before, and the button would look as though it had
         // done nothing.
-        var outcomes = await SatisfyGateAsync(CancellationToken.None).ConfigureAwait(true);
+        var outcomes = await SatisfyGateAsync(busy.Token).ConfigureAwait(true);
 
         var failure = outcomes.FirstOrDefault(o => o.IsFailure);
         Summary = failure is null ? $"{row.Name} synced." : $"Still failing: {failure.Explanation}";

@@ -17,7 +17,22 @@ public sealed record OrchestratorOptions
     /// writing into a .project is the strictly more dangerous direction.</summary>
     public bool RequireImportConfirmation { get; init; } = true;
 
-    public TimeSpan MinimumInterval { get; init; } = TimeSpan.FromSeconds(30);
+    /// <summary>
+    /// The shortest gap between two export starts for one project.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Ten seconds, not thirty.</b> The point of exporting on every change is that somebody
+    /// can read the diff <i>before</i> committing, and a thirty-second wait between saving and
+    /// seeing it is long enough that people stop waiting and go and do something else. A save
+    /// inside the window is not lost — it is recorded as pending and runs once things go quiet.
+    /// </para>
+    /// <para>
+    /// It is a floor on how often the toolchain starts, not a debounce: the watcher's own
+    /// settling delay already absorbs the burst of writes a single save produces.
+    /// </para>
+    /// </remarks>
+    public TimeSpan MinimumInterval { get; init; } = TimeSpan.FromSeconds(10);
     public int CircuitBreakerThreshold { get; init; } = 5;
     public TimeSpan CircuitBreakerWindow { get; init; } = TimeSpan.FromSeconds(60);
 }
@@ -105,6 +120,12 @@ public sealed class SyncOrchestrator
     /// </summary>
     private readonly IProjectOccupancyProbe? _occupancy;
 
+    /// <summary>
+    /// Asks whether the working tree is mid-merge. Defaults to "never", which is what the
+    /// engine assumed before anybody asked.
+    /// </summary>
+    private readonly IConflictProbe _conflicts;
+
     public SyncOrchestrator(
         string repoRoot,
         IReadOnlyList<ProjectBinding> bindings,
@@ -116,9 +137,11 @@ public sealed class SyncOrchestrator
         OrchestratorOptions? options = null,
         IProgress<PlcProgress>? progress = null,
         IVersioLogger? logger = null,
-        IProjectOccupancyProbe? occupancy = null)
+        IProjectOccupancyProbe? occupancy = null,
+        IConflictProbe? conflicts = null)
     {
         _occupancy = occupancy;
+        _conflicts = conflicts ?? NoConflicts.Instance;
         _repoRoot = repoRoot;
         _owner = owner;
         _progress = progress;
@@ -283,6 +306,144 @@ public sealed class SyncOrchestrator
         return decisions;
     }
 
+    /// <summary>How many git operations are rewriting the working tree right now.</summary>
+    /// <remarks>
+    /// Counted rather than a flag, because a pull that has to stage the mirror afterwards is
+    /// two nested writes and whichever finished first would clear a boolean while the other
+    /// was still going — the same argument the progress tracker makes for the same shape.
+    /// </remarks>
+    private int _externalWrites;
+
+    /// <summary>True while git is rewriting the tree beneath us.</summary>
+    public bool IsExternalWriteInProgress => Volatile.Read(ref _externalWrites) > 0;
+
+    /// <summary>
+    /// Declare that git is about to rewrite the working tree. Dispose when it has finished.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A checkout and a pull rewrite both sides of a binding at once</b>, and the watcher
+    /// cannot tell those writes from an engineer's. The hash gate agrees something changed —
+    /// it genuinely did — and the self-write suppressor cannot help, because it recognises
+    /// only the hashes Versio's own export produced.
+    /// </para>
+    /// <para>
+    /// Left alone, that is the one failure in this design that needs no user error at all: a
+    /// pull lands a new mirror, the watcher reports it as an edit to the exported text, and the
+    /// engine imports it into the project — writing git's idea of the mirror into a binary file
+    /// on the strength of a change nobody made.
+    /// </para>
+    /// <para>
+    /// Suppressing is only half of it. The state after the operation is <b>consistent</b> — the
+    /// project and the mirror both came out of the same commit, and the commit gate is what
+    /// guarantees they match — so the right response is to adopt it as the new baseline rather
+    /// than to sync anything. See <see cref="AdoptExternalStateAsync"/>, which the caller runs
+    /// once the write is done.
+    /// </para>
+    /// </remarks>
+    public IDisposable BeginExternalWrite(string what)
+    {
+        Interlocked.Increment(ref _externalWrites);
+        _log.Debug(LogCategory.Sync, $"git is rewriting the tree ({what}); syncing is held off");
+
+        return new ExternalWrite(this, what);
+    }
+
+    private sealed class ExternalWrite(SyncOrchestrator owner, string what) : IDisposable
+    {
+        private bool _disposed;
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            Interlocked.Decrement(ref owner._externalWrites);
+            owner._log.Debug(LogCategory.Sync, $"git has finished ({what})");
+        }
+    }
+
+    /// <summary>
+    /// Take the state git just produced as the truth, without running anything.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// After a checkout or a pull, the project and its mirror are both whatever the new commit
+    /// says — and they agree with each other, because the commit gate refuses to let a commit
+    /// record one without the other. Nothing needs exporting or importing; what needs to happen
+    /// is that the engine stops believing the <i>previous</i> commit's hashes, or the next real
+    /// save is measured against a project that no longer exists.
+    /// </para>
+    /// <para>
+    /// <b>Only bindings that hold no lock.</b> A binding with unsynced work has something the
+    /// new commit does not contain, and quietly adopting over it would lose exactly the work
+    /// the direction lock exists to protect. In practice the guard above the UI refuses a
+    /// checkout while any lock is held, so this should never find one — which is precisely why
+    /// it is worth refusing rather than assuming.
+    /// </para>
+    /// </remarks>
+    /// <returns>The bindings whose baseline moved.</returns>
+    public async Task<IReadOnlyList<string>> AdoptExternalStateAsync(CancellationToken ct)
+    {
+        var adopted = new List<string>();
+
+        foreach (var binding in _bindings.Values.Where(b => b.Enabled))
+        {
+            if (!_locks.TryGetValue(binding.Id, out var current))
+            {
+                continue;
+            }
+
+            if (SyncStateMachine.HoldsLock(current.Direction))
+            {
+                _log.Warn(LogCategory.Lock,
+                    $"{binding.Id}: git rewrote the tree while this binding held a " +
+                    $"{current.Direction} lock; its baseline is left alone so the unsynced " +
+                    "work is not silently adopted");
+                continue;
+            }
+
+            var projectHash = await ProjectHashAsync(binding, ct).ConfigureAwait(false);
+            var mirrorHash = await ExportTreeHashAsync(binding, ct).ConfigureAwait(false);
+
+            if (projectHash == current.LastSynced.ProjectHash &&
+                mirrorHash == current.LastSynced.MirrorHash)
+            {
+                continue;   // the commit git moved to holds what we already believed
+            }
+
+            _locks[binding.Id] = current with
+            {
+                Baseline = current.Baseline with
+                {
+                    ProjectHash = projectHash,
+                    MirrorHash = mirrorHash,
+                },
+                LastSynced = new SyncedState
+                {
+                    ProjectHash = projectHash,
+                    MirrorHash = mirrorHash,
+                },
+            };
+
+            adopted.Add(binding.Id);
+
+            _log.Info(LogCategory.Lock,
+                $"{binding.Id}: adopted the state git left behind " +
+                $"(project {Short(projectHash)}, mirror {Short(mirrorHash)}) without syncing");
+        }
+
+        if (adopted.Count > 0)
+        {
+            await PersistAsync(ct).ConfigureAwait(false);
+        }
+
+        return adopted;
+    }
+
     /// <summary>A change was detected. Decide what, if anything, to do about it.</summary>
     /// <remarks>
     /// The loop is the coalescer's contract, and it used to be missing.
@@ -368,6 +529,20 @@ public sealed class SyncOrchestrator
                 state), slotHeld);
         }
 
+        // 1b. GIT IS REWRITING THE TREE.
+        //
+        //     Before the hash gate, unlike almost everything else here. A checkout really did
+        //     change the content, so the hashes agree that something happened — what makes it
+        //     uninteresting is who did it. Asking "did it change" first would answer yes and
+        //     send a pull's new mirror down the import path.
+        //
+        //     After the breaker only, because a tripped breaker outranks everything.
+        if (IsExternalWriteInProgress)
+        {
+            return (Refuse(LogLevel.Debug, SyncVerdict.GitWriteSuppressed, job.BindingId,
+                "git is rewriting the working tree; this was not an edit", state), slotHeld);
+        }
+
         // 2. Hash gate. Before the lock on purpose: an event carrying no actual change is
         //    noise, and reporting it as a lock violation would show the user a scary
         //    refusal for a no-op save.
@@ -391,6 +566,27 @@ public sealed class SyncOrchestrator
         {
             return (Refuse(LogLevel.Debug, SyncVerdict.SelfWriteSuppressed, job.BindingId,
                 "this was the echo of our own export", state), slotHeld);
+        }
+
+        // 3b. UNMERGED PATHS.
+        //
+        //     After the hash gate and the suppressor, so a save that changed nothing and an
+        //     echo of our own export are still dropped as what they are rather than reported
+        //     as a conflict — and so the cost, one `git status`, is paid only for changes that
+        //     are actually going somewhere.
+        //
+        //     Before the direction lock, deliberately. A conflicted tree is the more
+        //     fundamental problem and has the clearer remedy; reporting it as a lock violation
+        //     would send the user to push or discard when what they have to do is finish the
+        //     merge. The guard above the UI orders these two the same way, for the same reason.
+        if (await ConflictedPathsFor(binding, ct).ConfigureAwait(false) is { Count: > 0 } clashes)
+        {
+            return (Refuse(LogLevel.Information, SyncVerdict.BlockedByConflict, job.BindingId,
+                $"{ProjectName(binding)} has {Files(clashes.Count)} with unresolved merge " +
+                $"conflicts ({string.Join(", ", clashes.Take(3))}" +
+                (clashes.Count > 3 ? ", …" : string.Empty) +
+                "). Finish the merge and this will run on the next change.",
+                state), slotHeld);
         }
 
         // 4. Direction lock.
@@ -723,6 +919,54 @@ public sealed class SyncOrchestrator
     /// not a backup, and the backups live next door under their own name.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// Which of the tree's unmerged paths belong to this binding.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Both sides count. A conflict in the mirror is the obvious one — importing text holding
+    /// <c>&lt;&lt;&lt;&lt;&lt;&lt;&lt;</c> markers writes them into a structured project file
+    /// that will not compile afterwards. A conflict on the <c>.project</c> itself matters just
+    /// as much: exporting from a binary git could not merge would produce a mirror of whichever
+    /// half won, and record it as the truth.
+    /// </para>
+    /// <para>
+    /// A conflict elsewhere in the repository is somebody else's business. A README both sides
+    /// edited has nothing to do with this project, and halting its sync over one would be the
+    /// same over-reach as releasing every direction lock because one unrelated file was
+    /// discarded.
+    /// </para>
+    /// </remarks>
+    private async Task<IReadOnlyList<string>> ConflictedPathsFor(
+        ProjectBinding binding, CancellationToken ct)
+    {
+        var unmerged = await _conflicts.UnmergedPathsAsync(ct).ConfigureAwait(false);
+
+        if (unmerged.Count == 0)
+        {
+            return [];
+        }
+
+        return [.. unmerged.Where(path => Owns(binding, path))];
+    }
+
+    /// <summary>Does this binding's project or mirror contain the given repo-relative path?</summary>
+    /// <remarks>
+    /// The project is matched exactly and the mirror by prefix, in that order, and the prefix
+    /// carries its separator: <c>plc/A.project</c> sits beside <c>plc/A</c>, and a careless
+    /// prefix test would have the mirror claim the project — the same trap
+    /// <c>SyncViewModel.Locate</c> documents on the other side of the seam.
+    /// </remarks>
+    private static bool Owns(ProjectBinding binding, string repoRelativePath)
+    {
+        var path = repoRelativePath.Replace('\\', '/');
+
+        return string.Equals(path, binding.ProjectPath, StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith(binding.ExportPath.TrimEnd('/') + '/', StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string Files(int count) => count == 1 ? "1 file" : $"{count} files";
+
     private async Task<string?> CopyOpenProjectAsync(ProjectBinding binding, CancellationToken ct)
     {
         var source = Absolute(binding.ProjectPath);
@@ -901,9 +1145,9 @@ public sealed class SyncOrchestrator
     /// The commit gate: refuse to commit while any binding's export is stale.
     /// </summary>
     /// <remarks>
-    /// This is what converts a dropped watcher event from a correctness problem into a UX
-    /// one — and since <c>On git action</c> became the default sync mode, it is the primary
-    /// path by which the export tree is written at all.
+    /// This is what converts a dropped watcher event from a correctness problem into a UX one.
+    /// It is a backstop: exports follow a detected change, so a commit normally finds every
+    /// mirror already current and this gate finds nothing to do.
     /// </remarks>
     public async Task<CommitGateResult> EvaluateCommitGateAsync(CancellationToken ct)
     {

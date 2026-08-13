@@ -36,7 +36,7 @@ public sealed class JobCoalescer(
     IClock clock,
     TimeSpan? minimumInterval = null)
 {
-    private readonly TimeSpan _minimumInterval = minimumInterval ?? TimeSpan.FromSeconds(30);
+    private readonly TimeSpan _minimumInterval = minimumInterval ?? TimeSpan.FromSeconds(10);
 
     private DateTimeOffset? _runningSince;
     private DateTimeOffset? _lastStart;

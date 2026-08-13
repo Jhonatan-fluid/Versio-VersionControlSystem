@@ -79,6 +79,21 @@ public partial class App : Application
         // the folder free to be renamed or deleted the moment Versio closes.
         Exit += (_, _) => shell.Dispose();
 
+        // Logging off or shutting down. This does NOT go through the close guard: Windows
+        // gives a process a few seconds and will not read a dialog, so the only useful thing
+        // to do is give up deliberately rather than be killed mid-run — which at least gets
+        // the runner to kill the CODESYS process tree it started instead of orphaning it.
+        //
+        // Not vetoed, though SessionEndingCancelEventArgs would allow it. An application that
+        // blocks a shutdown to protect its own work is one people learn to force-quit, and the
+        // direction locks are already on disk and recovered on the next open.
+        SessionEnding += (_, args) =>
+        {
+            logger.Warn(LogCategory.App,
+                $"the session is ending ({args.ReasonSessionEnding})");
+            shell.AbandonForShutdown();
+        };
+
         new MainWindow(shell).Show();
 
         // Open a repository straight away when one is obvious: an explicit path argument,

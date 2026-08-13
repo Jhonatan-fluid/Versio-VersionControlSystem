@@ -49,6 +49,43 @@ public enum SyncVerdict
     /// </remarks>
     BlockedByOpenProject,
 
+    /// <summary>
+    /// The working tree has unmerged paths, so neither direction may run.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A wait, not a failure</b>, for the same reasons as
+    /// <see cref="BlockedByOpenProject"/>: a merge in progress is a normal state somebody is
+    /// working through, and marking the binding failed would stop all syncing until a button
+    /// is pressed. It leaves the direction lock alone and does not feed the circuit breaker.
+    /// </para>
+    /// <para>
+    /// Both directions, not just import. Exporting over a half-merged mirror would overwrite
+    /// the conflict the user is in the middle of resolving; importing a mirror containing
+    /// <c>&lt;&lt;&lt;&lt;&lt;&lt;&lt;</c> markers would put them into the project, where they
+    /// are not text but a structured file that will no longer compile.
+    /// </para>
+    /// </remarks>
+    BlockedByConflict,
+
+    /// <summary>
+    /// Git was rewriting the working tree, so the change was not the user's to act on.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The sibling of <see cref="SelfWriteSuppressed"/>, one step out. That one swallows the
+    /// echo of an export Versio wrote; this one swallows a checkout, a pull or a stash
+    /// restore — writes that are equally not an edit, and which the suppressor could not
+    /// recognise because it matches on a hash Versio itself produced.
+    /// </para>
+    /// <para>
+    /// Dropped <b>before</b> the hash gate, unlike almost everything else. Git really did
+    /// change the content, so the hashes agree that something happened; what makes it
+    /// uninteresting is who did it, not whether it differs.
+    /// </para>
+    /// </remarks>
+    GitWriteSuppressed,
+
     /// <summary>CODESYS failed, or the run did not complete.</summary>
     Failed,
 

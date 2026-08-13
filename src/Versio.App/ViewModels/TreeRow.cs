@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using Versio.App.Mvvm;
 using Versio.Core.Git;
 using Versio.Core.Projects;
@@ -32,12 +33,13 @@ namespace Versio.App.ViewModels;
 public sealed class TreeRow : ObservableObject
 {
     private readonly TreeExpansion? _expansion;
-    private IReadOnlyList<TreeRow>? _children;
+    private ObservableCollection<TreeRow>? _children;
     private bool _isExpanded;
+    private ProjectTreeNode _node;
 
     public TreeRow(ProjectTreeNode node, int depth, TreeExpansion? expansion = null)
     {
-        Node = node;
+        _node = node;
         Depth = depth;
         _expansion = expansion;
 
@@ -48,11 +50,100 @@ public sealed class TreeRow : ObservableObject
                       ?? (node.Kind == ProjectNodeKind.Project || (node.IsFolder && node.HasChanges));
     }
 
-    public ProjectTreeNode Node { get; }
+    public ProjectTreeNode Node => _node;
 
     /// <summary>This row's children, built the first time anything asks for them.</summary>
-    public IReadOnlyList<TreeRow> Children =>
-        _children ??= [.. Node.Children.Select(c => new TreeRow(c, Depth + 1, _expansion))];
+    /// <remarks>
+    /// Observable so a later export can add and remove rows here without the level being
+    /// rebuilt. The declared type stays read-only: nothing outside this class may add to it,
+    /// and <see cref="Reconcile"/> is the only thing that does.
+    /// </remarks>
+    public IReadOnlyList<TreeRow> Children => Realised;
+
+    private ObservableCollection<TreeRow> Realised =>
+        _children ??= [.. _node.Children.Select(c => new TreeRow(c, Depth + 1, _expansion))];
+
+    /// <summary>
+    /// Take fresh facts for the node this row already represents.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The row object survives, which is the entire point: WPF keeps its container, its
+    /// expander state and — critically — the selection, because <c>SelectedItem</c> is a
+    /// reference to this instance. Replacing the row would drop all three, which is what
+    /// clearing and refilling the collection used to do on every export.
+    /// </para>
+    /// <para>
+    /// Everything the view shows is derived from <see cref="Node"/>, so one empty-name
+    /// notification re-reads the lot. Enumerating a dozen property names here would be a list
+    /// to forget to extend the next time the row grows a badge.
+    /// </para>
+    /// <para>
+    /// <b>Children are reconciled only if they were ever realised.</b> Touching
+    /// <see cref="Children"/> on an unrealised row would build it — and doing that from a
+    /// refresh would construct a row per object in the project, thousands on a real machine,
+    /// undoing the laziness this class exists for.
+    /// </para>
+    /// </remarks>
+    public void Adopt(ProjectTreeNode fresh)
+    {
+        _node = fresh;
+
+        OnPropertyChanged(string.Empty);
+
+        if (_children is not null)
+        {
+            Reconcile(_children, fresh.Children, Depth + 1, _expansion);
+        }
+    }
+
+    /// <summary>
+    /// Bring a level of rows into line with freshly built nodes, touching only what moved.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The same single forward pass the changed-files list uses, for the same reason: an
+    /// export that lands while somebody is reading the tree must appear as the objects that
+    /// actually changed appearing and disappearing, not as the tree vanishing and coming back.
+    /// </para>
+    /// <para>
+    /// Identity is the node's path. A row never changes path — an object that moved is a
+    /// different row — which is what makes a positional pass safe once the removals are done.
+    /// </para>
+    /// </remarks>
+    public static void Reconcile(
+        ObservableCollection<TreeRow> rows,
+        IReadOnlyList<ProjectTreeNode> fresh,
+        int depth,
+        TreeExpansion? expansion)
+    {
+        var live = fresh.Select(n => n.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        for (var i = rows.Count - 1; i >= 0; i--)
+        {
+            if (!live.Contains(rows[i].Node.Path))
+            {
+                rows.RemoveAt(i);
+            }
+        }
+
+        for (var i = 0; i < fresh.Count; i++)
+        {
+            if (i >= rows.Count)
+            {
+                rows.Add(new TreeRow(fresh[i], depth, expansion));
+            }
+            else if (!string.Equals(rows[i].Node.Path, fresh[i].Path,
+                                    StringComparison.OrdinalIgnoreCase))
+            {
+                rows.Insert(i, new TreeRow(fresh[i], depth, expansion));
+            }
+            else
+            {
+                rows[i].Adopt(fresh[i]);
+            }
+        }
+    }
 
     /// <summary>Nesting level, for the indent.</summary>
     public int Depth { get; }
@@ -101,7 +192,7 @@ public sealed class TreeRow : ObservableObject
             {
                 // Recorded so the next rebuild - one per git status refresh - puts the tree
                 // back the way the user left it rather than the way the defaults want it.
-                _expansion?.Record(Node, value);
+                _expansion?.Record(_node, value);
             }
         }
     }

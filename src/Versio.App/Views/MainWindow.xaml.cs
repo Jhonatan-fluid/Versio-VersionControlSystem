@@ -48,6 +48,17 @@ public partial class MainWindow : Window
                             MessageBoxImage.Warning, MessageBoxResult.Cancel)
             == MessageBoxResult.OK;
 
+        // The guard's questions have three answers, not two, so they need a real dialog for
+        // the same reason the branch prompt does. Owned, so it centres on the window and
+        // cannot be lost behind it — which for a modal blocking a close would look like a
+        // hang rather than a question.
+        shell.AskGuard = prompt =>
+        {
+            var window = new GuardPromptWindow(prompt) { Owner = this };
+            window.ShowDialog();
+            return window.ChoiceResult;
+        };
+
         // A branch name needs a text box and live validation, which a MessageBox cannot do.
         // The dialog is owned so it centres on the window and cannot be lost behind it.
         shell.PromptForBranchName = () =>
@@ -76,6 +87,74 @@ public partial class MainWindow : Window
         SyncThemeRadios();
 
         InputBindings.Add(new KeyBinding(shell.RefreshCommand, Key.F5, ModifierKeys.None));
+    }
+
+    /// <summary>
+    /// True once the shell has agreed the window may go.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="OnClosing"/> runs twice for any close that had to wait: once to ask and veto,
+    /// and once more when <see cref="Close"/> is called after the answer arrives. Without this
+    /// the second pass would ask again, and a user who had chosen "wait" would be asked whether
+    /// they wanted to wait for the thing they had just finished waiting for.
+    /// </remarks>
+    private bool _closeApproved;
+
+    /// <summary>
+    /// Do not close while Versio is in the middle of something.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Until this existed, closing the window killed the process and orphaned whatever CODESYS
+    /// it had launched — hidden, since the runner starts it with <c>CREATE_NO_WINDOW</c>, still
+    /// holding the project, and part-way through writing a binary file if it was importing.
+    /// </para>
+    /// <para>
+    /// <b>Closing is synchronous and the answer is not.</b> So the close is vetoed
+    /// unconditionally, the answer is awaited, and the window is closed again once it arrives.
+    /// <c>async void</c> is correct here and only here: an event handler is the one place the
+    /// framework gives no task to await, and the body cannot throw — everything inside it is
+    /// already guarded.
+    /// </para>
+    /// <para>
+    /// <b>The second close is posted, never called inline.</b> When nothing is running —
+    /// overwhelmingly the common case — <see cref="ShellViewModel.RequestCloseAsync"/> completes
+    /// without ever yielding, so the <c>await</c> continues on the same stack and
+    /// <see cref="Close"/> would run <i>inside</i> this very <c>Closing</c> event. WPF forbids
+    /// that outright:
+    /// </para>
+    /// <code>
+    /// InvalidOperationException: Cannot set Visibility to Visible or call Show, ShowDialog,
+    /// Close, or WindowInteropHelper.EnsureHandle while a Window is closing.
+    /// </code>
+    /// <para>
+    /// The exception surfaces on the dispatcher rather than here, so the crash handler logs it
+    /// and marks it handled — and the window simply stays open. <b>Versio could not be closed
+    /// at all</b>, and every unit test passed, because they drive the view model and never the
+    /// window. Posting the close lets this event unwind first, which is the whole difference.
+    /// </para>
+    /// </remarks>
+    protected override async void OnClosing(System.ComponentModel.CancelEventArgs e)
+    {
+        if (_closeApproved)
+        {
+            base.OnClosing(e);
+            return;
+        }
+
+        // Vetoed first, always. The answer may involve waiting 20 seconds for an export, and
+        // there is no way to hold the close open while we find out.
+        e.Cancel = true;
+
+        if (!await _shell.RequestCloseAsync())
+        {
+            return;
+        }
+
+        _closeApproved = true;
+
+        // Queued behind the event we are still inside. See the remarks.
+        await Dispatcher.InvokeAsync(Close, System.Windows.Threading.DispatcherPriority.Normal);
     }
 
     /// <summary>

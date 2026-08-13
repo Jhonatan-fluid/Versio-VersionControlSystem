@@ -55,7 +55,7 @@ Three consecutive exports were byte-identical, including a 2.5 MB visualisation 
 
 Measured: 31.5 s first run (cold), 17.6 s subsequent. Every export pays it.
 
-**This supports making `On git action` the default sync mode** rather than export-on-save. An automatic export per save means a CODESYS process running most of the working day. (Plan §7.4.6, open question 11.)
+~~**This supports making `On git action` the default sync mode** rather than export-on-save.~~ **The measurement stands; the conclusion was re-reversed by the product owner on 2026-08-12.** Exporting on every detected change is the default, because the mirror exists to be reviewed *before* a commit. The cost is managed by the coalescer and a 10 s minimum interval rather than avoided. An automatic export per save means a CODESYS process running most of the working day. (Plan §7.4.6, open question 11.)
 
 ### 5. PowerShell's `-Encoding utf8` writes a BOM that IronPython cannot read
 
