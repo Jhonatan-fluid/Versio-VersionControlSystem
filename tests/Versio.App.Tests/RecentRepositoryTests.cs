@@ -207,6 +207,44 @@ public sealed class RecentRepositoryTests
         Assert.Equal(repo.Path, shell.MostRecentExisting());
     }
 
+    [SkippableFact]
+    public async Task A_shell_built_without_a_store_writes_nothing_to_the_users_settings()
+    {
+        // This is not hypothetical. The view model defaulted to the real store, so every
+        // test that opened a throwaway repository rewrote the developer's own recent list -
+        // two versio-reset-* temp folders were sitting in it when this was found. The real
+        // store is wired by the application host and by nothing else.
+        Skip.IfNot(GitIsAvailable(), "git is not on PATH");
+
+        var real = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Versio", "settings.json");
+
+        var before = File.Exists(real) ? File.ReadAllBytes(real) : null;
+
+        using var repo = new TempRepo();
+        var sink = new InMemoryLogSink();
+        var shell = new ShellViewModel(
+            new VersioLogger(new SystemClock()).AddSink(sink),
+            new LogViewModel(sink),
+            toolchains: (_, _) => null);
+
+        await shell.OpenAsync(repo.Path);
+
+        var after = File.Exists(real) ? File.ReadAllBytes(real) : null;
+
+        Assert.Equal(before is null, after is null);
+        if (before is not null && after is not null)
+        {
+            Assert.Equal(before, after);
+        }
+
+        // In-session behaviour is unchanged: the dropdown still lists what was opened, it is
+        // only the writing down that the null store declines to do.
+        Assert.Contains(shell.RecentRepositories, r => r.Path.Equals(
+            repo.Path, StringComparison.OrdinalIgnoreCase));
+    }
+
     // ------------------------------------------------------------------- real git plumbing
 
     /// <summary>A throwaway git repository, deleted when the test ends.</summary>

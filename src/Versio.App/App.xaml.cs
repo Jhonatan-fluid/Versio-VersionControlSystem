@@ -7,6 +7,7 @@ using Versio.App.Theme;
 using Versio.App.ViewModels;
 using Versio.App.Views;
 using Versio.Core.Logging;
+using Versio.Infrastructure.FileSystem;
 using Versio.Infrastructure.Logging;
 using Versio.Infrastructure.Platform;
 
@@ -67,7 +68,11 @@ public partial class App : Application
         // The file sink needs a repository, so it is attached when one is opened. Until
         // then the ring buffer holds everything and the console shows it.
         var log = new LogViewModel(sink);
-        var shell = new ShellViewModel(logger, log)
+        // The real settings store is wired HERE and nowhere else. The view model defaults to
+        // one that remembers nothing, so that constructing a shell - in a test, in a harness -
+        // cannot rewrite the recent list belonging to whoever is running it.
+        var shell = new ShellViewModel(
+            logger, log, settings: new JsonAppSettingsStore(logger: logger))
         {
             // So "Open logs folder" opens where the logs actually are, not where they would
             // have gone had the sink attached successfully.

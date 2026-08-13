@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-13 · **Commits:** 67 · **Tests:** 968 unit + 197 UI + 111 integration, 0 skipped
+**Date:** 2026-08-13 · **Commits:** 67 · **Tests:** 968 unit + 198 UI + 111 integration, 0 skipped
 
 > All three measured on 2026-08-13, on branch `Clean-up-and-continue-dev`. The integration
 > suite was re-run in full against real CODESYS 3.5.22.20 after the manifest work — 111
@@ -346,6 +346,14 @@ Five of the seven new view-model tests fail when persistence or the missing-repo
 reverted, and they come in through `OpenAsync` and `SwitchRepositoryAsync` rather than through
 the store — this repository has been bitten three times by a method that was perfectly tested
 and called by nothing.
+
+**And the first version of this shipped a bug of its own, caught by running the suite.** The
+view model defaulted to the real store, so every test that opened a throwaway repository
+rewrote the developer's own recent list: two `versio-reset-…` temp folders were sitting in
+`settings.json` when it was found. The default is a store that remembers nothing, the real one
+is wired by the application host and nowhere else, and there is now a test that opens a
+repository through the default constructor and asserts the user's settings file is byte-for-byte
+unchanged.
 
 ### One field's type disagreed, and the panel lost fifty-six objects without saying so
 

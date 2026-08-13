@@ -11,7 +11,6 @@ using Versio.Core.Plc;
 using Versio.Core.Settings;
 using Versio.Core.Sync;
 using Versio.Core.Watching;
-using Versio.Infrastructure.FileSystem;
 using Versio.Infrastructure.Git;
 using Versio.Infrastructure.Logging;
 using Versio.Infrastructure.Platform;
@@ -243,7 +242,10 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         _logger = logger;
         Log = log;
         _clock = clock ?? new SystemClock();
-        _settings = settings ?? new JsonAppSettingsStore(logger: logger);
+        // Null by default, real only when the host passes one. A view model that reached
+        // for %LOCALAPPDATA% on its own rewrote the developer's recent list every time a
+        // test opened a temp repository.
+        _settings = settings ?? NullAppSettingsStore.Instance;
 
         // Built here rather than in an initialiser because it needs the clock: every scope
         // records when it started, so a dialog can say how long the user has been waiting

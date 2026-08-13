@@ -25,3 +25,24 @@ public interface IAppSettingsStore
     /// <summary>Persist the settings, replacing whatever was there.</summary>
     Task WriteAsync(AppSettings settings, CancellationToken ct);
 }
+
+/// <summary>
+/// A store that remembers nothing.
+/// </summary>
+/// <remarks>
+/// <b>The default for a view model, so that constructing one touches no disk.</b> It is not a
+/// convenience: the real store writes to <c>%LOCALAPPDATA%</c>, and defaulting to it meant a
+/// test that opened a temp repository quietly rewrote the developer's own recent list — which
+/// is exactly what happened, with two <c>versio-reset-…</c> temp folders landing in it. The
+/// application host wires the real store; anything else gets this one and behaves normally
+/// within its own session.
+/// </remarks>
+public sealed class NullAppSettingsStore : IAppSettingsStore
+{
+    public static readonly NullAppSettingsStore Instance = new();
+
+    public Task<AppSettings> ReadAsync(CancellationToken ct) =>
+        Task.FromResult(AppSettings.Empty);
+
+    public Task WriteAsync(AppSettings settings, CancellationToken ct) => Task.CompletedTask;
+}
