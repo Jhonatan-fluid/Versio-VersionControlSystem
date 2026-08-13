@@ -76,6 +76,9 @@ public static class SyncNarrative
         SyncVerdict.SelfWriteSuppressed =>
             "Ignored: that change was the echo of Versio's own export.",
 
+        SyncVerdict.GitWriteSuppressed =>
+            "Ignored: git was rewriting the working tree, so that was not an edit.",
+
         SyncVerdict.BlockedByLock =>
             $"Blocked by the direction lock. {outcome.Explanation}",
 

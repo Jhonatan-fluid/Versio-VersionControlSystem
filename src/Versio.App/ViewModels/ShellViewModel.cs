@@ -1396,7 +1396,15 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         _logger.Click("Git.Pull");
         using var busy = Busy.Begin(WorkKind.GitWrite, "Pulling…");
 
-        var result = await _git.PullAsync(null, busy.Token).ConfigureAwait(true);
+        // Same as a checkout: a pull can land a whole new mirror, and an unheld watcher would
+        // report it as an edit to the exported text and import it into the project.
+        GitResult result = default!;
+
+        await Sync.WhileGitRewritesTheTreeAsync(
+            "pull",
+            async () => result = await _git.PullAsync(null, busy.Token).ConfigureAwait(true))
+            .ConfigureAwait(true);
+
         StatusSummary = result.Success ? "Pulled." : result.FailureReason ?? "the pull failed";
 
         await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
@@ -2116,7 +2124,15 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // was still replacing.
         using var busy = Busy.Begin(WorkKind.GitWrite, $"Switching to {branch}…");
 
-        var result = await _git.CheckoutAsync(branch, busy.Token).ConfigureAwait(true);
+        // A checkout rewrites the project and its mirror together, and the watcher cannot tell
+        // that from somebody editing them. Held off for the duration, and what git leaves is
+        // adopted rather than synced.
+        GitResult result = default!;
+
+        await Sync.WhileGitRewritesTheTreeAsync(
+            $"checkout {branch}",
+            async () => result = await _git.CheckoutAsync(branch, busy.Token).ConfigureAwait(true))
+            .ConfigureAwait(true);
 
         if (!result.Success)
         {

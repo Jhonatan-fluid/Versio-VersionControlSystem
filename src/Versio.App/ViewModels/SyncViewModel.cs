@@ -1003,6 +1003,107 @@ public sealed class SyncViewModel : ObservableObject
         await RefreshStalenessAsync().ConfigureAwait(true);
     }
 
+    /// <summary>
+    /// Hold syncing off while git rewrites the working tree, and adopt what it leaves.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Wrapped around a checkout or a pull. Both rewrite the project <i>and</i> its mirror at
+    /// once, and the watcher cannot tell those writes from an engineer's — the hash gate agrees
+    /// something changed, because it did, and the self-write suppressor only recognises hashes
+    /// Versio's own export produced. Left alone, a pull lands a new mirror and the engine
+    /// imports it into the project: the one failure in this design that needs no user error.
+    /// </para>
+    /// <para>
+    /// Adopting afterwards is the other half. The project and mirror git left behind agree with
+    /// each other — the commit gate is what guarantees a commit never records one without the
+    /// other — so the right answer is to believe them, not to sync. Without it the engine would
+    /// keep measuring against the previous commit's hashes and export on the next real save for
+    /// a change nobody made.
+    /// </para>
+    /// </remarks>
+    public async Task WhileGitRewritesTheTreeAsync(string what, Func<Task> operation)
+    {
+        if (_orchestrator is null)
+        {
+            await operation().ConfigureAwait(true);
+            return;
+        }
+
+        using (_orchestrator.BeginExternalWrite(what))
+        {
+            await operation().ConfigureAwait(true);
+        }
+
+        var adopted = await _orchestrator
+            .AdoptExternalStateAsync(CancellationToken.None)
+            .ConfigureAwait(true);
+
+        if (adopted.Count > 0)
+        {
+            _logger.Info(LogCategory.Sync,
+                $"{what}: adopted the state of {adopted.Count} binding(s) without syncing");
+        }
+
+        await RescanAsync().ConfigureAwait(true);
+        await RefreshStalenessAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Give a project that has just been adopted its first mirror.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Versio does not export on save</b>, and that is deliberate: a CODESYS cold start is
+    /// 17-31 s, so exporting after every settled change would run the toolchain most of the
+    /// working day for diffs nobody looks at until they commit. Exports happen on a git action,
+    /// and on open for whatever changed while Versio was closed.
+    /// </para>
+    /// <para>
+    /// <b>Adoption is the case that fell between those two.</b> The catch-up on open is armed
+    /// once per repository, so a project dropped in afterwards missed it, and the panel would
+    /// sit reading "not exported · coverage unknown" until somebody committed or reopened —
+    /// with nothing on screen suggesting either. A project that has never been exported has no
+    /// mirror to diff, review or import from, which is the whole of what tracking it is for.
+    /// </para>
+    /// <para>
+    /// Through <see cref="SatisfyGateAsync"/>, the same path the catch-up and the commit gate
+    /// use, so the direction lock, the hash gate, the conflict gate and the open-project check
+    /// all apply exactly as they do everywhere else. A project someone has open in the IDE is a
+    /// wait, not a failure, and this leaves it alone.
+    /// </para>
+    /// </remarks>
+    private async Task ExportNewlyAdoptedAsync(int adopted)
+    {
+        if (_orchestrator is null || !ToolchainAvailable)
+        {
+            // A repository of PLC projects on a machine with no toolchain is still a perfectly
+            // good repository, and the panel already reports why it cannot export.
+            _logger.Info(LogCategory.Sync,
+                "newly tracked project(s) will be exported when a toolchain is available");
+            return;
+        }
+
+        _logger.Info(LogCategory.Sync,
+            $"{adopted} newly tracked project(s) have never been exported; exporting now");
+
+        using var busy = _busy.Begin(
+            WorkKind.Export,
+            adopted == 1
+                ? "Exporting a newly tracked project…"
+                : $"Exporting {adopted} newly tracked projects…");
+
+        var outcomes = await SatisfyGateAsync(busy.Token).ConfigureAwait(true);
+
+        var failure = outcomes.FirstOrDefault(o => o.IsFailure);
+
+        Summary = failure is null
+            ? outcomes.Count == 0 ? Summary : SyncNarrative.Describe(outcomes[^1])
+            : $"Export failed: {failure.Explanation}";
+
+        await RefreshStalenessAsync().ConfigureAwait(true);
+    }
+
     /// <summary>Does this path carry an extension some registered vendor claims?</summary>
     /// <remarks>
     /// Asked of the registry rather than hardcoded, so the day a second vendor is implemented
@@ -1031,7 +1132,9 @@ public sealed class SyncViewModel : ObservableObject
 
         // Detection and tracking are one step now: anything found is tracked, and the locks
         // take it from there.
-        if (await AutoAdoptAsync(snapshot, busy.Token).ConfigureAwait(true) > 0)
+        var adopted = await AutoAdoptAsync(snapshot, busy.Token).ConfigureAwait(true);
+
+        if (adopted > 0)
         {
             await BuildOrchestratorAsync(busy.Token).ConfigureAwait(true);
             StartWatching();
@@ -1087,6 +1190,11 @@ public sealed class SyncViewModel : ObservableObject
 
         _logger.Info(LogCategory.Sync,
             $"scan: {Projects.Count} project(s), {Findings.Count} finding(s)");
+
+        if (adopted > 0)
+        {
+            await ExportNewlyAdoptedAsync(adopted).ConfigureAwait(true);
+        }
     }
 
     /// <summary>The short phrase for one row.</summary>

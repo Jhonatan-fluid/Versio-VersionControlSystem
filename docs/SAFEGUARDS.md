@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | Document | **The interruption and destructive-action plan.** What Versio must refuse, ask about, or wait for — and why each answer is the one it is |
-| Status | **Phases 1–5 built and verified against real CODESYS** (§6) — the guard, its narrative, the cancellation plumbing, the dialog, the close guard, the context-switch guard and the repository reset. Phases 6–9 are still plan. Every "today" below is a reading of the code at the commit this was written against |
+| Status | **Phases 1–6 built and verified against real CODESYS** (§6) — the guard, its narrative, the cancellation plumbing, the dialog, the close guard, the context-switch guard, the repository reset, the conflict gate and the git-write window. Phases 7–9 are still plan. Every "today" below is a reading of the code at the commit this was written against |
 | Related | [`PLAN.md`](PLAN.md) — the architecture · [`STATUS.md`](STATUS.md) — where the project is · [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) — what was measured |
 
 ---
@@ -428,7 +428,7 @@ the first time a user had two.
 
 Ordered by how badly they end.
 
-### A. A pull or checkout rewrites the project *and* the mirror under the watcher — *highest risk*
+### A. A pull or checkout rewrites the project *and* the mirror under the watcher — **BUILT**
 
 `git pull` changes both sides of a binding at once. The watcher fires, the hash gate correctly
 agrees both changed, and the orchestrator can trigger an export or an import from **git's** write
@@ -440,6 +440,24 @@ exports (`SyncOrchestrator.cs:404`) — it has no concept of a git-authored writ
 both hashes from the new HEAD rather than treating the difference as a user edit.
 
 **This is the only item here that can corrupt a project through no user error at all.**
+
+**As built.** `SyncOrchestrator.BeginExternalWrite(what)` returns a scope; while one is held, every
+change is dropped as `GitWriteSuppressed`. It is checked **before the hash gate** — unlike almost
+everything else in that method — because git really did change the content, so asking "did anything
+change" first answers yes and sends a pull's new mirror down the import path. Counted rather than
+flagged: a pull that stages the mirror afterwards is two nested writes.
+
+Suppressing is only half. `AdoptExternalStateAsync` then takes the state git left as the truth
+without running anything — the project and mirror both came from the same commit and agree with
+each other, because the commit gate refuses to record one without the other. Without it the engine
+keeps measuring against the previous commit's hashes and exports on the next real save for a change
+nobody made. **Bindings holding a lock are refused**, not adopted: unsynced work is something the
+new commit does not contain, and the guard above the UI already prevents the checkout — which is
+exactly why this refuses rather than assuming it.
+
+`SyncViewModel.WhileGitRewritesTheTreeAsync` wraps `CheckoutAsync` and `PullAsync`. **8 Core tests.**
+Verified able to fail: removing the suppression fails three, and adopting over a held lock fails
+the one that guards it.
 
 ### B. Merge conflicts inside the mirror get imported into the project — **BUILT**
 
@@ -538,7 +556,7 @@ this adequately — worth confirming rather than changing.
 | **3 ✅** | **Close guard** (§3.4) | Highest damage per line: an orphaned CODESYS mid-import is the worst outcome on this list. |
 | **4 ✅** | **Context-switch guard** (§3.3) — dropdowns disabled for uninterruptible work, prompt for the rest | Second highest, and reuses phase 3 wholesale. |
 | **5 ✅** | **`ResetForRepositoryChange`** (§3.2) | Self-contained, no new machinery, immediately visible. |
-| **6** | Git-write suppression window (§5.A) and the conflict gate (§5.B) | Correctness, and both are **prerequisites** for phase 7 — see §4.8 and §4.6. |
+| **6 ✅** | Git-write suppression window (§5.A) and the conflict gate (§5.B) | Correctness, and both are **prerequisites** for phase 7 — see §4.8 and §4.6. |
 | **7** | **Branch-switch guard with the full auto-stash** (§3.1, §4), plus the branch recorded in `BindingLock` | Needs the prompt from phase 2 and both defences from phase 6. |
 | **8** | Swap via trash-rename (§5.D), staging in the ignore plan (§5.F), leftover sweep at open | Small, independent, and §5.D closes a real window. |
 | **9** | Import confirmation made real (§5.C), backup restore UI (§5.E), read-only second instance (§5.G) | Features rather than guards. Each is its own conversation. |

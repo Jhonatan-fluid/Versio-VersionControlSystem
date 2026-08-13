@@ -68,6 +68,24 @@ public enum SyncVerdict
     /// </remarks>
     BlockedByConflict,
 
+    /// <summary>
+    /// Git was rewriting the working tree, so the change was not the user's to act on.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The sibling of <see cref="SelfWriteSuppressed"/>, one step out. That one swallows the
+    /// echo of an export Versio wrote; this one swallows a checkout, a pull or a stash
+    /// restore — writes that are equally not an edit, and which the suppressor could not
+    /// recognise because it matches on a hash Versio itself produced.
+    /// </para>
+    /// <para>
+    /// Dropped <b>before</b> the hash gate, unlike almost everything else. Git really did
+    /// change the content, so the hashes agree that something happened; what makes it
+    /// uninteresting is who did it, not whether it differs.
+    /// </para>
+    /// </remarks>
+    GitWriteSuppressed,
+
     /// <summary>CODESYS failed, or the run did not complete.</summary>
     Failed,
 
