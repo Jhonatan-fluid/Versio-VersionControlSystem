@@ -1454,6 +1454,16 @@ Rail icons (top to bottom): 📄 Changed files · 🔀 Git · 🔄 Sync/CODESYS 
   - ~~*Create new branch…* inline at the bottom~~ → **a button beside the dropdown** (Rev 11). That list's selection means "switch to this branch", so a row meaning something else would sit one arrow-key away from a checkout. The dialog validates the name against `git check-ref-format`'s rules while it is typed, and says which rule a refusal broke.
 - **⟳ Refresh** — forces a full rescan (status + hash + orphan scan).
 
+> **Rev 14 — the bar's own layout.** Every column was `Auto` except the one holding the branch
+> buttons, and both dropdowns were pinned (230 px and 200 px), so the whole bar crowded into the
+> left 700 px of a 2560 px window while the slack piled up in the middle. The dropdowns now take
+> the slack, bounded at 420 px and 360 px, and a spacer before Settings holds the right-hand
+> cluster to the right. `Size.Control.Height` was 28 while `IconButton` hardcoded 32, so every
+> dropdown sat 4 px shorter than the buttons beside it; both read the token now, at 32, with
+> `Size.Control.Compact` (24) for the controls inside a dense strip. The brand is the app's own
+> mark — `Theme/controls/Brand.xaml`, the geometry from `assets/versio.svg` — beside a wordmark
+> that is no longer accent-coloured, because accent had been spent on six things at once.
+
 ### 9.3 Main split — the project tree, not a flat file list
 
 Because the export mirrors the CODESYS structure (§3.2), the left pane should show **the project as the engineer thinks about it**, not as paths on disk. A flat list of `plc/export/src/Application/POUs/Main.POU.st` is a regression from what CODESYS itself shows.

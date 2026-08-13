@@ -1,0 +1,56 @@
+<!--
+    The Versio mark, drawn in the app rather than only in the .ico.
+
+    The shell showed the word "Versio" in accent blue and nothing else, while the real mark -
+    assets/versio.svg, three plates and a status dot - existed and appeared nowhere a user
+    could see it. This is that drawing, at 20 px, in the app's own colours.
+
+    THREE PLACES CARRY THIS GEOMETRY, and the header of assets/versio.svg says so: the SVG
+    reference drawing, tools/New-VersioIcon.ps1 which redraws it per icon size, and here.
+    Change one, change all three.
+
+    Two departures from the SVG, both deliberate:
+
+    - NO TILE. The rounded #1D2026 square is what makes an icon readable against an unknown
+      desktop; inside a bar that is already Surface.Base it would be an invisible square with
+      a visible edge.
+    - The badge is punched in Surface.Base rather than the tile colour, for the same reason:
+      the notch has to be the colour of whatever the mark is sitting on.
+
+    A ControlTemplate rather than a DrawingImage, and that is not a style preference. A
+    Freezable in a resource dictionary resolves its DynamicResource once and is not re-resolved
+    when the palette underneath it is replaced - the exact trap ThemeManager.cs documents at
+    length. A template is instantiated per use and resolves its brushes there, so the mark
+    follows a theme switch like every other control does.
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <ControlTemplate x:Key="BrandMark" TargetType="ContentControl">
+        <!-- Drawn at the SVG's 64-unit scale and scaled by the Viewbox, so the numbers here
+             can be compared with the reference drawing without arithmetic. -->
+        <Viewbox Stretch="Uniform">
+            <Canvas Width="64" Height="64">
+
+                <!-- Oldest at the bottom, current on top in the brightest ink: the mark is a
+                     version history, and the stagger is the point. -->
+                <Border Canvas.Left="16" Canvas.Top="40" Width="34" Height="8"
+                        CornerRadius="3"
+                        Background="{DynamicResource Brush.Border.Strong}" />
+                <Border Canvas.Left="15" Canvas.Top="28" Width="34" Height="8"
+                        CornerRadius="3"
+                        Background="{DynamicResource Brush.Text.Disabled}" />
+                <Border Canvas.Left="14" Canvas.Top="16" Width="34" Height="8"
+                        CornerRadius="3"
+                        Background="{DynamicResource Brush.Text.Primary}" />
+
+                <!-- The notch, then the badge inside it. -->
+                <Ellipse Canvas.Left="39.5" Canvas.Top="12.5" Width="15" Height="15"
+                         Fill="{DynamicResource Brush.Surface.Base}" />
+                <Ellipse Canvas.Left="41.8" Canvas.Top="14.8" Width="10.4" Height="10.4"
+                         Fill="{DynamicResource Brush.Status.Added}" />
+            </Canvas>
+        </Viewbox>
+    </ControlTemplate>
+
+</ResourceDictionary>

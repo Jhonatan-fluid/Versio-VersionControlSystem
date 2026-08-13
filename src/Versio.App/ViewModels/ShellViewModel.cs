@@ -66,6 +66,20 @@ public sealed class BranchEntry(BranchInfo branch)
 
     public string AheadBehind { get; } =
         branch is { Ahead: 0, Behind: 0 } ? string.Empty : $"↑{branch.Ahead} ↓{branch.Behind}";
+
+    /// <summary>
+    /// Which semantic colour the divergence deserves.
+    /// </summary>
+    /// <remarks>
+    /// Behind is the one that matters: it means somebody else has moved and this branch has not
+    /// caught up, which is the state a pull answers. Ahead alone is normal - work that has not
+    /// been pushed yet - so it is stated without being coloured like a problem. Named as a key
+    /// rather than a brush for the reason <see cref="ChangeRow.BrushKey"/> is: the view model
+    /// decides the meaning and the theme decides the paint.
+    /// </remarks>
+    public string BrushKey { get; } = branch.Behind > 0
+        ? "Brush.Status.Modified"
+        : "Brush.Text.Secondary";
 }
 
 /// <summary>

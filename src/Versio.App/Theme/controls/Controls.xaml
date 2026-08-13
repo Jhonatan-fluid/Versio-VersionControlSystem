@@ -1,4 +1,4 @@
-<!--
+﻿<!--
     Control styles.
 
     The first pass looked like a Win32 app, and the reasons were specific: every button
@@ -17,7 +17,7 @@
         window's resources.
 
         It lived in MainWindow.Resources, and SystemInfoWindow used the same key without
-        declaring it - so opening Settings → System information threw
+        declaring it - so opening Settings â†’ System information threw
         "Cannot find resource named 'BoolToVisibility'" from inside the row DataTemplate,
         during Measure. Nothing caught it: the reference compiles, the window is the one
         dialog with no test constructing it, and the throw only happens when somebody opens
@@ -110,9 +110,12 @@
         </Setter>
     </Style>
 
+    <!-- Square, and the same height as everything else in its row. It used to hardcode 32
+         against a 28 px Size.Control.Height, which is why the top bar's buttons stood taller
+         than the dropdowns beside them. -->
     <Style x:Key="IconButton" TargetType="Button" BasedOn="{StaticResource GhostButton}">
-        <Setter Property="Width" Value="32" />
-        <Setter Property="Height" Value="32" />
+        <Setter Property="Width" Value="{DynamicResource Size.Control.Height}" />
+        <Setter Property="Height" Value="{DynamicResource Size.Control.Height}" />
         <Setter Property="Padding" Value="0" />
         <Setter Property="FontFamily" Value="{DynamicResource Font.Icon}" />
         <Setter Property="FontSize" Value="14" />

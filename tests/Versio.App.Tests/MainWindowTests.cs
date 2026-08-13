@@ -158,6 +158,97 @@ public sealed class MainWindowTests
     }
 
     [Fact]
+    public void Everything_in_the_top_bar_is_the_same_height()
+    {
+        // The defect this pins: Size.Control.Height was 28 and IconButton hardcoded 32, so
+        // every dropdown in the top bar sat 4 px shorter than the buttons beside it. Nobody
+        // could name it and everybody could see it - the bar read as ragged.
+        //
+        // Measured after arrange rather than read off the styles, because that is the question:
+        // two controls can name the same token and still disagree if one of them also sets a
+        // padding or a border that changes what it renders as.
+        StaHarness.Run(() =>
+        {
+            var window = Build();
+            var content = Assert.IsAssignableFrom<FrameworkElement>(window.Content);
+
+            content.Measure(new Size(1400, 900));
+            content.Arrange(new Rect(0, 0, 1400, 900));
+            content.UpdateLayout();
+
+            // First ComboBox in tree order is the repository dropdown; SettingsButton is an
+            // IconButton in the same row.
+            var combo = Assert.IsAssignableFrom<ComboBox>(
+                VisualChild(content, static v => v is ComboBox));
+            var button = Assert.IsType<Button>(window.FindName("SettingsButton"));
+
+            Assert.True(combo.ActualHeight > 0, "the repository dropdown did not render");
+            Assert.Equal(combo.ActualHeight, button.ActualHeight);
+        });
+    }
+
+    [Fact]
+    public void The_repository_dropdown_grows_with_the_window()
+    {
+        // The dropdowns were pinned at 230 and 200 px, so the whole bar crowded into the left
+        // 700 px of a wide window. They are bounded now, not fixed: wider window, wider box,
+        // up to the cap.
+        StaHarness.Run(() =>
+        {
+            var window = Build();
+            var content = Assert.IsAssignableFrom<FrameworkElement>(window.Content);
+
+            double WidthAt(double windowWidth)
+            {
+                content.Measure(new Size(windowWidth, 900));
+                content.Arrange(new Rect(0, 0, windowWidth, 900));
+                content.UpdateLayout();
+
+                var combo = Assert.IsAssignableFrom<ComboBox>(
+                    VisualChild(content, static v => v is ComboBox));
+
+                return combo.ActualWidth;
+            }
+
+            var narrow = WidthAt(1000);
+            var wide = WidthAt(2200);
+
+            Assert.True(wide > narrow,
+                        $"the dropdown measured {narrow:F0} px at 1000 and {wide:F0} px at " +
+                        "2200, so it is still pinned");
+
+            // Bounded, so a 4K window does not hand it half the screen.
+            Assert.True(wide <= 420, $"the dropdown grew to {wide:F0} px, past its cap");
+        });
+    }
+
+    [Fact]
+    public void The_brand_mark_draws()
+    {
+        // The mark exists in assets/versio.svg and in the .ico, and until now appeared nowhere
+        // a user could see it. A ControlTemplate rather than a DrawingImage on purpose - see
+        // Brand.xaml - so this checks the template instantiates and occupies its box.
+        StaHarness.Run(() =>
+        {
+            var template = Assert.IsType<ControlTemplate>(
+                Application.Current.Resources["BrandMark"]);
+
+            var mark = new ContentControl { Template = template, Width = 20, Height = 20 };
+
+            mark.Measure(new Size(40, 40));
+            mark.Arrange(new Rect(0, 0, 20, 20));
+            mark.UpdateLayout();
+
+            Assert.Equal(20, mark.ActualWidth);
+
+            // The plates themselves, not just the box around them: a Canvas with nothing in
+            // it arranges to exactly the same 20x20.
+            var plate = VisualChild(mark, static v => v is Border);
+            Assert.NotNull(plate);
+        });
+    }
+
+    [Fact]
     public void The_settings_popup_builds_when_it_is_opened()
     {
         // The blind spot LogPanelChromeTests records for the category dropdown, one popup

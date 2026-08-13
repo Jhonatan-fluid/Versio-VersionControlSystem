@@ -269,6 +269,46 @@ does not record them has to be run again.
 
 Written down with their evidence, because the reasoning is worth more than the fix.
 
+### A top bar crowded into its left third, with two control heights in one row
+
+Reported from use: *"the repo and branch bars should cover more real estate horizontally so it
+looks more balanced, currently very heavy to the left."* Three separate causes, all visible at
+once and none of them nameable without opening the file.
+
+**One flexible column, in the wrong place.** Six columns, five of them `Auto`, and the single
+`*` sat on the *branch buttons* — so on a 2560 px window the slack piled up in the middle while
+both dropdowns stayed pinned at their hardcoded 230 px and 200 px. Two `*` columns now carry
+the dropdowns, bounded with `MaxWidth` so a wide window widens them without handing one of them
+half the screen, and a third `*` before Settings is what holds the right-hand cluster right.
+
+**Two heights in one row.** `Size.Control.Height` was 28 and `IconButton` hardcoded 32, so every
+dropdown in the bar sat four pixels shorter than the buttons beside it. That is the ragged
+baseline, and it is the reason the bar read as unfinished even where the spacing was right. Both
+read the token now, at 32, with `Size.Control.Compact` (24) named once for controls inside a
+strip that is itself dense — the log header, the section-label rows — rather than a third value
+picked per view.
+
+The test measures both controls after `Arrange` instead of reading the styles, because two
+controls can name the same token and still render differently if one of them also sets a padding
+or a border. Checked by putting the old values back: it fails.
+
+**The mark existed and was nowhere.** `assets/versio.svg` — three plates and a status badge — was
+drawn for the `.ico` and never appeared in the app, which showed the word "Versio" in accent
+blue instead. The geometry is now also `Theme/controls/Brand.xaml` at 20 px, and the SVG's header
+names all three places that carry it. A `ControlTemplate` rather than a `DrawingImage`, and not
+as a matter of taste: a `Freezable` in a resource dictionary resolves its `DynamicResource` once
+and is not re-resolved when the palette underneath is replaced — the trap `ThemeManager` already
+documents — so a `DrawingImage` mark would have kept the colours of whichever theme started
+first.
+
+**And accent was doing six jobs.** Brand, commit hashes, ahead/behind, watch state, the busy
+caption and every category in a scrolling log. A colour that marks six things marks none of
+them, so it is now spent on selection, the primary action, the count badge and the progress bar,
+and the rest moved to `Text.Secondary` or `Text.Disabled`. The one that gained meaning rather
+than losing colour is divergence: `BranchEntry.BrushKey` says `Status.Modified` when a branch is
+*behind*, because that is the state a pull answers, and secondary when it is merely ahead —
+which is normal and should not be painted like a problem.
+
 ### The app themed everything except the strip Windows draws, and every tooltip in it
 
 Reported from use, and it is the first thing anybody sees: *"the top windows bar should follow
