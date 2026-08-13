@@ -29,6 +29,24 @@ public sealed record CommitEntry
 /// <summary>One entry in the stash.</summary>
 public sealed record StashEntry
 {
+    /// <summary>
+    /// The stash commit's full SHA — the only stable way to name one.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b><c>apply</c> takes this and <c>drop</c> does not.</b> Measured against real git:
+    /// <c>git stash apply &lt;sha&gt;</c> exits 0, and <c>git stash drop &lt;sha&gt;</c> fails
+    /// with <i>'&lt;sha&gt;' is not a stash reference</i>, exit 1. So this is what an auto-stash
+    /// is recorded under, and <see cref="Ref"/> is re-resolved by matching on it at the moment
+    /// a drop actually happens.
+    /// </para>
+    /// <para>
+    /// A design that stored the positional ref instead would pass every test with one stash in
+    /// the list and fail the first time a user had two.
+    /// </para>
+    /// </remarks>
+    public string CommitId { get; init; } = string.Empty;
+
     /// <summary>The name git accepts back — <c>stash@{0}</c>.</summary>
     /// <remarks>
     /// <b>Positional, and it moves.</b> Dropping <c>stash@{0}</c> renumbers everything below
@@ -82,7 +100,13 @@ public static class GitLogParser
     public const string CommitFormat = "--format=%H%x1f%h%x1f%s%x1f%an%x1f%aI%x1f%ar%x1e";
 
     /// <summary>The <c>--format</c> that produces what <see cref="ParseStashes"/> reads.</summary>
-    public const string StashFormat = "--format=%gd%x1f%gs%x1f%cr%x1e";
+    /// <remarks>
+    /// <c>%H</c> leads, as it does in <see cref="CommitFormat"/>, and it is the only field here
+    /// that is stable: <c>%gd</c> is positional and moves, <c>%gs</c> is a sentence, and
+    /// <c>%cr</c> is relative to now. Nothing could refer to one particular stash across a
+    /// refresh until this was added — see <see cref="StashEntry.CommitId"/>.
+    /// </remarks>
+    public const string StashFormat = "--format=%H%x1f%gd%x1f%gs%x1f%cr%x1e";
 
     public static IReadOnlyList<CommitEntry> ParseCommits(string? output)
     {
@@ -108,17 +132,18 @@ public static class GitLogParser
     {
         var stashes = new List<StashEntry>();
 
-        foreach (var fields in Records(output, expected: 3))
+        foreach (var fields in Records(output, expected: 4))
         {
-            var (branch, message) = SplitSubject(fields[1]);
+            var (branch, message) = SplitSubject(fields[2]);
 
             stashes.Add(new StashEntry
             {
-                Ref = fields[0],
-                Subject = fields[1],
+                CommitId = fields[0],
+                Ref = fields[1],
+                Subject = fields[2],
                 Branch = branch,
                 Message = message,
-                Age = fields[2],
+                Age = fields[3],
             });
         }
 

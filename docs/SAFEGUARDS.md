@@ -28,7 +28,8 @@ the code, two of which (§5.A and §5.D) can lose work with no user error at all
 
 ## 0. Handover — where this stands
 
-**Branch:** `Safeguards`. **Built:** phases 1–6. **Next:** phase 7 (the auto-stash, §4), then 8 and 9.
+**Branch:** `Clean-up-and-continue-dev`. **Built:** phases 1–6, and **phase 7 is under way** —
+see *Phase 7, as built* at the end of §4 for what has landed and what is next.
 
 Everything below §1 is the original plan, kept as written, with each phase's *"as built"* notes
 appended where it was planned. Read §6 for the order and what is done.
@@ -84,6 +85,9 @@ concrete step is one line: `GitLogParser.StashFormat` needs `%H` and `StashEntry
 Everything else in §4 hangs off having that stable identity.
 
 Phase 7's two prerequisites (§5.A and §5.B) are both built, so it is unblocked.
+
+**Both of those steps are now done** — the identity and the whole pure layer. Pick it up at
+*Phase 7, as built*, below §4.10.
 
 ---
 
@@ -482,6 +486,47 @@ the first time a user had two.
 - `Versio.Integration.Tests` — against real git: stash → switch → return → restore round trip; a
   conflicting pop leaves both the stash and the sidecar entry intact; a stash dropped externally
   clears its entry; `stash push` on a clean tree creates nothing and the set difference is empty.
+
+### Phase 7, as built — so far
+
+Two of the five steps have landed, both of them pure and both of them prerequisites for
+everything else.
+
+**1 · The identity.** `StashFormat` leads with `%H` and `StashEntry` carries `CommitId`. Before
+this, nothing in a stash entry could name one particular stash twice: `%gd` is positional and
+renumbers, `%gs` is a sentence a user's own stash can imitate exactly, and `%cr` is relative to
+now. Two tests cover it, and one of them asserts the **format and the parser agree about the
+field count** — they are one decision written in two places, and a field added to one and not
+the other silently shifts every column.
+
+**2 · The pure layer.** `src/Versio.Core/Guarding/AutoStash.cs` — `AutoStashRecord`,
+`AutoStashState`, `StashedLock`, and the rules:
+
+| | |
+|---|---|
+| `NewStash(before, after)` | The set difference from §4.3. `git stash push` on a clean tree exits 0 and creates nothing, so this is what proves an entry exists — and a null answer means abandon the switch, never fall through to the checkout |
+| `OnArrival(branch, state, live)` | Restorable versus stale, with the positional ref **resolved from the SHA at the moment of use** and never stored |
+| `BeforeTaking(...)` | Ours and theirs, counted separately, with the sentence that says both |
+| `Orphans(...)` | A stash whose branch was deleted. Surfaced, never auto-dropped |
+| `KeyFor(branch, head)` | `detached@<sha>` when there is no branch name |
+| `With` / `Without` | The record set, newest first |
+
+19 tests, one per row of §4.6 plus the corners. Verified able to fail: identifying our own
+stashes without the branch filter fails exactly the test that asserts another branch's stash is
+not offered here.
+
+**What is left, in order:**
+
+3. `IAutoStashStore` + `JsonAutoStashStore` in `Versio.Infrastructure/FileSystem/`, mirroring
+   `JsonLockStore` including the atomic replace. Nothing decides anything; it reads and writes
+   `.versio/local/autostash.json`.
+4. Taking and restoring for real, in the shell: `StashPushAsync` with the marker, the set
+   difference, the lock capture and release (§4.7), and the arrival prompt on **every**
+   successful checkout — the dropdown, `CreateBranchAsync`, and a pull that moved HEAD.
+5. Wrap both ends in `BeginOwnWrite` — **not** `BeginExternalWrite**, which is now the wrong
+   tool: it is repository-wide, and a stash touches one binding's mirror. §4.8 was written
+   before the narrower window existed. Then wire `GuardIntent.Pull` and delete
+   `ShellViewModel.AskAboutWork`.
 
 ---
 
