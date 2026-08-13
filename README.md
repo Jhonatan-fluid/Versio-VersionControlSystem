@@ -81,8 +81,8 @@ Both directions run automatically and deterministically. A per-project **directi
 | A second vendor (TwinCAT / Studio 5000 / TIA Portal) | ⛔ the seam is ready and unproven |
 | **Git side panel** — staging, commit message, fetch/pull/push | ✅ one operation at a time across every button |
 | **The commit gate, enforced** — a stale export is exported and staged first | ✅ push releases the direction locks, commit does not |
-| **Stash** — push with a message, apply, pop, drop with a confirmation | ✅ parsed from git's own format; 6 integration tests against real git |
-| **Recent commits with click-to-diff** | ✅ the commit's patch opens in the same pane as everything else |
+| **History panel** — commits with hash, local date and time, author and subject; expand for the files, click a file for its diff | ✅ its own rail button, and lazy at four levels: the log is not read until the panel is opened, then a page at a time; a commit's files when it is expanded; a patch when a file is clicked |
+| **Stash** — push, apply, pop, drop | ⛔ **withdrawn from the UI**, pending a different design. The client operations and their 6 integration tests are kept |
 | **Per-hunk stage and unstage** | ✅ the hunk is copied verbatim and applied to the index; the working tree is never touched |
 | **Branch creation** — validated against git's own rules as you type | ✅ creates from HEAD and switches; 35 unit tests over the rules, and the dialog says *which* rule was broken |
 | **Clone with verification** — URL, Verify, destination, progress | ✅ Clone stays dead until `ls-remote` passes, and editing the URL shuts it again |

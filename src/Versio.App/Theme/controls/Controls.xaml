@@ -46,6 +46,7 @@
     <sys:String x:Key="Icon.Pause">&#xE769;</sys:String>
     <sys:String x:Key="Icon.Play">&#xE768;</sys:String>
     <sys:String x:Key="Icon.Filter">&#xE71C;</sys:String>
+    <sys:String x:Key="Icon.History">&#xE81C;</sys:String>
 
     <!-- ==================================================================== ICON -->
     <Style x:Key="IconText" TargetType="TextBlock">

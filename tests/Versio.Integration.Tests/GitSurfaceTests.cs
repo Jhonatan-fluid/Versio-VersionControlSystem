@@ -1,4 +1,5 @@
 using Versio.Core.Diff;
+using Versio.Core.Git;
 using Versio.Infrastructure.Git;
 using Xunit;
 using Xunit.Abstractions;
@@ -114,7 +115,7 @@ public sealed class GitSurfaceTests(ITestOutputHelper output) : IDisposable
         await RunRawAsync("add", "-A");
         await RunRawAsync("commit", "-m", "second\twith a tab and a | pipe");
 
-        var commits = await Client.RecentCommitsAsync(10, CancellationToken.None);
+        var commits = await Client.RecentCommitsAsync(10, 0, CancellationToken.None);
 
         foreach (var c in commits)
         {
@@ -140,7 +141,7 @@ public sealed class GitSurfaceTests(ITestOutputHelper output) : IDisposable
         Skip.IfNot(GitAvailable, "git not on PATH");
         await InitAsync();
 
-        Assert.Empty(await Client.RecentCommitsAsync(10, CancellationToken.None));
+        Assert.Empty(await Client.RecentCommitsAsync(10, 0, CancellationToken.None));
     }
 
     [SkippableFact]
@@ -169,6 +170,200 @@ public sealed class GitSurfaceTests(ITestOutputHelper output) : IDisposable
         var document = UnifiedDiffParser.Parse(patch);
         Assert.Equal(1, document.Hunks);
         Assert.Equal(1, document.Added);
+    }
+
+    /// <summary>
+    /// Paging reads a window further back rather than a longer prefix.
+    /// </summary>
+    /// <remarks>
+    /// The history panel asks for one page at a time, and the whole point is that the second
+    /// page costs the same as the first. A <c>--skip</c> that git ignored would show the same
+    /// commits twice, which is exactly the kind of thing that looks like a UI bug.
+    /// </remarks>
+    [SkippableFact]
+    public async Task A_later_page_of_history_starts_where_the_previous_one_ended()
+    {
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        for (var i = 1; i <= 5; i++)
+        {
+            Write("a.st", $"revision {i}\n");
+            await RunRawAsync("add", "-A");
+            await RunRawAsync("commit", "-m", $"commit {i}");
+        }
+
+        var first = await Client.RecentCommitsAsync(2, 0, CancellationToken.None);
+        var second = await Client.RecentCommitsAsync(2, 2, CancellationToken.None);
+        var past = await Client.RecentCommitsAsync(2, 5, CancellationToken.None);
+
+        Assert.Equal(["commit 5", "commit 4"], first.Select(c => c.Subject));
+        Assert.Equal(["commit 3", "commit 2"], second.Select(c => c.Subject));
+
+        // Running off the end is how the panel learns there is nothing more to load.
+        Assert.Empty(past);
+    }
+
+    /// <summary>
+    /// The file list behind one commit, including a rename and a delete.
+    /// </summary>
+    /// <remarks>
+    /// The two-path statuses are the ones worth proving against real git: the parser's
+    /// handling of them is what keeps every row after a rename from being read as garbage,
+    /// and whether git emits <c>R100</c> at all depends on rename detection being on by
+    /// default — which is a property of git, not of the parser.
+    /// </remarks>
+    [SkippableFact]
+    public async Task A_commits_file_list_names_every_file_and_what_happened_to_it()
+    {
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        Write("keep.st", "one\n");
+        Write("move me.st", "the content that is about to move\n");
+        Write("doomed.st", "temporary\n");
+        await RunRawAsync("add", "-A");
+        await RunRawAsync("commit", "-m", "first");
+
+        Write("keep.st", "two\n");
+        Write("Kühlschrank Regelung.st", "the content that is about to move\n");
+        File.Delete(Path.Combine(_repo, "move me.st"));
+        File.Delete(Path.Combine(_repo, "doomed.st"));
+        Write("added.st", "brand new\n");
+        await RunRawAsync("add", "-A");
+        await RunRawAsync("commit", "-m", "second");
+
+        var head = (await Client.RecentCommitsAsync(1, 0, CancellationToken.None))[0];
+        var files = await Client.CommitFilesAsync(head.Id, CancellationToken.None);
+
+        foreach (var f in files)
+        {
+            output.WriteLine($"{f.Kind} {f.OriginalPath} -> {f.Path}");
+        }
+
+        var byPath = files.ToDictionary(f => f.Path);
+
+        Assert.Equal(ChangeKind.Modified, byPath["keep.st"].Kind);
+        Assert.Equal(ChangeKind.Added, byPath["added.st"].Kind);
+        Assert.Equal(ChangeKind.Deleted, byPath["doomed.st"].Kind);
+
+        // The space and the umlaut are the reason the client asks for -z. Quoted output
+        // would arrive here wrapped in quotes with the umlaut as octal escapes, and the
+        // lookup below would simply not find it.
+        var renamed = byPath["Kühlschrank Regelung.st"];
+        Assert.Equal(ChangeKind.Renamed, renamed.Kind);
+        Assert.Equal("move me.st", renamed.OriginalPath);
+    }
+
+    /// <summary>
+    /// One file's patch out of a commit that touched several.
+    /// </summary>
+    /// <remarks>
+    /// This feeds the same diff view the working tree uses, so it has to arrive as a plain
+    /// unified diff naming that file and nothing else — a patch carrying the other files
+    /// would render the wrong change under the row the user clicked.
+    /// </remarks>
+    [SkippableFact]
+    public async Task One_files_patch_can_be_read_out_of_a_commit_on_its_own()
+    {
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        Write("a.st", "a one\n");
+        Write("b.st", "b one\n");
+        await RunRawAsync("add", "-A");
+        await RunRawAsync("commit", "-m", "first");
+
+        Write("a.st", "a two\n");
+        Write("b.st", "b two\n");
+        await RunRawAsync("add", "-A");
+        await RunRawAsync("commit", "-m", "second");
+
+        var head = (await Client.RecentCommitsAsync(1, 0, CancellationToken.None))[0];
+        var patch = await Client.CommitFileDiffAsync(head.Id, "a.st", CancellationToken.None);
+
+        output.WriteLine(patch);
+
+        Assert.Contains("--- a/a.st", patch, StringComparison.Ordinal);
+        Assert.Contains("-a one", patch, StringComparison.Ordinal);
+        Assert.Contains("+a two", patch, StringComparison.Ordinal);
+        Assert.DoesNotContain("b.st", patch, StringComparison.Ordinal);
+
+        // No commit header in front of it: the parser and the highlighting downstream read a
+        // unified diff, which is why --format= is passed at all.
+        Assert.StartsWith("diff --git", patch.TrimStart(), StringComparison.Ordinal);
+
+        var file = Assert.Single(
+            await Client.CommitFilesAsync(head.Id, CancellationToken.None),
+            f => f.Path == "a.st");
+        Assert.Equal(ChangeKind.Modified, file.Kind);
+    }
+
+    /// <summary>
+    /// The first commit of a repository has no parent, and is still readable.
+    /// </summary>
+    /// <remarks>
+    /// The reason the client uses <c>git show</c> with a pathspec rather than diffing the
+    /// commit against <c>HEAD~1</c>. Scrolling to the bottom of the history is exactly how
+    /// somebody reaches this commit, so it cannot be the one that fails.
+    /// </remarks>
+    [SkippableFact]
+    public async Task The_root_commit_has_a_file_list_and_a_patch()
+    {
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        Write("first.st", "in the beginning\n");
+        await RunRawAsync("add", "-A");
+        await RunRawAsync("commit", "-m", "the root commit");
+
+        var root = (await Client.RecentCommitsAsync(1, 0, CancellationToken.None))[0];
+
+        var file = Assert.Single(await Client.CommitFilesAsync(root.Id, CancellationToken.None));
+        Assert.Equal(ChangeKind.Added, file.Kind);
+        Assert.Equal("first.st", file.Path);
+
+        var patch = await Client.CommitFileDiffAsync(root.Id, "first.st", CancellationToken.None);
+        Assert.Contains("+in the beginning", patch, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A merge yields no file list, and that is git's answer rather than a failure.
+    /// </summary>
+    /// <remarks>
+    /// Git suppresses the combined diff for a merge, so both the patch and the file list come
+    /// back empty. The panel says so in a row of its own; what is asserted here is that the
+    /// client reports emptiness rather than inventing a parent to diff against, which would
+    /// describe a change nobody made.
+    /// </remarks>
+    [SkippableFact]
+    public async Task A_merge_commit_reports_no_files_rather_than_one_parents_diff()
+    {
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        Write("base.st", "base\n");
+        await RunRawAsync("add", "-A");
+        await RunRawAsync("commit", "-m", "base");
+
+        await RunRawAsync("checkout", "-b", "side");
+        Write("side.st", "side\n");
+        await RunRawAsync("add", "-A");
+        await RunRawAsync("commit", "-m", "on the side");
+
+        await RunRawAsync("checkout", "main");
+        Write("main.st", "main\n");
+        await RunRawAsync("add", "-A");
+        await RunRawAsync("commit", "-m", "on main");
+
+        await RunRawAsync("merge", "--no-ff", "side", "-m", "merge side into main");
+
+        var head = (await Client.RecentCommitsAsync(1, 0, CancellationToken.None))[0];
+        Assert.StartsWith("merge side into main", head.Subject, StringComparison.Ordinal);
+
+        Assert.Empty(await Client.CommitFilesAsync(head.Id, CancellationToken.None));
+        Assert.True(string.IsNullOrWhiteSpace(
+            await Client.CommitPatchAsync(head.Id, CancellationToken.None)));
     }
 
     // --- stash --------------------------------------------------------------------

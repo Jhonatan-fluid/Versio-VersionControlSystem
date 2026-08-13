@@ -18,17 +18,29 @@ namespace Versio.App.ViewModels;
 
 /// <summary>Which panel the left rail is showing.</summary>
 /// <remarks>
-/// Two, not three. The PLC panel was folded into the project view: it had become a row of
-/// buttons for operations that now run on their own, and its object tree was answering the
-/// same question as the changed-files list one pane to the left.
+/// <para>
+/// The PLC panel was folded into the project view: it had become a row of buttons for
+/// operations that now run on their own, and its object tree was answering the same question
+/// as the changed-files list one pane to the left.
+/// </para>
+/// <para>
+/// History went the other way, out of the git panel and into its own. The two were never one
+/// task — staging and committing is about what is <i>about</i> to happen, and history is about
+/// what already did — and sharing a 380 px column meant history got 150 pixels of it, which is
+/// four rows. Splitting them is also what makes the history affordable to load lazily: a panel
+/// nobody has opened can read nothing at all.
+/// </para>
 /// </remarks>
 public enum ShellPanel
 {
     /// <summary>The repository as CODESYS structures it, plus every other changed file.</summary>
     Project,
 
-    /// <summary>Staging, commit, stash, history, and the remote operations.</summary>
+    /// <summary>Staging, commit, and the remote operations.</summary>
     Git,
+
+    /// <summary>The commit log, with each commit's files underneath it.</summary>
+    History,
 }
 
 /// <summary>An entry in the repository dropdown.</summary>
@@ -96,27 +108,9 @@ public sealed class ChangeRow(FileChange change) : ObservableObject
         return true;
     }
 
-    public string Glyph => _change.Effective switch
-    {
-        ChangeKind.Added => "A",
-        ChangeKind.Modified => "M",
-        ChangeKind.Deleted => "D",
-        ChangeKind.Renamed => "R",
-        ChangeKind.Copied => "C",
-        ChangeKind.Untracked => "?",
-        ChangeKind.Conflicted => "!",
-        _ => " ",
-    };
+    public string Glyph => ChangeGlyph.For(_change.Effective);
 
-    public string BrushKey => _change.Effective switch
-    {
-        ChangeKind.Added => "Brush.Status.Added",
-        ChangeKind.Modified => "Brush.Status.Modified",
-        ChangeKind.Deleted => "Brush.Status.Deleted",
-        ChangeKind.Renamed => "Brush.Status.Renamed",
-        ChangeKind.Conflicted => "Brush.Status.Conflict",
-        _ => "Brush.Status.Neutral",
-    };
+    public string BrushKey => ChangeGlyph.BrushFor(_change.Effective);
 
     public string Detail => _change.OriginalPath is null
         ? string.Empty
@@ -199,6 +193,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         Log = log;
         _clock = clock ?? new SystemClock();
         Sync = new SyncViewModel(logger, _clock);
+        History = new HistoryViewModel(logger);
         _gitFactory = gitFactory ?? (path => new GitCliClient(path, logger: logger));
         _locator = new RepositoryLocator(probe ?? new FileSystemRepositoryProbe());
         _policy = new StatusRefreshPolicy(_clock);
@@ -213,6 +208,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // Picking a row in the project tree shows it in the diff pane. One pane, whichever
         // way the row was reached.
         Sync.NodeSelected += ShowNode;
+
+        // And the same for the history: the panel decides what was picked, this decides how
+        // it is rendered. Keeping the render here is what stops a second diff pane growing
+        // in the history panel the first time it needs something the shared one already does.
+        History.CommitSelected += row => _ = ShowCommitAsync(row.Entry);
+        History.FileSelected += row => _ = ShowCommitFileAsync(row);
 
         logger.Info(LogCategory.App, "Versio started");
     }
@@ -231,6 +232,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
     /// <summary>The PLC sync panel — what Versio is for, as distinct from the git client.</summary>
     public SyncViewModel Sync { get; }
+
+    /// <summary>The commit history, in its own panel and loaded only when it is shown.</summary>
+    public HistoryViewModel History { get; }
 
     public ObservableCollection<ChangeRow> Changes { get; } = [];
 
@@ -297,11 +301,18 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         get => _activePanel;
         set
         {
-            if (SetProperty(ref _activePanel, value))
+            if (!SetProperty(ref _activePanel, value))
             {
-                _logger.Click($"Rail.{value}");
-                OnPropertyChanged(nameof(PanelTitle));
+                return;
             }
+
+            _logger.Click($"Rail.{value}");
+            OnPropertyChanged(nameof(PanelTitle));
+
+            // The history reads nothing until it is looked at, so it has to be told when
+            // that happens. Everything else here is already loaded by the time the rail
+            // can switch to it.
+            History.IsVisible = value == ShellPanel.History;
         }
     }
 
@@ -309,6 +320,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     {
         ShellPanel.Project => "PROJECT",
         ShellPanel.Git => "GIT",
+        ShellPanel.History => "HISTORY",
         _ => string.Empty,
     };
 
@@ -395,10 +407,26 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             _logger.Click($"Diff.ShowFullFile={value}");
 
             // Re-read rather than re-render: the extra context has to come from git, and the
-            // currently displayed diff simply does not contain it.
-            if (!string.IsNullOrEmpty(SelectedDiffPath))
+            // currently displayed diff simply does not contain it. Back to the same source it
+            // came from - re-reading a commit's diff off the working tree would quietly swap
+            // what the pane is answering.
+            switch (_shownCommit)
             {
-                _ = ShowPathAsync(SelectedDiffPath, _selectedDiffStaged);
+                case { Path: { } path } commit:
+                    _ = ShowCommitFileAsync(commit.Id, commit.ShortId, path);
+                    break;
+
+                case { } commit:
+                    _ = ShowCommitPatchAsync(commit.Id, commit.ShortId, commit.Caption);
+                    break;
+
+                default:
+                    if (!string.IsNullOrEmpty(SelectedDiffPath))
+                    {
+                        _ = ShowPathAsync(SelectedDiffPath, _selectedDiffStaged);
+                    }
+
+                    break;
             }
         }
     }
@@ -642,6 +670,10 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         await RefreshCoreAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
 
+        // The history is handed the client but reads nothing yet. Whether this repository's
+        // log is ever walked is now the user's decision, made by clicking the rail.
+        History.Attach(client);
+
         // Scan for PLC projects after the git state is up, so the sync panel is populated
         // by the time the user reaches for it.
         await Sync.AttachAsync(path, client, CancellationToken.None).ConfigureAwait(true);
@@ -845,7 +877,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         CommitAndPushCommand = new AsyncCommand(
             () => CommitAsync(push: true), CanCommit, ReportError);
 
-        BuildStashCommands();
+        BuildHunkCommand();
 
         PullCommand = new AsyncCommand(PullAsync, () => Ready, ReportError);
         PushCommand = new AsyncCommand(() => PushAsync(afterCommit: false),
@@ -911,10 +943,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         PushCommand.RaiseCanExecuteChanged();
         FetchCommand.RaiseCanExecuteChanged();
         RefreshCommand.RaiseCanExecuteChanged();
-        StashCommand.RaiseCanExecuteChanged();
-        ApplyStashCommand.RaiseCanExecuteChanged();
-        PopStashCommand.RaiseCanExecuteChanged();
-        DropStashCommand.RaiseCanExecuteChanged();
         HunkCommand.RaiseCanExecuteChanged();
         DiscardCommand.RaiseCanExecuteChanged();
         CreateBranchCommand.RaiseCanExecuteChanged();
@@ -1126,29 +1154,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
     }
 
-    // ------------------------------------------------------- stash, history, hunks
-
-    /// <summary>Everything currently stashed, newest first.</summary>
-    public ObservableCollection<StashEntry> Stashes { get; } = [];
-
-    /// <summary>A window onto the branch's history, newest first.</summary>
-    public ObservableCollection<CommitEntry> Commits { get; } = [];
-
-    /// <summary>How much history the panel keeps. A window, not the log.</summary>
-    private const int HistoryDepth = 40;
-
-    private StashEntry? _selectedStash;
-    private CommitEntry? _selectedCommit;
-    private string _stashMessage = string.Empty;
-    private bool _stashUntracked;
-    private bool _stashExpanded;
-
-    public RelayCommand ToggleStashCommand { get; private set; } = null!;
-
-    public AsyncCommand StashCommand { get; private set; } = null!;
-    public AsyncCommand ApplyStashCommand { get; private set; } = null!;
-    public AsyncCommand PopStashCommand { get; private set; } = null!;
-    public AsyncCommand DropStashCommand { get; private set; } = null!;
+    // -------------------------------------------------------------- hunks, diffs
 
     /// <summary>Stage or unstage one hunk of the open diff, by its index.</summary>
     public AsyncCommand<int> HunkCommand { get; private set; } = null!;
@@ -1206,257 +1212,31 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// </remarks>
     public Func<string, string, bool>? ConfirmDestructive { get; set; }
 
-    public StashEntry? SelectedStash
-    {
-        get => _selectedStash;
-        set
-        {
-            if (SetProperty(ref _selectedStash, value))
-            {
-                RaiseGitCommandStates();
-            }
-        }
-    }
-
-    /// <summary>Picking a commit shows its patch.</summary>
-    public CommitEntry? SelectedCommit
-    {
-        get => _selectedCommit;
-        set
-        {
-            if (SetProperty(ref _selectedCommit, value) && value is not null)
-            {
-                _ = ShowCommitAsync(value);
-            }
-        }
-    }
-
-    /// <summary>Optional label for the next stash.</summary>
-    public string StashMessage
-    {
-        get => _stashMessage;
-        set => SetProperty(ref _stashMessage, value);
-    }
-
-    /// <summary>
-    /// Whether a stash also sweeps up files git has never seen.
-    /// </summary>
-    /// <remarks>
-    /// Off by default. An export tree that has never been committed is untracked, and so is
-    /// every scratch file and build artefact beside it — stashing those by default would
-    /// make the tree vanish, and it would come back on the pop as a surprise.
-    /// </remarks>
-    public bool StashUntracked
-    {
-        get => _stashUntracked;
-        set => SetProperty(ref _stashUntracked, value);
-    }
-
-    /// <summary>
-    /// Whether the stash section is showing its controls.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Collapsed by default, and the reason is written next to the section itself: the stash
-    /// is the escape hatch, not the daily path. Expanded it costs six always-visible controls
-    /// — a checkbox, a button, a message box, a list and three more buttons — in a 380 px
-    /// column that also has to hold the branch card, two file lists, the history and the
-    /// commit box. That is the clutter; the fix is not to shrink any of it but to stop
-    /// showing the part somebody reaches for a few times a month.
-    /// </para>
-    /// <para>
-    /// The header keeps its count, so a repository <i>with</i> stashes still says so while
-    /// collapsed. Hiding the fact that work is parked would be a different and worse bug
-    /// than the clutter.
-    /// </para>
-    /// </remarks>
-    public bool StashExpanded
-    {
-        get => _stashExpanded;
-        set => SetProperty(ref _stashExpanded, value);
-    }
-
-    private void BuildStashCommands()
-    {
-        ToggleStashCommand = new RelayCommand(() => StashExpanded = !StashExpanded);
-        StashCommand = new AsyncCommand(StashAsync, () => Ready, ReportError);
-        ApplyStashCommand = new AsyncCommand(
-            () => RestoreStashAsync(drop: false), () => Ready && SelectedStash is not null,
-            ReportError);
-        PopStashCommand = new AsyncCommand(
-            () => RestoreStashAsync(drop: true), () => Ready && SelectedStash is not null,
-            ReportError);
-        DropStashCommand = new AsyncCommand(
-            DropStashAsync, () => Ready && SelectedStash is not null, ReportError);
-
+    private void BuildHunkCommand() =>
         HunkCommand = new AsyncCommand<int>(ApplyHunkAsync, _ => Ready && CanStageHunks,
                                             ReportError);
-    }
-
-    private async Task StashAsync()
-    {
-        if (_git is null)
-        {
-            return;
-        }
-
-        _logger.Click("Git.Stash");
-        using var busy = Busy.Begin("Stashing…");
-
-        var result = await _git
-            .StashPushAsync(StashMessage, StashUntracked, CancellationToken.None)
-            .ConfigureAwait(true);
-
-        if (!result.Success)
-        {
-            StatusSummary = result.FailureReason ?? "the stash failed";
-            return;
-        }
-
-        // Cleared only on success, like the commit message: a refused stash that also threw
-        // away what the user typed is two losses for one mistake.
-        StashMessage = string.Empty;
-
-        // A stash reverts the working tree, which for a tracked project means the exported
-        // mirror is now behind the project again. Saying so beats letting the panel imply
-        // everything is level.
-        StatusSummary = "Stashed. The working tree is back to HEAD.";
-        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
-    }
 
     /// <summary>
-    /// Restore a stash, optionally dropping it.
+    /// Show one whole commit's patch in the same pane everything else uses.
     /// </summary>
     /// <remarks>
-    /// The reference is re-read rather than remembered. Stash names are positional — dropping
-    /// <c>stash@{0}</c> renumbers everything below it — so a name held across a refresh can
-    /// point at a different entry than the row the user is looking at. Matching on the
-    /// subject and age finds the row again wherever it moved to.
+    /// Reached by clicking the commit itself rather than a file under it. Every file at once
+    /// is the right answer to "what did this commit do?", and the per-file rows underneath are
+    /// the right answer to "what did it do to this file?" — the panel offers both because they
+    /// are different questions, and the expensive one is not the one asked by default.
     /// </remarks>
-    private async Task RestoreStashAsync(bool drop)
-    {
-        if (_git is null || SelectedStash is not { } wanted)
-        {
-            return;
-        }
+    private Task ShowCommitAsync(CommitEntry commit) =>
+        ShowCommitPatchAsync(commit.Id, commit.ShortId, $"{commit.ShortId} {commit.Subject}");
 
-        _logger.Click(drop ? "Git.StashPop" : "Git.StashApply");
-        using var busy = Busy.Begin(drop ? "Popping the stash…" : "Applying the stash…");
-
-        if (await ResolveStashAsync(wanted).ConfigureAwait(true) is not { } stashRef)
-        {
-            StatusSummary = "That stash is no longer there; nothing was applied.";
-            await LoadStashesAsync().ConfigureAwait(true);
-            return;
-        }
-
-        var result = await _git.StashApplyAsync(stashRef, drop, CancellationToken.None)
-            .ConfigureAwait(true);
-
-        StatusSummary = result.Success
-            ? drop ? "Popped." : "Applied. The stash is still there."
-            : result.FailureReason ?? "the stash could not be applied";
-
-        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
-    }
-
-    private async Task DropStashAsync()
-    {
-        if (_git is null || SelectedStash is not { } wanted)
-        {
-            return;
-        }
-
-        // The one git operation in this panel that destroys work with no other copy of it.
-        var confirmed = ConfirmDestructive?.Invoke(
-            "Drop this stash?",
-            $"{wanted.Ref} — {wanted.Message}\n\n" +
-            "The contents are not recoverable afterwards.") ?? false;
-
-        if (!confirmed)
-        {
-            return;
-        }
-
-        _logger.Click("Git.StashDrop");
-        using var busy = Busy.Begin("Dropping the stash…");
-
-        if (await ResolveStashAsync(wanted).ConfigureAwait(true) is not { } stashRef)
-        {
-            StatusSummary = "That stash is no longer there.";
-            await LoadStashesAsync().ConfigureAwait(true);
-            return;
-        }
-
-        var result = await _git.StashDropAsync(stashRef, CancellationToken.None)
-            .ConfigureAwait(true);
-
-        StatusSummary = result.Success
-            ? "Dropped."
-            : result.FailureReason ?? "the stash could not be dropped";
-
-        await LoadStashesAsync().ConfigureAwait(true);
-    }
-
-    /// <summary>Find a stash again by what it says rather than by where it was.</summary>
-    private async Task<string?> ResolveStashAsync(StashEntry wanted)
-    {
-        if (_git is null)
-        {
-            return null;
-        }
-
-        var current = await _git.StashListAsync(CancellationToken.None).ConfigureAwait(true);
-
-        return current.FirstOrDefault(s =>
-            string.Equals(s.Subject, wanted.Subject, StringComparison.Ordinal) &&
-            string.Equals(s.Age, wanted.Age, StringComparison.Ordinal))?.Ref;
-    }
-
-    private async Task LoadStashesAsync()
+    private async Task ShowCommitPatchAsync(string commitId, string shortId, string caption)
     {
         if (_git is null)
         {
             return;
         }
 
-        var stashes = await _git.StashListAsync(CancellationToken.None).ConfigureAwait(true);
-
-        Stashes.Clear();
-        foreach (var stash in stashes)
-        {
-            Stashes.Add(stash);
-        }
-
-        SelectedStash = null;
-    }
-
-    private async Task LoadCommitsAsync()
-    {
-        if (_git is null)
-        {
-            return;
-        }
-
-        var commits = await _git.RecentCommitsAsync(HistoryDepth, CancellationToken.None)
-            .ConfigureAwait(true);
-
-        Commits.Clear();
-        foreach (var commit in commits)
-        {
-            Commits.Add(commit);
-        }
-    }
-
-    /// <summary>Show one commit's patch in the same pane everything else uses.</summary>
-    private async Task ShowCommitAsync(CommitEntry commit)
-    {
-        if (_git is null)
-        {
-            return;
-        }
-
-        SelectedDiffPath = $"{commit.ShortId} {commit.Subject}";
+        SelectedDiffPath = caption;
+        _shownCommit = (commitId, shortId, caption, null);
         _selectedDiffStaged = false;
 
         // A commit is history: it is already staged, already committed, and there is nothing
@@ -1464,13 +1244,44 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // something git cannot do.
         CanStageHunks = false;
 
-        var patch = await _git.CommitPatchAsync(commit.Id, CancellationToken.None)
+        var patch = await _git
+            .CommitPatchAsync(commitId, CancellationToken.None, DiffContext)
             .ConfigureAwait(true);
 
         SelectedDiff = string.IsNullOrWhiteSpace(patch)
-            ? $"{commit.ShortId} {commit.Subject}" + Environment.NewLine + Environment.NewLine +
+            ? caption + Environment.NewLine + Environment.NewLine +
               "No patch to show. This is usually a merge commit, whose changes are a diff " +
               "against several parents rather than one patch."
+            : patch;
+    }
+
+    /// <summary>Show what one commit did to one file.</summary>
+    private Task ShowCommitFileAsync(CommitFileRow row) =>
+        ShowCommitFileAsync(row.Commit.Id, row.Commit.ShortId, row.Path);
+
+    private async Task ShowCommitFileAsync(string commitId, string shortId, string path)
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        // The commit is named in the header as well as the path. Without it this reads
+        // identically to the working-tree diff of the same file, which is the one thing a
+        // reviewer must not confuse it with.
+        SelectedDiffPath = $"{path} @ {shortId}";
+        _shownCommit = (commitId, shortId, SelectedDiffPath, path);
+        _selectedDiffStaged = false;
+        CanStageHunks = false;
+
+        var patch = await _git
+            .CommitFileDiffAsync(commitId, path, CancellationToken.None, DiffContext)
+            .ConfigureAwait(true);
+
+        SelectedDiff = string.IsNullOrWhiteSpace(patch)
+            ? SelectedDiffPath + Environment.NewLine + Environment.NewLine +
+              "Nothing to compare: git reports this file as binary, which for a .project " +
+              "file is the whole reason the exported tree beside it exists."
             : patch;
     }
 
@@ -1659,9 +1470,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         var confirmed = ConfirmDestructive?.Invoke(
             "Discard changes to this file?",
             $"{row.Path}\n\n" +
-            "The changes are thrown away and cannot be recovered — they are not in a commit, " +
-            "the index or a stash.\n\n" +
-            "Stash them instead if you might want them back.") ?? false;
+            "The changes are thrown away and cannot be recovered — they are not in a commit " +
+            "or in the index.\n\n" +
+            "Commit them on a scratch branch if you might want them back.") ?? false;
 
         if (!confirmed)
         {
@@ -1886,19 +1697,26 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             _lastRefreshUtc = _clock.UtcNow;
             UpdateLastRefreshText();
 
-            // Branches, history and the stash each cost a git process and almost never move.
-            // Reload them only when something could plausibly have changed them - which a
-            // working-tree save, the common automatic refresh, cannot.
+            // Branches cost a git process and almost never move, so they are reloaded only
+            // when something could plausibly have changed them - which a working-tree save,
+            // the common automatic refresh, cannot.
+            //
+            // The history is marked rather than reloaded. It lives in a panel of its own now,
+            // and re-reading a log for a panel nobody is looking at was most of what this
+            // branch used to cost; when it is in front, Invalidate reloads it at once.
             if (manual || trigger == RefreshTrigger.GitMetadata || BranchName != previousBranch)
             {
                 await LoadBranchesAsync().ConfigureAwait(true);
-                await LoadCommitsAsync().ConfigureAwait(true);
-                await LoadStashesAsync().ConfigureAwait(true);
+                History.Invalidate();
             }
 
             // The open diff is as stale as the list was. Reload it when the shown path's
             // status moved, or when the refresh was triggered by a write to that very file.
-            if (SelectedDiffPath is { Length: > 0 } shown &&
+            //
+            // A diff read out of a commit is exempt: it is a patch that has already happened,
+            // and nothing in the working tree can change what it says.
+            if (_shownCommit is null &&
+                SelectedDiffPath is { Length: > 0 } shown &&
                 (changed.Contains(shown) || Touches(paths, shown)))
             {
                 await ShowPathAsync(shown, _selectedDiffStaged).ConfigureAwait(true);
@@ -2100,6 +1918,27 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
+    /// The commit the open diff was read out of, when it was read out of one.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Null whenever the pane is showing the working tree or the index. Set, it carries the
+    /// commit and — for a single file rather than a whole patch — the path, which is what
+    /// re-reading needs: <see cref="SelectedDiffPath"/> is a caption by then, not a path, and
+    /// asking git for a diff of "PLC_PRG.st @ 1a2b3c4" would find nothing.
+    /// </para>
+    /// <para>
+    /// It is also what keeps a refresh from replacing a historical diff with the working-tree
+    /// diff of the same file, which would silently answer a different question than the one
+    /// the user clicked on.
+    /// </para>
+    /// </remarks>
+    private (string Id, string ShortId, string Caption, string? Path)? _shownCommit;
+
+    /// <summary>How much context git is asked for, following the pane's own checkbox.</summary>
+    private int DiffContext => ShowFullFile ? GitDiff.FullFileContext : GitDiff.DefaultContext;
+
+    /// <summary>
     /// Which side of the index the open diff came from.
     /// </summary>
     /// <remarks>
@@ -2120,6 +1959,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         if (row.IsProject)
         {
             SelectedDiffPath = row.Node.Path;
+            _shownCommit = null;
             _selectedDiffStaged = false;
             CanStageHunks = false;
 
@@ -2173,10 +2013,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
 
         SelectedDiffPath = path;
+        _shownCommit = null;
 
         try
         {
-            var context = ShowFullFile ? GitDiff.FullFileContext : GitDiff.DefaultContext;
+            var context = DiffContext;
 
             var fromIndex = staged ?? false;
             var diff = await _git.DiffAsync(path, fromIndex, CancellationToken.None, context)
@@ -2234,5 +2075,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // tree. Releasing only the shell's would leave those handles open and the repository
         // folder locked against rename or delete after the window closes.
         Sync.Detach();
+        History.Detach();
     }
 }

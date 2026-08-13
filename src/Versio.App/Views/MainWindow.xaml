@@ -2,6 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:Versio.App.Views"
+        xmlns:vm="clr-namespace:Versio.App.ViewModels"
         Title="Versio" Height="840" Width="1420" WindowState="Maximized"
         Background="{DynamicResource Brush.Surface.Sunken}"
         TextOptions.TextFormattingMode="Display"
@@ -274,7 +275,18 @@
                                  Tag="Git"
                                  Content="{DynamicResource Icon.Link}"
                                  Checked="OnRailChanged"
-                                 ToolTip="Git — staging, commit, stash, history, pull and push" />
+                                 ToolTip="Git — staging, commit, pull and push" />
+
+                    <!-- History is its own panel rather than a section of the git one. The
+                         two answer different questions - what is about to happen, and what
+                         already did - and sharing a column left history with 150 pixels of
+                         it. It is also what makes the log affordable: a panel nobody has
+                         opened reads nothing at all. -->
+                    <RadioButton x:Name="RailHistory" Style="{StaticResource RailButton}"
+                                 Tag="History"
+                                 Content="{DynamicResource Icon.History}"
+                                 Checked="OnRailChanged"
+                                 ToolTip="History — commits, the files in each, and their diffs" />
                 </StackPanel>
             </Border>
 
@@ -404,166 +416,6 @@
                                 </TextBlock>
                             </StackPanel>
 
-                            <!-- STASH. Put below the commit box rather than above the file
-                                 lists because it is the escape hatch, not the daily path:
-                                 somebody reaches for it when they have to switch to something
-                                 else and cannot commit what they have.
-
-                                 Collapsed by default for the same reason. Six controls for a
-                                 feature used a few times a month, permanently on screen in a
-                                 380 px column, is most of what makes this panel feel dense.
-                                 The count stays visible while collapsed, so a repository with
-                                 parked work still says so - that fact is not clutter. -->
-                            <Grid DockPanel.Dock="Bottom" Margin="0,12,0,0">
-                                <Button HorizontalAlignment="Left" Padding="0"
-                                        Style="{StaticResource GhostButton}"
-                                        Command="{Binding ToggleStashCommand}">
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock x:Name="StashChevron"
-                                                   FontSize="9" Margin="0,0,6,0"
-                                                   Foreground="{DynamicResource Brush.Text.Disabled}">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock"
-                                                       BasedOn="{StaticResource IconText}">
-                                                    <Setter Property="Text"
-                                                            Value="{DynamicResource Icon.ChevronDown}" />
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding StashExpanded}"
-                                                                     Value="True">
-                                                            <Setter Property="Text"
-                                                                    Value="{DynamicResource Icon.ChevronUp}" />
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
-                                        <TextBlock Text="STASH"
-                                                   Style="{StaticResource SectionLabel}" />
-                                        <Border Style="{StaticResource Pill}" Margin="6,0,0,0"
-                                                Padding="6,0">
-                                            <TextBlock Text="{Binding Stashes.Count}"
-                                                       Style="{StaticResource PillText}" />
-                                        </Border>
-                                    </StackPanel>
-                                </Button>
-
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
-                                            Visibility="{Binding StashExpanded,
-                                                Converter={StaticResource BoolToVisibility}}">
-                                    <CheckBox Content="+ untracked" VerticalAlignment="Center"
-                                              Margin="0,0,8,0"
-                                              IsChecked="{Binding StashUntracked}"
-                                              Foreground="{DynamicResource Brush.Text.Secondary}"
-                                              FontFamily="{DynamicResource Font.UI}"
-                                              FontSize="{DynamicResource Font.Size.Caption}"
-                                              ToolTip="Also stash files git has never seen — including an export tree that was never committed" />
-                                    <Button Content="Stash" Style="{StaticResource GhostButton}"
-                                            Padding="8,2"
-                                            Command="{Binding StashCommand}" />
-                                </StackPanel>
-                            </Grid>
-
-                            <TextBox DockPanel.Dock="Bottom" Margin="0,4,0,0"
-                                     Style="{StaticResource FlatTextBox}"
-                                     Tag="Stash message (optional)…"
-                                     Visibility="{Binding StashExpanded,
-                                         Converter={StaticResource BoolToVisibility}}"
-                                     Text="{Binding StashMessage, UpdateSourceTrigger=PropertyChanged}" />
-
-                            <ListBox DockPanel.Dock="Bottom" ItemsSource="{Binding Stashes}"
-                                     SelectedItem="{Binding SelectedStash}"
-                                     Background="Transparent" BorderThickness="0"
-                                     ItemContainerStyle="{StaticResource RowItem}"
-                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                     Visibility="{Binding StashExpanded,
-                                         Converter={StaticResource BoolToVisibility}}"
-                                     MaxHeight="90" Margin="0,4,0,0">
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0" Text="{Binding Message}"
-                                                       FontFamily="{DynamicResource Font.UI}"
-                                                       FontSize="{DynamicResource Font.Size.Caption}"
-                                                       Foreground="{DynamicResource Brush.Text.Primary}"
-                                                       TextTrimming="CharacterEllipsis"
-                                                       ToolTip="{Binding Subject}" />
-                                            <TextBlock Grid.Column="1" Text="{Binding Age}"
-                                                       Margin="10,0,0,0" VerticalAlignment="Center"
-                                                       FontFamily="{DynamicResource Font.Mono}"
-                                                       FontSize="{DynamicResource Font.Size.Caption}"
-                                                       Foreground="{DynamicResource Brush.Text.Disabled}" />
-                                        </Grid>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-
-                            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
-                                        Margin="0,4,0,0"
-                                        Visibility="{Binding StashExpanded,
-                                            Converter={StaticResource BoolToVisibility}}">
-                                <Button Content="Apply" Style="{StaticResource GhostButton}"
-                                        Padding="8,2"
-                                        ToolTip="Restore it and keep the stash"
-                                        Command="{Binding ApplyStashCommand}" />
-                                <Button Content="Pop" Margin="6,0,0,0" Padding="8,2"
-                                        Style="{StaticResource GhostButton}"
-                                        ToolTip="Restore it and remove the stash, only if the restore succeeds"
-                                        Command="{Binding PopStashCommand}" />
-                                <Button Content="Drop" Margin="6,0,0,0" Padding="8,2"
-                                        Style="{StaticResource GhostButton}"
-                                        ToolTip="Delete it without restoring. The contents are not recoverable"
-                                        Command="{Binding DropStashCommand}" />
-                            </StackPanel>
-
-                            <!-- HISTORY. Click a commit to read its patch in the same pane
-                                 everything else uses - the point of one diff pane is that a
-                                 change reads the same whether it is on disk, in the index or
-                                 already committed. -->
-                            <TextBlock DockPanel.Dock="Bottom" Text="RECENT COMMITS"
-                                       Style="{StaticResource SectionLabel}" Margin="0,12,0,4" />
-
-                            <ListBox DockPanel.Dock="Bottom" ItemsSource="{Binding Commits}"
-                                     SelectedItem="{Binding SelectedCommit}"
-                                     Background="Transparent" BorderThickness="0"
-                                     ItemContainerStyle="{StaticResource RowItem}"
-                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                     VirtualizingStackPanel.IsVirtualizing="True"
-                                     VirtualizingStackPanel.VirtualizationMode="Recycling"
-                                     MaxHeight="150">
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto" />
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0" Text="{Binding ShortId}"
-                                                       VerticalAlignment="Center"
-                                                       FontFamily="{DynamicResource Font.Mono}"
-                                                       FontSize="{DynamicResource Font.Size.Caption}"
-                                                       Foreground="{DynamicResource Brush.Accent.Default}" />
-                                            <TextBlock Grid.Column="1" Text="{Binding Subject}"
-                                                       Margin="8,0,0,0" VerticalAlignment="Center"
-                                                       FontFamily="{DynamicResource Font.UI}"
-                                                       FontSize="{DynamicResource Font.Size.Caption}"
-                                                       Foreground="{DynamicResource Brush.Text.Primary}"
-                                                       TextTrimming="CharacterEllipsis"
-                                                       ToolTip="{Binding Subject}" />
-                                            <TextBlock Grid.Column="2" Text="{Binding Age}"
-                                                       Margin="10,0,0,0" VerticalAlignment="Center"
-                                                       FontFamily="{DynamicResource Font.Mono}"
-                                                       FontSize="{DynamicResource Font.Size.Caption}"
-                                                       Foreground="{DynamicResource Brush.Text.Disabled}" />
-                                        </Grid>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-
                             <!-- Staged / unstaged -->
                             <Grid DockPanel.Dock="Top" Margin="0,0,0,4">
                                 <TextBlock Text="STAGED" Style="{StaticResource SectionLabel}" />
@@ -605,6 +457,118 @@
                                      ItemTemplate="{StaticResource ChangeRowTemplate}"
                                      VirtualizingStackPanel.IsVirtualizing="True"
                                      VirtualizingStackPanel.VirtualizationMode="Recycling" />
+                        </DockPanel>
+                    </Border>
+
+                    <!-- HISTORY: what already happened, as against the git panel's what is
+                         about to. A commit opens to the files it touched, and a file opens
+                         its patch in the same pane the working tree uses - one pane, so a
+                         change reads the same wherever it was reached from.
+
+                         Nothing here is read before somebody asks for it. The log is not
+                         walked until this panel is first shown, a page at a time after that;
+                         a commit's files are fetched when it is expanded; and a patch when a
+                         file is clicked. The panel this replaced re-read the whole log on
+                         every refresh that touched git's metadata, open or not. -->
+                    <Border x:Name="HistoryPanel" Visibility="Collapsed" Padding="14,0,12,12">
+                        <DockPanel>
+                            <!-- One page back at a time. Hidden once the branch runs out,
+                                 rather than greyed: there is nothing further to say about a
+                                 history somebody has reached the beginning of. -->
+                            <Button DockPanel.Dock="Bottom" Margin="0,8,0,0"
+                                    HorizontalAlignment="Left" Padding="8,2"
+                                    Style="{StaticResource GhostButton}"
+                                    Content="Load older commits"
+                                    Command="{Binding History.LoadMoreCommand}"
+                                    Visibility="{Binding History.HasMore,
+                                        Converter={StaticResource BoolToVisibility}}" />
+
+                            <TextBlock DockPanel.Dock="Bottom" Text="{Binding History.Summary}"
+                                       TextWrapping="Wrap" Margin="0,6,0,0"
+                                       FontFamily="{DynamicResource Font.UI}"
+                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                       Foreground="{DynamicResource Brush.Text.Disabled}" />
+
+                            <!-- A TreeView for the same reason the project panel uses one:
+                                 expand and collapse, one selection across both levels, and
+                                 virtualization that is measured rather than assumed. All
+                                 three attributes below are required, and so is the
+                                 VirtualizingStackPanel items panel - see the project tree,
+                                 where the defaults cost 10,635 ms against 94.7 ms. -->
+                            <TreeView ItemsSource="{Binding History.Commits}"
+                                      Background="Transparent" BorderThickness="0"
+                                      VirtualizingStackPanel.IsVirtualizing="True"
+                                      VirtualizingStackPanel.VirtualizationMode="Recycling"
+                                      VirtualizingStackPanel.ScrollUnit="Pixel"
+                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                      SelectedItemChanged="OnHistoryRowSelected">
+                                <TreeView.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <VirtualizingStackPanel />
+                                    </ItemsPanelTemplate>
+                                </TreeView.ItemsPanel>
+
+                                <TreeView.ItemContainerStyle>
+                                    <Style TargetType="TreeViewItem">
+                                        <Setter Property="IsExpanded"
+                                                Value="{Binding IsExpanded, Mode=TwoWay}" />
+                                        <Setter Property="Foreground"
+                                                Value="{DynamicResource Brush.Text.Primary}" />
+                                    </Style>
+                                </TreeView.ItemContainerStyle>
+
+                                <TreeView.Resources>
+                                    <!-- Two lines, because four facts do not fit across a
+                                         380 px column. The subject leads - it is what
+                                         somebody is scanning for - and the identifying
+                                         details sit under it in the quieter face. -->
+                                    <HierarchicalDataTemplate DataType="{x:Type vm:CommitRow}"
+                                                              ItemsSource="{Binding Children}">
+                                        <StackPanel Margin="0,2">
+                                            <TextBlock Text="{Binding Subject}"
+                                                       FontFamily="{DynamicResource Font.UI}"
+                                                       FontSize="{DynamicResource Font.Size.Body}"
+                                                       Foreground="{DynamicResource Brush.Text.Primary}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding Subject}" />
+
+                                            <StackPanel Orientation="Horizontal" Margin="0,1,0,0">
+                                                <TextBlock Text="{Binding ShortId}"
+                                                           FontFamily="{DynamicResource Font.Mono}"
+                                                           FontSize="{DynamicResource Font.Size.Caption}"
+                                                           Foreground="{DynamicResource Brush.Accent.Default}"
+                                                           ToolTip="{Binding Id}" />
+
+                                                <!-- Absolute and local. The relative form git
+                                                     prints is on the tooltip: it is friendlier
+                                                     to read and useless to quote. -->
+                                                <TextBlock Text="{Binding When}" Margin="8,0,0,0"
+                                                           FontFamily="{DynamicResource Font.Mono}"
+                                                           FontSize="{DynamicResource Font.Size.Caption}"
+                                                           Foreground="{DynamicResource Brush.Text.Disabled}"
+                                                           ToolTip="{Binding Age}" />
+
+                                                <TextBlock Text="{Binding Author}" Margin="8,0,0,0"
+                                                           FontFamily="{DynamicResource Font.UI}"
+                                                           FontSize="{DynamicResource Font.Size.Caption}"
+                                                           Foreground="{DynamicResource Brush.Text.Secondary}"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           MaxWidth="120"
+                                                           ToolTip="{Binding Author}" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </HierarchicalDataTemplate>
+
+                                    <!-- The same row the staged and unstaged lists draw. A
+                                         deletion is the same colour and the same letter
+                                         wherever it is seen, which is the entire point of
+                                         there being one template. -->
+                                    <DataTemplate DataType="{x:Type vm:CommitFileRow}">
+                                        <ContentPresenter Content="{Binding}"
+                                                          ContentTemplate="{StaticResource ChangeRowTemplate}" />
+                                    </DataTemplate>
+                                </TreeView.Resources>
+                            </TreeView>
                         </DockPanel>
                     </Border>
 

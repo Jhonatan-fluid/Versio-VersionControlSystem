@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Media;
 using Versio.App.ViewModels;
 using Versio.App.Views;
 using Versio.Core.Logging;
@@ -47,7 +48,9 @@ namespace Versio.App.Tests;
 [Collection("theme")]
 public sealed class MainWindowTests
 {
-    private static MainWindow Build()
+    private static MainWindow Build() => BuildWithShell().Window;
+
+    private static (MainWindow Window, ShellViewModel Shell) BuildWithShell()
     {
         var logger = new VersioLogger(new SystemClock());
         var sink = new InMemoryLogSink();
@@ -56,7 +59,8 @@ public sealed class MainWindowTests
         // No repository is opened: construction is the thing under test, and a window that
         // parses is a window that parses whether or not it has data. Opening one would drag
         // git.exe and a real working tree into a test about XAML.
-        return new MainWindow(new ShellViewModel(logger, new LogViewModel(sink)));
+        var shell = new ShellViewModel(logger, new LogViewModel(sink));
+        return (new MainWindow(shell), shell);
     }
 
     [Fact]
@@ -91,6 +95,91 @@ public sealed class MainWindowTests
 
             Assert.True(content.DesiredSize.Width > 0);
         });
+    }
+
+    /// <summary>
+    /// The history panel lays out, with rows in it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Constructing the window is not enough to cover a panel that starts collapsed. A
+    /// <c>StaticResource</c> inside a <see cref="DataTemplate"/> is not resolved when the XAML
+    /// is parsed — it is resolved when the template is instantiated, which happens the first
+    /// time a row is realised. A missing key in there would sail past every other test in this
+    /// file and throw in front of whoever clicked the rail.
+    /// </para>
+    /// <para>
+    /// So the panel is switched to through the rail button a user would press, filled from the
+    /// counting client the history tests use, and one commit is expanded — which is what makes
+    /// the second-level template, the one shared with the staged and unstaged lists, actually
+    /// build.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void The_history_panel_lays_out_with_commits_and_files_in_it()
+    {
+        StaHarness.Run(() =>
+        {
+            var (window, shell) = BuildWithShell();
+            var content = Assert.IsAssignableFrom<FrameworkElement>(window.Content);
+
+            shell.History.Attach(new CountingGitClient());
+
+            // Through the rail, not by setting the panel directly: the handler behind this is
+            // what makes the panel visible and tells the history it is being looked at.
+            var rail = Assert.IsType<RadioButton>(window.FindName("RailHistory"));
+            rail.IsChecked = true;
+
+            Assert.Equal(ShellPanel.History, shell.ActivePanel);
+            Assert.NotEmpty(shell.History.Commits);
+
+            shell.History.Commits[0].IsExpanded = true;
+            Assert.NotEmpty(shell.History.Commits[0].Children);
+
+            var panel = Assert.IsType<Border>(window.FindName("HistoryPanel"));
+            Assert.Equal(Visibility.Visible, panel.Visibility);
+
+            content.Measure(new Size(1400, 900));
+            content.Arrange(new Rect(0, 0, 1400, 900));
+            content.UpdateLayout();
+
+            Assert.True(panel.DesiredSize.Width > 0);
+
+            // The rows themselves, not just the panel around them. A template that failed to
+            // build leaves a TreeView that measures perfectly well and shows nothing.
+            var tree = Assert.IsAssignableFrom<TreeView>(
+                VisualChild(panel, static v => v is TreeView));
+
+            var item = Assert.IsAssignableFrom<TreeViewItem>(
+                VisualChild(tree, static v => v is TreeViewItem));
+
+            Assert.True(item.DesiredSize.Height > 0);
+        });
+    }
+
+    /// <summary>First descendant matching <paramref name="wanted"/>, breadth-first.</summary>
+    private static DependencyObject? VisualChild(
+        DependencyObject root, Func<DependencyObject, bool> wanted)
+    {
+        var queue = new Queue<DependencyObject>();
+        queue.Enqueue(root);
+
+        while (queue.Count > 0)
+        {
+            var node = queue.Dequeue();
+
+            if (node != root && wanted(node))
+            {
+                return node;
+            }
+
+            for (var i = 0; i < VisualTreeHelper.GetChildrenCount(node); i++)
+            {
+                queue.Enqueue(VisualTreeHelper.GetChild(node, i));
+            }
+        }
+
+        return null;
     }
 
     [Fact]

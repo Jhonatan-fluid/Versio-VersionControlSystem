@@ -1304,10 +1304,10 @@ Two implementation details that cost real debugging time and are now pinned by t
 >
 > | §  | As planned | As built |
 > |---|---|---|
-> | 9.1 | Rail: Changed files · Git · Sync · Settings | Rail: **Project · Git**; settings is a popup on the top bar |
+> | 9.1 | Rail: Changed files · Git · Sync · Settings | Rail: **Project · Git · History**; settings is a popup on the top bar |
 > | 9.3 | `changed only` (default) / full tree toggle | **Always the full tree**, changes marked. The filter answered "what did I change"; as the only view it has to answer "where in the machine am I" |
 > | 9.3 | Config nodes parsed from `config/*.yaml` | **Not built, and blocked**: nothing writes that YAML yet. See STATUS item 1 |
-> | 9.4 | Stash ▾, recent commits with click-to-diff | **Built** |
+> | 9.4 | Stash ▾, recent commits with click-to-diff | **Split, and half withdrawn (Rev 13).** History is a rail panel of its own: a commit expands to the files it touched, and a file opens what that commit did to it. Nothing is read until it is asked for — no log walk until the panel is shown, no file list until a commit is expanded, no patch until a file is clicked. **Stash is out of the UI** pending a different design; the client operations remain and are still tested |
 > | 9.5 | Sync panel with its own actions | **Folded away, then emptied (Rev 12).** The toolchain, its version and its profile are environment and live in Settings → Help → System information. *Export now* is gone: the mirror is exported when the repository opens. *Acknowledge failure* is gone as a panel control and lives on the failing project's own row. What is left in the panel is transient — coverage, staleness, heartbeat — and hides itself when empty |
 >
 > The §9.3 tree design itself — one node per object, roll-up badges, GUID identity, virtualization

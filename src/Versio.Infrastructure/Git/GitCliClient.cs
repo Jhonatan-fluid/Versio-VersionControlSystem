@@ -458,10 +458,12 @@ public sealed partial class GitCliClient(
     /// scrolling, and hiding it would make the list disagree with the branch it describes.
     /// Its patch is the thing that cannot be shown, and that is said when it is asked for.
     /// </remarks>
-    public async Task<IReadOnlyList<CommitEntry>> RecentCommitsAsync(int count, CancellationToken ct)
+    public async Task<IReadOnlyList<CommitEntry>> RecentCommitsAsync(
+        int count, int skip, CancellationToken ct)
     {
         var result = await RunAsync(
-            ["log", $"--max-count={Math.Max(1, count)}", GitLogParser.CommitFormat], null, ct)
+            ["log", $"--max-count={Math.Max(1, count)}", $"--skip={Math.Max(0, skip)}",
+             GitLogParser.CommitFormat], null, ct)
             .ConfigureAwait(false);
 
         // An unborn branch has no HEAD to walk, and git says so on stderr. That is the first
@@ -477,9 +479,54 @@ public sealed partial class GitCliClient(
     /// rather than papered over with <c>-m</c>, which would show one parent's diff as though
     /// it were the merge.
     /// </remarks>
-    public async Task<string> CommitPatchAsync(string commit, CancellationToken ct)
+    public async Task<string> CommitPatchAsync(
+        string commit, CancellationToken ct, int contextLines = GitDiff.DefaultContext)
     {
-        var result = await RunAsync(["show", "--format=", "--patch", commit], null, ct)
+        var result = await RunAsync(
+            ["show", "--format=", "--patch", $"-U{Math.Max(0, contextLines)}", commit], null, ct)
+            .ConfigureAwait(false);
+
+        return result.Success ? result.StdOut : string.Empty;
+    }
+
+    /// <summary>Which files one commit touched.</summary>
+    /// <remarks>
+    /// <para>
+    /// <c>-z</c> is load-bearing rather than tidiness. Without it git quotes any path holding
+    /// a byte it considers unusual, so <c>Kühlschrank Regelung.st</c> — a real shape in this
+    /// repository's own fixtures — comes back wrapped in quotes with its umlaut as octal
+    /// escapes, and the panel would then ask git for a diff of a path that does not exist.
+    /// </para>
+    /// <para>
+    /// The NUL-separated stream survives <see cref="RunAsync"/> intact: the reader there
+    /// splits on line breaks, of which this output has none, so the whole listing arrives as
+    /// a single line with its separators untouched.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<CommitFile>> CommitFilesAsync(
+        string commit, CancellationToken ct)
+    {
+        var result = await RunAsync(
+            ["show", "--format=", "--name-status", "-z", commit], null, ct)
+            .ConfigureAwait(false);
+
+        return result.Success ? GitNameStatusParser.Parse(result.StdOut) : [];
+    }
+
+    /// <summary>The patch one commit applied to one file.</summary>
+    /// <remarks>
+    /// <c>git show</c> with a pathspec rather than a diff between the commit and its parent.
+    /// The two agree everywhere except on a root commit, which has no parent to name — and
+    /// the first commit of a repository is exactly the one somebody scrolls to the bottom of
+    /// the history to look at.
+    /// </remarks>
+    public async Task<string> CommitFileDiffAsync(
+        string commit, string path, CancellationToken ct,
+        int contextLines = GitDiff.DefaultContext)
+    {
+        var result = await RunAsync(
+            ["show", "--format=", "--patch", $"-U{Math.Max(0, contextLines)}",
+             commit, "--", path], null, ct)
             .ConfigureAwait(false);
 
         return result.Success ? result.StdOut : string.Empty;

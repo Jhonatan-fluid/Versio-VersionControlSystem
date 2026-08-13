@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-12 · **Commits:** 45 · **Tests:** 814 unit + 76 UI + 102 integration, 0 skipped
+**Date:** 2026-08-12 · **Commits:** 46 · **Tests:** 822 unit + 90 UI + 107 integration, 0 skipped
 
 > Both numbers are re-derivable rather than remembered: `git rev-list --count HEAD`, and
 > `dotnet test` prints a total per suite. The commit count in this header was wrong by twelve
@@ -115,7 +115,8 @@ format; `.gitattributes` covers every registered vendor's extensions.
 | | |
 |---|---|
 | **Project view** | **One panel.** Every project *with something to review* — a change, a mirror behind, a lock held, a failure, or never exported — carrying its full CODESYS-shaped object tree, with every other changed file beside them. A project whose mirror is clean is not listed, and the empty state says so rather than going blank. Search still reaches into a clean project, because the box searches the project and not the diff |
-| **Git panel** | Staging, commit message with a 50/72 guide, Ctrl+Enter, fetch / pull / push, stash, recent commits with click-to-diff, **discard**. One operation at a time across every button — a shared counted flag, so a 17–31 s export also holds them |
+| **Git panel** | Staging, commit message with a 50/72 guide, Ctrl+Enter, fetch / pull / push, **discard**. One operation at a time across every button — a shared counted flag, so a 17–31 s export also holds them. **No stash**: the controls were removed pending a different design, and the client-side operations are kept and still tested |
+| **History panel** | **Its own rail button**, not a strip inside the git panel. Every commit with its hash, local date and time, author and subject; expand one for the files it touched; click a file for what that commit did to it, in the shared diff pane. Lazy at four levels — the log is not walked until the panel is first shown, then one page of 50 at a time; a commit's files are read when it is expanded and cached for the session, because a commit's contents cannot change; a patch is read only when a file is clicked, and never cached. A merge says so rather than showing an empty list |
 | **PLC state** | **No card, and no buttons.** Toolchain, version and profile were environment rather than repository state and moved to Settings → Help → System information. "Export now" is gone because a stale mirror needs no decision — it is exported when the repository opens. "Acknowledge failure" is gone as a panel-wide control: a failure belongs to one project, so it is reported on that project's row with the reason and a *Try again* beside it. What is left in the panel is transient and hides itself: the coverage warning and the live heartbeat |
 | **Branch and clone** | Create a branch from HEAD and switch to it, with the name checked against git's rules while it is typed; clone a repository after verifying the remote, then open it. Both are modal dialogs built from the one stylesheet, and both are covered by tests that construct them against the real theme |
 | **Commit gate** | A stale mirror is exported *and staged* before the commit. Push releases the direction locks; commit does not, and the panel says so |
@@ -153,7 +154,13 @@ fixture: two library managers, **both exported now**, and `_coverage.md` reports
 
 ### 2. ~~Finish the git surface~~ — **done**
 
-- ~~Stash~~, ~~recent commits with click-to-diff~~, ~~per-hunk staging~~ — **done**
+- ~~Recent commits with click-to-diff~~, ~~per-hunk staging~~ — **done**. History has since
+  moved to a **panel of its own** with per-file diffs and lazy loading throughout; see the
+  finding on what the old list cost on every refresh
+- **Stash is withdrawn from the UI**, not finished. `StashPushAsync` / `StashApplyAsync` /
+  `StashDropAsync` and the list parser are kept, tested and unused: what was wrong was six
+  permanent controls in the narrowest column for something reached a few times a month. A
+  different design is owed
 - ~~Branch creation~~ — a dialog that validates the name **as it is typed**, against git's own
   rules, and creates-and-switches. `BranchName` is 35 unit tests in Core, because the useful
   half is the *reason* a name is refused, and git's own refusal arrives after a process spawn
@@ -256,6 +263,54 @@ does not record them has to be run again.
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### The history was re-read on every refresh, into a panel four rows tall
+
+The commit list lived at the bottom of the git panel, under the stash, with `MaxHeight="150"`
+in a 380 px column that also carried the branch card, the commit box, two file lists and six
+stash controls. Four rows, and every one of them a single line holding a hash, a subject and a
+relative age — the date and time the commit was actually made were not on screen anywhere.
+
+What it cost is the part worth writing down. This ran on every manual refresh, every refresh
+triggered by git's own metadata moving, and every branch change:
+
+```csharp
+await LoadBranchesAsync();
+await LoadCommitsAsync();     // git log
+await LoadStashesAsync();     // git stash list
+```
+
+**No part of that asked whether anybody was looking.** The rail could be on the project panel —
+it is the default, and it is where the work happens — and a commit, a checkout or a fetch still
+spawned two git processes to refill a list that was not on screen. The one interaction the list
+did offer, clicking a commit, fetched the commit's *entire* patch, because whole-commit was the
+only granularity there was. On a commit touching an exported CODESYS tree that is hundreds of
+files in one string, to read one of them.
+
+So history moved out to its own rail button, and everything about it is now demand-driven at
+four separate levels: the log is not walked until the panel is first shown, and then one page
+of fifty at a time; a commit's files are read when it is expanded; a patch is read when a file
+is clicked. A refresh behind a hidden panel *marks* it and reads nothing — deferring the cost
+without deferring the correctness, which is the only version of lazy that is safe here. A
+commit that did not appear the moment it was made would look like a commit that had failed.
+
+The file lists are cached and the patches deliberately are not. **A commit's hash is its
+content**, so its file list cannot go stale and may be held for the session; its patches are
+unbounded in size and are held only by the diff pane, one at a time. The same caching would be
+wrong one panel to the left, where the working tree changes under you.
+
+Three things surfaced while building it:
+
+| Found | Why it mattered |
+|---|---|
+| `--name-status` quotes paths | Without `-z`, git renders `Kühlschrank Regelung.st` as `"K\303\274hlschrank Regelung.st"` — quotes and octal escapes included. This repository's own fixture corpus has both spaces and umlauts in its object names, so the panel would have asked git for the diff of a path that does not exist. The same class of bug as the mangled subprocess output already recorded here: an encoding assumption at a process boundary |
+| *Show full file* would have swapped what the pane was answering | Its re-read keys off the shown path, which for a historical diff is a caption — `PLC_PRG.st @ 1a2b3c4` — not a path. Left alone it would have quietly re-read the *working tree* version of that file and rendered it under a header naming a commit. Caught before it shipped; the pane now records which source it is showing, and a refresh leaves a historical diff alone entirely |
+| A collapsed panel passes the window test | `MainWindowTests` constructs and measures the whole window, and would still have passed with a broken `DataTemplate` in it: a `StaticResource` inside a template is resolved when a row is *realised*, not when the XAML is parsed. The new test switches to the panel through the rail button, fills it, expands a commit and asserts a real `TreeViewItem` came out with a height. Written the obvious way it would have been one more vacuous pass on the pile below |
+
+The stash controls came out at the same time and are not replaced: six controls for something
+reached for a few times a month, in the column that most needed the room. The client-side
+operations — push, apply, pop, drop, and the list parser — are kept and still covered, because
+what was wrong with the stash was the shelf it sat on, not the operations.
 
 ### A window that never opened, and three instruments that called it clean
 
