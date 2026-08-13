@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | Document | Architecture and implementation plan — **the design record** |
-| Status | **Rev 11.** Phase 0 complete, Phase 1 largely complete. Implementation is under way and this document is kept in step with it |
+| Status | **Rev 12.** Phase 0 complete, Phases 1-3 substantially complete. Implementation is under way and this document is kept in step with it |
 | Where things stand | **[`STATUS.md`](STATUS.md)** — read that first |
 | Measured findings | **[`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md)** — numbers, failures and dead ends |
 | Target platform | Windows 11 desktop. Windows only, by decision (§13.7) |
@@ -33,6 +33,7 @@
 | PLCopenXML as the export format | **ST + native XML** (§3.1.5) | `textual_declaration` gives the text directly; PLCopenXML is less readable, less complete and lossy on import |
 | AvalonEdit for the diff view | **A tokenizer in `Versio.Core`** (§8.3) | Structured Text has no bundled definition, so a custom highlighter was needed regardless |
 | Inno Setup | **Velopack** (§13.5) | Delta updates on a ~110 MB app, plus an MSI for managed sites |
+| A sync panel with actions on it | **No actions at all** (§9.5, Rev 12) | Both surviving buttons were disabled almost always, which teaches people to stop looking there. A stale mirror needs no decision — it is exported when the repository opens; a failure belongs to one project, not to the panel |
 | One `config/libraries.yaml` | **One `<manager>.libraries.yaml` per library manager**, beside the object that owns it (§5) | A real project has **two** managers, not one — 21 references on the application, 13 on the project. One file cannot hold both without inventing a key to tell them apart, and placing each beside its owner is what makes a library change appear under the device it belongs to |
 
 ### The vendor seam — enforced as of 2026-08-12
@@ -1307,7 +1308,7 @@ Two implementation details that cost real debugging time and are now pinned by t
 > | 9.3 | `changed only` (default) / full tree toggle | **Always the full tree**, changes marked. The filter answered "what did I change"; as the only view it has to answer "where in the machine am I" |
 > | 9.3 | Config nodes parsed from `config/*.yaml` | **Not built, and blocked**: nothing writes that YAML yet. See STATUS item 1 |
 > | 9.4 | Stash ▾, recent commits with click-to-diff | **Built** |
-> | 9.5 | Sync panel with its own actions | **Folded away.** Its facts — toolchain, lock, staleness, heartbeat — live in the project panel; two actions survived, *Export now* and *Acknowledge failure* |
+> | 9.5 | Sync panel with its own actions | **Folded away, then emptied (Rev 12).** The toolchain, its version and its profile are environment and live in Settings → Help → System information. *Export now* is gone: the mirror is exported when the repository opens. *Acknowledge failure* is gone as a panel control and lives on the failing project's own row. What is left in the panel is transient — coverage, staleness, heartbeat — and hides itself when empty |
 >
 > The §9.3 tree design itself — one node per object, roll-up badges, GUID identity, virtualization
 > — shipped as specified and is the part worth reading. `docs/STATUS.md` is authoritative for
@@ -1523,7 +1524,7 @@ Not in your original description, but the lock model needs somewhere to live and
 
 - Current state with a plain-English sentence: *"The project file is authoritative. XML edits will not be imported until you push or discard."*
 - Last export / last import time, duration, object counts
-- *Export now* / *Import now* manual triggers
+- ~~*Export now* / *Import now* manual triggers~~ — **Rev 12: neither exists.** Both directions are automatic, and a stale mirror is exported when the repository opens. A control for something that happens on its own implies it might not have
 - The `_coverage.md` report — per layer, what was exported and what could not be, so the gaps of §3.1 are always visible rather than silently assumed
 - Round-trip fidelity check results
 - Profile pin and CODESYS path, with a *Test* button

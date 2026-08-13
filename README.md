@@ -46,7 +46,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | Staleness stated, not implied — "2 projects not yet exported" | ✅ answered by the commit gate, so the two cannot disagree |
 | **The project view follows the repository by itself** | ✅ 18 policy tests + 9 against a real filesystem; rebuilt only when something it shows changed |
 | Design system tokens, light and dark | ✅ `src/Versio.App/Theme/`; switching at runtime repaints open windows, which it never did until it was measured |
-| Logging — ring buffer, correlation ids, heartbeat, rolling file | ✅ 20 tests; "Open logs folder" selects today's file |
+| Logging — ring buffer, correlation ids, heartbeat, rolling file | ✅ 21 tests; timestamps are local and the file rolls on the local day, so the panel and the file agree; "Open logs folder" selects today's file |
 | **The export narrates itself** — directory swap with both file counts, every skip and its reason | ✅ asserted against the log a real export produces, across two runs |
 | Shell — repo/branch dropdowns, rail, changed files, diff, collapsible log | ✅ opens a real repo, shows real git state |
 | Diff view — gutter, line numbers, syntax highlighting for 11 languages | ✅ ST, C#, Python, XML, JSON, YAML, Markdown, PowerShell, JS/TS, SQL |
@@ -134,7 +134,7 @@ Versio.sln
 │  ├─ Versio.Core.Tests/        799 unit tests — pure, no IO, ~290 ms
 │  ├─ Versio.App.Tests/         45 tests that build the real dialogs against the real
 │  │                            stylesheet on an STA thread — no window is ever shown
-│  └─ Versio.Integration.Tests/ 101 tests against real CODESYS and real git, ~7 min
+│  └─ Versio.Integration.Tests/ 102 tests against real CODESYS and real git, ~7 min
 ├─ tools/                       PowerShell harnesses used during Phase 0, plus
 │                               New-VersioIcon.ps1 which generates the app icon
 ├─ assets/                      versio.svg (reference drawing) and versio.ico
@@ -207,7 +207,13 @@ dotnet test tests/Versio.Core.Tests
 > `%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe`, or set `DOTNET_ROOT` to it — the same install
 > layout that makes a framework-dependent `Versio.exe` fail to start, noted again below.
 
-The unit suite is pure and runs anywhere. The integration suite drives a real CODESYS installation and a real `git.exe`, and **skips cleanly** when either is absent:
+**Three suites, and they need different things:**
+
+| Suite | Needs | Runs in |
+|---|---|---|
+| `Versio.Core.Tests` | nothing — pure, no IO, no clock, no UI | ~0.3 s |
+| `Versio.App.Tests` | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~0.4 s |
+| `Versio.Integration.Tests` | a real CODESYS and a real `git.exe`, and **skips cleanly** when either is absent | ~7 min |
 
 ```bash
 dotnet test

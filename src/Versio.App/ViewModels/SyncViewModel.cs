@@ -201,8 +201,6 @@ public sealed class SyncViewModel : ObservableObject
     /// </remarks>
     public AsyncCommand RetryCommand { get; }
 
-    /// <summary>Display name of the toolchain this repository targets.</summary>
-    public string VendorName => _format.DisplayName;
 
     /// <summary>Whether the toolchain is installed, and which profile will be used.</summary>
     public string ToolchainState

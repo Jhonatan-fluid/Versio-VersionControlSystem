@@ -581,6 +581,29 @@
                                 </TextBlock.Style>
                             </TextBlock>
 
+                            <!-- Projects the mirror is still behind on. Normally empty: the
+                                 catch-up on open exports them. It is NOT empty when an export
+                                 could not run - the project is open in the IDE, or the
+                                 direction lock points the other way - and that is exactly when
+                                 silence would read as "in sync". -->
+                            <TextBlock DockPanel.Dock="Top" Text="{Binding Sync.StalenessSummary}"
+                                       TextWrapping="Wrap" Margin="2,0,0,8"
+                                       FontFamily="{DynamicResource Font.UI}"
+                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                       Foreground="{DynamicResource Brush.Status.Modified}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Sync.StalenessSummary}"
+                                                         Value="">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+
                             <!-- A toolchain launch is 17-31 s with nothing on screen to show
                                  for it, and silence is indistinguishable from a hang. -->
                             <TextBlock DockPanel.Dock="Top" Text="{Binding Sync.Activity}"

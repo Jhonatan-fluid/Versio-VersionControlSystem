@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-12 · **Commits:** 30 · **Tests:** 799 unit + 45 UI + 101 integration, 0 skipped
+**Date:** 2026-08-12 · **Commits:** 31 · **Tests:** 799 unit + 45 UI + 102 integration, 0 skipped
 
 > One integration test, `RepositoryWatcherTests.A_deleted_file_is_reported`, is **flaky under
 > full-suite load** — see Findings. It passes in isolation and failed once during a complete
@@ -117,7 +117,6 @@ format; `.gitattributes` covers every registered vendor's extensions.
 | **Diff view** | Eleven languages, new files rendered entirely green, *Show full file*, rows built only when realised, **per-hunk stage and unstage** |
 | **Open in the IDE** | Export runs anyway, from a copy; import waits and names who has the project. Neither marks the binding failed, and the breaker is never fed |
 | **Adoption writes `.gitignore`** | Created when absent, appended when present, never overriding an existing decision. Covers `.versio/local/` — locks, backups, scratch copies — and the toolchain's `-AllUsers.opt` and `-<user>-<machine>.opt`, the second of which carries a username and machine name in its filename |
-| **PLC state** | Toolchain, direction lock, staleness and heartbeat, folded into the project panel as facts rather than controls. Two buttons survive: export what is stale, and acknowledge a failure |
 | **Export coverage** | What the export does *not* carry, said out loud: `_coverage.md` in the tree, every skip in the manifest with a stable reason, and a sentence in the panel naming what cannot be relied on. A gap is distinguished from a deliberate omission, from a file that is exported one way, and an old manifest reports "unknown" rather than "complete" |
 | **Library references** | One `<manager>.libraries.yaml` per library manager, beside the object that owns it — what the project asks for, never how it resolved here. Hand-written YAML on both sides, no dependency added to either. **Export-only**, and stated where a reader will meet it: the file's own header, `_coverage.md`, and the manifest's `form`. **Not yet in the panel** — `CoverageSummary` speaks only when there are gaps, deliberately, and the row-level 🔒 glyph the plan asks for (§9.3) is part of the unbuilt tree work |
 | **Chrome** | One app-wide progress bar with a caption, maximized on open, log console collapsed, heartbeat during long runs |
@@ -126,6 +125,11 @@ format; `.gitattributes` covers every registered vendor's extensions.
 ---
 
 ## What remains, in dependency order
+
+> **Picking this up?** Items 1 and 2 are done and kept for their reasoning. **Start at item 3**:
+> it is small, self-contained, and finishes a feature that is already 90% built. Item 4 is the
+> largest piece of user-visible value left. Nothing below depends on anything above it except
+> where it says so.
 
 ### 1. ~~Export what is currently missing~~ — **done**
 
@@ -160,12 +164,16 @@ fixture: two library managers, **both exported now**, and `_coverage.md` reports
   is held (plan §9.2 asks for that, with a tooltip saying why). Git refuses a dirty-tree
   checkout on its own, which covers the dangerous case but not the explanation
 
-### 3. Retry automatically when the IDE closes
+### 3. Retry automatically when the IDE closes  ← **start here**
 
 Export and import both handle an open project now. The one piece left is the trigger: the
 vendor's lock file disappearing is a filesystem event the watcher could see, which would make
-closing CODESYS the retry and need no button at all. Today the next save retries and
-*Export now* covers the gap.
+closing CODESYS the retry and need no button at all.
+
+Today the next save retries, and reopening the repository retries — the catch-up export runs on
+open. What is missing is the case in between: the IDE is closed while Versio stays open, and
+nothing notices until the next save. The panel says so rather than going quiet, which is what
+`StalenessSummary` is for.
 
 ### 4. Finish the project tree
 
@@ -199,6 +207,31 @@ being CODESYS-derived, and Studio 5000 the harshest.
 ### 8. Corpus breadth
 
 More fixture projects. Every field bug becomes a fixture before it is fixed.
+
+---
+
+## Known loose ends, from an audit of the repository
+
+Small, specific, and none of them blocking. Written down because an audit that finds things and
+does not record them has to be run again.
+
+- **Orphan findings are computed and shown nowhere.** `OrphanScanner` runs on every scan and
+  `SyncViewModel.Findings` is populated from it — an export tree whose project was deleted, a
+  binding pointing at nothing — and no view binds that collection. It reaches the log as a
+  count and nothing else. Either surface it in the panel or delete the collection; leaving it
+  is the shape of bug this codebase keeps finding.
+- **`ToolchainState` is a public observable property with no view.** It survives because the
+  runner uses its text as the "why this is unavailable" explanation. It should be a plain
+  string, not a bindable one.
+- **The branch dropdown does not refuse a switch while a direction lock is held** (plan §9.2).
+  Git refuses a dirty-tree checkout on its own, which covers the dangerous case without
+  explaining it.
+- **Adoption writes no line-ending rules to `.gitattributes`** — only binary/LFS rules for the
+  project extensions. This repository's own `* text=auto eol=lf` was typed by hand. On a
+  machine with `core.autocrlf=true`, a cloned mirror may read as entirely modified. Measure it
+  before fixing: the repo's own rule is that a plausible inference is not a measurement.
+- **One integration test is flaky under full-suite load** — see the finding below. Diagnosed,
+  two fixes attempted and reverted, left alone deliberately.
 
 ---
 
@@ -249,6 +282,25 @@ nothing happened.
 One wording fix fell out of it. `SatisfyGateAsync` logged "exporting stale bindings before the
 commit", which was true when only the commit gate called it and false for the two callers added
 since — in a log read precisely when somebody is working out what the app did on its own.
+
+### The log said one time in the panel and another in the file
+
+Two renderings of one instant. `LogViewModel.Time` called `ToLocalTime()`; `LogEvent.Format()`,
+which is what the file sink writes, formatted the raw UTC stamp. So an entry read as 17:14 in
+the app and 00:14 in the file — and the file is the copy somebody opens hours later, while
+correlating against the CODESYS log and their own memory of when it happened. The file names
+were UTC-dated too, so an afternoon's work in Pacific time lived in a file named for tomorrow.
+
+Both now render local, and the file rolls on the **local** day so its name matches the stamps
+inside it. `LogEvent.Timestamp` stays UTC: ordering, rolling and the tests all want one
+unambiguous instant, and only the rendering was ever the problem.
+
+**The first test written for it was vacuous, and only breaking the code showed it.** It built
+the timestamp with a *local* offset — where `ToLocalTime()` is the identity and both renderings
+are identical by construction. It passed against the bug it was written to catch. Rebuilt with
+a UTC-offset stamp, as the real logger produces, it fails properly. That is the thirteenth
+vacuous pass caught this way, and the second in two days from the same root cause: a test whose
+input cannot distinguish the two behaviours it is comparing.
 
 ### The theme switch changed a colour nothing was looking at
 
@@ -666,7 +718,7 @@ Two things the integration test caught that nothing else would have:
 - **The scratch folder is emptied, not the copy deleted.** Removing only the file we created left the toolchain's own files behind for good. The first write-up of this named the wrong file — `.~u`, inferred rather than looked at, because the test had already cleaned up. Measured properly afterwards: a clean open/close leaves **nothing**, and it is the *export* that leaves `<name>-AllUsers.opt` and `<name>-<user>-<machine>.opt`. See the finding below.
 - **The test's own CODESYS launch used `ArgumentList`**, which quotes the whole `--profile=A B C` pair — the trap already documented in the README and covered by `ArgumentBuildingTests`. It exits 1 in under a second with no output, and the symptom was two silently skipped tests. It now uses `LocalCodesysRunner.BuildArguments`, which also means the test launches CODESYS the same way the product does.
 
-Not built, and deliberately: **automatic retry when the IDE closes.** The `.~u` disappearing is a filesystem event the watcher could see, which would make closing CODESYS the trigger and need no button. Today the next save retries, and *Export now* is there meanwhile. Worth doing, not worth blocking this on.
+Not built, and deliberately: **automatic retry when the IDE closes.** The `.~u` disappearing is a filesystem event the watcher could see, which would make closing CODESYS the trigger and need no button. Today the next save retries, and so does reopening the repository. Worth doing, not worth blocking this on. *(Written when an "Export now" button existed; it has since been deleted in favour of exporting on open.)*
 
 ### A project open in the CODESYS IDE — measured, and it is the normal case
 
@@ -1026,7 +1078,7 @@ state machine are tested in milliseconds rather than by causing real crashes.
 a paragraph in a README — because it was a paragraph in a README, and it had already stopped
 being true.
 
-**Green results are distrusted until they can fail.** Twelve vacuous passes have been caught
+**Green results are distrusted until they can fail.** Thirteen vacuous passes have been caught
 this way — counting the determinism test that compared the one file with no GUIDs in it, and
 the two the library reader gave up when it was broken on purpose: a parameters test that could
 not have failed because a list dash already prevented the leak it asserted, and a

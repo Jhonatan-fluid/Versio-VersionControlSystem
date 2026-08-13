@@ -80,7 +80,11 @@ public sealed class RollingFileSink : ILogSink, IDisposable
     {
         lock (_gate)
         {
-            var day = DateOnly.FromDateTime(entry.Timestamp.UtcDateTime);
+            // The LOCAL day, matching what Format() renders. A file named for the 13th
+            // holding entries stamped 17:00 on the 12th is the confusion this whole change
+            // was about, and the file name is what somebody picks when asked for "yesterday's
+            // log".
+            var day = DateOnly.FromDateTime(entry.Timestamp.ToLocalTime().DateTime);
             if (_writer is null || day != _openFor)
             {
                 _writer?.Dispose();
@@ -138,7 +142,9 @@ public sealed class RollingFileSink : ILogSink, IDisposable
         }
     }
 
-    private static DateOnly Today() => DateOnly.FromDateTime(DateTime.UtcNow);
+    /// <summary>Today where the user is, so <see cref="CurrentFile"/> names the file that
+    /// entries are actually going to.</summary>
+    private static DateOnly Today() => DateOnly.FromDateTime(DateTime.Now);
 
     /// <summary>Sortable by name, which is what makes the folder readable at a glance.</summary>
     private static string FileNameFor(DateOnly day) => $"versio-{day:yyyy-MM-dd}.log";

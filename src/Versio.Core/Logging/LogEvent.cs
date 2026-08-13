@@ -106,8 +106,16 @@ public sealed record LogEvent
 
     /// <summary>Render for a text log. The exception, when present, follows on its own
     /// lines — a stack trace squeezed onto one line is a stack trace nobody reads.</summary>
+    /// <remarks>
+    /// <b>Rendered in LOCAL time, while <see cref="Timestamp"/> stays UTC.</b> The stored value
+    /// is UTC so that ordering, rolling and tests are unambiguous; the rendered value is local
+    /// because the person reading it is correlating against their own clock, the CODESYS log
+    /// and the Windows event log. The file used to render UTC while the in-app log panel
+    /// rendered local, so the same entry read as two different times depending on where you
+    /// looked at it — the worst of both.
+    /// </remarks>
     public string Format() =>
-        $"{Timestamp:HH:mm:ss.fff} {Abbreviate(Level)} [{Category}] " +
+        $"{Timestamp.ToLocalTime():HH:mm:ss.fff} {Abbreviate(Level)} [{Category}] " +
         (OperationId is null ? string.Empty : $"{{{OperationId}}} ") +
         Message +
         (Exception is null ? string.Empty : $"\n{Exception}");

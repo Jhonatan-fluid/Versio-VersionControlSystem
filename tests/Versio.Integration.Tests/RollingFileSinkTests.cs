@@ -181,15 +181,20 @@ public sealed class RollingFileSinkTests : IDisposable
     {
         // The date in the name is what makes "it broke on Tuesday" a file rather than a
         // search, so it tracks the entry's own timestamp, not the wall clock.
+        //
+        // Anchored to LOCAL midday, and deliberately so. The file rolls on the local day
+        // because that is the day the rendered timestamps belong to; writing these as
+        // 09:00 UTC made the test pass in this timezone and fail west of UTC-9, where that
+        // instant is the previous local day.
         using var sink = new RollingFileSink(_dir);
 
         sink.Emit(Entry(LogLevel.Information, "monday") with
         {
-            Timestamp = new DateTimeOffset(2026, 3, 2, 9, 0, 0, TimeSpan.Zero),
+            Timestamp = Local(2026, 3, 2),
         });
         sink.Emit(Entry(LogLevel.Information, "tuesday") with
         {
-            Timestamp = new DateTimeOffset(2026, 3, 3, 9, 0, 0, TimeSpan.Zero),
+            Timestamp = Local(2026, 3, 3),
         });
 
         var monday = Path.Combine(_dir, "versio-2026-03-02.log");
@@ -245,6 +250,42 @@ public sealed class RollingFileSinkTests : IDisposable
         Assert.Equal(_dir, sink.LogDirectory);
         Assert.True(Directory.Exists(sink.LogDirectory));
     }
+
+    [SkippableFact]
+    public void The_file_and_the_panel_agree_about_what_time_it_was()
+    {
+        // They did not. The panel rendered ToLocalTime and the file rendered the raw stamp,
+        // so one entry read as two different times depending on where you looked - and the
+        // file is the copy somebody reads hours later, correlating against the CODESYS log
+        // and their own memory of when it happened.
+        //
+        // The timestamp MUST be built with a UTC offset, which is what the real logger
+        // produces. The first version of this test used a local-offset value, where both
+        // renderings are identical by construction - it passed against the bug it was
+        // written to catch, and only breaking the code on purpose showed it up.
+        var utc = new DateTimeOffset(2026, 3, 2, 20, 0, 0, TimeSpan.Zero);
+        var local = utc.ToLocalTime();
+
+        Skip.If(local.Hour == utc.Hour && local.Day == utc.Day,
+                "this machine runs on UTC, so there are no two times to tell apart");
+
+        using var sink = new RollingFileSink(_dir);
+        sink.Emit(Entry(LogLevel.Information, "marker") with { Timestamp = utc });
+
+        // Named for the LOCAL day, because that is the day its entries are stamped with.
+        var text = ReadShared(Path.Combine(_dir, $"versio-{local:yyyy-MM-dd}.log"));
+
+        Assert.Contains(local.ToString("HH:mm:ss"), text, StringComparison.Ordinal);
+        Assert.DoesNotContain(utc.ToString("HH:mm:ss"), text, StringComparison.Ordinal);
+    }
+
+    /// <summary>Local midday on a given date, as the instant it really is.</summary>
+    /// <remarks>
+    /// Midday rather than midnight so that no offset on earth pushes it into a neighbouring
+    /// day, which is the whole hazard being avoided.
+    /// </remarks>
+    private static DateTimeOffset Local(int year, int month, int day) =>
+        new(new DateTime(year, month, day, 12, 0, 0, DateTimeKind.Local));
 
     private static LogEvent Entry(LogLevel level, string message, Exception? exception = null) => new()
     {
