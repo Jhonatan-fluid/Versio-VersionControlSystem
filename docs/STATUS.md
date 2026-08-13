@@ -1,6 +1,11 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-12 · **Commits:** 32 · **Tests:** 800 unit + 45 UI + 102 integration, 0 skipped
+**Date:** 2026-08-12 · **Commits:** 40 · **Tests:** 800 unit + 45 UI + 102 integration, 0 skipped
+
+> Both numbers are re-derivable rather than remembered: `git rev-list --count HEAD`, and
+> `dotnet test` prints a total per suite. The commit count in this header was wrong by twelve
+> before an audit checked it — a hand-maintained number that nothing verifies drifts silently,
+> which is the same class of problem as a comment claiming a file nobody wrote.
 
 > One integration test, `RepositoryWatcherTests.A_deleted_file_is_reported`, is **flaky under
 > full-suite load** — see Findings. It passes in isolation and failed once during a complete
@@ -21,7 +26,7 @@ end against the real fixture with real CODESYS.
 
 ```
   CODESYS pipeline    ████████████████████  proven on a real project
-  Domain core         ████████████████████  721 tests, 286 ms
+  Domain core         ████████████████████  800 tests, 311 ms
   Vendor seam         ████████████████████  enforced from assembly metadata
   Infrastructure      ████████████████████  drives real CODESYS + real git
   Desktop shell       ███████████████████░  one project view, full git surface, diff
@@ -230,6 +235,10 @@ does not record them has to be run again.
   project extensions. This repository's own `* text=auto eol=lf` was typed by hand. On a
   machine with `core.autocrlf=true`, a cloned mirror may read as entirely modified. Measure it
   before fixing: the repo's own rule is that a plausible inference is not a measurement.
+- **Hand-maintained counts in these documents drift.** The commit count was wrong by twelve,
+  the project tree's test count by six, and the scenario suite's by twenty-two — all of them
+  written once and never re-checked. Re-derive rather than trust: `git rev-list --count HEAD`,
+  and `dotnet test --filter FullyQualifiedName~<TestClass>` for a per-area figure.
 - **One integration test is flaky under full-suite load** — see the finding below. Diagnosed,
   two fixes attempted and reverted, left alone deliberately.
 
@@ -793,8 +802,9 @@ before the lock is believed. `LockRecoveryPolicy` already does exactly that reas
 Versio's locks.
 
 **The defect this exposes is not the refusal, it is what Versio does with it.** A refusal
-arrives as a failed run, and a failed binding stops syncing until somebody presses
-*Acknowledge failure*. So the most common working state in the tool's whole life — the IDE
+arrives as a failed run, and a failed binding stops syncing until somebody acknowledges it
+— then a button called *Acknowledge failure* on the panel, now *Try again* on the failing
+project's own row. So the most common working state in the tool's whole life — the IDE
 open — turns into a sticky failure requiring a button press, over and over. "The project is
 open" is not a failure; it is a *wait*.
 
