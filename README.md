@@ -208,7 +208,10 @@ That is not tidiness for its own sake — it is what makes the risky parts (the 
 | | |
 |---|---|
 | .NET SDK | 9.0.317 (pinned in `global.json`) |
-| git | 2.x with `git-lfs` |
+| git | 2.x with `git-lfs`, **on `PATH`** — Versio resolves `git` from `PATH` and drives it for
+  everything, so a machine without it starts and says so rather than working. Nothing is
+  vendored: that is what makes Git Credential Manager, SSH agents, 2FA and corporate proxies
+  behave exactly as they do in your own terminal. |
 | CODESYS | 3.5 SP22 — **integration tests only**, unit tests need none |
 
 ```bash

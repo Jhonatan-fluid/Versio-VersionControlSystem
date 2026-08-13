@@ -245,10 +245,166 @@ public sealed partial class GitCliClient(
         return result.Success ? result.StdOut.Trim() : string.Empty;
     }
 
+    /// <summary>Who git will attribute a commit to, as git itself resolves it.</summary>
+    /// <remarks>
+    /// Plain <c>--get</c> rather than <c>--local --get</c>: a name inherited from the global or
+    /// system config is a working identity, and reporting it as missing would nag every user
+    /// who configured git once, years ago, the way everybody is told to.
+    /// <para>
+    /// Exit 1 means "no such key", which is the ordinary answer on a fresh machine and not a
+    /// failure worth logging as one — so both calls fall back to empty rather than throwing.
+    /// </para>
+    /// </remarks>
+    public async Task<GitIdentity> IdentityAsync(CancellationToken ct)
+    {
+        var name = await RunAsync(["config", "--get", "user.name"], null, ct,
+                                  TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+        var email = await RunAsync(["config", "--get", "user.email"], null, ct,
+                                   TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+
+        var identity = GitIdentity.From(
+            name.Success ? name.StdOut : string.Empty,
+            email.Success ? email.StdOut : string.Empty);
+
+        _log.Debug(LogCategory.Git,
+            identity.IsComplete
+                ? $"identity: {identity.Name} <{identity.Email}>"
+                : $"identity incomplete: {identity.Explanation}");
+
+        return identity;
+    }
+
+    /// <summary>Write a name and email into git's configuration.</summary>
+    /// <remarks>
+    /// Two writes, and the second is attempted even when the first fails, so a half-configured
+    /// machine does not stay half-configured because of one bad value. The failure returned is
+    /// the first one, since that is the one whose message explains what went wrong.
+    /// </remarks>
+    public async Task<GitResult> SetIdentityAsync(
+        string name, string email, bool global, CancellationToken ct)
+    {
+        var scope = global ? "--global" : "--local";
+        _log.Info(LogCategory.Git, $"setting {scope} identity to {name} <{email}>");
+
+        var wroteName = await RunAsync(["config", scope, "user.name", name], null, ct,
+                                       TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+        var wroteEmail = await RunAsync(["config", scope, "user.email", email], null, ct,
+                                        TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+
+        if (!wroteName.Success)
+        {
+            _log.Error(LogCategory.Git, $"could not write user.name: {wroteName.FailureReason}");
+            return wroteName;
+        }
+
+        if (!wroteEmail.Success)
+        {
+            _log.Error(LogCategory.Git, $"could not write user.email: {wroteEmail.FailureReason}");
+        }
+
+        return wroteEmail;
+    }
+
     public Task<GitResult> VerifyRemoteAsync(string url, CancellationToken ct)
     {
         _log.Info(LogCategory.Git, $"verifying remote {Redact(url)}");
         return RunAsync(["ls-remote", "--heads", url], null, ct, TimeSpan.FromSeconds(20));
+    }
+
+    /// <summary>
+    /// Ask whether git can be run at all, before any repository is open.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Static, for the same reason <see cref="CloneAsync"/> is:</b> it runs where there is no
+    /// repository. It runs at launch, so the one machine that needs this answered — the one
+    /// without git — gets it before anything else has a chance to fail obscurely.
+    /// </para>
+    /// <para>
+    /// A missing executable surfaces as <see cref="System.ComponentModel.Win32Exception"/> from
+    /// the process start, not as a non-zero exit code, so it is caught rather than read off a
+    /// <see cref="GitResult"/>. <see cref="IOException"/> comes with it because a PATH entry on
+    /// a dead network share throws that instead, and both mean the same thing to a user.
+    /// </para>
+    /// <para>
+    /// The executable's own path is resolved separately and its failure is not the probe's
+    /// failure: <c>--version</c> having succeeded already proves git runs, and the path is a
+    /// diagnostic nicety for the machines carrying several gits.
+    /// </para>
+    /// </remarks>
+    public static async Task<GitPresence> ProbeAsync(
+        string gitExecutable, IVersioLogger? logger, CancellationToken ct)
+    {
+        var log = logger ?? NullLogger.Instance;
+
+        try
+        {
+            var client = new GitCliClient(Path.GetTempPath(), gitExecutable, logger);
+            var version = await client.VersionAsync(ct).ConfigureAwait(false);
+
+            if (string.IsNullOrWhiteSpace(version))
+            {
+                log.Warn(LogCategory.Git, "git ran but reported no version");
+                return GitPresence.NotFound("git ran but reported no version");
+            }
+
+            var path = await ResolveExecutableAsync(gitExecutable, ct).ConfigureAwait(false);
+            log.Info(LogCategory.Git,
+                     $"git found: {version.Trim()}" + (path.Length == 0 ? "" : $" at {path}"));
+
+            return GitPresence.Found(version, path);
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or IOException)
+        {
+            log.Error(LogCategory.Git, $"git could not be run: {ex.Message}", ex);
+            return GitPresence.NotFound(ex.Message);
+        }
+    }
+
+    /// <summary>Where the <c>git</c> that will run actually lives, or empty.</summary>
+    /// <remarks>
+    /// <c>git --exec-path</c> reports git's own libexec directory rather than the executable, so
+    /// the question is put to the OS instead. A failure here is silent by design — see
+    /// <see cref="ProbeAsync"/>.
+    /// </remarks>
+    private static async Task<string> ResolveExecutableAsync(string gitExecutable, CancellationToken ct)
+    {
+        if (Path.IsPathRooted(gitExecutable))
+        {
+            return gitExecutable;
+        }
+
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = OperatingSystem.IsWindows() ? "where" : "which",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                StandardOutputEncoding = new UTF8Encoding(false),
+            };
+            psi.ArgumentList.Add(gitExecutable);
+
+            using var process = Process.Start(psi);
+            if (process is null)
+            {
+                return string.Empty;
+            }
+
+            var output = await process.StandardOutput.ReadToEndAsync(ct).ConfigureAwait(false);
+            await process.WaitForExitAsync(ct).ConfigureAwait(false);
+
+            // `where` lists every match, one per line. The first is the one PATH resolves to.
+            return process.ExitCode == 0
+                ? output.Split('\n').FirstOrDefault()?.Trim() ?? string.Empty
+                : string.Empty;
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or IOException)
+        {
+            return string.Empty;
+        }
     }
 
     /// <summary>

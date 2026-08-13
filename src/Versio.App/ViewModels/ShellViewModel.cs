@@ -907,6 +907,122 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref _statusSummary, value);
     }
 
+    // ------------------------------------------------------- git's own health (plan §12a/§12b)
+
+    private GitPresence _gitPresence = GitPresence.Unknown;
+    private GitIdentity _identity = GitIdentity.None;
+
+    /// <summary>
+    /// Whether the git everything runs through is actually there.
+    /// </summary>
+    /// <remarks>
+    /// Probed once at launch by <see cref="ProbeGitAsync"/> rather than on first use, so a
+    /// machine without git is told in a sentence instead of discovering it as an exception from
+    /// somewhere deep. Starts <see cref="GitPresence.Unknown"/>, which is not
+    /// <c>Missing</c> — see that type.
+    /// </remarks>
+    public GitPresence GitPresence
+    {
+        get => _gitPresence;
+        private set
+        {
+            if (SetProperty(ref _gitPresence, value))
+            {
+                OnPropertyChanged(nameof(GitIsMissing));
+                OnPropertyChanged(nameof(GitPresenceExplanation));
+            }
+        }
+    }
+
+    /// <summary>True only once the probe has come back and said no.</summary>
+    public bool GitIsMissing => _gitPresence.Availability == GitAvailability.Missing;
+
+    public string GitPresenceExplanation => _gitPresence.Explanation;
+
+    /// <summary>
+    /// Who git will attribute a commit to in the open repository.
+    /// </summary>
+    /// <remarks>
+    /// Read at open, and again after the user sets it. <see cref="CanCommit"/> gates on it, so
+    /// the export gate never runs a 17–31 second CODESYS export for a commit that git was
+    /// always going to refuse.
+    /// </remarks>
+    public GitIdentity Identity
+    {
+        get => _identity;
+        private set
+        {
+            if (SetProperty(ref _identity, value))
+            {
+                OnPropertyChanged(nameof(IdentityIsMissing));
+                OnPropertyChanged(nameof(IdentityExplanation));
+                IdentityName = value.Name;
+                IdentityEmail = value.Email;
+                RaiseGitCommandStates();
+            }
+        }
+    }
+
+    /// <summary>True when a repository is open and git could not name a committer.</summary>
+    /// <remarks>
+    /// Gated on having a repository, because with none open there is nothing to be missing an
+    /// identity <i>for</i>, and a prompt on an empty shell is noise.
+    /// </remarks>
+    public bool IdentityIsMissing => _git is not null && !_identity.IsComplete;
+
+    public string IdentityExplanation => _identity.Explanation;
+
+    private string _identityName = string.Empty;
+    private string _identityEmail = string.Empty;
+    private bool _identityGlobal;
+
+    /// <summary>Edit buffer for the name field. Separate from <see cref="Identity"/> so typing
+    /// does not claim to have configured anything until Save is pressed.</summary>
+    public string IdentityName
+    {
+        get => _identityName;
+        set
+        {
+            if (SetProperty(ref _identityName, value))
+            {
+                SaveIdentityCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public string IdentityEmail
+    {
+        get => _identityEmail;
+        set
+        {
+            if (SetProperty(ref _identityEmail, value))
+            {
+                OnPropertyChanged(nameof(IdentityEmailLooksWrong));
+                SaveIdentityCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Write to the global config as well as this repository.
+    /// </summary>
+    /// <remarks>
+    /// Off by default. A work machine carrying a personal global identity is a common and
+    /// annoying way to attribute commits to the wrong person, and the repository in front of
+    /// the user is the one they are answering about.
+    /// </remarks>
+    public bool IdentityGlobal
+    {
+        get => _identityGlobal;
+        set => SetProperty(ref _identityGlobal, value);
+    }
+
+    /// <summary>Advisory: the address does not have the shape of one. Never blocks Save.</summary>
+    public bool IdentityEmailLooksWrong =>
+        _identityEmail.Length > 0 && !GitIdentity.From(_identityName, _identityEmail).LooksLikeEmail;
+
+    public AsyncCommand SaveIdentityCommand { get; private set; } = null!;
+
     public string SelectedDiff
     {
         get => _selectedDiff;
@@ -1125,6 +1241,18 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         rows.Add(Views.SystemInfoRow.Section("GIT"));
         rows.Add(new Views.SystemInfoRow("Version", await GitVersionAsync(ct).ConfigureAwait(true)));
 
+        // Which git, not just which version. A machine can carry a Git for Windows install, one
+        // inside a vendor toolchain and one on a build agent's PATH; they all answer --version
+        // and only one of them has the credentials. Blank until the launch probe has resolved
+        // it, and blank is not a failure - see GitPresence.ExecutablePath.
+        rows.Add(new Views.SystemInfoRow("Path",
+            GitPresence.ExecutablePath.Length > 0 ? GitPresence.ExecutablePath : "not resolved"));
+
+        rows.Add(new Views.SystemInfoRow("Commits as",
+            _identity.IsComplete
+                ? $"{_identity.Name} <{_identity.Email}>"
+                : _identity.Explanation));
+
         rows.Add(Views.SystemInfoRow.Section("RUNTIME"));
         rows.Add(new Views.SystemInfoRow(".NET",
             System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription));
@@ -1215,6 +1343,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         var remoteUrl = await client.RemoteUrlAsync("origin", busy.Token).ConfigureAwait(true);
 
         await RememberAsync(path, remoteUrl).ConfigureAwait(true);
+
+        // Before the first refresh, and long before anything can be committed, so the panel
+        // can say "git needs a name" while the user is still looking at an empty commit box
+        // rather than after a 17-31 s export has run for a commit git will refuse.
+        await LoadIdentityAsync(busy.Token).ConfigureAwait(true);
 
         RefreshCommand.RaiseCanExecuteChanged();
 
@@ -1462,6 +1595,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // whenever nothing else is running, unlike every other command here.
         CloneCommand = new AsyncCommand(() => CloneRepositoryAsync(), () => !Busy.IsBusy, ReportError);
 
+        SaveIdentityCommand = new AsyncCommand(SaveIdentityAsync, CanSaveIdentity, ReportError);
+
         // Every git button consults the same shared flag, so the moment one operation starts
         // they all go dead together. AsyncCommand.IsRunning only disables the button that was
         // pressed, which would leave Push live during a Pull.
@@ -1505,8 +1640,96 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// </remarks>
     private bool Ready => _git is not null && !Busy.IsBusy;
 
+    /// <summary>
+    /// Whether a commit may be attempted at all.
+    /// </summary>
+    /// <remarks>
+    /// <b><see cref="Identity"/> is part of the gate, and that is the point of it.</b> The PLC
+    /// export gate runs before the commit, so without this check a machine with no
+    /// <c>user.email</c> spends 17–31 seconds exporting a CODESYS project and is then handed
+    /// git's nine-line lecture about configuring an identity. The wait is what makes that
+    /// failure expensive, and it is entirely avoidable from two <c>git config --get</c> calls
+    /// made when the repository opened.
+    /// </remarks>
     private bool CanCommit() =>
-        Ready && Staged.Count > 0 && !string.IsNullOrWhiteSpace(CommitMessage);
+        Ready && Staged.Count > 0 && !string.IsNullOrWhiteSpace(CommitMessage)
+        && _identity.IsComplete;
+
+    /// <summary>
+    /// Ask whether git can be run at all. Once, at launch.
+    /// </summary>
+    /// <remarks>
+    /// Called by the host before any repository is opened, because the machine that needs the
+    /// answer is the one where opening a repository is what fails. Never throws: a probe that
+    /// could take the application down with it would be worse than the absence it is reporting.
+    /// </remarks>
+    public async Task ProbeGitAsync(CancellationToken ct)
+    {
+        GitPresence = await GitCliClient.ProbeAsync("git", _logger, ct).ConfigureAwait(true);
+
+        if (!GitPresence.IsUsable)
+        {
+            StatusSummary = "Git is not available";
+        }
+    }
+
+    /// <summary>Read who git will attribute a commit to, and let the panel say so.</summary>
+    private async Task LoadIdentityAsync(CancellationToken ct)
+    {
+        if (_git is null)
+        {
+            Identity = GitIdentity.None;
+            return;
+        }
+
+        Identity = await _git.IdentityAsync(ct).ConfigureAwait(true);
+        OnPropertyChanged(nameof(IdentityIsMissing));
+
+        if (!_identity.IsComplete)
+        {
+            // Info, not Warn: an unconfigured machine is an ordinary state on a first run, and
+            // the panel is already saying so where the user can act on it.
+            _logger.Info(LogCategory.Git, $"commit identity incomplete — {_identity.Explanation}");
+        }
+    }
+
+    /// <summary>Write the name and email the user typed, then re-read what git now reports.</summary>
+    /// <remarks>
+    /// Re-read rather than assumed. Writing <c>--local</c> into a repository whose global config
+    /// already holds a different identity is a case where what git will use and what Versio just
+    /// wrote are not obviously the same thing, and the panel must report git's answer.
+    /// </remarks>
+    private async Task SaveIdentityAsync()
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        _logger.Click("Git.SaveIdentity");
+        using var busy = Busy.Begin(WorkKind.GitWrite, "Setting the git identity…");
+
+        var result = await _git.SetIdentityAsync(
+            IdentityName.Trim(), IdentityEmail.Trim(), IdentityGlobal, busy.Token)
+            .ConfigureAwait(true);
+
+        if (!result.Success)
+        {
+            StatusSummary = result.FailureReason ?? "git would not write that identity";
+            return;
+        }
+
+        await LoadIdentityAsync(busy.Token).ConfigureAwait(true);
+        StatusSummary = _identity.IsComplete
+            ? $"Committing as {_identity.Name} <{_identity.Email}>."
+            : _identity.Explanation;
+    }
+
+    private bool CanSaveIdentity() =>
+        _git is not null
+        && !Busy.IsBusy
+        && !string.IsNullOrWhiteSpace(IdentityName)
+        && !string.IsNullOrWhiteSpace(IdentityEmail);
 
     private void RaiseGitCommandStates()
     {
@@ -1522,6 +1745,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         DiscardCommand.RaiseCanExecuteChanged();
         CreateBranchCommand.RaiseCanExecuteChanged();
         CloneCommand.RaiseCanExecuteChanged();
+        SaveIdentityCommand.RaiseCanExecuteChanged();
     }
 
     /// <summary>Stage or unstage every row in a list.</summary>

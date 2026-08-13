@@ -15,9 +15,17 @@ namespace Versio.Core.Abstractions;
 ///   <item><b>It removes R19 outright.</b> LibGit2Sharp carries native <c>git2-*.dll</c>
 ///     binaries, which are the documented way <c>PublishSingleFile</c> breaks. A pure-CLI
 ///     client has no native payload at all.</item>
-///   <item><b>git.exe is already a hard dependency.</b> PortableGit is vendored for
-///     credentials, LFS and network operations regardless, so the CLI costs nothing extra
-///     while LibGit2Sharp adds a second thing to keep in step with it.</item>
+///   <item><b>git.exe is already a hard dependency.</b> Credentials, LFS and network
+///     operations all go through the engineer's own git regardless, so the CLI costs nothing
+///     extra while LibGit2Sharp adds a second thing to keep in step with it.
+///     <para>
+///     This item used to claim PortableGit was <i>vendored</i> for those. It is not, and never
+///     was: <see cref="GitProbe"/> resolves <c>git</c> from <c>PATH</c>, which is why a machine
+///     without it gets an explained empty state rather than a working application. Vendoring
+///     remains an option and would not change this interface; the sentence was corrected
+///     rather than the code, because a doc comment asserting a dependency that does not exist
+///     is the same defect class as a comment claiming a rule nothing enforces.
+///     </para></item>
 ///   <item><b>Porcelain v2 is a stable machine format</b>, explicitly guaranteed across
 ///     versions. Parsing it is a bounded, testable problem — and it is now covered by
 ///     unit tests over real output shapes, which is more verification than the
@@ -40,6 +48,33 @@ public interface IGitClient
     /// real confusion on machines carrying several.
     /// </remarks>
     Task<string> VersionAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Who git will attribute a commit in this repository to.
+    /// </summary>
+    /// <remarks>
+    /// Read at repository open rather than discovered at commit time. A commit with no identity
+    /// fails with a lecture from git — and in Versio it fails <i>after</i> the export gate has
+    /// run a 17–31 second CODESYS export, because the gate goes first so the mirror is never
+    /// committed stale. Two <c>git config --get</c> calls remove that entirely.
+    /// <para>
+    /// Resolved the way git itself resolves it, so a value inherited from the global or system
+    /// config counts as present: what matters is whether the commit will succeed, not where the
+    /// setting was written.
+    /// </para>
+    /// </remarks>
+    Task<GitIdentity> IdentityAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Write a name and email into git's configuration.
+    /// </summary>
+    /// <param name="global">
+    /// Write to the user's global config rather than this repository's. <b>Local is the
+    /// default</b>, because a work machine carrying a personal global identity is a common and
+    /// annoying way to attribute commits to the wrong person, and the repository in front of
+    /// the user is the one they are answering about.
+    /// </param>
+    Task<GitResult> SetIdentityAsync(string name, string email, bool global, CancellationToken ct);
 
     Task<GitStatus> StatusAsync(CancellationToken ct);
 

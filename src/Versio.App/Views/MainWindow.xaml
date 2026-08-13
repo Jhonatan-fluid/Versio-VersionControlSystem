@@ -382,6 +382,99 @@
                          landing while the gate's export is still writing the mirror. -->
                     <Border Grid.Row="1" x:Name="GitPanel" Visibility="Collapsed" Padding="14,0,12,12">
                         <DockPanel>
+                            <!-- GIT ITSELF IS MISSING.
+
+                                 First, above everything, because nothing below it can work:
+                                 every operation in this panel is git.exe resolved from PATH.
+                                 A first-class state rather than a toast, because it does not
+                                 go away and there is nothing else to look at.
+
+                                 Bound to GitIsMissing, which is false until the launch probe
+                                 has actually answered - GitPresence.Unknown is deliberately
+                                 not Missing, or this banner would flash on every launch
+                                 during the moment before the probe returns. -->
+                            <Border DockPanel.Dock="Top"
+                                    Background="{DynamicResource Brush.Surface.Sunken}"
+                                    CornerRadius="{DynamicResource Radius.Control}"
+                                    Padding="10,8" Margin="0,0,0,10"
+                                    Visibility="{Binding GitIsMissing,
+                                        Converter={StaticResource BoolToVisibility}}">
+                                <StackPanel>
+                                    <TextBlock Text="GIT NOT AVAILABLE"
+                                               Style="{StaticResource SectionLabel}"
+                                               Foreground="{DynamicResource Brush.Status.Deleted}" />
+                                    <TextBlock Text="{Binding GitPresenceExplanation}"
+                                               TextWrapping="Wrap" Margin="0,6,0,0"
+                                               FontFamily="{DynamicResource Font.UI}"
+                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                               Foreground="{DynamicResource Brush.Text.Primary}" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- COMMIT IDENTITY.
+
+                                 git commit refuses without user.name and user.email, and in
+                                 Versio it refuses AFTER the export gate has spent 17-31 s
+                                 running CODESYS - the gate goes first so the mirror is never
+                                 committed stale. A long wait followed by git's nine-line
+                                 lecture is the worst first run this app can produce, and
+                                 two config reads at open remove it entirely.
+
+                                 Persistent rather than a toast: it is a state to be fixed,
+                                 not an event that happened. It disappears the moment git can
+                                 name a committer. -->
+                            <Border DockPanel.Dock="Top"
+                                    Background="{DynamicResource Brush.Surface.Sunken}"
+                                    CornerRadius="{DynamicResource Radius.Control}"
+                                    Padding="10,8" Margin="0,0,0,10"
+                                    Visibility="{Binding IdentityIsMissing,
+                                        Converter={StaticResource BoolToVisibility}}">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding IdentityExplanation}"
+                                               TextWrapping="Wrap"
+                                               FontFamily="{DynamicResource Font.UI}"
+                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                               Foreground="{DynamicResource Brush.Status.Modified}" />
+
+                                    <TextBox Style="{StaticResource FlatTextBox}"
+                                             Margin="0,8,0,0" Tag="Your name"
+                                             Height="{DynamicResource Size.Control.Compact}"
+                                             Text="{Binding IdentityName,
+                                                 UpdateSourceTrigger=PropertyChanged}" />
+                                    <TextBox Style="{StaticResource FlatTextBox}"
+                                             Margin="0,6,0,0" Tag="you@example.com"
+                                             Height="{DynamicResource Size.Control.Compact}"
+                                             Text="{Binding IdentityEmail,
+                                                 UpdateSourceTrigger=PropertyChanged}" />
+
+                                    <!-- Advisory, never a gate: git accepts anything non-empty,
+                                         and engineer@plc is a perfectly good intranet address.
+                                         Refusing it would make Versio stricter than the git it
+                                         is driving. -->
+                                    <TextBlock Text="That does not look like an email address."
+                                               TextWrapping="Wrap" Margin="0,4,0,0"
+                                               FontFamily="{DynamicResource Font.UI}"
+                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                               Foreground="{DynamicResource Brush.Text.Disabled}"
+                                               Visibility="{Binding IdentityEmailLooksWrong,
+                                                   Converter={StaticResource BoolToVisibility}}" />
+
+                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                        <Button Content="Save" Style="{StaticResource AccentButton}"
+                                                Height="{DynamicResource Size.Control.Compact}"
+                                                Command="{Binding SaveIdentityCommand}" />
+                                        <!-- Local by default. A work machine carrying a personal
+                                             global identity is a common and annoying way to
+                                             attribute commits to the wrong person. -->
+                                        <CheckBox Content="Every repository" Margin="10,0,0,0"
+                                                  VerticalAlignment="Center"
+                                                  Style="{StaticResource MenuCheck}"
+                                                  ToolTip="Write to the global git config as well as this repository"
+                                                  IsChecked="{Binding IdentityGlobal}" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
                             <!-- Branch and divergence. The remote state is why somebody opens
                                  this panel, so it leads. -->
                             <Border DockPanel.Dock="Top"
@@ -456,12 +549,22 @@
                                          KeyDown="OnCommitMessageKeyDown"
                                          Text="{Binding CommitMessage, UpdateSourceTrigger=PropertyChanged}" />
 
+                                <!-- ToolTipService.ShowOnDisabled is the whole point of these
+                                     two tooltips: WPF hides a tooltip on a disabled control by
+                                     default, so without it the one moment the explanation is
+                                     wanted is the one moment it cannot be seen. A dead button
+                                     with no reason is what sends somebody to the command line,
+                                     which is the thing this panel exists to avoid. -->
                                 <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
                                     <Button Content="Commit" Style="{StaticResource AccentButton}"
-                                            Command="{Binding CommitCommand}" />
+                                            Command="{Binding CommitCommand}"
+                                            ToolTipService.ShowOnDisabled="True"
+                                            ToolTip="{Binding Identity.CommitBlockedReason}" />
                                     <Button Content="Commit &amp; Push" Margin="6,0,0,0"
                                             Style="{StaticResource GhostButton}"
-                                            Command="{Binding CommitAndPushCommand}" />
+                                            Command="{Binding CommitAndPushCommand}"
+                                            ToolTipService.ShowOnDisabled="True"
+                                            ToolTip="{Binding Identity.CommitBlockedReason}" />
                                 </StackPanel>
 
                                 <!-- The most surprising rule in the tool, stated where the

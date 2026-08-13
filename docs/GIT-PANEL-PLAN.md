@@ -1521,7 +1521,7 @@ different things is a coordination bug waiting to happen.
 
 | Phase | Work | Why here |
 |---|---|---|
-| **GP-0** | **Git presence probe + identity preflight (§12a, §12b)** | **First, and alone. Both are one `git config --get` and a startup `--version`, and together they remove the two worst first-run failures — a `Win32Exception` from nowhere, and a 31-second export followed by a wall of text.** |
+| **GP-0 ✅** | **Git presence probe + identity preflight (§12a, §12b)** | **First, and alone. Both are one `git config --get` and a startup `--version`, and together they remove the two worst first-run failures — a `Win32Exception` from nowhere, and a 31-second export followed by a wall of text.** |
 | **GP-C** | **Credential detection, sign-in and sign-out (§12c)** | With GP-B, because both are about what stands between this branch and the remote, and they share the badge slot. Must land *before* GP-D — the poller running with prompts suppressed and no credential-failure classification would hammer an unreachable remote and could lock an account. |
 | GP-H2 | Detached HEAD (§9e) | Rides with GP-H: the same `TrackingState` work, and §7c's fallback checkout must never leave the user detached. |
 
@@ -1599,6 +1599,47 @@ Record the answers here when taken, rather than deciding the constants from a gu
 
 Neither of the first two blocks writing code; both block *finishing* those phases with the right
 constants. The third is conditional and may never be needed.
+
+## Phase log
+
+What each phase actually taught, recorded as it landed. A plan never corrected by contact with
+the code is not evidence of a good plan.
+
+### GP-0 — git presence and identity · done 2026-08-13
+
+**Built:** `Core/Git/GitPresence.cs`, `Core/Git/GitIdentity.cs`;
+`IGitClient.IdentityAsync` / `SetIdentityAsync`; `GitCliClient.ProbeAsync` and its
+`where`/`which` executable resolution; a launch probe in `App.xaml.cs`; two banners in the git
+panel; identity added to `CanCommit`; `Path` and `Commits as` rows in System Info.
+
+**Tests:** 29 Core, 8 App (4 of them rendering the panel), 7 integration. 1,066 / 228 / 50 green.
+
+**Corrected in passing:** `IGitClient`'s Rev 9 remark claimed PortableGit was *vendored* for
+credentials and LFS. Nothing vendors it — `git` is resolved from `PATH`. The sentence was
+load-bearing in the argument for CLI-over-LibGit2Sharp, so it was rewritten rather than left.
+
+**What the phase taught — two things worth carrying forward:**
+
+1. **The first version of the commit-gate test was vacuous, and only the mutation check found
+   it.** It asserted `CommitCommand.CanExecute` was false with no repository open — true
+   because `Ready` is false without a git client, and equally true with the identity check
+   deleted. Reaching the identity term meant satisfying every other term of `CanCommit`: a real
+   repository, a staged file, a message. **The mutation check is not a formality.** It is the
+   only reason that test means anything, and it earned its place in the definition of done on
+   the first phase that used it.
+2. **`--trace-bindings` cannot verify this panel from a normal launch.** The trace file came
+   back *empty* — the git panel starts `Collapsed`, so its bindings were never evaluated, which
+   is precisely the trap `App.xaml.cs:274` documents. The substitute that cannot pass vacuously
+   is `GitPanelChromeTests`: click the rail, measure, arrange, then assert. **§4a's protocol
+   needs this amendment** — for the extraction, the trace run must show the git panel, or it
+   proves nothing.
+
+**Verified in the running app** against a repository with no identity: probe found
+`git version 2.53.0.windows.2` at `C:/Program Files/Git/mingw64/bin/git.exe`, and the log
+carried `commit identity incomplete — Git needs a name and an email address before it can
+record a commit.` Both at the levels §3 specifies.
+
+---
 
 ## Explicitly not doing
 

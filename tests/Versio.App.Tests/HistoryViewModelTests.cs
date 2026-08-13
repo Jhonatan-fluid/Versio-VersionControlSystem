@@ -76,6 +76,13 @@ internal sealed class CountingGitClient : IGitClient
 
     public Task<string> VersionAsync(CancellationToken ct) => Task.FromResult("git version 2.0");
 
+    public Task<GitIdentity> IdentityAsync(CancellationToken ct) =>
+        throw new NotSupportedException();
+
+    public Task<GitResult> SetIdentityAsync(
+        string name, string email, bool global, CancellationToken ct) =>
+        throw new NotSupportedException();
+
     public Task<GitStatus> StatusAsync(CancellationToken ct) =>
         throw new NotSupportedException();
 

@@ -101,6 +101,21 @@ public partial class App : Application
 
         new MainWindow(shell).Show();
 
+        // Is git there at all? Asked once, here, rather than at first use.
+        //
+        // The machine that needs this answered is the one where opening a repository is what
+        // fails - and before this, the only thing that asked was the System Info window, which
+        // answered "not checked - open a repository" when none was open. So the one question a
+        // git-less machine needs was the one question it could not get to. Everything else
+        // surfaced the absence as a Win32Exception from somewhere deep, which reads as a bug in
+        // Versio rather than as a missing dependency.
+        //
+        // Not awaited, and deliberately not blocking the window: the probe is a process spawn,
+        // and a splash-free app that pauses before painting looks broken. The panel shows
+        // "Checking for git…" until this lands, which is why GitPresence has an Unknown state
+        // distinct from Missing.
+        _ = shell.ProbeGitAsync(CancellationToken.None);
+
         // The recent list first, and before anything opens: OpenAsync promotes a repository
         // to the top of it, so loading afterwards would overwrite the entry just opened - and
         // the startup fallback has nothing to fall back to until it has been read.
