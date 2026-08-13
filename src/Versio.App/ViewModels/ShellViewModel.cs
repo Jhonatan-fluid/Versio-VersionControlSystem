@@ -8,8 +8,10 @@ using Versio.Core.Git;
 using Versio.Core.Guarding;
 using Versio.Core.Logging;
 using Versio.Core.Plc;
+using Versio.Core.Settings;
 using Versio.Core.Sync;
 using Versio.Core.Watching;
+using Versio.Infrastructure.FileSystem;
 using Versio.Infrastructure.Git;
 using Versio.Infrastructure.Logging;
 using Versio.Infrastructure.Platform;
@@ -46,7 +48,12 @@ public enum ShellPanel
 }
 
 /// <summary>An entry in the repository dropdown.</summary>
-public sealed class RepoEntry(string path)
+/// <remarks>
+/// Carries the remote and the last-opened time because the dropdown is a memory now rather
+/// than a session: the list survives a restart, and an entry whose folder has since gone can
+/// only be offered back if its URL was recorded while it was still there.
+/// </remarks>
+public sealed class RepoEntry(string path, string remoteUrl = "", DateTimeOffset? lastOpened = null)
 {
     public string Path { get; } = path;
 
@@ -55,6 +62,20 @@ public sealed class RepoEntry(string path)
     /// <summary>Parent directory, shown beneath the name so two repos with the same folder
     /// name are still distinguishable.</summary>
     public string Location { get; } = System.IO.Path.GetDirectoryName(path) ?? path;
+
+    /// <summary><c>origin</c>'s URL when this repository was last opened, or empty.</summary>
+    public string RemoteUrl { get; } = remoteUrl;
+
+    /// <summary>When it was last opened, or null for one opened in this session only.</summary>
+    public DateTimeOffset? LastOpenedUtc { get; } = lastOpened;
+
+    /// <summary>This entry as the settings file records it.</summary>
+    public RecentRepository ToRecord(DateTimeOffset when) => new()
+    {
+        Path = Path,
+        RemoteUrl = RemoteUrl,
+        LastOpenedUtc = when,
+    };
 }
 
 /// <summary>An entry in the branch dropdown.</summary>
@@ -185,6 +206,18 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// </remarks>
     private readonly QuietRunTracker _quietRefreshes = new();
 
+    private readonly IAppSettingsStore _settings;
+
+    /// <summary>
+    /// The recent list as it is on disk, which is not what the dropdown holds.
+    /// </summary>
+    /// <remarks>
+    /// The <see cref="RecentRepositories"/> collection is for WPF and holds view objects; this
+    /// is the record written back. Kept apart so the ordering and capping rules stay in
+    /// <see cref="Core.Settings.RecentRepositories"/>, where they are tested without a window.
+    /// </remarks>
+    private IReadOnlyList<RecentRepository> _recent = [];
+
     private GitCliClient? _git;
     private RepositoryWatcher? _watcher;
     private string? _repositoryPath;
@@ -204,11 +237,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                           Func<string, GitCliClient>? gitFactory = null,
                           IRepositoryProbe? probe = null,
                           IClock? clock = null,
-                          Func<PlcVendor, IVersioLogger, IPlcToolchain?>? toolchains = null)
+                          Func<PlcVendor, IVersioLogger, IPlcToolchain?>? toolchains = null,
+                          IAppSettingsStore? settings = null)
     {
         _logger = logger;
         Log = log;
         _clock = clock ?? new SystemClock();
+        _settings = settings ?? new JsonAppSettingsStore(logger: logger);
 
         // Built here rather than in an initialiser because it needs the clock: every scope
         // records when it started, so a dialog can say how long the user has been waiting
@@ -365,6 +400,16 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
+        // Checked before the guard's work is undone but after it has agreed, because a
+        // repository that is not there is a different conversation from one that is: the
+        // generic refusal says "not a Git repository" and offers a folder picker, which is
+        // an odd answer to a row the user was told they could come back to.
+        if (await MissingAsync(target).ConfigureAwait(true))
+        {
+            ShowOpenRepository();
+            return;
+        }
+
         await OpenAsync(target.Path).ConfigureAwait(true);
 
         // OpenAsync refuses a folder git will not work in and says why through
@@ -373,6 +418,80 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         {
             ShowOpenRepository();
         }
+    }
+
+    /// <summary>
+    /// Ask the view to decide what to do about a remembered repository that has gone.
+    /// </summary>
+    /// <remarks>
+    /// <b>Unset means cancel</b>, the same way <see cref="AskGuard"/> is unset: a view model
+    /// with no view attached must never take the destructive-looking branch by default.
+    /// </remarks>
+    public Func<MissingRepositoryPrompt, MissingRepositoryChoice?>? AskAboutMissingRepository
+    {
+        get;
+        set;
+    }
+
+    /// <summary>
+    /// Deal with a recent repository that is no longer where it was.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Returns true when the switch must not proceed — which is every outcome except a
+    /// repository that is still there. Cloning re-enters through the ordinary clone path, so
+    /// what opens afterwards is a repository that has just been verified rather than a path
+    /// this method assumed would appear.
+    /// </para>
+    /// <para>
+    /// A folder that exists but is no longer a repository is included, because it is the same
+    /// question with the same three answers. Whether git will work there is asked of git
+    /// itself, not inferred from a <c>.git</c> directory being present.
+    /// </para>
+    /// </remarks>
+    private async Task<bool> MissingAsync(RepoEntry target)
+    {
+        var reason = !Directory.Exists(target.Path)
+            ? MissingRepositoryReason.Gone
+            : await _gitFactory(target.Path).IsRepositoryAsync(CancellationToken.None)
+                .ConfigureAwait(true)
+                ? (MissingRepositoryReason?)null
+                : MissingRepositoryReason.NotARepository;
+
+        if (reason is not { } why)
+        {
+            return false;
+        }
+
+        _logger.Warn(LogCategory.App,
+            $"recent repository {target.Path} is {(why == MissingRepositoryReason.Gone
+                ? "no longer on disk" : "no longer a git repository")}");
+
+        var record = target.ToRecord(target.LastOpenedUtc ?? _clock.UtcNow);
+        var choice = AskAboutMissingRepository?.Invoke(MissingRepository.Prompt(record, why))
+                     ?? MissingRepositoryChoice.Cancel;
+
+        switch (choice)
+        {
+            case MissingRepositoryChoice.Forget:
+                await ForgetAsync(target.Path).ConfigureAwait(true);
+                break;
+
+            case MissingRepositoryChoice.CloneAgain:
+                // The path, never the URL. A remote can carry a token in its userinfo, and
+                // the redaction that handles that is inside the git client where every
+                // argument passes through it - not something a view model reimplements.
+                _logger.Info(LogCategory.Git, $"re-cloning the repository that was at {target.Path}");
+                await CloneRepositoryAsync(target.RemoteUrl).ConfigureAwait(true);
+                break;
+
+            default:
+                // Left in the list on purpose. A drive that is not mounted today is mounted
+                // tomorrow, and the entry is the only record of where the repository was.
+                break;
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -563,6 +682,115 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     private void ShowCurrentBranch() =>
         WithoutSideEffects(() =>
             SelectedBranch = Branches.FirstOrDefault(b => b.IsCurrent));
+
+    /// <summary>
+    /// Fill the repository dropdown from what this machine remembers.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Awaited by the host before the first repository is opened, so the list is already
+    /// there when <see cref="OpenAsync"/> promotes one to the top of it. Called after, the
+    /// load would overwrite the entry that had just been opened.
+    /// </para>
+    /// <para>
+    /// The dropdown held only what the current session had opened until now — which on a
+    /// fresh start is one repository, the one the app opened by itself, so a control whose
+    /// entire purpose is jumping between repositories could never do it.
+    /// </para>
+    /// </remarks>
+    public async Task LoadRecentAsync(CancellationToken ct = default)
+    {
+        _recent = (await _settings.ReadAsync(ct).ConfigureAwait(true)).Recent;
+
+        WithoutSideEffects(() =>
+        {
+            RecentRepositories.Clear();
+            foreach (var entry in _recent)
+            {
+                RecentRepositories.Add(
+                    new RepoEntry(entry.Path, entry.RemoteUrl, entry.LastOpenedUtc));
+            }
+
+            SelectedRepository = RecentRepositories.FirstOrDefault(r => r.Path == _repositoryPath);
+        });
+
+        _logger.Debug(LogCategory.App,
+            $"{_recent.Count} recent repositor(ies) restored");
+    }
+
+    /// <summary>
+    /// The working tree root for a folder, or null when it is not inside a repository.
+    /// </summary>
+    /// <remarks>
+    /// Exposed for the startup choice, which has to know whether the working directory is
+    /// worth opening <i>before</i> it falls back to the recent list. Asking the locator here
+    /// rather than testing for a <c>.git</c> folder keeps one answer to "is this a
+    /// repository" — the one that already handles subdirectories, bare repos and worktrees.
+    /// </remarks>
+    public string? WorkingTreeRootOf(string path) =>
+        _locator.Locate(path) is { Kind: RepositoryKind.WorkingTreeRoot
+                                        or RepositoryKind.InsideWorkingTree } found
+            ? found.WorkingTreeRoot
+            : null;
+
+    /// <summary>The most recently opened repository that is still on disk, or null.</summary>
+    /// <remarks>
+    /// The startup fallback, for the ordinary case of launching from a shortcut rather than
+    /// from a repository's own folder. Checked for existence here so the host does not open
+    /// something that will only be refused — and left in the list either way, because a
+    /// disconnected drive is not a deleted repository.
+    /// </remarks>
+    public string? MostRecentExisting() =>
+        _recent.FirstOrDefault(r => Directory.Exists(r.Path))?.Path;
+
+    /// <summary>Move a repository to the top of the list, and write the list down.</summary>
+    private async Task RememberAsync(string path, string remoteUrl)
+    {
+        _recent = Core.Settings.RecentRepositories.Promote(
+            _recent,
+            new RecentRepository
+            {
+                Path = path,
+                RemoteUrl = remoteUrl,
+                LastOpenedUtc = _clock.UtcNow,
+            });
+
+        SyncRecentToDropdown(path);
+        await _settings.WriteAsync(new AppSettings { Recent = _recent }, CancellationToken.None)
+            .ConfigureAwait(true);
+    }
+
+    /// <summary>Take a repository out of the list, and write the list down.</summary>
+    private async Task ForgetAsync(string path)
+    {
+        _recent = Core.Settings.RecentRepositories.Remove(_recent, path);
+
+        SyncRecentToDropdown(_repositoryPath);
+        await _settings.WriteAsync(new AppSettings { Recent = _recent }, CancellationToken.None)
+            .ConfigureAwait(true);
+
+        _logger.Info(LogCategory.App, $"removed {path} from the recent repositories");
+    }
+
+    /// <summary>Rebuild the dropdown from the record, keeping the selection meaningful.</summary>
+    /// <remarks>
+    /// Rebuilt wholesale rather than reconciled, unlike the project tree: this list is at most
+    /// ten rows of two strings, nothing about it is expensive, and nothing in it is expanded
+    /// or scrolled. <see cref="WithoutSideEffects"/> is what keeps the reselection from
+    /// reading as the user choosing a repository.
+    /// </remarks>
+    private void SyncRecentToDropdown(string? select) =>
+        WithoutSideEffects(() =>
+        {
+            RecentRepositories.Clear();
+            foreach (var entry in _recent)
+            {
+                RecentRepositories.Add(
+                    new RepoEntry(entry.Path, entry.RemoteUrl, entry.LastOpenedUtc));
+            }
+
+            SelectedRepository = RecentRepositories.FirstOrDefault(r => r.Path == select);
+        });
 
     /// <summary>Put the repository dropdown back on the repository that is actually open.</summary>
     private void ShowOpenRepository() =>
@@ -945,17 +1173,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         _git = client;
         RepositoryPath = path;
 
-        WithoutSideEffects(() =>
-        {
-            var existing = RecentRepositories.FirstOrDefault(r => r.Path == path);
-            if (existing is null)
-            {
-                existing = new RepoEntry(path);
-                RecentRepositories.Insert(0, existing);
-            }
+        // Read while the repository is open, because this is the only time it can be read.
+        // When it is wanted - offering to clone a vanished repository back - there is no
+        // .git left to ask. Empty for a repository with no remote, which is ordinary.
+        var remoteUrl = await client.RemoteUrlAsync("origin", busy.Token).ConfigureAwait(true);
 
-            SelectedRepository = existing;
-        });
+        await RememberAsync(path, remoteUrl).ConfigureAwait(true);
 
         RefreshCommand.RaiseCanExecuteChanged();
 
@@ -1188,7 +1411,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         // Cloning needs no open repository — it is how you get one — so it is enabled
         // whenever nothing else is running, unlike every other command here.
-        CloneCommand = new AsyncCommand(CloneRepositoryAsync, () => !Busy.IsBusy, ReportError);
+        CloneCommand = new AsyncCommand(() => CloneRepositoryAsync(), () => !Busy.IsBusy, ReportError);
 
         // Every git button consults the same shared flag, so the moment one operation starts
         // they all go dead together. AsyncCommand.IsRunning only disables the button that was
@@ -1489,7 +1712,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// passes" is a rule about a conversation rather than about one operation. What comes back
     /// is a path on disk, which is all the shell needs to open it.
     /// </remarks>
-    public Func<Task<string?>>? PromptForClone { get; set; }
+    /// <param name="initialUrl">
+    /// Prefilled when the clone is a repository being fetched back rather than a new one.
+    /// The dialog still requires Verify to pass before it will clone: a remembered URL is a
+    /// convenience, not a claim that the remote is still there.
+    /// </param>
+    public Func<string?, Task<string?>>? PromptForClone { get; set; }
 
     /// <summary>Check a remote is reachable, with no repository open.</summary>
     /// <remarks>Handed to the clone dialog. Lives here rather than in the view so that the
@@ -2094,7 +2322,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// repository they started in, with a new folder somewhere on disk they have to go and
     /// find, has done the work and withheld the result.
     /// </remarks>
-    private async Task CloneRepositoryAsync()
+    private async Task CloneRepositoryAsync(string? initialUrl = null)
     {
         _logger.Click("TopBar.Clone");
 
@@ -2103,7 +2331,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
-        if (await PromptForClone().ConfigureAwait(true) is not { } cloned)
+        if (await PromptForClone(initialUrl).ConfigureAwait(true) is not { } cloned)
         {
             return;
         }

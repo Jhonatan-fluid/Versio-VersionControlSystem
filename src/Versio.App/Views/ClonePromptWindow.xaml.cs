@@ -50,10 +50,16 @@ public partial class ClonePromptWindow : Window
         Interval = TimeSpan.FromMilliseconds(600),
     };
 
+    /// <param name="initialUrl">
+    /// Prefilled when a remembered repository is being fetched back. It is only the text in
+    /// the box: Clone stays dead until Verify passes, exactly as it does for a URL somebody
+    /// typed. A remote that was reachable last week is not evidence about now.
+    /// </param>
     public ClonePromptWindow(
         Func<string, CancellationToken, Task<GitResult>> verify,
         Func<string, string, IProgress<GitProgress>?, CancellationToken, Task<GitResult>> clone,
-        string? initialFolder = null)
+        string? initialFolder = null,
+        string? initialUrl = null)
     {
         _verify = verify;
         _clone = clone;
@@ -61,6 +67,7 @@ public partial class ClonePromptWindow : Window
         InitializeComponent();
 
         FolderBox.Text = initialFolder ?? string.Empty;
+        UrlBox.Text = initialUrl ?? string.Empty;
 
         _verifyAfterTyping.Tick += async (_, _) =>
         {

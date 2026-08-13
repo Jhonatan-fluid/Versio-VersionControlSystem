@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-13 · **Commits:** 66 · **Tests:** 955 unit + 190 UI + 111 integration, 0 skipped
+**Date:** 2026-08-13 · **Commits:** 67 · **Tests:** 968 unit + 197 UI + 111 integration, 0 skipped
 
 > All three measured on 2026-08-13, on branch `Clean-up-and-continue-dev`. The integration
 > suite was re-run in full against real CODESYS 3.5.22.20 after the manifest work — 111
@@ -286,6 +286,66 @@ does not record them has to be run again.
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### The repository dropdown could not do the one thing it exists for
+
+Reported from the app, with a screenshot of the control open and holding exactly one row:
+*"the repo drop down is supposed to store recent repos… currently it doesnt store anything."*
+
+`RecentRepositories` was an `ObservableCollection` on the view model, appended to when a
+repository opened and dropped when the process exited. Nothing wrote it anywhere and nothing
+read it back, so on every start it contained precisely the repository the app had opened by
+itself — and a control whose entire purpose is jumping between repositories could not jump
+anywhere. It had looked right in every session where somebody opened a second repository by
+hand, which is every session it was ever demonstrated in.
+
+Underneath it was a gap rather than a bug: **Versio had no machine-level state at all.** Every
+store it owns belongs to a repository and lives in that repository's `.versio/`. Which
+repositories this user has opened is not repository state — it names paths that exist on one
+disk — so there was nowhere for it to go. `%LOCALAPPDATA%\Versio\settings.json` is that
+place now, beside the logs, written through the same atomic temp-and-replace `JsonLockStore`
+uses and read with the same rule: unreadable costs a dropdown's contents and nothing else.
+The theme is the next thing that should join it — it is currently reapplied as `System` on
+every start, which is a preference the app forgets just as thoroughly.
+
+Worth pairing with the finding below about *Open logs folder*: writes under `%LOCALAPPDATA%`
+are redirected when the app runs from an MSIX/AppContainer, so a packaged build and a plain one
+can end up with two separate recent lists. Nothing to fix today — packaging is unbuilt — but it
+is the same environment fact, and it now applies to a second file.
+
+Three decisions in it are worth keeping:
+
+- **The remote is recorded at open time, not when it is needed.** By the time it is wanted —
+  offering a vanished repository back — there is no `.git` left to read it out of. Promoting an
+  entry inherits the old URL when the new read comes back empty, so opening a repository while
+  its remote is unreachable cannot erase the only thing that could restore it.
+- **A missing repository is a question, not a refusal.** Every row in that dropdown is a
+  repository the app told the user they could come back to, so one that has vanished offers
+  *clone it again*, *remove from list* and *cancel* — where the generic path says "not a Git
+  repository" and opens a folder picker. Which options exist is a pure function of whether a
+  URL was recorded, because a *Clone it again* button on a repository that never had a remote
+  is a button that cannot work.
+- **Nothing is removed on discovery, and nothing deletes a folder.** A disconnected network
+  drive and a deleted clone are indistinguishable from here, and quietly forgetting the second
+  also forgets the URL that could bring it back. The label says *Remove from list*, never
+  *Delete*, because deleting the folder is what the user is afraid the button does.
+
+One existing test had to change rather than being made to pass: `A_repository_that_cannot_be_
+opened_leaves_the_dropdown_where_it_was` asserted that a dropdown row which will not open
+raises `RepositoryRejected`. It now asserts the missing-repository question instead — the
+guarantee it was written for, that the dropdown never points at a repository that did not
+open, is unchanged and still asserted.
+
+Startup gained a third fallback while this was wired: an explicit path argument, then the
+working directory *if it is inside a repository*, then the most recent repository still on
+disk. Launched from a desktop shortcut the working directory is wherever Windows put it, and
+the app opened on an empty window beside a dropdown that had forgotten everywhere the user had
+ever been.
+
+Five of the seven new view-model tests fail when persistence or the missing-repository check is
+reverted, and they come in through `OpenAsync` and `SwitchRepositoryAsync` rather than through
+the store — this repository has been bitten three times by a method that was perfectly tested
+and called by nothing.
 
 ### One field's type disagreed, and the panel lost fifty-six objects without saying so
 

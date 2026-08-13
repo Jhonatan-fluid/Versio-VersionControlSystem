@@ -96,12 +96,34 @@ public partial class App : Application
 
         new MainWindow(shell).Show();
 
-        // Open a repository straight away when one is obvious: an explicit path argument,
-        // otherwise the working directory. Starting on an empty window and making the user
-        // hunt for a folder picker is a poor first thirty seconds.
-        var candidate = RepositoryArgument(e.Args) ?? Directory.GetCurrentDirectory();
+        // The recent list first, and before anything opens: OpenAsync promotes a repository
+        // to the top of it, so loading afterwards would overwrite the entry just opened - and
+        // the startup fallback has nothing to fall back to until it has been read.
+        _ = shell.LoadRecentAsync()
+            .ContinueWith(
+                _ => StartupOpen(shell, e.Args, logger),
+                CancellationToken.None,
+                TaskContinuationOptions.None,
+                TaskScheduler.FromCurrentSynchronizationContext());
+    }
 
-        if (Directory.Exists(candidate))
+    /// <summary>
+    /// Open a repository straight away when one is obvious.
+    /// </summary>
+    /// <remarks>
+    /// An explicit path argument wins, then the working directory, then the most recent
+    /// repository that is still on disk. The last of those is what makes a shortcut on the
+    /// desktop useful: launched that way the working directory is wherever Windows put it,
+    /// which is not a repository, and the app used to open on an empty window with a dropdown
+    /// that had forgotten every repository the user had ever opened.
+    /// </remarks>
+    private static void StartupOpen(ShellViewModel shell, string[] args, VersioLogger logger)
+    {
+        var candidate = RepositoryArgument(args)
+                        ?? shell.WorkingTreeRootOf(Directory.GetCurrentDirectory())
+                        ?? shell.MostRecentExisting();
+
+        if (candidate is not null && Directory.Exists(candidate))
         {
             // Fire-and-forget, but never silently: an exception inside an un-awaited Task is
             // swallowed by default, so the app would open on an empty window with no
@@ -116,7 +138,10 @@ public partial class App : Application
         else
         {
             logger.Info(LogCategory.App,
-                $"no repository opened at startup: {candidate} does not exist");
+                candidate is null
+                    ? "no repository opened at startup: nothing obvious to open, and no " +
+                      "remembered repository is still on disk"
+                    : $"no repository opened at startup: {candidate} does not exist");
         }
     }
 

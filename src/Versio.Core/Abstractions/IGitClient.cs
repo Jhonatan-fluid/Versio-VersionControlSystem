@@ -60,6 +60,16 @@ public interface IGitClient
     /// <summary>Verify a remote is reachable without cloning it.</summary>
     Task<GitResult> VerifyRemoteAsync(string url, CancellationToken ct);
 
+    /// <summary>
+    /// Where this repository was cloned from, or empty when it has no such remote.
+    /// </summary>
+    /// <remarks>
+    /// Read while the repository is open and remembered, because the moment it is <i>needed</i>
+    /// — offering to clone a vanished repository back — there is no <c>.git</c> left to ask.
+    /// A repository with no remote is an ordinary local repository, not a failure.
+    /// </remarks>
+    Task<string> RemoteUrlAsync(string remote, CancellationToken ct);
+
     Task<GitResult> FetchAsync(IProgress<GitProgress>? progress, CancellationToken ct);
 
     Task<GitResult> PullAsync(IProgress<GitProgress>? progress, CancellationToken ct);
