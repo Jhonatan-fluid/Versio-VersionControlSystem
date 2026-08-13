@@ -544,15 +544,47 @@ Three decisions in it are worth knowing:
 Seven tests, and the one that matters — a newer lock is not overwritten — fails when the check
 is removed.
 
-**What is left, in order:**
+**5 · Taking and restoring, in the shell.** The guard now sees the real working tree, so
+`StashAndProceed` is reachable and `ClearForContextChangeAsync` carries it out;
+`OfferStashedWorkAsync` runs after **every** successful checkout. Two things came out of
+building it that the design did not anticipate:
 
-5. Taking and restoring for real, in the shell: `StashPushAsync` with the marker, the set
+- **`.versio/local/` had to be excluded in `.git/info/exclude`, not just `.gitignore`.**
+  Found by the second test: an auto-stash taken while that directory was visible to git
+  swallowed the record naming the *previous* stash, leaving real work in git with nothing
+  pointing at it. `.gitignore` cannot fix that — it is a tracked file, so a stash carries the
+  rule away exactly when it is needed. `info/exclude` is outside the working tree and cannot be
+  stashed, committed or conflicted. Written when a repository opens, before anything reaches
+  `.versio/local/`; adoption still writes the `.gitignore` rule, which is what a *teammate*
+  gets when they clone.
+- **§4.8 was wrong about the window, and so was the correction in the previous handover.** A
+  stash and a restore rewrite every modified file in the repository, exactly like a checkout —
+  so the repository-wide `BeginExternalWrite` is right after all, and both ends use the same
+  `WhileGitRewritesTheTreeAsync` wrapper the checkout does. `BeginOwnWrite` is for an export
+  writing one binding's mirror, which is a different shape.
+
+Six tests against a real repository, because every interesting failure here is about what git
+actually did. The one that matters most — a stash that was never created must abandon the
+switch — is called directly rather than through the dropdown: with a clean tree the guard
+answers `Proceed` and never asks, so the front door cannot reach that branch, and it is the
+branch that decides whether a checkout happens over unsaved work. It fails when the set
+difference is replaced by the exit code.
+
+One existing test was **inverted**: `A_dirty_tree_is_not_asked_about_yet` asserted that the
+guard did not offer a stash, which was right while nothing could stash. It now asserts the
+offer is made.
+
+**What is left:**
+
+6. Taking and restoring for real, in the shell: `StashPushAsync` with the marker, the set
    difference, the lock capture and release (§4.7), and the arrival prompt on **every**
    successful checkout — the dropdown, `CreateBranchAsync`, and a pull that moved HEAD.
-6. Wrap both ends in `BeginOwnWrite` — **not** `BeginExternalWrite`, which is now the wrong
-   tool: it is repository-wide, and a stash touches one binding's mirror. §4.8 was written
-   before the narrower window existed. Then wire `GuardIntent.Pull` and delete
-   `ShellViewModel.AskAboutWork`.
+6. **Wire `GuardIntent.Pull`.** It is implemented, tested and deliberately unwired, and its
+   verdicts all resolve to the auto-stash that now exists. A pull is the remaining path that
+   can meet a dirty tree.
+7. **The second and later stashes on one branch.** `OnArrival` returns them all, newest first,
+   and the prompt says how many — but only the newest is offered per arrival. Offering the rest
+   in turn is a loop nobody has written yet.
 
 ---
 

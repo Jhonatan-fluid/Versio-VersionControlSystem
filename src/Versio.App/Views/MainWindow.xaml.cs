@@ -5,6 +5,7 @@ using System.Windows.Input;
 using Versio.App.Theme;
 using Versio.App.ViewModels;
 using Versio.Core.Git;
+using Versio.Core.Guarding;
 using Versio.Core.Settings;
 
 namespace Versio.App.Views;
@@ -58,6 +59,23 @@ public partial class MainWindow : Window
             var window = new GuardPromptWindow(prompt) { Owner = this };
             window.ShowDialog();
             return window.ChoiceResult;
+        };
+
+        // Three named courses of action, so the same window the guard uses rather than a
+        // MessageBox: "Yes" is not an answer to "restore, leave or discard".
+        shell.AskAboutStashedWork = prompt =>
+        {
+            var window = new GuardPromptWindow(
+                prompt.Title,
+                prompt.Body,
+                [.. prompt.Choices.Select(c => new PromptOption(AutoStashNarrative.Label(c), c))],
+                cancels: StashedWorkChoice.Leave)
+            {
+                Owner = this,
+            };
+
+            window.ShowDialog();
+            return window.Result as StashedWorkChoice?;
         };
 
         // A branch name needs a text box and live validation, which a MessageBox cannot do.

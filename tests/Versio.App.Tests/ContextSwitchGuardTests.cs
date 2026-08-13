@@ -208,11 +208,12 @@ public sealed class ContextSwitchGuardTests
     }
 
     [Fact]
-    public async Task A_dirty_tree_is_not_asked_about_yet()
+    public async Task A_dirty_tree_is_asked_about_now_that_it_can_be_stashed()
     {
-        // The work half of the guard only, until the auto-stash exists. Offering "stash my
-        // changes" before anything can stash would be a button that lies about what it does,
-        // which is how somebody loses work believing it was saved.
+        // INVERTED, deliberately. This asserted the opposite while the auto-stash did not
+        // exist: offering "stash my changes" before anything could stash would have been a
+        // button that lies about what it does, which is how somebody loses work believing it
+        // was saved. The stash exists now, so the tree goes to the guard and the offer is real.
         var fixture = Fixture.Build(GuardChoice.Cancel);
 
         fixture.Shell.Changes.Add(new ChangeRow(new FileChange
@@ -224,7 +225,11 @@ public sealed class ContextSwitchGuardTests
 
         await fixture.Shell.SwitchBranchAsync(fixture.Other);
 
-        Assert.Empty(fixture.Asked);
+        var prompt = Assert.Single(fixture.Asked);
+        Assert.Contains(GuardChoice.StashAndProceed, prompt.Choices);
+
+        // Cancel was the answer, so the dropdown is back on the branch we are actually on.
+        Assert.True(fixture.Shell.SelectedBranch?.IsCurrent);
     }
 
     // -------------------------------------------------------------- switching repository

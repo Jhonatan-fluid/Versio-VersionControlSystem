@@ -235,6 +235,16 @@ public sealed partial class GitCliClient(
         return result.Success ? result.StdOut.Trim() : string.Empty;
     }
 
+    /// <summary>Where git keeps its own state for this working tree.</summary>
+    public async Task<string> GitDirectoryAsync(CancellationToken ct)
+    {
+        var result = await RunAsync(
+            ["rev-parse", "--absolute-git-dir"], null, ct, TimeSpan.FromSeconds(10))
+            .ConfigureAwait(false);
+
+        return result.Success ? result.StdOut.Trim() : string.Empty;
+    }
+
     public Task<GitResult> VerifyRemoteAsync(string url, CancellationToken ct)
     {
         _log.Info(LogCategory.Git, $"verifying remote {Redact(url)}");

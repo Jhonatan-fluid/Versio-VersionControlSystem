@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-13 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,021 unit + 199 UI + 122 integration, 0 skipped
+**Date:** 2026-08-13 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,021 unit + 205 UI + 122 integration, 0 skipped
 
 > All three measured on 2026-08-13, on branch `Clean-up-and-continue-dev`. The integration
 > suite was re-run in full against real CODESYS 3.5.22.20 after the manifest work — 111
@@ -149,7 +149,7 @@ format; `.gitattributes` covers every registered vendor's extensions.
 > **Safeguards work is tracked separately** in **[`SAFEGUARDS.md`](SAFEGUARDS.md)** — what Versio
 > refuses, asks about or waits for when something is running or unsaved. Phases 1–6 of it are
 > built and verified against real CODESYS, and **phase 7 (the auto-stash) is under way**: the
-> stash identity, the pure rule layer, the sidecar store and the lock round trip have landed. **§0 of that document is the
+> the stash identity, the rule layer, the sidecar store, the lock round trip and the take-and-restore flow have landed; a pull is the one path still unwired. **§0 of that document is the
 > handover note**, and *Phase 7, as built* at the end of §4 says what is left.
 >
 > It also carries a correction worth reading before touching the sync engine: **`On git action` is
@@ -289,6 +289,31 @@ does not record them has to be run again.
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### The auto-stash swallowed its own record, and `.gitignore` could not have saved it
+
+Found by the second test written for the flow, not by reading it. Switching away twice stashed
+the work correctly both times — and the second stash took `.versio/local/autostash.json` with
+it, because a repository with no adopted project has no `.gitignore` rule for that directory,
+so `--include-untracked` counted Versio's own record as the user's work.
+
+The consequence is worse than untidy. That record is the **only** thing that knows which
+stashes are Versio's and which branch each belongs to, so stashing it away leaves real work
+sitting in `git stash list` with nothing pointing at it — and a later `pop` would restore the
+*older* record over the newer one.
+
+**`.gitignore` is the wrong instrument for this**, which is the part worth keeping. It is a
+tracked file: a stash carries the rule away at exactly the moment the rule is needed, and
+writing it means editing a file the user commits and shares. `.git/info/exclude` is outside the
+working tree — it cannot be stashed, committed or conflicted — and it is per clone, which is
+precisely what this rule is. It is written when a repository opens, before anything reaches
+`.versio/local/`. Adoption still writes the `.gitignore` rule, and that is not redundant: that
+one is what a *teammate* gets when they clone.
+
+The same gap applied to the direction locks in any repository where no project had been adopted
+yet. Nobody had hit it because a lock only exists once there is a binding, and a binding only
+exists after adoption has written the ignore rule — the auto-stash is the first thing Versio
+writes into a repository *before* adopting anything.
 
 ### The IDE's heartbeat was a `git status` every five seconds, forever — and it took two fixes
 

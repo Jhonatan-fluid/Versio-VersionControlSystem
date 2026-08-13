@@ -70,6 +70,16 @@ public interface IGitClient
     /// </remarks>
     Task<string> RemoteUrlAsync(string remote, CancellationToken ct);
 
+    /// <summary>
+    /// The absolute path of this repository's <c>.git</c> directory.
+    /// </summary>
+    /// <remarks>
+    /// Asked of git rather than assembled from the working tree root, because <c>.git</c> is a
+    /// <i>file</i> in a linked worktree and a submodule keeps its directory somewhere else
+    /// entirely. Anything writing next to git's own state has to know where that state is.
+    /// </remarks>
+    Task<string> GitDirectoryAsync(CancellationToken ct);
+
     Task<GitResult> FetchAsync(IProgress<GitProgress>? progress, CancellationToken ct);
 
     Task<GitResult> PullAsync(IProgress<GitProgress>? progress, CancellationToken ct);

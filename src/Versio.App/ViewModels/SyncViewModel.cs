@@ -320,6 +320,27 @@ public sealed class SyncViewModel : ObservableObject
     /// lock worth re-adopting after a reboot" cannot drift apart.
     /// </para>
     /// </remarks>
+    /// <summary>The direction locks as an auto-stash needs to record them, and let them go.</summary>
+    /// <remarks>
+    /// Forwarded rather than exposing the orchestrator, so the shell cannot reach past this
+    /// view model into the sync engine for anything else. Empty when no repository is open,
+    /// which is the same answer as "nothing was held".
+    /// </remarks>
+    public IReadOnlyList<StashedLock> CaptureLocksForStash() =>
+        _orchestrator?.CaptureLocks() ?? [];
+
+    /// <summary>Let the captured locks go, now that the stash holding their work exists.</summary>
+    public Task ReleaseStashedLocksAsync(
+        IReadOnlyList<StashedLock> captured, string stashCommitId) =>
+        _orchestrator?.ReleaseCapturedLocksAsync(captured, stashCommitId, CancellationToken.None)
+        ?? Task.CompletedTask;
+
+    /// <summary>Put them back, after the stash has been restored. Returns what it refused.</summary>
+    public Task<IReadOnlyList<string>> RestoreStashedLocksAsync(
+        IReadOnlyList<StashedLock> captured) =>
+        _orchestrator?.RestoreCapturedLocksAsync(captured, CancellationToken.None)
+        ?? Task.FromResult<IReadOnlyList<string>>([]);
+
     public IReadOnlyList<HeldLock> HeldLocks =>
         _orchestrator is null
             ? []

@@ -11,6 +11,7 @@ using Versio.Core.Plc;
 using Versio.Core.Settings;
 using Versio.Core.Sync;
 using Versio.Core.Watching;
+using Versio.Infrastructure.FileSystem;
 using Versio.Infrastructure.Git;
 using Versio.Infrastructure.Logging;
 using Versio.Infrastructure.Platform;
@@ -206,6 +207,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     private readonly QuietRunTracker _quietRefreshes = new();
 
     private readonly IAppSettingsStore _settings;
+
+    /// <summary>
+    /// Where this clone's auto-stashes are recorded. Rebuilt for each repository opened.
+    /// </summary>
+    /// <remarks>
+    /// Constructed here rather than injected, unlike <see cref="_settings"/>, and the
+    /// difference is where the file lives: this one is inside the repository being opened, so
+    /// a test that opens a temp repository writes into that temp repository and cleans up with
+    /// it. The settings store writes to the user's own machine, which is why the host owns it.
+    /// </remarks>
+    private IAutoStashStore? _autoStash;
 
     /// <summary>
     /// The recent list as it is on disk, which is not what the dropdown holds.
@@ -551,6 +563,10 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                     $"Waiting for the current work to finish, then switching to {target}…";
                 await Busy.WhenIdleAsync().ConfigureAwait(true);
                 return true;
+
+            case GuardChoice.StashAndProceed:
+                // False here means the stash did not happen, and the switch must not either.
+                return await TakeAutoStashAsync(target).ConfigureAwait(true);
 
             default:
                 _logger.Info(LogCategory.Ui, $"switch to {target} cancelled");
@@ -1179,6 +1195,15 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         _git = client;
         RepositoryPath = path;
+        _autoStash = new JsonAutoStashStore(path, _logger);
+
+        // Before anything is written into .versio/local/, and per clone rather than per
+        // project: an auto-stash record that git can see is a record the NEXT auto-stash
+        // swallows, leaving real work in the stash with nothing pointing at it.
+        await LocalExclude.EnsureAsync(
+            await client.GitDirectoryAsync(busy.Token).ConfigureAwait(true),
+            _logger,
+            busy.Token).ConfigureAwait(true);
 
         // Read while the repository is open, because this is the only time it can be read.
         // When it is wanted - offering to clone a vanished repository back - there is no
@@ -1792,6 +1817,16 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     public Func<GuardPrompt, GuardChoice?>? AskGuard { get; set; }
 
     /// <summary>
+    /// Puts the offer of stashed work to the user on returning to a branch.
+    /// </summary>
+    /// <remarks>
+    /// <b>Unset means Leave</b>, not Restore and certainly not Discard. A host that forgets to
+    /// wire this leaves every stash exactly where it is and offers it again next time, which is
+    /// the only one of the three answers that cannot lose anything.
+    /// </remarks>
+    public Func<ChoicePrompt, StashedWorkChoice?>? AskAboutStashedWork { get; set; }
+
+    /// <summary>
     /// Evaluate the guard for an intent, and ask the user if it wants asking.
     /// </summary>
     /// <remarks>
@@ -1820,8 +1855,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// Phase 7 deletes this method and its callers switch to <see cref="Ask"/>.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// The guard's question, now including the state of the working tree.
+    /// </summary>
+    /// <remarks>
+    /// It used to pass <c>WorkingTreeSnapshot.Clean</c> deliberately: offering to stash before
+    /// anything could stash would be a button that lies about what it does, which is how
+    /// somebody loses work believing it was saved. The auto-stash exists now, so the real tree
+    /// goes in and <see cref="GuardChoice.StashAndProceed"/> becomes reachable.
+    /// </remarks>
     private GuardChoice AskAboutWork(GuardIntent intent, string target = "") =>
-        Ask(intent, target, WorkingTreeSnapshot.Clean);
+        Ask(intent, target);
 
     private GuardChoice Ask(
         GuardIntent intent, string target = "", WorkingTreeSnapshot? tree = null)
@@ -1969,6 +2013,239 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// rather than the lock as it stands now.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// Stash the work in the tree so a switch can go ahead, and record that we did.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The set difference is the correctness check, not bookkeeping.</b> <c>git stash
+    /// push</c> on a clean tree prints <i>No local changes to save</i> and exits 0 <i>without
+    /// creating an entry</i> — measured against real git — so the exit code cannot say whether
+    /// the work is safe. If no new stash id appears this returns false and the switch is
+    /// abandoned: a stash that did not happen followed by a checkout that did is the worst
+    /// outcome available here.
+    /// </para>
+    /// <para>
+    /// The locks are captured <i>before</i> the push and released <i>after</i> the id is in
+    /// hand, in that order deliberately. Releasing first would leave a lock cleared against a
+    /// stash that was never created, which is work nobody can find.
+    /// </para>
+    /// </remarks>
+    /// <remarks>Internal so a test can reach the refusal path directly: with a clean tree the
+    /// guard answers Proceed and never asks, so the only way to exercise "the stash created
+    /// nothing" through the front door is a race nothing can schedule.</remarks>
+    internal async Task<bool> TakeAutoStashAsync(string target)
+    {
+        if (_git is null || _autoStash is null)
+        {
+            return false;
+        }
+
+        using var busy = Busy.Begin(WorkKind.GitWrite, $"Saving your work before {target}…");
+
+        var head = await _git.HeadCommitAsync(busy.Token).ConfigureAwait(true);
+        var branch = AutoStash.KeyFor(BranchName, head);
+        var before = await _git.StashListAsync(busy.Token).ConfigureAwait(true);
+
+        // Captured before anything moves: the push is what makes the tree clean, and a lock
+        // read afterwards would describe the world the stash created rather than the one the
+        // user is leaving.
+        var captured = Sync.CaptureLocksForStash();
+        var files = Changes.Count;
+        var marker = AutoStash.Marker(branch, Short(head));
+
+        GitResult push = default!;
+        await Sync.WhileGitRewritesTheTreeAsync(
+            "auto-stash",
+            async () => push = await _git
+                .StashPushAsync(marker, includeUntracked: true, busy.Token)
+                .ConfigureAwait(true))
+            .ConfigureAwait(true);
+
+        var after = await _git.StashListAsync(busy.Token).ConfigureAwait(true);
+
+        if (AutoStash.NewStash(before, after) is not { } stashId)
+        {
+            // Either the push failed or it found nothing to save, and both mean the same thing
+            // here: the work is not somewhere it can be recovered from, so nothing else may
+            // happen. Never fall through to the checkout, and never to a discard.
+            StatusSummary = push.Success
+                ? "Nothing was stashed, so nothing was switched."
+                : push.FailureReason ?? "the stash failed, so nothing was switched";
+
+            _logger.Warn(LogCategory.Git,
+                "auto-stash created no entry " +
+                $"({(push.Success ? "clean tree" : push.FailureReason)}); {target} abandoned");
+
+            return false;
+        }
+
+        var state = await _autoStash.ReadAsync(CancellationToken.None).ConfigureAwait(true);
+
+        await _autoStash.WriteAsync(
+            AutoStash.With(state, new AutoStashRecord
+            {
+                Branch = branch,
+                StashCommitId = stashId,
+                Message = marker,
+                CreatedUtc = _clock.UtcNow,
+                HeadCommit = head,
+                FileCount = files,
+                Locks = captured,
+            }),
+            CancellationToken.None).ConfigureAwait(true);
+
+        await Sync.ReleaseStashedLocksAsync(captured, stashId).ConfigureAwait(true);
+
+        _logger.Info(LogCategory.Git,
+            $"auto-stashed {files} changed file(s) on {branch} as {Short(stashId)}" +
+            (captured.Count == 0
+                ? string.Empty
+                : $", releasing {captured.Count} direction lock(s)"));
+
+        StatusSummary = $"Saved {files} changed file(s). They will be offered back on {branch}.";
+        return true;
+    }
+
+    /// <summary>
+    /// Offer back whatever was stashed for the branch just arrived at.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Offered, never automatic.</b> The same principle as the direction lock, which is
+    /// never auto-cleared: the work a stash holds is still work, and silently rewriting
+    /// somebody's working tree as a side effect of picking a branch from a dropdown is that
+    /// mistake wearing a friendlier hat.
+    /// </para>
+    /// <para>
+    /// Records whose stash has gone — popped or dropped from a terminal, which is an ordinary
+    /// thing for a git user to do — are cleared here and nothing is said about it. It must not
+    /// read as an error.
+    /// </para>
+    /// </remarks>
+    private async Task OfferStashedWorkAsync(string branch)
+    {
+        if (_git is null || _autoStash is null)
+        {
+            return;
+        }
+
+        var state = await _autoStash.ReadAsync(CancellationToken.None).ConfigureAwait(true);
+        if (state.Entries.Count == 0)
+        {
+            return;
+        }
+
+        var live = await _git.StashListAsync(CancellationToken.None).ConfigureAwait(true);
+        var arrival = AutoStash.OnArrival(branch, state, live);
+
+        if (arrival.Stale.Count > 0)
+        {
+            state = AutoStash.Without(state, [.. arrival.Stale.Select(e => e.StashCommitId)]);
+            await _autoStash.WriteAsync(state, CancellationToken.None).ConfigureAwait(true);
+
+            _logger.Info(LogCategory.Git,
+                $"{arrival.Stale.Count} auto-stash record(s) for {branch} name stashes that are " +
+                "no longer in git; forgotten");
+        }
+
+        if (!arrival.HasWork)
+        {
+            return;
+        }
+
+        var offer = arrival.Restorable[0];
+        var choice = AskAboutStashedWork?.Invoke(AutoStashNarrative.Arrival(arrival, _clock.UtcNow))
+                     ?? StashedWorkChoice.Leave;
+
+        switch (choice)
+        {
+            case StashedWorkChoice.Restore:
+                await RestoreStashAsync(offer).ConfigureAwait(true);
+                break;
+
+            case StashedWorkChoice.Discard:
+                var warning = AutoStashNarrative.DiscardWarning(offer);
+                if (ConfirmDestructive?.Invoke(warning.Title, warning.Body) != true)
+                {
+                    return;
+                }
+
+                await _git.StashDropAsync(offer.Ref, CancellationToken.None).ConfigureAwait(true);
+                await _autoStash.WriteAsync(
+                    AutoStash.Without(state, offer.Record.StashCommitId),
+                    CancellationToken.None).ConfigureAwait(true);
+
+                _logger.Warn(LogCategory.Git,
+                    $"auto-stash {Short(offer.Record.StashCommitId)} discarded at the user's request");
+
+                StatusSummary = "The stashed work was discarded.";
+                break;
+
+            default:
+                // Left where it is, and offered again next time. Doing nothing has to be a real
+                // answer, or the dialog is a demand rather than an offer.
+                StatusSummary = $"Your stashed work is still saved for {branch}.";
+                break;
+        }
+    }
+
+    /// <summary>Restore one stash, and the sync state that went with it.</summary>
+    /// <remarks>
+    /// <c>pop</c> rather than apply-then-drop, because git drops only when the restore
+    /// succeeded. A conflicted restore keeps both the stash and its record: the work still
+    /// exists and is still ours, and the conflict gate refuses both sync directions until
+    /// somebody resolves it.
+    /// </remarks>
+    private async Task RestoreStashAsync(LiveStash offer)
+    {
+        if (_git is null || _autoStash is null)
+        {
+            return;
+        }
+
+        using var busy = Busy.Begin(WorkKind.GitWrite, "Restoring your stashed work…");
+
+        GitResult result = default!;
+        await Sync.WhileGitRewritesTheTreeAsync(
+            "restoring an auto-stash",
+            async () => result = await _git
+                .StashApplyAsync(offer.Ref, drop: true, busy.Token)
+                .ConfigureAwait(true))
+            .ConfigureAwait(true);
+
+        if (!result.Success)
+        {
+            StatusSummary = result.FailureReason ?? "the stashed work could not be restored";
+            _logger.Error(LogCategory.Git,
+                $"restoring auto-stash {Short(offer.Record.StashCommitId)} failed; the stash is " +
+                $"kept: {result.FailureReason}");
+            return;
+        }
+
+        var refused = await Sync.RestoreStashedLocksAsync(offer.Record.Locks).ConfigureAwait(true);
+
+        var state = await _autoStash.ReadAsync(CancellationToken.None).ConfigureAwait(true);
+        await _autoStash.WriteAsync(
+            AutoStash.Without(state, offer.Record.StashCommitId),
+            CancellationToken.None).ConfigureAwait(true);
+
+        _logger.Info(LogCategory.Git,
+            $"restored auto-stash {Short(offer.Record.StashCommitId)}" +
+            (refused.Count == 0
+                ? string.Empty
+                : $"; {refused.Count} direction lock(s) left alone because newer work holds them"));
+
+        StatusSummary = refused.Count == 0
+            ? "Your stashed work is back."
+            : "Your stashed work is back. Some projects have changed since, so their sync " +
+              "state was left as it is.";
+
+        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+    }
+
+    private static string Short(string commit) => commit.Length >= 7 ? commit[..7] : commit;
+
     private WorkingTreeSnapshot TreeState() => new()
     {
         DirtyPaths = [.. Changes.Select(c => c.Path)],
@@ -2398,9 +2675,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             // be correct by coincidence rather than by decision — and the comment here used to
             // claim a revert that nothing actually did.
             ShowCurrentBranch();
+            await RefreshAsync().ConfigureAwait(true);
+            return;
         }
 
         await RefreshAsync().ConfigureAwait(true);
+
+        // After the refresh, so the panel already describes the branch we have arrived on
+        // before a dialog appears over it. Offered on EVERY successful checkout - the
+        // dropdown, a new branch, or a pull that moved HEAD - because a stash the user is
+        // never offered is a stash they will not know to look for.
+        await OfferStashedWorkAsync(branch).ConfigureAwait(true);
     }
 
     private Task OpenRepositoryAsync()
