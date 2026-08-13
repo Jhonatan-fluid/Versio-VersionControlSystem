@@ -29,10 +29,20 @@ scratch/
 # ---------------------------------------------------------------------------
 # CODESYS writes these next to any project it opens. They are per-user and per-
 # machine, they churn on every open, and they must never be tracked.
+#
+# The lock marker REPLACES the extension rather than appending to it:
+# RefrigeratorControl.project is held by RefrigeratorControl.~u, never by
+# RefrigeratorControl.project.~u. The rule here used to be `*.project.~*`, which
+# was written from the second, plausible reading and therefore matched nothing at
+# all - the marker showed up untracked in every status while three places in the
+# code correctly assumed it was ignored. `CodesysProjectFormat.OccupancyMarkerFor`
+# and `TransientPatternsFor` have always had it right, and adoption writes the
+# scoped form (`plc/Machine.~u`) for repositories it sets up; this repository
+# predates that and was typed by hand.
 *.opt
 *.precompilecache
 *~
-*.project.~*
+*.~u
 *.autosave
 *.bak
 
