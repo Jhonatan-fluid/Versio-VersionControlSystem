@@ -318,6 +318,75 @@ public sealed class SyncOrchestrator
     public bool IsExternalWriteInProgress => Volatile.Read(ref _externalWrites) > 0;
 
     /// <summary>
+    /// Which side of which binding Versio itself is writing right now.
+    /// </summary>
+    /// <remarks>
+    /// Per binding and per side, unlike <see cref="_externalWrites"/>, which is repository-wide
+    /// because a checkout is. An export rewrites one mirror and says nothing about anybody
+    /// else's, so holding off every binding's syncing for the 20–30 seconds a toolchain run
+    /// takes would drop real edits elsewhere in the repository.
+    /// </remarks>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<(string Binding,
+        ChangeSource Side), int> _ownWrites = new();
+
+    /// <summary>True while Versio is writing that side of that binding itself.</summary>
+    public bool IsWriting(string bindingId, ChangeSource side) =>
+        _ownWrites.TryGetValue((bindingId, side), out var depth) && depth > 0;
+
+    /// <summary>
+    /// Declare that Versio is about to write one side of a binding. Dispose when it has.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The self-write suppressor cannot do this job, and had quietly stopped trying.</b> It
+    /// registers one path with one expected hash, immediately before writing, consumed by the
+    /// first matching event. An export writes a whole tree and swaps a directory into place,
+    /// which raises one watcher event <i>per file</i> — 56 on the project that surfaced this —
+    /// and the registration was made <b>after</b> the run finished, tens of seconds after the
+    /// swap those events describe. One registration, arriving late, against dozens of echoes.
+    /// </para>
+    /// <para>
+    /// Nothing was ever lost, because the direction lock refused every one of them: an export
+    /// only runs while the project side is authoritative, and a mirror edit is refused in that
+    /// state anyway. What it cost was work — each echo ran a conflict probe (a <c>git status</c>
+    /// process) and hashed the whole mirror before reaching the lock, so a tree of n files cost
+    /// n status calls and n full-tree hashes. Quadratic, in the one place a project is large.
+    /// </para>
+    /// <para>
+    /// A window rather than a set of hashes, because that is what the problem is: the mirror is
+    /// mid-write for a known stretch of time, and every event in it is Versio's own. The same
+    /// shape as <see cref="BeginExternalWrite"/>, narrowed to the side actually being written
+    /// so an edit to the <i>other</i> side is still seen.
+    /// </para>
+    /// </remarks>
+    public IDisposable BeginOwnWrite(string bindingId, ChangeSource side)
+    {
+        _ownWrites.AddOrUpdate((bindingId, side), 1, (_, depth) => depth + 1);
+        _log.Debug(LogCategory.Sync,
+            $"{bindingId}: writing {side} ourselves; echoes from it are not edits");
+
+        return new OwnWrite(this, bindingId, side);
+    }
+
+    private sealed class OwnWrite(SyncOrchestrator owner, string bindingId, ChangeSource side)
+        : IDisposable
+    {
+        private bool _disposed;
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            owner._ownWrites.AddOrUpdate((bindingId, side), 0, (_, depth) => Math.Max(0, depth - 1));
+            owner._log.Debug(LogCategory.Sync, $"{bindingId}: finished writing {side}");
+        }
+    }
+
+    /// <summary>
     /// Declare that git is about to rewrite the working tree. Dispose when it has finished.
     /// </summary>
     /// <remarks>
@@ -541,6 +610,23 @@ public sealed class SyncOrchestrator
         {
             return (Refuse(LogLevel.Debug, SyncVerdict.GitWriteSuppressed, job.BindingId,
                 "git is rewriting the working tree; this was not an edit", state), slotHeld);
+        }
+
+        // 1c. WE ARE WRITING THAT SIDE RIGHT NOW.
+        //
+        //     The same argument as 1b, about our own writes rather than git's, and in the
+        //     same place for the same reason: the content really did change, so the hash gate
+        //     would say yes. An export swaps a directory into place and the watcher reports
+        //     every file in it; the suppressor below can only answer for one path with one
+        //     hash, registered after the run, so in practice it answered for none of them.
+        //
+        //     Before the conflict probe and the hash gate deliberately - those are what the
+        //     echoes were costing, a git status process and a full-tree hash apiece.
+        if (IsWriting(job.BindingId, job.Source))
+        {
+            return (Refuse(LogLevel.Debug, SyncVerdict.SelfWriteSuppressed, job.BindingId,
+                $"Versio is writing the {job.Source} side of this project right now; " +
+                "this was not an edit", state), slotHeld);
         }
 
         // 2. Hash gate. Before the lock on purpose: an event carrying no actual change is
@@ -845,6 +931,11 @@ public sealed class SyncOrchestrator
         try
         {
 
+        // Open BEFORE the run and closed after the bookkeeping, because the events being
+        // suppressed are raised by the directory swap in the middle and settle whenever the
+        // watcher's quiet period lets them - which is long after the toolchain has exited.
+        using var writing = BeginOwnWrite(binding.Id, ChangeSource.ExportedText);
+
         var result = await _toolchain.RunAsync(job, _progress, ct).ConfigureAwait(false);
         var elapsed = _clock.UtcNow - started;
 
@@ -1099,6 +1190,12 @@ public sealed class SyncOrchestrator
         _log.Warn(LogCategory.Sync,
             $"{binding.Id}: importing {binding.ExportPath} → {binding.ProjectPath}" +
             (string.IsNullOrEmpty(binding.Profile) ? string.Empty : $" [{binding.Profile}]"));
+
+        // The other direction, for symmetry and for the same reason: an import rewrites the
+        // .project, the watcher reports it, and that event is ours. One file rather than a
+        // tree, so it was never expensive - but a rule that holds for one side and not the
+        // other is a rule somebody will eventually be surprised by.
+        using var writing = BeginOwnWrite(binding.Id, ChangeSource.Project);
 
         var result = await _toolchain.RunAsync(job, _progress, ct).ConfigureAwait(false);
         var elapsed = _clock.UtcNow - started;

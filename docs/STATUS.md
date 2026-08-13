@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-13 · **Commits:** 69 · **Tests:** 968 unit + 198 UI + 111 integration, 0 skipped
+**Date:** 2026-08-13 · **Commits:** 70 · **Tests:** 977 unit + 198 UI + 111 integration, 0 skipped
 
 > All three measured on 2026-08-13, on branch `Clean-up-and-continue-dev`. The integration
 > suite was re-run in full against real CODESYS 3.5.22.20 after the manifest work — 111
@@ -286,6 +286,58 @@ does not record them has to be run again.
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### An export woke the change detector once per file it had just written
+
+Noticed in the log while checking something else, on a real project with 56 exported files: for
+about forty seconds the app ran a `git status` and hashed the whole mirror roughly twice a
+second, with git invocations overlapping each other — `still running` — and each one ending in
+a `BlockedByLock` warning.
+
+The mechanism is one line in the log above the storm:
+
+```
+watcher error on …\ObjectOrientedProgramming(Extended) (Access is denied.) — events were lost
+```
+
+The export stages into `<mirror>.versio_staging` and **swaps the directory into place**, which
+invalidates the `FileSystemWatcher`'s handle on the directory it was watching. The error
+handler does the right thing — an overflow means events were lost, so rescan everything — and
+the rescan then finds all 56 files changed, because they are new files, and reports each one as
+a settled change. Every one of those became a sync job: a conflict probe (a `git status`
+process) and a full-tree hash, before the direction lock refused it. **n files cost n status
+processes and n full-tree hashes.**
+
+`SelfWriteSuppressor` exists for exactly this and could not do it. It registers *one* path with
+*one* expected hash, consumed by the first matching event, and `ExportAsync` registers it
+**after** the run completes — tens of seconds after the swap those events describe. One late
+registration against dozens of echoes. It had been that way since the suppressor was written,
+and it never showed up because **the direction lock was quietly doing its job**: an export only
+runs while the project side is authoritative, and a mirror edit is refused in that state anyway.
+Nothing was ever lost. It was pure cost, and it is quadratic in the size of the project — worst
+exactly where projects are large.
+
+The fix is a window rather than a set of hashes, because that is the shape of the problem: the
+mirror is mid-write for a known stretch of time and every event in it is ours.
+`BeginOwnWrite(bindingId, side)` is the same mechanism as the git-write window (§5.A), with two
+deliberate differences:
+
+- **Per binding, and per side.** A checkout rewrites the whole repository; an export rewrites
+  one mirror. Holding every binding off for the 20–31 s a toolchain run takes would drop real
+  edits elsewhere, and an engineer saving in the IDE *during* an export must still be seen.
+- **Opened before the run and closed after the bookkeeping**, because the echoes are raised by
+  the swap in the middle and settle whenever the watcher's quiet period lets them — which is
+  long after the toolchain has exited.
+
+Nine tests, five of which fail with the gate reverted. The one that matters is the ninth: it
+drives a **real export** through the orchestrator and asks, from inside the run, whether the
+window is open — every other test opens it by hand and would pass against an export that never
+called it. That is the mistake this repository has now shipped three times, and it fails when
+the call is removed.
+
+Not fixed, and worth knowing: the watcher's response to a lost-events error is still to report
+every file in the tree individually. The window makes that free for our own writes; a genuine
+overflow — a network share, antivirus — still produces one job per file.
 
 ### The repository dropdown could not do the one thing it exists for
 
