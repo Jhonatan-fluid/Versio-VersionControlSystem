@@ -1,4 +1,4 @@
-﻿<Window x:Class="Versio.App.Views.MainWindow"
+<Window x:Class="Versio.App.Views.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:Versio.App.Views"
@@ -13,7 +13,7 @@
          Application.Resources, and ThemeManager swaps the palette inside THAT dictionary.
          A second copy here gave this window its own private palette: lookups found it first
          and never reached the application's, so the theme buttons in Settings changed
-         nothing on the main window while every dialog â€” which has no private copy â€” followed
+         nothing on the main window while every dialog — which has no private copy — followed
          them correctly. One theme, one place, swapped once. -->
     <Window.Resources>
         <ResourceDictionary>
@@ -52,6 +52,22 @@
     </Window.Resources>
 
     <Grid>
+        <!--
+            Two columns, because the rail is app-level navigation and has to own the whole left
+            edge.
+
+            It used to live inside the body row, which meant it stopped at the bottom of the
+            panels while the log console - a sibling row - ran the full width of the window
+            underneath it. Two surfaces of the same colour meeting at a T-junction under the
+            rail icons, which reads exactly like the log bar overlapping the sidebar, because
+            visually that is what it is. The rail now spans the body and the log; the log
+            starts where the content starts.
+        -->
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />  <!-- rail    -->
+            <ColumnDefinition Width="*" />     <!-- content -->
+        </Grid.ColumnDefinitions>
+
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />   <!-- top bar   -->
             <RowDefinition Height="*" />      <!-- body      -->
@@ -60,7 +76,7 @@
         </Grid.RowDefinitions>
 
         <!-- ============================== TOP BAR ============================== -->
-        <Border Grid.Row="0" Background="{DynamicResource Brush.Surface.Base}" Padding="10,8">
+        <Border Grid.Row="0" Grid.ColumnSpan="2" Background="{DynamicResource Brush.Surface.Base}" Padding="10,8">
             <!--
                 Two flexible columns, not one. Every column here used to be Auto except the
                 one holding the branch buttons, so both dropdowns were pinned at 230 and 200 px
@@ -123,15 +139,15 @@
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="6,0,0,0">
                     <Button Style="{StaticResource IconButton}"
                             Content="{DynamicResource Icon.Folder}"
-                            Click="OnOpenRepository" ToolTip="Open a repositoryâ€¦" />
+                            Click="OnOpenRepository" ToolTip="Open a repository…" />
 
-                    <!-- Clone. Beside Open because they answer the same question â€” "work on
-                         which repository?" â€” and this is the answer when you do not have it
+                    <!-- Clone. Beside Open because they answer the same question — "work on
+                         which repository?" — and this is the answer when you do not have it
                          yet. Enabled without one open, unlike everything else in this bar. -->
                     <Button Style="{StaticResource IconButton}"
                             Content="{DynamicResource Icon.Download}"
                             Command="{Binding CloneCommand}"
-                            ToolTip="Clone a repositoryâ€¦" />
+                            ToolTip="Clone a repository…" />
                 </StackPanel>
 
                 <!-- Branch dropdown. Closed: name and divergence only. Upstream tracking is
@@ -170,7 +186,7 @@
                     <Button Style="{StaticResource IconButton}"
                             Content="{DynamicResource Icon.Add}"
                             Command="{Binding CreateBranchCommand}"
-                            ToolTip="Create a branch from HEAD and switch to itâ€¦" />
+                            ToolTip="Create a branch from HEAD and switch to it…" />
 
                     <Button Style="{StaticResource IconButton}"
                             Content="{DynamicResource Icon.Refresh}"
@@ -194,7 +210,7 @@
 
              Two pixels tall and inside the top bar's shadow, so an operation that takes 50 ms
              does not shove the whole window down and back on every keystroke. -->
-        <Grid Grid.Row="0" VerticalAlignment="Bottom" Panel.ZIndex="10"
+        <Grid Grid.Row="0" Grid.ColumnSpan="2" VerticalAlignment="Bottom" Panel.ZIndex="10"
               Visibility="{Binding Busy.IsBusy, Converter={StaticResource BoolToVisibility}}">
             <ProgressBar IsIndeterminate="True" Height="2" BorderThickness="0"
                          Background="Transparent"
@@ -245,7 +261,7 @@
                     <!-- The log panel shows this session; the folder holds the last five
                          days. Troubleshooting a problem from yesterday needs the file, so
                          the way to reach it is a button rather than a path to memorise. -->
-                    <Button Content="Open logs folderâ€¦" Margin="10,0,10,10"
+                    <Button Content="Open logs folder…" Margin="10,0,10,10"
                             HorizontalAlignment="Left"
                             Style="{StaticResource GhostButton}"
                             Command="{Binding OpenLogsFolderCommand}"
@@ -262,7 +278,7 @@
                          needed and looked like it was about the repository. -->
                     <TextBlock Text="HELP" Style="{StaticResource SectionLabel}"
                                Margin="10,6,0,6" />
-                    <Button Content="System informationâ€¦" Margin="10,0,10,10"
+                    <Button Content="System information…" Margin="10,0,10,10"
                             HorizontalAlignment="Left"
                             Style="{StaticResource GhostButton}"
                             Click="OnOpenSystemInfo"
@@ -271,53 +287,60 @@
             </Border>
         </Popup>
 
+        <!-- ================================= RAIL =================================
+             In the outer grid, spanning the body and the log, rather than inside the body row.
+             It is app-level navigation: it should not stop halfway down the window and leave
+             the log console running along underneath it. -->
+        <Border x:Name="Rail" Grid.Row="1" Grid.RowSpan="2" Grid.Column="0"
+                Width="{DynamicResource Size.Rail.Width}"
+                Background="{DynamicResource Brush.Surface.Base}">
+            <StackPanel Margin="2,10,2,0">
+                <RadioButton x:Name="RailProject" Style="{StaticResource RailButton}"
+                             IsChecked="True" Tag="Project"
+                             Content="{DynamicResource Icon.Document}"
+                             Checked="OnRailChanged"
+                             ToolTip="Project — the repository as CODESYS structures it, with every change marked" />
+                <RadioButton x:Name="RailGit" Style="{StaticResource RailButton}"
+                             Tag="Git"
+                             Content="{DynamicResource Icon.Link}"
+                             Checked="OnRailChanged"
+                             ToolTip="Git — staging, commit, pull and push" />
+
+                <!-- History is its own panel rather than a section of the git one. The
+                     two answer different questions - what is about to happen, and what
+                     already did - and sharing a column left history with 150 pixels of
+                     it. It is also what makes the log affordable: a panel nobody has
+                     opened reads nothing at all. -->
+                <RadioButton x:Name="RailHistory" Style="{StaticResource RailButton}"
+                             Tag="History"
+                             Content="{DynamicResource Icon.History}"
+                             Checked="OnRailChanged"
+                             ToolTip="History — commits, the files in each, and their diffs" />
+            </StackPanel>
+        </Border>
+
         <!-- ================================ BODY ================================ -->
-        <Grid Grid.Row="1">
+        <Grid Grid.Row="1" Grid.Column="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="380" MinWidth="260" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" MinWidth="340" />
             </Grid.ColumnDefinitions>
 
-            <!-- Rail. Selected state is an accent bar, not a border.
-                 These were dead placeholders; each now switches the panel beside it. A
-                 button that visibly does nothing is worse than one that says why. -->
-            <Border Grid.Column="0" Width="52"
-                    Background="{DynamicResource Brush.Surface.Base}">
-                <StackPanel Margin="6,10,6,0">
-                    <RadioButton x:Name="RailProject" Style="{StaticResource RailButton}"
-                                 IsChecked="True" Tag="Project"
-                                 Content="{DynamicResource Icon.Document}"
-                                 Checked="OnRailChanged"
-                                 ToolTip="Project â€” the repository as CODESYS structures it, with every change marked" />
-                    <RadioButton x:Name="RailGit" Style="{StaticResource RailButton}"
-                                 Tag="Git"
-                                 Content="{DynamicResource Icon.Link}"
-                                 Checked="OnRailChanged"
-                                 ToolTip="Git â€” staging, commit, pull and push" />
-
-                    <!-- History is its own panel rather than a section of the git one. The
-                         two answer different questions - what is about to happen, and what
-                         already did - and sharing a column left history with 150 pixels of
-                         it. It is also what makes the log affordable: a panel nobody has
-                         opened reads nothing at all. -->
-                    <RadioButton x:Name="RailHistory" Style="{StaticResource RailButton}"
-                                 Tag="History"
-                                 Content="{DynamicResource Icon.History}"
-                                 Checked="OnRailChanged"
-                                 ToolTip="History â€” commits, the files in each, and their diffs" />
-                </StackPanel>
-            </Border>
-
             <!-- Left panel. One card; the rail swaps its contents. -->
-            <Border Grid.Column="1" Background="{DynamicResource Brush.Surface.Base}"
+            <Border Grid.Column="0" Background="{DynamicResource Brush.Surface.Base}"
                     Margin="8,8,0,8" CornerRadius="{DynamicResource Radius.Card}">
                 <DockPanel>
                     <Grid DockPanel.Dock="Top" Margin="14,12,12,8">
-                        <TextBlock Style="{StaticResource SectionLabel}"
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Style="{StaticResource SectionLabel}"
+                                   VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis"
                                    Text="{Binding PanelTitle}" />
-                        <Border HorizontalAlignment="Right"
+                        <Border Grid.Column="1" Margin="8,0,0,0"
                                 x:Name="ChangeCountBadge"
                                 Background="{DynamicResource Brush.Accent.Muted}"
                                 CornerRadius="9" Padding="8,1" MinWidth="22">
@@ -361,15 +384,22 @@
                                                    Foreground="{DynamicResource Brush.Accent.Default}" />
                                     </StackPanel>
 
-                                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                    <!-- Compact: three buttons inside a card that is itself
+                                         inside a 380 px panel. At the full 32 px they set the
+                                         height of the whole card and pushed the file lists
+                                         down for nothing. -->
+                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                                         <Button Content="Fetch" Style="{StaticResource GhostButton}"
+                                                Height="{DynamicResource Size.Control.Compact}"
                                                 Command="{Binding FetchCommand}" />
                                         <Button Content="Pull" Margin="6,0,0,0"
                                                 Style="{StaticResource GhostButton}"
+                                                Height="{DynamicResource Size.Control.Compact}"
                                                 ToolTip="Fast-forward only; a divergence is surfaced, never auto-merged"
                                                 Command="{Binding PullCommand}" />
                                         <Button Content="Push" Margin="6,0,0,0"
                                                 Style="{StaticResource GhostButton}"
+                                                Height="{DynamicResource Size.Control.Compact}"
                                                 ToolTip="Pushing is what releases the PLC direction locks"
                                                 Command="{Binding PushCommand}" />
                                     </StackPanel>
@@ -381,9 +411,15 @@
                                  that happens dozens of times a day. -->
                             <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
                                 <Grid Margin="0,0,0,4">
-                                    <TextBlock Text="COMMIT MESSAGE"
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="COMMIT MESSAGE"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"
                                                Style="{StaticResource SectionLabel}" />
-                                    <TextBlock HorizontalAlignment="Right"
+                                    <TextBlock Grid.Column="1" Margin="8,0,0,0"
                                                Text="{Binding CommitSubjectLength}"
                                                FontFamily="{DynamicResource Font.Mono}"
                                                FontSize="{DynamicResource Font.Size.Caption}"
@@ -393,7 +429,7 @@
 
                                 <TextBox x:Name="CommitMessageBox" Height="72"
                                          Style="{StaticResource FlatTextBox}"
-                                         Tag="Summary of the changeâ€¦"
+                                         Tag="Summary of the change…"
                                          AcceptsReturn="True" TextWrapping="Wrap"
                                          VerticalContentAlignment="Top"
                                          KeyDown="OnCommitMessageKeyDown"
@@ -436,11 +472,25 @@
                                 </TextBlock>
                             </StackPanel>
 
-                            <!-- Staged / unstaged -->
+                            <!-- Staged / unstaged.
+                                 Two columns, not one cell with a right-aligned button in it.
+                                 Sharing the cell is how "NOT STAGED" and "Discard" ended up
+                                 touching in a 380 px panel: a right-aligned child grows
+                                 leftwards across the label instead of pushing it, and neither
+                                 one knows the other is there. The label takes what is left and
+                                 trims; the buttons keep their width. -->
                             <Grid DockPanel.Dock="Top" Margin="0,0,0,4">
-                                <TextBlock Text="STAGED" Style="{StaticResource SectionLabel}" />
-                                <Button HorizontalAlignment="Right" Content="Unstage all"
-                                        Style="{StaticResource GhostButton}" Padding="8,2" Height="{DynamicResource Size.Control.Compact}"
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="STAGED"
+                                           VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis"
+                                           Style="{StaticResource SectionLabel}" />
+                                <Button Grid.Column="1" Content="Unstage all" Margin="8,0,0,0"
+                                        Style="{StaticResource GhostButton}" Padding="8,2"
+                                        Height="{DynamicResource Size.Control.Compact}"
                                         Command="{Binding UnstageCommand}" />
                             </Grid>
                             <ListBox DockPanel.Dock="Top" ItemsSource="{Binding Staged}"
@@ -452,8 +502,16 @@
                                      MaxHeight="150" Margin="0,0,0,10" />
 
                             <Grid DockPanel.Dock="Top" Margin="0,0,0,4">
-                                <TextBlock Text="NOT STAGED" Style="{StaticResource SectionLabel}" />
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="NOT STAGED"
+                                           VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis"
+                                           Style="{StaticResource SectionLabel}" />
+                                <StackPanel Grid.Column="1" Orientation="Horizontal"
+                                            Margin="8,0,0,0">
                                     <!-- Discard is per-FILE and needs a selection, while
                                          "Stage all" takes the list. That asymmetry is the
                                          point: this is the only button here that destroys
@@ -463,7 +521,7 @@
                                             Style="{StaticResource GhostButton}"
                                             Foreground="{DynamicResource Brush.Status.Deleted}"
                                             Command="{Binding DiscardCommand}"
-                                            ToolTip="Throw away the changes to the selected file â€” this cannot be undone" />
+                                            ToolTip="Throw away the changes to the selected file — this cannot be undone" />
                                     <Button Content="Stage all" Padding="8,2" Margin="6,0,0,0" Height="{DynamicResource Size.Control.Compact}"
                                             Style="{StaticResource GhostButton}"
                                             Command="{Binding StageCommand}" />
@@ -683,7 +741,7 @@
 
                             <TextBox DockPanel.Dock="Top" Margin="0,0,0,6"
                                      Style="{StaticResource FlatTextBox}"
-                                     Tag="Find an object or a fileâ€¦"
+                                     Tag="Find an object or a file…"
                                      Text="{Binding Sync.TreeSearch, UpdateSourceTrigger=PropertyChanged, Delay=200}" />
 
                             <TextBlock DockPanel.Dock="Bottom" Text="{Binding Sync.TreeSummary}"
@@ -784,7 +842,7 @@
                                                  is the accent colour instead of the dimmest
                                                  one on the palette. The complaint that led
                                                  here was that a save looked like nothing was
-                                                 happening for half a minute, and "exportingâ€¦"
+                                                 happening for half a minute, and "exporting…"
                                                  rendered in the same grey as "in sync" is a
                                                  poor answer to it: the eye reads the colour
                                                  before it reads the word. -->
@@ -840,17 +898,26 @@
                 </DockPanel>
             </Border>
 
-            <GridSplitter Grid.Column="2" Width="8" HorizontalAlignment="Stretch"
+            <GridSplitter Grid.Column="1" Width="8" HorizontalAlignment="Stretch"
                           Background="Transparent" />
 
             <!-- Diff -->
-            <Border Grid.Column="3" Background="{DynamicResource Brush.Surface.Base}"
+            <Border Grid.Column="2" Background="{DynamicResource Brush.Surface.Base}"
                     Margin="0,8,8,8" CornerRadius="{DynamicResource Radius.Card}">
                 <DockPanel>
                     <Grid DockPanel.Dock="Top" Margin="14,12,12,8">
-                        <TextBlock Style="{StaticResource SectionLabel}" Text="DIFF" />
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
 
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <TextBlock Grid.Column="0" VerticalAlignment="Center"
+                                   Style="{StaticResource SectionLabel}" Text="DIFF" />
+
+                        <!-- Right-aligned inside its own column, so the path can be long
+                             without reaching the label. -->
+                        <StackPanel Grid.Column="1" Orientation="Horizontal"
+                                    Margin="12,0,0,0" HorizontalAlignment="Right">
                             <!-- Three lines of context is enough for a typo and not enough
                                  for a POU, where whether an edit is safe depends on
                                  declarations well above it. Still a diff either way: the
@@ -928,7 +995,8 @@
         </Grid>
 
         <!-- ============================= LOG PANEL ============================= -->
-        <Border Grid.Row="2" Background="{DynamicResource Brush.Surface.Base}"
+        <Border x:Name="LogConsole" Grid.Row="2" Grid.Column="1"
+                Background="{DynamicResource Brush.Surface.Base}"
                 Margin="8,0,8,8" CornerRadius="{DynamicResource Radius.Card}">
             <DockPanel>
                 <!--
@@ -1099,7 +1167,7 @@
 
                     <TextBox Grid.Column="6" Width="200" Margin="0,0,6,0"
                              Style="{StaticResource FlatTextBox}"
-                             Tag="Findâ€¦"
+                             Tag="Find…"
                              Visibility="{Binding Log.IsExpanded,
                                  Converter={StaticResource BoolToVisibility}}"
                              Text="{Binding Log.Filters.Text, UpdateSourceTrigger=PropertyChanged}" />
@@ -1115,7 +1183,7 @@
                             <Style TargetType="Button" BasedOn="{StaticResource IconButton}">
                                 <Setter Property="Content" Value="{DynamicResource Icon.Pause}" />
                                 <Setter Property="ToolTip"
-                                        Value="Freeze the list. Nothing is lost â€” entries queue up and arrive when you resume" />
+                                        Value="Freeze the list. Nothing is lost — entries queue up and arrive when you resume" />
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding Log.IsPaused}" Value="True">
                                         <Setter Property="Content"
@@ -1135,7 +1203,7 @@
                             Command="{Binding Log.ClearCommand}"
                             Visibility="{Binding Log.IsExpanded,
                                 Converter={StaticResource BoolToVisibility}}"
-                            ToolTip="Clear the view â€” the log file keeps everything" />
+                            ToolTip="Clear the view — the log file keeps everything" />
                 </Grid>
 
                 <ListBox x:Name="LogList" Height="200"
@@ -1179,7 +1247,7 @@
         </Border>
 
         <!-- ============================= STATUS BAR ============================= -->
-        <Border Grid.Row="3" Background="{DynamicResource Brush.Surface.Base}" Padding="16,6">
+        <Border Grid.Row="3" Grid.ColumnSpan="2" Background="{DynamicResource Brush.Surface.Base}" Padding="16,6">
             <Grid>
                 <StackPanel Orientation="Horizontal">
                     <Ellipse Width="7" Height="7" VerticalAlignment="Center"

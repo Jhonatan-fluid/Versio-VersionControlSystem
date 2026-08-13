@@ -269,6 +269,61 @@ does not record them has to be run again.
 
 Written down with their evidence, because the reasoning is worth more than the fix.
 
+### Two things overlapping, and a test suite that could not see either
+
+Both reported from the running app, and neither was reachable by anything in the suite: it
+constructed the window and measured it once, at a comfortable width. **An overlap is not a
+failure in WPF.** Two controls sitting on top of each other measure and arrange perfectly well —
+the layout did exactly what it was told.
+
+**The log console ran underneath the rail.** The rail lived inside the body *row*, so it stopped
+at the bottom of the panels, while the log console — a sibling row — spanned the full width of
+the window beneath it. Two surfaces of the same `Surface.Base` meeting at a T-junction under the
+rail icons, which is precisely what "the logs bar overlapping the left side bar" describes. The
+rail is app-level navigation, so it now lives in the outer grid and spans the body and the log;
+the log starts where the content starts. The status bar still spans the full width, which is
+where a status bar belongs.
+
+**A section label and its buttons shared one Grid cell.** `NOT STAGED` with `Discard` and `Stage
+all`, `STAGED` with `Unstage all`, the panel title with its count badge, `COMMIT MESSAGE` with
+its length counter, and `DIFF` with a checkbox and a 420 px path. A right-aligned child in a
+shared cell grows *leftwards across* the label rather than pushing it, and neither knows the
+other is there — so in a 380 px panel the label and the first button touched. Every one of those
+headers is two columns now: the label takes what is left and trims, the buttons keep their width.
+
+The tests assert **rendered geometry** — bounds transformed into a common ancestor, at a 1000 px
+window — because that is the only form in which "these two things are on top of each other" can
+be written down. They also select the git panel through the rail first: a collapsed panel
+arranges to nothing, which would have made every assertion vacuously true. All three fixes were
+checked by putting the old layout back, where each fails.
+
+Two smaller things went with it. The branch card's *Fetch / Pull / Push* are compact: at the full
+32 px they set the height of the whole card and pushed the file lists down for nothing. And
+`Size.Rail.Width` is finally what sets the rail's width, instead of a hardcoded 52 sitting beside
+an unused token.
+
+### An editor that corrupted every em-dash in a file it was only reformatting
+
+Not a design finding, and worth recording anyway because the damage was invisible in the diff
+that mattered and glaring on screen: the commit-box placeholder rendered as
+`Summary of the changeâ€¦`.
+
+`MainWindow.xaml` was edited in a few places with PowerShell's `Get-Content -Raw` /
+`Set-Content`, which reads with the system's ANSI codepage and writes UTF-8. Every one of the
+file's 18 em-dashes and ellipses — all of them in tooltips and comments — round-tripped into
+mojibake, and a BOM was added to a file that never had one. **Nothing caught it.** The build was
+clean, all 116 tests passed, the binding tracer was empty, and XAML is perfectly happy to render
+a corrupted string. It took a screenshot of the app.
+
+Repaired by re-decoding: the file's only non-ASCII characters were the mojibake sequences
+themselves, so reading the UTF-8 bytes back through CP1252 is exact rather than a guess. Verified
+by counting `…` and `—` against the previous commit — 18 in both — and by checking the first three
+bytes are `3C 57 69` rather than a BOM.
+
+The lesson is narrow and worth keeping: **edit source files with an editor that preserves
+encoding, not with a shell round-trip.** If a shell must do it, `[IO.File]::ReadAllText` /
+`WriteAllText` with an explicit `UTF8Encoding($false)` is the pair that does not corrupt anything.
+
 ### The stylesheet's own argument, not applied to four controls
 
 `Controls.xaml` opens by naming the four things that made the first pass look like a Win32 app:

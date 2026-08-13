@@ -1,4 +1,4 @@
-﻿<!--
+<!--
     Control styles.
 
     The first pass looked like a Win32 app, and the reasons were specific: every button
@@ -34,7 +34,7 @@
         window's resources.
 
         It lived in MainWindow.Resources, and SystemInfoWindow used the same key without
-        declaring it - so opening Settings â†’ System information threw
+        declaring it - so opening Settings → System information threw
         "Cannot find resource named 'BoolToVisibility'" from inside the row DataTemplate,
         during Measure. Nothing caught it: the reference compiles, the window is the one
         dialog with no test constructing it, and the throw only happens when somebody opens
