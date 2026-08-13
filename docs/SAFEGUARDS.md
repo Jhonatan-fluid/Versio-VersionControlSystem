@@ -28,8 +28,9 @@ the code, two of which (§5.A and §5.D) can lose work with no user error at all
 
 ## 0. Handover — where this stands
 
-**Branch:** `Clean-up-and-continue-dev`. **Built:** phases 1–6, and **phase 7 is under way** —
-see *Phase 7, as built* at the end of §4 for what has landed and what is next.
+**Branch:** `Clean-up-and-continue-dev`. **Built:** phases 1–7 —
+see *Phase 7, as built* at the end of §4. **Next: phase 8** (§5.D's trash-rename swap, staging
+in the ignore plan, the leftover sweep at open).
 
 Everything below §1 is the original plan, kept as written, with each phase's *"as built"* notes
 appended where it was planned. Read §6 for the order and what is done.
@@ -579,10 +580,16 @@ offer is made.
 6. Taking and restoring for real, in the shell: `StashPushAsync` with the marker, the set
    difference, the lock capture and release (§4.7), and the arrival prompt on **every**
    successful checkout — the dropdown, `CreateBranchAsync`, and a pull that moved HEAD.
-6. **Wire `GuardIntent.Pull`.** It is implemented, tested and deliberately unwired, and its
-   verdicts all resolve to the auto-stash that now exists. A pull is the remaining path that
-   can meet a dirty tree.
-7. **The second and later stashes on one branch.** `OnArrival` returns them all, newest first,
+**6 · `GuardIntent.Pull`, wired.** It had existed, been tested and been deliberately unwired
+since the day the guard was written, because every verdict it produces resolves to a stash that
+did not exist. A pull is the worst path to meet a dirty tree on — it rewrites the project and
+its mirror together — and it is guarded now, with a test that fails when the call is removed.
+`AskAboutWork` is gone with it: it existed only to pass `WorkingTreeSnapshot.Clean`, and became
+a synonym for `Ask` the moment there was something to offer.
+
+**Phase 7 is complete except for one small thing:**
+
+1. **The second and later stashes on one branch.** `OnArrival` returns them all, newest first,
    and the prompt says how many — but only the newest is offered per arrival. Offering the rest
    in turn is a loop nobody has written yet.
 

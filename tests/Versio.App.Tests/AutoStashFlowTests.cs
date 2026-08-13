@@ -260,6 +260,36 @@ public sealed class AutoStashFlowTests : IDisposable
         Assert.Contains("Nothing was stashed", shell.StatusSummary, StringComparison.Ordinal);
     }
 
+    [SkippableFact]
+    public async Task A_pull_over_a_dirty_tree_is_guarded_now_too()
+    {
+        // GuardIntent.Pull existed, was tested, and was deliberately unwired from the day the
+        // guard was written, because all of its verdicts resolve to a stash that did not yet
+        // exist. A pull is the worst path to meet a dirty tree on: it rewrites the project and
+        // its mirror together.
+        Skip.IfNot(GitIsAvailable(), "git is not on PATH");
+
+        var shell = await OpenWithDirtyTreeAsync();
+        var asked = 0;
+
+        shell.AskGuard = _ =>
+        {
+            asked++;
+            return GuardChoice.Cancel;
+        };
+
+        await shell.PullForTestAsync();
+
+        Assert.Equal(1, asked);
+
+        // Cancelled, so the edit is untouched and nothing was stashed.
+        Assert.Contains("half a thought",
+                        File.ReadAllText(Path.Combine(_path, "machine.st")),
+                        StringComparison.Ordinal);
+
+        Assert.Equal(string.Empty, Git("stash list").Trim());
+    }
+
     private static bool GitIsAvailable()
     {
         try

@@ -548,7 +548,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// <returns>True when the switch may go ahead.</returns>
     private async Task<bool> ClearForContextChangeAsync(GuardIntent intent, string target)
     {
-        switch (AskAboutWork(intent, target))
+        // Ask, with the real working tree in it. This used to go through a wrapper that
+        // passed WorkingTreeSnapshot.Clean deliberately - offering to stash before anything
+        // could stash would be a button that lies about what it does - and the wrapper became
+        // a synonym for Ask the moment the auto-stash existed.
+        switch (Ask(intent, target))
         {
             case GuardChoice.Proceed:
                 return true;
@@ -1658,6 +1662,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         return paths.Count;
     }
 
+    /// <summary>Pull, for a test that cannot click the button.</summary>
+    internal Task PullForTestAsync() => PullAsync();
+
     private async Task PullAsync()
     {
         if (_git is null)
@@ -1666,6 +1673,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
 
         _logger.Click("Git.Pull");
+
+        // Guarded at last. GuardIntent.Pull has existed, been tested and been deliberately
+        // unwired since the guard was written, because every verdict it produces resolves to
+        // the auto-stash - and offering to stash before anything could would have been a
+        // button that lies. A pull is the last path that can meet a dirty tree, and it is the
+        // worst one to meet it on: it rewrites the project and the mirror together.
+        if (!await ClearForContextChangeAsync(GuardIntent.Pull, "pulling").ConfigureAwait(true))
+        {
+            return;
+        }
+
         using var busy = Busy.Begin(WorkKind.GitWrite, "Pulling…");
 
         // Same as a checkout: a pull can land a whole new mirror, and an unheld watcher would
@@ -1855,18 +1873,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// Phase 7 deletes this method and its callers switch to <see cref="Ask"/>.
     /// </para>
     /// </remarks>
-    /// <summary>
-    /// The guard's question, now including the state of the working tree.
-    /// </summary>
-    /// <remarks>
-    /// It used to pass <c>WorkingTreeSnapshot.Clean</c> deliberately: offering to stash before
-    /// anything could stash would be a button that lies about what it does, which is how
-    /// somebody loses work believing it was saved. The auto-stash exists now, so the real tree
-    /// goes in and <see cref="GuardChoice.StashAndProceed"/> becomes reachable.
-    /// </remarks>
-    private GuardChoice AskAboutWork(GuardIntent intent, string target = "") =>
-        Ask(intent, target);
-
     private GuardChoice Ask(
         GuardIntent intent, string target = "", WorkingTreeSnapshot? tree = null)
     {
