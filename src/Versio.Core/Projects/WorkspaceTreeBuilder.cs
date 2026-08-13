@@ -23,6 +23,18 @@ public sealed record WorkspaceProject
     public string ExportState { get; init; } = string.Empty;
 
     /// <summary>
+    /// A toolchain run is in flight for this project right now.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="ExportState"/> rather than inferred from its wording, because
+    /// the wording is a sentence for a human and matching on it would make the row's colour
+    /// depend on a string somebody is free to rephrase. The state says <i>what</i>; this says
+    /// <i>whether it is happening now</i>, which is what decides whether the row reads as an
+    /// activity or as a fact.
+    /// </remarks>
+    public bool Busy { get; init; }
+
+    /// <summary>
     /// Show this project even when nothing under it changed.
     /// </summary>
     /// <remarks>
@@ -161,6 +173,7 @@ public static class WorkspaceTreeBuilder
             Path = projectPath,
             Kind = ProjectNodeKind.Project,
             Detail = project.ExportState,
+            Busy = project.Busy,
 
             // The .project is binary, so this is never opened as a diff — but it is still a
             // changed file, and a project row that did not say so would be the one place in

@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-12 · **Commits:** 46 · **Tests:** 822 unit + 90 UI + 107 integration, 0 skipped
+**Date:** 2026-08-12 · **Commits:** 47 · **Tests:** 838 unit + 92 UI + 107 integration, 0 skipped
 
 > Both numbers are re-derivable rather than remembered: `git rev-list --count HEAD`, and
 > `dotnet test` prints a total per suite. The commit count in this header was wrong by twelve
@@ -126,6 +126,7 @@ format; `.gitattributes` covers every registered vendor's extensions.
 | **Export coverage** | What the export does *not* carry, said out loud: `_coverage.md` in the tree, every skip in the manifest with a stable reason, and a sentence in the panel naming what cannot be relied on. A gap is distinguished from a deliberate omission, from a file that is exported one way, and an old manifest reports "unknown" rather than "complete" |
 | **Library references** | One `<manager>.libraries.yaml` per library manager, beside the object that owns it — what the project asks for, never how it resolved here. Hand-written YAML on both sides, no dependency added to either. **Export-only**, and stated where a reader will meet it: the file's own header, `_coverage.md`, and the manifest's `form`. **Not yet in the panel** — `CoverageSummary` speaks only when there are gaps, deliberately, and the row-level 🔒 glyph the plan asks for (§9.3) is part of the unbuilt tree work |
 | **Chrome** | One app-wide progress bar with a caption, maximized on open, log console collapsed, heartbeat during long runs |
+| **Saying it is working** | A toolchain run announces itself the moment it passes the last gate, and three surfaces answer three different questions: the **bar** that the app is busy, the **row** which project it is busy with (`exporting…`, in the accent colour), and the **heartbeat** that it is still alive and how far along. A refused, coalesced or throttled save announces nothing, because it is not working |
 | **Log panel** | Level as four chips (click to drop, click to restore) and category as a multi-select dropdown carrying a live count each, because the counts are what say where the volume is. **Pause freezes the feed** rather than the scroll, says so in the header, and shows what is queued behind it. The controls appear with the list they filter: collapsed, the strip is a chevron, a count and the paused pill |
 | **Logging** | Ring buffer, correlation ids, rolling file from startup, crash handlers on all three .NET channels. An idle app is quiet: a completed git command writes one line, not two, and runs of unchanged status polls are summarised every five minutes instead of three lines per poll. The export narrates itself: the directory swap with both file counts, every skip with its reason, the summary, and a warning when a killed run left a staging folder behind |
 
@@ -228,6 +229,10 @@ More fixture projects. Every field bug becomes a fixture before it is fixed.
 Small, specific, and none of them blocking. Written down because an audit that finds things and
 does not record them has to be run again.
 
+- **Cancelling a running toolchain job is not implemented.** A change arriving mid-run is
+  queued, which is correct and cheap; restarting instead would be better when the run has
+  barely begun, and needs process cancellation plus cleanup of the staging folder a killed
+  export leaves behind.
 - **Orphan findings are computed and shown nowhere.** `OrphanScanner` runs on every scan and
   `SyncViewModel.Findings` is populated from it — an export tree whose project was deleted, a
   binding pointing at nothing — and no view binds that collection. It reaches the log as a
@@ -263,6 +268,109 @@ does not record them has to be run again.
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### Twenty seconds of work with nothing on screen, and four separate reasons for it
+
+Reported from use, and precisely: *"I save, the PLC tree immediately shows the changed file,
+and after a few seconds the changes get highlighted. I'm assuming the export is running, but
+there is no visual indication of this."*
+
+The reading was exactly right. The `.project` appears the instant git notices it — about 300 ms
+— and the diff people are actually waiting for appears when CODESYS finishes, 17–31 seconds
+later. In between, the app looked idle while doing the most expensive thing it ever does.
+
+What made it worth a full investigation is that **every mechanism for showing it already
+existed, and all four were disconnected.** None of them was missing; each was wired to
+something that could not deliver it.
+
+| Mechanism | Why nothing appeared |
+|---|---|
+| The app-wide progress bar | `SyncViewModel` takes a `BusyTracker` and **defaults to constructing its own**. The bar binds to the shell's. So the bar never moved for *any* sync work — including the catch-up and commit-gate exports, which both carefully open a scope for it |
+| `ProjectRow.Busy` and the `"exporting…"` state | Documented in the class — *"it says exporting… for 17–31 seconds"* — and **assigned by nothing**. `RefreshStalenessAsync` even guards with `!p.Busy`, a condition that could never be true |
+| The heartbeat | `HeartbeatService.Track` was called from exactly one place, the commit-gate path. The automatic save path started no tracker, so `Report` found nothing to attach to and returned |
+| The progress detail itself | `PlcJob.OperationId` defaulted to a **fresh random value**. The runner tags its phases and counts with the job's id; the heartbeat is keyed by the operation's. Two unrelated strings, so every phase the toolchain reported was dropped — on *every* path, including the one that did start a heartbeat, which could therefore only ever show elapsed seconds |
+
+The last one is the most instructive: an end-to-end pipeline, complete at both ends, discarding
+its payload at the final hop because two ids that had to be equal were each independently
+correct.
+
+**The announcement is a notification, not a wrapper.** It would be simpler for the caller to
+put a bar around its call to `HandleChangeAsync`, and it would be wrong: the overwhelming
+majority of calls are refused by a gate in milliseconds — a save that changed nothing, a
+coalesced burst, a throttled repeat — and a bar flashing on every settle is worse than no bar
+at all. `RunStarted` fires after the last gate, `RunFinished` from a `finally` so a failure or
+a throw cannot leave the bar up. A bar that never goes away is indistinguishable from a hang,
+which is the very confusion being fixed.
+
+**The row is shown and marked, not hidden.** Hiding it until the export finished was the other
+option and it is the wrong one: the `.project` really is modified in git the moment you save,
+and a panel that disagrees with `git status` is how somebody concludes Versio lost their work.
+One further defect fell out of choosing that: re-exporting a project whose file matches HEAD
+made its row **vanish for the whole run**, because the "show what has something to review" rule
+had nothing to show. The tree said so in its own log — `1 project(s) hidden as in sync` — while
+CODESYS was running against it. A run in flight now counts as a reason to be visible.
+
+### Two loop defences that had never actually run
+
+Found while tracing the above. Both are in the coalescer, both were written correctly, and
+neither had anything driving it.
+
+**A queued follow-up was dropped, and the coalescer was left believing a job was running.**
+`OnJobCompleted()` returns `true` to mean *a change arrived while that run was going and must
+be handled now*, and sets the slot as running again on the strength of the caller obeying it.
+The caller discarded the result. So the follow-up never ran — and worse, from that moment every
+later change on that binding answered `Queue`, then `Coalesced`, for the rest of the session.
+
+It stayed invisible because **the commit gate is synchronous and skips the coalescer entirely**,
+so exporting still worked at the one moment anybody checked. The plan's worked example — four
+saves during one export producing two exports — produced one.
+
+**A throttled change waited for something that did not exist.** `TryStartThrottled()` is
+documented as *"used by the idle tick"*; there was no idle tick and no caller anywhere. The
+pending flag that "guarantees a final export once things go quiet" guaranteed nothing precisely
+when things went quiet: the change waited for the next save, or for somebody to commit. There
+is a five-second tick now, and the deferred job re-enters the whole pipeline rather than being
+replayed, so the hash gate can say the reason to run has gone.
+
+### "Cancel and restart" cancelled nothing, and ran two CODESYS instances instead
+
+The most consequential of the three, and it was found by watching, not by reading.
+
+A save arriving in the first five seconds of a run returned `CancelAndRestart` — *"cheap to
+restart this early, and it avoids 40 s of work we know is stale"*. Sound reasoning, and the
+mechanism was never built: **no cancellation is plumbed through to a running toolchain job**.
+The orchestrator's only way to act on the instruction was to start a second export beside the
+first.
+
+Observed doing exactly that. One `git checkout` of the project file produced two settled
+changes 1.8 s apart, both inside the window, and the log shows two exports running
+concurrently against one project:
+
+```
+23:11:23.548  {4da031c5} Project change (automatic, Project)
+23:11:25.351  {81e9666a} Project change (automatic, Project)
+…
+23:12:09.269  {4da031c5} exported 12 object(s) in 45.6s
+23:12:32.748  {81e9666a} ExportSucceeded accepted
+```
+
+**45.6 s for a job that takes 17–31 s alone** — the two instances contending for the profile
+and the shared temp state, which is the same contention already documented for the integration
+suite.
+
+The branch is gone. A change arriving during a run is always queued, and the `cancelWindow`
+option went with it rather than being left as a knob that does nothing. Queueing costs almost
+nothing in return: an export reads the file as it opens it, so a save landing mid-run is
+usually captured by that very run, and the follow-up then finds nothing at the hash gate and
+costs a file read instead of a toolchain launch. **Restarting is still worth having** — it just
+has to cancel the process first, and killing CODESYS mid-export leaves a staging folder the
+exporter already warns about. That is a separate piece of work, not a comment.
+
+**The unit test passed throughout.** It asserted that the coalescer *returns* `CancelAndRestart`
+in the window, which it faithfully did. A component tested alone cannot see what its caller does
+with the answer, and "the caller cannot honour this verdict" is not a property any test of that
+component can express. The test now asserts the property that matters and could have caught it:
+**a second job is never started while one is in flight.**
 
 ### The history was re-read on every refresh, into a panel four rows tall
 

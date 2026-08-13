@@ -214,4 +214,43 @@ public sealed class MainWindowTests
             Assert.True(button.DesiredSize.Width > 0);
         });
     }
+
+    [Fact]
+    public void The_progress_bar_and_the_sync_engine_share_one_busy_tracker()
+    {
+        // The bar binds to the shell's tracker; the sync panel opened its scopes on one it
+        // built itself, because the constructor parameter was optional and nobody passed it.
+        // Both halves were correct in isolation, which is why it survived: the catch-up
+        // export and the commit-gate export both open a scope, and the bar never moved for
+        // either. Reference equality is the only thing that can state this.
+        var logger = new VersioLogger(new SystemClock());
+        var sink = new InMemoryLogSink();
+        logger.AddSink(sink);
+
+        var shell = new ShellViewModel(logger, new LogViewModel(sink));
+
+        Assert.Same(shell.Busy, shell.Sync.Busy);
+    }
+
+    [Fact]
+    public void The_bar_reports_busy_while_the_sync_panel_holds_a_scope()
+    {
+        // Same fact from the other side: opening a scope on the sync panel must be visible
+        // through the property the window actually binds to.
+        var logger = new VersioLogger(new SystemClock());
+        var sink = new InMemoryLogSink();
+        logger.AddSink(sink);
+
+        var shell = new ShellViewModel(logger, new LogViewModel(sink));
+
+        Assert.False(shell.Busy.IsBusy);
+
+        using (shell.Sync.Busy.Begin("Exporting something…"))
+        {
+            Assert.True(shell.Busy.IsBusy);
+            Assert.Equal("Exporting something…", shell.Busy.Message);
+        }
+
+        Assert.False(shell.Busy.IsBusy);
+    }
 }

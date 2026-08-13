@@ -192,7 +192,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         _logger = logger;
         Log = log;
         _clock = clock ?? new SystemClock();
-        Sync = new SyncViewModel(logger, _clock);
+        // The SHELL's tracker, not one of its own.
+        //
+        // This defaulted, so the sync view model built a private BusyTracker while the
+        // progress bar binds to this one — meaning the app-wide bar never appeared for any
+        // toolchain work at all, including the catch-up and commit-gate exports that both
+        // carefully open a scope for it. Two objects, both correct, wired to nothing.
+        Sync = new SyncViewModel(logger, _clock, Busy);
         History = new HistoryViewModel(logger);
         _gitFactory = gitFactory ?? (path => new GitCliClient(path, logger: logger));
         _locator = new RepositoryLocator(probe ?? new FileSystemRepositoryProbe());

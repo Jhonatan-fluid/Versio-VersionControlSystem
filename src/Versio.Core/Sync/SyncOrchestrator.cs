@@ -17,11 +17,29 @@ public sealed record OrchestratorOptions
     /// writing into a .project is the strictly more dangerous direction.</summary>
     public bool RequireImportConfirmation { get; init; } = true;
 
-    public TimeSpan CancelWindow { get; init; } = TimeSpan.FromSeconds(5);
     public TimeSpan MinimumInterval { get; init; } = TimeSpan.FromSeconds(30);
     public int CircuitBreakerThreshold { get; init; } = 5;
     public TimeSpan CircuitBreakerWindow { get; init; } = TimeSpan.FromSeconds(60);
 }
+
+/// <summary>One toolchain run, announced as it starts and again as it ends.</summary>
+/// <remarks>
+/// <para>
+/// Carries the <see cref="OperationId"/> because that is what makes the announcement useful:
+/// it is the same id the runner tags its progress with and the same id every log line for
+/// this run carries, so a caller can start a heartbeat keyed to it and have the two meet.
+/// </para>
+/// <para>
+/// This exists because the UI could not tell the difference between "nothing is happening"
+/// and "CODESYS has been running for twenty seconds". Wrapping the call to
+/// <see cref="SyncOrchestrator.HandleChangeAsync"/> is not the same thing: the overwhelming
+/// majority of calls are refused by a gate in milliseconds — a save that changed nothing, a
+/// coalesced burst, a throttled repeat — and a bar that flashed for each of those would be
+/// worse than none.
+/// </para>
+/// </remarks>
+public readonly record struct SyncRunNotice(
+    string BindingId, PlcOperation Operation, string OperationId);
 
 /// <summary>
 /// Reconciles a CODESYS project against its exported text.
@@ -65,6 +83,15 @@ public sealed class SyncOrchestrator
     private readonly Dictionary<string, ProjectBinding> _bindings;
     private readonly Dictionary<string, BindingLock> _locks = new(StringComparer.Ordinal);
     private readonly Dictionary<string, JobCoalescer> _coalescers = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The job the throttle turned away, per binding, waiting for its interval to pass.
+    /// </summary>
+    /// <remarks>
+    /// One per binding, overwritten rather than queued: the coalescer's whole premise is that
+    /// an export reads the current file, so the newest deferred job describes every older one.
+    /// </remarks>
+    private readonly Dictionary<string, SyncJob> _deferred = new(StringComparer.Ordinal);
     private readonly CircuitBreaker _breaker;
     private readonly SelfWriteSuppressor _suppressor;
     private readonly IVersioLogger _log;
@@ -110,7 +137,7 @@ public sealed class SyncOrchestrator
         {
             _locks[binding.Id] = new BindingLock { Direction = SyncDirection.Clean };
             _coalescers[binding.Id] =
-                new JobCoalescer(clock, _options.CancelWindow, _options.MinimumInterval);
+                new JobCoalescer(clock, _options.MinimumInterval);
         }
 
         _log.Info(LogCategory.Sync, bindings.Count == 0
@@ -123,7 +150,6 @@ public sealed class SyncOrchestrator
         // turns out to be "it did, thirty seconds ago".
         _log.Debug(LogCategory.Sync,
             $"options: importConfirmation={_options.RequireImportConfirmation} " +
-            $"cancelWindow={_options.CancelWindow.TotalSeconds:F0}s " +
             $"minInterval={_options.MinimumInterval.TotalSeconds:F0}s " +
             $"breaker={_options.CircuitBreakerThreshold}/" +
             $"{_options.CircuitBreakerWindow.TotalSeconds:F0}s");
@@ -148,6 +174,25 @@ public sealed class SyncOrchestrator
     public bool AnyLockHeld => _locks.Values.Any(l => SyncStateMachine.HoldsLock(l.Direction));
 
     public CircuitBreaker Breaker => _breaker;
+
+    /// <summary>
+    /// A toolchain run has passed every gate and is starting now.
+    /// </summary>
+    /// <remarks>
+    /// Raised on whatever thread the change arrived on, which for the automatic path is a
+    /// watcher's timer thread. Marshalling to a UI thread is the subscriber's job — the same
+    /// contract the watchers already use.
+    /// </remarks>
+    public event Action<SyncRunNotice>? RunStarted;
+
+    /// <summary>That run has finished, whether it succeeded, failed or threw.</summary>
+    /// <remarks>
+    /// Raised from a <c>finally</c>, so a subscriber that turns something on in
+    /// <see cref="RunStarted"/> cannot be left with it on. That matters more than it looks:
+    /// the thing being turned on is a progress bar, and a progress bar that never goes away
+    /// is indistinguishable from a hang.
+    /// </remarks>
+    public event Action<SyncRunNotice>? RunFinished;
 
     /// <summary>
     /// Restore state written by a previous session.
@@ -239,11 +284,66 @@ public sealed class SyncOrchestrator
     }
 
     /// <summary>A change was detected. Decide what, if anything, to do about it.</summary>
-    public async Task<SyncOutcome> HandleChangeAsync(SyncJob job, CancellationToken ct)
+    /// <remarks>
+    /// The loop is the coalescer's contract, and it used to be missing.
+    /// <see cref="JobCoalescer.OnJobCompleted"/> returns <c>true</c> to mean <i>a change
+    /// arrived while that run was going and must be handled now</i>, and its result was
+    /// discarded — so the follow-up never ran, and worse, the coalescer had already marked
+    /// the slot as running again on the strength of the caller obeying it. Every later change
+    /// on that binding then answered <c>Queue</c> and then <c>Coalesced</c> for the rest of
+    /// the session. Nothing noticed because the commit gate is synchronous and skips the
+    /// coalescer entirely, so exporting still worked at the one moment anybody checked.
+    /// <para>
+    /// The follow-up re-enters the whole pipeline rather than re-running the export directly:
+    /// the hash gate, the occupancy probe and the direction lock all have to be asked again
+    /// about a file that has changed since. Re-running the body would also export a scratch
+    /// copy that the previous run has already deleted.
+    /// </para>
+    /// </remarks>
+    public Task<SyncOutcome> HandleChangeAsync(SyncJob job, CancellationToken ct) =>
+        RunLoopAsync(job, slotHeld: false, ct);
+
+    /// <summary>
+    /// Attempt the job, then keep going while the coalescer says a follow-up must start now.
+    /// </summary>
+    private async Task<SyncOutcome> RunLoopAsync(SyncJob job, bool slotHeld, CancellationToken ct)
+    {
+        while (true)
+        {
+            var (outcome, ranWithSlot) = await AttemptAsync(job, slotHeld, ct)
+                .ConfigureAwait(false);
+
+            if (!ranWithSlot || !_coalescers[job.BindingId].OnJobCompleted())
+            {
+                return outcome;
+            }
+
+            _log.Info(LogCategory.Sync,
+                $"{job.BindingId}: handling the change that arrived while the last run was " +
+                "in flight");
+
+            // The slot is already ours: OnJobCompleted handed it straight back rather than
+            // releasing it, which is what "must start now" means.
+            slotHeld = true;
+        }
+    }
+
+    /// <param name="slotHeld">
+    /// True when the coalescer has already granted this job its slot — a queued follow-up, or
+    /// a throttled job released by <see cref="RunDeferredAsync"/>. Such a job skips the
+    /// coalescer question it has already been answered, and still completes the slot on the
+    /// way out.
+    /// </param>
+    /// <returns>
+    /// The outcome, and whether a toolchain run actually happened while holding the slot —
+    /// which is what decides whether there is a slot to complete.
+    /// </returns>
+    private async Task<(SyncOutcome Outcome, bool RanWithSlot)> AttemptAsync(
+        SyncJob job, bool slotHeld, CancellationToken ct)
     {
         // Joins the caller's scope when there is one — a button press already opened it —
         // and starts a fresh one when the trigger was a file watcher with nobody above it.
-        using var scope = _log.JoinOrBeginOperation(out _);
+        using var scope = _log.JoinOrBeginOperation(out var operationId);
 
         _log.Debug(LogCategory.Sync,
             $"{job.BindingId}: {job.Source} change" +
@@ -253,8 +353,8 @@ public sealed class SyncOrchestrator
 
         if (!_bindings.TryGetValue(job.BindingId, out var binding) || !binding.Enabled)
         {
-            return Refuse(LogLevel.Warning, SyncVerdict.UnknownBinding, job.BindingId,
-                "no enabled binding with that id");
+            return (Refuse(LogLevel.Warning, SyncVerdict.UnknownBinding, job.BindingId,
+                "no enabled binding with that id"), slotHeld);
         }
 
         var state = StateOf(job.BindingId);
@@ -263,9 +363,9 @@ public sealed class SyncOrchestrator
         //    no longer trusted and nothing below it should run.
         if (_breaker.IsTripped(job.BindingId))
         {
-            return Refuse(LogLevel.Warning, SyncVerdict.BlockedByCircuitBreaker, job.BindingId,
+            return (Refuse(LogLevel.Warning, SyncVerdict.BlockedByCircuitBreaker, job.BindingId,
                 "sync halted for this project after repeated cycles; acknowledge to resume",
-                state);
+                state), slotHeld);
         }
 
         // 2. Hash gate. Before the lock on purpose: an event carrying no actual change is
@@ -279,9 +379,9 @@ public sealed class SyncOrchestrator
             // did not actually alter the file lands here — and at Info it would drown the
             // log. The hash is included because "the gate says nothing changed but I know
             // I changed something" is otherwise unanswerable.
-            return Refuse(LogLevel.Debug, SyncVerdict.NoChange, job.BindingId,
+            return (Refuse(LogLevel.Debug, SyncVerdict.NoChange, job.BindingId,
                 $"content is identical to the last synced state (hash {Short(currentHash)})",
-                state);
+                state), slotHeld);
         }
 
         // 3. Self-write suppression, for text only: an export writes into the tree the text
@@ -289,8 +389,8 @@ public sealed class SyncOrchestrator
         if (job.Source == ChangeSource.ExportedText &&
             _suppressor.ShouldSuppress(binding.ExportPath, currentHash))
         {
-            return Refuse(LogLevel.Debug, SyncVerdict.SelfWriteSuppressed, job.BindingId,
-                "this was the echo of our own export", state);
+            return (Refuse(LogLevel.Debug, SyncVerdict.SelfWriteSuppressed, job.BindingId,
+                "this was the echo of our own export", state), slotHeld);
         }
 
         // 4. Direction lock.
@@ -302,16 +402,16 @@ public sealed class SyncOrchestrator
         {
             // The one refusal the user is most likely to be confused by, so it carries the
             // state that did the refusing as well as the sentence explaining it.
-            return Refuse(LogLevel.Warning, SyncVerdict.BlockedByLock, job.BindingId,
-                $"{transition.Reason} (lock is {state})", transition.State);
+            return (Refuse(LogLevel.Warning, SyncVerdict.BlockedByLock, job.BindingId,
+                $"{transition.Reason} (lock is {state})", transition.State), slotHeld);
         }
 
         // 5. Import is detected automatically but applied only on confirmation.
         if (job.Source == ChangeSource.ExportedText &&
             _options.RequireImportConfirmation && !job.Confirmed)
         {
-            return Refuse(LogLevel.Information, SyncVerdict.AwaitingConfirmation, job.BindingId,
-                "exported text changed; review the diff and confirm before importing", state);
+            return (Refuse(LogLevel.Information, SyncVerdict.AwaitingConfirmation, job.BindingId,
+                "exported text changed; review the diff and confirm before importing", state), slotHeld);
         }
 
         // 5b. IS THE PROJECT OPEN IN ITS IDE?
@@ -346,11 +446,11 @@ public sealed class SyncOrchestrator
             // was imported - so this direction genuinely has to wait.
             if (job.Source == ChangeSource.ExportedText)
             {
-                return Refuse(LogLevel.Information, SyncVerdict.BlockedByOpenProject,
+                return (Refuse(LogLevel.Information, SyncVerdict.BlockedByOpenProject,
                     job.BindingId,
                     $"{ProjectName(binding)} is open in the IDE ({occupancy.Owner}), so the " +
                     "edited text cannot be imported yet. Close it and the import will run.",
-                    state);
+                    state), slotHeld);
             }
 
             // Export only reads, and the lock is a sidecar on the path - so a copy at another
@@ -359,30 +459,41 @@ public sealed class SyncOrchestrator
 
             if (scratchProject is null)
             {
-                return Refuse(LogLevel.Warning, SyncVerdict.BlockedByOpenProject, job.BindingId,
+                return (Refuse(LogLevel.Warning, SyncVerdict.BlockedByOpenProject, job.BindingId,
                     $"{ProjectName(binding)} is open in the IDE ({occupancy.Owner}) and could " +
                     "not be copied aside, so the export was not attempted.",
-                    state);
+                    state), slotHeld);
             }
         }
 
-        // 6. Coalescing. Skipped for a synchronous job: the commit gate must run now and
-        //    block, not queue behind a background export.
-        if (!job.Synchronous)
+        // 6. Coalescing. Skipped for a synchronous job, because the commit gate must run now
+        //    and block rather than queue behind a background export — and skipped for a job
+        //    that already holds its slot, which has been through this question once.
+        var granted = slotHeld;
+
+        if (!job.Synchronous && !slotHeld)
         {
             var action = _coalescers[job.BindingId].OnChangeSettled();
             switch (action)
             {
                 case CoalesceAction.Coalesced:
-                    return Refuse(LogLevel.Debug, SyncVerdict.Coalesced, job.BindingId,
-                        "a sync is already running and a follow-up is queued", state);
+                    return (Refuse(LogLevel.Debug, SyncVerdict.Coalesced, job.BindingId,
+                        "a sync is already running and a follow-up is queued", state), false);
+
                 case CoalesceAction.Throttled:
-                    return Refuse(LogLevel.Debug, SyncVerdict.Throttled, job.BindingId,
-                        "throttled; a final sync will run once changes settle", state);
+                    // Remembered, not just refused. The pending flag inside the coalescer
+                    // guarantees a final export "once things go quiet", and nothing was
+                    // asking it — see RunDeferredAsync.
+                    _deferred[job.BindingId] = job;
+                    return (Refuse(LogLevel.Debug, SyncVerdict.Throttled, job.BindingId,
+                        "throttled; a final sync will run once changes settle", state), false);
+
                 case CoalesceAction.Queue:
-                    return Refuse(LogLevel.Debug, SyncVerdict.Coalesced, job.BindingId,
-                        "queued behind the running sync", state);
+                    return (Refuse(LogLevel.Debug, SyncVerdict.Coalesced, job.BindingId,
+                        "queued behind the running sync", state), false);
             }
+
+            granted = true;
         }
 
         if (!_breaker.TryRecord(job.BindingId))
@@ -395,9 +506,9 @@ public sealed class SyncOrchestrator
                 $"{_breaker.CountInWindow(job.BindingId)} syncs within " +
                 $"{_options.CircuitBreakerWindow.TotalSeconds:F0}s — halting sync for this project");
 
-            return Refuse(LogLevel.Warning, SyncVerdict.BlockedByCircuitBreaker, job.BindingId,
+            return (Refuse(LogLevel.Warning, SyncVerdict.BlockedByCircuitBreaker, job.BindingId,
                 "sync halted for this project after repeated cycles; acknowledge to resume",
-                state);
+                state), granted);
         }
 
         // 7. TAKE THE LOCK BEFORE DOING THE WORK, and persist it.
@@ -412,20 +523,80 @@ public sealed class SyncOrchestrator
         await ApplyAsync(job.BindingId, trigger,
             _locks[job.BindingId].LastSynced.ProjectHash, ct).ConfigureAwait(false);
 
+        var operation = job.Source == ChangeSource.Project
+            ? PlcOperation.Export
+            : PlcOperation.Import;
+
+        // Said out loud the moment the work actually begins, and not one gate earlier.
+        //
+        // Every refusal above returns before this point, which is the whole reason it is a
+        // notification rather than something the caller wraps around the call: a save that
+        // changed nothing, was coalesced, was throttled or was refused by the lock is the
+        // common case, and lighting a progress bar for the 200 ms it takes to decide that
+        // would flicker on every keystroke-triggered settle.
+        var notice = new SyncRunNotice(job.BindingId, operation, operationId);
+        RunStarted?.Invoke(notice);
+
         try
         {
-            return job.Source == ChangeSource.Project
-                ? await ExportAsync(binding, transition, scratchProject, ct).ConfigureAwait(false)
-                : await ImportAsync(binding, transition, ct).ConfigureAwait(false);
+            var outcome = operation == PlcOperation.Export
+                ? await ExportAsync(binding, transition, scratchProject, operationId, ct)
+                    .ConfigureAwait(false)
+                : await ImportAsync(binding, transition, operationId, ct).ConfigureAwait(false);
+
+            // The slot is completed by the caller, which is the only place that can act on
+            // "a follow-up must start now" — it has to await one.
+            return (outcome, !job.Synchronous);
         }
         finally
         {
-            if (!job.Synchronous)
-            {
-                _coalescers[job.BindingId].OnJobCompleted();
-            }
+            RunFinished?.Invoke(notice);
         }
     }
+
+    /// <summary>
+    /// Run whatever the throttle deferred, if its interval has passed.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The missing driver for <see cref="JobCoalescer.TryStartThrottled"/>, which was written
+    /// for "the idle tick" and had <b>no caller at all</b> — so a change arriving within the
+    /// 30-second minimum interval was recorded as pending and then waited for the next save
+    /// or the commit gate to notice it. A save-happy engineer who then stopped saving got no
+    /// export until they committed.
+    /// </para>
+    /// <para>
+    /// Only the throttled case needs this. A change that arrived <i>during</i> a run is
+    /// handled by the loop in <see cref="HandleChangeAsync"/> the moment that run ends, which
+    /// is sooner than any tick.
+    /// </para>
+    /// <para>
+    /// The deferred job re-enters the full pipeline, so the file is re-hashed and the IDE
+    /// re-probed: by the time the interval expires, the reason to run may have gone away.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<SyncOutcome>> RunDeferredAsync(CancellationToken ct)
+    {
+        var outcomes = new List<SyncOutcome>();
+
+        foreach (var (bindingId, job) in _deferred.ToList())
+        {
+            if (!_coalescers[bindingId].TryStartThrottled())
+            {
+                continue;
+            }
+
+            _deferred.Remove(bindingId);
+            _log.Info(LogCategory.Sync,
+                $"{bindingId}: the throttle has expired; running the change it deferred");
+
+            // Enters holding the slot TryStartThrottled just granted.
+            outcomes.Add(await RunLoopAsync(job, slotHeld: true, ct).ConfigureAwait(false));
+        }
+
+        return outcomes;
+    }
+
 
     /// <param name="scratchProject">
     /// A copy to export instead of the project itself, when the IDE has the original open.
@@ -433,7 +604,7 @@ public sealed class SyncOrchestrator
     /// </param>
     private async Task<SyncOutcome> ExportAsync(
         ProjectBinding binding, TransitionResult transition, string? scratchProject,
-        CancellationToken ct)
+        string operationId, CancellationToken ct)
     {
         var started = _clock.UtcNow;
         var source = scratchProject ?? Absolute(binding.ProjectPath);
@@ -441,6 +612,15 @@ public sealed class SyncOrchestrator
         var job = new PlcJob
         {
             Operation = PlcOperation.Export,
+
+            // The SAME id the log scope is using, rather than the record's random default.
+            //
+            // The runner tags every progress report with this, and the heartbeat is keyed by
+            // it. Left to default they were two unrelated random strings, so
+            // HeartbeatService.Report found no tracker and dropped every phase and count the
+            // toolchain produced — on every path, including the commit gate, where the
+            // heartbeat did exist and could only ever show elapsed seconds.
+            OperationId = operationId,
             Profile = binding.Profile ?? string.Empty,
             Projects =
             [
@@ -624,7 +804,8 @@ public sealed class SyncOrchestrator
     }
 
     private async Task<SyncOutcome> ImportAsync(
-        ProjectBinding binding, TransitionResult transition, CancellationToken ct)
+        ProjectBinding binding, TransitionResult transition, string operationId,
+        CancellationToken ct)
     {
         var started = _clock.UtcNow;
 
@@ -655,6 +836,7 @@ public sealed class SyncOrchestrator
         var job = new PlcJob
         {
             Operation = PlcOperation.Import,
+            OperationId = operationId,
             Profile = binding.Profile ?? string.Empty,
             Projects =
             [

@@ -748,12 +748,35 @@
                                             <!-- A project reports its export state here; an
                                                  object reports its CODESYS type, so a POU and
                                                  a visualisation of the same name are told
-                                                 apart. No row ever has both. -->
+                                                 apart. No row ever has both.
+
+                                                 While a toolchain run is in flight the state
+                                                 is the accent colour instead of the dimmest
+                                                 one on the palette. The complaint that led
+                                                 here was that a save looked like nothing was
+                                                 happening for half a minute, and "exporting…"
+                                                 rendered in the same grey as "in sync" is a
+                                                 poor answer to it: the eye reads the colour
+                                                 before it reads the word. -->
                                             <TextBlock Grid.Column="2" Text="{Binding Annotation}"
                                                        VerticalAlignment="Center" Margin="8,0,0,0"
                                                        FontFamily="{DynamicResource Font.Mono}"
-                                                       FontSize="{DynamicResource Font.Size.Caption}"
-                                                       Foreground="{DynamicResource Brush.Text.Disabled}" />
+                                                       FontSize="{DynamicResource Font.Size.Caption}">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground"
+                                                                Value="{DynamicResource Brush.Text.Disabled}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsBusy}" Value="True">
+                                                                <Setter Property="Foreground"
+                                                                        Value="{DynamicResource Brush.Accent.Default}" />
+                                                                <Setter Property="FontWeight"
+                                                                        Value="{DynamicResource Font.Weight.Semibold}" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
 
                                             <!-- Roll-up count, so a change is never hidden
                                                  behind a collapsed folder. -->

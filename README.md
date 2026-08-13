@@ -42,6 +42,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | **Import while it is open** — waits and names who has it | ✅ it cannot be made to work: the IDE would revert it on the next save. Neither direction marks the binding failed, and the breaker is never fed |
 | Retry automatically when the IDE closes | ⛔ the lock file vanishing is a watchable event; today the next save retries |
 | Sync orchestrator — locks, loop defences, commit gate | ✅ 46 scenario tests |
+| **The app says when it is working** — progress bar, live heartbeat, and the row reading `exporting…` | ✅ a run announces itself when it passes the last gate, so a refused or coalesced save never flashes a bar |
 | Change detection — watcher + safety poll + overflow rescan | ✅ `FileChangeWatcher`, driving the sync engine |
 | Staleness stated, not implied — "2 projects not yet exported" | ✅ answered by the commit gate, so the two cannot disagree |
 | **The project view follows the repository by itself** | ✅ 18 policy tests + 9 against a real filesystem; rebuilt only when something it shows changed |

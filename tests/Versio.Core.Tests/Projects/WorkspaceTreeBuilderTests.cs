@@ -30,7 +30,7 @@ public sealed class WorkspaceTreeBuilderTests
 
     private static WorkspaceProject Project(
         ProjectManifest? manifest = null, string exportState = "in sync",
-        bool needsAttention = false) =>
+        bool needsAttention = false, bool busy = false) =>
         new()
         {
             ProjectPath = ProjectPath,
@@ -38,6 +38,7 @@ public sealed class WorkspaceTreeBuilderTests
             Manifest = manifest,
             ExportState = exportState,
             NeedsAttention = needsAttention,
+            Busy = busy,
         };
 
     /// <summary>Builds with unchanged projects kept, for the tests about tree shape.</summary>
@@ -376,5 +377,37 @@ public sealed class WorkspaceTreeBuilderTests
         var project = Assert.Single(roots);
         Assert.Equal(ProjectPath, project.Path);
         Assert.DoesNotContain(project.Children, c => c.Path == ProjectPath);
+    }
+
+    // --- a run in flight ------------------------------------------------------
+
+    [Fact]
+    public void A_project_with_a_run_in_flight_says_so_on_its_node()
+    {
+        // The row is rebuilt from this snapshot on every refresh, so "something is happening
+        // to this project" has to travel in the snapshot. Held beside it in a view model, it
+        // would be lost the moment the tree was rebuilt - which is exactly when a long export
+        // causes a rebuild.
+        var node = Build(Project(exportState: "exporting…", busy: true), []).Single();
+
+        Assert.True(node.Busy);
+        Assert.Equal("exporting…", node.Detail);
+    }
+
+    [Fact]
+    public void A_project_with_nothing_running_is_not_busy()
+    {
+        Assert.False(Build(Project(), []).Single().Busy);
+    }
+
+    [Fact]
+    public void Busy_is_a_flag_rather_than_a_reading_of_the_state_text()
+    {
+        // Deliberately contradictory: the wording is for a person and is free to change, so
+        // nothing may infer the flag from it. A test that matched on "exporting" would pass
+        // here and break the first time somebody rephrased the sentence.
+        var node = Build(Project(exportState: "in sync", busy: true), []).Single();
+
+        Assert.True(node.Busy);
     }
 }

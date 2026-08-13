@@ -79,6 +79,9 @@ public sealed class TreeRow : ObservableObject
     /// <summary>Export state for a project row, empty elsewhere.</summary>
     public string Detail => Node.Detail;
 
+    /// <summary>True while a toolchain run is in flight for this project.</summary>
+    public bool IsBusy => Node.Busy;
+
     /// <summary>
     /// The one phrase shown to the right of the name.
     /// </summary>
