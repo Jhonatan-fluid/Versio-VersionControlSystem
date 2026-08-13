@@ -2144,7 +2144,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>The toolbar button.</summary>
-    private Task RefreshAsync()
+    /// <remarks>Internal so a test can await it; the command cannot.</remarks>
+    internal Task RefreshAsync()
     {
         _logger.Click("TopBar.Refresh");
 
@@ -2208,6 +2209,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             // `git status` per refresh is a process spawn for an answer we already have, and
             // two reads a moment apart can disagree.
             await Sync.RefreshTreeAsync(status).ConfigureAwait(true);
+
+            // A project dropped into the repository while Versio is running is git's news
+            // first: it appears here as an untracked file and nothing else happens, because
+            // the project scan only ran when a repository was opened. Handed the paths that
+            // actually moved, so this costs a set lookup unless something project-shaped
+            // turned up.
+            await Sync.NoticeWorkingTreeAsync(changed).ConfigureAwait(true);
 
             StatusSummary = status.IsClean
                 ? "No changes"

@@ -334,6 +334,38 @@ public sealed class RepositoryChangeResetTests
     }
 
     [SkippableFact]
+    public async Task A_project_dropped_in_while_running_is_noticed()
+    {
+        // Reported from the running application: a repository was created, a .project added,
+        // and it sat in the changed-file list as untracked for ever. The project scan ran only
+        // when a repository was opened, after a sync did work, and after a push, discard or
+        // retry — never because a file appeared. Git noticed it instantly, which is what made
+        // it look as though Versio had seen it and decided to do nothing.
+        //
+        // The watcher could not have covered it: it follows the project and mirror of each
+        // EXISTING binding, and in a repository with none it does not start at all — exactly
+        // the state somebody is in when they add their first project.
+        Skip.IfNot(GitIsAvailable(), "git is not on PATH");
+
+        using var repo = new TempRepo("readme.txt");
+
+        var shell = Build();
+
+        await shell.OpenAsync(repo.Path);
+
+        Assert.Empty(shell.Sync.Projects);
+
+        File.WriteAllText(
+            System.IO.Path.Combine(repo.Path, "Machine(Extended).project"), "not really a project");
+
+        await shell.RefreshAsync();
+
+        Assert.Contains(shell.Sync.Projects, p => p.Path == "Machine(Extended).project");
+
+        shell.Dispose();
+    }
+
+    [SkippableFact]
     public void Two_real_repositories_swapped_under_a_real_window()
     {
         // As close to the application as automation gets without a mouse: real git, real

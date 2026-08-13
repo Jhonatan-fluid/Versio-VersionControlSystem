@@ -952,6 +952,68 @@ public sealed class SyncViewModel : ObservableObject
         Activity = string.Empty;
     });
 
+    /// <summary>
+    /// The working tree moved. Look for projects again if what moved could be one.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A project added while Versio is running was invisible until the repository was
+    /// reopened.</b> The scan ran on open, after a sync did work, and after a push, discard or
+    /// retry — never because a file appeared. Git noticed it immediately, so it showed in the
+    /// changed-file list as untracked and sat there, which reads as the tool having seen it and
+    /// decided to do nothing.
+    /// </para>
+    /// <para>
+    /// The watcher could not have caught it either: it follows the project file and mirror of
+    /// each <i>existing</i> binding, so a file nobody tracks yet is watched by nothing — and in
+    /// a repository with no bindings at all, <see cref="StartWatching"/> returns early and there
+    /// is no watcher whatsoever. That is exactly the state somebody is in when they add their
+    /// first project.
+    /// </para>
+    /// <para>
+    /// Gated on a path that <b>looks like a project and is not already known</b>, so the ordinary
+    /// case — saving a project that is already tracked — costs a set lookup rather than a
+    /// filesystem walk and a git call on every refresh.
+    /// </para>
+    /// </remarks>
+    /// <param name="changedPaths">Repo-relative paths whose git state moved in the last refresh.</param>
+    public async Task NoticeWorkingTreeAsync(IReadOnlyCollection<string> changedPaths)
+    {
+        if (_repositoryRoot is null || changedPaths.Count == 0)
+        {
+            return;
+        }
+
+        var known = Projects.Select(p => p.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var appeared = changedPaths
+            .Where(p => LooksLikeAProject(p) && !known.Contains(p))
+            .ToList();
+
+        if (appeared.Count == 0)
+        {
+            return;
+        }
+
+        _logger.Info(LogCategory.Sync,
+            $"a project appeared in the working tree ({string.Join(", ", appeared.Take(3))}" +
+            (appeared.Count > 3 ? ", …" : string.Empty) + "); scanning again");
+
+        await RescanAsync().ConfigureAwait(true);
+        await RefreshStalenessAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>Does this path carry an extension some registered vendor claims?</summary>
+    /// <remarks>
+    /// Asked of the registry rather than hardcoded, so the day a second vendor is implemented
+    /// this needs no edit — the same rule the scanner itself follows.
+    /// </remarks>
+    private static bool LooksLikeAProject(string repoRelativePath) =>
+        PlcFormats.All
+            .SelectMany(f => f.ProjectExtensions)
+            .Any(extension =>
+                repoRelativePath.EndsWith(extension, StringComparison.OrdinalIgnoreCase));
+
     /// <summary>Scan the repository for PLC projects and classify what was found.</summary>
     private async Task RescanAsync()
     {
