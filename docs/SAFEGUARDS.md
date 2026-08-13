@@ -525,12 +525,31 @@ lost, but the knowledge of which stashes were ours is, and that is what stops th
 somebody else's back. Six tests against a real filesystem, including that the file lands under
 the `.versio/local/` prefix `.gitignore` already covers.
 
+**4 · The lock round trip.** `SyncOrchestrator.CaptureLocks()`, `ReleaseCapturedLocksAsync` and
+`RestoreCapturedLocksAsync`. Built before the shell flow deliberately: both halves of that flow
+need it, and shipping either half without it produces a lock that claims work no longer on disk.
+Three decisions in it are worth knowing:
+
+- **Capture and release are separate calls.** The stash can still fail to be created, and a
+  lock released against a stash that does not exist is work nobody can find. The caller
+  releases only once the stash's commit id is in hand.
+- **The release is written straight into the lock table, not through the state machine.** There
+  is no trigger for "the work went somewhere else": push and discard both mean the work has
+  *landed*, and reusing either would record a reason that is untrue and move the baseline as
+  though the world had seen it.
+- **A binding that has since taken a lock of its own keeps it.** Days may have passed, on
+  another branch, and whatever is claimed now was claimed by real work. Reported back to the
+  caller rather than overwritten.
+
+Seven tests, and the one that matters — a newer lock is not overwritten — fails when the check
+is removed.
+
 **What is left, in order:**
 
-4. Taking and restoring for real, in the shell: `StashPushAsync` with the marker, the set
+5. Taking and restoring for real, in the shell: `StashPushAsync` with the marker, the set
    difference, the lock capture and release (§4.7), and the arrival prompt on **every**
    successful checkout — the dropdown, `CreateBranchAsync`, and a pull that moved HEAD.
-5. Wrap both ends in `BeginOwnWrite` — **not** `BeginExternalWrite`, which is now the wrong
+6. Wrap both ends in `BeginOwnWrite` — **not** `BeginExternalWrite`, which is now the wrong
    tool: it is repository-wide, and a stash touches one binding's mirror. §4.8 was written
    before the narrower window existed. Then wire `GuardIntent.Pull` and delete
    `ShellViewModel.AskAboutWork`.

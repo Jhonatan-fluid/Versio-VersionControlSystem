@@ -1,6 +1,7 @@
 using System.Globalization;
 using Versio.Core.Abstractions;
 using Versio.Core.Bindings;
+using Versio.Core.Guarding;
 using Versio.Core.Plc;
 using Versio.Core.Locking;
 using Versio.Core.Hashing;
@@ -195,6 +196,145 @@ public sealed class SyncOrchestrator
         _locks.TryGetValue(bindingId, out var l) ? l.Reason : string.Empty;
 
     public bool AnyLockHeld => _locks.Values.Any(l => SyncStateMachine.HoldsLock(l.Direction));
+
+    /// <summary>
+    /// Hand the direction locks to an auto-stash, and let them go.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A stash does not carry the sync state, and that is why this exists.</b>
+    /// <c>--include-untracked</c> excludes <i>ignored</i> files, so <c>.versio/local/</c> —
+    /// where the locks live — stays exactly where it is while the mirror it describes is
+    /// stashed away. Left alone, the lock would go on claiming <c>TextAuthoritative</c> with
+    /// baselines describing content no longer on disk, and the commit gate would report a
+    /// mirror as stale that is, on this branch, perfectly clean.
+    /// </para>
+    /// <para>
+    /// Only bindings actually holding a lock are captured. A clean binding has nothing to give
+    /// back, and recording it would make restoring re-assert a lock that was never held.
+    /// </para>
+    /// <para>
+    /// Returns what was taken, for the caller to put in the record. It does <b>not</b> write
+    /// the record: the stash may still fail to be created, and a lock released against a stash
+    /// that does not exist is work nobody can find. The caller releases only once the stash's
+    /// commit id is in hand.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<StashedLock> CaptureLocks()
+    {
+        var captured = new List<StashedLock>();
+
+        foreach (var (bindingId, held) in _locks)
+        {
+            if (!SyncStateMachine.HoldsLock(held.Direction))
+            {
+                continue;
+            }
+
+            captured.Add(new StashedLock
+            {
+                BindingId = bindingId,
+                Direction = held.Direction,
+                ProjectHash = held.LastSynced.ProjectHash,
+                MirrorHash = held.LastSynced.MirrorHash,
+            });
+        }
+
+        return captured;
+    }
+
+    /// <summary>Let the captured locks go, once the stash holding their work exists.</summary>
+    /// <remarks>
+    /// Written straight into the lock table rather than through <see cref="SyncStateMachine"/>,
+    /// and deliberately: there is no trigger for "the work went somewhere else". Push and
+    /// discard both mean the work has <i>landed</i>, and reusing either would record a reason
+    /// that is not true and move the baseline as though the world had seen it.
+    /// </remarks>
+    public async Task ReleaseCapturedLocksAsync(
+        IReadOnlyList<StashedLock> captured, string stashCommitId, CancellationToken ct)
+    {
+        foreach (var lockRecord in captured)
+        {
+            if (!_locks.TryGetValue(lockRecord.BindingId, out var held))
+            {
+                continue;
+            }
+
+            _locks[lockRecord.BindingId] = held with
+            {
+                Direction = SyncDirection.Clean,
+                AcquiredUtc = null,
+                Reason = $"the work was auto-stashed as {Short(stashCommitId)}",
+            };
+
+            _log.Info(LogCategory.Lock,
+                $"{lockRecord.BindingId}: {lockRecord.Direction} released; the work it guarded " +
+                $"is in stash {Short(stashCommitId)}");
+        }
+
+        await PersistAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Put the captured locks back, after their stash has been restored.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The other half of the round trip: the user gets back the working tree <i>and</i> the
+    /// sync state they left, and neither one alone is enough. Restoring the files while the
+    /// binding reads <c>Clean</c> would let the very next export overwrite the mirror edits
+    /// that were just handed back.
+    /// </para>
+    /// <para>
+    /// <b>A binding that has since acquired a lock of its own keeps it.</b> Time passed —
+    /// possibly days, possibly on another branch — and whatever is claimed now was claimed by
+    /// real work. Reported rather than overwritten, so the caller can say so.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<string>> RestoreCapturedLocksAsync(
+        IReadOnlyList<StashedLock> captured, CancellationToken ct)
+    {
+        var refused = new List<string>();
+
+        foreach (var lockRecord in captured)
+        {
+            if (!_locks.TryGetValue(lockRecord.BindingId, out var held))
+            {
+                // The project is not tracked here any more - deleted, or this is a branch
+                // where it never existed. The stash still restored its files; there is simply
+                // no binding to hand the lock back to.
+                refused.Add(lockRecord.BindingId);
+                continue;
+            }
+
+            if (SyncStateMachine.HoldsLock(held.Direction))
+            {
+                refused.Add(lockRecord.BindingId);
+                _log.Warn(LogCategory.Lock,
+                    $"{lockRecord.BindingId}: not restoring the stashed {lockRecord.Direction} " +
+                    $"lock; the binding now holds {held.Direction} from newer work");
+                continue;
+            }
+
+            _locks[lockRecord.BindingId] = held with
+            {
+                Direction = lockRecord.Direction,
+                AcquiredUtc = _clock.UtcNow,
+                Reason = "restored with the work that was auto-stashed",
+                LastSynced = new SyncedState
+                {
+                    ProjectHash = lockRecord.ProjectHash,
+                    MirrorHash = lockRecord.MirrorHash,
+                },
+            };
+
+            _log.Info(LogCategory.Lock,
+                $"{lockRecord.BindingId}: {lockRecord.Direction} restored with its stashed work");
+        }
+
+        await PersistAsync(ct).ConfigureAwait(false);
+        return refused;
+    }
 
     public CircuitBreaker Breaker => _breaker;
 

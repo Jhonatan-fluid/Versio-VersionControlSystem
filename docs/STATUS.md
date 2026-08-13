@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-13 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,014 unit + 199 UI + 122 integration, 0 skipped
+**Date:** 2026-08-13 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,021 unit + 199 UI + 122 integration, 0 skipped
 
 > All three measured on 2026-08-13, on branch `Clean-up-and-continue-dev`. The integration
 > suite was re-run in full against real CODESYS 3.5.22.20 after the manifest work — 111
@@ -149,7 +149,7 @@ format; `.gitattributes` covers every registered vendor's extensions.
 > **Safeguards work is tracked separately** in **[`SAFEGUARDS.md`](SAFEGUARDS.md)** — what Versio
 > refuses, asks about or waits for when something is running or unsaved. Phases 1–6 of it are
 > built and verified against real CODESYS, and **phase 7 (the auto-stash) is under way**: the
-> stash identity, the pure rule layer and the sidecar store have landed. **§0 of that document is the
+> stash identity, the pure rule layer, the sidecar store and the lock round trip have landed. **§0 of that document is the
 > handover note**, and *Phase 7, as built* at the end of §4 says what is left.
 >
 > It also carries a correction worth reading before touching the sync engine: **`On git action` is
