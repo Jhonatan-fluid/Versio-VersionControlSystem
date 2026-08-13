@@ -88,12 +88,18 @@ Both directions run automatically and deterministically. A per-project **directi
 | **Branch creation** — validated against git's own rules as you type | ✅ creates from HEAD and switches; 35 unit tests over the rules, and the dialog says *which* rule was broken |
 | **Clone with verification** — URL, Verify, destination, progress | ✅ Clone stays dead until `ls-remote` passes, and editing the URL shuts it again |
 | **Discard** — per file, after a confirmation naming it | ✅ refuses an untracked file with an explanation; releases the direction lock when the file was inside a mirror |
-| Branch switching refused while a direction lock is held | ⛔ git refuses a dirty-tree checkout on its own; the explanation is missing |
+| **Nothing is interrupted mid-flight** — a guard decides whether closing, switching branch or switching repository may happen right now | ✅ `InterruptionGuard`, pure, 93 unit tests. An export may be cancelled and an import may not: the export stages and swaps, the import writes into the binary project |
+| **Closing waits, or refuses** | ✅ an export offers *wait* or *stop it*; an import refuses outright until it finishes or times out. Before this, closing orphaned a hidden CODESYS still holding the project |
+| **Every operation can actually be cancelled** | ✅ the plumbing reached `KillTree` all along and every caller passed `CancellationToken.None`. 25 call sites now carry a real token |
+| **The repository and branch dropdowns are guarded** | ✅ shut while an import runs, and they snap back whenever a switch does not happen — a refused checkout used to leave the control naming a branch you were not on |
+| Branch switching refused while a direction lock is held | ⛔ the work half is guarded; the dirty-tree and lock half waits on the auto-stash — **[`SAFEGUARDS.md`](docs/SAFEGUARDS.md) §4** |
 | **Project tree** — CODESYS structure, roll-up badges, search | ✅ 34 unit tests + built from the export this repository commits |
 | Config nodes — one tree node per library, layer switcher, context menu | ⛔ not built. The library YAML now exists and parses (`LibraryCatalog`), so a version bump lands under the device that owns it; what is missing is a node per library. Device and IO YAML are still unwritten |
 | Packaging | ⛔ not built |
 
 **[docs/STATUS.md](docs/STATUS.md)** has the current state and the route to completion.
+**[docs/SAFEGUARDS.md](docs/SAFEGUARDS.md)** is what Versio refuses, asks about or waits for — the
+interruption guard, and the nine further ways this could lose work that it does not yet cover.
 **[docs/PHASE0-FINDINGS.md](docs/PHASE0-FINDINGS.md)** records the measurements and the known limitations — including one real CODESYS mutation (`Core2` in task configuration) that keeps task config **diff-only** for now.
 
 ---
@@ -146,6 +152,7 @@ Versio.sln
 └─ docs/
    ├─ PLAN.md                   the full architecture plan
    ├─ STATUS.md                 where the project is and what remains
+   ├─ SAFEGUARDS.md             what Versio refuses, asks about, or waits for
    └─ PHASE0-FINDINGS.md        measured results and known limitations
 ```
 

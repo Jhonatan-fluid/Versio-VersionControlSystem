@@ -5,6 +5,7 @@ using Versio.App.Mvvm;
 using Versio.Core.Abstractions;
 using Versio.Core.Bindings;
 using Versio.Core.Git;
+using Versio.Core.Guarding;
 using Versio.Core.Locking;
 using Versio.Core.Logging;
 using Versio.Core.Plc;
@@ -160,7 +161,7 @@ public sealed class SyncViewModel : ObservableObject
     {
         _logger = logger;
         _clock = clock;
-        _busy = busy ?? new BusyTracker();
+        _busy = busy ?? new BusyTracker(clock, logger);
         _heartbeat = new HeartbeatService(clock, logger);
 
         // The beat fires on a timer thread. Assigning a string property from there is safe —
@@ -283,6 +284,33 @@ public sealed class SyncViewModel : ObservableObject
 
     /// <summary>Whether the once-per-repository catch-up export has already run.</summary>
     private bool _caughtUp;
+
+    /// <summary>
+    /// Every binding whose direction lock is currently held, for the guard.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Asked of the orchestrator rather than of the rows, so the guard and the sync engine can
+    /// never disagree about whether work is outstanding. A row's <c>State</c> is a sentence
+    /// produced for a human at the time of the last scan; this is the lock itself, now.
+    /// </para>
+    /// <para>
+    /// <see cref="SyncStateMachine.HoldsLock"/> decides what counts as held — the same
+    /// predicate lock recovery uses, so "a lock worth refusing a branch switch over" and "a
+    /// lock worth re-adopting after a reboot" cannot drift apart.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<HeldLock> HeldLocks =>
+        _orchestrator is null
+            ? []
+            : [.. _config.Bindings
+                .Where(b => b.Enabled)
+                .Select(b => (Binding: b, Direction: _orchestrator.StateOf(b.Id)))
+                .Where(x => SyncStateMachine.HoldsLock(x.Direction))
+                .Select(x => new HeldLock(
+                    x.Binding.Id,
+                    System.IO.Path.GetFileNameWithoutExtension(x.Binding.ProjectPath),
+                    x.Direction))];
 
     public IReadOnlyList<string> ExportPaths =>
         [.. _config.Bindings.Where(b => b.Enabled).Select(b => b.ExportPath)];
@@ -437,11 +465,16 @@ public sealed class SyncViewModel : ObservableObject
         _logger.Info(LogCategory.Sync,
             $"catch-up: {behind} project(s) changed while Versio was not running; exporting");
 
-        using var busy = _busy.Begin(behind == 1
+        using var busy = _busy.Begin(WorkKind.Export, behind == 1
             ? "Exporting 1 project that changed while Versio was closed…"
             : $"Exporting {behind} projects that changed while Versio was closed…");
 
-        var outcomes = await SatisfyGateAsync(ct).ConfigureAwait(true);
+        // Both tokens: the caller's, and the one belonging to the bar the user is looking at.
+        // The catch-up runs unattended at open and is the longest thing Versio ever does
+        // without being asked, so it has to answer to whoever wants to stop it.
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, busy.Token);
+
+        var outcomes = await SatisfyGateAsync(linked.Token).ConfigureAwait(true);
 
         var failure = outcomes.FirstOrDefault(o => o.IsFailure);
         Summary = failure is null
@@ -528,6 +561,29 @@ public sealed class SyncViewModel : ObservableObject
         }
 
         return rows;
+    }
+
+    /// <summary>
+    /// Stop noticing changes, without forgetting anything.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// For the moment a close has been agreed to but the work in flight has not finished yet.
+    /// Releasing the watchers stops the five-second deferred tick and any settling save from
+    /// starting a <i>new</i> export while we are waiting for the current one — without which
+    /// "wait for it to finish" could wait for a queue it keeps refilling, and an app the user
+    /// asked to close would sit there exporting.
+    /// </para>
+    /// <para>
+    /// Deliberately not <see cref="Detach"/>. That nulls the orchestrator and clears the panel,
+    /// which is right when a repository is being swapped and wrong here: a run is still going,
+    /// its completion still has to be reported, and the user is still looking at the window.
+    /// </para>
+    /// </remarks>
+    public void Quiesce()
+    {
+        StopWatching();
+        _logger.Info(LogCategory.Watch, "stopped watching; no new sync will be started");
     }
 
     /// <summary>Clear state when the repository closes, so a stale scan is never shown.</summary>
@@ -713,6 +769,35 @@ public sealed class SyncViewModel : ObservableObject
     /// <summary>How many runs are in flight per binding, so the row clears on the last one.</summary>
     private readonly Dictionary<string, int> _runsPerBinding = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// The token source for the run currently under way on each binding.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Owned by whoever <i>started</i> the run, and looked up by <see cref="OnRunStarted"/> so
+    /// the progress scope adopts it rather than minting one connected to nothing. The two
+    /// happen at different moments on purpose — a run announces itself only once it is past
+    /// the last gate, so the caller is already several method frames away by then.
+    /// </para>
+    /// <para>
+    /// Keyed by binding rather than by operation id because the caller does not know the
+    /// operation id: it is assigned inside the orchestrator, after the call.
+    /// </para>
+    /// </remarks>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, CancellationTokenSource>
+        _runCancellation = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The token for a run nobody registered against a particular binding.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="RunDeferredAsync"/> releases whatever the throttle held back, and cannot say
+    /// in advance which bindings that will turn out to be — so it registers here instead, and
+    /// <see cref="OnRunStarted"/> falls back to it. Without the fallback the five-second tick
+    /// would be the one path that produced a run with no reachable token.
+    /// </remarks>
+    private CancellationTokenSource? _deferredCancellation;
+
     private void AttachRunSignals(SyncOrchestrator orchestrator)
     {
         orchestrator.RunStarted += OnRunStarted;
@@ -784,7 +869,9 @@ public sealed class SyncViewModel : ObservableObject
 
         _runScopes[notice.OperationId] =
         [
-            _busy.Begin(what),
+            _busy.Begin(exporting ? WorkKind.Export : WorkKind.Import, what,
+                        _runCancellation.GetValueOrDefault(notice.BindingId)
+                            ?? _deferredCancellation),
             _heartbeat.Track(notice.OperationId, what.TrimEnd('…')),
         ];
 
@@ -837,17 +924,17 @@ public sealed class SyncViewModel : ObservableObject
         }
 
         using var scope = _logger.BeginOperation(Guid.NewGuid().ToString("N")[..8]);
-        using var busy = _busy.Begin("Scanning for PLC projects…");
+        using var busy = _busy.Begin(WorkKind.Scan, "Scanning for PLC projects…");
         _logger.Info(LogCategory.Sync, "scanning for PLC projects");
 
         var scanner = new RepoScanner(_repositoryRoot, PlcFormats.All, _logger);
-        var snapshot = await scanner.ScanAsync(_git, CancellationToken.None).ConfigureAwait(true);
+        var snapshot = await scanner.ScanAsync(_git, busy.Token).ConfigureAwait(true);
 
         // Detection and tracking are one step now: anything found is tracked, and the locks
         // take it from there.
-        if (await AutoAdoptAsync(snapshot, CancellationToken.None).ConfigureAwait(true) > 0)
+        if (await AutoAdoptAsync(snapshot, busy.Token).ConfigureAwait(true) > 0)
         {
-            await BuildOrchestratorAsync(CancellationToken.None).ConfigureAwait(true);
+            await BuildOrchestratorAsync(busy.Token).ConfigureAwait(true);
             StartWatching();
         }
 
@@ -1018,9 +1105,12 @@ public sealed class SyncViewModel : ObservableObject
             return;
         }
 
+        using var cancel = new CancellationTokenSource();
+        _deferredCancellation = cancel;
+
         try
         {
-            var outcomes = await _orchestrator.RunDeferredAsync(CancellationToken.None)
+            var outcomes = await _orchestrator.RunDeferredAsync(cancel.Token)
                 .ConfigureAwait(true);
 
             if (outcomes.Any(o => o.DidWork || o.IsFailure))
@@ -1029,9 +1119,22 @@ public sealed class SyncViewModel : ObservableObject
                 await RefreshStalenessAsync().ConfigureAwait(true);
             }
         }
+        catch (OperationCanceledException)
+        {
+            // Asked to stop, by somebody switching branch or closing the window. Not a
+            // failure, and not worth an error line for something they just requested.
+            _logger.Info(LogCategory.Sync, "the deferred sync was cancelled");
+        }
         catch (Exception ex)
         {
             _logger.Error(LogCategory.Sync, "could not run the deferred sync", ex);
+        }
+        finally
+        {
+            if (ReferenceEquals(_deferredCancellation, cancel))
+            {
+                _deferredCancellation = null;
+            }
         }
     }
 
@@ -1510,7 +1613,7 @@ public sealed class SyncViewModel : ObservableObject
 
         var operationId = Guid.NewGuid().ToString("N")[..8];
         using var scope = _logger.BeginOperation(operationId);
-        using var busy = _busy.Begin("Exporting before commit…");
+        using var busy = _busy.Begin(WorkKind.Export, "Exporting before commit…");
         using var beat = _heartbeat.Track(operationId, "commit gate export");
 
         // Says what it is doing, not why the caller asked. This same path now serves the
@@ -1684,49 +1787,67 @@ public sealed class SyncViewModel : ObservableObject
         _logger.Debug(LogCategory.Sync,
             $"{binding.Id}: {source} change settled at {path}");
 
-        var outcome = await _orchestrator.HandleChangeAsync(new SyncJob
-        {
-            BindingId = binding.Id,
-            Source = source,
+        // The run's own token, registered before the call so the progress scope opened from
+        // inside the orchestrator can find and adopt it. Without this the automatic export -
+        // by far the most common thing to be running when somebody switches branch or closes
+        // the window - would have no reachable token, and "stop it and continue" would be a
+        // button that did nothing.
+        using var cancel = new CancellationTokenSource();
+        _runCancellation[binding.Id] = cancel;
 
-            // Confirmed, because there is nobody to ask. The project is copied aside before
-            // an import writes into it, which is what makes that answer defensible.
-            Confirmed = true,
-            Reason = $"automatic, {source}",
-        }, CancellationToken.None).ConfigureAwait(true);
-
-        var sentence = SyncNarrative.Describe(outcome);
-
-        if (outcome.IsFailure)
+        try
         {
-            _logger.Error(LogCategory.Sync, sentence);
-        }
-        else if (outcome.DidWork)
-        {
-            _logger.Info(LogCategory.Sync, sentence);
-        }
-        else
-        {
-            // Coalesced, throttled, unchanged, or blocked by the lock. All routine.
-            _logger.Debug(LogCategory.Sync, sentence);
-
-            // Queued and throttled are not "nothing happened": an export IS going to run,
-            // just not this instant, and the row would otherwise sit on its old state while
-            // the user waits for a diff. Said in the row rather than the bar, because the
-            // app is not busy - it is waiting on purpose.
-            if (outcome.Verdict is SyncVerdict.Coalesced or SyncVerdict.Throttled &&
-                Projects.FirstOrDefault(p => p.BindingId == binding.Id) is { Busy: false } row)
+            var outcome = await _orchestrator.HandleChangeAsync(new SyncJob
             {
-                row.State = "queued…";
+                BindingId = binding.Id,
+                Source = source,
+
+                // Confirmed, because there is nobody to ask. The project is copied aside before
+                // an import writes into it, which is what makes that answer defensible.
+                Confirmed = true,
+                Reason = $"automatic, {source}",
+            }, cancel.Token).ConfigureAwait(true);
+
+            var sentence = SyncNarrative.Describe(outcome);
+
+            if (outcome.IsFailure)
+            {
+                _logger.Error(LogCategory.Sync, sentence);
+            }
+            else if (outcome.DidWork)
+            {
+                _logger.Info(LogCategory.Sync, sentence);
+            }
+            else
+            {
+                // Coalesced, throttled, unchanged, or blocked by the lock. All routine.
+                _logger.Debug(LogCategory.Sync, sentence);
+
+                // Queued and throttled are not "nothing happened": an export IS going to run,
+                // just not this instant, and the row would otherwise sit on its old state while
+                // the user waits for a diff. Said in the row rather than the bar, because the
+                // app is not busy - it is waiting on purpose.
+                if (outcome.Verdict is SyncVerdict.Coalesced or SyncVerdict.Throttled &&
+                    Projects.FirstOrDefault(p => p.BindingId == binding.Id) is { Busy: false } row)
+                {
+                    row.State = "queued…";
+                }
+            }
+
+            if (outcome.DidWork || outcome.IsFailure)
+            {
+                Summary = sentence;
+                LockState = SyncNarrative.Describe(outcome.State);
+                await RescanAsync().ConfigureAwait(true);
+                await RefreshStalenessAsync().ConfigureAwait(true);
             }
         }
-
-        if (outcome.DidWork || outcome.IsFailure)
+        finally
         {
-            Summary = sentence;
-            LockState = SyncNarrative.Describe(outcome.State);
-            await RescanAsync().ConfigureAwait(true);
-            await RefreshStalenessAsync().ConfigureAwait(true);
+            // Removed by identity: a later change on this binding may already have replaced
+            // the entry, and clearing it blindly would unregister somebody else's live run.
+            _runCancellation.TryRemove(
+                new KeyValuePair<string, CancellationTokenSource>(binding.Id, cancel));
         }
     }
 
@@ -1842,15 +1963,15 @@ public sealed class SyncViewModel : ObservableObject
         _logger.Click("Sync.Retry");
         _logger.Info(LogCategory.Sync, $"{row.Name}: failure acknowledged; retrying");
 
-        using var busy = _busy.Begin($"Retrying {row.Name}…");
+        using var busy = _busy.Begin(WorkKind.Export, $"Retrying {row.Name}…");
 
-        await _orchestrator.AcknowledgeFailureAsync(row.BindingId!, CancellationToken.None)
+        await _orchestrator.AcknowledgeFailureAsync(row.BindingId!, busy.Token)
             .ConfigureAwait(true);
 
         // The acknowledgement only clears the gate. Without this the project would sit in
         // exactly the state it was in before, and the button would look as though it had
         // done nothing.
-        var outcomes = await SatisfyGateAsync(CancellationToken.None).ConfigureAwait(true);
+        var outcomes = await SatisfyGateAsync(busy.Token).ConfigureAwait(true);
 
         var failure = outcomes.FirstOrDefault(o => o.IsFailure);
         Summary = failure is null ? $"{row.Name} synced." : $"Still failing: {failure.Explanation}";

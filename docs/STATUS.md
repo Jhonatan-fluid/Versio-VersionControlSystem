@@ -1,6 +1,10 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-12 · **Commits:** 47 · **Tests:** 838 unit + 92 UI + 107 integration, 0 skipped
+**Date:** 2026-08-13 · **Commits:** 53 · **Tests:** 931 unit + 168 UI + 107 integration, 0 skipped
+
+> The unit and UI numbers were measured on 2026-08-13; the integration number is carried
+> forward from 2026-08-12, since that suite needs a real CODESYS and was not re-run for the
+> safeguards work, which touches nothing it covers.
 
 > Both numbers are re-derivable rather than remembered: `git rev-list --count HEAD`, and
 > `dotnet test` prints a total per suite. The commit count in this header was wrong by twelve

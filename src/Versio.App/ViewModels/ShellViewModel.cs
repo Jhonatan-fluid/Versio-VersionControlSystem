@@ -5,6 +5,7 @@ using Versio.App.Mvvm;
 using Versio.Core.Abstractions;
 using Versio.Core.Diff;
 using Versio.Core.Git;
+using Versio.Core.Guarding;
 using Versio.Core.Logging;
 using Versio.Core.Sync;
 using Versio.Core.Watching;
@@ -206,6 +207,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         _logger = logger;
         Log = log;
         _clock = clock ?? new SystemClock();
+
+        // Built here rather than in an initialiser because it needs the clock: every scope
+        // records when it started, so a dialog can say how long the user has been waiting
+        // rather than only that something is happening.
+        Busy = new BusyTracker(_clock, logger);
+
         // The SHELL's tracker, not one of its own.
         //
         // This defaulted, so the sync view model built a private BusyTracker while the
@@ -248,7 +255,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// refresh and a 20-second CODESYS export alike. Two independent indicators would
     /// disagree the moment the two overlapped, which is exactly when the user is looking.
     /// </remarks>
-    public BusyTracker Busy { get; } = new();
+    public BusyTracker Busy { get; }
 
     /// <summary>The PLC sync panel — what Versio is for, as distinct from the git client.</summary>
     public SyncViewModel Sync { get; }
@@ -293,7 +300,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
             if (value is not null && value.Path != _repositoryPath)
             {
-                _ = OpenAsync(value.Path);
+                _ = SwitchRepositoryAsync(value);
             }
         }
     }
@@ -310,8 +317,153 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
             if (value is not null && !value.IsCurrent)
             {
-                _ = CheckoutAsync(value.Name);
+                _ = SwitchBranchAsync(value);
             }
+        }
+    }
+
+    /// <summary>
+    /// Whether the repository and branch dropdowns accept a selection at all.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Bound to <c>IsEnabled</c> on both, so the half of the problem with no safe answer is
+    /// <b>unreachable</b> rather than refused after the click. A dropdown that accepts a
+    /// selection, opens a dialog and then snaps back is a worse experience than one that was
+    /// visibly unavailable — and it briefly shows a branch the user is not on, which is the one
+    /// bug this area already had.
+    /// </para>
+    /// <para>
+    /// Only uninterruptible work closes them. An export is 17-31 s and there is a real choice
+    /// worth offering during it, so the dropdown stays live and the guard does the asking.
+    /// </para>
+    /// </remarks>
+    public bool CanChangeContext => !Busy.HasUninterruptible;
+
+    /// <summary>
+    /// Switch repository, once anything in flight has been dealt with.
+    /// </summary>
+    /// <remarks>
+    /// Nothing about the working tree matters here: the folder being left stays on disk, still
+    /// dirty, still holding its locks, and is still there on the way back. Only a run in
+    /// progress is a reason to pause, because that one is pointed at the repository we are
+    /// about to stop looking at.
+    /// </remarks>
+    /// <remarks>
+    /// Internal rather than private so a test can await it. The setter is a fire-and-forget
+    /// dispatcher — it has to be, since a property setter cannot await — and a test driving it
+    /// through the property would be racing the work it wants to assert on.
+    /// </remarks>
+    internal async Task SwitchRepositoryAsync(RepoEntry target)
+    {
+        if (!await ClearForContextChangeAsync(GuardIntent.SwitchRepository, target.Name)
+                .ConfigureAwait(true))
+        {
+            ShowOpenRepository();
+            return;
+        }
+
+        await OpenAsync(target.Path).ConfigureAwait(true);
+
+        // OpenAsync refuses a folder git will not work in and says why through
+        // RepositoryRejected. The dropdown must not be left pointing at it.
+        if (target.Path != _repositoryPath)
+        {
+            ShowOpenRepository();
+        }
+    }
+
+    /// <summary>
+    /// Switch branch, once anything in flight has been dealt with.
+    /// </summary>
+    /// <remarks>
+    /// <b>The work half of the guard only.</b> A dirty tree and a held direction lock are also
+    /// reasons to stop somebody switching branch — safeguards §3.1 — but the answer to both is
+    /// the auto-stash, which is not built yet. Until it is, a dirty checkout stays git's to
+    /// allow or refuse, which it does correctly and which <see cref="CheckoutAsync"/> now
+    /// reports properly. Asking about a tree nothing can yet act on would mean offering a
+    /// "stash my changes" button that does nothing.
+    /// </remarks>
+    /// <remarks>Internal for the same reason as <see cref="SwitchRepositoryAsync"/>.</remarks>
+    internal async Task SwitchBranchAsync(BranchEntry target)
+    {
+        if (!await ClearForContextChangeAsync(GuardIntent.SwitchBranch, target.Name)
+                .ConfigureAwait(true))
+        {
+            ShowCurrentBranch();
+            return;
+        }
+
+        await CheckoutAsync(target.Name).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Put the guard's question about work in flight, and carry out the answer.
+    /// </summary>
+    /// <remarks>
+    /// Shared by both dropdowns so they cannot come to differ about what "something is running"
+    /// means. Waiting and cancelling both end by waiting: cancelling is a request, and the
+    /// operation is over when its own <c>await</c> unwinds, not when the token is tripped.
+    /// </remarks>
+    /// <returns>True when the switch may go ahead.</returns>
+    private async Task<bool> ClearForContextChangeAsync(GuardIntent intent, string target)
+    {
+        switch (AskAboutWork(intent, target))
+        {
+            case GuardChoice.Proceed:
+                return true;
+
+            case GuardChoice.CancelWorkAndProceed:
+                Busy.CancelCancellable();
+                await Busy.WhenIdleAsync().ConfigureAwait(true);
+                return true;
+
+            case GuardChoice.WaitThenProceed:
+                StatusSummary =
+                    $"Waiting for the current work to finish, then switching to {target}…";
+                await Busy.WhenIdleAsync().ConfigureAwait(true);
+                return true;
+
+            default:
+                _logger.Info(LogCategory.Ui, $"switch to {target} cancelled");
+                return false;
+        }
+    }
+
+    /// <summary>Put the branch dropdown back on the branch we are actually on.</summary>
+    /// <remarks>
+    /// A dropdown showing a branch you are not on is worse than no dropdown: every other panel
+    /// is describing HEAD, and the one control claiming otherwise is the one the user believes.
+    /// This was a real bug before the guard existed — a refused checkout left the selection
+    /// wherever the click had put it, and nothing ever moved it back.
+    /// </remarks>
+    private void ShowCurrentBranch() =>
+        WithoutSideEffects(() =>
+            SelectedBranch = Branches.FirstOrDefault(b => b.IsCurrent));
+
+    /// <summary>Put the repository dropdown back on the repository that is actually open.</summary>
+    private void ShowOpenRepository() =>
+        WithoutSideEffects(() =>
+            SelectedRepository = RecentRepositories.FirstOrDefault(r => r.Path == _repositoryPath));
+
+    /// <summary>
+    /// Move a dropdown's selection without that counting as the user picking something.
+    /// </summary>
+    /// <remarks>
+    /// The setters act on a change, and a revert is a change. Without this the revert would be
+    /// read as a fresh request to switch — back to where we already are, which is merely
+    /// wasteful, or into two dropdowns correcting each other, which is not.
+    /// </remarks>
+    private void WithoutSideEffects(Action change)
+    {
+        _suppressSelectionSideEffects = true;
+        try
+        {
+            change();
+        }
+        finally
+        {
+            _suppressSelectionSideEffects = false;
         }
     }
 
@@ -631,7 +783,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     {
         _logger.Info(LogCategory.App, $"Opening {path}");
 
-        using var busy = Busy.Begin($"Opening {System.IO.Path.GetFileName(path.TrimEnd('\\', '/'))}…");
+        using var busy = Busy.Begin(WorkKind.Scan, $"Opening {System.IO.Path.GetFileName(path.TrimEnd('\\', '/'))}…");
 
         var location = _locator.Locate(path);
         if (!location.IsUsable)
@@ -654,7 +806,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // Second, authoritative check. The locator reads the filesystem; only git itself
         // can say whether it will actually operate here, since a corrupt or partially
         // cloned .git looks perfectly fine from the outside.
-        if (!await client.IsRepositoryAsync(CancellationToken.None).ConfigureAwait(true))
+        if (!await client.IsRepositoryAsync(busy.Token).ConfigureAwait(true))
         {
             var rejected = location with { Kind = RepositoryKind.NotARepository };
             _logger.Warn(LogCategory.Git, $"git refused to open {path}");
@@ -666,8 +818,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         _git = client;
         RepositoryPath = path;
 
-        _suppressSelectionSideEffects = true;
-        try
+        WithoutSideEffects(() =>
         {
             var existing = RecentRepositories.FirstOrDefault(r => r.Path == path);
             if (existing is null)
@@ -677,11 +828,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             }
 
             SelectedRepository = existing;
-        }
-        finally
-        {
-            _suppressSelectionSideEffects = false;
-        }
+        });
 
         RefreshCommand.RaiseCanExecuteChanged();
 
@@ -696,7 +843,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         // Scan for PLC projects after the git state is up, so the sync panel is populated
         // by the time the user reaches for it.
-        await Sync.AttachAsync(path, client, CancellationToken.None).ConfigureAwait(true);
+        await Sync.AttachAsync(path, client, busy.Token).ConfigureAwait(true);
         return true;
     }
 
@@ -919,11 +1066,20 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // Every git button consults the same shared flag, so the moment one operation starts
         // they all go dead together. AsyncCommand.IsRunning only disables the button that was
         // pressed, which would leave Push live during a Pull.
+        //
+        // The dropdowns follow HasUninterruptible rather than IsBusy, and it moves
+        // independently — an export raises one and not the other — so both are listened for.
         Busy.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName is nameof(BusyTracker.IsBusy))
+            switch (e.PropertyName)
             {
-                OnUi(RaiseGitCommandStates);
+                case nameof(BusyTracker.IsBusy):
+                    OnUi(RaiseGitCommandStates);
+                    break;
+
+                case nameof(BusyTracker.HasUninterruptible):
+                    OnUi(() => OnPropertyChanged(nameof(CanChangeContext)));
+                    break;
             }
         };
     }
@@ -985,11 +1141,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         var paths = rows.Select(r => r.Path).ToList();
         _logger.Click(stage ? "Git.Stage" : "Git.Unstage");
 
-        using var busy = Busy.Begin(stage ? "Staging…" : "Unstaging…");
+        using var busy = Busy.Begin(WorkKind.GitWrite, stage ? "Staging…" : "Unstaging…");
 
         var result = stage
-            ? await _git.StageAsync(paths, CancellationToken.None).ConfigureAwait(true)
-            : await _git.UnstageAsync(paths, CancellationToken.None).ConfigureAwait(true);
+            ? await _git.StageAsync(paths, busy.Token).ConfigureAwait(true)
+            : await _git.UnstageAsync(paths, busy.Token).ConfigureAwait(true);
 
         if (!result.Success)
         {
@@ -1055,8 +1211,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 $"staged {staged} export path(s) before committing");
         }
 
-        using var busy = Busy.Begin("Committing…");
-        var result = await _git.CommitAsync(CommitMessage, CancellationToken.None)
+        using var busy = Busy.Begin(WorkKind.GitWrite, "Committing…");
+        var result = await _git.CommitAsync(CommitMessage, busy.Token)
             .ConfigureAwait(true);
 
         if (!result.Success)
@@ -1113,9 +1269,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
 
         _logger.Click("Git.Pull");
-        using var busy = Busy.Begin("Pulling…");
+        using var busy = Busy.Begin(WorkKind.GitWrite, "Pulling…");
 
-        var result = await _git.PullAsync(null, CancellationToken.None).ConfigureAwait(true);
+        var result = await _git.PullAsync(null, busy.Token).ConfigureAwait(true);
         StatusSummary = result.Success ? "Pulled." : result.FailureReason ?? "the pull failed";
 
         await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
@@ -1141,8 +1297,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             _logger.Click("Git.Push");
         }
 
-        using var busy = Busy.Begin("Pushing…");
-        var result = await _git.PushAsync(null, CancellationToken.None).ConfigureAwait(true);
+        using var busy = Busy.Begin(WorkKind.GitPush, "Pushing…");
+        var result = await _git.PushAsync(null, busy.Token).ConfigureAwait(true);
 
         if (!result.Success)
         {
@@ -1151,8 +1307,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
-        var head = await _git.HeadCommitAsync(CancellationToken.None).ConfigureAwait(true);
-        await Sync.ReleaseAfterPushAsync(head, CancellationToken.None).ConfigureAwait(true);
+        var head = await _git.HeadCommitAsync(busy.Token).ConfigureAwait(true);
+        await Sync.ReleaseAfterPushAsync(head, busy.Token).ConfigureAwait(true);
 
         StatusSummary = "Pushed. Every direction lock is released.";
         await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
@@ -1166,9 +1322,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
 
         _logger.Click("Git.Fetch");
-        using var busy = Busy.Begin("Fetching…");
+        using var busy = Busy.Begin(WorkKind.GitRead, "Fetching…");
 
-        var result = await _git.FetchAsync(null, CancellationToken.None).ConfigureAwait(true);
+        var result = await _git.FetchAsync(null, busy.Token).ConfigureAwait(true);
         StatusSummary = result.Success ? "Fetched." : result.FailureReason ?? "the fetch failed";
 
         await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
@@ -1231,6 +1387,209 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// host that forgets to wire it destroys nothing.
     /// </remarks>
     public Func<string, string, bool>? ConfirmDestructive { get; set; }
+
+    /// <summary>
+    /// Puts a guard's question to the user and returns what they chose.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Beside <see cref="ConfirmDestructive"/> rather than replacing it. That one asks a
+    /// yes-or-no about a single named file and is answered by a message box; this one offers
+    /// between two and three named courses of action and needs a real dialog. Collapsing them
+    /// would mean the discard confirmation grew a choice list it has no use for.
+    /// </para>
+    /// <para>
+    /// <b>Unset means Cancel</b>, exactly as unset means "no" for the destructive confirm — the
+    /// right way round for a wiring mistake to fail, and what lets <see cref="Ask"/> be called
+    /// from a view model with no view attached at all.
+    /// </para>
+    /// </remarks>
+    public Func<GuardPrompt, GuardChoice?>? AskGuard { get; set; }
+
+    /// <summary>
+    /// Evaluate the guard for an intent, and ask the user if it wants asking.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The one entry point every guarded action goes through, so that "what is running" and
+    /// "what state is the repository in" are gathered in one place and cannot be assembled
+    /// differently by two callers. Phases 3 and 4 hang the close guard and the context-switch
+    /// guard off this; nothing calls it yet.
+    /// </para>
+    /// <para>
+    /// Returns the choice to act on: <see cref="GuardChoice.Proceed"/> when nothing was in the
+    /// way, whatever the user picked when they were asked, and <see cref="GuardChoice.Cancel"/>
+    /// for a refusal — a refusal has no choices, so there is nothing else it could be.
+    /// </para>
+    /// </remarks>
+    /// <summary>
+    /// Ask about work in flight, and nothing else.
+    /// </summary>
+    /// <remarks>
+    /// <b>A deliberate seam, not a shortcut.</b> The guard's verdicts about a dirty tree and a
+    /// held direction lock both resolve to the auto-stash, which is not built yet (safeguards
+    /// §4). Passing the real tree state now would produce a "stash my changes" button that does
+    /// nothing — worse than not asking, because a button that lies about what it will do is how
+    /// somebody loses work believing it was saved.
+    /// <para>
+    /// Phase 7 deletes this method and its callers switch to <see cref="Ask"/>.
+    /// </para>
+    /// </remarks>
+    private GuardChoice AskAboutWork(GuardIntent intent, string target = "") =>
+        Ask(intent, target, WorkingTreeSnapshot.Clean);
+
+    private GuardChoice Ask(
+        GuardIntent intent, string target = "", WorkingTreeSnapshot? tree = null)
+    {
+        var verdict = InterruptionGuard.Evaluate(
+            intent, Busy.Snapshot(), tree ?? TreeState(), target);
+
+        // Refusals and questions at Info, a clear road at Debug. Phase 4 puts this on every
+        // repository and branch selection, and a line saying nothing was in the way each time
+        // is how the log panel got drowned before. What matters in a log is the decision that
+        // stopped somebody.
+        _logger.Log(
+            verdict.Decision == GuardDecision.Proceed ? LogLevel.Debug : LogLevel.Information,
+            LogCategory.App,
+            GuardNarrative.Describe(verdict));
+
+        if (verdict.Decision == GuardDecision.Proceed)
+        {
+            return GuardChoice.Proceed;
+        }
+
+        if (GuardNarrative.Prompt(verdict) is not { } prompt)
+        {
+            return GuardChoice.Cancel;
+        }
+
+        var answer = AskGuard?.Invoke(prompt) ?? GuardChoice.Cancel;
+
+        // A REFUSAL IS NOT A QUESTION.
+        //
+        // It is still shown — the user has to be told why nothing happened — but whatever
+        // comes back is discarded. The dialog returns null for the acknowledgement it puts on
+        // a refusal, so in the shipped path this changes nothing; it matters because the hook
+        // is a delegate anybody can set, and without this a handler that answered `Proceed`
+        // out of habit would close the window over a running import. The refusal has to be the
+        // decision, not a strong suggestion that the caller is trusted to respect.
+        if (verdict.Decision == GuardDecision.Refuse)
+        {
+            return GuardChoice.Cancel;
+        }
+
+        return answer;
+    }
+
+    /// <summary>
+    /// May Versio close, and if not yet, when?
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The whole close decision, in the view model rather than in the window, so it can be
+    /// driven by a test without anything being shown. The window's job is reduced to vetoing
+    /// the close, awaiting this, and closing again — which is all a synchronous
+    /// <c>Window.Closing</c> can do with an asynchronous answer.
+    /// </para>
+    /// <para>
+    /// <b>An import in flight refuses outright.</b> The guard produces that verdict, not this
+    /// method, and it produces a refusal rather than a question because no answer would make it
+    /// safe: it is the one write that can leave a project the IDE will not open, and "are you
+    /// sure" is the wrong question when the honest answer is "twenty more seconds". The
+    /// toolchain job carries its own timeout, so the wait is bounded whatever happens.
+    /// </para>
+    /// <para>
+    /// Once closing is agreed, the watchers are released <b>before</b> waiting. Otherwise a
+    /// save settling during the wait would start a fresh export and the app would sit there
+    /// working after being asked to stop.
+    /// </para>
+    /// </remarks>
+    /// <returns>True when the window may close now.</returns>
+    public async Task<bool> RequestCloseAsync()
+    {
+        var choice = Ask(GuardIntent.CloseApp);
+
+        if (choice == GuardChoice.Proceed)
+        {
+            return true;
+        }
+
+        if (choice is not (GuardChoice.WaitThenProceed or GuardChoice.CancelWorkAndProceed))
+        {
+            _logger.Info(LogCategory.App, "close cancelled; Versio stays open");
+            return false;
+        }
+
+        _logger.Info(LogCategory.App,
+            choice == GuardChoice.CancelWorkAndProceed
+                ? "closing: stopping what is running first"
+                : "closing: waiting for what is running to finish");
+
+        // Committed to closing. Nothing new may start from here on.
+        StopWatching();
+        Sync.Quiesce();
+
+        if (choice == GuardChoice.CancelWorkAndProceed)
+        {
+            var stopped = Busy.CancelCancellable();
+            _logger.Info(LogCategory.App,
+                $"closing: asked {stopped} operation(s) to stop");
+        }
+
+        StatusSummary = choice == GuardChoice.CancelWorkAndProceed
+            ? "Stopping, then closing…"
+            : "Closing when the current work finishes…";
+
+        await Busy.WhenIdleAsync().ConfigureAwait(true);
+
+        _logger.Info(LogCategory.App, "nothing left running; closing");
+        return true;
+    }
+
+    /// <summary>
+    /// Windows is ending the session. Give up whatever is running, deliberately.
+    /// </summary>
+    /// <remarks>
+    /// Not a close the user can be asked about: the process has a few seconds and no dialog
+    /// will be read. See <see cref="BusyTracker.CancelEverythingForShutdown"/> for why even an
+    /// import is stopped here — the alternative is an orphaned CODESYS holding the project
+    /// after its parent has gone.
+    /// </remarks>
+    public void AbandonForShutdown()
+    {
+        StopWatching();
+        Sync.Quiesce();
+
+        var stopped = Busy.CancelEverythingForShutdown();
+
+        _logger.Warn(LogCategory.App,
+            stopped == 0
+                ? "the session is ending; nothing was running"
+                : $"the session is ending; {stopped} operation(s) stopped mid-flight. The " +
+                  "direction locks are on disk and will be recovered on the next open");
+    }
+
+    /// <summary>
+    /// The repository as the guard needs to see it.
+    /// </summary>
+    /// <remarks>
+    /// Built from what the shell has already read rather than by asking git again: a second
+    /// <c>status</c> here would be a process spawn for an answer on screen, and two reads a
+    /// moment apart can disagree — which for a guard would mean refusing on the strength of a
+    /// conflict that had just been resolved.
+    /// <para>
+    /// The held locks come from the sync panel, which owns the orchestrator and asks it
+    /// directly — see <see cref="SyncViewModel.HeldLocks"/>. Reading them off the project rows
+    /// instead would be reading a sentence written for a human at the time of the last scan,
+    /// rather than the lock as it stands now.
+    /// </para>
+    /// </remarks>
+    private WorkingTreeSnapshot TreeState() => new()
+    {
+        DirtyPaths = [.. Changes.Select(c => c.Path)],
+        ConflictedPaths = [.. Changes.Where(c => c.Kind == ChangeKind.Conflicted).Select(c => c.Path)],
+        HeldLocks = Sync.HeldLocks,
+    };
 
     private void BuildHunkCommand() =>
         HunkCommand = new AsyncCommand<int>(ApplyHunkAsync, _ => Ready && CanStageHunks,
@@ -1338,10 +1697,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         var unstaging = _selectedDiffStaged;
         _logger.Click(unstaging ? "Diff.UnstageHunk" : "Diff.StageHunk");
 
-        using var busy = Busy.Begin(unstaging ? "Unstaging a hunk…" : "Staging a hunk…");
+        using var busy = Busy.Begin(
+            WorkKind.GitWrite, unstaging ? "Unstaging a hunk…" : "Staging a hunk…");
 
         var result = await _git
-            .ApplyToIndexAsync(patch, reverse: unstaging, CancellationToken.None)
+            .ApplyToIndexAsync(patch, reverse: unstaging, busy.Token)
             .ConfigureAwait(true);
 
         if (!result.Success)
@@ -1501,9 +1861,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
 
         _logger.Click("Git.Discard");
-        using var busy = Busy.Begin($"Discarding {row.Path}…");
+        using var busy = Busy.Begin(WorkKind.GitWrite, $"Discarding {row.Path}…");
 
-        var result = await _git.DiscardAsync([row.Path], CancellationToken.None)
+        var result = await _git.DiscardAsync([row.Path], busy.Token)
             .ConfigureAwait(true);
 
         if (!result.Success)
@@ -1521,7 +1881,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // restored would be the more damaging kind of over-reach.
         if (Sync.BindingOwning(row.Path) is { } bindingId)
         {
-            await Sync.ReleaseAfterDiscardAsync(bindingId, CancellationToken.None)
+            await Sync.ReleaseAfterDiscardAsync(bindingId, busy.Token)
                 .ConfigureAwait(true);
         }
 
@@ -1570,9 +1930,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
-        using var busy = Busy.Begin($"Creating {name}…");
+        using var busy = Busy.Begin(WorkKind.GitWrite, $"Creating {name}…");
 
-        var result = await _git.CreateBranchAsync(name, checkout: true, CancellationToken.None)
+        var result = await _git.CreateBranchAsync(name, checkout: true, busy.Token)
             .ConfigureAwait(true);
 
         StatusSummary = result.Success
@@ -1623,14 +1983,28 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
 
         _logger.Info(LogCategory.Git, $"checkout {branch}");
-        var result = await _git.CheckoutAsync(branch, CancellationToken.None).ConfigureAwait(true);
+
+        // A checkout had no scope at all until now, which meant the one operation that
+        // rewrites every file in the working tree was invisible both to the progress bar and
+        // to anything asking whether Versio was busy. Two quick selections in the dropdown
+        // could therefore overlap, and the second would be reasoning about the tree the first
+        // was still replacing.
+        using var busy = Busy.Begin(WorkKind.GitWrite, $"Switching to {branch}…");
+
+        var result = await _git.CheckoutAsync(branch, busy.Token).ConfigureAwait(true);
 
         if (!result.Success)
         {
-            // Almost always a dirty working tree. Say so rather than failing silently and
-            // leaving the dropdown showing a branch we are not on.
+            // Almost always a dirty working tree whose changes collide with the target.
             _logger.Warn(LogCategory.Git, $"checkout failed: {result.FailureReason}");
+
             StatusSummary = result.FailureReason ?? "checkout failed";
+
+            // Explicitly, and not left to the refresh below. That reloads the branch list only
+            // on some of its paths, so the selection sitting on a branch we are not on would
+            // be correct by coincidence rather than by decision — and the comment here used to
+            // claim a revert that nothing actually did.
+            ShowCurrentBranch();
         }
 
         await RefreshAsync().ConfigureAwait(true);
@@ -1685,14 +2059,14 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // Only a manual refresh earns the progress bar. The automatic ones fire whenever the
         // working tree moves, and a bar blinking on every keystroke in the user's editor is
         // noise that would teach them to ignore the one signal that matters.
-        using var busy = manual ? Busy.Begin("Reading git status…") : null;
+        using var busy = manual ? Busy.Begin(WorkKind.GitRead, "Reading git status…") : null;
 
         var operationId = Guid.NewGuid().ToString("N")[..8];
         using var scope = _logger.BeginOperation(operationId);
 
         try
         {
-            var status = await _git.StatusAsync(CancellationToken.None).ConfigureAwait(true);
+            var status = await _git.StatusAsync(busy?.Token ?? CancellationToken.None).ConfigureAwait(true);
 
             var previousBranch = BranchName;
             BranchName = status.Branch.IsDetached ? "(detached)" : status.Branch.Name;
@@ -1863,8 +2237,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         var branches = await _git.BranchesAsync(CancellationToken.None).ConfigureAwait(true);
 
-        _suppressSelectionSideEffects = true;
-        try
+        WithoutSideEffects(() =>
         {
             Branches.Clear();
             foreach (var branch in branches.OrderByDescending(b => b.IsCurrent)
@@ -1874,11 +2247,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             }
 
             SelectedBranch = Branches.FirstOrDefault(b => b.IsCurrent);
-        }
-        finally
-        {
-            _suppressSelectionSideEffects = false;
-        }
+        });
     }
 
     private string _selectedDiffPath = string.Empty;
@@ -2073,8 +2442,25 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// Surface a failed command.
+    /// </summary>
+    /// <remarks>
+    /// <b>Cancellation is not a failure.</b> Every operation now runs under a token that a
+    /// user can trip deliberately — by answering "stop it and continue" to a guard — and the
+    /// exception that produces is the mechanism working, not breaking. Reported at Info and
+    /// worded as an outcome, because a red error line for something the user just asked for
+    /// teaches them that the button is broken.
+    /// </remarks>
     private void ReportError(Exception ex)
     {
+        if (ex is OperationCanceledException)
+        {
+            _logger.Info(LogCategory.App, "the operation was cancelled");
+            StatusSummary = "Cancelled.";
+            return;
+        }
+
         _logger.Error(LogCategory.App, ex.Message, ex);
         StatusSummary = ex.Message;
     }

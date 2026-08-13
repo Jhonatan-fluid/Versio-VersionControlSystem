@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | Document | **The interruption and destructive-action plan.** What Versio must refuse, ask about, or wait for — and why each answer is the one it is |
-| Status | **Plan. Nothing here is built yet.** Every "today" below is a reading of the code at the commit this was written against |
+| Status | **Phases 1–4 built** (§6) — the guard, its narrative, the cancellation plumbing, the dialog, the close guard and the context-switch guard. Phases 5–9 are still plan. Every "today" below is a reading of the code at the commit this was written against |
 | Related | [`PLAN.md`](PLAN.md) — the architecture · [`STATUS.md`](STATUS.md) — where the project is · [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) — what was measured |
 
 ---
@@ -41,18 +41,21 @@ the code, two of which (§5.A and §5.D) can lose work with no user error at all
 
 **The gap is at the top, and it is three facts:**
 
-1. **`Ready` guards buttons, not the dropdowns.** `Ready => _git is not null && !Busy.IsBusy`
-   (`ShellViewModel.cs:938`) is consulted by every git command. Neither the repository nor the
-   branch `ComboBox` (`MainWindow.xaml:86`, `:120`) binds `IsEnabled` to anything at all.
+1. ~~**`Ready` guards buttons, not the dropdowns.**~~ **Closed in phase 4.** `Ready` was consulted
+   by every git command, and neither the repository nor the branch `ComboBox` bound `IsEnabled` to
+   anything at all — so a selection went straight to a checkout or a repository open underneath
+   whatever was running.
 
-2. **There is no `Closing` handler anywhere in `Versio.App`.** `Exit += shell.Dispose()` releases
-   watcher handles and returns. A CODESYS child launched with `CREATE_NO_WINDOW` is orphaned,
-   invisible, and — if it was an import — halfway through writing a binary `.project`.
+2. ~~**There is no `Closing` handler anywhere in `Versio.App`.**~~ **Closed in phase 3.**
+   `Exit += shell.Dispose()` released watcher handles and returned, so a CODESYS child launched
+   with `CREATE_NO_WINDOW` was orphaned, invisible, and — if it was an import — halfway through
+   writing a binary `.project`.
 
-3. **Every UI call site passes `CancellationToken.None`.** The plumbing beneath is complete:
-   `GitCliClient.RunAsync` links the caller's token (`GitCliClient.cs:767`), and the CODESYS runner
-   links it and kills the process tree. Nothing at the top ever creates a token to pass down. The
-   cancellation feature is fully built and entirely unreachable.
+3. ~~**Every UI call site passes `CancellationToken.None`.**~~ **Closed in phase 2.** The plumbing
+   beneath was already complete — `GitCliClient.RunAsync` links the caller's token
+   (`GitCliClient.cs:767`), and the CODESYS runner links it and kills the process tree — but
+   nothing at the top ever created a token to pass down, so the cancellation feature was fully
+   built and entirely unreachable.
 
 ---
 
@@ -63,14 +66,14 @@ Four pieces. Everything in §3–§5 is a consumer of these.
 ### 2.1 `Versio.Core/Guarding/` — a pure interruption gate
 
 ```
-InterruptionGuard.Evaluate(GuardRequest, WorkSnapshot, RepoSnapshot) → GuardVerdict
+InterruptionGuard.Evaluate(GuardRequest, WorkSnapshot, WorkingTreeSnapshot) → GuardVerdict
 ```
 
 | Type | Carries |
 |---|---|
 | `GuardRequest` | `Intent`: `SwitchBranch`, `SwitchRepository`, `CloseApp`, `Clone`, `Pull`, `Discard` |
 | `WorkSnapshot` | Every in-flight operation, each with a `WorkKind` and an `Interruption` |
-| `RepoSnapshot` | Dirty paths, conflicted paths, held direction locks per binding |
+| `WorkingTreeSnapshot` | Dirty paths, conflicted paths, held direction locks per binding |
 | `GuardVerdict` | `Proceed` · `Ask(GuardPrompt)` · `Refuse(sentence)` |
 | `GuardPrompt` | Title, body, and an ordered `GuardChoice[]` — Stash / Discard / Cancel the run / Wait / Cancel |
 
@@ -345,7 +348,7 @@ friendlier hat.
 | Case | Answer |
 |---|---|
 | `stash push` fails, or creates nothing | Abort the switch. Never fall through to checkout or discard. |
-| Nothing to stash (clean tree) | The guard never asks in the first place — `RepoSnapshot` says the tree is clean and the verdict is `Proceed`. |
+| Nothing to stash (clean tree) | The guard never asks in the first place — `WorkingTreeSnapshot` says the tree is clean and the verdict is `Proceed`. |
 | **`pop` conflicts** | Git leaves the stash in place and marks paths unmerged. **Keep the sidecar entry** — the work still exists and is still ours. Report the conflict, and let §5.B refuse both sync directions until it is resolved. |
 | Stash popped or dropped from a terminal | SHA is gone from the list. Clear the entry, log at Info, stay quiet. |
 | Branch deleted while its stash is held | Orphaned entry. **Never auto-drop** — surface it in `Findings`, which already exists for exactly this class of "needs a human". |
@@ -530,10 +533,10 @@ this adequately — worth confirming rather than changing.
 
 | Phase | Contents | Why here |
 |---|---|---|
-| **1** | `InterruptionGuard`, `GuardNarrative`, `WorkKind`/`Interruption` on `BusyTracker`. Unit tests only, nothing wired | Pure and fast. Everything below depends on it. |
-| **2** | A real `CancellationTokenSource` per operation; `GuardPromptWindow`; the `AskGuard` hook | The two mechanisms every scenario needs. |
-| **3** | **Close guard** (§3.4) | Highest damage per line: an orphaned CODESYS mid-import is the worst outcome on this list. |
-| **4** | **Context-switch guard** (§3.3) — dropdowns disabled for uninterruptible work, prompt for the rest | Second highest, and reuses phase 3 wholesale. |
+| **1 ✅** | `InterruptionGuard`, `GuardNarrative`, `WorkKind`/`Interruption`. Unit tests only, nothing wired | Pure and fast. Everything below depends on it. |
+| **2 ✅** | A real `CancellationTokenSource` per operation; `GuardPromptWindow`; the `AskGuard` hook | The two mechanisms every scenario needs. |
+| **3 ✅** | **Close guard** (§3.4) | Highest damage per line: an orphaned CODESYS mid-import is the worst outcome on this list. |
+| **4 ✅** | **Context-switch guard** (§3.3) — dropdowns disabled for uninterruptible work, prompt for the rest | Second highest, and reuses phase 3 wholesale. |
 | **5** | **`ResetForRepositoryChange`** (§3.2) | Self-contained, no new machinery, immediately visible. |
 | **6** | Git-write suppression window (§5.A) and the conflict gate (§5.B) | Correctness, and both are **prerequisites** for phase 7 — see §4.8 and §4.6. |
 | **7** | **Branch-switch guard with the full auto-stash** (§3.1, §4), plus the branch recorded in `BindingLock` | Needs the prompt from phase 2 and both defences from phase 6. |
@@ -547,3 +550,201 @@ conflicted `pop` becomes a way to import conflict markers into a project.
 Tests follow the existing split: guard and stash policy in `Versio.Core.Tests` (pure, ~0.3 s), the
 prompt window in `Versio.App.Tests` on the STA harness, and the stash round trip, conflict gate and
 suppression window in `Versio.Integration.Tests` against real git.
+
+### Phase 1, as built
+
+`src/Versio.Core/Guarding/` — four files, no IO, no clock, no UI:
+
+| File | Holds |
+|---|---|
+| `ActiveWork.cs` | `WorkKind`, `Interruption`, `WorkKinds.InterruptionOf`, `ActiveWork`, `WorkSnapshot` |
+| `GuardVerdict.cs` | `GuardIntent`, `GuardDecision`, `GuardReason`, `GuardChoice`, `HeldLock`, `WorkingTreeSnapshot`, `GuardVerdict` |
+| `InterruptionGuard.cs` | `Evaluate(intent, work, repo, target)` — the five-step ordering |
+| `GuardNarrative.cs` | `GuardPrompt`, and every sentence: `Title`, `Body`, `Describe`, `Label`, `Action` |
+
+**93 new unit tests**, taking `Versio.Core.Tests` from 838 to 931 in ~380 ms. Two decisions were
+made during implementation that the plan above had left open:
+
+- **`Interruption` is derived from `WorkKind`, never passed alongside it.** A call site that had to
+  state both would eventually state the wrong one, and the silent failure direction is an import
+  cancelled because somebody typed `Cancellable`. An unrecognised kind falls through to
+  `MustFinish`, so forgetting to extend the switch costs a refusal rather than a half-written
+  project — asserted by a test that casts an undefined enum value.
+- **A refusal offers no choices at all**, where a question offers Cancel last, always. If no option
+  would make the action safe, presenting one is a lie with a button on it.
+
+The suite was verified able to fail before being believed, per the `-MutateFirst` principle in the
+README: marking `Export` as `MustFinish` failed 10 tests, and swapping the conflict and lock checks
+failed exactly the one test that asserts that ordering.
+
+One name changed from the plan above: `RepoSnapshot` became **`WorkingTreeSnapshot`**, because
+`Versio.Core.Bindings.RepoSnapshot` already exists and means "what the repository scan found". The
+new name is the better one anyway — everything in it describes the condition of the working tree.
+
+### Phase 2, as built
+
+**`BusyTracker` now owns the cancellation.** `Begin(WorkKind, string, CancellationTokenSource?)`
+returns a `BusyScope` carrying the token, so a call site that has opened a scope cannot then forget
+to pass one — the token is already in the variable it is holding. `IsBusy` and `Message` kept their
+shape, so no existing binding moved. New: `Snapshot()`, `HasUninterruptible`, `CancelCancellable()`.
+
+**Call sites migrated** — 15 existing scopes given a `WorkKind`, and **25 arguments now carry a real
+token** (22 `busy.Token`, plus a linked source for the catch-up and one apiece for the automatic and
+deferred sync runs).
+
+**Twelve `CancellationToken.None` deliberately remain**, and they are not an oversight: short
+read-only calls with no scope of their own — `LoadBranchesAsync`, the commit-patch and diff reads,
+`RefreshTreeAsync`'s status read, the gate evaluations that run *before* the commit scope opens —
+plus the fallback on the one scope that is nullable by design (an automatic refresh does not raise
+the bar). None of them is a run worth cancelling, and inventing a scope for each would put the
+progress bar back on every keystroke, which is a bug this codebase already fixed once.
+
+Three findings came out of doing it:
+
+- **A checkout had no busy scope at all.** The one operation that rewrites every file in the working
+  tree was invisible to the progress bar and to anything asking whether Versio was busy, so two
+  quick selections in the branch dropdown could overlap. It has one now (`GitWrite`).
+- **The automatic export's token was unreachable**, and this is the one that mattered. A run is
+  begun by the watcher but announces itself from the orchestrator's `RunStarted` event — after the
+  call that started it, deliberately, so a refused or coalesced save never flashes a bar. A scope
+  minting its own token there would have produced one connected to nothing, and *"stop it and
+  continue"* would have silently done nothing for **the single most common case of something
+  running**. `SyncViewModel` now registers a source per binding before the call, and the scope
+  adopts it — which is what the `external` parameter on `Begin` is for. The tracker cancels an
+  adopted source but never disposes it.
+- **`RunDeferredAsync` had the same hole** and cannot say in advance which bindings it will run, so
+  it registers a fallback the run scope uses when there is no per-binding entry.
+
+**`CancelCancellable()` skips work that must finish**, rather than relying on the guard never
+asking. The guard is the courtesy; the filter is the guarantee — this is the only method in the app
+that can kill a CODESYS process tree.
+
+**Cancellation stopped being an error.** `ReportError` reports `OperationCanceledException` at Info
+as "Cancelled.", and the deferred sync catches it separately. A red error line for something the
+user just asked for teaches them the button is broken.
+
+**`GuardPromptWindow`** renders a verdict and returns a choice. It contains no `if` about locks,
+exports or dirty trees — which options exist, their order and every word come from the guard and
+the narrative. A `MessageBox` could not do this: the questions have three answers, and "Yes" is not
+an answer to "stash or discard". The button row is the reverse of the verdict's order, so the
+recommended choice lands on the right under the Enter key. A refusal has no choices, so it shows a
+single OK that acknowledges without returning a decision.
+
+**`ShellViewModel.Ask(intent, target)`** is the single entry point: it gathers the work snapshot and
+the tree state, evaluates, logs the one-line narrative, and puts the question through the `AskGuard`
+hook. Unset means Cancel, as unset already means "no" for `ConfirmDestructive`. **Nothing calls it
+yet** — phases 3 and 4 do.
+
+**18 new tests** (`Versio.App.Tests` 125 → 143). Verified able to fail: removing the
+must-finish filter from `CancelCancellable` failed the test that asserts an import survives a
+cancel-all. The first version of the button-mapping test was wrong about its own indices and was
+rewritten to assert *every* button maps to its choice, since a test that pressed one button could
+pass with the mapping inverted.
+
+### Phase 3, as built
+
+`MainWindow.OnClosing` exists. Closing Versio no longer kills the process out from under a hidden
+CODESYS.
+
+**The decision is in the view model, not the window.** `ShellViewModel.RequestCloseAsync()` returns
+whether the window may go; the window's whole job is three lines — veto unconditionally, await the
+answer, close again — because `Window.Closing` is synchronous and the answer is not. `_closeApproved`
+stops the second pass asking again, which would otherwise ask a user who chose "wait" whether they
+wanted to wait for the thing they had just finished waiting for. Putting it here is what lets the
+whole matrix be tested with no window, no dispatcher and no dialog.
+
+**`BusyTracker.WhenIdleAsync()`** is what "wait for it to finish" is made of. It re-checks `IsBusy`
+*after* subscribing: operations end on threadpool threads, so the last one can finish between the
+test and the subscription, and the notification would already have been raised to nobody. Waiting
+on that would hang until something unrelated started and stopped — which on an app the user has
+just asked to close is never. **This one guard is reasoned rather than tested**: the race cannot be
+scheduled deterministically from a test, and a test that pretended to would only be asserting its
+own timing.
+
+**Watchers are released before waiting.** Otherwise a save settling during the wait starts a fresh
+export and the app sits there working after being told to stop. `SyncViewModel.Quiesce()` stops the
+watcher and the five-second deferred tick without `Detach()`'s clearing — a run is still in flight,
+its completion still has to be reported, and the user is still looking at the window.
+
+**`SessionEnding` does not go through the guard at all.** Windows gives a process a few seconds and
+will not read a dialog, so `AbandonForShutdown()` cancels *everything*, including the import —
+`CancelEverythingForShutdown()` is the one place `CancelCancellable`'s guarantee is deliberately set
+aside. It is not a good outcome; it is the better of the two available, because the alternative is a
+hidden CODESYS orphaned and still holding the project after its parent has gone. The shutdown is
+**not vetoed**, though `SessionEndingCancelEventArgs` would allow it: an application that blocks a
+shutdown to protect its own work is one people learn to force-quit, and the direction locks are
+already on disk and recovered on the next open.
+
+**One defect found by its own test.** `An_import_refuses_the_close_outright` failed on first run:
+`Ask` returned whatever the `AskGuard` hook handed back, so a handler answering `Proceed` — which
+the test does deliberately, as the most permissive thing it could say — closed the window over a
+running import. **A refusal is not a question.** It is still shown, because the user has to be told
+why nothing happened, but the answer is now discarded. The shipped dialog returns null for a
+refusal's acknowledgement, so this changes nothing in the real path; it matters because the hook is
+a delegate anybody can set, and the refusal has to *be* the decision rather than a strong suggestion
+the caller is trusted to respect.
+
+**9 new tests** (143 → 152). Verified able to fail: treating "Cancel" as permission to close failed
+three of them.
+
+### The audit before phase 4
+
+A pass over everything phases 1–3 added, for organisation, comments and logging. Eight changes:
+
+| Found | Done |
+|---|---|
+| `GuardVerdict.cs` held seven types and was named after one of them | Split: `WorkingTreeSnapshot.cs` takes the repository-state types, `GuardVerdict.cs` keeps the intent and the answer |
+| A `<see cref="AskGuardAsync"/>` pointing at a method that never existed | Points at `Ask`. Crefs are unvalidated here — no documentation file is generated — so these rot silently |
+| A comment claiming held locks were "empty until phase 7" | They were wired in phase 2. Now describes what it actually does, and says why it asks the orchestrator rather than reading the project rows |
+| `Ask` was `internal`, overstating its reach | `private` |
+| Every guard evaluation logged at Info | `Proceed` at Debug, `Ask`/`Refuse` at Info. Phase 4 puts this on every dropdown selection, and a line per "nothing was in the way" is how the log panel got drowned before |
+| `RequestCloseAsync` did not say which way the user answered | It does |
+| **`BusyTracker` had no logger at all** | Takes an optional `IVersioLogger`, defaulting to `NullLogger.Instance` as the orchestrator does |
+| **A cancelled operation left no record of itself** | Named at Warning — `cancelled 'Exporting Machine…' on request`. Must-finish work stopped by a shutdown is named at **Error**, since that is the line somebody reads after a shutdown left a project that will not open |
+
+That last pair is the one that mattered. The app could kill a CODESYS process tree and the only
+trace was a count. "Why did my export not produce a diff?" now has an answer in the log, for the
+same reason discarding a file and dropping a stash are both logged by name. **3 new tests** assert
+the log lines, because logging that nothing checks is logging that quietly stops happening.
+
+### Phase 4, as built
+
+The dropdowns were the one way round every guard in the application. `Ready` gates every git button
+on `Busy.IsBusy`; neither `ComboBox` consulted anything at all, and a selection went straight to a
+checkout or a repository open underneath whatever was running.
+
+**`CanChangeContext`** (`!Busy.HasUninterruptible`) is bound to `IsEnabled` on both. While an import
+is writing into a project there is no safe answer to "switch now", so the question is made
+**unreachable** rather than asked and refused — a control that accepts a click, opens a dialog and
+snaps back is worse than one that was visibly unavailable. An export leaves them live: 17–31 s with
+a real choice worth offering, and the guard offers it.
+
+**Both dropdowns route through `ClearForContextChangeAsync`**, so they cannot come to differ about
+what "something is running" means. Waiting and cancelling both end by waiting — cancelling is a
+request, and the operation is over when its own `await` unwinds, not when the token trips.
+
+**The dropdown snaps back whenever the switch does not happen** — refused, cancelled, or a checkout
+git turned down. This was a real bug: a failed checkout left the control showing a branch the user
+was not on, and every other panel disagreed with it silently. `CheckoutAsync`'s comment already
+claimed a revert that nothing did; it now does it explicitly rather than relying on the refresh path
+that happens to reload the branch list on some of its routes.
+
+**`WithoutSideEffects`** replaced three copies of the suppression flag's try/finally. A revert *is*
+a change, so without it the correction reads as a fresh request to switch.
+
+**The dirty tree is deliberately not asked about yet.** `AskAboutWork` evaluates against
+`WorkingTreeSnapshot.Clean` — a documented seam, not a shortcut. The guard's verdicts about a dirty
+tree and a held lock both resolve to the auto-stash, which is phase 7; passing the real tree state
+now would produce a *"stash my changes"* button that does nothing, and a button that lies about what
+it will do is how somebody loses work believing it was saved. Until then a dirty checkout stays
+git's to allow or refuse, which it does correctly. Phase 7 deletes `AskAboutWork` and its two
+callers switch to `Ask`.
+
+**"`OnRunFinished` must tolerate a detached view model"** turned out to need no defensive code. Both
+paths through `ClearForContextChangeAsync` drain to idle before the switch, and a refusal blocks it
+outright — so a context switch can no longer happen with a run in flight at all. `BuildOrchestratorAsync`
+already detaches the old orchestrator's signals before attaching new ones. The hole is closed by
+construction rather than by null checks that could never fire.
+
+**16 new tests** (152 → 168). Verified able to fail: dropping the revert failed two, and pinning
+`CanChangeContext` to `true` failed one.

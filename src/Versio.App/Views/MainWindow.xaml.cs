@@ -48,6 +48,17 @@ public partial class MainWindow : Window
                             MessageBoxImage.Warning, MessageBoxResult.Cancel)
             == MessageBoxResult.OK;
 
+        // The guard's questions have three answers, not two, so they need a real dialog for
+        // the same reason the branch prompt does. Owned, so it centres on the window and
+        // cannot be lost behind it — which for a modal blocking a close would look like a
+        // hang rather than a question.
+        shell.AskGuard = prompt =>
+        {
+            var window = new GuardPromptWindow(prompt) { Owner = this };
+            window.ShowDialog();
+            return window.ChoiceResult;
+        };
+
         // A branch name needs a text box and live validation, which a MessageBox cannot do.
         // The dialog is owned so it centres on the window and cannot be lost behind it.
         shell.PromptForBranchName = () =>
@@ -76,6 +87,53 @@ public partial class MainWindow : Window
         SyncThemeRadios();
 
         InputBindings.Add(new KeyBinding(shell.RefreshCommand, Key.F5, ModifierKeys.None));
+    }
+
+    /// <summary>
+    /// True once the shell has agreed the window may go.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="OnClosing"/> runs twice for any close that had to wait: once to ask and veto,
+    /// and once more when <see cref="Close"/> is called after the answer arrives. Without this
+    /// the second pass would ask again, and a user who had chosen "wait" would be asked whether
+    /// they wanted to wait for the thing they had just finished waiting for.
+    /// </remarks>
+    private bool _closeApproved;
+
+    /// <summary>
+    /// Do not close while Versio is in the middle of something.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Until this existed, closing the window killed the process and orphaned whatever CODESYS
+    /// it had launched — hidden, since the runner starts it with <c>CREATE_NO_WINDOW</c>, still
+    /// holding the project, and part-way through writing a binary file if it was importing.
+    /// </para>
+    /// <para>
+    /// <b>Closing is synchronous and the answer is not.</b> So the close is vetoed
+    /// unconditionally, the answer is awaited, and <see cref="Close"/> is called again once it
+    /// arrives. <c>async void</c> is correct here and only here: an event handler is the one
+    /// place the framework gives no task to await, and the body cannot throw — everything
+    /// inside it is already guarded.
+    /// </para>
+    /// </remarks>
+    protected override async void OnClosing(System.ComponentModel.CancelEventArgs e)
+    {
+        if (_closeApproved)
+        {
+            base.OnClosing(e);
+            return;
+        }
+
+        // Vetoed first, always. The answer may involve waiting 20 seconds for an export, and
+        // there is no way to hold the close open while we find out.
+        e.Cancel = true;
+
+        if (await _shell.RequestCloseAsync())
+        {
+            _closeApproved = true;
+            Close();
+        }
     }
 
     /// <summary>

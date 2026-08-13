@@ -124,6 +124,7 @@
                           Tag="{DynamicResource Icon.Folder}"
                           ItemsSource="{Binding RecentRepositories}"
                           SelectedItem="{Binding SelectedRepository}"
+                          IsEnabled="{Binding CanChangeContext}"
                           ToolTip="{Binding RepositoryPath}">
                     <ComboBox.ItemTemplate>
                         <DataTemplate>
@@ -151,7 +152,13 @@
                 </StackPanel>
 
                 <!-- Branch dropdown. Closed: name and divergence only. Upstream tracking is
-                     only useful while comparing branches, so it lives in the open list. -->
+                     only useful while comparing branches, so it lives in the open list.
+
+                     IsEnabled follows CanChangeContext on both dropdowns: while an import is
+                     writing into a project there is no safe answer to "switch now", so the
+                     question is made unreachable rather than asked and refused. An export
+                     leaves them live - there is a real choice worth offering during those
+                     17-31 s, and the guard offers it. -->
                 <ComboBox Grid.Column="3" MinWidth="180" MaxWidth="360" Margin="16,0,0,0"
                           HorizontalAlignment="Stretch"
                           Style="{StaticResource FlatCombo}"
@@ -159,6 +166,7 @@
                           Tag="{DynamicResource Icon.Link}"
                           ItemsSource="{Binding Branches}"
                           SelectedItem="{Binding SelectedBranch}"
+                          IsEnabled="{Binding CanChangeContext}"
                           ToolTip="Switch branch">
                     <ComboBox.ItemTemplate>
                         <DataTemplate>
