@@ -144,8 +144,6 @@ public sealed class InterruptionGuardTests
     [Theory]
     [InlineData(GuardIntent.SwitchRepository)]
     [InlineData(GuardIntent.CloseApp)]
-    [InlineData(GuardIntent.Clone)]
-    [InlineData(GuardIntent.Discard)]
     public void An_intent_that_does_not_rewrite_the_tree_ignores_its_state(GuardIntent intent)
     {
         // Switching repository leaves every file where it is; closing leaves them on disk and

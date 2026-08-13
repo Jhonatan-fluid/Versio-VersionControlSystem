@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | Document | **The interruption and destructive-action plan.** What Versio must refuse, ask about, or wait for — and why each answer is the one it is |
-| Status | **Phases 1–4 built** (§6) — the guard, its narrative, the cancellation plumbing, the dialog, the close guard and the context-switch guard. Phases 5–9 are still plan. Every "today" below is a reading of the code at the commit this was written against |
+| Status | **Phases 1–4 built and verified against real CODESYS** (§6) — the guard, its narrative, the cancellation plumbing, the dialog, the close guard and the context-switch guard. Phases 5–9 are still plan. Every "today" below is a reading of the code at the commit this was written against |
 | Related | [`PLAN.md`](PLAN.md) — the architecture · [`STATUS.md`](STATUS.md) — where the project is · [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) — what was measured |
 
 ---
@@ -777,3 +777,26 @@ construction rather than by null checks that could never fire.
 
 **16 new tests** (152 → 168). Verified able to fail: dropping the revert failed two, and pinning
 `CanChangeContext` to `true` failed one.
+
+#### Three intents that reached nothing
+
+`GuardIntent` shipped with six members and three call sites. `Clone`, `Pull` and `Discard` were
+defined, given labels, given verdicts, covered by theory tests — and called by nothing.
+
+**The theory tests could not have caught it.** `Every_intent_has_a_verb_phrase` and its siblings
+iterate `Enum.GetValues<GuardIntent>()` and assert each member has a label and a verdict. That
+proves the guard *handles* every intent. It says nothing about whether anything *asks*, which was
+the actual question.
+
+- **`Clone` and `Discard` are removed.** `RewritesWorkingTree` is false for both, so the guard's
+  verdict is exactly what the commands' own `Ready` check already enforces — dead at every phase,
+  not just this one. Wiring them would have added a dialog in front of a button that is already
+  disabled.
+- **`Pull` is kept and documented as not-yet-wired**, the same treatment the stash client
+  operations already get in the README: the behaviour is designed and tested, and what is missing
+  is a caller. All three of its verdicts resolve to the auto-stash (phase 7). Meanwhile `PullAsync`
+  is gated on `Ready` like every other git command, so it cannot run while anything else is —
+  this was dead API, not an open door.
+
+The enum's own doc comment now records the rule: every member has a caller, or says why it does
+not.

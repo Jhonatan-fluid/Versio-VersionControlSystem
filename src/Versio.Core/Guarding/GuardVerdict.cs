@@ -2,9 +2,25 @@ namespace Versio.Core.Guarding;
 
 /// <summary>What the user is trying to do.</summary>
 /// <remarks>
+/// <para>
 /// The intent is what decides which repository state matters. Switching branch rewrites the
 /// working tree, so a dirty tree and a held direction lock are both its business; switching
 /// repository leaves every file exactly where it is, so neither is.
+/// </para>
+/// <para>
+/// <b>Every member here has a caller, or says why it does not.</b> This enum first shipped with
+/// <c>Clone</c> and <c>Discard</c> alongside these, reaching nothing — which implied a guard
+/// over cloning and discarding that did not exist. They were removed rather than wired, because
+/// <see cref="InterruptionGuard"/> would have returned exactly what the commands' own
+/// <c>Ready</c> check already enforces: both leave the working tree alone, so the guard has no
+/// verdict to add beyond "something is running", and their buttons are already dead while
+/// anything is.
+/// </para>
+/// <para>
+/// The theory tests over this enum did not catch it, and could not have: they assert that every
+/// intent has a label and a verdict, which proves the guard handles each one and says nothing
+/// about whether anything asks.
+/// </para>
 /// </remarks>
 public enum GuardIntent
 {
@@ -17,14 +33,24 @@ public enum GuardIntent
     /// <summary>Close the application.</summary>
     CloseApp,
 
-    /// <summary>Clone into a new folder.</summary>
-    Clone,
-
-    /// <summary>Pull from the upstream.</summary>
+    /// <summary>
+    /// Pull from the upstream.
+    /// </summary>
+    /// <remarks>
+    /// <b>Implemented and deliberately not yet wired.</b> A pull rewrites the working tree, so
+    /// this is one of the two intents <c>RewritesWorkingTree</c> answers true for, and its
+    /// dirty-tree branch is offered stash-without-discard for reasons argued in
+    /// <c>ChoicesForDirtyTree</c>. All three of its verdicts — unmerged paths, a held direction
+    /// lock, a dirty tree — resolve to the auto-stash, which is not built yet, so wiring it now
+    /// would offer a button that cannot do what it says.
+    /// <para>
+    /// Kept rather than deleted for the same reason the stash client operations are kept while
+    /// withdrawn from the UI: the behaviour is designed and tested, and the thing missing is a
+    /// caller. Meanwhile <c>PullAsync</c> is gated on <c>Ready</c> like every other git command,
+    /// so it cannot run while anything else is.
+    /// </para>
+    /// </remarks>
     Pull,
-
-    /// <summary>Discard changes to a file.</summary>
-    Discard,
 }
 
 /// <summary>The three answers the guard can give.</summary>

@@ -1,10 +1,10 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-13 · **Commits:** 53 · **Tests:** 931 unit + 168 UI + 107 integration, 0 skipped
+**Date:** 2026-08-13 · **Commits:** 55 · **Tests:** 919 unit + 170 UI + 107 integration, 0 skipped
 
-> The unit and UI numbers were measured on 2026-08-13; the integration number is carried
-> forward from 2026-08-12, since that suite needs a real CODESYS and was not re-run for the
-> safeguards work, which touches nothing it covers.
+> All three measured on 2026-08-13. The integration suite was re-run in full against real
+> CODESYS 3.5.22.20 after the safeguards work — 107 passed, 0 skipped, 6 m 15 s — including
+> `RepositoryWatcherTests.A_deleted_file_is_reported`, the one noted below as flaky.
 
 > Both numbers are re-derivable rather than remembered: `git rev-list --count HEAD`, and
 > `dotnet test` prints a total per suite. The commit count in this header was wrong by twelve

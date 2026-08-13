@@ -47,9 +47,7 @@ public static class GuardNarrative
         GuardIntent.SwitchBranch => "switch branch",
         GuardIntent.SwitchRepository => "open a different repository",
         GuardIntent.CloseApp => "close Versio",
-        GuardIntent.Clone => "clone a repository",
         GuardIntent.Pull => "pull",
-        GuardIntent.Discard => "discard that file",
         _ => "do that",
     };
 
