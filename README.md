@@ -85,7 +85,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | **Git side panel** — staging, commit message, fetch/pull/push | ✅ one operation at a time across every button |
 | **The commit gate, enforced** — a stale export is exported and staged first | ✅ push releases the direction locks, commit does not |
 | **History panel** — commits with hash, local date and time, author and subject; expand for the files, click a file for its diff | ✅ its own rail button, and lazy at four levels: the log is not read until the panel is opened, then a page at a time; a commit's files when it is expanded; a patch when a file is clicked |
-| **Stash** — push, apply, pop, drop | ⛔ **withdrawn from the UI**, pending a different design. The client operations and their 6 integration tests are kept |
+| **Stash** — push, apply, pop, drop | ✅ **not as buttons.** The six permanent controls were withdrawn and the operations kept; they drive the auto-stash now, which is where a stash is actually wanted — at the moment a branch switch would otherwise strand uncommitted work. A manual stash UI is still deliberately absent |
 | **Per-hunk stage and unstage** | ✅ the hunk is copied verbatim and applied to the index; the working tree is never touched |
 | **Branch creation** — validated against git's own rules as you type | ✅ creates from HEAD and switches; 35 unit tests over the rules, and the dialog says *which* rule was broken |
 | **Clone with verification** — URL, Verify, destination, progress | ✅ Clone stays dead until `ls-remote` passes, and editing the URL shuts it again |
@@ -95,15 +95,18 @@ Both directions run automatically and deterministically. A per-project **directi
 | **Every operation can actually be cancelled** | ✅ the plumbing reached `KillTree` all along and every caller passed `CancellationToken.None`. 25 call sites now carry a real token |
 | **The repository and branch dropdowns are guarded** | ✅ shut while an import runs, and they snap back whenever a switch does not happen — a refused checkout used to leave the control naming a branch you were not on |
 | **Auto-stash on a branch switch** | ✅ uncommitted work is stashed with a marker, recorded in `.versio/local/autostash.json` with the direction locks it released, and offered back — restore, leave, discard — on returning to that branch. The stash is proven to exist by a set difference over `git stash list`, because `git stash push` on a clean tree exits 0 and creates nothing |
-| Branch switching refused while a direction lock is held | ⛔ the work half is guarded; the dirty-tree and lock half waits on the auto-stash — **[`SAFEGUARDS.md`](docs/SAFEGUARDS.md) §4** |
+| Branch switching with work in the tree | ✅ the guard asks, the auto-stash saves it with the direction locks it released, and returning to the branch offers it back — restore, leave, or discard. A stash that git did not actually create abandons the switch rather than checking out over unsaved work |
 | **Project tree** — CODESYS structure, roll-up badges, search | ✅ 34 unit tests + built from the export this repository commits |
 | **Methods and properties under the object that owns them** | ✅ manifest schema 4 records each member's owner GUID and the tree nests by it — a chain, since a property owns its accessors. Before this a function block's methods were its siblings, and four `InitRoom` methods on four different rooms were four rows in one folder. A mirror exported earlier carries no parents and stays flat until it is re-exported |
 | Config nodes — one tree node per library, layer switcher, context menu | ⛔ not built. The library YAML now exists and parses (`LibraryCatalog`), so a version bump lands under the device that owns it; what is missing is a node per library. Device and IO YAML are still unwritten |
 | Packaging | ⛔ not built |
 
 **[docs/STATUS.md](docs/STATUS.md)** has the current state and the route to completion.
-**[docs/SAFEGUARDS.md](docs/SAFEGUARDS.md)** is what Versio refuses, asks about or waits for — the
-interruption guard, and the nine further ways this could lose work that it does not yet cover.
+**[docs/SAFEGUARDS.md](docs/SAFEGUARDS.md)** is what Versio refuses, asks about or waits for —
+the interruption guard, the auto-stash, and the ways this could lose work. Eight of its nine
+phases are built; the ninth is features rather than guards.
+**[docs/GIT-PANEL-PLAN.md](docs/GIT-PANEL-PLAN.md)** is the git panel's functionality and UX,
+and nothing in it is built yet.
 **[docs/PHASE0-FINDINGS.md](docs/PHASE0-FINDINGS.md)** records the measurements and the known limitations — including one real CODESYS mutation (`Core2` in task configuration) that keeps task config **diff-only** for now.
 
 ---
@@ -157,6 +160,7 @@ Versio.sln
    ├─ PLAN.md                   the full architecture plan
    ├─ STATUS.md                 where the project is and what remains
    ├─ SAFEGUARDS.md             what Versio refuses, asks about, or waits for
+   ├─ GIT-PANEL-PLAN.md         the git panel's functionality and UX — unbuilt
    └─ PHASE0-FINDINGS.md        measured results and known limitations
 ```
 

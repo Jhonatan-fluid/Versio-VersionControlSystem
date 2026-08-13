@@ -1,11 +1,11 @@
 # Versio — safeguards
 
-**Date:** 2026-08-13 · **Handed over at** `Safeguards` @ 61 commits — start at §0
+**Date:** 2026-08-13 · **Phases 1–8 built; phase 9 is what remains** — start at §0
 
 | | |
 |---|---|
 | Document | **The interruption and destructive-action plan.** What Versio must refuse, ask about, or wait for — and why each answer is the one it is |
-| Status | **Phases 1–6 built and verified against real CODESYS** (§6) — the guard, its narrative, the cancellation plumbing, the dialog, the close guard, the context-switch guard, the repository reset, the conflict gate and the git-write window. Phases 7–9 are still plan — **§0 is the handover note.** Every "today" below is a reading of the code as it was when this was written, with each phase's *"as built"* notes appended where it was planned |
+| Status | **Phases 1–8 built and verified against real CODESYS** (§6) — the guard and its narrative, the cancellation plumbing, the dialog, the close guard, the context-switch guard, the repository reset, the conflict gate, the git-write window, the auto-stash in both directions, and the swap that can no longer leave a project with no mirror. **Phase 9 is what remains**, and it is features rather than guards: a real import confirmation (§5.C), a backup restore path (§5.E), a read-only second instance (§5.G). **§0 is the handover note.** Every "today" below is a reading of the code as it was when that section was written, with each phase's *"as built"* notes appended where it was planned |
 | Related | [`PLAN.md`](PLAN.md) — the architecture · [`STATUS.md`](STATUS.md) — where the project is · [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) — what was measured |
 
 ---
@@ -39,8 +39,8 @@ appended where it was planned. Read §6 for the order and what is done.
 
 | | |
 |---|---|
-| 939 Core + 190 UI unit tests | `dotnet test tests/Versio.Core.Tests`, `…/Versio.App.Tests` |
-| 111 integration tests | Real git and **real CODESYS 3.5.22.20**; 0 skipped, 6 m 15 s |
+| 1,037 Core + 214 UI unit tests | `dotnet test tests/Versio.Core.Tests`, `…/Versio.App.Tests` |
+| 130 integration tests | Real git and **real CODESYS 3.5.22.20**; 0 skipped, 8 m 15 s |
 | The application itself | Started, driven, closed. Two bugs found this way that no test caught |
 | Every new behaviour | Deliberately broken and the tests re-run, per the README's `-MutateFirst` rule |
 
@@ -78,7 +78,24 @@ and **Versio could not be closed at all**. Only running the application found it
 - **`GuardIntent.Pull` is implemented and deliberately unwired** — its verdicts all resolve to the
   auto-stash. Phase 7 wires it and deletes `ShellViewModel.AskAboutWork`.
 
-### Starting phase 7
+### Starting phase 9
+
+§5.C, §5.E and §5.G are the three that remain, and none of them is a guard: each adds a
+capability the app describes and does not have.
+
+- **§5.C** is the smallest and the most dishonest as it stands: `RequireImportConfirmation` is
+  `true` by default and the only caller answers `Confirmed = true` with the comment *"there is
+  nobody to ask"*. There is somebody to ask now — the prompt from phase 2 renders any question
+  with named answers.
+- **§5.E** is a window over the ten backups per binding that already exist and are reachable by
+  nothing.
+- **§5.G** is the sentence `LockRecovery` already produces — *"opening read-only"* — which
+  nothing implements.
+
+Nothing in phase 9 is blocked. §5.H (the repository disappearing while it is open) is still
+unwritten and is the one remaining item in §5 that nobody has costed.
+
+### Starting phase 7 (kept for its reasoning)
 
 §4 is the full design and was written before any of this was built; it still holds. The first
 concrete step is one line: `GitLogParser.StashFormat` needs `%H` and `StashEntry` needs a

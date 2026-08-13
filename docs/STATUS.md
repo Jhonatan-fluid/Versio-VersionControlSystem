@@ -31,9 +31,15 @@ repository is tracked without ceremony, exported to a reviewable mirror when it 
 edits to that mirror flow back into the project — driven by the direction lock, proven end to
 end against the real fixture with real CODESYS.
 
+**And it now defends the half a mouse can reach.** Closing, switching branch, switching
+repository and pulling all go through one guard; uncommitted work is stashed and offered back
+with the sync state it had; an export can be killed at any instant without leaving a project
+without a mirror; and what a killed run leaves behind is put right the next time the repository
+opens. That is `SAFEGUARDS.md` phases 1–8, and phase 9 is features rather than guards.
+
 ```
   CODESYS pipeline    ████████████████████  proven on a real project
-  Domain core         ████████████████████  800 tests, 311 ms
+  Domain core         ████████████████████  1,037 tests, 281 ms
   Vendor seam         ████████████████████  enforced from assembly metadata
   Infrastructure      ████████████████████  drives real CODESYS + real git
   Desktop shell       ███████████████████░  one project view, full git surface, diff
@@ -141,21 +147,29 @@ format; `.gitattributes` covers every registered vendor's extensions.
 
 ## What remains, in dependency order
 
-> **Picking this up?** Items 1 and 2 are done and kept for their reasoning. **Start at item 3**:
-> it is small, self-contained, and finishes a feature that is already 90% built. Item 4 is the
-> largest piece of user-visible value left. Nothing below depends on anything above it except
-> where it says so.
+> **Picking this up?** Items 1 and 2 are done and kept for their reasoning. Items 3–8 are
+> untouched: **item 3 is the smallest**, item 4 is the largest piece of user-visible value, and
+> nothing below depends on anything above it except where it says so.
 
-> **Safeguards work is tracked separately** in **[`SAFEGUARDS.md`](SAFEGUARDS.md)** — what Versio
-> refuses, asks about or waits for when something is running or unsaved. Phases 1–6 of it are
-> built and verified against real CODESYS, and **phase 7 (the auto-stash) is under way**: the
-> **phase 7 is complete** — the stash identity, the rule layer, the sidecar store, the lock round trip, the take-and-restore flow and the guarded pull. Only offering a second stash on one branch is left. **Phase 8 is done too** — the mirror can no longer vanish in the swap window, and what a killed export leaves behind is put right when the repository opens. **Phase 9** (import confirmation, backup restore, read-only second instance) is what remains. **§0 of that document is the
-> handover note**, and *Phase 7, as built* at the end of §4 says what is left.
+> **Two other plans are tracked separately, and both are ahead of this list.**
 >
-> It also carries a correction worth reading before touching the sync engine: **`On git action` is
-> not the default sync mode** and had not been since 2026-08-12. Exports follow a detected change,
-> because the mirror exists to be reviewed *before* a commit. Eleven places still said otherwise
-> and now say so; the commit gate is a backstop, not the trigger.
+> **[`SAFEGUARDS.md`](SAFEGUARDS.md)** — what Versio refuses, asks about or waits for.
+> **Phases 1–8 are built and verified against real CODESYS**: the guard, the cancellation
+> plumbing, the close and context-switch guards, the conflict gate, the git-write window, the
+> auto-stash in both directions, and a swap that can no longer leave a project with no mirror.
+> **Phase 9 is what remains** — a real import confirmation, a backup restore path, and the
+> read-only second instance the code already promises in a sentence. §0 is the handover note.
+>
+> **[`GIT-PANEL-PLAN.md`](GIT-PANEL-PLAN.md)** — the git panel's functionality and UX.
+> **Nothing in it is built.** GP-0 is two `git config` calls and removes the two worst first-run
+> failures; GP-A fixes a live bug in which a successful push produces no visible confirmation at
+> all, because `StatusSummary` is overwritten by the refresh that follows it. Its pre-flight
+> section names one blocker that has since been cleared — §5.A shipped — so GP-G is unblocked.
+>
+> `SAFEGUARDS.md` also carries a correction worth reading before touching the sync engine:
+> **`On git action` is not the default sync mode** and had not been since 2026-08-12. Exports
+> follow a detected change, because the mirror exists to be reviewed *before* a commit. The
+> commit gate is a backstop, not the trigger.
 
 ### 1. ~~Export what is currently missing~~ — **done**
 
