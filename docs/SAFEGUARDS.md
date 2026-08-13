@@ -523,7 +523,7 @@ not offered here.
 4. Taking and restoring for real, in the shell: `StashPushAsync` with the marker, the set
    difference, the lock capture and release (§4.7), and the arrival prompt on **every**
    successful checkout — the dropdown, `CreateBranchAsync`, and a pull that moved HEAD.
-5. Wrap both ends in `BeginOwnWrite` — **not** `BeginExternalWrite**, which is now the wrong
+5. Wrap both ends in `BeginOwnWrite` — **not** `BeginExternalWrite`, which is now the wrong
    tool: it is repository-wide, and a stash touches one binding's mirror. §4.8 was written
    before the narrower window existed. Then wire `GuardIntent.Pull` and delete
    `ShellViewModel.AskAboutWork`.
