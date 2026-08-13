@@ -28,9 +28,9 @@ the code, two of which (§5.A and §5.D) can lose work with no user error at all
 
 ## 0. Handover — where this stands
 
-**Branch:** `Clean-up-and-continue-dev`. **Built:** phases 1–7 —
-see *Phase 7, as built* at the end of §4. **Next: phase 8** (§5.D's trash-rename swap, staging
-in the ignore plan, the leftover sweep at open).
+**Branch:** `Clean-up-and-continue-dev`. **Built:** phases 1–8 — see *Phase 7, as built* at the end of §4 and
+*Phase 8, as built* below it. **Next: phase 9** (§5.C import confirmation, §5.E backup restore,
+§5.G read-only second instance) — features rather than guards, and each its own conversation.
 
 Everything below §1 is the original plan, kept as written, with each phase's *"as built"* notes
 appended where it was planned. Read §6 for the order and what is done.
@@ -593,6 +593,50 @@ a synonym for `Ask` the moment there was something to offer.
    and the prompt says how many — but only the newest is offered per arrival. Offering the rest
    in turn is a loop nobody has written yet.
 
+### Phase 8, as built
+
+**§5.D — the swap.** `rmtree(out_root)` then `os.rename(staging, out_root)` left a window with
+**no mirror at all** — not stale, not partial, none — and `rmtree` over the fixture's 2.5 MB
+visualisation tree is not instantaneous. It is three renames now: mirror to
+`<mirror>.versio_trash`, staging to mirror, delete the trash. Each is atomic on NTFS, so at
+every instant between them the mirror is either the old tree or the new one. What a kill can
+leave behind is a trash directory holding the previous export, which is recoverable, rather
+than nothing, which is not.
+
+**§5.F — the ignore plan.** `<mirror>.versio_staging/` and `<mirror>.versio_trash/` are in it
+now, alongside `.versio/local/` and the vendor's own leftovers. Both directories exist for
+milliseconds in the happy case and survive a killed run, and until this landed **this
+repository had the staging rule only because somebody typed it by hand** — an adopted user
+repository had nothing, so a killed export left an untracked staging tree that *Stage all*
+would cheerfully commit. The names live in `BindingConventions` and a test reads
+`versio_export.py` to check the two languages still agree about them.
+
+**The sweep at open — and the reason it is not a delete loop.** The exporter clears its own
+leftovers on the *next* run, which covers nothing until an export happens; a repository can be
+opened, read, committed from and closed again without one. So `SwapRecovery` reads the three
+directories and decides:
+
+| On disk | What it means | What happens |
+|---|---|---|
+| mirror only | a finished export | nothing |
+| mirror + staging | killed before the swap | delete the staging tree; it is a partial export by definition |
+| mirror + trash | killed after the swap, during the tidy-up | delete the trash; the export is intact |
+| **trash, no mirror** | **killed between the two renames** | **restore the trash as the mirror** |
+
+That last row is the whole point. The obvious implementation — clear anything left over —
+destroys the last copy of the mirror in exactly the case the three-rename swap was built to
+survive, and it would do it quietly, at startup, in a repository nobody had touched. Eight pure
+tests cover every combination, including the two that must do nothing: a project that has never
+been exported, and a missing mirror with only a staging tree beside it, which is not restorable
+because a staging tree is not a previous export.
+
+The sweep runs twice during attach, before and after the scan. Before, so adoption cannot start
+an export over a mirror sitting in the trash; after, because the scan is where a project that
+is not yet in `repo.json` becomes a binding — which is precisely the first-adoption case where
+this would otherwise go unnoticed. The front-door test arranges the dangerous combination on
+disk and opens the repository through `OpenAsync`; it fails when the restore is replaced by a
+delete.
+
 ---
 
 ## 5. Other scenarios that can break
@@ -729,7 +773,7 @@ this adequately — worth confirming rather than changing.
 | **5 ✅** | **`ResetForRepositoryChange`** (§3.2) | Self-contained, no new machinery, immediately visible. |
 | **6 ✅** | Git-write suppression window (§5.A) and the conflict gate (§5.B) | Correctness, and both are **prerequisites** for phase 7 — see §4.8 and §4.6. |
 | **7** | **Branch-switch guard with the full auto-stash** (§3.1, §4), plus the branch recorded in `BindingLock` | Needs the prompt from phase 2 and both defences from phase 6. |
-| **8** | Swap via trash-rename (§5.D), staging in the ignore plan (§5.F), leftover sweep at open | Small, independent, and §5.D closes a real window. |
+| **8 ✅** | Swap via trash-rename (§5.D), staging in the ignore plan (§5.F), leftover sweep at open | Small, independent, and §5.D closes a real window. |
 | **9** | Import confirmation made real (§5.C), backup restore UI (§5.E), read-only second instance (§5.G) | Features rather than guards. Each is its own conversation. |
 
 Phases 6 and 7 are ordered deliberately: **the auto-stash cannot ship before the suppression window

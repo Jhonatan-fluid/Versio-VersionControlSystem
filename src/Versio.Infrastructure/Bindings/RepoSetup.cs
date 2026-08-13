@@ -95,7 +95,8 @@ public sealed class RepoSetup(
         }
 
         var attributes = await EnsureGitAttributesAsync(git, ct).ConfigureAwait(false);
-        var ignores = await EnsureGitIgnoreAsync(projectPath, ct).ConfigureAwait(false);
+        var ignores = await EnsureGitIgnoreAsync(
+            projectPath, ct, decision.Binding!.ExportPath).ConfigureAwait(false);
         var updated = await store.AddBindingAsync(decision.Binding!, ct).ConfigureAwait(false);
 
         // Adoption edits two tracked files and creates a binding the user will live with,
@@ -136,7 +137,13 @@ public sealed class RepoSetup(
     /// repository.
     /// </para>
     /// </remarks>
-    public async Task<GitIgnorePlan> EnsureGitIgnoreAsync(string projectPath, CancellationToken ct)
+    /// <param name="exportPath">
+    /// Where this project's mirror lives, so the scratch directories written <i>beside</i> it
+    /// can be covered too. Null falls back to the conventional location, which is where a
+    /// project adopted with default settings puts it.
+    /// </param>
+    public async Task<GitIgnorePlan> EnsureGitIgnoreAsync(
+        string projectPath, CancellationToken ct, string? exportPath = null)
     {
         // Versio's own machine-specific directory first, and unconditionally: locks, session
         // state, backups and the scratch copies taken while the IDE holds a project. Three
@@ -145,10 +152,25 @@ public sealed class RepoSetup(
         //
         // Then whatever the vendor leaves beside a project. No format means no vendor to ask,
         // which is a legitimate way to construct this for the scan-only paths.
+        // And the two directories an export writes beside the mirror. Neither is the
+        // vendor's: staging and trash are Versio's own swap mechanism, which is why they are
+        // here rather than in TransientPatternsFor.
+        //
+        // Both are transient in the happy case and both survive a killed run. THIS
+        // repository has the staging rule only because somebody typed it into .gitignore by
+        // hand — an adopted user repository had nothing, so a killed export left an untracked
+        // staging tree that "stage all" would cheerfully commit. Same shape as the three
+        // comments that described .versio/local/ as gitignored while nothing wrote the rule.
+        var mirror = (exportPath ?? BindingConventions.ConventionalExportPath(projectPath))
+            .Replace('\\', '/')
+            .TrimEnd('/');
+
         List<string> patterns =
         [
             BindingConventions.LocalIgnorePattern,
             .. format?.TransientPatternsFor(projectPath) ?? [],
+            mirror + BindingConventions.StagingSuffix + "/",
+            mirror + BindingConventions.TrashSuffix + "/",
         ];
 
         var existing = File.Exists(GitIgnorePath)

@@ -450,6 +450,18 @@ public sealed class LocalCodesysRunner(
                         $"{evt.String("path")} — a previous export did not finish");
                     break;
 
+                case "trash-cleared":
+                    // Rarer than a leftover staging folder and worse: a trash directory
+                    // survives only if a run died inside the three-rename swap, which is
+                    // the one window in which the mirror could have looked wrong. Says
+                    // where the previous export went, because that is what somebody
+                    // needs if they arrived here looking for a mirror that vanished.
+                    _log.Warn(LogCategory.Codesys,
+                        $"cleared {evt.Int("files")} file(s) from {evt.String("path")} — " +
+                        "a previous export was killed while swapping the new tree into place, " +
+                        "and this was the export it was replacing");
+                    break;
+
                 case "skip":
                     _log.Info(LogCategory.Codesys,
                         $"not exported ({evt.String("reason")}): {evt.String("path")} " +

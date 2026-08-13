@@ -270,6 +270,37 @@ public sealed class RecentRepositoryTests
         Assert.Contains(shell.WatcherIgnoredGlobs, g => g.StartsWith(".versio/local/", StringComparison.Ordinal));
     }
 
+    [SkippableFact]
+    public async Task Opening_a_repository_puts_back_a_mirror_a_killed_export_left_in_the_trash()
+    {
+        // The dangerous combination, arranged on disk and driven through OpenAsync: the mirror
+        // is gone and its last complete copy is in a trash directory beside it, which is what
+        // a kill between the swap's two renames leaves. A sweep that deleted leftovers would
+        // destroy it - quietly, at startup, in a repository nobody had touched.
+        Skip.IfNot(GitIsAvailable(), "git is not on PATH");
+
+        using var repo = new TempRepo();
+
+        // A tracked project with a mirror, so there is a binding to sweep.
+        File.WriteAllText(PathIn(repo, "Machine.project"), "binary-ish");
+        repo.Run("add .");
+        repo.Run("commit -qm project");
+
+        var mirror = System.IO.Path.Combine(repo.Path, "Machine");
+        var trash = mirror + Versio.Core.Bindings.BindingConventions.TrashSuffix;
+
+        Directory.CreateDirectory(trash);
+        File.WriteAllText(System.IO.Path.Combine(trash, "Main.st"), "PROGRAM Main");
+
+        var shell = Build(new MemoryStore());
+        await shell.OpenAsync(repo.Path);
+
+        Assert.True(Directory.Exists(mirror), "the mirror was not restored from the trash");
+        Assert.False(Directory.Exists(trash), "the trash directory should be gone once restored");
+        Assert.Equal("PROGRAM Main",
+                     File.ReadAllText(System.IO.Path.Combine(mirror, "Main.st")));
+    }
+
     private static string PathIn(TempRepo repo, string name) =>
         System.IO.Path.Combine(repo.Path, name);
 

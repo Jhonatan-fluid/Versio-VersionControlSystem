@@ -434,11 +434,18 @@ def main():
     # Staging + swap: a locked target folder or a mid-export crash must not destroy
     # the existing on-disk copy.
     staging = out_root + ".versio_staging"
+    trash = out_root + ".versio_trash"
     if os.path.isdir(staging):
         # Left behind by an export that was killed. Said out loud: it is evidence that a
         # previous run did not finish, and finding out silently is finding out never.
         emit({"t": "staging-cleared", "path": staging, "files": count_files(staging)})
         shutil.rmtree(staging)
+    if os.path.isdir(trash):
+        # The other half of the same story, and a more interesting one: a trash directory
+        # survives only if a run died in the three-rename swap below, which is the window
+        # this design exists to make harmless. If the mirror is missing, THIS is where it is.
+        emit({"t": "trash-cleared", "path": trash, "files": count_files(trash)})
+        shutil.rmtree(trash)
     os.makedirs(staging)
 
     emit({"t": "start", "python": sys.version, "project": job["project"], "out": out_root})
@@ -499,11 +506,29 @@ def main():
     emit({"t": "swap", "out": out_root, "replacing": replaced,
           "with": count_files(staging)})
 
+    # THREE RENAMES, AND NO MOMENT WITH NO MIRROR.
+    #
+    # This used to be rmtree(out_root) followed by rename(staging, out_root), and a kill,
+    # a crash or a power cut between those two statements left the project with NO export
+    # at all - not a stale one, not a partial one, none. rmtree is not instantaneous
+    # either: the fixture's visualisation tree alone is 2.5 MB across 33,644 lines, so the
+    # window is real rather than theoretical.
+    #
+    # Renaming is atomic on NTFS, so at every instant between these three statements the
+    # mirror is either the old tree or the new one. What a crash can leave behind now is a
+    # .versio_trash directory holding the previous export - recoverable by hand, cleared
+    # and announced by the next run - instead of nothing.
     if os.path.isdir(out_root):
-        shutil.rmtree(out_root)
+        os.rename(out_root, trash)
+
     os.rename(staging, out_root)
 
     emit({"t": "swapped", "out": out_root, "files": count_files(out_root)})
+
+    # Deleted only once the new tree is in place. Doing it before the second rename would
+    # put the window straight back where it was.
+    if os.path.isdir(trash):
+        shutil.rmtree(trash)
 
     proj.close()
     gaps = len([s for s in ex.skips if s["reason"] == SKIP_GAP])

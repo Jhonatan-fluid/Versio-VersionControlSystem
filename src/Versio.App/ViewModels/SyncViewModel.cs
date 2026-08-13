@@ -440,7 +440,21 @@ public sealed class SyncViewModel : ObservableObject
 
         await ProbeToolchainAsync(ct).ConfigureAwait(true);
         await BuildOrchestratorAsync(ct).ConfigureAwait(true);
+
+        // Before the scan, and before anything is hashed or exported: if a previous run was
+        // killed midway through swapping a mirror into place, the mirror is currently missing
+        // and its last complete copy is sitting in a trash directory beside it. Everything
+        // below would otherwise read that as "never exported" and cheerfully export over it.
+        await SweepKilledSwapsAsync().ConfigureAwait(true);
+
         await RescanAsync().ConfigureAwait(true);
+
+        // Again, because the scan is where a project that is not in repo.json yet becomes a
+        // binding - and a repository being adopted for the first time is exactly where a
+        // mirror in a trash directory would otherwise go unnoticed. The first pass is still
+        // worth having: it runs before adoption can start an export over a mirror that is
+        // sitting in the trash.
+        await SweepKilledSwapsAsync().ConfigureAwait(true);
 
         StartWatching();
         await RefreshStalenessAsync().ConfigureAwait(true);
@@ -1157,6 +1171,84 @@ public sealed class SyncViewModel : ObservableObject
                 repoRelativePath.EndsWith(extension, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Scan the repository for PLC projects and classify what was found.</summary>
+    /// <summary>
+    /// Put right whatever a killed export left beside a mirror.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The exporter clears its own leftovers on the <i>next</i> run, which is the common case
+    /// and covers nothing until an export happens. A repository can be opened, read, committed
+    /// from and closed again without one — so the state has to be corrected when it is seen,
+    /// not when it is next written.
+    /// </para>
+    /// <para>
+    /// <b>Not a delete loop.</b> One of the four combinations means the mirror is gone and the
+    /// trash directory holds the only copy of it, and clearing that would destroy exactly what
+    /// the three-rename swap exists to protect. <see cref="SwapRecovery"/> decides; this moves
+    /// the directories and says what it did.
+    /// </para>
+    /// </remarks>
+    private Task SweepKilledSwapsAsync()
+    {
+        // Synchronous on purpose, and awaited by its caller anyway. Three Directory.Exists
+        // calls per binding cost nothing, and the moves are the kind of work that must be
+        // finished before the scan reads the same paths - a Task.Run here would buy a thread
+        // and a race.
+        if (_repositoryRoot is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        foreach (var binding in _config.Bindings.Where(b => b.Enabled))
+        {
+            var mirror = AbsolutePath(binding.ExportPath);
+            var staging = mirror + BindingConventions.StagingSuffix;
+            var trash = mirror + BindingConventions.TrashSuffix;
+
+            var verdict = SwapRecovery.Decide(
+                Directory.Exists(mirror), Directory.Exists(staging), Directory.Exists(trash));
+
+            if (verdict.Action == SwapAction.Nothing)
+            {
+                continue;
+            }
+
+            // Warning, always. Every one of these means a previous run of this app was killed
+            // while it was writing, and that is worth knowing even in the cases where nothing
+            // was at risk.
+            _logger.Warn(LogCategory.Sync, $"{binding.Id}: {verdict.Explanation}");
+
+            try
+            {
+                switch (verdict.Action)
+                {
+                    case SwapAction.RestoreTrash:
+                        Directory.Move(trash, mirror);
+                        _logger.Info(LogCategory.Sync,
+                            $"{binding.Id}: restored the export directory from {trash}");
+                        break;
+
+                    case SwapAction.DeleteTrash:
+                        Directory.Delete(trash, recursive: true);
+                        break;
+
+                    case SwapAction.DeleteStaging:
+                        Directory.Delete(staging, recursive: true);
+                        break;
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Reported and carried on. A repository that cannot be tidied is still a
+                // repository somebody can work in, and the next export tries again.
+                _logger.Error(LogCategory.Sync,
+                    $"{binding.Id}: could not put right what a killed export left behind", ex);
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
     private async Task RescanAsync()
     {
         if (_repositoryRoot is null)

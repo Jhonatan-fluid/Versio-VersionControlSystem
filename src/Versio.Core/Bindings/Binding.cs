@@ -60,6 +60,31 @@ public static class BindingConventions
     public const string ManifestFileName = "_manifest.json";
 
     /// <summary>
+    /// What an export writes beside the mirror while it is being replaced.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// An export builds the new tree in <c>&lt;mirror&gt;.versio_staging</c>, renames the old
+    /// tree to <c>&lt;mirror&gt;.versio_trash</c>, renames staging into place and then deletes
+    /// the trash. Three renames, each atomic on NTFS, so at no instant is the mirror missing —
+    /// which the previous <c>rmtree</c>-then-rename could not say, and the tree it deletes is
+    /// megabytes.
+    /// </para>
+    /// <para>
+    /// Named here rather than only in <c>versio_export.py</c> because the ignore plan has to
+    /// cover both: in the happy case they exist for milliseconds, and after a killed run they
+    /// survive as untracked directories that "stage all" would commit. The exporter writes
+    /// the names and this repository reads them; they are one convention in two languages, and
+    /// the tests assert they agree.
+    /// </para>
+    /// </remarks>
+    public const string StagingSuffix = ".versio_staging";
+
+    /// <summary>Where the previous mirror waits during the swap.</summary>
+    /// <seealso cref="StagingSuffix"/>
+    public const string TrashSuffix = ".versio_trash";
+
+    /// <summary>
     /// Versio's own machine-specific directory, which must never reach git.
     /// </summary>
     /// <remarks>

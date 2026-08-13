@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-13 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,021 unit + 206 UI + 122 integration, 0 skipped
+**Date:** 2026-08-13 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,033 unit + 207 UI + 122 integration, 0 skipped
 
 > All three measured on 2026-08-13, on branch `Clean-up-and-continue-dev`. The integration
 > suite was re-run in full against real CODESYS 3.5.22.20 after the manifest work — 111
@@ -149,7 +149,7 @@ format; `.gitattributes` covers every registered vendor's extensions.
 > **Safeguards work is tracked separately** in **[`SAFEGUARDS.md`](SAFEGUARDS.md)** — what Versio
 > refuses, asks about or waits for when something is running or unsaved. Phases 1–6 of it are
 > built and verified against real CODESYS, and **phase 7 (the auto-stash) is under way**: the
-> **phase 7 is complete** — the stash identity, the rule layer, the sidecar store, the lock round trip, the take-and-restore flow and the guarded pull. Only offering a second stash on one branch is left. **Phase 8 is next.** **§0 of that document is the
+> **phase 7 is complete** — the stash identity, the rule layer, the sidecar store, the lock round trip, the take-and-restore flow and the guarded pull. Only offering a second stash on one branch is left. **Phase 8 is done too** — the mirror can no longer vanish in the swap window, and what a killed export leaves behind is put right when the repository opens. **Phase 9** (import confirmation, backup restore, read-only second instance) is what remains. **§0 of that document is the
 > handover note**, and *Phase 7, as built* at the end of §4 says what is left.
 >
 > It also carries a correction worth reading before touching the sync engine: **`On git action` is

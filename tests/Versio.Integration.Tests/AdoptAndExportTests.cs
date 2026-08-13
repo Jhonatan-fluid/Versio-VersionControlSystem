@@ -506,10 +506,20 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
             Path.Combine(folder, stem + "-AllUsers.opt"),
             Path.Combine(folder, stem + "-elli_-ROG-JVM.opt"),
             Path.Combine(folder, stem + ".~u"),
+
+            // Written through a transient sibling by the IDE, and covered by the same rule.
+            Path.Combine(folder, stem + ".~u~"),
+
+            // The two directories an export writes beside the mirror while it swaps. Both
+            // exist for milliseconds in the happy case and both survive a killed run, and
+            // until this test they were untracked directories that "stage all" would commit.
+            Path.Combine(folder, stem + BindingConventions.StagingSuffix, "Device", "Main.st"),
+            Path.Combine(folder, stem + BindingConventions.TrashSuffix, "Device", "Main.st"),
         ];
 
         foreach (var file in leftovers)
         {
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
             await File.WriteAllTextAsync(file, "scratch");
         }
 
