@@ -196,11 +196,32 @@ public sealed class SyncOrchestrator
                 continue;
             }
 
+            var persisted = state?.Bindings.GetValueOrDefault(decision.BindingId);
+
             _locks[decision.BindingId] = decision.Outcome switch
             {
-                LockRecovery.ReadoptedAfterRestart when state?.Bindings.TryGetValue(
-                    decision.BindingId, out var held) == true => held,
-                _ => new BindingLock { Direction = SyncDirection.Clean },
+                LockRecovery.ReadoptedAfterRestart when persisted is not null => persisted,
+
+                // Releasing the DIRECTION is not the same as forgetting what was last
+                // exported, and conflating them cost an export on every single launch.
+                //
+                // This branch used to hand back a blank BindingLock, which wiped LastSynced.
+                // The commit gate compares the project's hash against LastSynced.ProjectHash,
+                // so an empty one reads as "the project has changed since it was last
+                // exported" — for a project nobody had touched. Every open therefore ran
+                // CODESYS for 17–31 s to rebuild a mirror that was already correct, and left
+                // the binding holding a fresh ProjectAuthoritative lock, so the project sat
+                // in the panel reading "project ahead" until somebody pushed.
+                //
+                // Invisible while exporting was a button somebody pressed. It became a
+                // twenty-second cost on every launch the moment the catch-up made it
+                // automatic, which is how it was found.
+                _ => new BindingLock
+                {
+                    Direction = SyncDirection.Clean,
+                    Baseline = persisted?.Baseline ?? new SyncBaseline(),
+                    LastSynced = persisted?.LastSynced ?? new SyncedState(),
+                },
             };
 
             // Readoption is the consequential one: it means unsynced work survived a crash

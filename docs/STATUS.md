@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-12 · **Commits:** 31 · **Tests:** 799 unit + 45 UI + 102 integration, 0 skipped
+**Date:** 2026-08-12 · **Commits:** 32 · **Tests:** 800 unit + 45 UI + 102 integration, 0 skipped
 
 > One integration test, `RepositoryWatcherTests.A_deleted_file_is_reported`, is **flaky under
 > full-suite load** — see Findings. It passes in isolation and failed once during a complete
@@ -282,6 +282,41 @@ nothing happened.
 One wording fix fell out of it. `SatisfyGateAsync` logged "exporting stale bindings before the
 commit", which was true when only the commit gate called it and false for the two callers added
 since — in a log read precisely when somebody is working out what the app did on its own.
+
+### Recovery forgot what had been exported, and it cost a toolchain run every launch
+
+Reported from use: the project sat in the panel reading "project ahead" with nothing changed
+under it, launch after launch. The panel was telling the truth; the state behind it was wrong.
+
+Recovery decides what to do with a lock left by the previous session. When it does **not**
+re-adopt — the ordinary case, because the previous session ended cleanly — it replaced the lock
+with a blank one. That blank threw away `LastSynced` along with the direction, and the commit
+gate compares the project's hash against `LastSynced.ProjectHash`. An empty one reads as *"the
+project has changed since it was last exported"* for a project nobody had touched.
+
+The sequence, from one launch's log:
+
+```
+NothingToRecover — binding was clean; now Clean        ← LastSynced wiped here
+tree: … 1 project(s) hidden as in sync                 ← still correct at this point
+ExportRequired — the project has changed since it was last exported
+catch-up: 1 project(s) changed while Versio was not running; exporting
+```
+
+So every open ran CODESYS for 17–31 s to rebuild a mirror that was already byte-correct, and
+left the binding holding a fresh `ProjectAuthoritative` lock — which is why the row then read
+"project ahead" and stayed until somebody pushed.
+
+**Releasing the direction and forgetting what was exported are different facts**, and only the
+first is recovery's business. The release now carries `LastSynced` and `Baseline` forward.
+
+**It was latent for as long as exporting was a button.** Nobody pressed *Export now* on a
+project they had not changed, so nobody saw the gate's answer. Making the export automatic on
+open turned a bookkeeping error into twenty seconds of CODESYS on every launch — which is how
+it got found, and an argument for automation surfacing bugs rather than creating them.
+
+Verified across two consecutive launches after the fix: `catch-up: every mirror is up to date`,
+no toolchain run, and `1 project(s) hidden as in sync`.
 
 ### The log said one time in the panel and another in the file
 

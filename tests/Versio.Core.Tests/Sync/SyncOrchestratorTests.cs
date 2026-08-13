@@ -510,6 +510,42 @@ public class SyncOrchestratorTests
     }
 
     [Fact]
+    public async Task Recovery_that_releases_a_lock_still_remembers_what_was_exported()
+    {
+        // The bug this exists for cost a full toolchain run on every single launch.
+        //
+        // Recovery that does not re-adopt used to hand back a BLANK lock, which threw away
+        // LastSynced along with the direction. The commit gate compares the project's hash
+        // against LastSynced.ProjectHash, so an empty one reads as "the project has changed
+        // since it was last exported" — for a project nobody had touched. Every open ran
+        // CODESYS for 17–31 s to rebuild a mirror that was already correct, then left the
+        // binding holding a fresh lock, so the panel reported "project ahead" until somebody
+        // pushed.
+        //
+        // Releasing the DIRECTION and forgetting WHAT WAS EXPORTED are different facts, and
+        // only the first one is recovery's business.
+        var h = new Harness();
+
+        await h.ProjectChanged();                    // exports; records LastSynced
+        await h.Orchestrator.ReleaseAfterPushAsync("c1", CancellationToken.None);
+
+        h.Build();                                   // restart, same store
+        var policy = new LockRecoveryPolicy(
+            new FakeMachineIdentity(Boot.AddDays(1)), new FakeProcessProbe(alive: false));
+
+        await h.Orchestrator.RecoverAsync(policy, CancellationToken.None);
+
+        // Nothing was held, so nothing is re-adopted — that part was always right.
+        Assert.Equal(SyncDirection.Clean, h.Orchestrator.StateOf(BindingId));
+
+        // And the gate must not ask for an export of a project that has not changed.
+        var gate = await h.Orchestrator.EvaluateCommitGateAsync(CancellationToken.None);
+
+        Assert.Equal(GateDecision.Proceed, gate.Decision);
+        Assert.Empty(gate.StaleBindings);
+    }
+
+    [Fact]
     public async Task A_reboot_with_externally_reverted_content_releases_the_stale_lock()
     {
         // The scenario: work was exported and pushed, then more work was done, then someone

@@ -131,7 +131,7 @@ Versio.sln
 │                               (text, types, yaml, libraries) import no scriptengine
 │                               and run on CPython too.
 ├─ tests/
-│  ├─ Versio.Core.Tests/        799 unit tests — pure, no IO, ~290 ms
+│  ├─ Versio.Core.Tests/        800 unit tests — pure, no IO, ~290 ms
 │  ├─ Versio.App.Tests/         45 tests that build the real dialogs against the real
 │  │                            stylesheet on an STA thread — no window is ever shown
 │  └─ Versio.Integration.Tests/ 102 tests against real CODESYS and real git, ~7 min
