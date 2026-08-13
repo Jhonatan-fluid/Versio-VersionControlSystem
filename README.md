@@ -59,6 +59,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | **App-wide progress bar** — one signal for git, export and import alike | ✅ counted `BusyTracker`, indeterminate, with a caption |
 | CODESYS runs with no visible window | ✅ `CREATE_NO_WINDOW` **and** `SW_HIDE` — different subsystems |
 | Repository validation — walks up to `.git`, refuses non-repos with a reason | ✅ handles subdirectories, bare repos and linked worktrees |
+| **The repository dropdown remembers** — recent repositories across restarts | ✅ `%LOCALAPPDATA%\Versio\settings.json`, atomic write, capped at ten. The remote is recorded while the repository is open, so one that has vanished offers *clone it again* / *remove from list* / *cancel* rather than a folder picker. Startup falls back to the most recent repository still on disk |
 | **Exports what changed while Versio was closed**, when the repository opens | ✅ after the toolchain is probed, the locks restored, the projects scanned and staleness evaluated — in that order, because exporting earlier would run against a lock not yet read |
 | PLC state — toolchain, lock and heartbeat | ✅ environment (toolchain, version, profile) moved to Settings → Help → System information; a failure is reported on the project's own row with a *Try again* beside it. No permanently disabled buttons |
 | **Vendor seam** — `IPlcRunner`/`PlcJob`/`PlcResult`, enforced from assembly metadata | ✅ 22 architecture tests, proven able to fail |
@@ -84,7 +85,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | **Git side panel** — staging, commit message, fetch/pull/push | ✅ one operation at a time across every button |
 | **The commit gate, enforced** — a stale export is exported and staged first | ✅ push releases the direction locks, commit does not |
 | **History panel** — commits with hash, local date and time, author and subject; expand for the files, click a file for its diff | ✅ its own rail button, and lazy at four levels: the log is not read until the panel is opened, then a page at a time; a commit's files when it is expanded; a patch when a file is clicked |
-| **Stash** — push, apply, pop, drop | ⛔ **withdrawn from the UI**, pending a different design. The client operations and their 6 integration tests are kept |
+| **Stash** — push, apply, pop, drop | ✅ **not as buttons.** The six permanent controls were withdrawn and the operations kept; they drive the auto-stash now, which is where a stash is actually wanted — at the moment a branch switch would otherwise strand uncommitted work. A manual stash UI is still deliberately absent |
 | **Per-hunk stage and unstage** | ✅ the hunk is copied verbatim and applied to the index; the working tree is never touched |
 | **Branch creation** — validated against git's own rules as you type | ✅ creates from HEAD and switches; 35 unit tests over the rules, and the dialog says *which* rule was broken |
 | **Clone with verification** — URL, Verify, destination, progress | ✅ Clone stays dead until `ls-remote` passes, and editing the URL shuts it again |
@@ -93,14 +94,19 @@ Both directions run automatically and deterministically. A per-project **directi
 | **Closing waits, or refuses** | ✅ an export offers *wait* or *stop it*; an import refuses outright until it finishes or times out. Before this, closing orphaned a hidden CODESYS still holding the project |
 | **Every operation can actually be cancelled** | ✅ the plumbing reached `KillTree` all along and every caller passed `CancellationToken.None`. 25 call sites now carry a real token |
 | **The repository and branch dropdowns are guarded** | ✅ shut while an import runs, and they snap back whenever a switch does not happen — a refused checkout used to leave the control naming a branch you were not on |
-| Branch switching refused while a direction lock is held | ⛔ the work half is guarded; the dirty-tree and lock half waits on the auto-stash — **[`SAFEGUARDS.md`](docs/SAFEGUARDS.md) §4** |
+| **Auto-stash on a branch switch** | ✅ uncommitted work is stashed with a marker, recorded in `.versio/local/autostash.json` with the direction locks it released, and offered back — restore, leave, discard — on returning to that branch. The stash is proven to exist by a set difference over `git stash list`, because `git stash push` on a clean tree exits 0 and creates nothing |
+| Branch switching with work in the tree | ✅ the guard asks, the auto-stash saves it with the direction locks it released, and returning to the branch offers it back — restore, leave, or discard. A stash that git did not actually create abandons the switch rather than checking out over unsaved work |
 | **Project tree** — CODESYS structure, roll-up badges, search | ✅ 34 unit tests + built from the export this repository commits |
+| **Methods and properties under the object that owns them** | ✅ manifest schema 4 records each member's owner GUID and the tree nests by it — a chain, since a property owns its accessors. Before this a function block's methods were its siblings, and four `InitRoom` methods on four different rooms were four rows in one folder. A mirror exported earlier carries no parents and stays flat until it is re-exported |
 | Config nodes — one tree node per library, layer switcher, context menu | ⛔ not built. The library YAML now exists and parses (`LibraryCatalog`), so a version bump lands under the device that owns it; what is missing is a node per library. Device and IO YAML are still unwritten |
 | Packaging | ⛔ not built |
 
 **[docs/STATUS.md](docs/STATUS.md)** has the current state and the route to completion.
-**[docs/SAFEGUARDS.md](docs/SAFEGUARDS.md)** is what Versio refuses, asks about or waits for — the
-interruption guard, and the nine further ways this could lose work that it does not yet cover.
+**[docs/SAFEGUARDS.md](docs/SAFEGUARDS.md)** is what Versio refuses, asks about or waits for —
+the interruption guard, the auto-stash, and the ways this could lose work. Eight of its nine
+phases are built; the ninth is features rather than guards.
+**[docs/GIT-PANEL-PLAN.md](docs/GIT-PANEL-PLAN.md)** is the git panel's functionality and UX,
+and nothing in it is built yet.
 **[docs/PHASE0-FINDINGS.md](docs/PHASE0-FINDINGS.md)** records the measurements and the known limitations — including one real CODESYS mutation (`Core2` in task configuration) that keeps task config **diff-only** for now.
 
 ---
@@ -154,6 +160,7 @@ Versio.sln
    ├─ PLAN.md                   the full architecture plan
    ├─ STATUS.md                 where the project is and what remains
    ├─ SAFEGUARDS.md             what Versio refuses, asks about, or waits for
+   ├─ GIT-PANEL-PLAN.md         the git panel's functionality and UX — unbuilt
    └─ PHASE0-FINDINGS.md        measured results and known limitations
 ```
 
@@ -273,13 +280,17 @@ Each of these cost real debugging time and is now pinned by a test.
 | **`StandardOutputEncoding` must be set** | .NET otherwise decodes a subprocess using the console codepage and mangles `Kühlschrank Regelung.st`. |
 | **`git status` needs `-z`** | Without it git quotes and escapes paths containing spaces or non-ASCII — both routine in CODESYS object names. |
 | **`git status` writes to `.git/index`** | It rewrites the stat cache. Anything that refreshes *because* the index changed will refresh forever. `StatusRefreshPolicy` ignores metadata events for a second after each refresh; working-tree events are never suppressed. |
+| **A directory swap invalidates the watcher watching it** | The export stages into `<mirror>.versio_staging` and swaps, which kills the `FileSystemWatcher` handle on the old directory — *Access is denied*, events lost. The rescan that follows is correct and reports **every file in the tree** as changed, because they are new files. Each one used to cost a `git status` and a full-tree hash before the direction lock refused it: quadratic, in the one place a project is large. `BeginOwnWrite` is the window that makes our own writes free; a genuine overflow still costs one job per file. |
 | **Windows raises a `.git` directory event for every write inside it** | Including the lock files git creates around each invocation. Treating a bare `.git` event as a real change made lock-file churn alone wake the watcher — caught by the integration suite, not by reading the code. Nothing is lost by dropping it: a write to `.git/index` also raises an event naming `.git/index`. |
+| **Not every CODESYS object name is a name** | An external-file reference is identified as {GUID}|C:\Users\<user>\...\file.txt, and percent-encoding that produced a 120-character filename carrying a username and a directory layout into a shared repository. A path-like or over-long name is shortened to its last segment plus a six-character digest (license.txt~45a921); the manifest keeps the real name. Reversibility is not lost, because unsafe_file_stem was never called - imports resolve objects through the project tree, not by parsing filenames. |
+| **The IDE rewrites its lock marker every few seconds** | And not in place: it writes `<project>.~u~` — trailing tilde — and renames it over `.~u`, so a rule covering `.~u` alone left an unignored file appearing and vanishing in the working tree. Every rewrite also moves the *folder's* timestamp. Measured over 20 idle seconds: 7 events for `.~u~`, 4 for `.~u`, 4 for the folder. Left alone this was a `git status` every 2.5 s for as long as an engineer had the project open. |
 | **CODESYS leaves `.opt` files beside a project** | An export or an open writes `<name>-AllUsers.opt` and `<name>-<user>-<machine>.opt`, and they **persist** — the second puts a username and machine name into git by its filename alone. Adoption ignores them. A clean open/close leaves no `.~u`; only a crash does. |
 | **A project open in the IDE is refused, and `<project>.~u` says so** | CODESYS writes that file beside the project while it holds it — user, machine, pid, timestamp — and refuses any second instance with *"currently in use by 'x' on 'y'"*. Both export and import fail cleanly and change nothing, but `CODESYS.exe` still **exits 0**, so success must be judged from the script's own `rc` and `done` events. Read the `.~u` first and skip the 17–31 s launch. |
 | **CODESYS argument quoting** | `--profile="A B C"`, never `"--profile=A B C"`. `ProcessStartInfo.ArgumentList` produces the latter, and CODESYS exits 1 in under a second with no output. |
 | **`--noUI` requires `--profile`** | It is a hard precondition, not a preference. |
 | **`Mutex` has thread affinity** | It cannot be acquired and released across an `await`. A named `Semaphore` avoids that but loses abandonment recovery, which crash recovery depends on. |
 | **Import runs in two phases** | Creating objects then immediately calling `import_native` makes CODESYS enumerate a dictionary it is still mutating — and it **swallows the exception**, so the import silently does nothing and the run looks clean. |
+| **A manifest is read by a different language than wrote it** | `_manifest.json` is written by IronPython 2.7 inside CODESYS and read by System.Text.Json. `warnings` was written as records and declared as strings, and the whole-document `Deserialize` threw — so **one field's type disagreeing discarded all 56 objects** and the panel drew a flat list of paths with nothing said anywhere. `Parse` now reads field by field and element by element, and names what it could not read. The fixture has no warnings, which is why `"warnings": []` passed every test for the life of the property. |
 | **The export tree holds three kinds of file** | The project's objects; Versio's own bookkeeping (`_manifest.json`, `_coverage.md`); and **export-only** files that are real project state written for review with no trustworthy import path (`*.libraries.yaml`). The importer walks the tree and imports everything it finds, so anything in the second or third group must be declared in `versio_types.py` — `VERSIO_FILES` or `EXPORT_ONLY_SUFFIXES` — or CODESYS is handed markdown or YAML as native XML. It fails with a warning rather than loudly, which is worse. |
 | **`libman.get_libraries()` is not the library API** | It returns *names* — `"#Standard"` — with no version, company or parameters, and looks like a success. `libman.references` carries the real thing, and must be **iterated**: `references[i]` indexes by id, so `references[0]` raises on any project whose first reference has a non-zero id. Reading zero references out of a manager holding 21 is the symptom. |
 | **A library reference's `id` is re-minted on every open** | Measured across two runs of an untouched project: 68 differing lines, **all of them ids**, nothing else moved. Same class as the `__VisualizationStyle` GUID below. What a reference *resolves* to is machine state too — `Standard, *` becomes `3.5.22.0` only because that version is installed here — so the export records what the project **asks for**, never what it got. |

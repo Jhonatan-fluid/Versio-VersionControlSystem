@@ -219,6 +219,32 @@ public sealed partial class GitCliClient(
     /// <summary>Check a remote URL is reachable and the credentials work.</summary>
     /// <remarks><c>ls-remote</c> is a real reachability <i>and</i> auth check that transfers
     /// no objects, so the clone dialog can validate before committing to a long download.</remarks>
+    /// <summary>Where this repository was cloned from, or empty.</summary>
+    /// <remarks>
+    /// <c>config --get</c> rather than <c>remote get-url</c>: both read the same value, and
+    /// the config form exits 1 for "no such key" where the remote form writes an error to
+    /// stderr for a repository that simply has no remote. This is asked of every repository
+    /// that is opened, so the no-remote case has to be quiet.
+    /// </remarks>
+    public async Task<string> RemoteUrlAsync(string remote, CancellationToken ct)
+    {
+        var result = await RunAsync(
+            ["config", "--get", $"remote.{remote}.url"], null, ct, TimeSpan.FromSeconds(10))
+            .ConfigureAwait(false);
+
+        return result.Success ? result.StdOut.Trim() : string.Empty;
+    }
+
+    /// <summary>Where git keeps its own state for this working tree.</summary>
+    public async Task<string> GitDirectoryAsync(CancellationToken ct)
+    {
+        var result = await RunAsync(
+            ["rev-parse", "--absolute-git-dir"], null, ct, TimeSpan.FromSeconds(10))
+            .ConfigureAwait(false);
+
+        return result.Success ? result.StdOut.Trim() : string.Empty;
+    }
+
     public Task<GitResult> VerifyRemoteAsync(string url, CancellationToken ct)
     {
         _log.Info(LogCategory.Git, $"verifying remote {Redact(url)}");

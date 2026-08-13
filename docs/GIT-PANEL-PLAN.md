@@ -8,34 +8,66 @@ interface does not expose, plus one new dialog.
 
 ## What the code actually does today
 
-Read before proposing anything, because several of these items are partly built already and
-two are broken in ways that are invisible from the outside.
+**Re-verified 2026-08-13 against `a083356` on `Clean-up-and-continue-dev`**, after the
+safeguards work landed. Two rows changed and one was deleted outright; the git panel itself is
+substantially untouched, so most of this plan stands as written.
 
 | Claim | Where | Reality |
 |---|---|---|
-| The panel reports what happened | `ShellViewModel.cs:1115-1180` | `Pull`/`Push`/`Fetch` set `StatusSummary` and **then** call `RunRefreshAsync`, which overwrites it with `"No changes"` / `"N changed"` (`:1894`). A successful push produces no visible confirmation at all. |
-| Failures are reported | same | Only the ones that `return` early survive, and they land in a caption-sized status-bar line at the bottom of a maximised window, in secondary grey, with no colour and no sound. |
-| Upstream state is known | `PorcelainV2Parser.cs:113` | `GitStatus.Branch.Upstream` is parsed and the shell throws it away. `AheadBehind` (`:1886`) renders `""` for *both* "in sync" and "no upstream". |
-| The branch entry says "no upstream" | `ShellViewModel.cs:66` | `BranchEntry.Tracking` is computed and **bound by nothing**. Dead property. |
-| Behind-ness is visible | `ShellViewModel.cs:1886` | Rendered as `↓2` in a caption-sized mono glyph beside the branch name. Correct, and completely unemphatic — it looks the same as `↑2`, which needs no action. |
-| Staging is whole-list only | `ShellViewModel.cs:979-1008` | `StageAsync` already takes `IReadOnlyList<ChangeRow>`. The plumbing for a subset exists; only the selection does not. |
-| Rows survive a refresh | `ShellViewModel.cs:1544` | `UpdateStagingLists` **clears and rebuilds** both lists on every refresh. Anything per-row the user sets would be wiped roughly once a second while they type in their editor. |
-| Conflicts are handled | `GitModels.cs:67` | `HasConflicts` and `ChangeKind.Conflicted` exist; nothing in the panel reads either. |
-| The branch list covers the repository | `GitCliClient.cs:91` | `for-each-ref refs/heads` — **local branches only**. A branch that exists solely on the remote is invisible. |
-| There is a notion of a main branch | `Binding.cs:44` | `RepoConfig` has no default-branch field. Nothing in the codebase knows which branch is the trunk. |
-| Pull is guarded | `GuardVerdict.cs:36` | `PullAsync` (`:1115`) is **unguarded at runtime**, but this is a documented deferral, not an oversight: `GuardIntent.Pull` exists, is tested, and its remark says why it is not yet wired. `Clone` and `Discard` were deleted in `6417f2a` rather than wired. See §9a. |
-| Versio knows a change is a POU | `ProjectManifest.cs:14` | The manifest maps every exported path to an object **name** and **type**, and the git panel shows none of it — every row is a raw path. See §9c. |
+| The panel reports what happened | `ShellViewModel.cs:1690-1760` | **Still true.** `Pull`/`Push`/`Fetch` set `StatusSummary` and *then* call `RunRefreshAsync`, which overwrites it with `"No changes"` / `"N changed"` (`:2790`). A successful push still produces no visible confirmation at all. |
+| Failures are reported | same | **Still true.** Only the ones that `return` early survive, into a caption-sized status-bar line in secondary grey. |
+| Upstream state is known | `PorcelainV2Parser.cs:113` | **Still true.** `Branch.Upstream` is parsed and the shell throws it away; `AheadBehind` (`:2782`) renders `""` for *both* "in sync" and "no upstream". |
+| The branch entry says "no upstream" | `ShellViewModel.cs:88` | **Still true.** `BranchEntry.Tracking` is computed and bound by nothing. |
+| Behind-ness is visible | `ShellViewModel.cs:2782` | **Still true.** `↓2` in a caption-sized mono glyph, indistinguishable at a glance from `↑2`, which needs no action. |
+| Staging is whole-list only | `ShellViewModel.cs:1530` | **Still true.** `StageAsync` already takes `IReadOnlyList<ChangeRow>`; only the selection is missing. |
+| Rows survive a refresh | `ShellViewModel.cs:2440` | **Still true.** `UpdateStagingLists` still `Clear()`s and rebuilds both lists on every refresh. §4's prerequisite stands unchanged. |
+| Conflicts are handled | `Sync/ConflictProbe.cs`, `SyncNarrative.cs:79` | **Changed.** The *engine* now handles them: `IConflictProbe` and `SyncVerdict.BlockedByConflict` refuse both sync directions mid-merge, and `TreeState()` (`:2282`) feeds conflicted paths to the guard. **The git panel still shows nothing** — no banner, no section, no gate on commit. §6 is now purely the UI half. |
+| The branch list covers the repository | `GitCliClient.cs:91` | **Still true.** `for-each-ref refs/heads` — local branches only. A remote-only branch is invisible. |
+| There is a notion of a main branch | `Binding.cs:44` | **Still true.** `RepoConfig` gained nothing; no default-branch field anywhere. |
+| Versio knows a change is a POU | `ProjectManifest.cs` | **Still true.** The manifest maps every exported path to an object name and type; the panel renders raw paths. §9c unchanged. |
+| ~~Pull is unguarded~~ | `ShellViewModel.cs:1677-1682` | **Fixed, and this row is retired.** `fce3f90` wired `GuardIntent.Pull` once the auto-stash existed to back it, with a comment saying exactly that. See §9a. |
 
-Three structural notes that shape everything below:
+### What landed that this plan can now use
+
+| | |
+|---|---|
+| `IGitClient.RemoteUrlAsync(remote, ct)` | `GitCliClient.cs:229`. **§8 no longer needs to add it** — the forge work reads the remote through this. |
+| `IGitClient.GitDirectoryAsync(ct)` | Resolves `.git` correctly for linked worktrees and submodules. |
+| `Guarding/AutoStash.cs`, `AutoStashNarrative.cs` | A real auto-stash with an identity and a sidecar. **§7c's dirty-tree refusal can now offer to stash instead of refusing** — see §7c. |
+| `Sync/ConflictProbe.cs` + `SyncVerdict.BlockedByConflict` | The engine half of §6, already built and narrated. Bind to it; do not build a second detection path. |
+| `Core/Settings/AppSettings.cs` + a JSON store | A real settings home. Machine-level preferences have somewhere to live; per-repository ones still belong in `RepoConfig`. |
+| `SAFEGUARDS` phases 1–6 and 8 ✅ | Including **phase 6: the git-write suppression window and the conflict gate**. This clears GP-G's blocker entirely — see pre-flight. |
+
+### Two facts that shape everything below
 
 - **`StatusSummary` is doing two jobs.** It holds *state* ("3 changed") and *events*
-  ("Pushed.") on one property with one lifetime. That is the root cause of the clobbering —
-  fixing it by re-ordering `await`s would leave the same trap set for the next caller.
-- **`Ready` gates every git command on the shared `BusyTracker`** (`:955`), and that is
-  correct and should not be touched. New gating is *additional*, not a replacement.
-- **The log sink writes synchronously with `AutoFlush = true` under a lock**
-  (`RollingFileSink.cs:81,96`). Anything that logs frequently must log from a background
-  thread, and if contention ever shows up the sink needs a buffer — see §3.
+  ("Pushed.") on one property with one lifetime. That is the root cause of the clobbering in
+  row 1 — fixing it by re-ordering `await`s would leave the same trap set for the next caller.
+  §1 separates them instead.
+- **`Ready`** (`ShellViewModel.cs:1506`) is `_git is not null && !Busy.IsBusy` — one shared
+  flag, so the moment any operation starts every git button goes dead together, including a
+  17–31 s CODESYS export. That is correct and is not touched. Every gating rule in §5 is
+  **additional** to it, never a replacement.
+
+### One new structural concern
+
+`ShellViewModel.cs` is now **3,202 lines**, up from 2,304 when this plan was first written. It
+holds the repository, the branches, the diff pane, the staging lists, the guard, the auto-stash,
+the history hook and every git command.
+
+**This plan adds a tracking state machine, a poller, a credential state, per-row selection, a
+branch-deletion flow and a forge button to that same file.** Left alone it lands somewhere near
+4,500 lines, and the class stops being reviewable.
+
+Recommendation, to be taken **before GP-E, not after**: extract the git-panel surface into a
+`GitPanelViewModel` owned by the shell — the staging lists, the commit message, the remote
+commands, `TrackingState`, the poller and the credential banner. The shell keeps repository
+identity, the guard and the panel switching. It is a move, not a rewrite: the commands already
+funnel through `Ready` and `RaiseGitCommandStates`, which is the seam.
+
+Not a phase of its own — it is the first commit of GP-E, and everything after it lands in a file
+that has room. **It is also the riskiest single commit in this plan**, for a reason specific to
+WPF, and it is specified in full at §4a.
 
 ---
 
@@ -155,6 +187,12 @@ A phase is done when **all** of these are true:
 4. Logging follows §3 above, and a real run of the feature was read back in the log panel.
 5. The §13 verification script has been run **by you** in the real app, and passed.
 6. Docs updated in the same commit; `STATUS.md`'s test counts re-derived, not remembered.
+7. **The build was run with Versio.exe closed.** A build against a running app fails on the
+   assembly copy with `MSB3027` *and reports warnings that are an artefact of that failure* —
+   measured on 2026-08-13: 20 phantom warnings while running, 0 with it closed. A build result
+   taken while the app is open is not a build result.
+8. Any binding moved between view models was checked with `--trace-bindings` against a panel
+   that actually showed data — see §4a. Green tests do not cover this.
 
 ---
 
@@ -330,10 +368,10 @@ picking the default.
 
 - The poller owns a background loop with its own `CancellationTokenSource`. Nothing on the
   timer path touches an `ObservableCollection`; results are marshalled through the existing
-  `_ui.Post` helper (`ShellViewModel.cs:838`), which is already the rule for watcher callbacks.
+  `_ui.Post` helper (`ShellViewModel.cs:1383`), which is already the rule for watcher callbacks.
 - **It never raises the `BusyTracker`.** Raising it would flicker every git button dead every
   few seconds — the same reasoning that already keeps automatic status refreshes off the
-  progress bar (`:1873`).
+  progress bar (`:2768`).
 - **It never opens a diff, reloads the history, or rebuilds a list.** A probe that finds
   nothing must change exactly zero pixels.
 
@@ -397,9 +435,84 @@ buffered sink, not a quieter poller.
 
 ## 4 · Per-item staging
 
+### 4a · Extract `GitPanelViewModel` first
+
+GP-E's first commit, before a line of checkbox code. A move, not a rewrite.
+
+#### What moves, and what does not
+
+| Moves to `GitPanelViewModel` | Stays on `ShellViewModel` |
+|---|---|
+| `Staged`, `Unstaged`, `SelectedStaged`, `SelectedUnstaged` | `RepositoryPath`, `Branches`, `SelectedBranch` |
+| `CommitMessage`, `CommitSubjectLength` | The guard, the auto-stash, `ClearForContextChangeAsync` |
+| `Stage`/`Unstage`/`Commit`/`Push`/`Pull`/`Fetch`/`Discard` commands | `ActivePanel`, the diff pane, `History` |
+| `TrackingState`, the poller, the credential banner (§2, §3, §12c) | `Busy`, `StatusSummary`, `Sync` |
+
+The seam already exists: every command funnels through `Ready` and `RaiseGitCommandStates`. The
+child takes a reference to the shell's `BusyTracker` and its `IGitClient`, exactly as
+`SyncViewModel` already takes the shared tracker — there is a working precedent in the codebase
+for a child view model sharing the shell's busy state, and the test that pins it (*"the same
+instance the shell binds its bar to"*) is worth copying, because that exact bug shipped once.
+
+#### The risk, stated plainly
+
+**A WPF binding that loses its property fails silently.** `{Binding CommitMessage}` against a
+shell that no longer has `CommitMessage` produces no compile error, no exception, no test
+failure, and no visible error — the TextBox simply renders empty and stays empty. Move eleven
+properties and you can break the panel in eleven invisible ways while every one of the 1,251
+tests still passes.
+
+So this commit is **not** believed on a green suite. It is believed on the binding trace.
+
+#### The verification protocol
+
+`App.xaml.cs:325` already implements `--trace-bindings <file>`, which attaches a
+`TextWriterTraceListener` to `PresentationTraceSources.DataBindingSource` at `Warning`. Use it,
+and respect the trap the codebase already documented at `:274`: **a clean trace over a panel
+that was never populated proves nothing.** A run that opens no repository, or never shows the
+git panel, evaluates no bindings and produces an empty file — indistinguishable from success.
+
+```bash
+Versio.exe --trace-bindings C:\temp\bindings-before.txt C:\path\to\repo
+```
+
+1. Capture a trace **before** the extraction, with the git panel opened and every control
+   exercised. Keep it — it is the control sample, and it establishes what "already noisy" looks
+   like.
+2. Extract. Update the XAML to bind through the child (`{Binding Git.CommitMessage}`).
+3. Capture again, running the **same** steps.
+4. **The two traces must be equivalent.** Any new `BindingExpression path error` line is a
+   property that moved and a binding that did not follow it.
+
+The proof that the run was real: the panel must have shown live data — a branch name, file
+counts, a diff. If the trace is empty *and* the panel was blank, the run proved nothing and does
+not count.
+
+#### Tests
+
+- App: `GitPanelViewModel` is constructed with the shell's tracker and **is the same instance**
+  — the `SyncViewModel.Busy` test, copied.
+- App: `MainWindow` still constructs against the real stylesheet (already covered; it must stay
+  green through the move).
+- App: a test that asserts the shell **no longer** exposes the moved properties, so a stale
+  binding cannot be re-added later without something failing.
+- Core: none. Nothing moves that has a rule in it — that is what makes this safe to do first.
+
+**Mutation check:** leave one XAML binding pointing at the shell's old path; the trace comparison
+must show a new path error. If it does not, the protocol above was not actually run.
+
+#### Done when
+
+The two traces match, the panel shows live data in the second run, and `git diff --stat` for the
+commit is overwhelmingly moved lines rather than new ones. **If the diff contains real logic
+changes, split them out** — a refactor that also changes behaviour is a refactor nobody can
+review.
+
+---
+
 ### Prerequisite (not optional)
 
-`UpdateStagingLists` (`:1544`) rebuilds both collections on every refresh. Checkbox state
+`UpdateStagingLists` (`:2417`) rebuilds both collections on every refresh. Checkbox state
 would be destroyed by the next file save. **It must reconcile in place**, the way `Reconcile`
 already does for `Changes` — match on `Path`, `Update` the survivors, add and remove the
 difference. Everything else in this section depends on it.
@@ -443,7 +556,7 @@ template so the "three chances for the glyph and its colour to disagree" warning
 
 ### Multi-discard safety
 
-`DiscardAsync` (`:1665`) currently refuses untracked files and confirms with the path named.
+`DiscardAsync` (`:2524`) currently refuses untracked files and confirms with the path named.
 The multi-file version keeps both properties:
 
 - Partition the selection into discardable and untracked. Discard the first set; report the
@@ -493,7 +606,7 @@ something they did not mean to:
 The third row is the important one. Sweeping unstaged files into a commit because the user
 happened to press the general-purpose button would silently undo a deliberate partial stage.
 
-The PLC export gate (`CommitAsync`, `:1027`) runs first and unchanged — it is what makes the
+The PLC export gate (`CommitAsync`, `:1577`) runs first and unchanged — it is what makes the
 default sync mode work, and its exported paths are staged regardless of the selection, since a
 commit recording a project without its mirror is the exact state the gate exists to prevent.
 
@@ -538,7 +651,18 @@ the "commits only what is staged" test must fail.
 
 ---
 
-## 6 · Conflicts
+## 6 · Conflicts — the UI half only
+
+**The engine half is built.** `IConflictProbe` / `GitConflictProbe` and
+`SyncVerdict.BlockedByConflict` already refuse both sync directions while any path under a
+binding is unmerged, with its sentence in `SyncNarrative.cs:79`. `TreeState()` already feeds
+conflicted paths to the guard.
+
+So this section builds **no detection and no second vocabulary**. It binds the panel to what
+exists and adds only what the engine cannot: the surface. Read `SyncNarrative` before writing a
+word of UI copy — two independently-worded explanations of one condition is a failure this
+repository has already caught.
+
 
 `HasConflicts` and `ChangeKind.Conflicted` are parsed and read by nothing. Today a
 `--ff-only` pull that hits a divergence fails into a status line and leaves the user with no
@@ -656,9 +780,13 @@ Git refuses outright, so Versio handles it explicitly rather than surfacing the 
 
 1. If the current branch is in the selection, the dialog says so up front and names where it
    will move you: *"You are on `feature/x`. Versio will switch to `main` first."*
-2. **Refuse if the working tree is dirty.** A checkout with uncommitted changes either fails or
-   carries them across, and neither is something to do to somebody mid-delete. The dialog says
-   "commit or stash your changes first" and the button stays disabled.
+2. **A dirty working tree is no longer a refusal — route it through the auto-stash.** When
+   this was written there was nothing to offer, so the dialog refused. `a3cdbfe` and `a2335b4`
+   built a real auto-stash with an identity, a sidecar and lock capture, and
+   `ClearForContextChangeAsync` already routes a `SwitchBranch` through it. So the fallback
+   checkout takes the same path every other branch switch does, and the user gets the same
+   "stash and proceed" choice they get everywhere else. **Do not build a second dirty-tree
+   story for this dialog.**
 3. **Refuse if there are held direction locks or a pending export.** The same reasoning as the
    commit gate: a checkout under a half-written mirror produces a tree nobody reviewed.
 4. Checkout the default branch → verify it succeeded → *then* delete. If the checkout fails,
@@ -676,7 +804,8 @@ Git refuses outright, so Versio handles it explicitly rather than surfacing the 
   resolution order including the refuse case.
 - App: the dialog constructs against the real stylesheet (the `MainWindowTests` rationale);
   summary text matches the selection; force stays disabled until acknowledged; the default
-  branch cannot be ticked; a dirty tree disables deleting the current branch.
+  branch cannot be ticked; a dirty tree offers the auto-stash rather than disabling the
+  delete.
 - Integration against a fixture repo with a bare remote: delete local, delete local + remote,
   force-delete an unmerged branch, delete-current-branch with the fallback checkout, and a
   partial failure reporting per branch.
@@ -693,9 +822,12 @@ existing one.
 
 ### Reading the forge from the repository
 
-- The remote URL comes from `git remote get-url <remote>`, **not** from parsing `.git/config`
-  directly — `get-url` applies any `insteadOf` rewrite, and a team using an SSH rewrite would
-  otherwise get a URL that resolves to nothing in a browser.
+- **`IGitClient.RemoteUrlAsync(remote, ct)` already exists** (`GitCliClient.cs:229`, added for
+  the vanished-repository offer) and reads `config --get remote.<name>.url`. Use it rather than
+  adding a second way to ask. An earlier draft called for `git remote get-url` on the grounds
+  that it applies `insteadOf` rewrites — **it does not**; those are applied at transport time,
+  and the two commands differ only over multi-valued URLs and `pushurl`. Neither affects host
+  detection, so the method already in the interface is the right one.
 - Normalise both shapes into host + owner + repo. `ClonePromptWindow.xaml.cs:112-135,281-292`
   already parses the `https://` and scp-like (`git@host:owner/repo`) forms; **extract that into
   `Versio.Core/Git/RemoteUrl.cs`** so the dialog and this feature cannot drift apart. It is the
@@ -785,32 +917,23 @@ Create in the web UI. Nothing outward-facing happens on Versio's say-so.
 These come from reading the code rather than from a feature list. The first three are the ones
 I would argue for hardest.
 
-### 9a · The guard over Pull — **corrected: not a hole, a dependency**
+### 9a · The guard over Pull — **done, not by this plan**
 
-An earlier draft of this plan called this a safety hole and made it phase 0. **That was wrong**,
-and commit `6417f2a` had already settled it more carefully:
+Two drafts of this section were wrong in opposite directions, and the code has now settled it.
 
-- **`Clone` and `Discard` were deleted, not wired.** `RewritesWorkingTree` is false for both, so
-  the guard would return exactly what those commands' own `Ready` check already enforces. They
-  were dead API at every phase, not only this one.
-- **`Pull` is kept and documented as deliberately not wired.** All three of its verdicts —
-  unmerged paths, a held direction lock, a dirty tree — resolve to the auto-stash, which is not
-  built (`SAFEGUARDS` phase 6+7). Wiring it now would offer a button that cannot do what it
-  says, which is the same failure mode `AskAboutWork` already avoids by passing
-  `WorkingTreeSnapshot.Clean`.
+- The first draft called it a safety hole and made it phase 0. Wrong: `6417f2a` had already
+  deleted `Clone` and `Discard` rather than wiring them, and documented `Pull` as a deliberate
+  deferral waiting on the auto-stash.
+- The second draft called it a dependency this plan could not discharge. Also now wrong:
+  `fce3f90` **wired it**, once `a3cdbfe` and `a2335b4` had built the auto-stash that gives its
+  three verdicts something real to offer. `PullAsync` calls
+  `ClearForContextChangeAsync(GuardIntent.Pull, "pulling")` at `ShellViewModel.cs:1682`.
 
-So `PullAsync` really is unguarded at runtime, and the fix is **not** in this plan's gift: it
-lands when the auto-stash does. What this plan owes it instead:
-
-- **Do not wire `Pull` to the guard as part of the git-panel work.** Respect the deferral.
-- **Do not invent `GuardIntent.DeleteBranch` for §7c.** Deleting a branch you are not on leaves
-  the working tree alone. Deleting the branch you *are* on requires a checkout first — and that
-  checkout is `SwitchBranch`, which is already wired. Reuse it. `GuardIntent`'s own doc comment
-  now carries the rule this obeys: *every member has a caller, or says why it does not.*
-- **Record the dependency**, so §9b and §6 do not sail past it — see the pre-flight notes below.
-
-**Cost:** none. **Value:** stops this plan from re-adding API that was deliberately removed a
-commit ago.
+**Nothing left to do here.** What survives is one rule for §7c: **do not invent
+`GuardIntent.DeleteBranch`.** Deleting a branch you are not on leaves the working tree alone;
+deleting the branch you *are* on requires a checkout, and that checkout is `SwitchBranch`, wired
+since safeguards phase 4. `GuardIntent`'s own doc comment carries the rule — *every member has a
+caller, or says why it does not.*
 
 ### 9b · The diverged state currently has no exit
 
@@ -944,7 +1067,7 @@ The three that need their own:
    question.
 4. **Unborn branch.** `IsUnborn` is parsed and unused; a fresh repository shows `—` and a row
    of dead buttons with no explanation of what to do first.
-5. **Commit subject counter.** The bare number at `:888` is undecodable. Colour it at 50 and
+5. **Commit subject counter.** The bare number at `CommitSubjectLength` (`:1427`) is undecodable. Colour it at 50 and
    72 and it explains itself.
 6. **Keyboard.** Ctrl+Enter already commits (`OnCommitMessageKeyDown`). Add Ctrl+Shift+P for
    push and put each shortcut in its tooltip — the discoverability is most of the value.
@@ -984,7 +1107,7 @@ existing docs warn about.
 |---|---|---|
 | `docs/STATUS.md` | The "Desktop shell" progress line and the capability table; the header's test counts (re-derived, per its own note, not remembered) | Every phase |
 | `docs/PLAN.md` | The git-panel design section: new button model, `TrackingState`, the polling design, branch deletion. §6.5's direction-lock rule now also covers publish | GP-B, GP-D, GP-F, GP-H |
-| `docs/SAFEGUARDS.md` | Branch deletion joins the destructive set — local vs remote vs force, the dirty-tree refusal, the fallback checkout. Plus the merge/rebase choice (§5.A's dependency, stated there), the poller's circuit breaker, and §5.B growing a UI half | GP-D, GP-G, GP-H |
+| `docs/SAFEGUARDS.md` | Branch deletion joins the destructive set — local vs remote vs force, the fallback checkout, and its reuse of the auto-stash. Plus the merge/rebase choice, the poller's circuit breaker, and §5.B growing a UI half | GP-D, GP-G, GP-H |
 | `README.md` | "What works today" — per-file staging, publish, branch management, live remote state, merge requests. **Also the `git.exe`-on-PATH requirement and the credential model (§12), which the dependency section argues for but the requirements table does not spell out** | GP-0, GP-C, GP-E, GP-H, GP-I |
 | `.versio/repo.json` schema notes | New `DefaultBranch` field (GP-H) and `ForgeKind` (GP-I), each with the schema-version rule for reading configs written before it | GP-H, GP-I |
 | `src/Versio.Core/Abstractions/IGitClient.cs` | **Correct the remark claiming PortableGit is vendored — it is not (§12a).** Doc drift in a load-bearing design argument | GP-0 |
@@ -1038,7 +1161,7 @@ What to build now, either way:
 ### 12b · Identity
 
 `git commit` with no `user.email` fails with a nine-line lecture — and it fails **after** the
-PLC export gate has already run a 17–31 second CODESYS export (`CommitAsync`, `:1050`). A long
+PLC export gate has already run a 17–31 second CODESYS export (`CommitAsync`, `:1615`). A long
 wait followed by a wall of text is the worst first-run experience the app can produce, and it
 is entirely avoidable with one `git config --get` at repository open.
 
@@ -1276,6 +1399,18 @@ git clone /c/temp/versio-remote.git /c/temp/versio-scratch
    the log stops repeating. Reconnect and resume → polling restarts.
 7. Break authentication → the breaker trips on the **first** failure, not the fifth.
 
+### GP-E · The extraction (run this before anything else in GP-E)
+
+1. Launch with `--trace-bindings` and a real repository; open the git panel; click a staged file,
+   an unstaged file, type in the commit box, hover every button.
+2. **Confirm the panel showed live data** — branch name, file counts, a diff. A blank panel makes
+   the trace worthless.
+3. Extract, then repeat steps 1–2 into a second file.
+4. Diff the two traces → **no new `BindingExpression path error` lines.**
+5. In the app after the move: the branch name, both file lists, the commit box, the subject
+   counter and every button caption **all still show their values**. An empty control here is the
+   silent failure; there is no other symptom.
+
 ### GP-E / GP-F · Staging and buttons
 
 1. With 3 staged and 40 unstaged files → **both lists scroll independently**; neither is crushed;
@@ -1320,7 +1455,8 @@ git clone /c/temp/versio-remote.git /c/temp/versio-scratch
 7. Delete 3 where one fails → the report names **which** succeeded and which did not.
 8. Delete the branch you are on, clean tree → it switches to the default branch first, then
    deletes.
-9. Same with a dirty tree → **refused**, asking you to commit or stash.
+9. Same with a dirty tree → the **auto-stash prompt** appears, the same one a branch switch
+   shows; accepting it stashes, switches, deletes, and offers the work back.
 10. The success card offers **Restore** → pressing it brings the local branch back at the same
     SHA.
 11. Detach HEAD → the badge says not on a branch; the remote row is dead except Fetch; the
@@ -1372,9 +1508,9 @@ different things is a coordination bug waiting to happen.
 | GP-A | Notifications (§1) | Everything later needs a way to report success and failure. Fixes the invisible-push bug on its own. |
 | GP-B | Remote state machine + publish (§2) | Independent of staging; unblocks the gating in GP-F. |
 | GP-D | Background polling (§3) | Needs §2's state to have somewhere to put its answer. Makes every count in the panel true. |
-| GP-E | Reconcile the staging lists, then the two-pane scrollable layout and checkboxes (§4) | The reconcile prerequisite lands first and is worth having alone — the lists stop being rebuilt every second. |
+| GP-E | **Extract `GitPanelViewModel`**, then reconcile the staging lists, then the two-pane scrollable layout and checkboxes (§4) | The extraction is the first commit, before the file grows further — see the structural note at the top. The reconcile prerequisite lands next and is worth having alone: the lists stop being rebuilt every second. |
 | GP-F | Button model + gating matrix (§5) | Needs GP-B and GP-E to gate against real state. |
-| GP-G | Conflicts (§6) + the diverged-branch exit (§9b) — **blocked, see pre-flight** | One piece of work: both are "the remote and I disagree", and §2 currently advises a button that refuses. |
+| GP-G | Conflicts (§6, UI half) + the diverged-branch exit (§9b) | **No longer blocked** — safeguards phase 6 shipped both defences. One piece of work: both are "the remote and I disagree", and §2 currently advises a button that refuses. |
 | GP-H | Branch identity, default branch, deletion dialog (§7), undo-delete (§9f) | Largest single piece and the only new window; benefits from GP-A and GP-D already being in place. |
 | GP-I | Merge-request button (§8) | Needs §7b's default branch for the target, and extracting `RemoteUrl` from the clone dialog. |
 | GP-J | PLC-aware summaries and drafted commit messages (§9c) | Sequenced late because it is additive, not because it is low value — it is the highest-value item here. Nothing blocks it earlier if you want it sooner. |
@@ -1391,92 +1527,86 @@ different things is a coordination bug waiting to happen.
 
 ---
 
-## Pre-flight — checked before starting, 2026-08-13
+## Pre-flight — re-checked 2026-08-13
+
+Re-run after the safeguards work landed. The earlier pre-flight is superseded; nothing from it
+survives unchanged.
 
 ### Baseline
 
-Verified on `Safeguards` at `6417f2a`, working tree clean apart from this document.
+Verified on `Clean-up-and-continue-dev` at `a083356`, working tree clean.
 
 | | |
 |---|---|
-| Build | succeeded, **0 warnings, 0 errors**, 2.8 s |
-| `Versio.Core.Tests` | **919 passed**, 0 failed, 0 skipped, 286 ms |
-| `Versio.App.Tests` | **170 passed**, 0 failed, 0 skipped, 3 s |
-| Integration | not re-run; `6417f2a` records 107 passed, 0 skipped, 6 m 15 s against real CODESYS 3.5.22.20 |
+| Build | **succeeded, 0 warnings, 0 errors** |
+| `Versio.Core.Tests` | **1,037 passed**, 0 failed, 0 skipped, 259 ms |
+| `Versio.App.Tests` | **214 passed**, 0 failed, 0 skipped, 19 s |
+| Integration | not re-run here; `STATUS.md` records 130 collected and a full pass of 111 against real CODESYS 3.5.22.20, 6 m 11 s |
 
-`docs/STATUS.md`'s header says 838 + 92 + 107 and is now stale on two of three numbers — it
-asks to be re-derived rather than remembered, so re-derive it with the first phase that lands.
+`STATUS.md`'s header is **current** — it now carries these numbers and has replaced the commit
+count with the command that derives it. Nothing to correct there before starting; keep it that
+way by re-deriving with each phase.
 
-### Blocker: GP-G depends on unbuilt safeguard work
+*Note:* a build attempted while `Versio.exe` was running fails on the assembly copy step with
+`MSB3027`, and reports warnings that are an artefact of the failure rather than real. **Close the
+app before believing a build result.** The clean numbers above were taken with it closed.
 
-`SAFEGUARDS.md` §5.A is the highest-risk unbuilt item in the repository, and it is squarely in
-this plan's path:
+### The GP-G blocker is gone
 
-> A pull or checkout rewrites the project *and* the mirror under the watcher. The watcher fires,
-> the hash gate correctly agrees both changed, and the orchestrator can trigger an export or an
-> import from **git's** write rather than the user's. **This is the only item here that can
-> corrupt a project through no user error at all.**
+The previous pre-flight blocked GP-G on `SAFEGUARDS` §5.A, the git-write suppression window,
+calling it the highest-risk unbuilt item in the repository. **It is built.** `SAFEGUARDS` phase 6
+is ticked, and both halves are in the code:
 
-The suppression window that fixes it is `SAFEGUARDS` phase 6, unbuilt. Consequences:
+- `SyncVerdict.GitWriteSuppressed` — *"Ignored: git was rewriting the working tree, so that was
+  not an edit."* (`SyncNarrative.cs:79`, refused at `SyncOrchestrator.cs:772`)
+- `IConflictProbe` / `SyncVerdict.BlockedByConflict` — the conflict gate (§5.B)
 
-- **GP-G's merge/rebase (§9b) must not ship before `SAFEGUARDS` phase 6.** A rebase rewrites
-  both sides of a binding at once — exactly the scenario above, deliberately triggered.
-- **The §3 poller fetches and never pulls**, and that constraint is now load-bearing rather than
-  incidental. A fetch moves refs and objects inside `.git` and leaves the working tree alone; an
-  automatic pull would be the §5.A corruption on a 10-second timer. Stated in §3, worth
-  repeating in the code.
-- **§6's conflict surface overlaps `SAFEGUARDS` §5.B**, which is the engine half of the same
-  problem (`SyncVerdict.BlockedByConflict` — refuse both sync directions while any path under a
-  binding is unmerged). They are one piece of work seen from two ends. Build them together or
-  the UI will say "resolve these" while the importer happily reads conflict markers as text.
+So **GP-G is unblocked and §6 shrank to its UI half.** The merge/rebase exit in §9b can be built
+whenever it is reached. The constraint that survives is one of design, not sequencing: **the
+poller fetches and never pulls** (§3). That was load-bearing when §5.A was missing; it stays
+because an automatic pull is a working-tree rewrite nobody asked for, which is a different
+objection and an equally good one.
 
-**Everything else in this plan is clear of it.** GP-0, A, B, C, D, E, F, H, I, J, K, L touch no
-working-tree rewrite that the watcher could misread.
+### What changed under the plan
 
-### Live at the time of writing: the conflict gate is being built
+| Was | Now |
+|---|---|
+| Pull unguarded | Wired in `fce3f90` — §9a is done, not deferred |
+| §6 builds conflict detection | Engine half exists; §6 is the UI half only |
+| §7c refuses on a dirty tree | Routes through the auto-stash, like every other branch switch |
+| §8 must add a remote-URL reader | `RemoteUrlAsync` already exists |
+| Stash methods unreachable | Driven by the auto-stash; the "not doing" note re-argued |
+| `ShellViewModel` at 2,304 lines | **3,202** — extract `GitPanelViewModel` as GP-E's first commit |
 
-While this plan was being finalised, work was in flight on `Versio.Core/Sync/ConflictProbe.cs`,
-`Versio.Infrastructure/Git/GitConflictProbe.cs` and `Versio.Core.Tests/Sync/ConflictGateTests.cs`,
-with `SyncOrchestrator`, `SyncNarrative` and `SyncJob` modified alongside. That is
-`SAFEGUARDS` §5.B — the engine half of the conflict problem: refuse both sync directions while
-any path under a binding is unmerged.
+### Unchanged and still true
 
-**This changes §6's shape and clears half of GP-G's blocker.**
+Every claim behind §1–§5 and §8–§12 was re-verified line by line — see the table at the top.
+The git panel's XAML and its command set are substantially untouched by the safeguards work: the
+same seven commands, the same `Commit` / `Commit & Push` pair, the same `MaxHeight="150"` on the
+staged list, the same `Clear()`-and-rebuild in `UpdateStagingLists`.
 
-- §6 is now **only the UI half** — banner, the third list section, blocking commit, ours/theirs.
-  Do not build a second conflict-detection path. Read what landed and bind to it.
-- The remaining blocker is §5.A, the git-write suppression window, which is what GP-G's
-  merge/rebase actually waits on. Confirm whether it shipped in the same piece of work before
-  starting GP-G; if it did, GP-G unblocks entirely.
-- Re-read `SyncVerdict` / `SyncNarrative` before writing any conflict wording, so the panel and
-  the engine say the same thing about the same state. Two independently-worded explanations of
-  one condition is the failure this repository has already caught once.
+### Still worth measuring before GP-C and GP-D
 
-### Corrections carried in from `6417f2a`
+Unchanged from the last pre-flight, because neither has been done:
 
-The guard findings in the first draft of this document were superseded before it was finished.
-`§9a` now records what is actually true: `Clone` and `Discard` were removed rather than wired,
-`Pull` is a documented deferral waiting on the auto-stash, and §7c must reuse `SwitchBranch`
-rather than invent `DeleteBranch`.
+Record the answers here when taken, rather than deciding the constants from a guess.
 
-### Still worth confirming before GP-C
+| # | Measurement | Why it matters | Result |
+|---|---|---|---|
+| 1 | `git credential fill` with `GIT_TERMINAL_PROMPT` unset: does the helper's own UI appear, and **does its window open behind Versio**? | Decides whether §12c's busy caption has to tell the user to look behind the window. `GIT_TERMINAL_PROMPT=0` is still unconditional at `GitCliClient.cs:720`, so making it per-call is the first thing GP-C does | *not yet taken* |
+| 2 | `git ls-remote --heads origin <branch>`, timed against the real remote, 5 runs | Sets GP-D's base interval. A LAN server and GitHub over HTTPS differ by an order of magnitude, and the plan's 10 s default is a guess until this is run | *not yet taken* |
+| 3 | Does `RollingFileSink`'s `AutoFlush` lock ever make the UI thread wait, at the 5 s floor with Debug on? | Decides whether §3's logging needs a buffered sink. Only worth taking if the interval actually goes that low | *not yet taken* |
 
-Two things this plan asserts from documentation rather than from measurement:
-
-1. **`git credential fill` behaviour under this app's process setup.** The design assumes the
-   helper's own UI appears when `GIT_TERMINAL_PROMPT` is unset for that one call. Worth proving
-   with a throwaway run before building the sign-in flow around it — including whether the GCM
-   window comes up behind the Versio window, which decides how loud §12c's busy caption has to be.
-2. **One `ls-remote` against the real remote, timed.** It sets the §3 default interval, and the
-   answer differs by an order of magnitude between a LAN server and GitHub over HTTPS.
-
-Neither blocks writing code; both block *finishing* GP-C and GP-D with the right constants.
+Neither of the first two blocks writing code; both block *finishing* those phases with the right
+constants. The third is conditional and may never be needed.
 
 ## Explicitly not doing
 
-- **Stash UI.** Four stash methods exist in `IGitClient` and are unreachable, but there is no
-  demand for manual stashing yet, and panel space is the scarce resource. Revisit only if a
-  workflow actually needs it.
+- **A manual stash UI.** The four stash methods are no longer unreachable — the auto-stash
+  drives them on every guarded branch switch — so the original argument ("implemented and
+  unreachable") has expired. The decision stands on what is left of it: there is no demand for
+  *manual* stashing, panel space is the scarce resource, and the automatic path already covers
+  the case that was losing work. Revisit only if a workflow actually needs it.
 - **A three-way merge view.** Conflict resolution in §6 stops at ours/theirs. Anything richer
   is its own project.
 - **Merging STAGED and NOT STAGED into one list.** The separation is being kept deliberately;

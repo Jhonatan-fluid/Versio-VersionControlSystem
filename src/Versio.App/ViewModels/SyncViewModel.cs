@@ -212,7 +212,31 @@ public sealed class SyncViewModel : ObservableObject
     /// </remarks>
     public BusyTracker Busy => _busy;
 
+    /// <summary>
+    /// What the scan found that needs a person: an export tree whose project is gone, a
+    /// binding pointing at nothing, a manifest claiming a different binding.
+    /// </summary>
+    /// <remarks>
+    /// Populated on every scan, and until now bound by nothing at all - the count reached the
+    /// log and the sentences reached nobody. That is the shape of bug this repository keeps
+    /// finding, so it is either shown or deleted, and these are worth showing: every one of
+    /// them is a repository in a state Versio cannot resolve on its own.
+    /// </remarks>
     public ObservableCollection<string> Findings { get; } = [];
+
+    /// <summary>The findings as one sentence, or empty when the scan found nothing wrong.</summary>
+    /// <remarks>
+    /// A summary rather than a list in the panel, for the same reason the coverage warning is
+    /// one line: these are rare, they are not the panel's subject, and the log carries the
+    /// detail. Two is the most that has ever been seen at once; beyond that it counts rather
+    /// than scrolls.
+    /// </remarks>
+    public string FindingsSummary => Findings.Count switch
+    {
+        0 => string.Empty,
+        1 => Findings[0],
+        _ => $"{Findings.Count} things need attention — {Findings[0]} (see the log for the rest)",
+    };
 
     /// <summary>
     /// Clear the selected project's failure and sync it again.
@@ -320,6 +344,27 @@ public sealed class SyncViewModel : ObservableObject
     /// lock worth re-adopting after a reboot" cannot drift apart.
     /// </para>
     /// </remarks>
+    /// <summary>The direction locks as an auto-stash needs to record them, and let them go.</summary>
+    /// <remarks>
+    /// Forwarded rather than exposing the orchestrator, so the shell cannot reach past this
+    /// view model into the sync engine for anything else. Empty when no repository is open,
+    /// which is the same answer as "nothing was held".
+    /// </remarks>
+    public IReadOnlyList<StashedLock> CaptureLocksForStash() =>
+        _orchestrator?.CaptureLocks() ?? [];
+
+    /// <summary>Let the captured locks go, now that the stash holding their work exists.</summary>
+    public Task ReleaseStashedLocksAsync(
+        IReadOnlyList<StashedLock> captured, string stashCommitId) =>
+        _orchestrator?.ReleaseCapturedLocksAsync(captured, stashCommitId, CancellationToken.None)
+        ?? Task.CompletedTask;
+
+    /// <summary>Put them back, after the stash has been restored. Returns what it refused.</summary>
+    public Task<IReadOnlyList<string>> RestoreStashedLocksAsync(
+        IReadOnlyList<StashedLock> captured) =>
+        _orchestrator?.RestoreCapturedLocksAsync(captured, CancellationToken.None)
+        ?? Task.FromResult<IReadOnlyList<string>>([]);
+
     public IReadOnlyList<HeldLock> HeldLocks =>
         _orchestrator is null
             ? []
@@ -419,7 +464,21 @@ public sealed class SyncViewModel : ObservableObject
 
         await ProbeToolchainAsync(ct).ConfigureAwait(true);
         await BuildOrchestratorAsync(ct).ConfigureAwait(true);
+
+        // Before the scan, and before anything is hashed or exported: if a previous run was
+        // killed midway through swapping a mirror into place, the mirror is currently missing
+        // and its last complete copy is sitting in a trash directory beside it. Everything
+        // below would otherwise read that as "never exported" and cheerfully export over it.
+        await SweepKilledSwapsAsync().ConfigureAwait(true);
+
         await RescanAsync().ConfigureAwait(true);
+
+        // Again, because the scan is where a project that is not in repo.json yet becomes a
+        // binding - and a repository being adopted for the first time is exactly where a
+        // mirror in a trash directory would otherwise go unnoticed. The first pass is still
+        // worth having: it runs before adoption can start an export over a mirror that is
+        // sitting in the trash.
+        await SweepKilledSwapsAsync().ConfigureAwait(true);
 
         StartWatching();
         await RefreshStalenessAsync().ConfigureAwait(true);
@@ -630,6 +689,7 @@ public sealed class SyncViewModel : ObservableObject
         _config = new RepoConfig();
         Projects.Clear();
         Findings.Clear();
+        OnPropertyChanged(nameof(FindingsSummary));
         Tree.Clear();
 
         // The last git status this panel was built from. Left behind, the next tree rebuild
@@ -733,6 +793,7 @@ public sealed class SyncViewModel : ObservableObject
 
         var store = new RepoConfigStore(_repositoryRoot);
         _config = await store.LoadAsync(ct).ConfigureAwait(true);
+        AnnounceIgnoredPaths();
 
         if (_config.Bindings.Count == 0)
         {
@@ -1135,6 +1196,84 @@ public sealed class SyncViewModel : ObservableObject
                 repoRelativePath.EndsWith(extension, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Scan the repository for PLC projects and classify what was found.</summary>
+    /// <summary>
+    /// Put right whatever a killed export left beside a mirror.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The exporter clears its own leftovers on the <i>next</i> run, which is the common case
+    /// and covers nothing until an export happens. A repository can be opened, read, committed
+    /// from and closed again without one — so the state has to be corrected when it is seen,
+    /// not when it is next written.
+    /// </para>
+    /// <para>
+    /// <b>Not a delete loop.</b> One of the four combinations means the mirror is gone and the
+    /// trash directory holds the only copy of it, and clearing that would destroy exactly what
+    /// the three-rename swap exists to protect. <see cref="SwapRecovery"/> decides; this moves
+    /// the directories and says what it did.
+    /// </para>
+    /// </remarks>
+    private Task SweepKilledSwapsAsync()
+    {
+        // Synchronous on purpose, and awaited by its caller anyway. Three Directory.Exists
+        // calls per binding cost nothing, and the moves are the kind of work that must be
+        // finished before the scan reads the same paths - a Task.Run here would buy a thread
+        // and a race.
+        if (_repositoryRoot is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        foreach (var binding in _config.Bindings.Where(b => b.Enabled))
+        {
+            var mirror = AbsolutePath(binding.ExportPath);
+            var staging = mirror + BindingConventions.StagingSuffix;
+            var trash = mirror + BindingConventions.TrashSuffix;
+
+            var verdict = SwapRecovery.Decide(
+                Directory.Exists(mirror), Directory.Exists(staging), Directory.Exists(trash));
+
+            if (verdict.Action == SwapAction.Nothing)
+            {
+                continue;
+            }
+
+            // Warning, always. Every one of these means a previous run of this app was killed
+            // while it was writing, and that is worth knowing even in the cases where nothing
+            // was at risk.
+            _logger.Warn(LogCategory.Sync, $"{binding.Id}: {verdict.Explanation}");
+
+            try
+            {
+                switch (verdict.Action)
+                {
+                    case SwapAction.RestoreTrash:
+                        Directory.Move(trash, mirror);
+                        _logger.Info(LogCategory.Sync,
+                            $"{binding.Id}: restored the export directory from {trash}");
+                        break;
+
+                    case SwapAction.DeleteTrash:
+                        Directory.Delete(trash, recursive: true);
+                        break;
+
+                    case SwapAction.DeleteStaging:
+                        Directory.Delete(staging, recursive: true);
+                        break;
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Reported and carried on. A repository that cannot be tidied is still a
+                // repository somebody can work in, and the next export tries again.
+                _logger.Error(LogCategory.Sync,
+                    $"{binding.Id}: could not put right what a killed export left behind", ex);
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
     private async Task RescanAsync()
     {
         if (_repositoryRoot is null)
@@ -1152,6 +1291,11 @@ public sealed class SyncViewModel : ObservableObject
         // Detection and tracking are one step now: anything found is tracked, and the locks
         // take it from there.
         var adopted = await AutoAdoptAsync(snapshot, busy.Token).ConfigureAwait(true);
+
+        // After adoption, so a project tracked a moment ago is covered by the same pass, and
+        // on every scan, because the rules Versio writes grow over time and a repository
+        // adopted before a rule existed would otherwise never receive it.
+        await TopUpRepositoryRulesAsync(busy.Token).ConfigureAwait(true);
 
         if (adopted > 0)
         {
@@ -1209,6 +1353,9 @@ public sealed class SyncViewModel : ObservableObject
 
         _logger.Info(LogCategory.Sync,
             $"scan: {Projects.Count} project(s), {Findings.Count} finding(s)");
+
+        // The summary is derived, so it has to be told when the collection behind it moves.
+        OnPropertyChanged(nameof(FindingsSummary));
 
         if (adopted > 0)
         {
@@ -1568,6 +1715,46 @@ public sealed class SyncViewModel : ObservableObject
     /// </remarks>
     public event Action<TreeRow>? NodeSelected;
 
+    /// <summary>The set of paths git has been told to ignore has changed.</summary>
+    /// <remarks>
+    /// Raised when the bindings are loaded or a project is adopted, because that is when the
+    /// answer moves. The shell forwards it to the repository watcher — the marker of a project
+    /// adopted a moment ago is precisely the one that then beats on the status refresh.
+    /// </remarks>
+    public event Action<IReadOnlyList<string>>? IgnoredPathsChanged;
+
+    /// <summary>
+    /// Repo-relative globs Versio itself wrote into <c>.gitignore</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Asked of the vendor seam rather than assembled here: <c>TransientPatternsFor</c> is the
+    /// same call adoption makes when it writes the rules, so what the watcher ignores and what
+    /// git ignores cannot drift apart. Adding a vendor adds its markers here for free.
+    /// </para>
+    /// <para>
+    /// <c>.versio/local/</c> is included for the same reason it is in the ignore file: locks,
+    /// backups and scratch copies are written constantly by Versio itself, and none of them
+    /// can ever appear in <c>git status</c>.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<string> IgnoredPaths()
+    {
+        var globs = new List<string> { BindingConventions.LocalIgnorePattern + "**" };
+
+        foreach (var binding in _config.Bindings.Where(b => b.Enabled))
+        {
+            if (PlcFormats.ForPath(binding.ProjectPath) is { } format)
+            {
+                globs.AddRange(format.TransientPatternsFor(binding.ProjectPath));
+            }
+        }
+
+        return globs;
+    }
+
+    private void AnnounceIgnoredPaths() => IgnoredPathsChanged?.Invoke(IgnoredPaths());
+
     /// <summary>Rebuild the tree, reading git's status first.</summary>
     /// <remarks>
     /// For the callers inside this class, which have just changed the working tree and have no
@@ -1693,12 +1880,27 @@ public sealed class SyncViewModel : ObservableObject
         {
             var coverage = new Dictionary<string, CoverageReport>(StringComparer.OrdinalIgnoreCase);
             var projects = new List<WorkspaceProject>();
+            var unreadable = new List<string>();
 
             foreach (var source in sources)
             {
+                IReadOnlyList<string> problems = [];
                 var manifest = File.Exists(source.ManifestPath)
-                    ? ProjectManifest.Parse(File.ReadAllText(source.ManifestPath))
+                    ? ProjectManifest.Parse(File.ReadAllText(source.ManifestPath), out problems)
                     : null;
+
+                // Said out loud, because the tree cannot say it.
+                //
+                // A manifest that half-read draws a project with objects missing, and one
+                // that did not read at all draws it as a flat list of raw paths - both of
+                // which look like Versio's own tree rendering being wrong rather than like a
+                // file it could not use. That is exactly how the warnings/strings mismatch
+                // survived a whole feature. The signature above already gates this on the
+                // manifest having changed, so a broken export logs once and not per refresh.
+                if (manifest is not null && problems.Count > 0)
+                {
+                    unreadable.AddRange(problems.Select(p => $"{source.ProjectPath}: {p}"));
+                }
 
                 var report = ExportCoverage.Of(manifest);
                 coverage[source.ProjectPath] = report;
@@ -1727,8 +1929,14 @@ public sealed class SyncViewModel : ObservableObject
             return (Roots: WorkspaceTreeBuilder.Build(projects, status.Changes,
                         new ProjectTreeOptions { ChangedOnly = false, Search = search }),
                     Coverage: coverage,
-                    Tracked: projects.Count);
+                    Tracked: projects.Count,
+                    Unreadable: unreadable);
         }).ConfigureAwait(true);
+
+        foreach (var problem in built.Unreadable)
+        {
+            _logger.Warn(LogCategory.Sync, $"manifest not fully readable - {problem}");
+        }
 
         var roots = built.Roots;
 
@@ -1948,6 +2156,57 @@ public sealed class SyncViewModel : ObservableObject
     /// rather than merely unwanted, and genuinely confusing to unpick afterwards (plan R28).
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// Make sure the repository rules cover every binding, not only the ones just adopted.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Adoption writes the <c>.gitignore</c> and <c>.gitattributes</c> rules once, when a
+    /// project is first tracked, and <see cref="AutoAdoptAsync"/> skips a project that is
+    /// already bound. So <b>a rule added to Versio after a repository was adopted never
+    /// reaches it.</b> Three have been added in the time this repository has existed: the
+    /// mirror's <c>text eol=lf</c>, and the staging and trash directories an export swaps
+    /// through — and the repository that found the first of them was one adopted last week.
+    /// </para>
+    /// <para>
+    /// Both planners already leave an existing rule alone and report no change when
+    /// everything is covered, so this is idempotent by construction: it writes on the first
+    /// scan after an upgrade and never again.
+    /// </para>
+    /// </remarks>
+    private async Task TopUpRepositoryRulesAsync(CancellationToken ct)
+    {
+        if (_repositoryRoot is null || _git is null || _config.Bindings.Count == 0)
+        {
+            return;
+        }
+
+        var setup = new RepoSetup(_repositoryRoot, _format, _logger);
+        var mirrors = _config.Bindings
+            .Where(b => b.Enabled)
+            .Select(b => b.ExportPath)
+            .ToList();
+
+        try
+        {
+            await setup.EnsureGitAttributesAsync(_git, ct, mirrors).ConfigureAwait(true);
+
+            foreach (var binding in _config.Bindings.Where(b => b.Enabled))
+            {
+                await setup.EnsureGitIgnoreAsync(binding.ProjectPath, ct, binding.ExportPath)
+                    .ConfigureAwait(true);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // A read-only working tree, or one somebody has open elsewhere. The rules are a
+            // protection rather than a precondition, so this is reported and the scan carries
+            // on - refusing to open the repository over it would be the worse trade.
+            _logger.Warn(LogCategory.Git,
+                $"could not bring this repository's git rules up to date: {ex.Message}");
+        }
+    }
+
     private async Task<int> AutoAdoptAsync(RepoSnapshot snapshot, CancellationToken ct)
     {
         if (_repositoryRoot is null)
@@ -1971,6 +2230,7 @@ public sealed class SyncViewModel : ObservableObject
             if (result.Adopted)
             {
                 _config = result.Config;
+                AnnounceIgnoredPaths();
                 adopted++;
                 _logger.Info(LogCategory.Sync,
                     $"tracking {project} automatically as {result.Decision.Binding!.Id}");

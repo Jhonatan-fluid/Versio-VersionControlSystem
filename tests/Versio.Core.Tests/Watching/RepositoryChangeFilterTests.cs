@@ -169,4 +169,136 @@ public class RepositoryChangeFilterTests
         // "everything you think you know is unreliable".
         Assert.Equal(RepositoryChangeRelevance.WorkingTree, Classify(Root));
     }
+
+    /// <summary>
+    /// The paths Versio itself told git to ignore.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Measured in the running app: CODESYS rewrites <c>&lt;project&gt;.~u</c> every few
+    /// seconds for as long as the IDE holds the project, so an engineer working normally
+    /// produced a <c>git status</c> every couple of seconds — about 24 git processes a minute
+    /// — for a file that cannot appear in <c>git status</c> at all, because Versio put it in
+    /// <c>.gitignore</c> itself.
+    /// </para>
+    /// <para>
+    /// This is the one exception to "working-tree paths are never filtered by name", and the
+    /// distinction is what makes it safe: these are not names guessed to be ignored, they are
+    /// the rules this app wrote.
+    /// </para>
+    /// </remarks>
+    public sealed class KnownIgnoredPaths
+    {
+        private const string Root = @"C:\repo";
+
+        private static readonly string[] Globs =
+        [
+            "plc/Machine.~u",
+            "plc/Machine-*.opt",
+            ".versio/local/**",
+        ];
+
+        private static RepositoryChangeRelevance Classify(string path) =>
+            RepositoryChangeFilter.Classify(Root, path, Globs);
+
+        [Theory]
+        [InlineData(@"C:\repo\plc\Machine.~u")]
+        [InlineData(@"C:\repo\plc\Machine-AllUsers.opt")]
+        [InlineData(@"C:\repo\plc\Machine-elli_-ROG-JVM.opt")]
+        [InlineData(@"C:\repo\.versio\local\state.json")]
+        [InlineData(@"C:\repo\.versio\local\backups\b-1\Machine.project")]
+        public void A_path_this_app_had_gitignored_is_not_worth_a_status(string path)
+        {
+            Assert.Equal(RepositoryChangeRelevance.Ignored, Classify(path));
+        }
+
+        [Theory]
+        [InlineData(@"C:\repo\plc\Machine.project")]
+        [InlineData(@"C:\repo\plc\Machine\Device\Plc Logic\Main.st")]
+        [InlineData(@"C:\repo\.versio\repo.json")]
+        public void Everything_else_still_is(string path)
+        {
+            // repo.json especially: it is COMMITTED, sits one directory above the ignored
+            // ones, and a filter that swallowed it would hide a binding being added.
+            Assert.Equal(RepositoryChangeRelevance.WorkingTree, Classify(path));
+        }
+
+        [Fact]
+        public void A_similar_name_outside_the_glob_is_not_swallowed()
+        {
+            // The globs are scoped to the project that owns them, so another project's
+            // marker in another folder is somebody else's business and still reported.
+            Assert.Equal(
+                RepositoryChangeRelevance.WorkingTree,
+                Classify(@"C:\repo\other\Machine.~u"));
+        }
+
+        [Fact]
+        public void Git_metadata_still_gets_through()
+        {
+            Assert.Equal(
+                RepositoryChangeRelevance.GitMetadata,
+                Classify(@"C:\repo\.git\index"));
+        }
+
+        [Fact]
+        public void No_globs_means_filter_nothing_by_name()
+        {
+            // The default, and the behaviour every caller had before. Filtering by name is
+            // opt-in, and only for a caller that knows which rules it wrote.
+            Assert.Equal(
+                RepositoryChangeRelevance.WorkingTree,
+                RepositoryChangeFilter.Classify(Root, @"C:\repo\plc\Machine.~u"));
+
+            Assert.Equal(
+                RepositoryChangeRelevance.WorkingTree,
+                RepositoryChangeFilter.Classify(Root, @"C:\repo\plc\Machine.~u", []));
+        }
+    }
+
+    /// <summary>
+    /// A folder's own timestamp moving because something inside it appeared or vanished.
+    /// </summary>
+    /// <remarks>
+    /// What was left after the vendor's lock marker was filtered by name, and it cost exactly
+    /// as much: CODESYS rewrites the marker through a transient sibling, so the marker events
+    /// were ignored and the folder's mtime kept changing at the same rate — one status refresh
+    /// every five seconds, forever, for a directory whose interesting child had already been
+    /// dismissed.
+    /// </remarks>
+    public sealed class DirectoryWrites
+    {
+        private const string Root = @"C:\repo";
+
+        [Fact]
+        public void A_write_to_a_folder_says_nothing_the_childs_own_event_does_not()
+        {
+            Assert.Equal(
+                RepositoryChangeRelevance.Ignored,
+                RepositoryChangeFilter.Classify(
+                    Root, @"C:\repo\plc", knownIgnored: null, directoryWrite: true));
+        }
+
+        [Fact]
+        public void A_file_of_the_same_name_is_untouched_by_the_rule()
+        {
+            // The flag comes from the watcher, which asks the filesystem. The filter never
+            // guesses from the path - a folder and a file can be named the same thing.
+            Assert.Equal(
+                RepositoryChangeRelevance.WorkingTree,
+                RepositoryChangeFilter.Classify(
+                    Root, @"C:\repo\plc", knownIgnored: null, directoryWrite: false));
+        }
+
+        [Fact]
+        public void Git_metadata_is_decided_by_the_existing_rules_either_way()
+        {
+            // .git has its own bare-directory rule already, and it must keep it: this flag is
+            // about the working tree.
+            Assert.Equal(
+                RepositoryChangeRelevance.GitMetadata,
+                RepositoryChangeFilter.Classify(
+                    Root, @"C:\repo\.git\index", knownIgnored: null, directoryWrite: true));
+        }
+    }
 }

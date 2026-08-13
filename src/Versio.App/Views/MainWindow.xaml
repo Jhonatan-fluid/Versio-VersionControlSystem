@@ -697,6 +697,29 @@
                                  What is left are the two lines that are transient and worth
                                  interrupting for, and both hide themselves when empty. -->
 
+                            <!-- What the scan found that Versio cannot resolve on its own: an
+                                 export tree whose project was deleted, a binding pointing at
+                                 nothing, a manifest claiming a different binding. Rare, and
+                                 every one of them needs a person - which is why they are here
+                                 rather than only in the log, where they used to stop. -->
+                            <TextBlock DockPanel.Dock="Top" Text="{Binding Sync.FindingsSummary}"
+                                       TextWrapping="Wrap" Margin="2,0,0,8"
+                                       FontFamily="{DynamicResource Font.UI}"
+                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                       Foreground="{DynamicResource Brush.Status.Deleted}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Sync.FindingsSummary}"
+                                                         Value="">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+
                             <!-- What the export cannot carry. Distinct from staleness: stale
                                  means the mirror is behind the project, this means the mirror
                                  could never hold it in the first place. -->

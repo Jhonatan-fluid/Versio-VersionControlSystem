@@ -103,6 +103,12 @@ internal sealed class CountingGitClient : IGitClient
     public Task<GitResult> VerifyRemoteAsync(string url, CancellationToken ct) =>
         throw new NotSupportedException();
 
+    public Task<string> RemoteUrlAsync(string remote, CancellationToken ct) =>
+        throw new NotSupportedException();
+
+    public Task<string> GitDirectoryAsync(CancellationToken ct) =>
+        throw new NotSupportedException();
+
     public Task<GitResult> FetchAsync(IProgress<GitProgress>? progress, CancellationToken ct) =>
         throw new NotSupportedException();
 

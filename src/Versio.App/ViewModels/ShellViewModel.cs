@@ -8,8 +8,10 @@ using Versio.Core.Git;
 using Versio.Core.Guarding;
 using Versio.Core.Logging;
 using Versio.Core.Plc;
+using Versio.Core.Settings;
 using Versio.Core.Sync;
 using Versio.Core.Watching;
+using Versio.Infrastructure.FileSystem;
 using Versio.Infrastructure.Git;
 using Versio.Infrastructure.Logging;
 using Versio.Infrastructure.Platform;
@@ -46,7 +48,12 @@ public enum ShellPanel
 }
 
 /// <summary>An entry in the repository dropdown.</summary>
-public sealed class RepoEntry(string path)
+/// <remarks>
+/// Carries the remote and the last-opened time because the dropdown is a memory now rather
+/// than a session: the list survives a restart, and an entry whose folder has since gone can
+/// only be offered back if its URL was recorded while it was still there.
+/// </remarks>
+public sealed class RepoEntry(string path, string remoteUrl = "", DateTimeOffset? lastOpened = null)
 {
     public string Path { get; } = path;
 
@@ -55,6 +62,20 @@ public sealed class RepoEntry(string path)
     /// <summary>Parent directory, shown beneath the name so two repos with the same folder
     /// name are still distinguishable.</summary>
     public string Location { get; } = System.IO.Path.GetDirectoryName(path) ?? path;
+
+    /// <summary><c>origin</c>'s URL when this repository was last opened, or empty.</summary>
+    public string RemoteUrl { get; } = remoteUrl;
+
+    /// <summary>When it was last opened, or null for one opened in this session only.</summary>
+    public DateTimeOffset? LastOpenedUtc { get; } = lastOpened;
+
+    /// <summary>This entry as the settings file records it.</summary>
+    public RecentRepository ToRecord(DateTimeOffset when) => new()
+    {
+        Path = Path,
+        RemoteUrl = RemoteUrl,
+        LastOpenedUtc = when,
+    };
 }
 
 /// <summary>An entry in the branch dropdown.</summary>
@@ -185,6 +206,29 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// </remarks>
     private readonly QuietRunTracker _quietRefreshes = new();
 
+    private readonly IAppSettingsStore _settings;
+
+    /// <summary>
+    /// Where this clone's auto-stashes are recorded. Rebuilt for each repository opened.
+    /// </summary>
+    /// <remarks>
+    /// Constructed here rather than injected, unlike <see cref="_settings"/>, and the
+    /// difference is where the file lives: this one is inside the repository being opened, so
+    /// a test that opens a temp repository writes into that temp repository and cleans up with
+    /// it. The settings store writes to the user's own machine, which is why the host owns it.
+    /// </remarks>
+    private IAutoStashStore? _autoStash;
+
+    /// <summary>
+    /// The recent list as it is on disk, which is not what the dropdown holds.
+    /// </summary>
+    /// <remarks>
+    /// The <see cref="RecentRepositories"/> collection is for WPF and holds view objects; this
+    /// is the record written back. Kept apart so the ordering and capping rules stay in
+    /// <see cref="Core.Settings.RecentRepositories"/>, where they are tested without a window.
+    /// </remarks>
+    private IReadOnlyList<RecentRepository> _recent = [];
+
     private GitCliClient? _git;
     private RepositoryWatcher? _watcher;
     private string? _repositoryPath;
@@ -204,11 +248,16 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                           Func<string, GitCliClient>? gitFactory = null,
                           IRepositoryProbe? probe = null,
                           IClock? clock = null,
-                          Func<PlcVendor, IVersioLogger, IPlcToolchain?>? toolchains = null)
+                          Func<PlcVendor, IVersioLogger, IPlcToolchain?>? toolchains = null,
+                          IAppSettingsStore? settings = null)
     {
         _logger = logger;
         Log = log;
         _clock = clock ?? new SystemClock();
+        // Null by default, real only when the host passes one. A view model that reached
+        // for %LOCALAPPDATA% on its own rewrote the developer's recent list every time a
+        // test opened a temp repository.
+        _settings = settings ?? NullAppSettingsStore.Instance;
 
         // Built here rather than in an initialiser because it needs the clock: every scope
         // records when it started, so a dialog can say how long the user has been waiting
@@ -237,6 +286,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // Picking a row in the project tree shows it in the diff pane. One pane, whichever
         // way the row was reached.
         Sync.NodeSelected += ShowNode;
+
+        // A project adopted while the app is running writes new .gitignore rules, and its
+        // toolchain starts rewriting a lock marker a second later. Without this the watcher
+        // would keep spending a git status on it until the next repository switch.
+        Sync.IgnoredPathsChanged += globs => _watcher?.KnownIgnored(globs);
 
         // And the same for the history: the panel decides what was picked, this decides how
         // it is rendered. Keeping the render here is what stops a second diff pane growing
@@ -365,6 +419,16 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
+        // Checked before the guard's work is undone but after it has agreed, because a
+        // repository that is not there is a different conversation from one that is: the
+        // generic refusal says "not a Git repository" and offers a folder picker, which is
+        // an odd answer to a row the user was told they could come back to.
+        if (await MissingAsync(target).ConfigureAwait(true))
+        {
+            ShowOpenRepository();
+            return;
+        }
+
         await OpenAsync(target.Path).ConfigureAwait(true);
 
         // OpenAsync refuses a folder git will not work in and says why through
@@ -373,6 +437,80 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         {
             ShowOpenRepository();
         }
+    }
+
+    /// <summary>
+    /// Ask the view to decide what to do about a remembered repository that has gone.
+    /// </summary>
+    /// <remarks>
+    /// <b>Unset means cancel</b>, the same way <see cref="AskGuard"/> is unset: a view model
+    /// with no view attached must never take the destructive-looking branch by default.
+    /// </remarks>
+    public Func<MissingRepositoryPrompt, MissingRepositoryChoice?>? AskAboutMissingRepository
+    {
+        get;
+        set;
+    }
+
+    /// <summary>
+    /// Deal with a recent repository that is no longer where it was.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Returns true when the switch must not proceed — which is every outcome except a
+    /// repository that is still there. Cloning re-enters through the ordinary clone path, so
+    /// what opens afterwards is a repository that has just been verified rather than a path
+    /// this method assumed would appear.
+    /// </para>
+    /// <para>
+    /// A folder that exists but is no longer a repository is included, because it is the same
+    /// question with the same three answers. Whether git will work there is asked of git
+    /// itself, not inferred from a <c>.git</c> directory being present.
+    /// </para>
+    /// </remarks>
+    private async Task<bool> MissingAsync(RepoEntry target)
+    {
+        var reason = !Directory.Exists(target.Path)
+            ? MissingRepositoryReason.Gone
+            : await _gitFactory(target.Path).IsRepositoryAsync(CancellationToken.None)
+                .ConfigureAwait(true)
+                ? (MissingRepositoryReason?)null
+                : MissingRepositoryReason.NotARepository;
+
+        if (reason is not { } why)
+        {
+            return false;
+        }
+
+        _logger.Warn(LogCategory.App,
+            $"recent repository {target.Path} is {(why == MissingRepositoryReason.Gone
+                ? "no longer on disk" : "no longer a git repository")}");
+
+        var record = target.ToRecord(target.LastOpenedUtc ?? _clock.UtcNow);
+        var choice = AskAboutMissingRepository?.Invoke(MissingRepository.Prompt(record, why))
+                     ?? MissingRepositoryChoice.Cancel;
+
+        switch (choice)
+        {
+            case MissingRepositoryChoice.Forget:
+                await ForgetAsync(target.Path).ConfigureAwait(true);
+                break;
+
+            case MissingRepositoryChoice.CloneAgain:
+                // The path, never the URL. A remote can carry a token in its userinfo, and
+                // the redaction that handles that is inside the git client where every
+                // argument passes through it - not something a view model reimplements.
+                _logger.Info(LogCategory.Git, $"re-cloning the repository that was at {target.Path}");
+                await CloneRepositoryAsync(target.RemoteUrl).ConfigureAwait(true);
+                break;
+
+            default:
+                // Left in the list on purpose. A drive that is not mounted today is mounted
+                // tomorrow, and the entry is the only record of where the repository was.
+                break;
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -410,7 +548,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// <returns>True when the switch may go ahead.</returns>
     private async Task<bool> ClearForContextChangeAsync(GuardIntent intent, string target)
     {
-        switch (AskAboutWork(intent, target))
+        // Ask, with the real working tree in it. This used to go through a wrapper that
+        // passed WorkingTreeSnapshot.Clean deliberately - offering to stash before anything
+        // could stash would be a button that lies about what it does - and the wrapper became
+        // a synonym for Ask the moment the auto-stash existed.
+        switch (Ask(intent, target))
         {
             case GuardChoice.Proceed:
                 return true;
@@ -425,6 +567,10 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                     $"Waiting for the current work to finish, then switching to {target}…";
                 await Busy.WhenIdleAsync().ConfigureAwait(true);
                 return true;
+
+            case GuardChoice.StashAndProceed:
+                // False here means the stash did not happen, and the switch must not either.
+                return await TakeAutoStashAsync(target).ConfigureAwait(true);
 
             default:
                 _logger.Info(LogCategory.Ui, $"switch to {target} cancelled");
@@ -563,6 +709,115 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     private void ShowCurrentBranch() =>
         WithoutSideEffects(() =>
             SelectedBranch = Branches.FirstOrDefault(b => b.IsCurrent));
+
+    /// <summary>
+    /// Fill the repository dropdown from what this machine remembers.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Awaited by the host before the first repository is opened, so the list is already
+    /// there when <see cref="OpenAsync"/> promotes one to the top of it. Called after, the
+    /// load would overwrite the entry that had just been opened.
+    /// </para>
+    /// <para>
+    /// The dropdown held only what the current session had opened until now — which on a
+    /// fresh start is one repository, the one the app opened by itself, so a control whose
+    /// entire purpose is jumping between repositories could never do it.
+    /// </para>
+    /// </remarks>
+    public async Task LoadRecentAsync(CancellationToken ct = default)
+    {
+        _recent = (await _settings.ReadAsync(ct).ConfigureAwait(true)).Recent;
+
+        WithoutSideEffects(() =>
+        {
+            RecentRepositories.Clear();
+            foreach (var entry in _recent)
+            {
+                RecentRepositories.Add(
+                    new RepoEntry(entry.Path, entry.RemoteUrl, entry.LastOpenedUtc));
+            }
+
+            SelectedRepository = RecentRepositories.FirstOrDefault(r => r.Path == _repositoryPath);
+        });
+
+        _logger.Debug(LogCategory.App,
+            $"{_recent.Count} recent repositor(ies) restored");
+    }
+
+    /// <summary>
+    /// The working tree root for a folder, or null when it is not inside a repository.
+    /// </summary>
+    /// <remarks>
+    /// Exposed for the startup choice, which has to know whether the working directory is
+    /// worth opening <i>before</i> it falls back to the recent list. Asking the locator here
+    /// rather than testing for a <c>.git</c> folder keeps one answer to "is this a
+    /// repository" — the one that already handles subdirectories, bare repos and worktrees.
+    /// </remarks>
+    public string? WorkingTreeRootOf(string path) =>
+        _locator.Locate(path) is { Kind: RepositoryKind.WorkingTreeRoot
+                                        or RepositoryKind.InsideWorkingTree } found
+            ? found.WorkingTreeRoot
+            : null;
+
+    /// <summary>The most recently opened repository that is still on disk, or null.</summary>
+    /// <remarks>
+    /// The startup fallback, for the ordinary case of launching from a shortcut rather than
+    /// from a repository's own folder. Checked for existence here so the host does not open
+    /// something that will only be refused — and left in the list either way, because a
+    /// disconnected drive is not a deleted repository.
+    /// </remarks>
+    public string? MostRecentExisting() =>
+        _recent.FirstOrDefault(r => Directory.Exists(r.Path))?.Path;
+
+    /// <summary>Move a repository to the top of the list, and write the list down.</summary>
+    private async Task RememberAsync(string path, string remoteUrl)
+    {
+        _recent = Core.Settings.RecentRepositories.Promote(
+            _recent,
+            new RecentRepository
+            {
+                Path = path,
+                RemoteUrl = remoteUrl,
+                LastOpenedUtc = _clock.UtcNow,
+            });
+
+        SyncRecentToDropdown(path);
+        await _settings.WriteAsync(new AppSettings { Recent = _recent }, CancellationToken.None)
+            .ConfigureAwait(true);
+    }
+
+    /// <summary>Take a repository out of the list, and write the list down.</summary>
+    private async Task ForgetAsync(string path)
+    {
+        _recent = Core.Settings.RecentRepositories.Remove(_recent, path);
+
+        SyncRecentToDropdown(_repositoryPath);
+        await _settings.WriteAsync(new AppSettings { Recent = _recent }, CancellationToken.None)
+            .ConfigureAwait(true);
+
+        _logger.Info(LogCategory.App, $"removed {path} from the recent repositories");
+    }
+
+    /// <summary>Rebuild the dropdown from the record, keeping the selection meaningful.</summary>
+    /// <remarks>
+    /// Rebuilt wholesale rather than reconciled, unlike the project tree: this list is at most
+    /// ten rows of two strings, nothing about it is expensive, and nothing in it is expanded
+    /// or scrolled. <see cref="WithoutSideEffects"/> is what keeps the reselection from
+    /// reading as the user choosing a repository.
+    /// </remarks>
+    private void SyncRecentToDropdown(string? select) =>
+        WithoutSideEffects(() =>
+        {
+            RecentRepositories.Clear();
+            foreach (var entry in _recent)
+            {
+                RecentRepositories.Add(
+                    new RepoEntry(entry.Path, entry.RemoteUrl, entry.LastOpenedUtc));
+            }
+
+            SelectedRepository = RecentRepositories.FirstOrDefault(r => r.Path == select);
+        });
 
     /// <summary>Put the repository dropdown back on the repository that is actually open.</summary>
     private void ShowOpenRepository() =>
@@ -944,18 +1199,22 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         _git = client;
         RepositoryPath = path;
+        _autoStash = new JsonAutoStashStore(path, _logger);
 
-        WithoutSideEffects(() =>
-        {
-            var existing = RecentRepositories.FirstOrDefault(r => r.Path == path);
-            if (existing is null)
-            {
-                existing = new RepoEntry(path);
-                RecentRepositories.Insert(0, existing);
-            }
+        // Before anything is written into .versio/local/, and per clone rather than per
+        // project: an auto-stash record that git can see is a record the NEXT auto-stash
+        // swallows, leaving real work in the stash with nothing pointing at it.
+        await LocalExclude.EnsureAsync(
+            await client.GitDirectoryAsync(busy.Token).ConfigureAwait(true),
+            _logger,
+            busy.Token).ConfigureAwait(true);
 
-            SelectedRepository = existing;
-        });
+        // Read while the repository is open, because this is the only time it can be read.
+        // When it is wanted - offering to clone a vanished repository back - there is no
+        // .git left to ask. Empty for a repository with no remote, which is ordinary.
+        var remoteUrl = await client.RemoteUrlAsync("origin", busy.Token).ConfigureAwait(true);
+
+        await RememberAsync(path, remoteUrl).ConfigureAwait(true);
 
         RefreshCommand.RaiseCanExecuteChanged();
 
@@ -1007,7 +1266,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // switch would report the previous tree's idle polls against the new one.
         _quietRefreshes.Reset();
 
-        var watcher = new RepositoryWatcher(path, _clock, logger: _logger);
+        // The bindings are not loaded yet - Sync attaches after this - so the list starts
+        // with what is true of every repository and is replaced the moment the scan knows
+        // better. Starting empty is the safe direction: it filters nothing.
+        var watcher = new RepositoryWatcher(
+            path, _clock, logger: _logger, knownIgnored: Sync.IgnoredPaths());
 
         watcher.Settled += OnRepositoryChanged;
         watcher.Tick += OnWatcherTick;
@@ -1019,6 +1282,15 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 ? "filesystem watching unavailable; the file list will refresh periodically"
                 : "watching the working tree for changes");
     }
+
+    /// <summary>What the repository watcher is ignoring by name, for a test.</summary>
+    /// <remarks>
+    /// Internal rather than public: nothing in the app needs it, and the reason it exists is
+    /// that the alternative - trusting that a subscription written in this file is wired to a
+    /// watcher created in this file - is exactly the assumption that has been wrong three
+    /// times here.
+    /// </remarks>
+    internal IReadOnlyList<string> WatcherIgnoredGlobs => _watcher?.IgnoredGlobs ?? [];
 
     private void StopWatching()
     {
@@ -1188,7 +1460,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         // Cloning needs no open repository — it is how you get one — so it is enabled
         // whenever nothing else is running, unlike every other command here.
-        CloneCommand = new AsyncCommand(CloneRepositoryAsync, () => !Busy.IsBusy, ReportError);
+        CloneCommand = new AsyncCommand(() => CloneRepositoryAsync(), () => !Busy.IsBusy, ReportError);
 
         // Every git button consults the same shared flag, so the moment one operation starts
         // they all go dead together. AsyncCommand.IsRunning only disables the button that was
@@ -1390,6 +1662,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         return paths.Count;
     }
 
+    /// <summary>Pull, for a test that cannot click the button.</summary>
+    internal Task PullForTestAsync() => PullAsync();
+
     private async Task PullAsync()
     {
         if (_git is null)
@@ -1398,6 +1673,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
 
         _logger.Click("Git.Pull");
+
+        // Guarded at last. GuardIntent.Pull has existed, been tested and been deliberately
+        // unwired since the guard was written, because every verdict it produces resolves to
+        // the auto-stash - and offering to stash before anything could would have been a
+        // button that lies. A pull is the last path that can meet a dirty tree, and it is the
+        // worst one to meet it on: it rewrites the project and the mirror together.
+        if (!await ClearForContextChangeAsync(GuardIntent.Pull, "pulling").ConfigureAwait(true))
+        {
+            return;
+        }
+
         using var busy = Busy.Begin(WorkKind.GitWrite, "Pulling…");
 
         // Same as a checkout: a pull can land a whole new mirror, and an unheld watcher would
@@ -1489,7 +1775,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// passes" is a rule about a conversation rather than about one operation. What comes back
     /// is a path on disk, which is all the shell needs to open it.
     /// </remarks>
-    public Func<Task<string?>>? PromptForClone { get; set; }
+    /// <param name="initialUrl">
+    /// Prefilled when the clone is a repository being fetched back rather than a new one.
+    /// The dialog still requires Verify to pass before it will clone: a remembered URL is a
+    /// convenience, not a claim that the remote is still there.
+    /// </param>
+    public Func<string?, Task<string?>>? PromptForClone { get; set; }
 
     /// <summary>Check a remote is reachable, with no repository open.</summary>
     /// <remarks>Handed to the clone dialog. Lives here rather than in the view so that the
@@ -1544,6 +1835,16 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     public Func<GuardPrompt, GuardChoice?>? AskGuard { get; set; }
 
     /// <summary>
+    /// Puts the offer of stashed work to the user on returning to a branch.
+    /// </summary>
+    /// <remarks>
+    /// <b>Unset means Leave</b>, not Restore and certainly not Discard. A host that forgets to
+    /// wire this leaves every stash exactly where it is and offers it again next time, which is
+    /// the only one of the three answers that cannot lose anything.
+    /// </remarks>
+    public Func<ChoicePrompt, StashedWorkChoice?>? AskAboutStashedWork { get; set; }
+
+    /// <summary>
     /// Evaluate the guard for an intent, and ask the user if it wants asking.
     /// </summary>
     /// <remarks>
@@ -1572,9 +1873,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// Phase 7 deletes this method and its callers switch to <see cref="Ask"/>.
     /// </para>
     /// </remarks>
-    private GuardChoice AskAboutWork(GuardIntent intent, string target = "") =>
-        Ask(intent, target, WorkingTreeSnapshot.Clean);
-
     private GuardChoice Ask(
         GuardIntent intent, string target = "", WorkingTreeSnapshot? tree = null)
     {
@@ -1721,6 +2019,263 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// rather than the lock as it stands now.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// Stash the work in the tree so a switch can go ahead, and record that we did.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The set difference is the correctness check, not bookkeeping.</b> <c>git stash
+    /// push</c> on a clean tree prints <i>No local changes to save</i> and exits 0 <i>without
+    /// creating an entry</i> — measured against real git — so the exit code cannot say whether
+    /// the work is safe. If no new stash id appears this returns false and the switch is
+    /// abandoned: a stash that did not happen followed by a checkout that did is the worst
+    /// outcome available here.
+    /// </para>
+    /// <para>
+    /// The locks are captured <i>before</i> the push and released <i>after</i> the id is in
+    /// hand, in that order deliberately. Releasing first would leave a lock cleared against a
+    /// stash that was never created, which is work nobody can find.
+    /// </para>
+    /// </remarks>
+    /// <remarks>Internal so a test can reach the refusal path directly: with a clean tree the
+    /// guard answers Proceed and never asks, so the only way to exercise "the stash created
+    /// nothing" through the front door is a race nothing can schedule.</remarks>
+    internal async Task<bool> TakeAutoStashAsync(string target)
+    {
+        if (_git is null || _autoStash is null)
+        {
+            return false;
+        }
+
+        using var busy = Busy.Begin(WorkKind.GitWrite, $"Saving your work before {target}…");
+
+        var head = await _git.HeadCommitAsync(busy.Token).ConfigureAwait(true);
+        var branch = AutoStash.KeyFor(BranchName, head);
+        var before = await _git.StashListAsync(busy.Token).ConfigureAwait(true);
+
+        // Captured before anything moves: the push is what makes the tree clean, and a lock
+        // read afterwards would describe the world the stash created rather than the one the
+        // user is leaving.
+        var captured = Sync.CaptureLocksForStash();
+        var files = Changes.Count;
+        var marker = AutoStash.Marker(branch, Short(head));
+
+        GitResult push = default!;
+        await Sync.WhileGitRewritesTheTreeAsync(
+            "auto-stash",
+            async () => push = await _git
+                .StashPushAsync(marker, includeUntracked: true, busy.Token)
+                .ConfigureAwait(true))
+            .ConfigureAwait(true);
+
+        var after = await _git.StashListAsync(busy.Token).ConfigureAwait(true);
+
+        if (AutoStash.NewStash(before, after) is not { } stashId)
+        {
+            // Either the push failed or it found nothing to save, and both mean the same thing
+            // here: the work is not somewhere it can be recovered from, so nothing else may
+            // happen. Never fall through to the checkout, and never to a discard.
+            StatusSummary = push.Success
+                ? "Nothing was stashed, so nothing was switched."
+                : push.FailureReason ?? "the stash failed, so nothing was switched";
+
+            _logger.Warn(LogCategory.Git,
+                "auto-stash created no entry " +
+                $"({(push.Success ? "clean tree" : push.FailureReason)}); {target} abandoned");
+
+            return false;
+        }
+
+        var state = await _autoStash.ReadAsync(CancellationToken.None).ConfigureAwait(true);
+
+        await _autoStash.WriteAsync(
+            AutoStash.With(state, new AutoStashRecord
+            {
+                Branch = branch,
+                StashCommitId = stashId,
+                Message = marker,
+                CreatedUtc = _clock.UtcNow,
+                HeadCommit = head,
+                FileCount = files,
+                Locks = captured,
+            }),
+            CancellationToken.None).ConfigureAwait(true);
+
+        await Sync.ReleaseStashedLocksAsync(captured, stashId).ConfigureAwait(true);
+
+        _logger.Info(LogCategory.Git,
+            $"auto-stashed {files} changed file(s) on {branch} as {Short(stashId)}" +
+            (captured.Count == 0
+                ? string.Empty
+                : $", releasing {captured.Count} direction lock(s)"));
+
+        StatusSummary = $"Saved {files} changed file(s). They will be offered back on {branch}.";
+        return true;
+    }
+
+    /// <summary>
+    /// Offer back whatever was stashed for the branch just arrived at.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Offered, never automatic.</b> The same principle as the direction lock, which is
+    /// never auto-cleared: the work a stash holds is still work, and silently rewriting
+    /// somebody's working tree as a side effect of picking a branch from a dropdown is that
+    /// mistake wearing a friendlier hat.
+    /// </para>
+    /// <para>
+    /// Records whose stash has gone — popped or dropped from a terminal, which is an ordinary
+    /// thing for a git user to do — are cleared here and nothing is said about it. It must not
+    /// read as an error.
+    /// </para>
+    /// </remarks>
+    private async Task OfferStashedWorkAsync(string branch)
+    {
+        if (_git is null || _autoStash is null)
+        {
+            return;
+        }
+
+        var state = await _autoStash.ReadAsync(CancellationToken.None).ConfigureAwait(true);
+        if (state.Entries.Count == 0)
+        {
+            return;
+        }
+
+        var live = await _git.StashListAsync(CancellationToken.None).ConfigureAwait(true);
+        var arrival = AutoStash.OnArrival(branch, state, live);
+
+        if (arrival.Stale.Count > 0)
+        {
+            state = AutoStash.Without(state, [.. arrival.Stale.Select(e => e.StashCommitId)]);
+            await _autoStash.WriteAsync(state, CancellationToken.None).ConfigureAwait(true);
+
+            _logger.Info(LogCategory.Git,
+                $"{arrival.Stale.Count} auto-stash record(s) for {branch} name stashes that are " +
+                "no longer in git; forgotten");
+        }
+
+        if (!arrival.HasWork)
+        {
+            return;
+        }
+
+        // Each in turn, newest first, rather than only the newest.
+        //
+        // Switching away from a branch twice without coming back is ordinary, and the records
+        // are a list for exactly that reason - but offering one per arrival meant the older
+        // stashes were reachable only by switching away and back again, once per stash, with
+        // nothing on screen saying so. A stash somebody cannot reach is a stash they will
+        // eventually stop believing in.
+        //
+        // The list is re-read from the arrival snapshot rather than re-queried between
+        // answers: restoring one pops it, which renumbers every stash@{n} below it, and the
+        // refs held here would then name the wrong entries. RestoreStashAsync and the drop
+        // below both act on THIS binding's captured ref immediately, before anything else
+        // moves, which is what makes that safe.
+        for (var i = 0; i < arrival.Restorable.Count; i++)
+        {
+            var offer = arrival.Restorable[i];
+            var remaining = arrival.Restorable.Count - i;
+            var choice = AskAboutStashedWork?.Invoke(
+                             AutoStashNarrative.Arrival(arrival, offer, remaining, _clock.UtcNow))
+                         ?? StashedWorkChoice.Leave;
+
+            if (choice == StashedWorkChoice.Restore)
+            {
+                await RestoreStashAsync(offer).ConfigureAwait(true);
+
+                // One restore per arrival. A second pop on top of the first would land two
+                // sets of edits in one working tree with no way to tell them apart, and the
+                // remaining records are still there to be offered on the next arrival.
+                return;
+            }
+
+            if (choice == StashedWorkChoice.Discard)
+            {
+                var warning = AutoStashNarrative.DiscardWarning(offer);
+                if (ConfirmDestructive?.Invoke(warning.Title, warning.Body) != true)
+                {
+                    return;
+                }
+
+                await _git.StashDropAsync(offer.Ref, CancellationToken.None).ConfigureAwait(true);
+
+                state = AutoStash.Without(state, offer.Record.StashCommitId);
+                await _autoStash.WriteAsync(state, CancellationToken.None).ConfigureAwait(true);
+
+                _logger.Warn(LogCategory.Git,
+                    $"auto-stash {Short(offer.Record.StashCommitId)} discarded at the user's request");
+
+                StatusSummary = "The stashed work was discarded.";
+
+                // Dropping renumbers the refs below it, so nothing else may be acted on with
+                // the refs captured before it. The rest are offered on the next arrival.
+                return;
+            }
+
+            // Left where it is, and the next one is offered. Doing nothing has to be a real
+            // answer, or the dialog is a demand rather than an offer.
+            StatusSummary = $"Your stashed work is still saved for {branch}.";
+        }
+    }
+
+    /// <summary>Restore one stash, and the sync state that went with it.</summary>
+    /// <remarks>
+    /// <c>pop</c> rather than apply-then-drop, because git drops only when the restore
+    /// succeeded. A conflicted restore keeps both the stash and its record: the work still
+    /// exists and is still ours, and the conflict gate refuses both sync directions until
+    /// somebody resolves it.
+    /// </remarks>
+    private async Task RestoreStashAsync(LiveStash offer)
+    {
+        if (_git is null || _autoStash is null)
+        {
+            return;
+        }
+
+        using var busy = Busy.Begin(WorkKind.GitWrite, "Restoring your stashed work…");
+
+        GitResult result = default!;
+        await Sync.WhileGitRewritesTheTreeAsync(
+            "restoring an auto-stash",
+            async () => result = await _git
+                .StashApplyAsync(offer.Ref, drop: true, busy.Token)
+                .ConfigureAwait(true))
+            .ConfigureAwait(true);
+
+        if (!result.Success)
+        {
+            StatusSummary = result.FailureReason ?? "the stashed work could not be restored";
+            _logger.Error(LogCategory.Git,
+                $"restoring auto-stash {Short(offer.Record.StashCommitId)} failed; the stash is " +
+                $"kept: {result.FailureReason}");
+            return;
+        }
+
+        var refused = await Sync.RestoreStashedLocksAsync(offer.Record.Locks).ConfigureAwait(true);
+
+        var state = await _autoStash.ReadAsync(CancellationToken.None).ConfigureAwait(true);
+        await _autoStash.WriteAsync(
+            AutoStash.Without(state, offer.Record.StashCommitId),
+            CancellationToken.None).ConfigureAwait(true);
+
+        _logger.Info(LogCategory.Git,
+            $"restored auto-stash {Short(offer.Record.StashCommitId)}" +
+            (refused.Count == 0
+                ? string.Empty
+                : $"; {refused.Count} direction lock(s) left alone because newer work holds them"));
+
+        StatusSummary = refused.Count == 0
+            ? "Your stashed work is back."
+            : "Your stashed work is back. Some projects have changed since, so their sync " +
+              "state was left as it is.";
+
+        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+    }
+
+    private static string Short(string commit) => commit.Length >= 7 ? commit[..7] : commit;
+
     private WorkingTreeSnapshot TreeState() => new()
     {
         DirtyPaths = [.. Changes.Select(c => c.Path)],
@@ -2094,7 +2649,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// repository they started in, with a new folder somewhere on disk they have to go and
     /// find, has done the work and withheld the result.
     /// </remarks>
-    private async Task CloneRepositoryAsync()
+    private async Task CloneRepositoryAsync(string? initialUrl = null)
     {
         _logger.Click("TopBar.Clone");
 
@@ -2103,7 +2658,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
-        if (await PromptForClone().ConfigureAwait(true) is not { } cloned)
+        if (await PromptForClone(initialUrl).ConfigureAwait(true) is not { } cloned)
         {
             return;
         }
@@ -2150,9 +2705,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             // be correct by coincidence rather than by decision — and the comment here used to
             // claim a revert that nothing actually did.
             ShowCurrentBranch();
+            await RefreshAsync().ConfigureAwait(true);
+            return;
         }
 
         await RefreshAsync().ConfigureAwait(true);
+
+        // After the refresh, so the panel already describes the branch we have arrived on
+        // before a dialog appears over it. Offered on EVERY successful checkout - the
+        // dropdown, a new branch, or a pull that moved HEAD - because a stash the user is
+        // never offered is a stash they will not know to look for.
+        await OfferStashedWorkAsync(branch).ConfigureAwait(true);
     }
 
     private Task OpenRepositoryAsync()

@@ -60,6 +60,26 @@ public interface IGitClient
     /// <summary>Verify a remote is reachable without cloning it.</summary>
     Task<GitResult> VerifyRemoteAsync(string url, CancellationToken ct);
 
+    /// <summary>
+    /// Where this repository was cloned from, or empty when it has no such remote.
+    /// </summary>
+    /// <remarks>
+    /// Read while the repository is open and remembered, because the moment it is <i>needed</i>
+    /// — offering to clone a vanished repository back — there is no <c>.git</c> left to ask.
+    /// A repository with no remote is an ordinary local repository, not a failure.
+    /// </remarks>
+    Task<string> RemoteUrlAsync(string remote, CancellationToken ct);
+
+    /// <summary>
+    /// The absolute path of this repository's <c>.git</c> directory.
+    /// </summary>
+    /// <remarks>
+    /// Asked of git rather than assembled from the working tree root, because <c>.git</c> is a
+    /// <i>file</i> in a linked worktree and a submodule keeps its directory somewhere else
+    /// entirely. Anything writing next to git's own state has to know where that state is.
+    /// </remarks>
+    Task<string> GitDirectoryAsync(CancellationToken ct);
+
     Task<GitResult> FetchAsync(IProgress<GitProgress>? progress, CancellationToken ct);
 
     Task<GitResult> PullAsync(IProgress<GitProgress>? progress, CancellationToken ct);

@@ -122,4 +122,55 @@ public sealed class GitAttributesTests
         Assert.False(second.ChangeNeeded);
         Assert.Equal(first.Content, second.Content);
     }
+
+    [Fact]
+    public void The_mirror_gets_the_opposite_rule_to_the_project()
+    {
+        // The project is binary and must never be line-merged; the mirror exists to BE
+        // line-merged, and has to arrive byte-identical on every machine that clones it.
+        var plan = GitAttributes.Plan(string.Empty, ["*.project"], lfsAvailable: false,
+                                      mirrors: ["plc/Machine"]);
+
+        Assert.Contains("plc/Machine/**", plan.Content, StringComparison.Ordinal);
+        Assert.Contains("text eol=lf", plan.Content, StringComparison.Ordinal);
+        Assert.Contains("binary -diff -merge", plan.Content, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_mirror_rule_somebody_already_wrote_is_left_alone()
+    {
+        // Same rule as everywhere else here: a repository that has already spoken about a
+        // pattern was configured deliberately, and overriding it is a worse bug than the one
+        // being fixed.
+        var plan = GitAttributes.Plan(
+            "plc/Machine/** text" + Environment.NewLine, [], lfsAvailable: false,
+            mirrors: ["plc/Machine"]);
+
+        Assert.False(plan.ChangeNeeded);
+    }
+
+    [Fact]
+    public void A_mirror_needing_a_rule_is_enough_on_its_own()
+    {
+        // The project extensions are repository-wide and are usually already covered by the
+        // time a second project is adopted. That must not stop the second project's mirror
+        // getting its rule.
+        var plan = GitAttributes.Plan(
+            "*.project binary -diff -merge" + Environment.NewLine, ["*.project"],
+            lfsAvailable: false, mirrors: ["plc/Second"]);
+
+        Assert.True(plan.ChangeNeeded);
+        Assert.Equal("plc/Second/**", Assert.Single(plan.AddedPatterns));
+    }
+
+    [Fact]
+    public void Backslashes_in_an_export_path_become_the_separator_git_reads()
+    {
+        // repo.json stores whatever the scan produced, and on Windows that can be a
+        // backslash. git patterns are forward-slash only.
+        var plan = GitAttributes.Plan(string.Empty, [], lfsAvailable: false,
+                                      mirrors: [@"plc\Machine"]);
+
+        Assert.Contains("plc/Machine/**", plan.Content, StringComparison.Ordinal);
+    }
 }

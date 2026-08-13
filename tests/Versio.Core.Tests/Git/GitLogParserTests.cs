@@ -95,7 +95,8 @@ public sealed class GitLogParserTests
         // "WIP on main: 9852b29 Dogfood…" names the commit the stash was taken against, not
         // the work in it. The id is noise in a list; the subject after it is at least a hint.
         var stashes = GitLogParser.ParseStashes(string.Join(U,
-            "stash@{0}", "WIP on main: 9852b29 Dogfood: commit the binding", "3 minutes ago") + R);
+            "2a4b8cdc9f1e4b6a8d3c5e7f9a1b2c3d4e5f6a7b", "stash@{0}",
+            "WIP on main: 9852b29 Dogfood: commit the binding", "3 minutes ago") + R);
 
         var stash = Assert.Single(stashes);
         Assert.Equal("stash@{0}", stash.Ref);
@@ -110,7 +111,8 @@ public sealed class GitLogParserTests
         // `git stash push -m` produces "On <branch>: <message>", and the message routinely
         // contains a colon of its own — which is exactly what a naive split would truncate.
         var stashes = GitLogParser.ParseStashes(string.Join(U,
-            "stash@{1}", "On feature/pump: wip: retune the PID", "1 day ago") + R);
+            "b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0", "stash@{1}",
+            "On feature/pump: wip: retune the PID", "1 day ago") + R);
 
         var stash = Assert.Single(stashes);
         Assert.Equal("feature/pump", stash.Branch);
@@ -121,7 +123,8 @@ public sealed class GitLogParserTests
     public void A_subject_in_neither_shape_is_passed_through_rather_than_mangled()
     {
         var stashes = GitLogParser.ParseStashes(string.Join(U,
-            "stash@{0}", "something git has not written before", "now") + R);
+            "c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2", "stash@{0}",
+            "something git has not written before", "now") + R);
 
         var stash = Assert.Single(stashes);
         Assert.Equal(string.Empty, stash.Branch);
@@ -134,9 +137,41 @@ public sealed class GitLogParserTests
         // Only strip the id when what is there actually looks like one. Dropping the first
         // word unconditionally would eat a real message.
         var stashes = GitLogParser.ParseStashes(string.Join(U,
-            "stash@{0}", "WIP on main: rework the export", "now") + R);
+            "d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3", "stash@{0}",
+            "WIP on main: rework the export", "now") + R);
 
         Assert.Equal("rework the export", Assert.Single(stashes).Message);
+    }
+
+    [Fact]
+    public void A_stash_carries_the_only_identity_that_survives_a_drop()
+    {
+        // %gd is positional and renumbers, %gs is a sentence and %cr is relative to now, so
+        // before %H was in the format nothing in a StashEntry could name one particular stash
+        // twice. The auto-stash record is keyed on this.
+        var stashes = GitLogParser.ParseStashes(string.Join(U,
+            "2a4b8cdc9f1e4b6a8d3c5e7f9a1b2c3d4e5f6a7b", "stash@{0}",
+            "On main: versio-autostash main @ abc1234", "3 minutes ago") + R);
+
+        var stash = Assert.Single(stashes);
+        Assert.Equal("2a4b8cdc9f1e4b6a8d3c5e7f9a1b2c3d4e5f6a7b", stash.CommitId);
+        Assert.Equal("stash@{0}", stash.Ref);
+
+        // And our own marker splits like any other message, so a stash Versio took reads back
+        // with the branch it was taken on.
+        Assert.Equal("main", stash.Branch);
+        Assert.Equal("versio-autostash main @ abc1234", stash.Message);
+    }
+
+    [Fact]
+    public void The_format_asks_git_for_that_identity()
+    {
+        // The format and the parser are one decision in two places: a field added to one and
+        // not the other shifts every column. Records() then rejects the record for arity and
+        // stash listing comes back empty rather than wrong - the better failure, and still
+        // worth not having.
+        Assert.StartsWith("--format=%H", GitLogParser.StashFormat, StringComparison.Ordinal);
+        Assert.Equal(4, GitLogParser.StashFormat.Split("%x1f").Length);
     }
 
     [Fact]
@@ -145,8 +180,8 @@ public sealed class GitLogParserTests
         // The refs are positional and renumber on a drop, so the order they arrive in is the
         // order they must be shown in — anything acting on one re-reads the list first.
         var stashes = GitLogParser.ParseStashes(
-            string.Join(U, "stash@{0}", "On main: newest", "now") + R + "\n" +
-            string.Join(U, "stash@{1}", "On main: older", "2 days ago") + R);
+            string.Join(U, "aaa1", "stash@{0}", "On main: newest", "now") + R + "\n" +
+            string.Join(U, "bbb2", "stash@{1}", "On main: older", "2 days ago") + R);
 
         Assert.Equal(["stash@{0}", "stash@{1}"], stashes.Select(s => s.Ref));
     }

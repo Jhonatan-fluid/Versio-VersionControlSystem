@@ -35,16 +35,38 @@ public partial class GuardPromptWindow : Window
     /// Null for a refusal too: there was nothing to choose, and reporting the OK as a decision
     /// would let a caller act on it.
     /// </remarks>
-    public GuardChoice? ChoiceResult { get; private set; }
+    public GuardChoice? ChoiceResult => Result as GuardChoice?;
+
+    /// <summary>What the user picked, whatever kind of question was asked.</summary>
+    /// <remarks>
+    /// Untyped because this window now renders two unrelated decisions — the guard's, and
+    /// what to do about a repository that has gone. The alternative was a second window with
+    /// the same XAML, and duplicating a dialog to change the words in it is how two dialogs
+    /// drift apart.
+    /// </remarks>
+    public object? Result { get; private set; }
 
     public GuardPromptWindow(GuardPrompt prompt)
+        : this(prompt.Title, prompt.Body,
+               [.. prompt.Choices.Select(c => new PromptOption(GuardNarrative.Label(c), c))],
+               cancels: GuardChoice.Cancel)
+    {
+    }
+
+    /// <param name="options">Best first. Empty means a statement, not a question.</param>
+    /// <param name="cancels">
+    /// The value Escape maps to, wherever it sits in the list. Null when nothing in this
+    /// question is a way out — which is only the no-options case, where the OK is one.
+    /// </param>
+    public GuardPromptWindow(
+        string title, string body, IReadOnlyList<PromptOption> options, object? cancels = null)
     {
         InitializeComponent();
 
-        Heading.Text = prompt.Title.ToUpperInvariant();
-        Body.Text = prompt.Body;
+        Heading.Text = title.ToUpperInvariant();
+        Body.Text = body;
 
-        if (prompt.Choices.Count == 0)
+        if (options.Count == 0)
         {
             AddButton("OK", GuardChoice.Cancel, accent: true, isDefault: true, isCancel: true,
                       records: false);
@@ -53,30 +75,30 @@ public partial class GuardPromptWindow : Window
 
         // Reversed, because the panel lays out left to right and the recommended choice
         // belongs on the right where the default action sits in every other dialog here. The
-        // guard's order is "best first"; the row's order is "best last".
-        for (var i = prompt.Choices.Count - 1; i >= 0; i--)
+        // caller's order is "best first"; the row's order is "best last".
+        for (var i = options.Count - 1; i >= 0; i--)
         {
-            var choice = prompt.Choices[i];
+            var option = options[i];
             var recommended = i == 0;
 
             AddButton(
-                GuardNarrative.Label(choice),
-                choice,
+                option.Label,
+                option.Value,
                 accent: recommended,
                 isDefault: recommended,
 
                 // Escape maps to the way out, wherever it happens to sit in the list.
-                isCancel: choice == GuardChoice.Cancel,
+                isCancel: cancels is not null && Equals(option.Value, cancels),
                 records: true);
         }
     }
 
     /// <param name="records">
-    /// Whether pressing this sets <see cref="ChoiceResult"/>. False for the OK on a refusal,
+    /// Whether pressing this sets <see cref="Result"/>. False for the OK on a refusal,
     /// which acknowledges rather than chooses.
     /// </param>
     private void AddButton(
-        string text, GuardChoice choice, bool accent, bool isDefault, bool isCancel, bool records)
+        string text, object choice, bool accent, bool isDefault, bool isCancel, bool records)
     {
         var button = new Button
         {
@@ -90,7 +112,7 @@ public partial class GuardPromptWindow : Window
 
         button.Click += (_, _) =>
         {
-            ChoiceResult = records ? choice : null;
+            Result = records ? choice : null;
 
             // True even for Cancel. The dialog completed - what it returns is the choice, and
             // a caller that read DialogResult instead would be reading the wrong thing.

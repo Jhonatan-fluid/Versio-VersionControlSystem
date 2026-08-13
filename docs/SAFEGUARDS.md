@@ -1,11 +1,11 @@
 # Versio — safeguards
 
-**Date:** 2026-08-13 · **Handed over at** `Safeguards` @ 61 commits — start at §0
+**Date:** 2026-08-13 · **Phases 1–8 built; phase 9 is what remains** — start at §0
 
 | | |
 |---|---|
 | Document | **The interruption and destructive-action plan.** What Versio must refuse, ask about, or wait for — and why each answer is the one it is |
-| Status | **Phases 1–6 built and verified against real CODESYS** (§6) — the guard, its narrative, the cancellation plumbing, the dialog, the close guard, the context-switch guard, the repository reset, the conflict gate and the git-write window. Phases 7–9 are still plan — **§0 is the handover note.** Every "today" below is a reading of the code as it was when this was written, with each phase's *"as built"* notes appended where it was planned |
+| Status | **Phases 1–8 built and verified against real CODESYS** (§6) — the guard and its narrative, the cancellation plumbing, the dialog, the close guard, the context-switch guard, the repository reset, the conflict gate, the git-write window, the auto-stash in both directions, and the swap that can no longer leave a project with no mirror. **Phase 9 is what remains**, and it is features rather than guards: a real import confirmation (§5.C), a backup restore path (§5.E), a read-only second instance (§5.G). **§0 is the handover note.** Every "today" below is a reading of the code as it was when that section was written, with each phase's *"as built"* notes appended where it was planned |
 | Related | [`PLAN.md`](PLAN.md) — the architecture · [`STATUS.md`](STATUS.md) — where the project is · [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) — what was measured |
 
 ---
@@ -28,7 +28,9 @@ the code, two of which (§5.A and §5.D) can lose work with no user error at all
 
 ## 0. Handover — where this stands
 
-**Branch:** `Safeguards`. **Built:** phases 1–6. **Next:** phase 7 (the auto-stash, §4), then 8 and 9.
+**Branch:** `Clean-up-and-continue-dev`. **Built:** phases 1–8 — see *Phase 7, as built* at the end of §4 and
+*Phase 8, as built* below it. **Next: phase 9** (§5.C import confirmation, §5.E backup restore,
+§5.G read-only second instance) — features rather than guards, and each its own conversation.
 
 Everything below §1 is the original plan, kept as written, with each phase's *"as built"* notes
 appended where it was planned. Read §6 for the order and what is done.
@@ -37,8 +39,8 @@ appended where it was planned. Read §6 for the order and what is done.
 
 | | |
 |---|---|
-| 939 Core + 190 UI unit tests | `dotnet test tests/Versio.Core.Tests`, `…/Versio.App.Tests` |
-| 111 integration tests | Real git and **real CODESYS 3.5.22.20**; 0 skipped, 6 m 15 s |
+| 1,037 Core + 214 UI unit tests | `dotnet test tests/Versio.Core.Tests`, `…/Versio.App.Tests` |
+| 130 integration tests | Real git and **real CODESYS 3.5.22.20**; 0 skipped, 8 m 15 s |
 | The application itself | Started, driven, closed. Two bugs found this way that no test caught |
 | Every new behaviour | Deliberately broken and the tests re-run, per the README's `-MutateFirst` rule |
 
@@ -76,7 +78,24 @@ and **Versio could not be closed at all**. Only running the application found it
 - **`GuardIntent.Pull` is implemented and deliberately unwired** — its verdicts all resolve to the
   auto-stash. Phase 7 wires it and deletes `ShellViewModel.AskAboutWork`.
 
-### Starting phase 7
+### Starting phase 9
+
+§5.C, §5.E and §5.G are the three that remain, and none of them is a guard: each adds a
+capability the app describes and does not have.
+
+- **§5.C** is the smallest and the most dishonest as it stands: `RequireImportConfirmation` is
+  `true` by default and the only caller answers `Confirmed = true` with the comment *"there is
+  nobody to ask"*. There is somebody to ask now — the prompt from phase 2 renders any question
+  with named answers.
+- **§5.E** is a window over the ten backups per binding that already exist and are reachable by
+  nothing.
+- **§5.G** is the sentence `LockRecovery` already produces — *"opening read-only"* — which
+  nothing implements.
+
+Nothing in phase 9 is blocked. §5.H (the repository disappearing while it is open) is still
+unwritten and is the one remaining item in §5 that nobody has costed.
+
+### Starting phase 7 (kept for its reasoning)
 
 §4 is the full design and was written before any of this was built; it still holds. The first
 concrete step is one line: `GitLogParser.StashFormat` needs `%H` and `StashEntry` needs a
@@ -84,6 +103,9 @@ concrete step is one line: `GitLogParser.StashFormat` needs `%H` and `StashEntry
 Everything else in §4 hangs off having that stable identity.
 
 Phase 7's two prerequisites (§5.A and §5.B) are both built, so it is unblocked.
+
+**Both of those steps are now done** — the identity and the whole pure layer. Pick it up at
+*Phase 7, as built*, below §4.10.
 
 ---
 
@@ -483,6 +505,156 @@ the first time a user had two.
   conflicting pop leaves both the stash and the sidecar entry intact; a stash dropped externally
   clears its entry; `stash push` on a clean tree creates nothing and the set difference is empty.
 
+### Phase 7, as built — so far
+
+Two of the five steps have landed, both of them pure and both of them prerequisites for
+everything else.
+
+**1 · The identity.** `StashFormat` leads with `%H` and `StashEntry` carries `CommitId`. Before
+this, nothing in a stash entry could name one particular stash twice: `%gd` is positional and
+renumbers, `%gs` is a sentence a user's own stash can imitate exactly, and `%cr` is relative to
+now. Two tests cover it, and one of them asserts the **format and the parser agree about the
+field count** — they are one decision written in two places, and a field added to one and not
+the other silently shifts every column.
+
+**2 · The pure layer.** `src/Versio.Core/Guarding/AutoStash.cs` — `AutoStashRecord`,
+`AutoStashState`, `StashedLock`, and the rules:
+
+| | |
+|---|---|
+| `NewStash(before, after)` | The set difference from §4.3. `git stash push` on a clean tree exits 0 and creates nothing, so this is what proves an entry exists — and a null answer means abandon the switch, never fall through to the checkout |
+| `OnArrival(branch, state, live)` | Restorable versus stale, with the positional ref **resolved from the SHA at the moment of use** and never stored |
+| `BeforeTaking(...)` | Ours and theirs, counted separately, with the sentence that says both |
+| `Orphans(...)` | A stash whose branch was deleted. Surfaced, never auto-dropped |
+| `KeyFor(branch, head)` | `detached@<sha>` when there is no branch name |
+| `With` / `Without` | The record set, newest first |
+
+19 tests, one per row of §4.6 plus the corners. Verified able to fail: identifying our own
+stashes without the branch filter fails exactly the test that asserts another branch's stash is
+not offered here.
+
+**3 · The store.** `IAutoStashStore` in `Versio.Core/Abstractions/`, `JsonAutoStashStore` in
+`Versio.Infrastructure/FileSystem/`, writing `.versio/local/autostash.json` through the same
+atomic temp-and-replace `JsonLockStore` uses. It decides nothing. Two details are deliberate:
+the direction is serialised **by name**, so a schema change cannot silently renumber every
+stashed lock; and an unreadable record is logged as an **error** rather than a warning, with
+wording that says the stashes are still in git and how to reach them by hand — nobody's work is
+lost, but the knowledge of which stashes were ours is, and that is what stops the app offering
+somebody else's back. Six tests against a real filesystem, including that the file lands under
+the `.versio/local/` prefix `.gitignore` already covers.
+
+**4 · The lock round trip.** `SyncOrchestrator.CaptureLocks()`, `ReleaseCapturedLocksAsync` and
+`RestoreCapturedLocksAsync`. Built before the shell flow deliberately: both halves of that flow
+need it, and shipping either half without it produces a lock that claims work no longer on disk.
+Three decisions in it are worth knowing:
+
+- **Capture and release are separate calls.** The stash can still fail to be created, and a
+  lock released against a stash that does not exist is work nobody can find. The caller
+  releases only once the stash's commit id is in hand.
+- **The release is written straight into the lock table, not through the state machine.** There
+  is no trigger for "the work went somewhere else": push and discard both mean the work has
+  *landed*, and reusing either would record a reason that is untrue and move the baseline as
+  though the world had seen it.
+- **A binding that has since taken a lock of its own keeps it.** Days may have passed, on
+  another branch, and whatever is claimed now was claimed by real work. Reported back to the
+  caller rather than overwritten.
+
+Seven tests, and the one that matters — a newer lock is not overwritten — fails when the check
+is removed.
+
+**5 · Taking and restoring, in the shell.** The guard now sees the real working tree, so
+`StashAndProceed` is reachable and `ClearForContextChangeAsync` carries it out;
+`OfferStashedWorkAsync` runs after **every** successful checkout. Two things came out of
+building it that the design did not anticipate:
+
+- **`.versio/local/` had to be excluded in `.git/info/exclude`, not just `.gitignore`.**
+  Found by the second test: an auto-stash taken while that directory was visible to git
+  swallowed the record naming the *previous* stash, leaving real work in git with nothing
+  pointing at it. `.gitignore` cannot fix that — it is a tracked file, so a stash carries the
+  rule away exactly when it is needed. `info/exclude` is outside the working tree and cannot be
+  stashed, committed or conflicted. Written when a repository opens, before anything reaches
+  `.versio/local/`; adoption still writes the `.gitignore` rule, which is what a *teammate*
+  gets when they clone.
+- **§4.8 was wrong about the window, and so was the correction in the previous handover.** A
+  stash and a restore rewrite every modified file in the repository, exactly like a checkout —
+  so the repository-wide `BeginExternalWrite` is right after all, and both ends use the same
+  `WhileGitRewritesTheTreeAsync` wrapper the checkout does. `BeginOwnWrite` is for an export
+  writing one binding's mirror, which is a different shape.
+
+Six tests against a real repository, because every interesting failure here is about what git
+actually did. The one that matters most — a stash that was never created must abandon the
+switch — is called directly rather than through the dropdown: with a clean tree the guard
+answers `Proceed` and never asks, so the front door cannot reach that branch, and it is the
+branch that decides whether a checkout happens over unsaved work. It fails when the set
+difference is replaced by the exit code.
+
+One existing test was **inverted**: `A_dirty_tree_is_not_asked_about_yet` asserted that the
+guard did not offer a stash, which was right while nothing could stash. It now asserts the
+offer is made.
+
+**What is left:**
+
+6. Taking and restoring for real, in the shell: `StashPushAsync` with the marker, the set
+   difference, the lock capture and release (§4.7), and the arrival prompt on **every**
+   successful checkout — the dropdown, `CreateBranchAsync`, and a pull that moved HEAD.
+**6 · `GuardIntent.Pull`, wired.** It had existed, been tested and been deliberately unwired
+since the day the guard was written, because every verdict it produces resolves to a stash that
+did not exist. A pull is the worst path to meet a dirty tree on — it rewrites the project and
+its mirror together — and it is guarded now, with a test that fails when the call is removed.
+`AskAboutWork` is gone with it: it existed only to pass `WorkingTreeSnapshot.Clean`, and became
+a synonym for `Ask` the moment there was something to offer.
+
+**Phase 7 is complete.** The second and later stashes on one branch are offered in turn now,
+newest first, each answer moving on to the next, and the prompt says how many are waiting
+behind it. Restoring or discarding one stops there and leaves the rest for the next arrival:
+a `pop` renumbers every `stash@{n}` below it, so the refs captured a moment earlier would name
+the wrong entries — and two pops into one working tree would land two sets of edits with no way
+to tell them apart.
+
+### Phase 8, as built
+
+**§5.D — the swap.** `rmtree(out_root)` then `os.rename(staging, out_root)` left a window with
+**no mirror at all** — not stale, not partial, none — and `rmtree` over the fixture's 2.5 MB
+visualisation tree is not instantaneous. It is three renames now: mirror to
+`<mirror>.versio_trash`, staging to mirror, delete the trash. Each is atomic on NTFS, so at
+every instant between them the mirror is either the old tree or the new one. What a kill can
+leave behind is a trash directory holding the previous export, which is recoverable, rather
+than nothing, which is not.
+
+**§5.F — the ignore plan.** `<mirror>.versio_staging/` and `<mirror>.versio_trash/` are in it
+now, alongside `.versio/local/` and the vendor's own leftovers. Both directories exist for
+milliseconds in the happy case and survive a killed run, and until this landed **this
+repository had the staging rule only because somebody typed it by hand** — an adopted user
+repository had nothing, so a killed export left an untracked staging tree that *Stage all*
+would cheerfully commit. The names live in `BindingConventions` and a test reads
+`versio_export.py` to check the two languages still agree about them.
+
+**The sweep at open — and the reason it is not a delete loop.** The exporter clears its own
+leftovers on the *next* run, which covers nothing until an export happens; a repository can be
+opened, read, committed from and closed again without one. So `SwapRecovery` reads the three
+directories and decides:
+
+| On disk | What it means | What happens |
+|---|---|---|
+| mirror only | a finished export | nothing |
+| mirror + staging | killed before the swap | delete the staging tree; it is a partial export by definition |
+| mirror + trash | killed after the swap, during the tidy-up | delete the trash; the export is intact |
+| **trash, no mirror** | **killed between the two renames** | **restore the trash as the mirror** |
+
+That last row is the whole point. The obvious implementation — clear anything left over —
+destroys the last copy of the mirror in exactly the case the three-rename swap was built to
+survive, and it would do it quietly, at startup, in a repository nobody had touched. Eight pure
+tests cover every combination, including the two that must do nothing: a project that has never
+been exported, and a missing mirror with only a staging tree beside it, which is not restorable
+because a staging tree is not a previous export.
+
+The sweep runs twice during attach, before and after the scan. Before, so adoption cannot start
+an export over a mirror sitting in the trash; after, because the scan is where a project that
+is not yet in `repo.json` becomes a binding — which is precisely the first-adoption case where
+this would otherwise go unnoticed. The front-door test arranges the dangerous combination on
+disk and opens the repository through `OpenAsync`; it fails when the restore is replaced by a
+delete.
+
 ---
 
 ## 5. Other scenarios that can break
@@ -619,7 +791,7 @@ this adequately — worth confirming rather than changing.
 | **5 ✅** | **`ResetForRepositoryChange`** (§3.2) | Self-contained, no new machinery, immediately visible. |
 | **6 ✅** | Git-write suppression window (§5.A) and the conflict gate (§5.B) | Correctness, and both are **prerequisites** for phase 7 — see §4.8 and §4.6. |
 | **7** | **Branch-switch guard with the full auto-stash** (§3.1, §4), plus the branch recorded in `BindingLock` | Needs the prompt from phase 2 and both defences from phase 6. |
-| **8** | Swap via trash-rename (§5.D), staging in the ignore plan (§5.F), leftover sweep at open | Small, independent, and §5.D closes a real window. |
+| **8 ✅** | Swap via trash-rename (§5.D), staging in the ignore plan (§5.F), leftover sweep at open | Small, independent, and §5.D closes a real window. |
 | **9** | Import confirmation made real (§5.C), backup restore UI (§5.E), read-only second instance (§5.G) | Features rather than guards. Each is its own conversation. |
 
 Phases 6 and 7 are ordered deliberately: **the auto-stash cannot ship before the suppression window

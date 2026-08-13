@@ -39,14 +39,44 @@ public static class GitAttributes
     private const string Header =
         "# Added by Versio: a PLC project is a binary compound document. Marking it";
 
+    private const string MirrorHeader =
+        "# Added by Versio: the mirror is text, and must arrive byte-identical everywhere.";
+
+    private const string MirrorHeader2 =
+        "# Without eol=lf a core.autocrlf=true clone lands CRLF, which git calls clean and";
+
+    private const string MirrorHeader3 =
+        "# Versio's hash gate calls an edit to every file in it.";
+
     private const string Header2 =
         "# binary -diff -merge stops git from attempting a line merge and corrupting it.";
 
     /// <param name="existing">Current file contents, or empty when there is no file.</param>
     /// <param name="patterns">Glob patterns to cover, e.g. <c>*.project</c>.</param>
     /// <param name="lfsAvailable">Whether <c>git lfs</c> is installed and usable here.</param>
+    /// <param name="mirrors">
+    /// Export directories, which need the opposite treatment: <c>text eol=lf</c>.
+    /// </param>
+    /// <remarks>
+    /// <b>Why the mirror needs a rule at all, measured rather than assumed.</b> With
+    /// <c>core.autocrlf=true</c> — the Windows default in many installations — a clone lands
+    /// the mirror with CRLF endings. Git itself stays happy: <c>git status</c> reports the
+    /// tree clean, because git normalises on the way back in. <b>Versio does not.</b> The
+    /// exporter writes LF and the hash gate hashes the bytes on disk, so on such a clone every
+    /// file in the mirror hashes differently from what an export would produce:
+    /// <c>6fb69762…</c> against <c>c58f937f…</c> for a two-line file. The engine would read a
+    /// teammate's fresh clone as a mirror that had been edited by hand.
+    /// <para>
+    /// Checked against real git in a scratch repository, both ways: without the rule the
+    /// working copy is <c>0d0a</c>-terminated and hashes differ; with it the clone is
+    /// byte-identical to what was committed, same SHA, with <c>core.autocrlf=true</c> still on.
+    /// </para>
+    /// </remarks>
     public static GitAttributesPlan Plan(
-        string existing, IReadOnlyList<string> patterns, bool lfsAvailable)
+        string existing,
+        IReadOnlyList<string> patterns,
+        bool lfsAvailable,
+        IReadOnlyList<string>? mirrors = null)
     {
         var covered = ExistingPatterns(existing);
         var missing = patterns
@@ -54,15 +84,26 @@ public static class GitAttributes
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        if (missing.Count == 0)
+        var missingMirrors = (mirrors ?? [])
+            .Select(m => m.Replace('\\', '/').TrimEnd('/') + "/**")
+            .Where(p => !covered.Contains(p))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (missing.Count == 0 && missingMirrors.Count == 0)
         {
             return GitAttributesPlan.NoChange(existing);
         }
 
-        var width = missing.Max(p => p.Length);
+        var width = missing.Concat(missingMirrors).Max(p => p.Length);
+
         var rules = missing.Select(p =>
             $"{p.PadRight(width)} binary -diff -merge" +
             (lfsAvailable ? " filter=lfs diff=lfs merge=lfs" : string.Empty));
+
+        // The opposite rule, for the opposite reason: the mirror exists to be diffed and
+        // merged, and it has to arrive byte-identical on every machine that clones it.
+        var mirrorRules = missingMirrors.Select(p => $"{p.PadRight(width)} text eol=lf");
 
         // LF regardless of platform: .gitattributes is read by git, and CRLF in the file it
         // uses to decide line endings is the kind of irony that costs an afternoon.
@@ -78,13 +119,33 @@ public static class GitAttributes
             builder.Append('\n');
         }
 
-        builder.Append(Header).Append('\n').Append(Header2).Append('\n');
-        foreach (var rule in rules)
+        if (missing.Count > 0)
         {
-            builder.Append(rule).Append('\n');
+            builder.Append(Header).Append('\n').Append(Header2).Append('\n');
+            foreach (var rule in rules)
+            {
+                builder.Append(rule).Append('\n');
+            }
         }
 
-        return new GitAttributesPlan(true, builder.ToString(), missing, lfsAvailable);
+        if (missingMirrors.Count > 0)
+        {
+            if (missing.Count > 0)
+            {
+                builder.Append('\n');
+            }
+
+            builder.Append(MirrorHeader).Append('\n')
+                   .Append(MirrorHeader2).Append('\n')
+                   .Append(MirrorHeader3).Append('\n');
+            foreach (var rule in mirrorRules)
+            {
+                builder.Append(rule).Append('\n');
+            }
+        }
+
+        return new GitAttributesPlan(
+            true, builder.ToString(), [.. missing, .. missingMirrors], lfsAvailable);
     }
 
     /// <summary>

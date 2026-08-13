@@ -1,6 +1,7 @@
 using Versio.App.ViewModels;
 using Versio.Core.Git;
 using Versio.Core.Guarding;
+using Versio.Core.Settings;
 using Versio.Core.Logging;
 using Versio.Infrastructure.Platform;
 using Xunit;
@@ -207,11 +208,12 @@ public sealed class ContextSwitchGuardTests
     }
 
     [Fact]
-    public async Task A_dirty_tree_is_not_asked_about_yet()
+    public async Task A_dirty_tree_is_asked_about_now_that_it_can_be_stashed()
     {
-        // The work half of the guard only, until the auto-stash exists. Offering "stash my
-        // changes" before anything can stash would be a button that lies about what it does,
-        // which is how somebody loses work believing it was saved.
+        // INVERTED, deliberately. This asserted the opposite while the auto-stash did not
+        // exist: offering "stash my changes" before anything could stash would have been a
+        // button that lies about what it does, which is how somebody loses work believing it
+        // was saved. The stash exists now, so the tree goes to the guard and the offer is real.
         var fixture = Fixture.Build(GuardChoice.Cancel);
 
         fixture.Shell.Changes.Add(new ChangeRow(new FileChange
@@ -223,7 +225,11 @@ public sealed class ContextSwitchGuardTests
 
         await fixture.Shell.SwitchBranchAsync(fixture.Other);
 
-        Assert.Empty(fixture.Asked);
+        var prompt = Assert.Single(fixture.Asked);
+        Assert.Contains(GuardChoice.StashAndProceed, prompt.Choices);
+
+        // Cancel was the answer, so the dropdown is back on the branch we are actually on.
+        Assert.True(fixture.Shell.SelectedBranch?.IsCurrent);
     }
 
     // -------------------------------------------------------------- switching repository
@@ -243,16 +249,29 @@ public sealed class ContextSwitchGuardTests
     [Fact]
     public async Task A_repository_that_cannot_be_opened_leaves_the_dropdown_where_it_was()
     {
-        // OpenAsync refuses a folder git will not work in. The dropdown must not be left
-        // pointing at the one that was turned down.
+        // The dropdown must not be left pointing at a repository that did not open.
+        //
+        // What it is ASKED has changed. Every row in that control is a repository the user
+        // was told they could come back to, so one that has since vanished gets the question
+        // about a missing repository - clone it again, remove it, leave it alone - rather
+        // than the generic "not a Git repository" and a folder picker, which is a strange
+        // answer to a row the app itself put there. RepositoryRejected still belongs to the
+        // picker, where the folder is one the user has just chosen.
         var fixture = Fixture.Build(GuardChoice.Proceed);
         var rejected = 0;
+        var asked = 0;
 
         fixture.Shell.RepositoryRejected += _ => rejected++;
+        fixture.Shell.AskAboutMissingRepository = _ =>
+        {
+            asked++;
+            return MissingRepositoryChoice.Cancel;
+        };
 
         await fixture.Shell.SwitchRepositoryAsync(new RepoEntry(@"C:\nowhere\not-a-repo"));
 
-        Assert.Equal(1, rejected);
+        Assert.Equal(1, asked);
+        Assert.Equal(0, rejected);
         Assert.Null(fixture.Shell.SelectedRepository);
     }
 }

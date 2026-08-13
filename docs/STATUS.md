@@ -1,15 +1,18 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-13 · **Commits:** 61 · **Tests:** 939 unit + 190 UI + 111 integration, 0 skipped
+**Date:** 2026-08-13 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,037 unit + 214 UI + 130 integration, 0 skipped
 
-> All three measured on 2026-08-13. The integration suite was re-run in full against real
-> CODESYS 3.5.22.20 after the safeguards work — 107 passed, 0 skipped, 6 m 15 s — including
-> `RepositoryWatcherTests.A_deleted_file_is_reported`, the one noted below as flaky.
+> All three measured on 2026-08-13, on branch `Clean-up-and-continue-dev`. The integration
+> suite was re-run in full against real CODESYS 3.5.22.20 after the manifest work — 111
+> passed, 0 skipped, 6 m 11 s — including `RepositoryWatcherTests.A_deleted_file_is_reported`,
+> the one noted below as flaky.
 
-> Both numbers are re-derivable rather than remembered: `git rev-list --count HEAD`, and
-> `dotnet test` prints a total per suite. The commit count in this header was wrong by twelve
-> before an audit checked it — a hand-maintained number that nothing verifies drifts silently,
-> which is the same class of problem as a comment claiming a file nobody wrote.
+> **The commit count is the command now, not a number.** It was wrong by twelve when an audit
+> first checked it, and wrong again twice in one afternoon afterwards — including once by the
+> very commit that corrected it, which is the shape of the problem: a number that changes with
+> every commit cannot be written down in a file that every commit touches. The test counts stay
+> as numbers because they only move when the tests do, and `dotnet test` prints a total per
+> suite when they have.
 
 > One integration test, `RepositoryWatcherTests.A_deleted_file_is_reported`, is **flaky under
 > full-suite load** — see Findings. It passes in isolation and failed once during a complete
@@ -28,9 +31,15 @@ repository is tracked without ceremony, exported to a reviewable mirror when it 
 edits to that mirror flow back into the project — driven by the direction lock, proven end to
 end against the real fixture with real CODESYS.
 
+**And it now defends the half a mouse can reach.** Closing, switching branch, switching
+repository and pulling all go through one guard; uncommitted work is stashed and offered back
+with the sync state it had; an export can be killed at any instant without leaving a project
+without a mirror; and what a killed run leaves behind is put right the next time the repository
+opens. That is `SAFEGUARDS.md` phases 1–8, and phase 9 is features rather than guards.
+
 ```
   CODESYS pipeline    ████████████████████  proven on a real project
-  Domain core         ████████████████████  800 tests, 311 ms
+  Domain core         ████████████████████  1,037 tests, 281 ms
   Vendor seam         ████████████████████  enforced from assembly metadata
   Infrastructure      ████████████████████  drives real CODESYS + real git
   Desktop shell       ███████████████████░  one project view, full git surface, diff
@@ -138,20 +147,29 @@ format; `.gitattributes` covers every registered vendor's extensions.
 
 ## What remains, in dependency order
 
-> **Picking this up?** Items 1 and 2 are done and kept for their reasoning. **Start at item 3**:
-> it is small, self-contained, and finishes a feature that is already 90% built. Item 4 is the
-> largest piece of user-visible value left. Nothing below depends on anything above it except
-> where it says so.
+> **Picking this up?** Items 1 and 2 are done and kept for their reasoning. Items 3–8 are
+> untouched: **item 3 is the smallest**, item 4 is the largest piece of user-visible value, and
+> nothing below depends on anything above it except where it says so.
 
-> **Safeguards work is tracked separately** in **[`SAFEGUARDS.md`](SAFEGUARDS.md)** — what Versio
-> refuses, asks about or waits for when something is running or unsaved. Phases 1–6 of it are
-> built and verified against real CODESYS; **§0 of that document is the handover note**, and
-> phase 7 (the auto-stash) is the next piece and is unblocked.
+> **Two other plans are tracked separately, and both are ahead of this list.**
 >
-> It also carries a correction worth reading before touching the sync engine: **`On git action` is
-> not the default sync mode** and had not been since 2026-08-12. Exports follow a detected change,
-> because the mirror exists to be reviewed *before* a commit. Eleven places still said otherwise
-> and now say so; the commit gate is a backstop, not the trigger.
+> **[`SAFEGUARDS.md`](SAFEGUARDS.md)** — what Versio refuses, asks about or waits for.
+> **Phases 1–8 are built and verified against real CODESYS**: the guard, the cancellation
+> plumbing, the close and context-switch guards, the conflict gate, the git-write window, the
+> auto-stash in both directions, and a swap that can no longer leave a project with no mirror.
+> **Phase 9 is what remains** — a real import confirmation, a backup restore path, and the
+> read-only second instance the code already promises in a sentence. §0 is the handover note.
+>
+> **[`GIT-PANEL-PLAN.md`](GIT-PANEL-PLAN.md)** — the git panel's functionality and UX.
+> **Nothing in it is built.** GP-0 is two `git config` calls and removes the two worst first-run
+> failures; GP-A fixes a live bug in which a successful push produces no visible confirmation at
+> all, because `StatusSummary` is overwritten by the refresh that follows it. Its pre-flight
+> section names one blocker that has since been cleared — §5.A shipped — so GP-G is unblocked.
+>
+> `SAFEGUARDS.md` also carries a correction worth reading before touching the sync engine:
+> **`On git action` is not the default sync mode** and had not been since 2026-08-12. Exports
+> follow a detected change, because the mirror exists to be reviewed *before* a commit. The
+> commit gate is a backstop, not the trigger.
 
 ### 1. ~~Export what is currently missing~~ — **done**
 
@@ -205,6 +223,9 @@ nothing notices until the next save. The panel says so rather than going quiet, 
 
 ### 4. Finish the project tree
 
+- ~~**Methods and properties under the object that owns them**~~ — **done.** Manifest schema 4
+  records each member's owner GUID and the tree nests by it; see the finding. A mirror
+  exported before this stays flat until its project is next exported
 - **One node per library**, under its manager, parsed from the exported YAML. `LibraryCatalog`
   already reads the file; what is missing is the tree builder taking a catalog and the shell
   handing it one. This is the first piece of the plan's "config nodes parsed from YAML", and
@@ -247,21 +268,21 @@ does not record them has to be run again.
   queued, which is correct and cheap; restarting instead would be better when the run has
   barely begun, and needs process cancellation plus cleanup of the staging folder a killed
   export leaves behind.
-- **Orphan findings are computed and shown nowhere.** `OrphanScanner` runs on every scan and
-  `SyncViewModel.Findings` is populated from it — an export tree whose project was deleted, a
-  binding pointing at nothing — and no view binds that collection. It reaches the log as a
-  count and nothing else. Either surface it in the panel or delete the collection; leaving it
-  is the shape of bug this codebase keeps finding.
+- ~~**Orphan findings are computed and shown nowhere.**~~ — **shown.** `FindingsSummary` is a
+  line in the project panel, in the same slot and the same red as the coverage warning, and
+  hidden when there is nothing to say. One sentence for one finding; a count and the first one
+  for more, with the detail still in the log. They were surfaced rather than deleted because
+  every one of them is a repository in a state Versio cannot resolve on its own.
 - **`ToolchainState` is a public observable property with no view.** It survives because the
   runner uses its text as the "why this is unavailable" explanation. It should be a plain
   string, not a bindable one.
 - **The branch dropdown does not refuse a switch while a direction lock is held** (plan §9.2).
   Git refuses a dirty-tree checkout on its own, which covers the dangerous case without
   explaining it.
-- **Adoption writes no line-ending rules to `.gitattributes`** — only binary/LFS rules for the
-  project extensions. This repository's own `* text=auto eol=lf` was typed by hand. On a
-  machine with `core.autocrlf=true`, a cloned mirror may read as entirely modified. Measure it
-  before fixing: the repo's own rule is that a plausible inference is not a measurement.
+- ~~**Adoption writes no line-ending rules to `.gitattributes`**~~ — **measured, and fixed.**
+  The inference in this bullet was wrong: git reports such a clone as *clean*. What breaks is
+  Versio's own hash gate, which reads the bytes on disk. Adoption writes `<mirror>/** text
+  eol=lf` now; see the finding for the measurement both ways.
 - **Hand-maintained counts in these documents drift.** The commit count was wrong by twelve,
   the project tree's test count by six, and the scenario suite's by twenty-two — all of them
   written once and never re-checked. Re-derive rather than trust: `git rev-list --count HEAD`,
@@ -282,6 +303,384 @@ does not record them has to be run again.
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### A rule added after a repository was adopted never reached it
+
+Found while checking the previous finding against the reporter's own repository, which is the
+only reason it was found at all. Their `.gitattributes` had the two project rules and nothing
+about the mirror; their `git config core.autocrlf` said `true`; and `git check-attr` on an
+exported `.st` answered `text: unspecified`. The fix written an hour earlier would never have
+reached them.
+
+`AutoAdoptAsync` skips a project that is already bound — correctly, since adopting twice is not
+a thing — and adoption is the only caller of the two rule planners. So the rules a repository
+gets are the rules that existed on the day it was adopted, forever. Three have been added since
+this repository started tracking its own fixture: the mirror's `text eol=lf`, and the staging
+and trash directories the swap moves through.
+
+Every scan now tops up the rules for **every** binding, not only the ones just adopted. Both
+planners already leave an existing rule alone and report no change when everything is covered,
+so it writes once after an upgrade and never again — pinned by a test that opens the same
+repository twice and compares the bytes.
+
+This is the third time in this session that a rule was correct and unreachable, and the shape
+is always the same: the code that decides is fine, and nothing calls it for the case that
+matters. The other two were a guard intent nothing asked about and a filter nothing supplied
+globs to.
+
+### The mirror arrives with the wrong line endings, and git says it is fine
+
+The loose end this document has carried since the audit read: *"Adoption writes no line-ending
+rules to `.gitattributes`. On a machine with `core.autocrlf=true`, a cloned mirror may read as
+entirely modified. Measure it before fixing: the repo's own rule is that a plausible inference
+is not a measurement."*
+
+Measured, and **the inference was wrong in a way that matters more than being right would
+have**. Against real git, a scratch repository, `core.autocrlf=true`:
+
+```
+$ git -c core.autocrlf=true clone origin clone-crlf
+warning: in the working copy of 'Main.st', LF will be replaced by CRLF …
+
+$ git status --porcelain          # in the clone
+                                  # ← nothing. The tree is clean.
+```
+
+Git is perfectly happy: it normalises on the way back in, so nothing reads as modified and no
+diff appears. **Versio is not**, because the exporter writes LF and the hash gate hashes the
+bytes on disk:
+
+| | |
+|---|---|
+| `origin/Main.st`, as exported | `6fb69762e1887a3f…` |
+| the same file in a `core.autocrlf=true` clone | `c58f937fb0ab1dae…` |
+
+Every file in a teammate's fresh clone hashes differently from what an export of the same
+project would produce. The engine reads that as a mirror somebody has edited by hand — the one
+state that makes the text side authoritative and points the sync the wrong way.
+
+Adoption writes `<mirror>/** text eol=lf` now, beside the `binary -diff -merge` rules for the
+project files. It is the opposite rule for the opposite reason, and they belong in the same
+file: a project must never be line-merged, and a mirror exists to be. Proven the same way it
+was found — with the rule in place, the same clone with `core.autocrlf=true` still on lands
+byte-identical to what was committed, `6fb69762…` on both sides.
+
+An existing rule for the same pattern is still never rewritten, so a repository that has
+already decided something about its mirror keeps its decision.
+
+### The auto-stash swallowed its own record, and `.gitignore` could not have saved it
+
+Found by the second test written for the flow, not by reading it. Switching away twice stashed
+the work correctly both times — and the second stash took `.versio/local/autostash.json` with
+it, because a repository with no adopted project has no `.gitignore` rule for that directory,
+so `--include-untracked` counted Versio's own record as the user's work.
+
+The consequence is worse than untidy. That record is the **only** thing that knows which
+stashes are Versio's and which branch each belongs to, so stashing it away leaves real work
+sitting in `git stash list` with nothing pointing at it — and a later `pop` would restore the
+*older* record over the newer one.
+
+**`.gitignore` is the wrong instrument for this**, which is the part worth keeping. It is a
+tracked file: a stash carries the rule away at exactly the moment the rule is needed, and
+writing it means editing a file the user commits and shares. `.git/info/exclude` is outside the
+working tree — it cannot be stashed, committed or conflicted — and it is per clone, which is
+precisely what this rule is. It is written when a repository opens, before anything reaches
+`.versio/local/`. Adoption still writes the `.gitignore` rule, and that is not redundant: that
+one is what a *teammate* gets when they clone.
+
+The same gap applied to the direction locks in any repository where no project had been adopted
+yet. Nobody had hit it because a lock only exists once there is a binding, and a binding only
+exists after adoption has written the ignore rule — the auto-stash is the first thing Versio
+writes into a repository *before* adopting anything.
+
+### The IDE's heartbeat was a `git status` every five seconds, forever — and it took two fixes
+
+Found while checking that the log was quiet after the export-echo fix. It was not: with a
+repository open and nothing happening, the app ran a `git status` roughly every 2.5 seconds and
+wrote a Debug line for each.
+
+The cause is not Versio's own timers. `_deferredTick` fires every five seconds and does nothing
+when nothing is deferred, and no watcher event had settled at all. It is the **CODESYS IDE**:
+
+```
+ObjectOrientedProgramming(Extended).~u   14:00:07
+… six seconds later …
+ObjectOrientedProgramming(Extended).~u   14:00:12
+```
+
+CODESYS rewrites its lock marker every few seconds for as long as it holds the project. Each
+rewrite is a working-tree event, each event refreshes the status, and each refresh spawns
+`git.exe`. **The `.~u` file is gitignored** — adoption writes that rule itself — so it cannot
+change what `git status` reports, ever. The work is guaranteed to produce the same answer.
+
+The measurement that matters is that this is not an edge case: **an engineer with the IDE open
+is the normal state of this tool**, and in that state the app spawns ~24 git processes a minute
+and writes ~1,400 log lines an hour, against a design goal of eleven.
+
+Two things make the fix tractable rather than speculative, and both already exist:
+
+- **Versio knows which paths it told git to ignore.** Adoption writes `.versio/local/`,
+  `<name>-AllUsers.opt` and `<name>-<user>-<machine>.opt` into `.gitignore`, so those are
+  already a list rather than a guess.
+- **The vendor seam already answers where the lock marker is.** `IPlcProjectFormat` reports it
+  — that is how open-project detection works — so the rule stays vendor-neutral: *a path the
+  format declares as its lock marker is not a working-tree change.*
+
+**Fixed, and the fix was wrong twice before it was right** — which is the part worth keeping.
+
+`RepositoryChangeFilter` learned about paths **Versio itself put in `.gitignore`**, supplied by
+the vendor seam: `TransientPatternsFor` is the same call adoption makes when it writes the
+rules, so what the watcher ignores and what git ignores cannot drift apart. That is the one
+exception to this class's standing rule that working-tree paths are never filtered by name, and
+it is safe for a specific reason — these are not names guessed to be ignored, they are the rules
+this app wrote.
+
+Then the app was relaunched and **it polled exactly as before.** Watching the repository
+directly for 20 seconds said why:
+
+```
+Samples\ObjectOrientedProgramming(Extended).~u~   7
+Samples                                          4
+Samples\ObjectOrientedProgramming(Extended).~u    4
+```
+
+CODESYS does not write the marker in place. It writes `.~u~` — trailing tilde — and renames it
+over `.~u`, so the glob covered the less frequent of the two, and **`.~u~` was in nobody's
+`.gitignore`**: a file appearing and vanishing in the working tree that git had never been told
+to ignore. The pattern is `.~u*` now, which fixes the ignore rule as well as the noise.
+
+Relaunched again, and **it polled exactly as before.** The remaining trigger was the third row:
+a folder's own timestamp moves when a child appears or vanishes, so filtering the child by name
+left the parent's event arriving at the same rate. Dropped by the same argument the bare `.git`
+event already used — the folder's event says only that *something* changed, and the child's own
+event says what. A creation, deletion or rename of a folder is not a write and still gets
+through.
+
+| | |
+|---|---|
+| Before | ~2 `git status` per 5 s, 493 log lines in one 50-second window |
+| After | **1 `git status` in 45 seconds of idle** — the one at startup |
+| Still detected | a new file, in 0.5 s; its deletion, in 0.5 s; both verified in the running app |
+
+What remains over a longer watch is the **20-second backstop tick** — 24 calls in eight idle
+minutes, one every 20 s to the millisecond — which is `StatusRefreshPolicy` doing exactly what
+it was written to do, since `FileSystemWatcher` drops events silently and a panel that is 20 s
+stale beats one that is stale forever. It is worth stating because this document elsewhere
+claims an idle app writes about eleven lines an hour: with a repository open it writes about
+180, all of them the backstop's own `git status`. That is a design decision, not the bug that
+was just fixed, and it is the next thing to look at if idle cost ever matters again.
+
+The lesson is the one this document keeps recording in different clothes: **the rule was correct
+in unit tests while the app still spawned git every five seconds, twice, for two different
+reasons.** What closed it was a real `RepositoryWatcher` over a real directory, replaying what
+CODESYS actually does — write, rename, repeat — and asserting nothing comes out, then that a
+real edit beside it still does.
+
+### An export woke the change detector once per file it had just written
+
+Noticed in the log while checking something else, on a real project with 56 exported files: for
+about forty seconds the app ran a `git status` and hashed the whole mirror roughly twice a
+second, with git invocations overlapping each other — `still running` — and each one ending in
+a `BlockedByLock` warning.
+
+The mechanism is one line in the log above the storm:
+
+```
+watcher error on …\ObjectOrientedProgramming(Extended) (Access is denied.) — events were lost
+```
+
+The export stages into `<mirror>.versio_staging` and **swaps the directory into place**, which
+invalidates the `FileSystemWatcher`'s handle on the directory it was watching. The error
+handler does the right thing — an overflow means events were lost, so rescan everything — and
+the rescan then finds all 56 files changed, because they are new files, and reports each one as
+a settled change. Every one of those became a sync job: a conflict probe (a `git status`
+process) and a full-tree hash, before the direction lock refused it. **n files cost n status
+processes and n full-tree hashes.**
+
+`SelfWriteSuppressor` exists for exactly this and could not do it. It registers *one* path with
+*one* expected hash, consumed by the first matching event, and `ExportAsync` registers it
+**after** the run completes — tens of seconds after the swap those events describe. One late
+registration against dozens of echoes. It had been that way since the suppressor was written,
+and it never showed up because **the direction lock was quietly doing its job**: an export only
+runs while the project side is authoritative, and a mirror edit is refused in that state anyway.
+Nothing was ever lost. It was pure cost, and it is quadratic in the size of the project — worst
+exactly where projects are large.
+
+The fix is a window rather than a set of hashes, because that is the shape of the problem: the
+mirror is mid-write for a known stretch of time and every event in it is ours.
+`BeginOwnWrite(bindingId, side)` is the same mechanism as the git-write window (§5.A), with two
+deliberate differences:
+
+- **Per binding, and per side.** A checkout rewrites the whole repository; an export rewrites
+  one mirror. Holding every binding off for the 20–31 s a toolchain run takes would drop real
+  edits elsewhere, and an engineer saving in the IDE *during* an export must still be seen.
+- **Opened before the run and closed after the bookkeeping**, because the echoes are raised by
+  the swap in the middle and settle whenever the watcher's quiet period lets them — which is
+  long after the toolchain has exited.
+
+Nine tests, five of which fail with the gate reverted. The one that matters is the ninth: it
+drives a **real export** through the orchestrator and asks, from inside the run, whether the
+window is open — every other test opens it by hand and would pass against an export that never
+called it. That is the mistake this repository has now shipped three times, and it fails when
+the call is removed.
+
+Not fixed, and worth knowing: the watcher's response to a lost-events error is still to report
+every file in the tree individually. The window makes that free for our own writes; a genuine
+overflow — a network share, antivirus — still produces one job per file.
+
+### The repository dropdown could not do the one thing it exists for
+
+Reported from the app, with a screenshot of the control open and holding exactly one row:
+*"the repo drop down is supposed to store recent repos… currently it doesnt store anything."*
+
+`RecentRepositories` was an `ObservableCollection` on the view model, appended to when a
+repository opened and dropped when the process exited. Nothing wrote it anywhere and nothing
+read it back, so on every start it contained precisely the repository the app had opened by
+itself — and a control whose entire purpose is jumping between repositories could not jump
+anywhere. It had looked right in every session where somebody opened a second repository by
+hand, which is every session it was ever demonstrated in.
+
+Underneath it was a gap rather than a bug: **Versio had no machine-level state at all.** Every
+store it owns belongs to a repository and lives in that repository's `.versio/`. Which
+repositories this user has opened is not repository state — it names paths that exist on one
+disk — so there was nowhere for it to go. `%LOCALAPPDATA%\Versio\settings.json` is that
+place now, beside the logs, written through the same atomic temp-and-replace `JsonLockStore`
+uses and read with the same rule: unreadable costs a dropdown's contents and nothing else.
+The theme is the next thing that should join it — it is currently reapplied as `System` on
+every start, which is a preference the app forgets just as thoroughly.
+
+Worth pairing with the finding below about *Open logs folder*: writes under `%LOCALAPPDATA%`
+are redirected when the app runs from an MSIX/AppContainer, so a packaged build and a plain one
+can end up with two separate recent lists. Nothing to fix today — packaging is unbuilt — but it
+is the same environment fact, and it now applies to a second file.
+
+Three decisions in it are worth keeping:
+
+- **The remote is recorded at open time, not when it is needed.** By the time it is wanted —
+  offering a vanished repository back — there is no `.git` left to read it out of. Promoting an
+  entry inherits the old URL when the new read comes back empty, so opening a repository while
+  its remote is unreachable cannot erase the only thing that could restore it.
+- **A missing repository is a question, not a refusal.** Every row in that dropdown is a
+  repository the app told the user they could come back to, so one that has vanished offers
+  *clone it again*, *remove from list* and *cancel* — where the generic path says "not a Git
+  repository" and opens a folder picker. Which options exist is a pure function of whether a
+  URL was recorded, because a *Clone it again* button on a repository that never had a remote
+  is a button that cannot work.
+- **Nothing is removed on discovery, and nothing deletes a folder.** A disconnected network
+  drive and a deleted clone are indistinguishable from here, and quietly forgetting the second
+  also forgets the URL that could bring it back. The label says *Remove from list*, never
+  *Delete*, because deleting the folder is what the user is afraid the button does.
+
+One existing test had to change rather than being made to pass: `A_repository_that_cannot_be_
+opened_leaves_the_dropdown_where_it_was` asserted that a dropdown row which will not open
+raises `RepositoryRejected`. It now asserts the missing-repository question instead — the
+guarantee it was written for, that the dropdown never points at a repository that did not
+open, is unchanged and still asserted.
+
+Startup gained a third fallback while this was wired: an explicit path argument, then the
+working directory *if it is inside a repository*, then the most recent repository still on
+disk. Launched from a desktop shortcut the working directory is wherever Windows put it, and
+the app opened on an empty window beside a dropdown that had forgotten everywhere the user had
+ever been.
+
+Five of the seven new view-model tests fail when persistence or the missing-repository check is
+reverted, and they come in through `OpenAsync` and `SwitchRepositoryAsync` rather than through
+the store — this repository has been bitten three times by a method that was perfectly tested
+and called by nothing.
+
+**And the first version of this shipped a bug of its own, caught by running the suite.** The
+view model defaulted to the real store, so every test that opened a throwaway repository
+rewrote the developer's own recent list: two `versio-reset-…` temp folders were sitting in
+`settings.json` when it was found. The default is a store that remembers nothing, the real one
+is wired by the application host and nowhere else, and there is now a test that opens a
+repository through the default constructor and asserts the user's settings file is byte-for-byte
+unchanged.
+
+### One field's type disagreed, and the panel lost fifty-six objects without saying so
+
+Reported from the app against a real customer project, with a screenshot of the CODESYS Devices
+tree beside a screenshot of Versio: *"is not rendering at all in a correct format."* The panel
+showed `0 object(s) · 60 changed file(s)`, `coverage unknown`, and sixty rows of raw
+`Device/Plc Logic/BuildingApplication/…` paths where a tree belonged.
+
+`versio_export.py` has always written `warnings` as records — `{"code": …, "path": …,
+"detail": …}` — and `ProjectManifest.Warnings` was declared `IReadOnlyList<string>`.
+`JsonSerializer.Deserialize` threw on the first record, `Parse` caught the `JsonException` and
+returned `Empty` exactly as its own documentation promised, and **one field's type disagreeing
+discarded all fifty-six objects**. Everything downstream then behaved correctly on an empty
+manifest: no object nodes, so every exported file fell through to the unmapped-file list as a
+raw path, and `ExportCoverage.Of` reported schema 1 and answered "unknown".
+
+Three things had to line up for this to survive a whole feature:
+
+- **The fixture produces no warnings.** `RefrigeratorControl` has none, so `"warnings": []`
+  is what every test used — and an empty array is valid for both shapes. `_manifest.json` is
+  written by IronPython inside CODESYS and read by System.Text.Json, and nothing on either
+  side of that boundary had ever seen a non-empty one.
+- **The property was read by nothing.** `Warnings` was populated, exposed, and consumed
+  nowhere in the app, so no test, no view and no log line ever looked at it. It could only
+  ever cost something, never earn it.
+- **The failure was silent by design.** Returning `Empty` for an unreadable manifest is the
+  right instinct — the window must not come down over a convenience file — but `Empty` is
+  indistinguishable from a manifest that genuinely describes nothing, so the panel had nothing
+  to report and reported nothing.
+
+Fixed in three parts, and the third is the one that matters. `ExportWarning` is now the record
+the exporter writes. `Parse` reads **field by field and element by element**, so a field this
+build cannot make sense of costs that field and leaves the rest standing — a killed export that
+truncates one object record loses one row rather than the tree. And `Parse(json, out problems)`
+names what it skipped, which `SyncViewModel` logs at Warning, gated by the tree signature so a
+broken export says so once rather than per refresh.
+
+Verified against the reporter's own manifest: `schema=3 objects=56 skipped=4 warnings=2
+problems=[]`, coverage `CompleteByDesign` rather than `unknown`. Seven new tests, each checked
+against the mutation that should break it — reverting to a whole-array parse fails the
+per-element test, removing the per-field `catch` fails the per-field test.
+
+### A function block's methods were drawn as its siblings, and four InitRooms sat in one folder
+
+Same report, one level down. CODESYS draws `clsLight (FB)` with an expander and its methods
+inside it; Versio drew `clsLight`, `Light`, `SetLifeTime` and — in the rooms folder — four
+separate rows called `InitRoom`, with nothing saying which room each belonged to.
+
+The export writes a member **beside** its owner, as `clsLight.Light.xml` next to `clsLight.st`,
+so ownership was expressed in a filename and nowhere else. The manifest recorded where a
+method's *file* sat and not what the method *belonged to*, and a tree assembled from paths
+therefore could not have got this right.
+
+The fix is manifest **schema 4**: `record()` writes the owner's GUID as `parent`, and the tree
+builder nests by it. A GUID rather than the owner's name or its path, for the reason identity is
+a GUID everywhere else here — a rename must not re-parent anything, and reading ownership back
+out of `clsLight.Light.xml` is a guess that any name containing a dot defeats. It is a chain
+rather than one level, because a property owns its accessors.
+
+Three consequences were not obvious and are each pinned by a test:
+
+- **`PruneUnchanged` tested `IsFolder`.** Objects had no children until now, so an unchanged
+  function block was treated as a leaf and dropped — taking an edited method with it. It tests
+  for children now.
+- **The search had to move after the nesting.** Filtering leaves first would match a method and
+  drop the block that leads to it, leaving the match unreachable. A node that matches keeps all
+  its members; one that does not survives only for the members that do.
+- **A cycle in a manifest is possible.** It is a file on disk and can say anything, and an
+  object claiming its own descendant as its owner would recurse forever inside a background
+  build — which presents as the panel simply never appearing again. The walk carries a visited
+  set.
+
+An older manifest carries no parents, and that reads as a flat project rather than as an error:
+a mirror starts nesting when its project is next exported. Verified by exporting the reporter's
+project with real CODESYS — `schema=4 objects=56 withParent=22`, every parent GUID resolving to
+an object in the same manifest, `InitRoom` owned by `clsBetterRoom`, `clsCellarRoom` and
+`clsCheapRoom` respectively.
+
+The committed fixture was re-exported rather than hand-edited, and the fresh export was compared
+byte for byte against the committed one: **`_manifest.json` alone differs, by the schema line**.
+That is also the strongest determinism check the export has had — eleven files, two runs,
+months apart, identical.
+
+**The corpus is the finding underneath both of these.** One fixture project, with no members and
+no warnings, cannot see either bug. Every field report should become a fixture, and this one is
+the first candidate.
 
 ### Two of the three panels used half the card they sat in, because Dock defaults to Left
 

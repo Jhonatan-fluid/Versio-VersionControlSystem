@@ -97,6 +97,10 @@ def content_hash(text):
 
 
 _INVALID_WIN = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+# Long enough for any object name a person types, short enough that a deep CODESYS
+# folder chain plus this still clears Windows' 260-character path limit.
+_MAX_STEM = 80
+
 _RESERVED_WIN = set("""CON PRN AUX NUL COM1 COM2 COM3 COM4 COM5 COM6 COM7 COM8 COM9
                        LPT1 LPT2 LPT3 LPT4 LPT5 LPT6 LPT7 LPT8 LPT9""".split())
 
@@ -106,14 +110,69 @@ def safe_file_stem(name):
 
     Percent-encode the illegal characters rather than dropping them, so the mapping
     stays reversible and two objects cannot collide onto one file.
+
+    EXCEPT when the name is not a name at all. CODESYS gives an external-file
+    reference an identity like
+
+        {00000000-0000-0000-0000-000000000000}|C:\\Users\\m.lamp\\Documents\\license.txt
+
+    and percent-encoding that produces a 120-character filename carrying somebody's
+    username and directory layout into git, in a repository they will share. Measured
+    on a real project: the mirror held a file called
+    `00000000-0000-0000-0000-000000000000%7CC%3A%5CUsers%5Cm.lamp%5CDocuments%5C
+    license.txt.xml`. That is the same class of leak as the `-<user>-<machine>.opt`
+    files adoption gitignores, arriving by a different door.
+
+    So a name that looks like a path is shortened to its last segment plus a short
+    digest of the whole name: `license.txt~3f9a1c`. The digest is what keeps two
+    external files with the same basename from colliding onto one file, and the whole
+    name still reaches the reader - the manifest records `name` verbatim, which is
+    where the panel and _coverage.md read it from.
+
+    Reversibility is not lost by this, because it was never used: `unsafe_file_stem`
+    exists as the inverse and nothing calls it. An import resolves objects through the
+    project tree and the native XML's own identity, not by parsing filenames back.
     """
+    raw = name or u""
+
+    if _looks_like_a_path(raw):
+        return _shortened(raw)
+
     def repl(m):
         return u"%%%02X" % ord(m.group(0))
-    stem = _INVALID_WIN.sub(repl, name or u"")
+    stem = _INVALID_WIN.sub(repl, raw)
     stem = stem.rstrip(u" .")                       # Windows strips these silently
     if stem.upper() in _RESERVED_WIN:
         stem = stem + u"%20"
+
+    # Long names are shortened for a second reason: Windows still has a 260-character
+    # path limit in most configurations, and a deep CODESYS folder chain plus a
+    # percent-encoded name reaches it. A file nobody can open is worse than a file
+    # whose name is abbreviated.
+    if len(stem) > _MAX_STEM:
+        return _shortened(raw)
+
     return stem or u"_unnamed"
+
+
+def _looks_like_a_path(name):
+    """A name carrying a directory separator or a drive letter is not a name."""
+    return (u"\\" in name) or (u"/" in name) or (u":" in name)
+
+
+def _shortened(name):
+    """Last segment of a path-like name, plus a digest of the whole thing."""
+    tail = re.split(u"[\\\\/]", name)[-1].strip() or name
+    tail = _INVALID_WIN.sub(u"", tail).rstrip(u" .")
+
+    # Six hex characters: enough that two external files with the same basename in
+    # different folders do not collide, short enough to read past.
+    digest = hashlib.sha256(name.encode("utf-8")).hexdigest()[:6]
+
+    if not tail or tail.upper() in _RESERVED_WIN:
+        tail = u"object"
+
+    return u"%s~%s" % (tail[:_MAX_STEM], digest)
 
 
 def unsafe_file_stem(stem):

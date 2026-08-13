@@ -5,6 +5,8 @@ using System.Windows.Input;
 using Versio.App.Theme;
 using Versio.App.ViewModels;
 using Versio.Core.Git;
+using Versio.Core.Guarding;
+using Versio.Core.Settings;
 
 namespace Versio.App.Views;
 
@@ -59,6 +61,23 @@ public partial class MainWindow : Window
             return window.ChoiceResult;
         };
 
+        // Three named courses of action, so the same window the guard uses rather than a
+        // MessageBox: "Yes" is not an answer to "restore, leave or discard".
+        shell.AskAboutStashedWork = prompt =>
+        {
+            var window = new GuardPromptWindow(
+                prompt.Title,
+                prompt.Body,
+                [.. prompt.Choices.Select(c => new PromptOption(AutoStashNarrative.Label(c), c))],
+                cancels: StashedWorkChoice.Leave)
+            {
+                Owner = this,
+            };
+
+            window.ShowDialog();
+            return window.Result as StashedWorkChoice?;
+        };
+
         // A branch name needs a text box and live validation, which a MessageBox cannot do.
         // The dialog is owned so it centres on the window and cannot be lost behind it.
         shell.PromptForBranchName = () =>
@@ -70,17 +89,35 @@ public partial class MainWindow : Window
         // The clone dialog runs the conversation — verify, then clone — using git handed to
         // it by the shell. The view supplies the window; the view model supplies the
         // operations, so no dialog here ever constructs a git client of its own.
-        shell.PromptForClone = () =>
+        shell.PromptForClone = initialUrl =>
         {
             var prompt = new ClonePromptWindow(
                 shell.VerifyRemoteAsync,
                 shell.CloneAsync,
-                initialFolder: Path.GetDirectoryName(shell.RepositoryPath))
+                initialFolder: Path.GetDirectoryName(shell.RepositoryPath),
+                initialUrl: initialUrl)
             {
                 Owner = this,
             };
 
             return Task.FromResult(prompt.ShowDialog() == true ? prompt.ClonedPath : null);
+        };
+
+        // A repository the user was told they could come back to, which is not there any
+        // more. Three answers with real labels, so the same window the guard uses - a
+        // MessageBox would have to squeeze "clone it again" into Yes.
+        shell.AskAboutMissingRepository = prompt =>
+        {
+            var window = new GuardPromptWindow(
+                prompt.Title,
+                prompt.Body,
+                [.. prompt.Choices.Select(c => new PromptOption(MissingRepository.Label(c), c))])
+            {
+                Owner = this,
+            };
+
+            window.ShowDialog();
+            return window.Result as MissingRepositoryChoice?;
         };
 
         ApplyLogVisibility();

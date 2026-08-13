@@ -43,11 +43,17 @@ public sealed class TreeRow : ObservableObject
         Depth = depth;
         _expansion = expansion;
 
-        // Folders on the path to a change open themselves, and so does a project. Somebody
-        // who had to expand five levels by hand to find the object they just edited would
+        // Anything on the path to a change opens itself, and so does a project. Somebody who
+        // had to expand five levels by hand to find the object they just edited would
         // reasonably wonder what the roll-up badges were for.
+        //
+        // Written as "has changed descendants" rather than "is a folder with changes",
+        // because a function block owns its methods now: an edited method sat behind a
+        // collapsed block, which is the same complaint one level down. The two are equivalent
+        // for a folder - a folder has no state of its own to change - so this is the same
+        // rule stated in the terms that now cover both.
         _isExpanded = expansion?.ShouldExpand(node)
-                      ?? (node.Kind == ProjectNodeKind.Project || (node.IsFolder && node.HasChanges));
+                      ?? (node.Kind == ProjectNodeKind.Project || node.ChangedDescendants > 0);
     }
 
     public ProjectTreeNode Node => _node;

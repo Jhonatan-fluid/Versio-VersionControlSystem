@@ -177,10 +177,24 @@ public static class ProjectTreeBuilder
             .Where(o => !string.IsNullOrEmpty(o.Path))
             .GroupBy(o => string.IsNullOrEmpty(o.Guid) ? o.Path : o.Guid, StringComparer.Ordinal)
             .Select(g => BuildLeaf(g.ToList(), root, status))
-            .Where(leaf => Matches(leaf.Node.Name, opts.Search))
             .ToList();
 
-        var tree = Assemble(objects, name: RootName(manifest, exportPath), path: root);
+        // Members hung off their owner before anything is placed in a folder, because a
+        // method's folder is its owner's folder — the export writes clsLight.Light.xml beside
+        // clsLight.st — so placing by path alone is what made them siblings.
+        //
+        // Filtered after nesting rather than before it: a search that matched a method and
+        // dropped the function block holding it would leave the match unreachable.
+        var placed = new List<Leaf>();
+        foreach (var leaf in Nest(objects))
+        {
+            if (ForSearch(leaf.Node, opts.Search) is { } kept)
+            {
+                placed.Add(leaf with { Node = kept });
+            }
+        }
+
+        var tree = Assemble(placed, name: RootName(manifest, exportPath), path: root);
 
         return opts.ChangedOnly ? PruneUnchanged(tree) ?? EmptyRoot(tree) : tree;
     }
@@ -190,7 +204,109 @@ public static class ProjectTreeBuilder
             ? manifest.Project
             : exportPath.Replace('\\', '/').TrimEnd('/').Split('/').LastOrDefault() ?? "project";
 
-    private readonly record struct Leaf(ProjectTreeNode Node, string[] Folders);
+    private readonly record struct Leaf(ProjectTreeNode Node, string[] Folders, string Parent);
+
+    /// <summary>
+    /// Hang every member off the object that owns it, and hand back what is left.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// An owner is named by GUID (manifest schema 4). A member whose owner is <b>not in this
+    /// manifest</b> stays where its path puts it rather than being dropped: a truncated
+    /// export, or one written by a build that skipped the owner's type, would otherwise lose
+    /// objects that are sitting right there on disk — and losing an object silently is the one
+    /// failure this panel exists to prevent.
+    /// </para>
+    /// <para>
+    /// The walk is depth-limited by a visited set, not by trust. A manifest is a file on disk
+    /// and a cycle in it — an object claiming its own descendant as its owner — would
+    /// otherwise be an infinite recursion inside a background build, which presents as the
+    /// panel simply never appearing again.
+    /// </para>
+    /// </remarks>
+    private static IReadOnlyList<Leaf> Nest(IReadOnlyList<Leaf> leaves)
+    {
+        var owners = new Dictionary<string, Leaf>(StringComparer.Ordinal);
+        foreach (var leaf in leaves)
+        {
+            if (leaf.Node.Guid is { Length: > 0 } guid)
+            {
+                owners[guid] = leaf;
+            }
+        }
+
+        var members = leaves
+            .Where(l => l.Parent.Length > 0 && owners.ContainsKey(l.Parent))
+            .ToLookup(l => l.Parent, StringComparer.Ordinal);
+
+        if (members.Count == 0)
+        {
+            return leaves;
+        }
+
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+
+        ProjectTreeNode Attach(Leaf leaf)
+        {
+            if (leaf.Node.Guid is not { Length: > 0 } guid || !visited.Add(guid))
+            {
+                return leaf.Node;
+            }
+
+            var children = members[guid]
+                .Select(Attach)
+                .OrderBy(n => n.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            return children.Count == 0 ? leaf.Node : WithChildren(leaf.Node, children);
+        }
+
+        return leaves
+            .Where(l => l.Parent.Length == 0 || !owners.ContainsKey(l.Parent))
+            .Select(l => l with { Node = Attach(l) })
+            .ToList();
+    }
+
+    /// <summary>An object node that owns others, with its badges counted over them.</summary>
+    /// <remarks>
+    /// The same roll-up an <see cref="Assemble"/>d folder gets, and for the same reason: an
+    /// edited method inside a collapsed function block has to raise the block's badge, or a
+    /// change hides behind a chevron.
+    /// </remarks>
+    private static ProjectTreeNode WithChildren(
+        ProjectTreeNode node, IReadOnlyList<ProjectTreeNode> children) =>
+        node with
+        {
+            Children = children,
+            ChangedDescendants = children.Sum(
+                c => c.ChangedDescendants + (c.Status != ChangeKind.Unmodified ? 1 : 0)),
+            RollUp = children
+                .Select(c => Stronger(c.Status, c.RollUp))
+                .Aggregate(ChangeKind.Unmodified, Stronger),
+        };
+
+    /// <summary>
+    /// This object as the search leaves it, or null when nothing in it matches.
+    /// </summary>
+    /// <remarks>
+    /// A node that matches keeps <b>all</b> its members, because a function block whose name
+    /// was typed and which then appeared with no methods reads as a function block that lost
+    /// them. A node that does not match survives only for the members that do.
+    /// </remarks>
+    private static ProjectTreeNode? ForSearch(ProjectTreeNode node, string search)
+    {
+        if (Matches(node.Name, search))
+        {
+            return node;
+        }
+
+        var kept = node.Children
+            .Select(c => ForSearch(c, search))
+            .OfType<ProjectTreeNode>()
+            .ToList();
+
+        return kept.Count == 0 ? null : WithChildren(node, kept);
+    }
 
     /// <summary>Turn every file of one object into a single node with its layers.</summary>
     private static Leaf BuildLeaf(
@@ -229,7 +345,11 @@ public static class ProjectTreeBuilder
                     .Select(p => status.TryGetValue(p, out var k) ? k : ChangeKind.Unmodified)
                     .Aggregate(ChangeKind.Unmodified, Stronger),
             },
-            folders);
+            folders,
+
+            // Taken from the first record because every layer of one object has the same
+            // owner — a GVL's .st and .xml cannot belong to different function blocks.
+            first.Parent);
     }
 
     /// <summary>Hang every leaf off its folder chain, then roll the badges up.</summary>
@@ -271,9 +391,15 @@ public static class ProjectTreeBuilder
     }
 
     /// <summary>Drop everything with no changes under it.</summary>
+    /// <remarks>
+    /// Tested on <see cref="ProjectTreeNode.Children"/> rather than on
+    /// <see cref="ProjectTreeNode.IsFolder"/>, because an object owns objects now. An
+    /// unchanged function block holding an edited method is not a leaf, and treating it as one
+    /// dropped the block and the edit with it.
+    /// </remarks>
     private static ProjectTreeNode? PruneUnchanged(ProjectTreeNode node)
     {
-        if (!node.IsFolder)
+        if (node.Children.Count == 0)
         {
             return node.Status == ChangeKind.Unmodified ? null : node;
         }
