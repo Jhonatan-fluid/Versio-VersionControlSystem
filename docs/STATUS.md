@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-12 · **Commits:** 40 · **Tests:** 800 unit + 45 UI + 102 integration, 0 skipped
+**Date:** 2026-08-12 · **Commits:** 45 · **Tests:** 814 unit + 76 UI + 102 integration, 0 skipped
 
 > Both numbers are re-derivable rather than remembered: `git rev-list --count HEAD`, and
 > `dotnet test` prints a total per suite. The commit count in this header was wrong by twelve
@@ -125,7 +125,8 @@ format; `.gitattributes` covers every registered vendor's extensions.
 | **Export coverage** | What the export does *not* carry, said out loud: `_coverage.md` in the tree, every skip in the manifest with a stable reason, and a sentence in the panel naming what cannot be relied on. A gap is distinguished from a deliberate omission, from a file that is exported one way, and an old manifest reports "unknown" rather than "complete" |
 | **Library references** | One `<manager>.libraries.yaml` per library manager, beside the object that owns it — what the project asks for, never how it resolved here. Hand-written YAML on both sides, no dependency added to either. **Export-only**, and stated where a reader will meet it: the file's own header, `_coverage.md`, and the manifest's `form`. **Not yet in the panel** — `CoverageSummary` speaks only when there are gaps, deliberately, and the row-level 🔒 glyph the plan asks for (§9.3) is part of the unbuilt tree work |
 | **Chrome** | One app-wide progress bar with a caption, maximized on open, log console collapsed, heartbeat during long runs |
-| **Logging** | Ring buffer, correlation ids, rolling file from startup, crash handlers on all three .NET channels. The export narrates itself: the directory swap with both file counts, every skip with its reason, the summary, and a warning when a killed run left a staging folder behind |
+| **Log panel** | Level as four chips (click to drop, click to restore) and category as a multi-select dropdown carrying a live count each, because the counts are what say where the volume is. **Pause freezes the feed** rather than the scroll, says so in the header, and shows what is queued behind it. The controls appear with the list they filter: collapsed, the strip is a chevron, a count and the paused pill |
+| **Logging** | Ring buffer, correlation ids, rolling file from startup, crash handlers on all three .NET channels. An idle app is quiet: a completed git command writes one line, not two, and runs of unchanged status polls are summarised every five minutes instead of three lines per poll. The export narrates itself: the directory swap with both file counts, every skip with its reason, the summary, and a warning when a killed run left a staging folder behind |
 
 ---
 
@@ -241,12 +242,155 @@ does not record them has to be run again.
   and `dotnet test --filter FullyQualifiedName~<TestClass>` for a per-area figure.
 - **One integration test is flaky under full-suite load** — see the finding below. Diagnosed,
   two fixes attempted and reverted, left alone deliberately.
+- **`RefrigeratorControl.~u` is in pushed history.** Untracked and ignored now, but the commit
+  that carried a username, machine name and pid to `origin/main` is still there. Removing it
+  means rewriting a pushed commit — the owner's call, not a maintenance task.
+- **Only four windows are constructed by a test**: the two prompt dialogs, `MainWindow` and
+  `SystemInfoWindow`. That is currently all of them, and the rule worth keeping is that **a new
+  window ships with a test that constructs and measures it** — twice now a window has been added
+  without one and twice it threw in front of somebody. The next `Popup` needs the same: its
+  content is not built until it opens, so a test that constructs the parent does not reach it.
 
 ---
 
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### A window that never opened, and three instruments that called it clean
+
+The log panel gained a category dropdown - a `ToggleButton`, because it has to stay pressed
+while its popup is open - wearing `GhostButton`, whose `TargetType` was `Button`. WPF refuses
+that at the moment the style is set:
+
+```
+'Button' TargetType does not match type of element 'ToggleButton'
+MainWindow.xaml line 1005
+```
+
+So `MainWindow`'s constructor threw, and **the application started, opened its log file, probed
+the toolchain and never showed a window**. The build was clean and 883 tests were green while it
+did that.
+
+What makes it worth writing down is not the mistake, which is ordinary, but that **every
+instrument in place reported success**, each for a different reason:
+
+| Instrument | Why it said nothing |
+|---|---|
+| The compiler | XAML becomes BAML without resolving a single `StaticResource`. A style reference is a key until something asks for it |
+| `Versio.App.Tests` | Covered the two prompt dialogs and the stylesheet. `MainWindow` was the one window nothing constructed - on the reasoning that it opens on every launch and could not go unnoticed |
+| The resource-key tests | Assert `GhostButton` **exists**, which it did. The defect was a key that does not *fit* the element asking for it, which no lookup can see |
+| `--trace-bindings` | Reported nothing, twice, and it was believed. **A window that never opens evaluates no bindings**, so the trace is empty for the same reason it is empty when everything is correct |
+
+That last row is the thirteenth vacuous pass in this document, and the most embarrassing one,
+because it was read as evidence *while the app was failing to start*. The diagnosis offered
+first was also wrong: the empty trace was blamed on the MSIX filesystem-virtualization finding
+already recorded here, on the strength of it being a documented gotcha in the same area. It was
+not that - the app's own log was landing at the real path the whole time. **A documented
+explanation that fits is still a guess until it is checked**, and checking cost one command:
+
+```
+MainWindowTitle  :
+MainWindowHandle : 0
+```
+
+The fix is one word - `GhostButton` targets `ButtonBase`, so it dresses a `ToggleButton` and a
+`Button` alike - and everything derived from it still targets `Button`, which stays legal.
+
+The real fix is `MainWindowTests`: one construction of the real window, measured so templates
+are applied, verified to fail on the reverted bug. It is the cheapest possible regression test
+for the whole file - every `StaticResource` in `MainWindow.xaml` resolved on every run, in
+200 ms - and it should have existed from the day the two dialogs got theirs.
+
+### The same blind spot again, in the dialog added after it was written up
+
+Found only because the crash above forced a real launch. `SystemInfoWindow` uses
+`{StaticResource BoolToVisibility}` inside its row `DataTemplate`, and the converter was
+declared in **`MainWindow.Resources`** - a different window, which cannot see it. Opening
+Settings > Help > System information threw:
+
+```
+Cannot find resource named 'BoolToVisibility'. Resource names are case sensitive.
+  at FrameworkTemplate.LoadTemplateXaml ... at FrameworkElement.MeasureCore
+```
+
+**This one was not introduced by the change that found it.** It shipped with the dialog, and
+`Versio.App.Tests` covered the two prompt dialogs and not this one - so the lesson "a modal
+nobody has clicked has never been parsed" was recorded, and then the next modal was added
+without applying it. A blind spot named in a document is still a blind spot.
+
+Two things it teaches beyond the fix:
+
+- **A resource referenced from inside a template is not resolved until the template is
+  applied**, which is Measure, not construction. A test that only constructed the window would
+  have passed with the bug in place, so the tests measure and arrange.
+- The converter now lives in the stylesheet, declared once, and `MainWindow`'s private copy is
+  gone. A shared resource kept in one window's `Resources` is the same shape of bug as the
+  private `Theme.xaml` merge that broke the theme switch - resolution finds it from one place
+  and nowhere else, and the failure is invisible from the file that looks correct.
+
+### An idle log that was mostly its own noise
+
+Reported from use: the panel was drowning in `git status`. Measured from the log rather than
+argued about - the status backstop runs every 20 s forever, and each run wrote **three** Debug
+lines: the command, its duration, and a verdict of `status unchanged`.
+
+```
+17:29:29.287 DBG [Git] git status --porcelain=v2 --branch --untracked-files=all -z
+17:29:29.333 DBG [Git] git status --porcelain=v2 --branch --untracked-files=all -z ok in 0.0s
+17:29:29.335 DBG [Git] status unchanged (Backstop)
+```
+
+That is **about 540 lines an hour from an app with nothing to do**, and the entries that matter
+scroll out behind them. The panel keeps 5,000 rows, so roughly nine hours of idling evicts
+everything real.
+
+Both halves were already trying to be quiet and both had picked the wrong lever. The verdict
+line had been *demoted to Debug* - which is not the same as not writing it - and the command
+pair had never been questioned at all.
+
+- **A completed command needs one line, not two.** The pre-command line only ever earned its
+  place for a command that hangs, so that is now the only case that gets it: after one second,
+  `git fetch ... - still running`. Every routine call in this app finishes in tens of
+  milliseconds, so in normal use it writes nothing.
+- **A run of nothing is one fact, not N.** `QuietRunTracker` counts the quiet polls and says so
+  every five minutes: `no change in 15 checks over 5m (12 Backstop, 3 WorkingTree)`. An idle
+  hour goes from ~540 lines to 11.
+
+**The per-trigger counts are the part worth keeping.** A *Backstop* poll finding nothing is the
+definition of routine; a *WorkingTree* poll finding nothing means `RepositoryChangeFilter`
+passed an event git does not care about, which is the only signal for tuning it - and it is
+visible only in aggregate. A generic "collapse repeated lines" rule in the sink would have cut
+the same volume and thrown that away.
+
+Fourteen tests, and deleting the interval gate fails four of them, including both that assert
+silence - the property most easily made vacuous, since a tracker returning `null` unconditionally
+passes any test that only counts what it suppressed.
+
+### The CODESYS lock marker was committed, and the ignore rule had guessed its name
+
+Reported from use as "why is `control ~u` in my changes?". Three separate things, and only the
+first is cosmetic.
+
+**The rule matched nothing.** This repository's hand-written `.gitignore` carried
+`*.project.~*`, which is the plausible reading. CODESYS **replaces** the extension:
+`RefrigeratorControl.project` is held by `RefrigeratorControl.~u`. The product code has always
+had this right - `CodesysProjectFormat.OccupancyMarkerFor` uses `ChangeExtension`, with the
+measurement in its remarks, and adoption writes the scoped form for repositories it sets up.
+Only this repository was wrong, because its file was typed by hand before that code existed.
+Exactly the shape already recorded for `.versio/local/`: **a rule that is true only where
+somebody arranged it separately.**
+
+**The file was tracked, so the rule was irrelevant anyway.** `git check-ignore` reported no
+match even after the pattern was fixed - ignore rules do not apply to tracked files, and
+`git rm --cached` is the other half of the fix. Worth remembering: a corrected `.gitignore` that
+appears to do nothing is usually this.
+
+**It had been committed and pushed.** The marker's contents are a username, a machine name and a
+pid, and it went to `origin/main` in a commit made while testing. That is the same harm already
+documented for the `.opt` files, arriving by a route nobody had guarded. Removing it from
+history means rewriting a pushed commit, so it is left as the owner's call - but the guard is
+now in place for the next one.
 
 ### A panel about changed files, opening with a version number and two dead buttons
 
@@ -385,7 +529,8 @@ them.
 
 ### A diagnostic that verified an empty window
 
-`Versio.exe --trace-bindings <file> C:epo` never opened the repository. The startup code
+`Versio.exe --trace-bindings <file> C:
+epo` never opened the repository. The startup code
 took "the first argument that does not start with `--`" as the repository path, which is the
 trace file.
 
@@ -397,7 +542,8 @@ than no verification, because it gets reported as a pass. Both of this session's
 "clean trace" runs were exactly that, and were re-run properly afterwards.
 
 Flags that consume a value are listed rather than inferred: "skip whatever follows a flag"
-breaks on `--spike C:epo`, which is how the spike is actually run.
+breaks on `--spike C:
+epo`, which is how the spike is actually run.
 
 ### A project with nothing to review stayed on screen
 
@@ -1089,8 +1235,21 @@ the two dialogs, and a deliberately broken style reference fails every one of th
 **`Versio.exe --trace-bindings <file>`** writes every WPF data-binding failure to a file. A
 broken binding in WPF is otherwise **silent** — a mistyped path or a missing converter produces an
 empty control and no error anywhere — which made it the one class of failure in this codebase
-that was not loud. Every panel is verified clean through it, and the instrument itself was
-proven able to fail before its clean result was believed.
+that was not loud.
+
+> ⚠️ **Its clean result means nothing unless a window actually opened.** The tracer writes only
+> when a binding fails, so "no file" is produced both by a clean window and by *no window at
+> all* — and the second case happened: with `MainWindow` throwing during construction, two
+> consecutive runs produced an empty trace that was read as a pass. Check that the process has
+> a window before believing it:
+>
+> ```powershell
+> Get-Process Versio | Select-Object MainWindowTitle, MainWindowHandle
+> ```
+>
+> A handle of `0` means the window never opened and the trace is worthless. **Launch with
+> `Start-Process`**, not from a detached shell — a background-launched instance was alive,
+> logging and window-less, which is the same empty trace for a third reason.
 
 The app must be launched **outside** the tooling container for UI work; see the virtualization
 finding above.
@@ -1123,8 +1282,10 @@ state machine are tested in milliseconds rather than by causing real crashes.
 a paragraph in a README — because it was a paragraph in a README, and it had already stopped
 being true.
 
-**Green results are distrusted until they can fail.** Thirteen vacuous passes have been caught
-this way — counting the determinism test that compared the one file with no GUIDs in it, and
+**Green results are distrusted until they can fail.** Fifteen vacuous passes have been caught
+this way — most recently an empty `--trace-bindings` file read as a clean UI while the window was
+failing to construct at all, and a style-instantiation test that passed with the style deleted,
+because a missing resource casts to a null `Style` and assigning null is legal — counting the determinism test that compared the one file with no GUIDs in it, and
 the two the library reader gave up when it was broken on purpose: a parameters test that could
 not have failed because a list dash already prevented the leak it asserted, and a
 drop-the-nameless-entry rule that survived deletion because the fixture cannot produce a

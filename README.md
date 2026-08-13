@@ -47,6 +47,8 @@ Both directions run automatically and deterministically. A per-project **directi
 | **The project view follows the repository by itself** | ✅ 18 policy tests + 9 against a real filesystem; rebuilt only when something it shows changed |
 | Design system tokens, light and dark | ✅ `src/Versio.App/Theme/`; switching at runtime repaints open windows, which it never did until it was measured |
 | Logging — ring buffer, correlation ids, heartbeat, rolling file | ✅ 21 tests; timestamps are local and the file rolls on the local day, so the panel and the file agree; "Open logs folder" selects today's file |
+| **The log panel filters** — level as four chips, category as a multi-select with live counts | ✅ a set rather than a minimum level, because "warnings and errors only" is the request a threshold cannot express |
+| **An idle app stops writing about it** — quiet status polls are summarised, not logged one by one | ✅ ~540 lines an hour became 11; the per-trigger counts survive, since a working-tree poll finding nothing is the only signal for tuning the change filter |
 | **The export narrates itself** — directory swap with both file counts, every skip and its reason | ✅ asserted against the log a real export produces, across two runs |
 | Shell — repo/branch dropdowns, rail, changed files, diff, collapsible log | ✅ opens a real repo, shows real git state |
 | Diff view — gutter, line numbers, syntax highlighting for 11 languages | ✅ ST, C#, Python, XML, JSON, YAML, Markdown, PowerShell, JS/TS, SQL |

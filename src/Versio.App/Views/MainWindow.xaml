@@ -17,7 +17,11 @@
     <Window.Resources>
         <ResourceDictionary>
             <views:ResourceKeyConverter x:Key="ResourceKey" />
-            <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+
+            <!-- BoolToVisibility is NOT declared here any more. It moved to the stylesheet
+                 so every window gets the one instance: this private copy is why
+                 SystemInfoWindow, which uses the same key, threw on open. -->
+
 
             <!-- One row template for every list of changed files. Three copies of it would
                  be three chances for the glyph and its colour to disagree. -->
@@ -372,21 +376,80 @@
                                 </StackPanel>
 
                                 <!-- The most surprising rule in the tool, stated where the
-                                     decision is made rather than discovered afterwards. -->
+                                     decision is made rather than discovered afterwards - but
+                                     only when it is about to happen.
+
+                                     It used to be permanent, and a caption that says the same
+                                     thing on every refresh is read once and never again; this
+                                     codebase has already argued that out over a coverage line
+                                     that congratulated itself every time. The half about
+                                     pushing releasing the lock is on the Push button's own
+                                     tooltip, which is where somebody asks it. -->
                                 <TextBlock TextWrapping="Wrap" Margin="0,8,0,0"
                                            FontFamily="{DynamicResource Font.UI}"
                                            FontSize="{DynamicResource Font.Size.Caption}"
-                                           Foreground="{DynamicResource Brush.Text.Disabled}"
-                                           Text="A stale PLC export is exported before the commit, and staged with it. Pushing is what releases the direction lock." />
+                                           Foreground="{DynamicResource Brush.Status.Modified}"
+                                           Text="A stale PLC export runs before this commit, and is staged with it.">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Sync.StalenessSummary}"
+                                                             Value="">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
                             </StackPanel>
 
                             <!-- STASH. Put below the commit box rather than above the file
                                  lists because it is the escape hatch, not the daily path:
                                  somebody reaches for it when they have to switch to something
-                                 else and cannot commit what they have. -->
+                                 else and cannot commit what they have.
+
+                                 Collapsed by default for the same reason. Six controls for a
+                                 feature used a few times a month, permanently on screen in a
+                                 380 px column, is most of what makes this panel feel dense.
+                                 The count stays visible while collapsed, so a repository with
+                                 parked work still says so - that fact is not clutter. -->
                             <Grid DockPanel.Dock="Bottom" Margin="0,12,0,0">
-                                <TextBlock Text="STASH" Style="{StaticResource SectionLabel}" />
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button HorizontalAlignment="Left" Padding="0"
+                                        Style="{StaticResource GhostButton}"
+                                        Command="{Binding ToggleStashCommand}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock x:Name="StashChevron"
+                                                   FontSize="9" Margin="0,0,6,0"
+                                                   Foreground="{DynamicResource Brush.Text.Disabled}">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock"
+                                                       BasedOn="{StaticResource IconText}">
+                                                    <Setter Property="Text"
+                                                            Value="{DynamicResource Icon.ChevronDown}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding StashExpanded}"
+                                                                     Value="True">
+                                                            <Setter Property="Text"
+                                                                    Value="{DynamicResource Icon.ChevronUp}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                        <TextBlock Text="STASH"
+                                                   Style="{StaticResource SectionLabel}" />
+                                        <Border Style="{StaticResource Pill}" Margin="6,0,0,0"
+                                                Padding="6,0">
+                                            <TextBlock Text="{Binding Stashes.Count}"
+                                                       Style="{StaticResource PillText}" />
+                                        </Border>
+                                    </StackPanel>
+                                </Button>
+
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                                            Visibility="{Binding StashExpanded,
+                                                Converter={StaticResource BoolToVisibility}}">
                                     <CheckBox Content="+ untracked" VerticalAlignment="Center"
                                               Margin="0,0,8,0"
                                               IsChecked="{Binding StashUntracked}"
@@ -403,6 +466,8 @@
                             <TextBox DockPanel.Dock="Bottom" Margin="0,4,0,0"
                                      Style="{StaticResource FlatTextBox}"
                                      Tag="Stash message (optional)…"
+                                     Visibility="{Binding StashExpanded,
+                                         Converter={StaticResource BoolToVisibility}}"
                                      Text="{Binding StashMessage, UpdateSourceTrigger=PropertyChanged}" />
 
                             <ListBox DockPanel.Dock="Bottom" ItemsSource="{Binding Stashes}"
@@ -410,6 +475,8 @@
                                      Background="Transparent" BorderThickness="0"
                                      ItemContainerStyle="{StaticResource RowItem}"
                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     Visibility="{Binding StashExpanded,
+                                         Converter={StaticResource BoolToVisibility}}"
                                      MaxHeight="90" Margin="0,4,0,0">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate>
@@ -435,7 +502,9 @@
                             </ListBox>
 
                             <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
-                                        Margin="0,4,0,0">
+                                        Margin="0,4,0,0"
+                                        Visibility="{Binding StashExpanded,
+                                            Converter={StaticResource BoolToVisibility}}">
                                 <Button Content="Apply" Style="{StaticResource GhostButton}"
                                         Padding="8,2"
                                         ToolTip="Restore it and keep the stash"
@@ -845,12 +914,25 @@
         <Border Grid.Row="2" Background="{DynamicResource Brush.Surface.Base}"
                 Margin="8,0,8,8" CornerRadius="{DynamicResource Radius.Card}">
             <DockPanel>
-                <!-- Header is always visible; only the list collapses. -->
+                <!--
+                    Header is always visible; only the list collapses.
+
+                    The controls do not. A collapsed log is a one-line strip that exists to
+                    be clicked open and to carry the count, and hanging a filter box, four
+                    chips and a dropdown off it spends the width of the window on controls
+                    for a list nobody is looking at. They appear with the list they filter.
+
+                    Two things survive collapse, because both change what the strip MEANS:
+                    the entry count, and the paused state.
+                -->
                 <Grid DockPanel.Dock="Top" Height="38">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
@@ -868,28 +950,174 @@
                         </StackPanel>
                     </Button>
 
-                    <Border Grid.Column="1" Background="{DynamicResource Brush.Surface.Sunken}"
-                            CornerRadius="9" Padding="8,1" VerticalAlignment="Center"
-                            Margin="4,0,0,0">
+                    <Border Grid.Column="1" Style="{StaticResource Pill}" Margin="4,0,0,0">
                         <TextBlock Text="{Binding Log.Rows.Count}"
-                                   FontFamily="{DynamicResource Font.Mono}"
-                                   FontSize="{DynamicResource Font.Size.Caption}"
-                                   Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                   Style="{StaticResource PillText}" />
                     </Border>
 
-                    <TextBox Grid.Column="3" Width="240" Margin="0,0,6,0"
+                    <!--
+                        PAUSED, said in words. The pause button alone could not carry this:
+                        a paused log and an idle app look identical, and the reader who most
+                        needs to know is the one who paused to read something, got
+                        distracted, and came back to a panel that has not moved since.
+                        The held count is the proof it is a freeze and not a silence.
+                    -->
+                    <Border Grid.Column="2" Style="{StaticResource Pill}" Margin="6,0,0,0"
+                            Background="{DynamicResource Brush.Accent.Muted}"
+                            ToolTip="Entries are still being recorded and are waiting for you. The log file has them all."
+                            Visibility="{Binding Log.IsPaused,
+                                Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="PAUSED" Style="{StaticResource PillText}"
+                                       FontWeight="{DynamicResource Font.Weight.Semibold}"
+                                       Foreground="{DynamicResource Brush.Accent.Default}" />
+                            <TextBlock Style="{StaticResource PillText}" Margin="6,0,0,0"
+                                       Foreground="{DynamicResource Brush.Accent.Default}"
+                                       Text="{Binding Log.HeldCount, StringFormat={}+{0}}" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ===== Everything below appears only with the list it filters ===== -->
+
+                    <!-- Level, as four chips rather than a minimum. The question somebody
+                         has is "show me warnings and errors", which a threshold cannot
+                         express, and at the default of Debug a threshold filters nothing. -->
+                    <ItemsControl Grid.Column="4" VerticalAlignment="Center" Margin="0,0,8,0"
+                                  ItemsSource="{Binding Log.Filters.Levels}"
+                                  Visibility="{Binding Log.IsExpanded,
+                                      Converter={StaticResource BoolToVisibility}}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <ToggleButton Style="{StaticResource FilterChip}"
+                                              Content="{Binding Label}"
+                                              Foreground="{Binding BrushKey,
+                                                  Converter={StaticResource ResourceKey}}"
+                                              IsChecked="{Binding IsEnabled, Mode=TwoWay}"
+                                              ToolTip="Click to hide this level, click again to bring it back" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- Category, as a multi-select dropdown. Checkable rather than a single
+                         choice because the question is usually about two at once: an export
+                         is Sync deciding and Plc doing, and either alone is half the story. -->
+                    <ToggleButton Grid.Column="5" x:Name="CategoryButton"
+                                  Style="{StaticResource GhostButton}" Margin="0,0,6,0"
+                                  Height="26" Padding="8,0"
+                                  Visibility="{Binding Log.IsExpanded,
+                                      Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{DynamicResource Icon.Filter}"
+                                       Style="{StaticResource IconText}"
+                                       FontSize="11" Margin="0,0,6,0"
+                                       Foreground="{DynamicResource Brush.Text.Secondary}" />
+                            <TextBlock Text="{Binding Log.Filters.CategorySummary}"
+                                       FontFamily="{DynamicResource Font.UI}"
+                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                       Foreground="{DynamicResource Brush.Text.Secondary}"
+                                       VerticalAlignment="Center" />
+                            <TextBlock Text="{DynamicResource Icon.ChevronDown}"
+                                       Style="{StaticResource IconText}"
+                                       FontSize="9" Margin="6,0,0,0"
+                                       Foreground="{DynamicResource Brush.Text.Disabled}" />
+                        </StackPanel>
+                    </ToggleButton>
+
+                    <Popup PlacementTarget="{Binding ElementName=CategoryButton}"
+                           Placement="Top" StaysOpen="False" AllowsTransparency="True"
+                           IsOpen="{Binding IsChecked, ElementName=CategoryButton, Mode=TwoWay}">
+                        <Border Background="{DynamicResource Brush.Surface.Raised}"
+                                CornerRadius="{DynamicResource Radius.Card}"
+                                Padding="10" Margin="8" MinWidth="200">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="16" ShadowDepth="2"
+                                                  Opacity="0.35" Color="Black" />
+                            </Border.Effect>
+                            <StackPanel>
+                                <Grid Margin="0,0,0,6">
+                                    <TextBlock Text="CATEGORY"
+                                               Style="{StaticResource SectionLabel}" />
+                                    <StackPanel Orientation="Horizontal"
+                                                HorizontalAlignment="Right">
+                                        <!-- Both directions. "All" alone leaves the reader
+                                             who wants one category unchecking nine. -->
+                                        <Button Content="All" Padding="6,0" Height="20"
+                                                Style="{StaticResource GhostButton}"
+                                                FontSize="{DynamicResource Font.Size.Caption}"
+                                                Command="{Binding Log.Filters.AllCategoriesCommand}" />
+                                        <Button Content="None" Padding="6,0" Height="20"
+                                                Style="{StaticResource GhostButton}"
+                                                FontSize="{DynamicResource Font.Size.Caption}"
+                                                Command="{Binding Log.Filters.NoCategoriesCommand}" />
+                                    </StackPanel>
+                                </Grid>
+
+                                <ItemsControl ItemsSource="{Binding Log.Filters.Categories}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <CheckBox Style="{StaticResource MenuCheck}"
+                                                      IsChecked="{Binding IsEnabled, Mode=TwoWay}">
+                                                <Grid Width="150">
+                                                    <TextBlock Text="{Binding Name}" />
+                                                    <!-- The counts are why the list is worth
+                                                         opening: they say where the volume
+                                                         is, which is usually the question. -->
+                                                    <TextBlock HorizontalAlignment="Right"
+                                                               Text="{Binding Count}"
+                                                               FontFamily="{DynamicResource Font.Mono}"
+                                                               Foreground="{DynamicResource Brush.Text.Disabled}" />
+                                                </Grid>
+                                            </CheckBox>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                    </Popup>
+
+                    <TextBox Grid.Column="6" Width="200" Margin="0,0,6,0"
                              Style="{StaticResource FlatTextBox}"
-                             Tag="Filter messages or categories…"
-                             Text="{Binding Log.Filter, UpdateSourceTrigger=PropertyChanged}" />
+                             Tag="Find…"
+                             Visibility="{Binding Log.IsExpanded,
+                                 Converter={StaticResource BoolToVisibility}}"
+                             Text="{Binding Log.Filters.Text, UpdateSourceTrigger=PropertyChanged}" />
 
-                    <Button Grid.Column="4" Style="{StaticResource IconButton}"
-                            Content="{DynamicResource Icon.Pause}"
+                    <!-- The icon states what pressing it will do, so it shows Play while
+                         paused. The tooltip used to say "pause auto-scroll", which promises
+                         a much weaker thing than it does: the list stops entirely. -->
+                    <Button Grid.Column="7"
                             Command="{Binding Log.TogglePauseCommand}"
-                            ToolTip="Pause auto-scroll" />
+                            Visibility="{Binding Log.IsExpanded,
+                                Converter={StaticResource BoolToVisibility}}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource IconButton}">
+                                <Setter Property="Content" Value="{DynamicResource Icon.Pause}" />
+                                <Setter Property="ToolTip"
+                                        Value="Freeze the list. Nothing is lost — entries queue up and arrive when you resume" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Log.IsPaused}" Value="True">
+                                        <Setter Property="Content"
+                                                Value="{DynamicResource Icon.Play}" />
+                                        <Setter Property="Foreground"
+                                                Value="{DynamicResource Brush.Accent.Default}" />
+                                        <Setter Property="ToolTip"
+                                                Value="Resume, and deliver everything that arrived while you were reading" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
 
-                    <Button Grid.Column="5" Style="{StaticResource IconButton}" Margin="0,0,6,0"
+                    <Button Grid.Column="8" Style="{StaticResource IconButton}" Margin="0,0,6,0"
                             Content="{DynamicResource Icon.Delete}"
                             Command="{Binding Log.ClearCommand}"
+                            Visibility="{Binding Log.IsExpanded,
+                                Converter={StaticResource BoolToVisibility}}"
                             ToolTip="Clear the view — the log file keeps everything" />
                 </Grid>
 

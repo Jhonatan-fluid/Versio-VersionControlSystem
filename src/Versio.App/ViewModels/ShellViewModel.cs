@@ -165,6 +165,16 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
     private readonly StatusRefreshPolicy _policy;
 
+    /// <summary>
+    /// Collapses the runs of refreshes that find nothing into one periodic line.
+    /// </summary>
+    /// <remarks>
+    /// Owned here rather than by the logger because only this class knows what a check is:
+    /// the sink sees text, and a generic repeat-collapse would lose the per-trigger counts
+    /// that make the summary worth reading at all.
+    /// </remarks>
+    private readonly QuietRunTracker _quietRefreshes = new();
+
     private GitCliClient? _git;
     private RepositoryWatcher? _watcher;
     private string? _repositoryPath;
@@ -667,6 +677,10 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         StopWatching();
         _policy.Reset();
 
+        // A quiet run belongs to the repository it was quiet about. Carrying one across a
+        // switch would report the previous tree's idle polls against the new one.
+        _quietRefreshes.Reset();
+
         var watcher = new RepositoryWatcher(path, _clock, logger: _logger);
 
         watcher.Settled += OnRepositoryChanged;
@@ -1127,6 +1141,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     private CommitEntry? _selectedCommit;
     private string _stashMessage = string.Empty;
     private bool _stashUntracked;
+    private bool _stashExpanded;
+
+    public RelayCommand ToggleStashCommand { get; private set; } = null!;
 
     public AsyncCommand StashCommand { get; private set; } = null!;
     public AsyncCommand ApplyStashCommand { get; private set; } = null!;
@@ -1235,8 +1252,33 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         set => SetProperty(ref _stashUntracked, value);
     }
 
+    /// <summary>
+    /// Whether the stash section is showing its controls.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Collapsed by default, and the reason is written next to the section itself: the stash
+    /// is the escape hatch, not the daily path. Expanded it costs six always-visible controls
+    /// — a checkbox, a button, a message box, a list and three more buttons — in a 380 px
+    /// column that also has to hold the branch card, two file lists, the history and the
+    /// commit box. That is the clutter; the fix is not to shrink any of it but to stop
+    /// showing the part somebody reaches for a few times a month.
+    /// </para>
+    /// <para>
+    /// The header keeps its count, so a repository <i>with</i> stashes still says so while
+    /// collapsed. Hiding the fact that work is parked would be a different and worse bug
+    /// than the clutter.
+    /// </para>
+    /// </remarks>
+    public bool StashExpanded
+    {
+        get => _stashExpanded;
+        set => SetProperty(ref _stashExpanded, value);
+    }
+
     private void BuildStashCommands()
     {
+        ToggleStashCommand = new RelayCommand(() => StashExpanded = !StashExpanded);
         StashCommand = new AsyncCommand(StashAsync, () => Ready, ReportError);
         ApplyStashCommand = new AsyncCommand(
             () => RestoreStashAsync(drop: false), () => Ready && SelectedStash is not null,
@@ -1862,17 +1904,25 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 await ShowPathAsync(shown, _selectedDiffStaged).ConfigureAwait(true);
             }
 
-            // Automatic refreshes are the common case and mostly find nothing. Logging every
-            // one at Info would bury the entries that matter under a scrolling wall.
+            // Automatic refreshes are the common case and mostly find nothing. Demoting
+            // those to Debug was the first attempt and was not enough: the backstop runs
+            // every 20 s forever, so an idle app still wrote a line every 20 s saying
+            // nothing had happened, three times over once the git command's own pair is
+            // counted. They are now counted and summarised - see QuietRunTracker.
             if (manual || changed.Count > 0)
             {
+                if (_quietRefreshes.RecordChange(_clock.UtcNow) is { } ended)
+                {
+                    _logger.Debug(LogCategory.Git, ended);
+                }
+
                 _logger.Info(LogCategory.Git,
                     $"status: {status.Changes.Count} changed on {BranchName}" +
                     (manual ? string.Empty : $" ({trigger})"));
             }
-            else
+            else if (_quietRefreshes.RecordQuiet(trigger.ToString(), _clock.UtcNow) is { } due)
             {
-                _logger.Debug(LogCategory.Git, $"status unchanged ({trigger})");
+                _logger.Debug(LogCategory.Git, due);
             }
         }
         finally

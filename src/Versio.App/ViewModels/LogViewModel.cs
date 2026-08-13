@@ -87,17 +87,20 @@ public sealed class LogViewModel : ObservableObject, IDisposable
     private bool _isExpanded;
     private bool _autoScroll = true;
     private bool _isPaused;
-    private LogLevel _minimumLevel = LogLevel.Debug;
-    private string _filter = string.Empty;
+    private int _heldCount;
 
     public LogViewModel(InMemoryLogSink sink)
     {
         _sink = sink;
 
+        Filters.Changed += Rebuild;
+
         foreach (var entry in sink.Snapshot())
         {
             Append(entry);
         }
+
+        Filters.UpdateCounts(sink.Snapshot());
 
         sink.Emitted += OnEmitted;
 
@@ -120,6 +123,9 @@ public sealed class LogViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<LogRow> Rows { get; } = [];
 
+    /// <summary>Which levels and categories are on show.</summary>
+    public LogFilterViewModel Filters { get; } = new();
+
     public RelayCommand ClearCommand { get; }
 
     public RelayCommand TogglePauseCommand { get; }
@@ -138,34 +144,44 @@ public sealed class LogViewModel : ObservableObject, IDisposable
         set => SetProperty(ref _autoScroll, value);
     }
 
+    /// <summary>
+    /// Frozen: entries keep arriving and keep being buffered, but nothing reaches the view.
+    /// </summary>
+    /// <remarks>
+    /// This is a stronger promise than the tooltip used to make. It said "pause auto-scroll",
+    /// which describes a much weaker feature — the list would still change under the reader,
+    /// which is precisely what somebody reaching for pause is trying to stop. Nothing is
+    /// dropped: <see cref="HeldCount"/> is what is waiting, and unpausing delivers all of it.
+    /// </remarks>
     public bool IsPaused
     {
         get => _isPaused;
-        set => SetProperty(ref _isPaused, value);
-    }
-
-    public LogLevel MinimumLevel
-    {
-        get => _minimumLevel;
         set
         {
-            if (SetProperty(ref _minimumLevel, value))
+            if (SetProperty(ref _isPaused, value) && !value)
             {
-                Rebuild();
+                // Deliver immediately rather than waiting up to 100 ms for the next tick.
+                // Un-pausing is a direct request to see what was held.
+                Drain();
             }
+
+            UpdateHeldCount();
         }
     }
 
-    public string Filter
+    /// <summary>
+    /// How many entries are waiting behind the pause.
+    /// </summary>
+    /// <remarks>
+    /// Shown in the header because a paused log and an idle app look identical, and the
+    /// difference matters most in the case somebody paused to read something and then walked
+    /// away. A number that climbs is the clearest possible statement that this is a freeze
+    /// and not a silence.
+    /// </remarks>
+    public int HeldCount
     {
-        get => _filter;
-        set
-        {
-            if (SetProperty(ref _filter, value))
-            {
-                Rebuild();
-            }
-        }
+        get => _heldCount;
+        private set => SetProperty(ref _heldCount, value);
     }
 
     /// <summary>Raised after rows are appended so the view can scroll to the end.</summary>
@@ -183,6 +199,7 @@ public sealed class LogViewModel : ObservableObject, IDisposable
     {
         if (IsPaused)
         {
+            UpdateHeldCount();
             return;
         }
 
@@ -209,9 +226,22 @@ public sealed class LogViewModel : ObservableObject, IDisposable
             Rows.RemoveAt(0);
         }
 
+        // Counted from the sink rather than from this batch: the badges describe what the
+        // buffer holds and could be filtered back into view, not what has just arrived.
+        Filters.UpdateCounts(_sink.Snapshot());
+        UpdateHeldCount();
+
         if (appended)
         {
             RowsAppended?.Invoke();
+        }
+    }
+
+    private void UpdateHeldCount()
+    {
+        lock (_gate)
+        {
+            HeldCount = _incoming.Count;
         }
     }
 
@@ -241,11 +271,7 @@ public sealed class LogViewModel : ObservableObject, IDisposable
         return true;
     }
 
-    private bool Passes(LogEvent entry) =>
-        entry.Level >= _minimumLevel &&
-        (_filter.Length == 0 ||
-         entry.Message.Contains(_filter, StringComparison.OrdinalIgnoreCase) ||
-         entry.Category.Contains(_filter, StringComparison.OrdinalIgnoreCase));
+    private bool Passes(LogEvent entry) => Filters.Passes(entry);
 
     private void Rebuild()
     {
@@ -261,5 +287,6 @@ public sealed class LogViewModel : ObservableObject, IDisposable
     {
         _pump.Stop();
         _sink.Emitted -= OnEmitted;
+        Filters.Changed -= Rebuild;
     }
 }

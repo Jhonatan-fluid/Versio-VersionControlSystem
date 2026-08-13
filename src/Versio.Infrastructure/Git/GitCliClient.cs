@@ -691,7 +691,17 @@ public sealed partial class GitCliClient(
         };
 
         var display = $"git {string.Join(' ', args.Select(Redact))}";
-        _log.Debug(LogCategory.Git, display);
+
+        // Announced only if it is still running when the reader would start to wonder.
+        //
+        // This used to log unconditionally before the process started, so every git call
+        // cost two lines - the command, then the same command again with a duration. On the
+        // status backstop, which runs every 20 s forever, that is the bulk of an idle log.
+        // The pair only ever earned its keep for a command that hangs or never returns, so
+        // that is now the only case that gets it, and the completion lines below are
+        // unchanged: a command that finished says so once, with its duration.
+        using var announce = new CancellationTokenSource();
+        var announced = AnnounceIfSlowAsync(display, announce.Token);
 
         process.Start();
         process.BeginOutputReadLine();
@@ -735,6 +745,12 @@ public sealed partial class GitCliClient(
         await Task.Run(() => process.WaitForExit(), CancellationToken.None).ConfigureAwait(false);
         stopwatch.Stop();
 
+        // Whatever happened, the command is no longer in flight, so the announcement is
+        // cancelled before any outcome is logged - otherwise a command finishing at the
+        // threshold could report itself as still running after its own result.
+        await announce.CancelAsync().ConfigureAwait(false);
+        await announced.ConfigureAwait(false);
+
         string outText, errText;
         lock (gate)
         {
@@ -771,6 +787,30 @@ public sealed partial class GitCliClient(
             StdErr = errText,
             Duration = stopwatch.Elapsed,
         };
+    }
+
+    /// <summary>
+    /// Say what is running, but only once it has run long enough to be worth saying.
+    /// </summary>
+    /// <remarks>
+    /// One second is the threshold because it is roughly where a person stops reading a
+    /// pause as instant. Every routine git call in this app finishes in tens of
+    /// milliseconds, so in normal use this writes nothing at all; a fetch against an
+    /// unreachable remote, an auth prompt that cannot open, or a hung index lock all cross
+    /// it, and those are precisely the cases where knowing which command is outstanding is
+    /// the whole diagnosis.
+    /// </remarks>
+    private async Task AnnounceIfSlowAsync(string display, CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(1), ct).ConfigureAwait(false);
+            _log.Debug(LogCategory.Git, $"{display} — still running");
+        }
+        catch (OperationCanceledException)
+        {
+            // Finished before the threshold. The completion line covers it.
+        }
     }
 
     private static int SafeExitCode(Process process)

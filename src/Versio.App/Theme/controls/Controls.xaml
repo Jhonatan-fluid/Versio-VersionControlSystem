@@ -12,6 +12,20 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:sys="clr-namespace:System;assembly=System.Runtime">
 
+    <!--
+        Declared once, here, because every window needs it and a window cannot see another
+        window's resources.
+
+        It lived in MainWindow.Resources, and SystemInfoWindow used the same key without
+        declaring it - so opening Settings → System information threw
+        "Cannot find resource named 'BoolToVisibility'" from inside the row DataTemplate,
+        during Measure. Nothing caught it: the reference compiles, the window is the one
+        dialog with no test constructing it, and the throw only happens when somebody opens
+        it. The same blind spot already written up for modal dialogs, found again in the
+        modal that was added after the write-up.
+    -->
+    <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+
     <!-- Segoe Fluent Icons is the Windows 11 system icon font; Segoe MDL2 covers Windows 10.
          Monochrome, so glyphs inherit Foreground and re-theme for free - which colour emoji
          never do. -->
@@ -30,6 +44,7 @@
     <sys:String x:Key="Icon.Undo">&#xE7A7;</sys:String>
     <sys:String x:Key="Icon.Download">&#xE896;</sys:String>
     <sys:String x:Key="Icon.Pause">&#xE769;</sys:String>
+    <sys:String x:Key="Icon.Play">&#xE768;</sys:String>
     <sys:String x:Key="Icon.Filter">&#xE71C;</sys:String>
 
     <!-- ==================================================================== ICON -->
@@ -44,7 +59,18 @@
     <!-- ================================================================== BUTTON -->
     <!-- Ghost by default: no border, no fill until hovered. Borders on every control are
          the single strongest "old app" signal. -->
-    <Style x:Key="GhostButton" TargetType="Button">
+    <!--
+        TargetType is ButtonBase, not Button, so this also styles a ToggleButton.
+
+        It targeted Button until the log panel's category dropdown - a ToggleButton, because
+        it has to stay pressed while its popup is open - asked for it and WPF threw
+        "'Button' TargetType does not match type of element 'ToggleButton'" at window
+        construction. That is a runtime failure with a clean build behind it: BAML compiles
+        the reference happily, and nothing looks at it again until somebody opens the window.
+        Everything derived from this still targets Button, which stays legal because Button
+        is a ButtonBase.
+    -->
+    <Style x:Key="GhostButton" TargetType="ButtonBase">
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
         <Setter Property="BorderThickness" Value="0" />
@@ -56,7 +82,7 @@
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="Template">
             <Setter.Value>
-                <ControlTemplate TargetType="Button">
+                <ControlTemplate TargetType="ButtonBase">
                     <Border x:Name="Root"
                             Background="{TemplateBinding Background}"
                             CornerRadius="{DynamicResource Radius.Control}"
@@ -377,6 +403,78 @@
         <Setter Property="FontSize" Value="{DynamicResource Font.Size.Caption}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
         <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!-- =================================================================== CHIPS -->
+    <!--
+        A filter toggle that reads as on or off at a glance and in peripheral vision.
+
+        ON is a filled pill; OFF is the same pill emptied out and dimmed. Deliberately NOT
+        a border-only difference: the log header carries four of these side by side, and a
+        one-pixel outline is not a state anybody reads while scanning for a warning.
+
+        The unchecked state keeps the text visible rather than hiding it, because the label
+        IS the affordance - a chip that dropped its own name when switched off would leave
+        four unlabelled buttons and no way to guess which one to press.
+    -->
+    <Style x:Key="FilterChip" TargetType="ToggleButton">
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Height" Value="20" />
+        <Setter Property="Margin" Value="0,0,4,0" />
+        <Setter Property="FontFamily" Value="{DynamicResource Font.Mono}" />
+        <Setter Property="FontSize" Value="{DynamicResource Font.Size.Caption}" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToggleButton">
+                    <Border x:Name="Root" CornerRadius="10" Padding="8,0"
+                            Background="{DynamicResource Brush.Surface.Sunken}">
+                        <ContentPresenter x:Name="Label"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="False">
+                            <Setter TargetName="Root" Property="Background" Value="Transparent" />
+                            <Setter TargetName="Label" Property="Opacity" Value="0.35" />
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Root" Property="Background"
+                                    Value="{DynamicResource Brush.Surface.Hover}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!--
+        A small stated fact: a count, a state, a mode. Not clickable, and shaped so it does
+        not read as a button somebody is failing to press.
+    -->
+    <Style x:Key="Pill" TargetType="Border">
+        <Setter Property="CornerRadius" Value="9" />
+        <Setter Property="Padding" Value="8,1" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Background" Value="{DynamicResource Brush.Surface.Sunken}" />
+    </Style>
+
+    <Style x:Key="PillText" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource Font.Mono}" />
+        <Setter Property="FontSize" Value="{DynamicResource Font.Size.Caption}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Secondary}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!-- A checkable row inside a dropdown: the category list, and anything like it. -->
+    <Style x:Key="MenuCheck" TargetType="CheckBox">
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Padding" Value="6,0,0,0" />
+        <Setter Property="Margin" Value="0,2" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="FontFamily" Value="{DynamicResource Font.UI}" />
+        <Setter Property="FontSize" Value="{DynamicResource Font.Size.Caption}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
     </Style>
 
 </ResourceDictionary>
