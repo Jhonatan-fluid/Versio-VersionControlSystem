@@ -1,16 +1,18 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-13 · **Commits:** 71 · **Tests:** 998 unit + 198 UI + 111 integration, 0 skipped
+**Date:** 2026-08-13 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,000 unit + 198 UI + 117 integration, 0 skipped
 
 > All three measured on 2026-08-13, on branch `Clean-up-and-continue-dev`. The integration
 > suite was re-run in full against real CODESYS 3.5.22.20 after the manifest work — 111
 > passed, 0 skipped, 6 m 11 s — including `RepositoryWatcherTests.A_deleted_file_is_reported`,
 > the one noted below as flaky.
 
-> Both numbers are re-derivable rather than remembered: `git rev-list --count HEAD`, and
-> `dotnet test` prints a total per suite. The commit count in this header was wrong by twelve
-> before an audit checked it — a hand-maintained number that nothing verifies drifts silently,
-> which is the same class of problem as a comment claiming a file nobody wrote.
+> **The commit count is the command now, not a number.** It was wrong by twelve when an audit
+> first checked it, and wrong again twice in one afternoon afterwards — including once by the
+> very commit that corrected it, which is the shape of the problem: a number that changes with
+> every commit cannot be written down in a file that every commit touches. The test counts stay
+> as numbers because they only move when the tests do, and `dotnet test` prints a total per
+> suite when they have.
 
 > One integration test, `RepositoryWatcherTests.A_deleted_file_is_reported`, is **flaky under
 > full-suite load** — see Findings. It passes in isolation and failed once during a complete
@@ -147,7 +149,7 @@ format; `.gitattributes` covers every registered vendor's extensions.
 > **Safeguards work is tracked separately** in **[`SAFEGUARDS.md`](SAFEGUARDS.md)** — what Versio
 > refuses, asks about or waits for when something is running or unsaved. Phases 1–6 of it are
 > built and verified against real CODESYS, and **phase 7 (the auto-stash) is under way**: the
-> stash identity and the whole pure rule layer have landed. **§0 of that document is the
+> stash identity, the pure rule layer and the sidecar store have landed. **§0 of that document is the
 > handover note**, and *Phase 7, as built* at the end of §4 says what is left.
 >
 > It also carries a correction worth reading before touching the sync engine: **`On git action` is

@@ -53,3 +53,35 @@ public interface ILockStore
 
     Task ClearAsync(CancellationToken ct);
 }
+
+/// <summary>
+/// Where the record of Versio's own stashes lives.
+/// </summary>
+/// <remarks>
+/// <para>
+/// A sidecar beside the lock state, and for a related reason: <c>git stash list</c> cannot
+/// carry this. <c>stash@{n}</c> is positional and renumbers, the subject is a human-readable
+/// string a user's own stash can imitate exactly, and a stash carries no sync state at all —
+/// so what Versio stashed, on which branch, and which direction locks went with it have to be
+/// written down separately.
+/// </para>
+/// <para>
+/// <b>Machine-local.</b> A stash never leaves the clone it was taken in, so a record of one has
+/// no business travelling either.
+/// </para>
+/// </remarks>
+public interface IAutoStashStore
+{
+    /// <summary>
+    /// Read the record, or <see cref="Guarding.AutoStashState.Empty"/> when there is none.
+    /// </summary>
+    /// <remarks>
+    /// <b>Never throws.</b> A corrupt sidecar costs the <i>offer</i> to restore, and nothing
+    /// else: the stashes themselves are still in git and still listed, so the work is not lost
+    /// — it just stops being handed back automatically. Taking the window down over it would
+    /// turn a lost convenience into a lost session.
+    /// </remarks>
+    Task<Guarding.AutoStashState> ReadAsync(CancellationToken ct);
+
+    Task WriteAsync(Guarding.AutoStashState state, CancellationToken ct);
+}

@@ -184,6 +184,13 @@ public static class AutoStash
     /// A null answer means the switch must be abandoned. A stash that did not happen and a
     /// checkout that happened anyway is the worst outcome available here.
     /// </para>
+    /// <para>
+    /// If two entries appeared — a second Versio, or somebody stashing in a terminal in the
+    /// same instant — the <b>newest</b> is taken, because <c>git stash list</c> is ordered
+    /// newest first and our push is the one that just returned. Recording the wrong one of two
+    /// simultaneous stashes is a worse failure than it looks, so it is worth saying that this
+    /// is a choice and not an accident of <c>FirstOrDefault</c>.
+    /// </para>
     /// </remarks>
     public static string? NewStash(
         IReadOnlyList<StashEntry> before, IReadOnlyList<StashEntry> after)

@@ -92,6 +92,49 @@ public sealed class OwnWriteTests
     }
 
     [Fact]
+    public async Task Fifty_six_echoes_are_one_line_in_the_log_rather_than_fifty_six()
+    {
+        // The other half of the cost. Before the window each echo wrote a refusal, a hash and
+        // a git result - 493 lines in one 50-second export, measured in a real log. A line
+        // apiece here would have swapped a burst of work for a burst of log, so the window
+        // counts them and says how many when it closes.
+        var harness = new SyncOrchestratorTests.Harness();
+
+        using (harness.Orchestrator.BeginOwnWrite(
+                   SyncOrchestratorTests.BindingId, ChangeSource.ExportedText))
+        {
+            harness.SetExportedText("everything the export just wrote");
+
+            for (var i = 0; i < 56; i++)
+            {
+                await harness.Orchestrator.HandleChangeAsync(
+                    Change(ChangeSource.ExportedText), CancellationToken.None);
+            }
+        }
+
+        Assert.DoesNotContain(harness.Log, e => e.Message.Contains(
+            "this was not an edit", StringComparison.Ordinal));
+
+        Assert.Contains(harness.Log, e => e.Message.Contains(
+            "ignored 56 echo(es)", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_window_that_swallowed_nothing_says_nothing_about_echoes()
+    {
+        // A count of zero on every export would be the same noise one level quieter.
+        var harness = new SyncOrchestratorTests.Harness();
+
+        harness.Orchestrator.BeginOwnWrite(
+            SyncOrchestratorTests.BindingId, ChangeSource.ExportedText).Dispose();
+
+        await Task.CompletedTask;
+
+        Assert.DoesNotContain(harness.Log, e => e.Message.Contains(
+            "echo(es)", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task It_is_dropped_before_the_hash_gate_is_asked()
     {
         // The distinguishing property, the same one the git-write window has: our own export

@@ -326,12 +326,18 @@ public sealed class SyncOrchestrator
     /// else's, so holding off every binding's syncing for the 20–30 seconds a toolchain run
     /// takes would drop real edits elsewhere in the repository.
     /// </remarks>
+    /// <remarks>
+    /// <c>Echoes</c> splits the key into two counters over the same window: how many writers
+    /// are open, and how many echoes have been swallowed. One dictionary rather than two
+    /// because they are opened, read and cleared together, and a second one would eventually
+    /// be cleared in only one of the three places.
+    /// </remarks>
     private readonly System.Collections.Concurrent.ConcurrentDictionary<(string Binding,
-        ChangeSource Side), int> _ownWrites = new();
+        ChangeSource Side, bool Echoes), int> _ownWrites = new();
 
     /// <summary>True while Versio is writing that side of that binding itself.</summary>
     public bool IsWriting(string bindingId, ChangeSource side) =>
-        _ownWrites.TryGetValue((bindingId, side), out var depth) && depth > 0;
+        _ownWrites.TryGetValue((bindingId, side, false), out var depth) && depth > 0;
 
     /// <summary>
     /// Declare that Versio is about to write one side of a binding. Dispose when it has.
@@ -361,7 +367,7 @@ public sealed class SyncOrchestrator
     /// </remarks>
     public IDisposable BeginOwnWrite(string bindingId, ChangeSource side)
     {
-        _ownWrites.AddOrUpdate((bindingId, side), 1, (_, depth) => depth + 1);
+        _ownWrites.AddOrUpdate((bindingId, side, false), 1, (_, depth) => depth + 1);
         _log.Debug(LogCategory.Sync,
             $"{bindingId}: writing {side} ourselves; echoes from it are not edits");
 
@@ -381,8 +387,23 @@ public sealed class SyncOrchestrator
             }
 
             _disposed = true;
-            owner._ownWrites.AddOrUpdate((bindingId, side), 0, (_, depth) => Math.Max(0, depth - 1));
-            owner._log.Debug(LogCategory.Sync, $"{bindingId}: finished writing {side}");
+
+            var depth = owner._ownWrites.AddOrUpdate(
+                (bindingId, side, false), 0, (_, open) => Math.Max(0, open - 1));
+
+            // The count belongs to the window, so it is reported and reset by the last writer
+            // out rather than by each of them.
+            if (depth > 0)
+            {
+                return;
+            }
+
+            owner._ownWrites.TryRemove((bindingId, side, true), out var echoes);
+            owner._log.Debug(LogCategory.Sync,
+                $"{bindingId}: finished writing {side}" +
+                (echoes == 0
+                    ? string.Empty
+                    : $"; ignored {echoes} echo(es) of it"));
         }
     }
 
@@ -624,7 +645,15 @@ public sealed class SyncOrchestrator
         //     echoes were costing, a git status process and a full-tree hash apiece.
         if (IsWriting(job.BindingId, job.Source))
         {
-            return (Refuse(LogLevel.Debug, SyncVerdict.SelfWriteSuppressed, job.BindingId,
+            // Counted, not logged one by one. An export produces one echo per file it wrote -
+            // 56 on the project that surfaced this - and a line each would swap a burst of
+            // work for a burst of log. The window says how many it swallowed when it closes,
+            // which is the same trade the quiet-status summary already makes.
+            _ownWrites.AddOrUpdate(
+                (job.BindingId, job.Source, Echoes: true), 1, (_, seen) => seen + 1);
+
+            return (SyncOutcome.Refused(
+                SyncVerdict.SelfWriteSuppressed, job.BindingId,
                 $"Versio is writing the {job.Source} side of this project right now; " +
                 "this was not an edit", state), slotHeld);
         }

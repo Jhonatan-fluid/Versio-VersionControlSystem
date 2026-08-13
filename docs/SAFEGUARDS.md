@@ -515,11 +515,18 @@ the other silently shifts every column.
 stashes without the branch filter fails exactly the test that asserts another branch's stash is
 not offered here.
 
+**3 · The store.** `IAutoStashStore` in `Versio.Core/Abstractions/`, `JsonAutoStashStore` in
+`Versio.Infrastructure/FileSystem/`, writing `.versio/local/autostash.json` through the same
+atomic temp-and-replace `JsonLockStore` uses. It decides nothing. Two details are deliberate:
+the direction is serialised **by name**, so a schema change cannot silently renumber every
+stashed lock; and an unreadable record is logged as an **error** rather than a warning, with
+wording that says the stashes are still in git and how to reach them by hand — nobody's work is
+lost, but the knowledge of which stashes were ours is, and that is what stops the app offering
+somebody else's back. Six tests against a real filesystem, including that the file lands under
+the `.versio/local/` prefix `.gitignore` already covers.
+
 **What is left, in order:**
 
-3. `IAutoStashStore` + `JsonAutoStashStore` in `Versio.Infrastructure/FileSystem/`, mirroring
-   `JsonLockStore` including the atomic replace. Nothing decides anything; it reads and writes
-   `.versio/local/autostash.json`.
 4. Taking and restoring for real, in the shell: `StashPushAsync` with the marker, the set
    difference, the lock capture and release (§4.7), and the arrival prompt on **every**
    successful checkout — the dropdown, `CreateBranchAsync`, and a pull that moved HEAD.
