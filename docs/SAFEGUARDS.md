@@ -1,11 +1,11 @@
 # Versio — safeguards
 
-**Date:** 2026-08-12
+**Date:** 2026-08-13 · **Handed over at** `Safeguards` @ 61 commits — start at §0
 
 | | |
 |---|---|
 | Document | **The interruption and destructive-action plan.** What Versio must refuse, ask about, or wait for — and why each answer is the one it is |
-| Status | **Phases 1–6 built and verified against real CODESYS** (§6) — the guard, its narrative, the cancellation plumbing, the dialog, the close guard, the context-switch guard, the repository reset, the conflict gate and the git-write window. Phases 7–9 are still plan. Every "today" below is a reading of the code at the commit this was written against |
+| Status | **Phases 1–6 built and verified against real CODESYS** (§6) — the guard, its narrative, the cancellation plumbing, the dialog, the close guard, the context-switch guard, the repository reset, the conflict gate and the git-write window. Phases 7–9 are still plan — **§0 is the handover note.** Every "today" below is a reading of the code as it was when this was written, with each phase's *"as built"* notes appended where it was planned |
 | Related | [`PLAN.md`](PLAN.md) — the architecture · [`STATUS.md`](STATUS.md) — where the project is · [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) — what was measured |
 
 ---
@@ -23,6 +23,67 @@ a sentence for every refusal, and side effects confined to `Versio.App`.**
 
 The four scenarios in §3 are the ones that prompted it. §5 lists nine more found while reading
 the code, two of which (§5.A and §5.D) can lose work with no user error at all.
+
+---
+
+## 0. Handover — where this stands
+
+**Branch:** `Safeguards`. **Built:** phases 1–6. **Next:** phase 7 (the auto-stash, §4), then 8 and 9.
+
+Everything below §1 is the original plan, kept as written, with each phase's *"as built"* notes
+appended where it was planned. Read §6 for the order and what is done.
+
+### Verified how
+
+| | |
+|---|---|
+| 939 Core + 190 UI unit tests | `dotnet test tests/Versio.Core.Tests`, `…/Versio.App.Tests` |
+| 111 integration tests | Real git and **real CODESYS 3.5.22.20**; 0 skipped, 6 m 15 s |
+| The application itself | Started, driven, closed. Two bugs found this way that no test caught |
+| Every new behaviour | Deliberately broken and the tests re-run, per the README's `-MutateFirst` rule |
+
+> **The `dotnet` on PATH here has no SDK.** Use `%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe`, as
+> the README warns. And **a running `Versio.exe` locks `src/Versio.App/bin`**, so the App project
+> cannot be rebuilt while it is open — `-p:OutputPath=<somewhere else>` builds and tests around it.
+
+### The lesson worth inheriting
+
+Three separate times in this work, a unit test proved a method and not its caller, and each was
+caught only by deliberately deleting the call:
+
+- `GuardIntent.Clone`, `Pull` and `Discard` were defined, given labels and verdicts, covered by
+  theory tests over the enum — and called by nothing.
+- `ResetForRepositoryChange` had nine passing tests; deleting its call site from
+  `OpenRepositoryAsync` left all nine green.
+- `TreeRow.Reconcile` had eight passing tests; reverting `RefreshTreeAsync` to clear-and-refill
+  left all of them green.
+
+**A test entered through the front door of the thing under test cannot tell you the thing is
+reachable.** Where it matters, there is now a test that comes in from where the user does — which
+is why `Versio.App.Tests` takes `Xunit.SkippableFact` and opens real repositories.
+
+The same shape produced the worst bug of the work: the close guard shipped with every test green
+and **Versio could not be closed at all**. Only running the application found it.
+
+### Known gaps, stated rather than implied
+
+- **The conflict probe's wiring** is verified by compilation and review, not a test. The natural
+  test would launch a real 17–31 s CODESYS export whenever the wiring broke (§5.B).
+- **`BusyTracker.WhenIdleAsync`'s race re-check** is reasoned, not tested — the race cannot be
+  scheduled deterministically from a test (phase 3).
+- **No mouse has driven the guards.** Every path below the click is exercised with real git and
+  real bindings; the `ComboBox` interaction itself is not.
+- **`GuardIntent.Pull` is implemented and deliberately unwired** — its verdicts all resolve to the
+  auto-stash. Phase 7 wires it and deletes `ShellViewModel.AskAboutWork`.
+
+### Starting phase 7
+
+§4 is the full design and was written before any of this was built; it still holds. The first
+concrete step is one line: `GitLogParser.StashFormat` needs `%H` and `StashEntry` needs a
+`CommitId`, because **`stash apply <sha>` works and `stash drop <sha>` does not** — measured, §4.9b.
+Everything else in §4 hangs off having that stable identity.
+
+Phase 7's two prerequisites (§5.A and §5.B) are both built, so it is unblocked.
 
 ---
 
