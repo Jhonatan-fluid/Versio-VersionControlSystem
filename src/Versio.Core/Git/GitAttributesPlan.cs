@@ -43,8 +43,10 @@ public static class GitAttributes
         "# Added by Versio: the mirror is text, and must arrive byte-identical everywhere.";
 
     private const string MirrorHeader2 =
-        "# Without eol=lf a core.autocrlf=true clone lands CRLF, which git reports as clean" +
-        "' + chr(10) + '# and Versio's hash gate reports as an edit to every file in it.";
+        "# Without eol=lf a core.autocrlf=true clone lands CRLF, which git calls clean and";
+
+    private const string MirrorHeader3 =
+        "# Versio's hash gate calls an edit to every file in it.";
 
     private const string Header2 =
         "# binary -diff -merge stops git from attempting a line merge and corrupting it.";
@@ -133,7 +135,9 @@ public static class GitAttributes
                 builder.Append('\n');
             }
 
-            builder.Append(MirrorHeader).Append('\n').Append(MirrorHeader2).Append('\n');
+            builder.Append(MirrorHeader).Append('\n')
+                   .Append(MirrorHeader2).Append('\n')
+                   .Append(MirrorHeader3).Append('\n');
             foreach (var rule in mirrorRules)
             {
                 builder.Append(rule).Append('\n');
