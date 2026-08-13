@@ -96,12 +96,13 @@ public sealed class ProjectRow(string path, string? bindingId) : ObservableObjec
 /// automatic thing might not have happened.
 /// </para>
 /// <para>
-/// Two actions survived, and both survived for a reason rather than by omission.
-/// <see cref="ExportStaleCommand"/> exists because a project changed while Versio was closed
-/// was never seen by the watcher, and without it the only way out of "not exported" is to
-/// commit. <see cref="AcknowledgeCommand"/> exists because a failed binding syncs no further
-/// until somebody says they have seen the failure — that is the design, and a state nothing
-/// can clear is a dead end.
+/// <b>No buttons survive on the panel itself.</b> The last two were "Export now" and
+/// "Acknowledge failure", and both were disabled almost always — which teaches people to stop
+/// looking at that corner of the screen. Exporting what changed while Versio was closed is now
+/// automatic (<see cref="CatchUpAsync"/>), because nothing about a stale mirror needs deciding.
+/// The failure gate is unchanged and still deliberate, but it belongs to <i>one project</i>:
+/// it is reported on that project's row, with the reason and <see cref="RetryCommand"/> in the
+/// pane beside it.
 /// </para>
 /// </remarks>
 public sealed class SyncViewModel : ObservableObject
@@ -165,8 +166,7 @@ public sealed class SyncViewModel : ObservableObject
         // nothing else is touched here.
         _heartbeat.Beat += op => Activity = op.Describe(clock);
 
-        ExportStaleCommand = new AsyncCommand(ExportStaleAsync, CanExportStale, onError: Report);
-        AcknowledgeCommand = new AsyncCommand(AcknowledgeAsync, CanAcknowledge, onError: Report);
+        RetryCommand = new AsyncCommand(RetryAsync, CanRetry, onError: Report);
     }
 
     /// <summary>
@@ -182,18 +182,24 @@ public sealed class SyncViewModel : ObservableObject
     public ObservableCollection<string> Findings { get; } = [];
 
     /// <summary>
-    /// Export every project whose mirror is behind, without waiting for a commit.
+    /// Clear the selected project's failure and sync it again.
     /// </summary>
     /// <remarks>
-    /// The one export button left. A project edited while Versio was closed was never seen by
-    /// the watcher, so it sits stale until something asks for it; without this the only way
-    /// out of that state is to start a commit, which is a strange thing to have to do to
-    /// refresh a mirror.
+    /// <para>
+    /// Replaces two buttons that stood permanently on the panel and were disabled almost
+    /// always. "Export now" is gone because nothing about a stale mirror needs deciding — it
+    /// is exported on open now, by <see cref="CatchUpAsync"/>. "Acknowledge failure" is gone
+    /// as a panel-wide control, because a failure belongs to <i>one project</i> and the panel
+    /// is the wrong place to say so.
+    /// </para>
+    /// <para>
+    /// The gate itself is unchanged and deliberate: a failed binding syncs no further until a
+    /// person has seen the failure. What moved is where they see it — on the project's own
+    /// row, with the reason and this button in the pane beside it, instead of a greyed-out
+    /// control at the top of an otherwise unrelated panel.
+    /// </para>
     /// </remarks>
-    public AsyncCommand ExportStaleCommand { get; }
-
-    /// <summary>Clear every failed binding so those projects can sync again.</summary>
-    public AsyncCommand AcknowledgeCommand { get; }
+    public AsyncCommand RetryCommand { get; }
 
     /// <summary>Display name of the toolchain this repository targets.</summary>
     public string VendorName => _format.DisplayName;
@@ -263,6 +269,9 @@ public sealed class SyncViewModel : ObservableObject
     /// </remarks>
     /// <summary>Bindings whose mirror is behind their project, from the last gate evaluation.</summary>
     private readonly HashSet<string> _staleBindings = new(StringComparer.Ordinal);
+
+    /// <summary>Whether the once-per-repository catch-up export has already run.</summary>
+    private bool _caughtUp;
 
     public IReadOnlyList<string> ExportPaths =>
         [.. _config.Bindings.Where(b => b.Enabled).Select(b => b.ExportPath)];
@@ -345,12 +354,169 @@ public sealed class SyncViewModel : ObservableObject
         _repositoryRoot = repositoryRoot;
         _git = git;
 
+        // Armed for this repository. Set before any of the loading below, so a second
+        // AttachAsync - reopening the same repository, say - gets a fresh sweep.
+        _caughtUp = false;
+
         await ProbeToolchainAsync(ct).ConfigureAwait(true);
         await BuildOrchestratorAsync(ct).ConfigureAwait(true);
         await RescanAsync().ConfigureAwait(true);
 
         StartWatching();
         await RefreshStalenessAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Export whatever changed while Versio was not watching.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The watcher only sees changes made while the app is running. A project edited with
+    /// Versio closed — the normal case, since CODESYS is the tool people actually work in —
+    /// is therefore behind the moment the repository opens, and used to sit there until
+    /// somebody pressed a button or started a commit. Nothing about that state needs a human
+    /// decision: the mirror is simply out of date, and bringing it up to date is what this
+    /// application is for.
+    /// </para>
+    /// <para>
+    /// <b>Ordering is the guard.</b> This runs only after <see cref="AttachAsync"/> has
+    /// finished, which means the toolchain has been probed, the orchestrator has been rebuilt
+    /// and its locks restored from the previous session, every project has been scanned, and
+    /// staleness has been evaluated against all of it. Exporting earlier would run against a
+    /// direction lock that had not been read yet.
+    /// </para>
+    /// <para>
+    /// <b>Once per repository.</b> A refresh, a git operation or a second call must not start
+    /// another sweep — the flag is set before the work, not after it, so a failure does not
+    /// leave it armed to retry on every subsequent refresh.
+    /// </para>
+    /// <para>
+    /// It goes through <see cref="SatisfyGateAsync"/>, the same path the commit gate uses, so
+    /// the direction lock, hash gate, circuit breaker and open-project check all apply exactly
+    /// as they do everywhere else. A project someone has open in the IDE is a wait, not a
+    /// failure, and this leaves it alone.
+    /// </para>
+    /// </remarks>
+    public async Task CatchUpAsync(CancellationToken ct)
+    {
+        if (_orchestrator is null || _caughtUp)
+        {
+            return;
+        }
+
+        _caughtUp = true;
+
+        if (!ToolchainAvailable)
+        {
+            // Nothing to say to the user: a repository of PLC projects on a machine with no
+            // toolchain is still a perfectly good repository, and the panel already reports
+            // why it cannot export.
+            _logger.Info(LogCategory.Sync,
+                "catch-up skipped: no toolchain available to export with");
+            return;
+        }
+
+        if (UnexportedCount == 0)
+        {
+            _logger.Info(LogCategory.Sync, "catch-up: every mirror is up to date");
+            return;
+        }
+
+        var behind = UnexportedCount;
+        _logger.Info(LogCategory.Sync,
+            $"catch-up: {behind} project(s) changed while Versio was not running; exporting");
+
+        using var busy = _busy.Begin(behind == 1
+            ? "Exporting 1 project that changed while Versio was closed…"
+            : $"Exporting {behind} projects that changed while Versio was closed…");
+
+        var outcomes = await SatisfyGateAsync(ct).ConfigureAwait(true);
+
+        var failure = outcomes.FirstOrDefault(o => o.IsFailure);
+        Summary = failure is null
+            ? outcomes.Count == 0 ? Summary : SyncNarrative.Describe(outcomes[^1])
+            : $"Export failed: {failure.Explanation}";
+    }
+
+    /// <summary>
+    /// Every registered vendor's toolchain, as it is on this machine.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Walks the <b>registry</b>, not CODESYS: a machine with TwinCAT and no CODESYS should
+    /// say so, and the day a second vendor is implemented this needs no edit. Everything shown
+    /// comes from <see cref="PlcToolchainStatus"/>, which is above the seam, so no brand name
+    /// appears in this method.
+    /// </para>
+    /// <para>
+    /// Each toolchain is probed fresh rather than reported from the last probe. This is opened
+    /// precisely when somebody suspects the environment has changed — they have just installed
+    /// something, or a profile has gone missing — and answering from a cached probe taken when
+    /// the repository opened would be answering the wrong question.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<Views.SystemInfoRow>> DescribeToolchainsAsync(
+        CancellationToken ct)
+    {
+        var rows = new List<Views.SystemInfoRow>();
+
+        foreach (var format in PlcFormats.All)
+        {
+            rows.Add(Views.SystemInfoRow.Section(format.DisplayName.ToUpperInvariant()));
+
+            var toolchain = PlcToolchains.For(format.Vendor, _logger);
+            if (toolchain is null)
+            {
+                // Recognised but not drivable: projects of this vendor can be tracked and
+                // committed, and not exported. A real state, and one worth naming.
+                rows.Add(new Views.SystemInfoRow("Status", "no runner implemented yet"));
+                rows.Add(new Views.SystemInfoRow("Projects", string.Join(", ", format.ProjectExtensions)));
+                continue;
+            }
+
+            PlcToolchainStatus status;
+            try
+            {
+                status = await toolchain.ProbeAsync(ct).ConfigureAwait(true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // A probe reads the filesystem, and a locked-down machine can refuse. Report
+                // it here rather than letting it close the window somebody opened to find out
+                // what was wrong.
+                rows.Add(new Views.SystemInfoRow("Status", $"could not be probed: {ex.Message}"));
+                continue;
+            }
+
+            rows.Add(new Views.SystemInfoRow("Status",
+                status.Available ? "available" : status.Explanation ?? "unavailable"));
+
+            if (status.Version is { Length: > 0 } version)
+            {
+                rows.Add(new Views.SystemInfoRow("Version", version));
+            }
+
+            if (status.Profile is { Length: > 0 } profile)
+            {
+                rows.Add(new Views.SystemInfoRow("Profile", profile));
+            }
+
+            if (status.ExecutablePath is { Length: > 0 } exe)
+            {
+                rows.Add(new Views.SystemInfoRow("Executable", exe));
+            }
+
+            // Several usable installations and no safe way to choose. Shown in full, because
+            // the fix is for a person to pick one and the list is what they pick from.
+            foreach (var candidate in status.Candidates)
+            {
+                rows.Add(new Views.SystemInfoRow("Also found", candidate));
+            }
+
+            rows.Add(new Views.SystemInfoRow("Projects", string.Join(", ", format.ProjectExtensions)));
+        }
+
+        return rows;
     }
 
     /// <summary>Clear state when the repository closes, so a stale scan is never shown.</summary>
@@ -364,6 +530,8 @@ public sealed class SyncViewModel : ObservableObject
         _repositoryRoot = null;
         _git = null;
         _orchestrator = null;
+        _caughtUp = false;
+        _staleBindings.Clear();
         _config = new RepoConfig();
         Projects.Clear();
         Findings.Clear();
@@ -839,6 +1007,12 @@ public sealed class SyncViewModel : ObservableObject
 
             NoteSelection(value.Node.Path);
 
+            // A project row is where a failure is reported, so the pane beside it has to
+            // follow the selection. Called for every node, not just project rows: selecting
+            // something else has to CLEAR the pane, or a failure would follow the user
+            // around the tree.
+            RefreshFailure(value.Node.Kind == ProjectNodeKind.Project ? value.Node.Path : null);
+
             if (!value.IsFolder)
             {
                 NodeSelected?.Invoke(value);
@@ -1115,7 +1289,11 @@ public sealed class SyncViewModel : ObservableObject
         using var busy = _busy.Begin("Exporting before commit…");
         using var beat = _heartbeat.Track(operationId, "commit gate export");
 
-        _logger.Info(LogCategory.Sync, "commit gate: exporting stale bindings before the commit");
+        // Says what it is doing, not why the caller asked. This same path now serves the
+        // commit gate, the catch-up on open and a retry, and a line claiming a commit is
+        // about to happen was wrong for two of the three - in a log that is read precisely
+        // when somebody is trying to work out what the app did on its own.
+        _logger.Info(LogCategory.Sync, "exporting every project whose mirror is behind");
 
         var outcomes = await _orchestrator.SatisfyCommitGateAsync(ct).ConfigureAwait(true);
 
@@ -1355,81 +1533,98 @@ public sealed class SyncViewModel : ObservableObject
         Normalize(System.IO.Path.GetRelativePath(_repositoryRoot!, absolute));
 
     /// <summary>Something is behind and an export could fix it.</summary>
-    private bool CanExportStale() => _orchestrator is not null && UnexportedCount > 0;
+    /// <summary>The project the failure pane is about, or null when nothing has failed.</summary>
+    /// <remarks>
+    /// Driven by the tree selection rather than by a panel-wide "is anything broken" question,
+    /// because a repository can hold several projects and only one of them may have failed.
+    /// </remarks>
+    public ProjectRow? FailedProject { get; private set; }
 
     /// <summary>
-    /// Export every stale binding now.
+    /// The failure the selected project is stuck on, or empty when it is not stuck.
     /// </summary>
     /// <remarks>
-    /// The same call the commit gate makes, deliberately: two ways of deciding what is stale
-    /// would eventually disagree, and the moment they did would be a commit that recorded a
-    /// project without the mirror it exports to. The jobs run synchronously so they bypass the
-    /// coalescer's queue - somebody who presses this means now - but not the circuit breaker,
-    /// the hash gate or the direction lock, which protect work rather than pace it.
+    /// The reason comes from the lock record the orchestrator persisted, so it survives a
+    /// restart: a failure from yesterday's session still explains itself this morning, which
+    /// is exactly when somebody asks.
     /// </remarks>
-    private async Task ExportStaleAsync()
+    public string FailureDetail
     {
-        _logger.Click("Sync.ExportStale");
-
-        var outcomes = await SatisfyGateAsync(CancellationToken.None).ConfigureAwait(true);
-        if (outcomes.Count == 0)
-        {
-            Summary = "Nothing was stale.";
-            return;
-        }
-
-        var failure = outcomes.FirstOrDefault(o => o.IsFailure);
-        Summary = failure is null
-            ? SyncNarrative.Describe(outcomes[^1])
-            : $"Export failed: {failure.Explanation}";
+        get => _failureDetail;
+        private set => SetProperty(ref _failureDetail, value);
     }
 
-    private bool CanAcknowledge() =>
-        _orchestrator is not null &&
-        Projects.Any(p => p.Tracked &&
-                          _orchestrator.StateOf(p.BindingId!) == SyncDirection.Failed);
+    private string _failureDetail = string.Empty;
 
-    /// <summary>
-    /// Clear every failed binding.
-    /// </summary>
+    /// <summary>Work out whether the selected project is in a failed state, and why.</summary>
     /// <remarks>
-    /// Repo-wide rather than per-row, because there is no longer a row to press it against -
-    /// and because a failure nothing can clear is a dead end: a failed binding syncs no
-    /// further until somebody acknowledges it, by design.
+    /// Called on every selection change and after every rescan, so the pane cannot outlive
+    /// the failure it describes - a retry that succeeds has to make it go away.
     /// </remarks>
-    private async Task AcknowledgeAsync()
+    public void RefreshFailure(string? projectPath)
     {
-        if (_orchestrator is null)
-        {
-            return;
-        }
+        var row = Projects.FirstOrDefault(p =>
+            p.Tracked && string.Equals(p.Path, projectPath, StringComparison.OrdinalIgnoreCase));
 
-        _logger.Click("Sync.Acknowledge");
+        var failed = row is not null && _orchestrator is not null &&
+                     _orchestrator.StateOf(row.BindingId!) == SyncDirection.Failed;
 
-        var failed = Projects
-            .Where(p => p.Tracked && _orchestrator.StateOf(p.BindingId!) == SyncDirection.Failed)
-            .ToList();
+        FailedProject = failed ? row : null;
 
-        foreach (var row in failed)
-        {
-            await _orchestrator.AcknowledgeFailureAsync(row.BindingId!, CancellationToken.None)
-                .ConfigureAwait(true);
-            _logger.Info(LogCategory.Sync, $"{row.Name}: failure acknowledged");
-        }
-
-        LockState = SelectedProject is { Tracked: true } selected
-            ? SyncNarrative.Describe(_orchestrator.StateOf(selected.BindingId!))
+        // What the state means, then what actually happened. The first sentence is the same
+        // one the narrative gives everywhere else; the second is the toolchain's own words,
+        // which are the ones worth reading.
+        FailureDetail = failed
+            ? SyncNarrative.Describe(SyncDirection.Failed) +
+              Environment.NewLine + Environment.NewLine +
+              _orchestrator!.ReasonFor(row!.BindingId!)
             : string.Empty;
 
-        await RescanAsync().ConfigureAwait(true);
-        await RefreshStalenessAsync().ConfigureAwait(true);
+        OnPropertyChanged(nameof(HasFailure));
+        RaiseCommandStates();
     }
 
-    private void RaiseCommandStates()
+    /// <summary>True when the failure pane has something to show.</summary>
+    public bool HasFailure => FailedProject is not null;
+
+    private bool CanRetry() => _orchestrator is not null && FailedProject is not null;
+
+    /// <summary>
+    /// Acknowledge the selected project's failure and sync it again.
+    /// </summary>
+    /// <remarks>
+    /// Acknowledging and retrying are one action here, because they are one intention. Making
+    /// them two buttons would mean a person clearing a failure and then wondering why nothing
+    /// happened - the acknowledgement exists so that automation does not retry a failing
+    /// project forever, not so that it takes two clicks to ask for one retry.
+    /// </remarks>
+    private async Task RetryAsync()
     {
-        ExportStaleCommand.RaiseCanExecuteChanged();
-        AcknowledgeCommand.RaiseCanExecuteChanged();
+        if (_orchestrator is null || FailedProject is not { } row)
+        {
+            return;
+        }
+
+        _logger.Click("Sync.Retry");
+        _logger.Info(LogCategory.Sync, $"{row.Name}: failure acknowledged; retrying");
+
+        using var busy = _busy.Begin($"Retrying {row.Name}…");
+
+        await _orchestrator.AcknowledgeFailureAsync(row.BindingId!, CancellationToken.None)
+            .ConfigureAwait(true);
+
+        // The acknowledgement only clears the gate. Without this the project would sit in
+        // exactly the state it was in before, and the button would look as though it had
+        // done nothing.
+        var outcomes = await SatisfyGateAsync(CancellationToken.None).ConfigureAwait(true);
+
+        var failure = outcomes.FirstOrDefault(o => o.IsFailure);
+        Summary = failure is null ? $"{row.Name} synced." : $"Still failing: {failure.Explanation}";
+
+        RefreshFailure(row.Path);
     }
+
+    private void RaiseCommandStates() => RetryCommand.RaiseCanExecuteChanged();
 
     private void Report(Exception ex)
     {

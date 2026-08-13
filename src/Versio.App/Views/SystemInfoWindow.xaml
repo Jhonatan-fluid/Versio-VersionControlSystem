@@ -1,0 +1,78 @@
+<Window x:Class="Versio.App.Views.SystemInfoWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="System information"
+        Height="520" Width="700"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource Brush.Surface.Base}"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType"
+        UseLayoutRounding="True">
+
+    <!-- What this machine has, not what this repository is doing. Toolchains, profiles,
+         versions and paths: identical for every repository, changing only when somebody
+         installs something. It lived at the top of the project panel until it was pointed
+         out that a panel about changed files is the wrong place for it. -->
+
+    <DockPanel Margin="20">
+        <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap"
+                   Margin="0,0,0,12"
+                   FontFamily="{DynamicResource Font.UI}"
+                   FontSize="{DynamicResource Font.Size.Caption}"
+                   Foreground="{DynamicResource Brush.Text.Secondary}"
+                   Text="What Versio found on this machine. Copy this into a bug report — every line here is something that changes what the app can do." />
+
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
+                    HorizontalAlignment="Right" Margin="0,12,0,0">
+            <Button Content="Copy all" Style="{StaticResource GhostButton}"
+                    Padding="16,4" Click="OnCopy"
+                    ToolTip="Copy every line to the clipboard" />
+            <Button Content="Close" Style="{StaticResource AccentButton}"
+                    Padding="16,4" Margin="8,0,0,0" IsCancel="True" IsDefault="True"
+                    Click="OnClose" />
+        </StackPanel>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <ItemsControl x:Name="Rows">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Grid Margin="0,0,0,2">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="190" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <!-- A section header spans both columns and has no value; a plain
+                                 row has both. One template, told apart by IsHeader, so the
+                                 list stays a flat sequence rather than a nested one. -->
+                            <TextBlock Grid.Column="0" Grid.ColumnSpan="2"
+                                       Text="{Binding Label}"
+                                       Margin="0,14,0,4"
+                                       Style="{StaticResource SectionLabel}"
+                                       Visibility="{Binding IsHeader,
+                                           Converter={StaticResource BoolToVisibility}}" />
+
+                            <TextBlock Grid.Column="0" Text="{Binding Label}"
+                                       VerticalAlignment="Top"
+                                       FontFamily="{DynamicResource Font.UI}"
+                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                       Foreground="{DynamicResource Brush.Text.Secondary}"
+                                       Visibility="{Binding IsValue,
+                                           Converter={StaticResource BoolToVisibility}}" />
+
+                            <TextBlock Grid.Column="1" Text="{Binding Value}"
+                                       TextWrapping="Wrap"
+                                       FontFamily="{DynamicResource Font.Mono}"
+                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                       Foreground="{DynamicResource Brush.Text.Primary}"
+                                       Visibility="{Binding IsValue,
+                                           Converter={StaticResource BoolToVisibility}}" />
+                        </Grid>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

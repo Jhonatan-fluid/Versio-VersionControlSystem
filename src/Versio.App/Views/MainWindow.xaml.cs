@@ -212,6 +212,22 @@ public partial class MainWindow : Window
             : Visibility.Collapsed;
     }
 
+    /// <summary>
+    /// Show what this machine has: toolchains, versions, paths.
+    /// </summary>
+    /// <remarks>
+    /// The popup closes first. A modal opening from behind an open popup leaves the popup
+    /// hanging over it, and the popup closes on its own the moment focus moves - which looks
+    /// like a glitch rather than a decision.
+    /// </remarks>
+    private async void OnOpenSystemInfo(object sender, RoutedEventArgs e)
+    {
+        SettingsPopup.IsOpen = false;
+
+        var rows = await _shell.BuildSystemInfoAsync(CancellationToken.None);
+        new SystemInfoWindow(rows) { Owner = this }.ShowDialog();
+    }
+
     private void OnOpenSettings(object sender, RoutedEventArgs e)
     {
         SyncThemeRadios();

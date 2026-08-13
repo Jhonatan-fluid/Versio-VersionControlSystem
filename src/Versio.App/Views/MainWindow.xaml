@@ -225,6 +225,23 @@
                             Style="{StaticResource GhostButton}"
                             Command="{Binding OpenLogsFolderCommand}"
                             ToolTip="Daily log files, kept for 5 days" />
+
+                    <Border Height="1" Background="{DynamicResource Brush.Border.Subtle}"
+                            Margin="6,4" />
+
+                    <!-- Which toolchains this machine has, which profiles they offer, what
+                         version of everything is installed. Environment rather than state:
+                         the same on every repository, and it changes when somebody installs
+                         something, not while anybody is working. It used to sit at the top
+                         of the project panel, where it took up the room the changed files
+                         needed and looked like it was about the repository. -->
+                    <TextBlock Text="HELP" Style="{StaticResource SectionLabel}"
+                               Margin="10,6,0,6" />
+                    <Button Content="System information…" Margin="10,0,10,10"
+                            HorizontalAlignment="Left"
+                            Style="{StaticResource GhostButton}"
+                            Click="OnOpenSystemInfo"
+                            ToolTip="Toolchains, versions and paths on this machine" />
                 </StackPanel>
             </Border>
         </Popup>
@@ -531,152 +548,57 @@
                          were the same edit. -->
                     <Border x:Name="ProjectPanel" Padding="14,0,12,12">
                         <DockPanel>
-                            <!-- PLC state. Not controls - the export, the import and the
-                                 tracking all run on their own now, so what is left is the
-                                 handful of facts somebody cannot infer from the tree: whether
-                                 the toolchain is there, which way the lock points, and whether
-                                 anything is behind. -->
-                            <Border DockPanel.Dock="Top"
-                                    Background="{DynamicResource Brush.Surface.Sunken}"
-                                    CornerRadius="{DynamicResource Radius.Control}"
-                                    Padding="10,8" Margin="0,0,0,10">
-                                <StackPanel>
-                                    <StackPanel Orientation="Horizontal">
-                                        <Ellipse Width="7" Height="7" VerticalAlignment="Center"
-                                                 Margin="0,0,8,0">
-                                            <Ellipse.Style>
-                                                <Style TargetType="Ellipse">
-                                                    <Setter Property="Fill"
-                                                            Value="{DynamicResource Brush.Status.Deleted}" />
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding Sync.ToolchainAvailable}"
-                                                                     Value="True">
-                                                            <Setter Property="Fill"
-                                                                    Value="{DynamicResource Brush.Status.Added}" />
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </Ellipse.Style>
-                                        </Ellipse>
-                                        <TextBlock Text="{Binding Sync.VendorName}"
-                                                   FontFamily="{DynamicResource Font.UI}"
-                                                   FontSize="{DynamicResource Font.Size.Body}"
-                                                   FontWeight="{DynamicResource Font.Weight.Medium}"
-                                                   Foreground="{DynamicResource Brush.Text.Primary}" />
-                                        <TextBlock Text="{Binding Sync.Summary}" Margin="10,0,0,0"
-                                                   VerticalAlignment="Center"
-                                                   FontFamily="{DynamicResource Font.UI}"
-                                                   FontSize="{DynamicResource Font.Size.Caption}"
-                                                   Foreground="{DynamicResource Brush.Text.Secondary}"
-                                                   TextTrimming="CharacterEllipsis" />
-                                    </StackPanel>
+                            <!-- What used to be a PLC status card is gone.
+                                 It carried the toolchain name, its version and its profile -
+                                 system information, identical for every repository, which now
+                                 lives in Settings > Help > System information. And it carried
+                                 two buttons that were disabled almost always: "Export now",
+                                 replaced by exporting on open, and "Acknowledge failure",
+                                 which belonged to one project rather than to the panel and is
+                                 now on that project's own row.
 
-                                    <TextBlock Text="{Binding Sync.ToolchainState}"
-                                               TextWrapping="Wrap" Margin="15,3,0,0"
-                                               FontFamily="{DynamicResource Font.Mono}"
-                                               FontSize="{DynamicResource Font.Size.Caption}"
-                                               Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                 What is left are the two lines that are transient and worth
+                                 interrupting for, and both hide themselves when empty. -->
 
-                                    <!-- The direction lock in plain English. Without it the
-                                         lock is invisible magic that blocks the user with no
-                                         explanation (plan section 9.5). -->
-                                    <TextBlock Text="{Binding Sync.LockState}" TextWrapping="Wrap"
-                                               Margin="15,6,0,0"
-                                               FontFamily="{DynamicResource Font.UI}"
-                                               FontSize="{DynamicResource Font.Size.Caption}"
-                                               Foreground="{DynamicResource Brush.Text.Secondary}">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock">
-                                                <Setter Property="Visibility" Value="Visible" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding Sync.LockState}" Value="">
-                                                        <Setter Property="Visibility" Value="Collapsed" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
+                            <!-- What the export cannot carry. Distinct from staleness: stale
+                                 means the mirror is behind the project, this means the mirror
+                                 could never hold it in the first place. -->
+                            <TextBlock DockPanel.Dock="Top" Text="{Binding Sync.CoverageSummary}"
+                                       TextWrapping="Wrap" Margin="2,0,0,8"
+                                       FontFamily="{DynamicResource Font.UI}"
+                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                       Foreground="{DynamicResource Brush.Status.Deleted}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Sync.CoverageSummary}"
+                                                         Value="">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
 
-                                    <!-- What the export does not carry. Distinct from
-                                         staleness: stale means the mirror is behind the
-                                         project, this means the mirror could never hold it
-                                         in the first place. Empty on a clean export - a
-                                         standing green gets read past. -->
-                                    <TextBlock Text="{Binding Sync.CoverageSummary}"
-                                               TextWrapping="Wrap" Margin="15,6,0,0"
-                                               FontFamily="{DynamicResource Font.UI}"
-                                               FontSize="{DynamicResource Font.Size.Caption}"
-                                               Foreground="{DynamicResource Brush.Status.Deleted}">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock">
-                                                <Setter Property="Visibility" Value="Visible" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding Sync.CoverageSummary}"
-                                                                 Value="">
-                                                        <Setter Property="Visibility" Value="Collapsed" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
-
-                                    <!-- With no export on save, a project can sit unexported
-                                         all afternoon. Saying so is the whole reason the
-                                         watcher is wired up: silence reads as "in sync". -->
-                                    <TextBlock Text="{Binding Sync.StalenessSummary}"
-                                               TextWrapping="Wrap" Margin="15,6,0,0"
-                                               FontFamily="{DynamicResource Font.UI}"
-                                               FontSize="{DynamicResource Font.Size.Caption}"
-                                               Foreground="{DynamicResource Brush.Status.Modified}">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock">
-                                                <Setter Property="Visibility" Value="Visible" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding Sync.StalenessSummary}"
-                                                                 Value="">
-                                                        <Setter Property="Visibility" Value="Collapsed" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
-
-                                    <!-- A CODESYS launch is 17-31 s with nothing on screen to
-                                         show for it, and silence is indistinguishable from a
-                                         hang. -->
-                                    <TextBlock Text="{Binding Sync.Activity}" TextWrapping="Wrap"
-                                               Margin="15,6,0,0"
-                                               FontFamily="{DynamicResource Font.Mono}"
-                                               FontSize="{DynamicResource Font.Size.Caption}"
-                                               Foreground="{DynamicResource Brush.Status.Modified}">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock">
-                                                <Setter Property="Visibility" Value="Visible" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding Sync.Activity}" Value="">
-                                                        <Setter Property="Visibility" Value="Collapsed" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
-
-                                    <!-- Both buttons disable themselves when they have nothing
-                                         to do, which is almost always. They exist for the two
-                                         states automation cannot leave: a project changed while
-                                         Versio was closed, and a failure nothing has cleared. -->
-                                    <StackPanel Orientation="Horizontal" Margin="15,8,0,0">
-                                        <Button Content="Export now"
-                                                Style="{StaticResource GhostButton}"
-                                                ToolTip="Export every project whose mirror is behind"
-                                                Command="{Binding Sync.ExportStaleCommand}" />
-                                        <Button Content="Acknowledge failure" Margin="6,0,0,0"
-                                                Style="{StaticResource GhostButton}"
-                                                ToolTip="Nothing syncs for a failed project until the failure is acknowledged"
-                                                Command="{Binding Sync.AcknowledgeCommand}" />
-                                    </StackPanel>
-                                </StackPanel>
-                            </Border>
+                            <!-- A toolchain launch is 17-31 s with nothing on screen to show
+                                 for it, and silence is indistinguishable from a hang. -->
+                            <TextBlock DockPanel.Dock="Top" Text="{Binding Sync.Activity}"
+                                       TextWrapping="Wrap" Margin="2,0,0,8"
+                                       FontFamily="{DynamicResource Font.Mono}"
+                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                       Foreground="{DynamicResource Brush.Status.Modified}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Sync.Activity}" Value="">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
 
                             <TextBox DockPanel.Dock="Top" Margin="0,0,0,6"
                                      Style="{StaticResource FlatTextBox}"
@@ -837,6 +759,38 @@
                                        TextTrimming="CharacterEllipsis" MaxWidth="420" />
                         </StackPanel>
                     </Grid>
+                    <!-- The failure pane. A failed project stops syncing until a person has
+                         seen the failure - that gate is deliberate - so this is where they
+                         see it: the reason the toolchain gave, and one button that clears the
+                         failure and tries again. It used to be a permanently greyed button at
+                         the top of the project panel, which said nothing about WHICH project
+                         had failed. -->
+                    <Border DockPanel.Dock="Top" Margin="6,0,6,8" Padding="14,12"
+                            Background="{DynamicResource Brush.Surface.Sunken}"
+                            CornerRadius="{DynamicResource Radius.Control}"
+                            Visibility="{Binding Sync.HasFailure,
+                                Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel>
+                            <TextBlock Text="{Binding Sync.FailedProject.Name}"
+                                       FontFamily="{DynamicResource Font.UI}"
+                                       FontSize="{DynamicResource Font.Size.Body}"
+                                       FontWeight="{DynamicResource Font.Weight.Semibold}"
+                                       Foreground="{DynamicResource Brush.Status.Deleted}" />
+
+                            <TextBlock Text="{Binding Sync.FailureDetail}" TextWrapping="Wrap"
+                                       Margin="0,6,0,0"
+                                       FontFamily="{DynamicResource Font.UI}"
+                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                       Foreground="{DynamicResource Brush.Text.Secondary}" />
+
+                            <Button Content="Try again" Margin="0,10,0,0"
+                                    HorizontalAlignment="Left" Padding="16,4"
+                                    Style="{StaticResource AccentButton}"
+                                    Command="{Binding Sync.RetryCommand}"
+                                    ToolTip="Clear the failure and sync this project again" />
+                        </StackPanel>
+                    </Border>
+
                     <views:DiffView DiffText="{Binding SelectedDiff}"
                                     FilePath="{Binding SelectedDiffPath}"
                                     HunkCommand="{Binding HunkCommand}"

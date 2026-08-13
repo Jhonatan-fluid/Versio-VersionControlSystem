@@ -132,6 +132,19 @@ public sealed class SyncOrchestrator
     public SyncDirection StateOf(string bindingId) =>
         _locks.TryGetValue(bindingId, out var l) ? l.Direction : SyncDirection.Clean;
 
+    /// <summary>
+    /// Why a binding is in the state it is in, in the words recorded when it got there.
+    /// </summary>
+    /// <remarks>
+    /// Read from the persisted lock record rather than from memory, so it survives a restart:
+    /// a project that failed to export yesterday evening still explains itself this morning,
+    /// which is precisely when somebody opens the app and asks what happened. Empty when
+    /// nothing was recorded, which the caller must treat as "no explanation" rather than
+    /// inventing one.
+    /// </remarks>
+    public string ReasonFor(string bindingId) =>
+        _locks.TryGetValue(bindingId, out var l) ? l.Reason : string.Empty;
+
     public bool AnyLockHeld => _locks.Values.Any(l => SyncStateMachine.HoldsLock(l.Direction));
 
     public CircuitBreaker Breaker => _breaker;

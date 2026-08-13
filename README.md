@@ -56,7 +56,8 @@ Both directions run automatically and deterministically. A per-project **directi
 | **App-wide progress bar** — one signal for git, export and import alike | ✅ counted `BusyTracker`, indeterminate, with a caption |
 | CODESYS runs with no visible window | ✅ `CREATE_NO_WINDOW` **and** `SW_HIDE` — different subsystems |
 | Repository validation — walks up to `.git`, refuses non-repos with a reason | ✅ handles subdirectories, bare repos and linked worktrees |
-| PLC state — toolchain, lock, staleness and heartbeat, folded into the project view | ✅ facts, not controls: the export, import and tracking all run on their own |
+| **Exports what changed while Versio was closed**, when the repository opens | ✅ after the toolchain is probed, the locks restored, the projects scanned and staleness evaluated — in that order, because exporting earlier would run against a lock not yet read |
+| PLC state — toolchain, lock and heartbeat | ✅ environment (toolchain, version, profile) moved to Settings → Help → System information; a failure is reported on the project's own row with a *Try again* beside it. No permanently disabled buttons |
 | **Vendor seam** — `IPlcRunner`/`PlcJob`/`PlcResult`, enforced from assembly metadata | ✅ 22 architecture tests, proven able to fail |
 | Multi-vendor detection — registry, per-binding vendor, mixed repositories | ✅ `PlcFormats`; Rockwell/Siemens/TwinCAT are additive |
 | Application icon — 8 sizes, hand-tuned below 48px, embedded in the exe | ✅ 12 tests over the `.ico` itself |

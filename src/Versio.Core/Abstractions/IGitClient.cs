@@ -33,6 +33,14 @@ public interface IGitClient
 {
     Task<bool> IsRepositoryAsync(CancellationToken ct);
 
+    /// <summary>The version of git that will actually run, in its own words.</summary>
+    /// <remarks>
+    /// Asked of git rather than read from a setting, because the one on PATH is the one every
+    /// other call here will use - and "which git is it using" is a question that has caused
+    /// real confusion on machines carrying several.
+    /// </remarks>
+    Task<string> VersionAsync(CancellationToken ct);
+
     Task<GitStatus> StatusAsync(CancellationToken ct);
 
     Task<IReadOnlyList<BranchInfo>> BranchesAsync(CancellationToken ct);

@@ -111,6 +111,7 @@ format; `.gitattributes` covers every registered vendor's extensions.
 |---|---|
 | **Project view** | **One panel.** Every project *with something to review* — a change, a mirror behind, a lock held, a failure, or never exported — carrying its full CODESYS-shaped object tree, with every other changed file beside them. A project whose mirror is clean is not listed, and the empty state says so rather than going blank. Search still reaches into a clean project, because the box searches the project and not the diff |
 | **Git panel** | Staging, commit message with a 50/72 guide, Ctrl+Enter, fetch / pull / push, stash, recent commits with click-to-diff, **discard**. One operation at a time across every button — a shared counted flag, so a 17–31 s export also holds them |
+| **PLC state** | **No card, and no buttons.** Toolchain, version and profile were environment rather than repository state and moved to Settings → Help → System information. "Export now" is gone because a stale mirror needs no decision — it is exported when the repository opens. "Acknowledge failure" is gone as a panel-wide control: a failure belongs to one project, so it is reported on that project's row with the reason and a *Try again* beside it. What is left in the panel is transient and hides itself: the coverage warning and the live heartbeat |
 | **Branch and clone** | Create a branch from HEAD and switch to it, with the name checked against git's rules while it is typed; clone a repository after verifying the remote, then open it. Both are modal dialogs built from the one stylesheet, and both are covered by tests that construct them against the real theme |
 | **Commit gate** | A stale mirror is exported *and staged* before the commit. Push releases the direction locks; commit does not, and the panel says so |
 | **Diff view** | Eleven languages, new files rendered entirely green, *Show full file*, rows built only when realised, **per-hunk stage and unstage** |
@@ -204,6 +205,50 @@ More fixture projects. Every field bug becomes a fixture before it is fixed.
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### A panel about changed files, opening with a version number and two dead buttons
+
+Reported from use, and correct on every count. The card at the top of the project panel was
+four unrelated things wearing one border:
+
+| What it showed | What it actually was | Where it went |
+|---|---|---|
+| Toolchain name, version, profile, status dot | Environment — identical for every repository, changing only when somebody installs something | Settings → Help → System information |
+| "1 project, tracked." | A fact about the repository | The panel's own summary |
+| "The project file is authoritative…" | State of **one** project | The project's row |
+| *Export now*, *Acknowledge failure* | Two real actions, disabled almost always | Gone; see below |
+
+**A permanently disabled button teaches people to stop looking at that corner of the screen** —
+the same failure mode as a coverage line that congratulates itself on every refresh, which this
+codebase had already argued about once.
+
+*Export now* is gone because **nothing about a stale mirror needs deciding.** A project edited
+while Versio was closed was never seen by the watcher, and the answer is always "export it", so
+that now happens when the repository opens. The ordering is the guard, and it is the whole
+feature: toolchain probed → orchestrator rebuilt and its **locks restored from the previous
+session** → projects scanned → watcher started → staleness evaluated → *then* export. Exporting
+a step earlier would run against a direction lock that had not been read yet. It goes through
+the same `SatisfyGateAsync` the commit gate uses, so the lock, the hash gate, the breaker and
+the open-project check all apply unchanged. Verified from the log of a real launch:
+
+```
+watching 1 tracked project(s) for changes          ← attach finished
+commit gate: ExportRequired …                      ← staleness evaluated
+catch-up: 1 project(s) changed while Versio was not running; exporting
+…19.6 s… exported 12 object(s) → every tracked project is exported and up to date
+```
+
+*Acknowledge failure* is gone as a **panel-wide** control, not as a concept. The gate behind it
+is deliberate and unchanged — a failed binding syncs no further until a person has seen the
+failure — but a repository holds several projects and the panel could not say which one had
+failed. The failure is now reported on its own row, and selecting it shows the toolchain's own
+words with one button that clears the failure and retries. Acknowledging and retrying are one
+button because they are one intention: two would mean clearing a failure and then wondering why
+nothing happened.
+
+One wording fix fell out of it. `SatisfyGateAsync` logged "exporting stale bindings before the
+commit", which was true when only the commit gate called it and false for the two callers added
+since — in a log read precisely when somebody is working out what the app did on its own.
 
 ### The theme switch changed a colour nothing was looking at
 

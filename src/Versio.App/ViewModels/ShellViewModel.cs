@@ -495,6 +495,82 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// </remarks>
     public async Task OpenAsync(string path)
     {
+        if (!await OpenRepositoryAsync(path).ConfigureAwait(true))
+        {
+            return;
+        }
+
+        // ONLY once the repository is fully open: git state read, projects scanned, the
+        // orchestrator rebuilt and its locks restored from disk, and staleness evaluated.
+        // Ordering is the whole point — exporting before the locks are restored would export
+        // against a direction the previous session had already decided, and exporting before
+        // the scan would not know which projects exist.
+        //
+        // Deliberately outside the "Opening…" busy scope above, which has ended by now: this
+        // starts its own, with a caption saying what is being exported and why, because a
+        // CODESYS launch is 17–31 s and the window is already on screen and interactive.
+        await Sync.CatchUpAsync(CancellationToken.None).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Everything about this machine worth putting in a bug report.
+    /// </summary>
+    /// <remarks>
+    /// Assembled here rather than in the window, so what goes in it is decided somewhere
+    /// testable and the window stays a list of rows it was handed. The git version is asked of
+    /// git itself: the one on PATH is the one Versio will use, and "which git" is a question
+    /// that has caused real confusion on machines with several.
+    /// </remarks>
+    public async Task<IReadOnlyList<Views.SystemInfoRow>> BuildSystemInfoAsync(CancellationToken ct)
+    {
+        var rows = new List<Views.SystemInfoRow>
+        {
+            Views.SystemInfoRow.Section("VERSIO"),
+            new("Version", typeof(ShellViewModel).Assembly.GetName().Version?.ToString()
+                           ?? "unknown"),
+            new("Repository", RepositoryPath ?? "none open"),
+            new("Logs", FileLogDirectory ?? "not writing to disk"),
+        };
+
+        rows.AddRange(await Sync.DescribeToolchainsAsync(ct).ConfigureAwait(true));
+
+        rows.Add(Views.SystemInfoRow.Section("GIT"));
+        rows.Add(new Views.SystemInfoRow("Version", await GitVersionAsync(ct).ConfigureAwait(true)));
+
+        rows.Add(Views.SystemInfoRow.Section("RUNTIME"));
+        rows.Add(new Views.SystemInfoRow(".NET",
+            System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription));
+        rows.Add(new Views.SystemInfoRow("OS",
+            System.Runtime.InteropServices.RuntimeInformation.OSDescription));
+        rows.Add(new Views.SystemInfoRow("Machine", Environment.MachineName));
+
+        return rows;
+    }
+
+    /// <summary>Ask git for its version, or say why it could not be asked.</summary>
+    private async Task<string> GitVersionAsync(CancellationToken ct)
+    {
+        if (_git is null)
+        {
+            // No repository open, so there is no client. Still worth answering: a machine
+            // with no git at all is the most likely reason somebody is reading this window.
+            return "not checked — open a repository";
+        }
+
+        try
+        {
+            return await _git.VersionAsync(ct).ConfigureAwait(true);
+        }
+        catch (Exception ex) when (ex is IOException or System.ComponentModel.Win32Exception)
+        {
+            return $"could not be asked: {ex.Message}";
+        }
+    }
+
+    /// <summary>Open the repository and load everything that depends on it.</summary>
+    /// <returns>False when the folder was rejected, so the caller does no follow-up work.</returns>
+    private async Task<bool> OpenRepositoryAsync(string path)
+    {
         _logger.Info(LogCategory.App, $"Opening {path}");
 
         using var busy = Busy.Begin($"Opening {System.IO.Path.GetFileName(path.TrimEnd('\\', '/'))}…");
@@ -505,7 +581,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             _logger.Warn(LogCategory.Git, $"{path}: {location.Explanation}");
             StatusSummary = location.Explanation;
             RepositoryRejected?.Invoke(location);
-            return;
+            return false;
         }
 
         // Always operate on the working tree root, never the folder that was picked.
@@ -526,7 +602,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             _logger.Warn(LogCategory.Git, $"git refused to open {path}");
             StatusSummary = rejected.Explanation;
             RepositoryRejected?.Invoke(rejected);
-            return;
+            return false;
         }
 
         _git = client;
@@ -559,6 +635,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // Scan for PLC projects after the git state is up, so the sync panel is populated
         // by the time the user reaches for it.
         await Sync.AttachAsync(path, client, CancellationToken.None).ConfigureAwait(true);
+        return true;
     }
 
     /// <summary>Why a refresh is happening. Only affects logging and how much is reloaded.</summary>

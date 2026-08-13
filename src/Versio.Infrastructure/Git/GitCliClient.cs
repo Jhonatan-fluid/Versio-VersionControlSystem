@@ -50,6 +50,21 @@ public sealed partial class GitCliClient(
         return result.Success && result.StdOut.Trim() == "true";
     }
 
+    /// <summary>The version of the git that will actually run.</summary>
+    /// <remarks>
+    /// Never throws for a missing git: this is called to diagnose an environment, and the
+    /// environment being broken is the answer rather than an error to raise.
+    /// </remarks>
+    public async Task<string> VersionAsync(CancellationToken ct)
+    {
+        var result = await RunAsync(["--version"], null, ct, TimeSpan.FromSeconds(10))
+            .ConfigureAwait(false);
+
+        return result.Success
+            ? result.StdOut.Trim()
+            : result.FailureReason ?? "git could not be run";
+    }
+
     /// <summary>Current branch, divergence counts, and every changed path.</summary>
     /// <remarks>Porcelain v2 is git's stable machine format; the human output is localised
     /// and reflows between versions.</remarks>
