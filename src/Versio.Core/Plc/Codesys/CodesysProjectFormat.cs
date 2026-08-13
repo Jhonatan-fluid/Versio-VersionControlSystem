@@ -60,6 +60,15 @@ public sealed class CodesysProjectFormat : IPlcProjectFormat
     /// for every engineer who opens the project.
     /// </para>
     /// <para>
+    /// <b>The marker is written through a temporary sibling.</b> While the IDE holds a project
+    /// it rewrites the marker every few seconds, and each rewrite goes via
+    /// <c>Machine.~u~</c> — trailing tilde — which then disappears. Measured with a watcher on
+    /// a real repository: 20 seconds of an idle open project produced 7 events for
+    /// <c>.~u~</c> and 4 for <c>.~u</c>. So the pattern is <c>.~u*</c>, not <c>.~u</c>: the
+    /// narrower rule left a file git had never been told to ignore appearing and vanishing in
+    /// the working tree, and left Versio spending a <c>git status</c> on each one.
+    /// </para>
+    /// <para>
     /// Only observed files are listed. CODESYS can be configured to write <c>.bak</c> backups
     /// too, and that is deliberately absent: it has not been seen here, and the rules are
     /// re-checked on every adoption, so it costs one line to add when it is.
@@ -78,7 +87,7 @@ public sealed class CodesysProjectFormat : IPlcProjectFormat
             ? normalized[..^BindingConventions.ProjectExtension.Length]
             : normalized;
 
-        return [stem + ".~u", stem + "-*.opt"];
+        return [stem + ".~u*", stem + "-*.opt"];
     }
 
     /// <summary>

@@ -733,6 +733,7 @@ public sealed class SyncViewModel : ObservableObject
 
         var store = new RepoConfigStore(_repositoryRoot);
         _config = await store.LoadAsync(ct).ConfigureAwait(true);
+        AnnounceIgnoredPaths();
 
         if (_config.Bindings.Count == 0)
         {
@@ -1568,6 +1569,46 @@ public sealed class SyncViewModel : ObservableObject
     /// </remarks>
     public event Action<TreeRow>? NodeSelected;
 
+    /// <summary>The set of paths git has been told to ignore has changed.</summary>
+    /// <remarks>
+    /// Raised when the bindings are loaded or a project is adopted, because that is when the
+    /// answer moves. The shell forwards it to the repository watcher — the marker of a project
+    /// adopted a moment ago is precisely the one that then beats on the status refresh.
+    /// </remarks>
+    public event Action<IReadOnlyList<string>>? IgnoredPathsChanged;
+
+    /// <summary>
+    /// Repo-relative globs Versio itself wrote into <c>.gitignore</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Asked of the vendor seam rather than assembled here: <c>TransientPatternsFor</c> is the
+    /// same call adoption makes when it writes the rules, so what the watcher ignores and what
+    /// git ignores cannot drift apart. Adding a vendor adds its markers here for free.
+    /// </para>
+    /// <para>
+    /// <c>.versio/local/</c> is included for the same reason it is in the ignore file: locks,
+    /// backups and scratch copies are written constantly by Versio itself, and none of them
+    /// can ever appear in <c>git status</c>.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<string> IgnoredPaths()
+    {
+        var globs = new List<string> { BindingConventions.LocalIgnorePattern + "**" };
+
+        foreach (var binding in _config.Bindings.Where(b => b.Enabled))
+        {
+            if (PlcFormats.ForPath(binding.ProjectPath) is { } format)
+            {
+                globs.AddRange(format.TransientPatternsFor(binding.ProjectPath));
+            }
+        }
+
+        return globs;
+    }
+
+    private void AnnounceIgnoredPaths() => IgnoredPathsChanged?.Invoke(IgnoredPaths());
+
     /// <summary>Rebuild the tree, reading git's status first.</summary>
     /// <remarks>
     /// For the callers inside this class, which have just changed the working tree and have no
@@ -1992,6 +2033,7 @@ public sealed class SyncViewModel : ObservableObject
             if (result.Adopted)
             {
                 _config = result.Config;
+                AnnounceIgnoredPaths();
                 adopted++;
                 _logger.Info(LogCategory.Sync,
                     $"tracking {project} automatically as {result.Decision.Binding!.Id}");

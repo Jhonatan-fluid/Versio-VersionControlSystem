@@ -245,6 +245,34 @@ public sealed class RecentRepositoryTests
             repo.Path, StringComparison.OrdinalIgnoreCase));
     }
 
+    [SkippableFact]
+    public async Task Opening_a_repository_tells_the_watcher_what_git_ignores()
+    {
+        // The wiring, from where the user comes in. The filter's own tests prove the rule and
+        // say nothing about whether anything supplies the globs - and a rule that is correct
+        // and never delivered is the failure this repository keeps finding.
+        //
+        // What it costs when it is not delivered was measured in the running app: CODESYS
+        // rewrites <project>.~u every few seconds while the IDE holds the project, and every
+        // touch was spending a git status on a file git had been told to ignore.
+        Skip.IfNot(GitIsAvailable(), "git is not on PATH");
+
+        using var repo = new TempRepo();
+        File.WriteAllText(PathIn(repo, "Machine.project"), "binary-ish");
+
+        var shell = Build(new MemoryStore());
+        await shell.OpenAsync(repo.Path);
+
+        Assert.Contains(shell.WatcherIgnoredGlobs, g => g.EndsWith("Machine.~u*", StringComparison.Ordinal));
+        Assert.Contains(shell.WatcherIgnoredGlobs, g => g.EndsWith("Machine-*.opt", StringComparison.Ordinal));
+
+        // And Versio's own scratch directory, which it writes to constantly.
+        Assert.Contains(shell.WatcherIgnoredGlobs, g => g.StartsWith(".versio/local/", StringComparison.Ordinal));
+    }
+
+    private static string PathIn(TempRepo repo, string name) =>
+        System.IO.Path.Combine(repo.Path, name);
+
     // ------------------------------------------------------------------- real git plumbing
 
     /// <summary>A throwaway git repository, deleted when the test ends.</summary>

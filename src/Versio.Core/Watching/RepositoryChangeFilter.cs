@@ -40,6 +40,15 @@ public enum RepositoryChangeRelevance
 /// object files, logs, lock files — and almost none of it changes what the user sees.
 /// Only the handful of entries that actually move the status are allowed through.
 /// </para>
+/// <para>
+/// <b>The one exception to "never by name" is a path Versio itself put in
+/// <c>.gitignore</c>.</b> That is not a guess about what the repository ignores — it is the
+/// rule this app wrote, so a change there provably cannot alter what <c>git status</c>
+/// prints. The case that forced it: CODESYS rewrites <c>&lt;project&gt;.~u</c> every few
+/// seconds for as long as the IDE holds the project, so an engineer working normally produced
+/// a <c>git status</c> every couple of seconds, forever, for a file git had been told to
+/// ignore. Measured at roughly 24 git processes a minute.
+/// </para>
 /// </remarks>
 public static class RepositoryChangeFilter
 {
@@ -67,7 +76,35 @@ public static class RepositoryChangeFilter
     /// <summary>Classify one filesystem event.</summary>
     /// <param name="repositoryRoot">Working tree root.</param>
     /// <param name="fullPath">Absolute path the watcher reported.</param>
-    public static RepositoryChangeRelevance Classify(string repositoryRoot, string fullPath)
+    /// <param name="knownIgnored">
+    /// Repo-relative globs Versio itself wrote into <c>.gitignore</c> — the vendor's lock
+    /// marker and its scratch files, from <c>IPlcProjectFormat.IgnorePatternsFor</c>. Empty
+    /// means "filter nothing by name", which is the behaviour this had before and the right
+    /// default for any caller that does not know the repository's bindings.
+    /// </param>
+    /// <remarks>
+    /// <b>Only globs this app is responsible for.</b> Reading the repository's whole
+    /// <c>.gitignore</c> and honouring it here would be the same feature and a much worse
+    /// idea: git's ignore rules compose across files, directories and excludes, and a filter
+    /// that got one of those wrong would make the panel silently stale — which is the bug
+    /// this class exists to prevent, reintroduced in the name of performance.
+    /// </remarks>
+    /// <param name="directoryWrite">
+    /// The OS reported a <i>write to a directory</i> rather than to a file. Windows raises one
+    /// for the parent every time a child is created or deleted, and it carries no information
+    /// about which child — the same shape as the bare <c>.git</c> event handled below, and
+    /// nothing is lost by dropping it, because the child's own event arrives too.
+    /// <para>
+    /// This is what remained after the vendor's lock marker was filtered by name: CODESYS
+    /// rewrites the marker through a transient sibling, so the marker events were ignored and
+    /// the <i>folder's</i> mtime kept changing anyway, at exactly the same rate.
+    /// </para>
+    /// </param>
+    public static RepositoryChangeRelevance Classify(
+        string repositoryRoot,
+        string fullPath,
+        IReadOnlyList<string>? knownIgnored = null,
+        bool directoryWrite = false)
     {
         var relative = ToRelative(repositoryRoot, fullPath);
         if (relative is null)
@@ -78,12 +115,27 @@ public static class RepositoryChangeFilter
             return RepositoryChangeRelevance.Ignored;
         }
 
+        // Before the .git split, because these paths are in the working tree and the answer
+        // is the same wherever they sit.
+        if (knownIgnored is { Count: > 0 } && Bindings.PathGlob.Matches(relative, knownIgnored))
+        {
+            return RepositoryChangeRelevance.Ignored;
+        }
+
         var firstSlash = relative.IndexOf('/');
         var firstSegment = firstSlash < 0 ? relative : relative[..firstSlash];
 
         if (!firstSegment.Equals(".git", StringComparison.OrdinalIgnoreCase))
         {
-            return RepositoryChangeRelevance.WorkingTree;
+            // A folder whose own timestamp moved because something inside it appeared or
+            // vanished. The child's event says what; this one only says that something did.
+            //
+            // Dropped rather than debounced, because it is not noise from volume - it is a
+            // duplicate of information already arriving by a better route. A creation, a
+            // deletion or a rename of the FOLDER ITSELF is not a write and still gets through.
+            return directoryWrite
+                ? RepositoryChangeRelevance.Ignored
+                : RepositoryChangeRelevance.WorkingTree;
         }
 
         // A bare ".git" event, with no entry named. Windows raises one of these for the

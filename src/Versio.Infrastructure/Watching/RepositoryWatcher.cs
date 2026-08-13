@@ -64,14 +64,22 @@ public sealed class RepositoryWatcher : IDisposable
     /// How often <see cref="Tick"/> fires. Also the resolution of settle detection, so it
     /// wants to be comfortably shorter than <paramref name="quietPeriod"/>.
     /// </param>
+    /// <param name="knownIgnored">
+    /// Repo-relative globs Versio itself wrote into <c>.gitignore</c>. Settable rather than
+    /// fixed at construction because a project can be adopted while the watcher is running,
+    /// and the marker of a project adopted a moment ago is exactly the one that then beats on
+    /// the status refresh.
+    /// </param>
     public RepositoryWatcher(
         string root,
         IClock clock,
         TimeSpan? quietPeriod = null,
         TimeSpan? tickInterval = null,
-        IVersioLogger? logger = null)
+        IVersioLogger? logger = null,
+        IReadOnlyList<string>? knownIgnored = null)
     {
         _root = root;
+        _knownIgnored = knownIgnored ?? [];
         _clock = clock;
         _quietPeriod = quietPeriod ?? TimeSpan.FromMilliseconds(300);
         _log = logger ?? NullLogger.Instance;
@@ -101,7 +109,10 @@ public sealed class RepositoryWatcher : IDisposable
                              | NotifyFilters.Size,
             };
 
-            _watcher.Changed += (_, e) => Enqueue(e.FullPath);
+            // Only a Changed event can be a directory's own timestamp moving because a child
+            // appeared or vanished. Created, Deleted and Renamed on a directory are real
+            // structural changes and are never dropped.
+            _watcher.Changed += (_, e) => Enqueue(e.FullPath, IsDirectory(e.FullPath));
             _watcher.Created += (_, e) => Enqueue(e.FullPath);
             _watcher.Deleted += (_, e) => Enqueue(e.FullPath);
             _watcher.Renamed += (_, e) =>
@@ -139,9 +150,47 @@ public sealed class RepositoryWatcher : IDisposable
         }
     }
 
-    private void Enqueue(string fullPath)
+    /// <summary>Paths this app told git to ignore, so their events are not worth a status.</summary>
+    /// <remarks>
+    /// Volatile because it is written from the UI thread when a project is adopted and read on
+    /// the watcher's own thread for every event. The list is replaced wholesale rather than
+    /// mutated, so a reader sees either the old set or the new one and never a half-built one.
+    /// </remarks>
+    private volatile IReadOnlyList<string> _knownIgnored;
+
+    /// <summary>Tell the watcher which paths git has been told to ignore.</summary>
+    public void KnownIgnored(IReadOnlyList<string> globs) => _knownIgnored = globs;
+
+    /// <summary>What it is currently ignoring by name.</summary>
+    /// <remarks>
+    /// Readable so a test can come in through the shell and check the wiring actually
+    /// reached here. A rule that is correct and never delivered is the failure this
+    /// repository keeps finding, and it looks identical from inside the rule's own tests.
+    /// </remarks>
+    public IReadOnlyList<string> IgnoredGlobs => _knownIgnored;
+
+    /// <summary>Whether the path is a directory, for the one event kind where it matters.</summary>
+    /// <remarks>
+    /// One stat per <c>Changed</c> event, and only that kind. False when it has already gone,
+    /// which is the right answer: a path that no longer exists is a deletion, and deletions
+    /// are exactly what must not be dropped.
+    /// </remarks>
+    private static bool IsDirectory(string fullPath)
     {
-        var relevance = RepositoryChangeFilter.Classify(_root, fullPath);
+        try
+        {
+            return Directory.Exists(fullPath);
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+    }
+
+    private void Enqueue(string fullPath, bool directoryWrite = false)
+    {
+        var relevance = RepositoryChangeFilter.Classify(
+            _root, fullPath, _knownIgnored, directoryWrite);
         if (relevance == RepositoryChangeRelevance.Ignored)
         {
             return;

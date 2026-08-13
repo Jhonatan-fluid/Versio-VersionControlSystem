@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-13 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,000 unit + 198 UI + 111 integration, 0 skipped · **6 new integration tests written and not yet run**
+**Date:** 2026-08-13 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,014 unit + 199 UI + 122 integration, 0 skipped
 
 > All three measured on 2026-08-13, on branch `Clean-up-and-continue-dev`. The integration
 > suite was re-run in full against real CODESYS 3.5.22.20 after the manifest work — 111
@@ -290,7 +290,7 @@ does not record them has to be run again.
 
 Written down with their evidence, because the reasoning is worth more than the fix.
 
-### The IDE's heartbeat is a `git status` every five seconds, forever — **not fixed**
+### The IDE's heartbeat was a `git status` every five seconds, forever — and it took two fixes
 
 Found while checking that the log was quiet after the export-echo fix. It was not: with a
 repository open and nothing happening, the app ran a `git status` roughly every 2.5 seconds and
@@ -323,11 +323,47 @@ Two things make the fix tractable rather than speculative, and both already exis
   — that is how open-project detection works — so the rule stays vendor-neutral: *a path the
   format declares as its lock marker is not a working-tree change.*
 
-Deliberately not fixed in the same pass as the export echoes. That one had a measurement, a
-mechanism and a test; this one needs a decision about where the filter belongs —
-`StatusRefreshPolicy`, which already suppresses metadata events after a refresh, or the
-repository watcher itself — and a test that proves a marker touch changes nothing while a real
-edit still does.
+**Fixed, and the fix was wrong twice before it was right** — which is the part worth keeping.
+
+`RepositoryChangeFilter` learned about paths **Versio itself put in `.gitignore`**, supplied by
+the vendor seam: `TransientPatternsFor` is the same call adoption makes when it writes the
+rules, so what the watcher ignores and what git ignores cannot drift apart. That is the one
+exception to this class's standing rule that working-tree paths are never filtered by name, and
+it is safe for a specific reason — these are not names guessed to be ignored, they are the rules
+this app wrote.
+
+Then the app was relaunched and **it polled exactly as before.** Watching the repository
+directly for 20 seconds said why:
+
+```
+Samples\ObjectOrientedProgramming(Extended).~u~   7
+Samples                                          4
+Samples\ObjectOrientedProgramming(Extended).~u    4
+```
+
+CODESYS does not write the marker in place. It writes `.~u~` — trailing tilde — and renames it
+over `.~u`, so the glob covered the less frequent of the two, and **`.~u~` was in nobody's
+`.gitignore`**: a file appearing and vanishing in the working tree that git had never been told
+to ignore. The pattern is `.~u*` now, which fixes the ignore rule as well as the noise.
+
+Relaunched again, and **it polled exactly as before.** The remaining trigger was the third row:
+a folder's own timestamp moves when a child appears or vanishes, so filtering the child by name
+left the parent's event arriving at the same rate. Dropped by the same argument the bare `.git`
+event already used — the folder's event says only that *something* changed, and the child's own
+event says what. A creation, deletion or rename of a folder is not a write and still gets
+through.
+
+| | |
+|---|---|
+| Before | ~2 `git status` per 5 s, 493 log lines in one 50-second window |
+| After | **1 `git status` in 45 seconds of idle** — the one at startup |
+| Still detected | a new file, in 0.5 s; its deletion, in 0.5 s; both verified in the running app |
+
+The lesson is the one this document keeps recording in different clothes: **the rule was correct
+in unit tests while the app still spawned git every five seconds, twice, for two different
+reasons.** What closed it was a real `RepositoryWatcher` over a real directory, replaying what
+CODESYS actually does — write, rename, repeat — and asserting nothing comes out, then that a
+real edit beside it still does.
 
 ### An export woke the change detector once per file it had just written
 

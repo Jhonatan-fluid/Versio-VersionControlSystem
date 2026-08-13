@@ -9,14 +9,15 @@ namespace Versio.Core.Tests.Git;
 /// </summary>
 /// <remarks>
 /// Measured on CODESYS 3.5.22.20: opening <c>Machine.project</c> creates <c>Machine.~u</c>
-/// while it is held, and leaves <c>Machine-AllUsers.opt</c> and
+/// while it is held - rewriting it through a transient <c>Machine.~u~</c>, which is why the
+/// pattern is <c>.~u*</c> - and leaves <c>Machine-AllUsers.opt</c> and
 /// <c>Machine-&lt;user&gt;-&lt;machine&gt;.opt</c> behind afterwards. The per-user one carries a
 /// username and a machine name in its filename, so committing it writes both into history.
 /// </remarks>
 public sealed class GitIgnoreTests
 {
     private static readonly string[] Patterns =
-        ["plc/Machine.~u", "plc/Machine-*.opt"];
+        ["plc/Machine.~u*", "plc/Machine-*.opt"];
 
     [Fact]
     public void A_repository_with_no_gitignore_gets_one()
@@ -27,7 +28,7 @@ public sealed class GitIgnoreTests
 
         Assert.True(plan.ChangeNeeded);
         Assert.Equal(Patterns, plan.AddedPatterns);
-        Assert.Contains("plc/Machine.~u\n", plan.Content, StringComparison.Ordinal);
+        Assert.Contains("plc/Machine.~u*\n", plan.Content, StringComparison.Ordinal);
         Assert.Contains("plc/Machine-*.opt\n", plan.Content, StringComparison.Ordinal);
 
         // It says who wrote it and why, because the next person to read this file will not
@@ -74,7 +75,7 @@ public sealed class GitIgnoreTests
     [Fact]
     public void Only_the_missing_patterns_are_added()
     {
-        var plan = GitIgnore.Plan("plc/Machine.~u\n", Patterns);
+        var plan = GitIgnore.Plan("plc/Machine.~u*\n", Patterns);
 
         Assert.True(plan.ChangeNeeded);
         Assert.Equal(["plc/Machine-*.opt"], plan.AddedPatterns);
@@ -87,7 +88,7 @@ public sealed class GitIgnoreTests
         // the positive rule underneath would quietly reverse that.
         var plan = GitIgnore.Plan("!plc/Machine-*.opt\n", Patterns);
 
-        Assert.Equal(["plc/Machine.~u"], plan.AddedPatterns);
+        Assert.Equal(["plc/Machine.~u*"], plan.AddedPatterns);
         Assert.DoesNotContain("\nplc/Machine-*.opt", plan.Content, StringComparison.Ordinal);
     }
 
@@ -104,7 +105,7 @@ public sealed class GitIgnoreTests
     {
         // Git compares forward slashes without a leading one. A rule written either other way
         // is the same rule, and re-adding it would be noise in somebody's diff.
-        var plan = GitIgnore.Plan("/plc/Machine.~u\nplc\\Machine-*.opt\n", Patterns);
+        var plan = GitIgnore.Plan("/plc/Machine.~u*\nplc\\Machine-*.opt\n", Patterns);
 
         Assert.False(plan.ChangeNeeded);
     }
@@ -117,7 +118,7 @@ public sealed class GitIgnoreTests
         var patterns = CodesysProjectFormat.Instance
             .TransientPatternsFor("plc/machines/Machine.project");
 
-        Assert.Equal(["plc/machines/Machine.~u", "plc/machines/Machine-*.opt"], patterns);
+        Assert.Equal(["plc/machines/Machine.~u*", "plc/machines/Machine-*.opt"], patterns);
         Assert.All(patterns, p => Assert.StartsWith("plc/machines/", p, StringComparison.Ordinal));
     }
 
@@ -128,8 +129,8 @@ public sealed class GitIgnoreTests
         // Machine.project.~u, which matches nothing CODESYS ever writes.
         var patterns = CodesysProjectFormat.Instance.TransientPatternsFor("A.project");
 
-        Assert.Contains("A.~u", patterns);
-        Assert.DoesNotContain("A.project.~u", patterns);
+        Assert.Contains("A.~u*", patterns);
+        Assert.DoesNotContain("A.project.~u*", patterns);
     }
 
     [Fact]
@@ -137,7 +138,7 @@ public sealed class GitIgnoreTests
     {
         var patterns = CodesysProjectFormat.Instance.TransientPatternsFor("odd/name");
 
-        Assert.Equal(["odd/name.~u", "odd/name-*.opt"], patterns);
+        Assert.Equal(["odd/name.~u*", "odd/name-*.opt"], patterns);
         Assert.Empty(CodesysProjectFormat.Instance.TransientPatternsFor(string.Empty));
     }
 }

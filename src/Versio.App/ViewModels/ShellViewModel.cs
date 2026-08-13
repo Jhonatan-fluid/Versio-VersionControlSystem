@@ -275,6 +275,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // way the row was reached.
         Sync.NodeSelected += ShowNode;
 
+        // A project adopted while the app is running writes new .gitignore rules, and its
+        // toolchain starts rewriting a lock marker a second later. Without this the watcher
+        // would keep spending a git status on it until the next repository switch.
+        Sync.IgnoredPathsChanged += globs => _watcher?.KnownIgnored(globs);
+
         // And the same for the history: the panel decides what was picked, this decides how
         // it is rendered. Keeping the render here is what stops a second diff pane growing
         // in the history panel the first time it needs something the shared one already does.
@@ -1232,7 +1237,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // switch would report the previous tree's idle polls against the new one.
         _quietRefreshes.Reset();
 
-        var watcher = new RepositoryWatcher(path, _clock, logger: _logger);
+        // The bindings are not loaded yet - Sync attaches after this - so the list starts
+        // with what is true of every repository and is replaced the moment the scan knows
+        // better. Starting empty is the safe direction: it filters nothing.
+        var watcher = new RepositoryWatcher(
+            path, _clock, logger: _logger, knownIgnored: Sync.IgnoredPaths());
 
         watcher.Settled += OnRepositoryChanged;
         watcher.Tick += OnWatcherTick;
@@ -1244,6 +1253,15 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 ? "filesystem watching unavailable; the file list will refresh periodically"
                 : "watching the working tree for changes");
     }
+
+    /// <summary>What the repository watcher is ignoring by name, for a test.</summary>
+    /// <remarks>
+    /// Internal rather than public: nothing in the app needs it, and the reason it exists is
+    /// that the alternative - trusting that a subscription written in this file is wired to a
+    /// watcher created in this file - is exactly the assumption that has been wrong three
+    /// times here.
+    /// </remarks>
+    internal IReadOnlyList<string> WatcherIgnoredGlobs => _watcher?.IgnoredGlobs ?? [];
 
     private void StopWatching()
     {
