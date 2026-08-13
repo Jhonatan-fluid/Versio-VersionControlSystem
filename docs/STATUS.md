@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-13 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,037 unit + 212 UI + 130 integration, 0 skipped
+**Date:** 2026-08-13 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,037 unit + 214 UI + 130 integration, 0 skipped
 
 > All three measured on 2026-08-13, on branch `Clean-up-and-continue-dev`. The integration
 > suite was re-run in full against real CODESYS 3.5.22.20 after the manifest work — 111
@@ -289,6 +289,30 @@ does not record them has to be run again.
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### A rule added after a repository was adopted never reached it
+
+Found while checking the previous finding against the reporter's own repository, which is the
+only reason it was found at all. Their `.gitattributes` had the two project rules and nothing
+about the mirror; their `git config core.autocrlf` said `true`; and `git check-attr` on an
+exported `.st` answered `text: unspecified`. The fix written an hour earlier would never have
+reached them.
+
+`AutoAdoptAsync` skips a project that is already bound — correctly, since adopting twice is not
+a thing — and adoption is the only caller of the two rule planners. So the rules a repository
+gets are the rules that existed on the day it was adopted, forever. Three have been added since
+this repository started tracking its own fixture: the mirror's `text eol=lf`, and the staging
+and trash directories the swap moves through.
+
+Every scan now tops up the rules for **every** binding, not only the ones just adopted. Both
+planners already leave an existing rule alone and report no change when everything is covered,
+so it writes once after an upgrade and never again — pinned by a test that opens the same
+repository twice and compares the bytes.
+
+This is the third time in this session that a rule was correct and unreachable, and the shape
+is always the same: the code that decides is fine, and nothing calls it for the case that
+matters. The other two were a guard intent nothing asked about and a filter nothing supplied
+globs to.
 
 ### The mirror arrives with the wrong line endings, and git says it is fine
 

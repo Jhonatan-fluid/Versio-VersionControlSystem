@@ -301,6 +301,71 @@ public sealed class RecentRepositoryTests
                      File.ReadAllText(System.IO.Path.Combine(mirror, "Main.st")));
     }
 
+    [SkippableFact]
+    public async Task A_repository_adopted_before_a_rule_existed_gets_it_on_the_next_open()
+    {
+        // Adoption writes the git rules once, and the scan skips a project that is already
+        // bound - so a rule added to Versio after a repository was adopted never reached it.
+        // Found on a real repository: its mirror had no eol rule, its machine had
+        // core.autocrlf=true, and every file in it would have hashed differently from what an
+        // export produces the moment git touched them.
+        Skip.IfNot(GitIsAvailable(), "git is not on PATH");
+
+        using var repo = new TempRepo();
+        File.WriteAllText(PathIn(repo, "Machine.project"), "binary-ish");
+
+        // Adopted by the first open, which writes the rules as they are today.
+        await Build(new MemoryStore()).OpenAsync(repo.Path);
+
+        var attributes = System.IO.Path.Combine(repo.Path, ".gitattributes");
+        var ignore = System.IO.Path.Combine(repo.Path, ".gitignore");
+        Assert.True(File.Exists(attributes));
+
+        // Now put the repository back the way an OLDER Versio would have left it: bound, with
+        // the project rules but nothing about the mirror.
+        File.WriteAllText(
+            attributes,
+            "*.project binary -diff -merge" + Environment.NewLine +
+            "*.library binary -diff -merge" + Environment.NewLine);
+
+        File.WriteAllText(ignore, ".versio/local/" + Environment.NewLine);
+
+        await Build(new MemoryStore()).OpenAsync(repo.Path);
+
+        var topped = File.ReadAllText(attributes);
+        Assert.Contains("text eol=lf", topped, StringComparison.Ordinal);
+        Assert.Contains("Machine/**", topped, StringComparison.Ordinal);
+
+        // And the rules that were already there are left exactly as they were.
+        Assert.Contains("*.project binary -diff -merge", topped, StringComparison.Ordinal);
+
+        // The ignore plan is topped up the same way, with the directories an export swaps
+        // through - which a killed export would otherwise leave stageable.
+        var ignores = File.ReadAllText(ignore);
+        Assert.Contains(".versio_staging/", ignores, StringComparison.Ordinal);
+        Assert.Contains(".versio_trash/", ignores, StringComparison.Ordinal);
+    }
+
+    [SkippableFact]
+    public async Task Topping_up_twice_changes_nothing_the_second_time()
+    {
+        // It runs on every scan, so a repository already covered must come out byte-identical
+        // - otherwise every open would put a diff in front of somebody with nothing in it.
+        Skip.IfNot(GitIsAvailable(), "git is not on PATH");
+
+        using var repo = new TempRepo();
+        File.WriteAllText(PathIn(repo, "Machine.project"), "binary-ish");
+
+        await Build(new MemoryStore()).OpenAsync(repo.Path);
+
+        var attributes = System.IO.Path.Combine(repo.Path, ".gitattributes");
+        var first = File.ReadAllBytes(attributes);
+
+        await Build(new MemoryStore()).OpenAsync(repo.Path);
+
+        Assert.Equal(first, File.ReadAllBytes(attributes));
+    }
+
     private static string PathIn(TempRepo repo, string name) =>
         System.IO.Path.Combine(repo.Path, name);
 

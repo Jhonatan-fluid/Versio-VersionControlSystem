@@ -1292,6 +1292,11 @@ public sealed class SyncViewModel : ObservableObject
         // take it from there.
         var adopted = await AutoAdoptAsync(snapshot, busy.Token).ConfigureAwait(true);
 
+        // After adoption, so a project tracked a moment ago is covered by the same pass, and
+        // on every scan, because the rules Versio writes grow over time and a repository
+        // adopted before a rule existed would otherwise never receive it.
+        await TopUpRepositoryRulesAsync(busy.Token).ConfigureAwait(true);
+
         if (adopted > 0)
         {
             await BuildOrchestratorAsync(busy.Token).ConfigureAwait(true);
@@ -2151,6 +2156,57 @@ public sealed class SyncViewModel : ObservableObject
     /// rather than merely unwanted, and genuinely confusing to unpick afterwards (plan R28).
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// Make sure the repository rules cover every binding, not only the ones just adopted.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Adoption writes the <c>.gitignore</c> and <c>.gitattributes</c> rules once, when a
+    /// project is first tracked, and <see cref="AutoAdoptAsync"/> skips a project that is
+    /// already bound. So <b>a rule added to Versio after a repository was adopted never
+    /// reaches it.</b> Three have been added in the time this repository has existed: the
+    /// mirror's <c>text eol=lf</c>, and the staging and trash directories an export swaps
+    /// through — and the repository that found the first of them was one adopted last week.
+    /// </para>
+    /// <para>
+    /// Both planners already leave an existing rule alone and report no change when
+    /// everything is covered, so this is idempotent by construction: it writes on the first
+    /// scan after an upgrade and never again.
+    /// </para>
+    /// </remarks>
+    private async Task TopUpRepositoryRulesAsync(CancellationToken ct)
+    {
+        if (_repositoryRoot is null || _git is null || _config.Bindings.Count == 0)
+        {
+            return;
+        }
+
+        var setup = new RepoSetup(_repositoryRoot, _format, _logger);
+        var mirrors = _config.Bindings
+            .Where(b => b.Enabled)
+            .Select(b => b.ExportPath)
+            .ToList();
+
+        try
+        {
+            await setup.EnsureGitAttributesAsync(_git, ct, mirrors).ConfigureAwait(true);
+
+            foreach (var binding in _config.Bindings.Where(b => b.Enabled))
+            {
+                await setup.EnsureGitIgnoreAsync(binding.ProjectPath, ct, binding.ExportPath)
+                    .ConfigureAwait(true);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // A read-only working tree, or one somebody has open elsewhere. The rules are a
+            // protection rather than a precondition, so this is reported and the scan carries
+            // on - refusing to open the repository over it would be the worse trade.
+            _logger.Warn(LogCategory.Git,
+                $"could not bring this repository's git rules up to date: {ex.Message}");
+        }
+    }
+
     private async Task<int> AutoAdoptAsync(RepoSnapshot snapshot, CancellationToken ct)
     {
         if (_repositoryRoot is null)
