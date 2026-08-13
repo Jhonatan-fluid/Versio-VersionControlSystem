@@ -687,6 +687,35 @@ the caller is trusted to respect.
 **9 new tests** (143 → 152). Verified able to fail: treating "Cancel" as permission to close failed
 three of them.
 
+#### The bug all of that missed
+
+Every test passed and **Versio could not be closed at all.**
+
+`RequestCloseAsync` returns synchronously when nothing is running — the overwhelmingly common
+case — so the `await` never yielded and `Close()` ran inside the `Closing` event WPF was still
+raising. WPF forbids exactly that:
+
+```
+InvalidOperationException: Cannot set Visibility to Visible or call Show, ShowDialog,
+Close, or WindowInteropHelper.EnsureHandle while a Window is closing.
+```
+
+It surfaced on the dispatcher, where the crash handler logged it and marked it handled so the
+window would survive — so the only symptom was a window that would not close. Found by running
+the application, which nothing in phases 1–4 had done. The second close is now **posted** behind
+the event rather than called inline.
+
+Two things came out of it, and both are worth more than the fix:
+
+- **`MainWindowClosingTests` is the only test in the suite that shows a window**, and it earns the
+  exception: the re-entrancy state that makes the call illegal exists only inside a real `Closing`
+  event. It is positioned off-screen and kept out of the taskbar. Verified able to fail — restoring
+  the inline `Close()` fails both of its tests.
+- **`StaHarness` now sets `ShutdownMode.OnExplicitShutdown`.** WPF ends an `Application` when its
+  last window closes, so one test that shows and closes a window took the shared harness with it,
+  and every test after it failed inside `InitializeComponent` with *"The Application object is
+  being shut down"* — naming the victim rather than the cause.
+
 ### The audit before phase 4
 
 A pass over everything phases 1–3 added, for organisation, comments and logging. Eight changes:

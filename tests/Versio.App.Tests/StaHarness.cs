@@ -72,6 +72,16 @@ internal static class StaHarness
             {
                 var application = Application.Current ?? new Application();
 
+                // WPF shuts an Application down when its last window closes, and that default
+                // is fatal here: one test that shows a window and closes it again would take
+                // the harness with it, and every test after it would fail inside
+                // InitializeComponent with "The Application object is being shut down" —
+                // naming the victim rather than the cause.
+                //
+                // Nothing in this suite wants the application to exit. It is a background
+                // thread on a host that ends when the run does.
+                application.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
                 // The app's own dictionary, by pack URI, so this cannot drift from what ships.
                 application.Resources.MergedDictionaries.Add(new ResourceDictionary
                 {

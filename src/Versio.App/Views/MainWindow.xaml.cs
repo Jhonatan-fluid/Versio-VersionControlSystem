@@ -111,10 +111,27 @@ public partial class MainWindow : Window
     /// </para>
     /// <para>
     /// <b>Closing is synchronous and the answer is not.</b> So the close is vetoed
-    /// unconditionally, the answer is awaited, and <see cref="Close"/> is called again once it
-    /// arrives. <c>async void</c> is correct here and only here: an event handler is the one
-    /// place the framework gives no task to await, and the body cannot throw — everything
-    /// inside it is already guarded.
+    /// unconditionally, the answer is awaited, and the window is closed again once it arrives.
+    /// <c>async void</c> is correct here and only here: an event handler is the one place the
+    /// framework gives no task to await, and the body cannot throw — everything inside it is
+    /// already guarded.
+    /// </para>
+    /// <para>
+    /// <b>The second close is posted, never called inline.</b> When nothing is running —
+    /// overwhelmingly the common case — <see cref="ShellViewModel.RequestCloseAsync"/> completes
+    /// without ever yielding, so the <c>await</c> continues on the same stack and
+    /// <see cref="Close"/> would run <i>inside</i> this very <c>Closing</c> event. WPF forbids
+    /// that outright:
+    /// </para>
+    /// <code>
+    /// InvalidOperationException: Cannot set Visibility to Visible or call Show, ShowDialog,
+    /// Close, or WindowInteropHelper.EnsureHandle while a Window is closing.
+    /// </code>
+    /// <para>
+    /// The exception surfaces on the dispatcher rather than here, so the crash handler logs it
+    /// and marks it handled — and the window simply stays open. <b>Versio could not be closed
+    /// at all</b>, and every unit test passed, because they drive the view model and never the
+    /// window. Posting the close lets this event unwind first, which is the whole difference.
     /// </para>
     /// </remarks>
     protected override async void OnClosing(System.ComponentModel.CancelEventArgs e)
@@ -129,11 +146,15 @@ public partial class MainWindow : Window
         // there is no way to hold the close open while we find out.
         e.Cancel = true;
 
-        if (await _shell.RequestCloseAsync())
+        if (!await _shell.RequestCloseAsync())
         {
-            _closeApproved = true;
-            Close();
+            return;
         }
+
+        _closeApproved = true;
+
+        // Queued behind the event we are still inside. See the remarks.
+        await Dispatcher.InvokeAsync(Close, System.Windows.Threading.DispatcherPriority.Normal);
     }
 
     /// <summary>
