@@ -49,6 +49,25 @@ public enum SyncVerdict
     /// </remarks>
     BlockedByOpenProject,
 
+    /// <summary>
+    /// The working tree has unmerged paths, so neither direction may run.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A wait, not a failure</b>, for the same reasons as
+    /// <see cref="BlockedByOpenProject"/>: a merge in progress is a normal state somebody is
+    /// working through, and marking the binding failed would stop all syncing until a button
+    /// is pressed. It leaves the direction lock alone and does not feed the circuit breaker.
+    /// </para>
+    /// <para>
+    /// Both directions, not just import. Exporting over a half-merged mirror would overwrite
+    /// the conflict the user is in the middle of resolving; importing a mirror containing
+    /// <c>&lt;&lt;&lt;&lt;&lt;&lt;&lt;</c> markers would put them into the project, where they
+    /// are not text but a structured file that will no longer compile.
+    /// </para>
+    /// </remarks>
+    BlockedByConflict,
+
     /// <summary>CODESYS failed, or the run did not complete.</summary>
     Failed,
 

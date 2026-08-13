@@ -93,6 +93,12 @@ public static class SyncNarrative
 
         SyncVerdict.BlockedByOpenProject => outcome.Explanation,
 
+        // The explanation names the files, which is the part worth reading. The leading clause
+        // says why nothing happened, since a refusal is otherwise invisible: the user saves,
+        // and no diff appears.
+        SyncVerdict.BlockedByConflict =>
+            $"Waiting for the merge to be finished. {outcome.Explanation}",
+
         SyncVerdict.Failed =>
             $"The operation failed: {outcome.Explanation}",
 

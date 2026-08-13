@@ -13,6 +13,7 @@ using Versio.Core.Projects;
 using Versio.Core.Sync;
 using Versio.Infrastructure.Bindings;
 using Versio.Infrastructure.FileSystem;
+using Versio.Infrastructure.Git;
 using Versio.Infrastructure.Platform;
 using Versio.Infrastructure.Plc;
 using Versio.Infrastructure.Watching;
@@ -759,7 +760,16 @@ public sealed class SyncViewModel : ObservableObject
             // Lets the engine find out that CODESYS has the project open before it spends
             // 17-31 s being told so - and, for an export, work around it by reading a copy.
             occupancy: new ProjectOccupancyProbe(
-                new WindowsFileSystem(), _machine, new ProcessProbe()));
+                new WindowsFileSystem(), _machine, new ProcessProbe()),
+
+            // And whether the tree is mid-merge. Without this the engine cannot tell, and
+            // an import would write conflict markers into a project that then stops
+            // compiling - git's own status has reported them all along and nothing asked.
+            //
+            // Null when there is somehow no client, which leaves the engine on its previous
+            // assumption that nothing is ever conflicted rather than crashing over a question
+            // it only recently learned to ask.
+            conflicts: _git is null ? null : new GitConflictProbe(_git));
 
         AttachRunSignals(_orchestrator);
 

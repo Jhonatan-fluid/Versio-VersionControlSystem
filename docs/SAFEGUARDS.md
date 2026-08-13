@@ -441,7 +441,7 @@ both hashes from the new HEAD rather than treating the difference as a user edit
 
 **This is the only item here that can corrupt a project through no user error at all.**
 
-### B. Merge conflicts inside the mirror get imported into the project
+### B. Merge conflicts inside the mirror get imported into the project — **BUILT**
 
 `GitStatus.HasConflicts` is parsed and exposed (`GitModels.cs:68`) and **nothing in `Sync/` or the
 App ever reads it**. Conflict markers in a `.st` file are, to the importer, just text.

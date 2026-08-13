@@ -105,6 +105,12 @@ public sealed class SyncOrchestrator
     /// </summary>
     private readonly IProjectOccupancyProbe? _occupancy;
 
+    /// <summary>
+    /// Asks whether the working tree is mid-merge. Defaults to "never", which is what the
+    /// engine assumed before anybody asked.
+    /// </summary>
+    private readonly IConflictProbe _conflicts;
+
     public SyncOrchestrator(
         string repoRoot,
         IReadOnlyList<ProjectBinding> bindings,
@@ -116,9 +122,11 @@ public sealed class SyncOrchestrator
         OrchestratorOptions? options = null,
         IProgress<PlcProgress>? progress = null,
         IVersioLogger? logger = null,
-        IProjectOccupancyProbe? occupancy = null)
+        IProjectOccupancyProbe? occupancy = null,
+        IConflictProbe? conflicts = null)
     {
         _occupancy = occupancy;
+        _conflicts = conflicts ?? NoConflicts.Instance;
         _repoRoot = repoRoot;
         _owner = owner;
         _progress = progress;
@@ -391,6 +399,27 @@ public sealed class SyncOrchestrator
         {
             return (Refuse(LogLevel.Debug, SyncVerdict.SelfWriteSuppressed, job.BindingId,
                 "this was the echo of our own export", state), slotHeld);
+        }
+
+        // 3b. UNMERGED PATHS.
+        //
+        //     After the hash gate and the suppressor, so a save that changed nothing and an
+        //     echo of our own export are still dropped as what they are rather than reported
+        //     as a conflict — and so the cost, one `git status`, is paid only for changes that
+        //     are actually going somewhere.
+        //
+        //     Before the direction lock, deliberately. A conflicted tree is the more
+        //     fundamental problem and has the clearer remedy; reporting it as a lock violation
+        //     would send the user to push or discard when what they have to do is finish the
+        //     merge. The guard above the UI orders these two the same way, for the same reason.
+        if (await ConflictedPathsFor(binding, ct).ConfigureAwait(false) is { Count: > 0 } clashes)
+        {
+            return (Refuse(LogLevel.Information, SyncVerdict.BlockedByConflict, job.BindingId,
+                $"{ProjectName(binding)} has {Files(clashes.Count)} with unresolved merge " +
+                $"conflicts ({string.Join(", ", clashes.Take(3))}" +
+                (clashes.Count > 3 ? ", …" : string.Empty) +
+                "). Finish the merge and this will run on the next change.",
+                state), slotHeld);
         }
 
         // 4. Direction lock.
@@ -723,6 +752,54 @@ public sealed class SyncOrchestrator
     /// not a backup, and the backups live next door under their own name.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// Which of the tree's unmerged paths belong to this binding.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Both sides count. A conflict in the mirror is the obvious one — importing text holding
+    /// <c>&lt;&lt;&lt;&lt;&lt;&lt;&lt;</c> markers writes them into a structured project file
+    /// that will not compile afterwards. A conflict on the <c>.project</c> itself matters just
+    /// as much: exporting from a binary git could not merge would produce a mirror of whichever
+    /// half won, and record it as the truth.
+    /// </para>
+    /// <para>
+    /// A conflict elsewhere in the repository is somebody else's business. A README both sides
+    /// edited has nothing to do with this project, and halting its sync over one would be the
+    /// same over-reach as releasing every direction lock because one unrelated file was
+    /// discarded.
+    /// </para>
+    /// </remarks>
+    private async Task<IReadOnlyList<string>> ConflictedPathsFor(
+        ProjectBinding binding, CancellationToken ct)
+    {
+        var unmerged = await _conflicts.UnmergedPathsAsync(ct).ConfigureAwait(false);
+
+        if (unmerged.Count == 0)
+        {
+            return [];
+        }
+
+        return [.. unmerged.Where(path => Owns(binding, path))];
+    }
+
+    /// <summary>Does this binding's project or mirror contain the given repo-relative path?</summary>
+    /// <remarks>
+    /// The project is matched exactly and the mirror by prefix, in that order, and the prefix
+    /// carries its separator: <c>plc/A.project</c> sits beside <c>plc/A</c>, and a careless
+    /// prefix test would have the mirror claim the project — the same trap
+    /// <c>SyncViewModel.Locate</c> documents on the other side of the seam.
+    /// </remarks>
+    private static bool Owns(ProjectBinding binding, string repoRelativePath)
+    {
+        var path = repoRelativePath.Replace('\\', '/');
+
+        return string.Equals(path, binding.ProjectPath, StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith(binding.ExportPath.TrimEnd('/') + '/', StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string Files(int count) => count == 1 ? "1 file" : $"{count} files";
+
     private async Task<string?> CopyOpenProjectAsync(ProjectBinding binding, CancellationToken ct)
     {
         var source = Absolute(binding.ProjectPath);
