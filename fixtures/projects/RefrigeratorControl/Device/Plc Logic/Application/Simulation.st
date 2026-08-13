@@ -9,6 +9,7 @@ VAR
 	xRaiseTemp: BOOL;					//Signal for increasing the temperature
 	tTemp: TIME;						//Delay time
 	TestTag : BOOL;
+	TestTAg2: BOOL;
 END_VAR
 
 // --- BEGIN IMPLEMENTATION ---
