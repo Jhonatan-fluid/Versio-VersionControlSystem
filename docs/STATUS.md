@@ -290,6 +290,45 @@ does not record them has to be run again.
 
 Written down with their evidence, because the reasoning is worth more than the fix.
 
+### The IDE's heartbeat is a `git status` every five seconds, forever — **not fixed**
+
+Found while checking that the log was quiet after the export-echo fix. It was not: with a
+repository open and nothing happening, the app ran a `git status` roughly every 2.5 seconds and
+wrote a Debug line for each.
+
+The cause is not Versio's own timers. `_deferredTick` fires every five seconds and does nothing
+when nothing is deferred, and no watcher event had settled at all. It is the **CODESYS IDE**:
+
+```
+ObjectOrientedProgramming(Extended).~u   14:00:07
+… six seconds later …
+ObjectOrientedProgramming(Extended).~u   14:00:12
+```
+
+CODESYS rewrites its lock marker every few seconds for as long as it holds the project. Each
+rewrite is a working-tree event, each event refreshes the status, and each refresh spawns
+`git.exe`. **The `.~u` file is gitignored** — adoption writes that rule itself — so it cannot
+change what `git status` reports, ever. The work is guaranteed to produce the same answer.
+
+The measurement that matters is that this is not an edge case: **an engineer with the IDE open
+is the normal state of this tool**, and in that state the app spawns ~24 git processes a minute
+and writes ~1,400 log lines an hour, against a design goal of eleven.
+
+Two things make the fix tractable rather than speculative, and both already exist:
+
+- **Versio knows which paths it told git to ignore.** Adoption writes `.versio/local/`,
+  `<name>-AllUsers.opt` and `<name>-<user>-<machine>.opt` into `.gitignore`, so those are
+  already a list rather than a guess.
+- **The vendor seam already answers where the lock marker is.** `IPlcProjectFormat` reports it
+  — that is how open-project detection works — so the rule stays vendor-neutral: *a path the
+  format declares as its lock marker is not a working-tree change.*
+
+Deliberately not fixed in the same pass as the export echoes. That one had a measurement, a
+mechanism and a test; this one needs a decision about where the filter belongs —
+`StatusRefreshPolicy`, which already suppresses metadata events after a refresh, or the
+repository watcher itself — and a test that proves a marker touch changes nothing while a real
+edit still does.
+
 ### An export woke the change detector once per file it had just written
 
 Noticed in the log while checking something else, on a real project with 56 exported files: for
