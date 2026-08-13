@@ -94,7 +94,8 @@ public sealed class RepoSetup(
             return new AdoptionResult { Decision = decision, Config = config };
         }
 
-        var attributes = await EnsureGitAttributesAsync(git, ct).ConfigureAwait(false);
+        var attributes = await EnsureGitAttributesAsync(
+            git, ct, [decision.Binding!.ExportPath]).ConfigureAwait(false);
         var ignores = await EnsureGitIgnoreAsync(
             projectPath, ct, decision.Binding!.ExportPath).ConfigureAwait(false);
         var updated = await store.AddBindingAsync(decision.Binding!, ct).ConfigureAwait(false);
@@ -198,8 +199,12 @@ public sealed class RepoSetup(
     }
 
     /// <summary>Add the binary/LFS rules for this vendor's project files, if they are absent.</summary>
+    /// <param name="mirrors">
+    /// Export directories that need <c>text eol=lf</c>, so a clone with
+    /// <c>core.autocrlf=true</c> lands the mirror byte-identical to what the exporter wrote.
+    /// </param>
     public async Task<GitAttributesPlan> EnsureGitAttributesAsync(
-        IGitClient? git, CancellationToken ct)
+        IGitClient? git, CancellationToken ct, IReadOnlyList<string>? mirrors = null)
     {
         var existing = File.Exists(GitAttributesPath)
             ? await File.ReadAllTextAsync(GitAttributesPath, ct).ConfigureAwait(false)
@@ -213,7 +218,7 @@ public sealed class RepoSetup(
         // repository-wide, and writing them one vendor at a time would leave a TwinCAT project
         // line-mergeable until somebody happened to adopt one.
         var patterns = PlcFormats.AllExtensions.Select(e => $"*{e}").ToList();
-        var plan = GitAttributes.Plan(existing, patterns, lfs);
+        var plan = GitAttributes.Plan(existing, patterns, lfs, mirrors);
 
         if (plan.ChangeNeeded)
         {

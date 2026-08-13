@@ -212,7 +212,31 @@ public sealed class SyncViewModel : ObservableObject
     /// </remarks>
     public BusyTracker Busy => _busy;
 
+    /// <summary>
+    /// What the scan found that needs a person: an export tree whose project is gone, a
+    /// binding pointing at nothing, a manifest claiming a different binding.
+    /// </summary>
+    /// <remarks>
+    /// Populated on every scan, and until now bound by nothing at all - the count reached the
+    /// log and the sentences reached nobody. That is the shape of bug this repository keeps
+    /// finding, so it is either shown or deleted, and these are worth showing: every one of
+    /// them is a repository in a state Versio cannot resolve on its own.
+    /// </remarks>
     public ObservableCollection<string> Findings { get; } = [];
+
+    /// <summary>The findings as one sentence, or empty when the scan found nothing wrong.</summary>
+    /// <remarks>
+    /// A summary rather than a list in the panel, for the same reason the coverage warning is
+    /// one line: these are rare, they are not the panel's subject, and the log carries the
+    /// detail. Two is the most that has ever been seen at once; beyond that it counts rather
+    /// than scrolls.
+    /// </remarks>
+    public string FindingsSummary => Findings.Count switch
+    {
+        0 => string.Empty,
+        1 => Findings[0],
+        _ => $"{Findings.Count} things need attention — {Findings[0]} (see the log for the rest)",
+    };
 
     /// <summary>
     /// Clear the selected project's failure and sync it again.
@@ -665,6 +689,7 @@ public sealed class SyncViewModel : ObservableObject
         _config = new RepoConfig();
         Projects.Clear();
         Findings.Clear();
+        OnPropertyChanged(nameof(FindingsSummary));
         Tree.Clear();
 
         // The last git status this panel was built from. Left behind, the next tree rebuild
@@ -1323,6 +1348,9 @@ public sealed class SyncViewModel : ObservableObject
 
         _logger.Info(LogCategory.Sync,
             $"scan: {Projects.Count} project(s), {Findings.Count} finding(s)");
+
+        // The summary is derived, so it has to be told when the collection behind it moves.
+        OnPropertyChanged(nameof(FindingsSummary));
 
         if (adopted > 0)
         {

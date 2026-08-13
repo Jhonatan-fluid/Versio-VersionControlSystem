@@ -2160,17 +2160,39 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
-        var offer = arrival.Restorable[0];
-        var choice = AskAboutStashedWork?.Invoke(AutoStashNarrative.Arrival(arrival, _clock.UtcNow))
-                     ?? StashedWorkChoice.Leave;
-
-        switch (choice)
+        // Each in turn, newest first, rather than only the newest.
+        //
+        // Switching away from a branch twice without coming back is ordinary, and the records
+        // are a list for exactly that reason - but offering one per arrival meant the older
+        // stashes were reachable only by switching away and back again, once per stash, with
+        // nothing on screen saying so. A stash somebody cannot reach is a stash they will
+        // eventually stop believing in.
+        //
+        // The list is re-read from the arrival snapshot rather than re-queried between
+        // answers: restoring one pops it, which renumbers every stash@{n} below it, and the
+        // refs held here would then name the wrong entries. RestoreStashAsync and the drop
+        // below both act on THIS binding's captured ref immediately, before anything else
+        // moves, which is what makes that safe.
+        for (var i = 0; i < arrival.Restorable.Count; i++)
         {
-            case StashedWorkChoice.Restore:
-                await RestoreStashAsync(offer).ConfigureAwait(true);
-                break;
+            var offer = arrival.Restorable[i];
+            var remaining = arrival.Restorable.Count - i;
+            var choice = AskAboutStashedWork?.Invoke(
+                             AutoStashNarrative.Arrival(arrival, offer, remaining, _clock.UtcNow))
+                         ?? StashedWorkChoice.Leave;
 
-            case StashedWorkChoice.Discard:
+            if (choice == StashedWorkChoice.Restore)
+            {
+                await RestoreStashAsync(offer).ConfigureAwait(true);
+
+                // One restore per arrival. A second pop on top of the first would land two
+                // sets of edits in one working tree with no way to tell them apart, and the
+                // remaining records are still there to be offered on the next arrival.
+                return;
+            }
+
+            if (choice == StashedWorkChoice.Discard)
+            {
                 var warning = AutoStashNarrative.DiscardWarning(offer);
                 if (ConfirmDestructive?.Invoke(warning.Title, warning.Body) != true)
                 {
@@ -2178,21 +2200,23 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 }
 
                 await _git.StashDropAsync(offer.Ref, CancellationToken.None).ConfigureAwait(true);
-                await _autoStash.WriteAsync(
-                    AutoStash.Without(state, offer.Record.StashCommitId),
-                    CancellationToken.None).ConfigureAwait(true);
+
+                state = AutoStash.Without(state, offer.Record.StashCommitId);
+                await _autoStash.WriteAsync(state, CancellationToken.None).ConfigureAwait(true);
 
                 _logger.Warn(LogCategory.Git,
                     $"auto-stash {Short(offer.Record.StashCommitId)} discarded at the user's request");
 
                 StatusSummary = "The stashed work was discarded.";
-                break;
 
-            default:
-                // Left where it is, and offered again next time. Doing nothing has to be a real
-                // answer, or the dialog is a demand rather than an offer.
-                StatusSummary = $"Your stashed work is still saved for {branch}.";
-                break;
+                // Dropping renumbers the refs below it, so nothing else may be acted on with
+                // the refs captured before it. The rest are offered on the next arrival.
+                return;
+            }
+
+            // Left where it is, and the next one is offered. Doing nothing has to be a real
+            // answer, or the dialog is a demand rather than an offer.
+            StatusSummary = $"Your stashed work is still saved for {branch}.";
         }
     }
 

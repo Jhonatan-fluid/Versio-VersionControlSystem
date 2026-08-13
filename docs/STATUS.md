@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-13 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,033 unit + 207 UI + 122 integration, 0 skipped
+**Date:** 2026-08-13 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,037 unit + 209 UI + 130 integration, 0 skipped
 
 > All three measured on 2026-08-13, on branch `Clean-up-and-continue-dev`. The integration
 > suite was re-run in full against real CODESYS 3.5.22.20 after the manifest work — 111
@@ -254,21 +254,21 @@ does not record them has to be run again.
   queued, which is correct and cheap; restarting instead would be better when the run has
   barely begun, and needs process cancellation plus cleanup of the staging folder a killed
   export leaves behind.
-- **Orphan findings are computed and shown nowhere.** `OrphanScanner` runs on every scan and
-  `SyncViewModel.Findings` is populated from it — an export tree whose project was deleted, a
-  binding pointing at nothing — and no view binds that collection. It reaches the log as a
-  count and nothing else. Either surface it in the panel or delete the collection; leaving it
-  is the shape of bug this codebase keeps finding.
+- ~~**Orphan findings are computed and shown nowhere.**~~ — **shown.** `FindingsSummary` is a
+  line in the project panel, in the same slot and the same red as the coverage warning, and
+  hidden when there is nothing to say. One sentence for one finding; a count and the first one
+  for more, with the detail still in the log. They were surfaced rather than deleted because
+  every one of them is a repository in a state Versio cannot resolve on its own.
 - **`ToolchainState` is a public observable property with no view.** It survives because the
   runner uses its text as the "why this is unavailable" explanation. It should be a plain
   string, not a bindable one.
 - **The branch dropdown does not refuse a switch while a direction lock is held** (plan §9.2).
   Git refuses a dirty-tree checkout on its own, which covers the dangerous case without
   explaining it.
-- **Adoption writes no line-ending rules to `.gitattributes`** — only binary/LFS rules for the
-  project extensions. This repository's own `* text=auto eol=lf` was typed by hand. On a
-  machine with `core.autocrlf=true`, a cloned mirror may read as entirely modified. Measure it
-  before fixing: the repo's own rule is that a plausible inference is not a measurement.
+- ~~**Adoption writes no line-ending rules to `.gitattributes`**~~ — **measured, and fixed.**
+  The inference in this bullet was wrong: git reports such a clone as *clean*. What breaks is
+  Versio's own hash gate, which reads the bytes on disk. Adoption writes `<mirror>/** text
+  eol=lf` now; see the finding for the measurement both ways.
 - **Hand-maintained counts in these documents drift.** The commit count was wrong by twelve,
   the project tree's test count by six, and the scenario suite's by twenty-two — all of them
   written once and never re-checked. Re-derive rather than trust: `git rev-list --count HEAD`,
@@ -289,6 +289,46 @@ does not record them has to be run again.
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### The mirror arrives with the wrong line endings, and git says it is fine
+
+The loose end this document has carried since the audit read: *"Adoption writes no line-ending
+rules to `.gitattributes`. On a machine with `core.autocrlf=true`, a cloned mirror may read as
+entirely modified. Measure it before fixing: the repo's own rule is that a plausible inference
+is not a measurement."*
+
+Measured, and **the inference was wrong in a way that matters more than being right would
+have**. Against real git, a scratch repository, `core.autocrlf=true`:
+
+```
+$ git -c core.autocrlf=true clone origin clone-crlf
+warning: in the working copy of 'Main.st', LF will be replaced by CRLF …
+
+$ git status --porcelain          # in the clone
+                                  # ← nothing. The tree is clean.
+```
+
+Git is perfectly happy: it normalises on the way back in, so nothing reads as modified and no
+diff appears. **Versio is not**, because the exporter writes LF and the hash gate hashes the
+bytes on disk:
+
+| | |
+|---|---|
+| `origin/Main.st`, as exported | `6fb69762e1887a3f…` |
+| the same file in a `core.autocrlf=true` clone | `c58f937fb0ab1dae…` |
+
+Every file in a teammate's fresh clone hashes differently from what an export of the same
+project would produce. The engine reads that as a mirror somebody has edited by hand — the one
+state that makes the text side authoritative and points the sync the wrong way.
+
+Adoption writes `<mirror>/** text eol=lf` now, beside the `binary -diff -merge` rules for the
+project files. It is the opposite rule for the opposite reason, and they belong in the same
+file: a project must never be line-merged, and a mirror exists to be. Proven the same way it
+was found — with the rule in place, the same clone with `core.autocrlf=true` still on lands
+byte-identical to what was committed, `6fb69762…` on both sides.
+
+An existing rule for the same pattern is still never rewritten, so a repository that has
+already decided something about its mirror keeps its decision.
 
 ### The auto-stash swallowed its own record, and `.gitignore` could not have saved it
 

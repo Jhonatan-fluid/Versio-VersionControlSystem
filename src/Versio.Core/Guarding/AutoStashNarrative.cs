@@ -30,10 +30,17 @@ public enum StashedWorkChoice
 /// </remarks>
 public static class AutoStashNarrative
 {
-    /// <summary>The offer, when there is something to offer.</summary>
-    public static ChoicePrompt Arrival(StashArrival arrival, DateTimeOffset now)
+    /// <summary>The offer for one stash, and how many are still waiting behind it.</summary>
+    /// <param name="arrival">Everything waiting on this branch.</param>
+    /// <param name="offered">
+    /// The one being offered now, which is not always the newest: they are offered in turn and
+    /// each answer moves on to the next.
+    /// </param>
+    /// <param name="remaining">How many are left, including this one.</param>
+    public static ChoicePrompt Arrival(
+        StashArrival arrival, LiveStash offered, int remaining, DateTimeOffset now)
     {
-        var offer = arrival.Restorable[0].Record;
+        var offer = offered.Record;
         var files = offer.FileCount == 1 ? "1 changed file" : $"{offer.FileCount} changed files";
 
         var body = $"Versio saved {files} when you switched away from {offer.Branch} " +
@@ -42,10 +49,10 @@ public static class AutoStashNarrative
         // Said only when it is true, and it is worth saying: switching away twice without
         // coming back is legitimate, and somebody who is offered one stash while holding three
         // would reasonably assume the other two are gone.
-        if (arrival.Restorable.Count > 1)
+        if (remaining > 1)
         {
-            body += $"\n\nThere are {arrival.Restorable.Count} saved for this branch. This is " +
-                    "the most recent; the others are offered after it.";
+            body += $"\n\nThere are {remaining} saved for this branch. Answering this " +
+                    "one moves on to the next.";
         }
 
         return new ChoicePrompt(

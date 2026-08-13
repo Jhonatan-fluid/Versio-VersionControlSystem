@@ -290,6 +290,85 @@ public sealed class AutoStashFlowTests : IDisposable
         Assert.Equal(string.Empty, Git("stash list").Trim());
     }
 
+    [SkippableFact]
+    public async Task Two_stashes_on_one_branch_are_offered_one_after_the_other()
+    {
+        // Switching away twice without coming back is ordinary, which is why the records are a
+        // list. Offering only the newest per arrival meant the older ones were reachable only
+        // by switching away and back again, once per stash, with nothing on screen saying so.
+        Skip.IfNot(GitIsAvailable(), "git is not on PATH");
+
+        var shell = await OpenWithDirtyTreeAsync();
+        shell.AskGuard = _ => GuardChoice.StashAndProceed;
+
+        // Two rounds of "edit on main, switch away".
+        await shell.SwitchBranchAsync(Other());
+        await shell.SwitchBranchAsync(MainBranch());
+
+        File.WriteAllText(
+            Path.Combine(_path, "machine.st"),
+            "PROGRAM Main\n  (* a second thought *)\nEND_PROGRAM\n");
+
+        await shell.RefreshAsync();
+        await shell.SwitchBranchAsync(Other());
+
+        Assert.Equal(2, Record().Entries.Count);
+
+        var prompts = new List<string>();
+        shell.AskAboutStashedWork = prompt =>
+        {
+            prompts.Add(prompt.Body);
+            return StashedWorkChoice.Leave;
+        };
+
+        await shell.SwitchBranchAsync(MainBranch());
+
+        // Both offered, in one arrival, and the first says how many are behind it.
+        Assert.Equal(2, prompts.Count);
+        Assert.Contains("There are 2 saved", prompts[0], StringComparison.Ordinal);
+        Assert.DoesNotContain("There are", prompts[1], StringComparison.Ordinal);
+
+        // Left alone means left alone: both are still in git and still recorded.
+        Assert.Equal(2, Record().Entries.Count);
+    }
+
+    [SkippableFact]
+    public async Task Restoring_one_stops_offering_the_rest_until_the_next_arrival()
+    {
+        // A second pop on top of the first would land two sets of edits in one working tree
+        // with no way to tell them apart - and the refs captured before the first restore
+        // name the wrong entries once a pop has renumbered them.
+        Skip.IfNot(GitIsAvailable(), "git is not on PATH");
+
+        var shell = await OpenWithDirtyTreeAsync();
+        shell.AskGuard = _ => GuardChoice.StashAndProceed;
+
+        await shell.SwitchBranchAsync(Other());
+        await shell.SwitchBranchAsync(MainBranch());
+
+        File.WriteAllText(
+            Path.Combine(_path, "machine.st"),
+            "PROGRAM Main\n  (* a second thought *)\nEND_PROGRAM\n");
+
+        await shell.RefreshAsync();
+        await shell.SwitchBranchAsync(Other());
+
+        var asked = 0;
+        shell.AskAboutStashedWork = _ =>
+        {
+            asked++;
+            return StashedWorkChoice.Restore;
+        };
+
+        await shell.SwitchBranchAsync(MainBranch());
+
+        Assert.Equal(1, asked);
+        Assert.Single(Record().Entries);
+    }
+
+    private static BranchEntry MainBranch() =>
+        new(new Versio.Core.Git.BranchInfo { Name = "main", IsCurrent = false });
+
     private static bool GitIsAvailable()
     {
         try

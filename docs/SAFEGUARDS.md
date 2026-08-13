@@ -587,11 +587,12 @@ its mirror together — and it is guarded now, with a test that fails when the c
 `AskAboutWork` is gone with it: it existed only to pass `WorkingTreeSnapshot.Clean`, and became
 a synonym for `Ask` the moment there was something to offer.
 
-**Phase 7 is complete except for one small thing:**
-
-1. **The second and later stashes on one branch.** `OnArrival` returns them all, newest first,
-   and the prompt says how many — but only the newest is offered per arrival. Offering the rest
-   in turn is a loop nobody has written yet.
+**Phase 7 is complete.** The second and later stashes on one branch are offered in turn now,
+newest first, each answer moving on to the next, and the prompt says how many are waiting
+behind it. Restoring or discarding one stops there and leaves the rest for the next arrival:
+a `pop` renumbers every `stash@{n}` below it, so the refs captured a moment earlier would name
+the wrong entries — and two pops into one working tree would land two sets of edits with no way
+to tell them apart.
 
 ### Phase 8, as built
 
