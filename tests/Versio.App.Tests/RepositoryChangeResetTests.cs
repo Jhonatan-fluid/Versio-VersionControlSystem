@@ -34,7 +34,14 @@ public sealed class RepositoryChangeResetTests
     {
         var sink = new InMemoryLogSink();
         var logger = new VersioLogger(new SystemClock()).AddSink(sink);
-        return new ShellViewModel(logger, new LogViewModel(sink));
+
+        // No toolchain. Adoption exports a project the moment it is tracked, which is right
+        // for a user and ruinous here: these tests drop a .project into a temp repository, and
+        // without this they launch the real CODESYS and wait for it to fail — one of them went
+        // from one second to eight. A repository on a machine with no toolchain is a state the
+        // app already handles and reports, so this exercises a real path rather than a stub.
+        return new ShellViewModel(
+            logger, new LogViewModel(sink), toolchains: (_, _) => null);
     }
 
     /// <summary>Fill the shell with everything a repository puts on screen.</summary>
@@ -361,6 +368,47 @@ public sealed class RepositoryChangeResetTests
         await shell.RefreshAsync();
 
         Assert.Contains(shell.Sync.Projects, p => p.Path == "Machine(Extended).project");
+
+        shell.Dispose();
+    }
+
+    [SkippableFact]
+    public async Task An_export_landing_mid_review_updates_the_tree_rather_than_replacing_it()
+    {
+        // THE WIRING, not the algorithm.
+        //
+        // TreeReconcileTests proves TreeRow.Reconcile does the right thing when called. It says
+        // nothing about whether RefreshTreeAsync calls it — and reverting that one line to
+        // Tree.Clear() plus a refill left all of those tests green, which is the third time in
+        // this work that a unit test proved a method and not its caller.
+        //
+        // Selection is a reference to the row. If the refresh replaces row objects, whoever was
+        // reading the tree loses their place every time a save triggers an export.
+        Skip.IfNot(GitIsAvailable(), "git is not on PATH");
+
+        using var repo = new TempRepo("readme.txt");
+
+        var shell = Build();
+
+        await shell.OpenAsync(repo.Path);
+
+        File.WriteAllText(
+            System.IO.Path.Combine(repo.Path, "Machine.project"), "a tracked project");
+
+        await shell.RefreshAsync();
+
+        // Adoption also writes .gitattributes, .gitignore and .versio/repo.json, so the tree
+        // holds those alongside the project. The project row is the one being read.
+        var reading = Assert.Single(shell.Sync.Tree, r => r.IsProject);
+        var before = shell.Sync.Tree.Count;
+
+        // Something else changes, so the tree's signature moves and it genuinely rebuilds.
+        File.WriteAllText(System.IO.Path.Combine(repo.Path, "notes.txt"), "and another file");
+
+        await shell.RefreshAsync();
+
+        Assert.True(shell.Sync.Tree.Count > before, "the refresh did not actually rebuild");
+        Assert.Same(reading, Assert.Single(shell.Sync.Tree, r => r.IsProject));
 
         shell.Dispose();
     }

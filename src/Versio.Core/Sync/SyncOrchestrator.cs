@@ -17,7 +17,22 @@ public sealed record OrchestratorOptions
     /// writing into a .project is the strictly more dangerous direction.</summary>
     public bool RequireImportConfirmation { get; init; } = true;
 
-    public TimeSpan MinimumInterval { get; init; } = TimeSpan.FromSeconds(30);
+    /// <summary>
+    /// The shortest gap between two export starts for one project.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Ten seconds, not thirty.</b> The point of exporting on every change is that somebody
+    /// can read the diff <i>before</i> committing, and a thirty-second wait between saving and
+    /// seeing it is long enough that people stop waiting and go and do something else. A save
+    /// inside the window is not lost — it is recorded as pending and runs once things go quiet.
+    /// </para>
+    /// <para>
+    /// It is a floor on how often the toolchain starts, not a debounce: the watcher's own
+    /// settling delay already absorbs the burst of writes a single save produces.
+    /// </para>
+    /// </remarks>
+    public TimeSpan MinimumInterval { get; init; } = TimeSpan.FromSeconds(10);
     public int CircuitBreakerThreshold { get; init; } = 5;
     public TimeSpan CircuitBreakerWindow { get; init; } = TimeSpan.FromSeconds(60);
 }
@@ -1130,9 +1145,9 @@ public sealed class SyncOrchestrator
     /// The commit gate: refuse to commit while any binding's export is stale.
     /// </summary>
     /// <remarks>
-    /// This is what converts a dropped watcher event from a correctness problem into a UX
-    /// one — and since <c>On git action</c> became the default sync mode, it is the primary
-    /// path by which the export tree is written at all.
+    /// This is what converts a dropped watcher event from a correctness problem into a UX one.
+    /// It is a backstop: exports follow a detected change, so a commit normally finds every
+    /// mirror already current and this gate finds nothing to do.
     /// </remarks>
     public async Task<CommitGateResult> EvaluateCommitGateAsync(CancellationToken ct)
     {

@@ -7,6 +7,7 @@ using Versio.Core.Diff;
 using Versio.Core.Git;
 using Versio.Core.Guarding;
 using Versio.Core.Logging;
+using Versio.Core.Plc;
 using Versio.Core.Sync;
 using Versio.Core.Watching;
 using Versio.Infrastructure.Git;
@@ -202,7 +203,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     public ShellViewModel(VersioLogger logger, LogViewModel log,
                           Func<string, GitCliClient>? gitFactory = null,
                           IRepositoryProbe? probe = null,
-                          IClock? clock = null)
+                          IClock? clock = null,
+                          Func<PlcVendor, IVersioLogger, IPlcToolchain?>? toolchains = null)
     {
         _logger = logger;
         Log = log;
@@ -219,7 +221,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // progress bar binds to this one — meaning the app-wide bar never appeared for any
         // toolchain work at all, including the catch-up and commit-gate exports that both
         // carefully open a scope for it. Two objects, both correct, wired to nothing.
-        Sync = new SyncViewModel(logger, _clock, Busy);
+        Sync = new SyncViewModel(logger, _clock, Busy, toolchains);
         History = new HistoryViewModel(logger);
         _gitFactory = gitFactory ?? (path => new GitCliClient(path, logger: logger));
         _locator = new RepositoryLocator(probe ?? new FileSystemRepositoryProbe());
@@ -1286,10 +1288,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>The gate runs before the commit, and exports rather than merely refusing.</b> With
-    /// <c>On git action</c> as the default sync mode there is no export on save, so this is
-    /// the primary path by which the mirror gets written at all. Refusing here and leaving the
-    /// user to find the export button would make the default mode unusable.
+    /// <b>The gate runs before the commit, and exports rather than merely refusing.</b> A
+    /// backstop, not the trigger: exports run when a change is detected, so by the time
+    /// somebody commits the mirror is normally already current. This covers what the watcher
+    /// missed — a dropped event, a save during a throttle window, a project adopted while the
+    /// toolchain was unavailable. Refusing here and leaving the user to find an export button
+    /// would turn a rare gap into a dead end.
     /// </para>
     /// <para>
     /// The export writes files, so those files are staged afterwards and before the commit.

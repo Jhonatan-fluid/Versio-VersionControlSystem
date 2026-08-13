@@ -158,8 +158,26 @@ public sealed class SyncViewModel : ObservableObject
     private string _treeSummary = string.Empty;
     private string _coverageSummary = string.Empty;
 
-    public SyncViewModel(VersioLogger logger, IClock clock, BusyTracker? busy = null)
+    /// <summary>
+    /// How a vendor's toolchain is obtained. The registry, unless a caller says otherwise.
+    /// </summary>
+    /// <remarks>
+    /// <b>A seam, and it had to exist.</b> Adopting a project now exports it straight away —
+    /// which is right for a user and wrong for a test suite, because a test that drops a
+    /// <c>.project</c> into a temp repository was launching the real CODESYS and waiting for it
+    /// to fail. One test went from one second to eight, and the suite from four to fourteen.
+    /// A view model that can only ever reach the machine's actual toolchain is a view model
+    /// whose behaviour cannot be exercised without it.
+    /// </remarks>
+    private readonly Func<PlcVendor, IVersioLogger, IPlcToolchain?> _toolchains;
+
+    public SyncViewModel(
+        VersioLogger logger,
+        IClock clock,
+        BusyTracker? busy = null,
+        Func<PlcVendor, IVersioLogger, IPlcToolchain?>? toolchains = null)
     {
+        _toolchains = toolchains ?? PlcToolchains.For;
         _logger = logger;
         _clock = clock;
         _busy = busy ?? new BusyTracker(clock, logger);
@@ -254,9 +272,10 @@ public sealed class SyncViewModel : ObservableObject
     /// How many tracked projects have changes that were never exported.
     /// </summary>
     /// <remarks>
-    /// With <c>On git action</c> as the default sync mode there is deliberately no
-    /// export-on-save, so a project can sit unexported all afternoon. Counting it is what
-    /// stops the panel from implying everything is in sync.
+    /// Normally zero, because an export follows a detected change. It goes above zero while
+    /// one is queued behind the minimum interval, when no toolchain is available, and when a
+    /// gate refused — a merge in progress, a project open in the IDE. Counting it is what
+    /// stops the panel from implying everything is in sync when it is not.
     /// </remarks>
     public int UnexportedCount
     {
@@ -669,7 +688,7 @@ public sealed class SyncViewModel : ObservableObject
     /// </remarks>
     private async Task ProbeToolchainAsync(CancellationToken ct)
     {
-        _toolchain = PlcToolchains.For(_vendor, _logger);
+        _toolchain = _toolchains(_vendor, _logger);
 
         if (_toolchain is null)
         {
@@ -1229,12 +1248,16 @@ public sealed class SyncViewModel : ObservableObject
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>This deliberately does not export anything.</b> The default sync mode is
-    /// <c>On git action</c>, decided by measurement: a CODESYS cold start is 17-31 s, so
-    /// exporting after every settled save would run the toolchain most of the working day for
-    /// changes nobody looks at until they commit. What the watcher buys is <i>awareness</i> -
-    /// the panel can say "2 projects not yet exported" instead of implying everything is in
-    /// sync, which the plan calls out explicitly as the thing the status bar must not do.
+    /// <b>This is what triggers an export.</b> A settled change runs the sync pipeline, so the
+    /// mirror is written while somebody is still deciding what to commit — which is the whole
+    /// point of having one. Reviewing a diff that only appears once you have committed is
+    /// reviewing it too late.
+    /// </para>
+    /// <para>
+    /// A CODESYS cold start is 17-31 s, so the cost is managed rather than avoided: the
+    /// coalescer holds the queue at one job per project and the minimum interval floors how
+    /// often the toolchain starts. Saves inside the window are recorded as pending and run once
+    /// things go quiet - none is lost, and N saves cost one export rather than N.
     /// </para>
     /// <para>
     /// Nothing depends on the watcher being reliable. It drops events - buffers overflow,
@@ -1718,11 +1741,14 @@ public sealed class SyncViewModel : ObservableObject
         CoverageSummary = built.Coverage.Values.FirstOrDefault(c => c.HasGaps)?.Describe()
                           ?? string.Empty;
 
-        Tree.Clear();
-        foreach (var node in roots)
-        {
-            Tree.Add(new TreeRow(node, 0, _expansion));
-        }
+        // Reconciled, not rebuilt.
+        //
+        // Exporting on every change is what lets somebody review a diff before committing —
+        // and it means an export lands while they are reading the tree. Clearing the
+        // collection and refilling it dropped the selection, closed whatever WPF had realised,
+        // and threw the reader back to the top on every save. The changed-files list was fixed
+        // this way for the same reason; the tree is the primary view now and had not been.
+        TreeRow.Reconcile(Tree, roots, 0, _expansion);
 
         var objects = roots.Sum(CountObjects);
         var changed = status.Changes.Count;
@@ -1800,10 +1826,11 @@ public sealed class SyncViewModel : ObservableObject
     /// </summary>
     /// <remarks>
     /// <para>
-    /// This is the primary path by which the export tree is written at all, not a safety net.
-    /// With <c>On git action</c> as the default sync mode there is no export on save, so the
-    /// commit is where the mirror catches up - which is why it runs rather than merely
-    /// refusing, and why it is worth the 17-31 s it costs.
+    /// A backstop rather than the primary path: exports follow a detected change, so the
+    /// mirror is usually current well before anybody commits. This covers what the watcher
+    /// missed - a dropped event, a save still inside the throttle window, a project adopted
+    /// while no toolchain was available - which is why it exports rather than merely refusing,
+    /// and why it is worth the 17-31 s on the occasions it is needed.
     /// </para>
     /// <para>
     /// Each job is synchronous, so it bypasses the coalescer and runs now rather than queueing

@@ -66,7 +66,8 @@ Both directions run automatically and deterministically. A per-project **directi
 | Application icon — 8 sizes, hand-tuned below 48px, embedded in the exe | ✅ 12 tests over the `.ico` itself |
 | **Automatic tracking** — every project found, with its `.gitattributes`/LFS rules | ✅ 13 refusal tests + real-repo integration |
 | **`.gitignore` written on adoption**, created if the repository has none | ✅ covers `.versio/local/` (locks, backups, scratch copies) and the toolchain's `.opt` files; project-scoped, never repository-wide |
-| **Automatic export** when the project changes | ✅ 11 files in 16.7 s on the fixture, lock taken and persisted |
+| **Automatic export** when the project changes | ✅ the default, and the point of the mirror: the diff exists to be read *before* a commit. 11 files in 16.7 s on the fixture, lock taken and persisted. A 10 s minimum interval floors how often the toolchain starts and the coalescer holds one pending job per project, so N saves cost one export |
+| **An export landing mid-review does not interrupt it** | ✅ the tree is reconciled, not rebuilt — objects appear and disappear while the row you selected stays selected |
 | Direction lock in plain English, shared by the panel and the log | ✅ `SyncNarrative` — every blocking state names its remedy |
 | Heartbeat during a 17–31 s export | ✅ elapsed time in the panel, not silence |
 | WPF binding-failure tracing — `Versio.exe --trace-bindings <file>` | ✅ the one silent failure class, made loud |
