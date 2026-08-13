@@ -83,6 +83,12 @@ public static class ThemeManager
         }
 
         application.Resources.MergedDictionaries[index] = rebuilt;
+
+        // The caption is not part of the resource system, so nothing above repaints it. Every
+        // window that is already open would otherwise keep the caption of the theme it was
+        // born in until the app restarted - the same half-working theme switch this class was
+        // written to fix, one strip further out.
+        WindowCaption.RepaintOpenWindows();
     }
 
     /// <summary>

@@ -406,6 +406,58 @@
         <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
 
+    <!-- ================================================================= TOOLTIP -->
+    <!--
+        Implicit, and that is the point: there are dozens of ToolTips across the shell and the
+        dialogs, every one of them written as a plain string on the element it explains. Not
+        one of them named a style, so every one of them was the stock WPF tooltip - a
+        near-white slab with a hard border and a square drop shadow - opening on top of a dark
+        application. Retemplating them one by one would have meant touching dozens of call
+        sites and missing the next one; an implicit style dresses the ones that exist and the
+        ones nobody has written yet.
+
+        A ToolTip is a Popup with its own HWND, so it is the other reason this file has to be
+        honest about surfaces: nothing in the window's visual tree reaches it.
+    -->
+    <Style TargetType="ToolTip">
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+        <Setter Property="FontFamily" Value="{DynamicResource Font.UI}" />
+        <Setter Property="FontSize" Value="{DynamicResource Font.Size.Caption}" />
+        <Setter Property="MaxWidth" Value="340" />
+        <Setter Property="HasDropShadow" Value="False" />
+        <Setter Property="Placement" Value="Bottom" />
+        <Setter Property="HorizontalOffset" Value="0" />
+        <Setter Property="VerticalOffset" Value="4" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToolTip">
+                    <Border Background="{DynamicResource Brush.Surface.Raised}"
+                            BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                            BorderThickness="1"
+                            CornerRadius="{DynamicResource Radius.Control}"
+                            Padding="10,6">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="12" ShadowDepth="2" Opacity="0.28"
+                                              Direction="270" />
+                        </Border.Effect>
+
+                        <!-- Wrapping, because several of these are whole sentences: the
+                             direction-lock rule, what Discard cannot undo, why a stash keeps
+                             untracked files. A tooltip that ran off the screen edge would
+                             lose the half that matters. -->
+                        <ContentPresenter>
+                            <ContentPresenter.Resources>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="TextWrapping" Value="Wrap" />
+                                </Style>
+                            </ContentPresenter.Resources>
+                        </ContentPresenter>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- =================================================================== CHIPS -->
     <!--
         A filter toggle that reads as on or off at a glance and in peripheral vision.

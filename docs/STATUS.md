@@ -125,7 +125,7 @@ format; `.gitattributes` covers every registered vendor's extensions.
 | **Adoption writes `.gitignore`** | Created when absent, appended when present, never overriding an existing decision. Covers `.versio/local/` — locks, backups, scratch copies — and the toolchain's `-AllUsers.opt` and `-<user>-<machine>.opt`, the second of which carries a username and machine name in its filename |
 | **Export coverage** | What the export does *not* carry, said out loud: `_coverage.md` in the tree, every skip in the manifest with a stable reason, and a sentence in the panel naming what cannot be relied on. A gap is distinguished from a deliberate omission, from a file that is exported one way, and an old manifest reports "unknown" rather than "complete" |
 | **Library references** | One `<manager>.libraries.yaml` per library manager, beside the object that owns it — what the project asks for, never how it resolved here. Hand-written YAML on both sides, no dependency added to either. **Export-only**, and stated where a reader will meet it: the file's own header, `_coverage.md`, and the manifest's `form`. **Not yet in the panel** — `CoverageSummary` speaks only when there are gaps, deliberately, and the row-level 🔒 glyph the plan asks for (§9.3) is part of the unbuilt tree work |
-| **Chrome** | One app-wide progress bar with a caption, maximized on open, log console collapsed, heartbeat during long runs |
+| **Chrome** | One app-wide progress bar with a caption, maximized on open, log console collapsed, heartbeat during long runs. **The title bar follows the theme** — painted with `Color.Surface.Base` through DWM, on every window the app opens and again on every theme switch, so the caption and the top bar are one surface rather than two. Tooltips are themed too, by an implicit style, because there are dozens of them and not one named a style |
 | **Saying it is working** | A toolchain run announces itself the moment it passes the last gate, and three surfaces answer three different questions: the **bar** that the app is busy, the **row** which project it is busy with (`exporting…`, in the accent colour), and the **heartbeat** that it is still alive and how far along. A refused, coalesced or throttled save announces nothing, because it is not working |
 | **Log panel** | Level as four chips (click to drop, click to restore) and category as a multi-select dropdown carrying a live count each, because the counts are what say where the volume is. **Pause freezes the feed** rather than the scroll, says so in the header, and shows what is queued behind it. The controls appear with the list they filter: collapsed, the strip is a chevron, a count and the paused pill |
 | **Logging** | Ring buffer, correlation ids, rolling file from startup, crash handlers on all three .NET channels. An idle app is quiet: a completed git command writes one line, not two, and runs of unchanged status polls are summarised every five minutes instead of three lines per poll. The export narrates itself: the directory swap with both file counts, every skip with its reason, the summary, and a warning when a killed run left a staging folder behind |
@@ -268,6 +268,50 @@ does not record them has to be run again.
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### The app themed everything except the strip Windows draws, and every tooltip in it
+
+Reported from use, and it is the first thing anybody sees: *"the top windows bar should follow
+color theme, so if its dark theme then it goes dark as well."* A dark shell under a white
+caption, with the app's own top bar — `Surface.Base`, an exact colour — immediately below it.
+
+Two surfaces were unreachable from the stylesheet, for two different reasons:
+
+**The caption belongs to the window manager.** No style, template or brush reaches the
+non-client area; the only way in is `DwmSetWindowAttribute`. So the colours are handed over
+directly — `CAPTION_COLOR`, `TEXT_COLOR` and `BORDER_COLOR`, with `USE_IMMERSIVE_DARK_MODE`
+behind them for Windows 10, where the three colour attributes fail and dark mode is the whole
+effect. `Surface.Base` is passed rather than settling for immersive dark mode alone, because
+that gives a generic dark grey that is *close* to the top bar and not equal to it, and a seam
+one shade off looks worse than an honest contrast.
+
+**Tooltips are popups, and there are dozens of them.** Every one is a plain string on the
+element it explains, and not one named a style — so every one was the stock WPF tooltip: a
+near-white slab with a hard border, opening over a dark application. An implicit style dresses
+all of them at once, including the ones nobody has written yet. That is also why the style is
+pinned by a test: nothing in any view refers to it, so deleting it changes the look of dozens
+of controls and no lookup anywhere fails.
+
+**Two halves, and the second is the one that gets forgotten.** Painting on load is correct
+until the user switches theme with windows open, at which point every caption keeps the colour
+it was born with until the app restarts — the same shape of half-working theme switch already
+recorded below, one strip further out. So `ThemeManager.Apply` repaints every open window as
+part of the swap, and a test asserts it: two windows built, theme switched, both repainted.
+
+**The reach is what is tested, not the paint.** The DWM call needs a shown window with an HWND,
+and this suite deliberately shows nothing. What the tests assert instead is that every window
+which loads gets to the painter — a plain `Window` and a real dialog, separately, because "it
+works on the main window" is exactly how this fails — and they do it by raising `Loaded` by
+hand, since a class handler fires on `RaiseEvent` whether or not anything is on screen. The
+byte order gets its own test: COLORREF is `0x00BBGGRR`, and reversed, the caption comes out a
+warm brown that reads as somebody's decision rather than a bug. The interop itself was
+confirmed separately against the running app: all four attributes return `S_OK` on 10.0.26200.
+
+**A class handler rather than four constructors.** `EventManager.RegisterClassHandler` on
+`Window.Loaded`, registered once at startup, covers the shell, all three dialogs, the spike
+window, and the fifth window that would otherwise have been the one somebody forgot. Two
+surfaces remain honestly out of reach and are listed rather than hidden: `MessageBox` is a
+Win32 dialog, and `OpenFolderDialog` is the shell's own.
 
 ### Twenty seconds of work with nothing on screen, and four separate reasons for it
 

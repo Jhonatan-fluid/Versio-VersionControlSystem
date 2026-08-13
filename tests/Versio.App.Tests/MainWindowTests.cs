@@ -157,6 +157,45 @@ public sealed class MainWindowTests
         });
     }
 
+    [Fact]
+    public void The_settings_popup_builds_when_it_is_opened()
+    {
+        // The blind spot LogPanelChromeTests records for the category dropdown, one popup
+        // over. WPF builds nothing inside a Popup until it opens, so every style in here -
+        // the theme radios, the section labels, the ghost buttons - was unresolved and
+        // therefore unchecked until a user clicked the gear. This is the click.
+        StaHarness.Run(() =>
+        {
+            var window = Build();
+            var popup = Assert.IsType<Popup>(window.FindName("SettingsPopup"));
+
+            popup.IsOpen = true;
+            try
+            {
+                var content = Assert.IsAssignableFrom<FrameworkElement>(popup.Child);
+
+                content.Measure(new Size(400, 600));
+                content.Arrange(new Rect(0, 0, 400, 600));
+                content.UpdateLayout();
+
+                Assert.True(content.DesiredSize.Height > 0);
+
+                // The radios specifically: they are the only RadioButtons in the app that do
+                // NOT wear RailButton, so they are the ones the implicit style dresses.
+                var radio = Assert.IsAssignableFrom<RadioButton>(
+                    VisualChild(content, static v => v is RadioButton));
+
+                Assert.True(radio.DesiredSize.Width > 0);
+            }
+            finally
+            {
+                // Left open, this stays on screen for the rest of the run and the next test
+                // measures through it.
+                popup.IsOpen = false;
+            }
+        });
+    }
+
     /// <summary>First descendant matching <paramref name="wanted"/>, breadth-first.</summary>
     private static DependencyObject? VisualChild(
         DependencyObject root, Func<DependencyObject, bool> wanted)

@@ -20,6 +20,11 @@ public partial class App : Application
 
         TraceBindingsIfRequested(e.Args);
 
+        // Before the first window exists, so the shell's caption is painted the moment it
+        // loads rather than a frame later. One handler covers every window the app will ever
+        // open - the dialogs, System information, the spike - including ones not written yet.
+        WindowCaption.FollowTheme();
+
         // Follow the Windows app theme by default. Dark is the expected setting for this
         // audience, so it is verified on every screen rather than assumed to work.
         ThemeManager.Apply(AppTheme.System);
