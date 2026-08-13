@@ -359,6 +359,14 @@ through.
 | After | **1 `git status` in 45 seconds of idle** — the one at startup |
 | Still detected | a new file, in 0.5 s; its deletion, in 0.5 s; both verified in the running app |
 
+What remains over a longer watch is the **20-second backstop tick** — 24 calls in eight idle
+minutes, one every 20 s to the millisecond — which is `StatusRefreshPolicy` doing exactly what
+it was written to do, since `FileSystemWatcher` drops events silently and a panel that is 20 s
+stale beats one that is stale forever. It is worth stating because this document elsewhere
+claims an idle app writes about eleven lines an hour: with a repository open it writes about
+180, all of them the backstop's own `git status`. That is a design decision, not the bug that
+was just fixed, and it is the next thing to look at if idle cost ever matters again.
+
 The lesson is the one this document keeps recording in different clothes: **the rule was correct
 in unit tests while the app still spawned git every five seconds, twice, for two different
 reasons.** What closed it was a real `RepositoryWatcher` over a real directory, replaying what
