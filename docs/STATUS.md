@@ -269,6 +269,47 @@ does not record them has to be run again.
 
 Written down with their evidence, because the reasoning is worth more than the fix.
 
+### The stylesheet's own argument, not applied to four controls
+
+`Controls.xaml` opens by naming the four things that made the first pass look like a Win32 app:
+visible borders on every control, the system highlight brush for selection, hard dividers, and
+colour emoji. It then fixes all four — for the controls it retemplates. Four it never touched
+kept every one of the problems the header describes.
+
+**Checkboxes and radio buttons were WPF's own.** The settings popup's three theme radios, *Show
+full file*, *+ untracked*, and every row of the category dropdown were drawing Aero's shaded
+square and shaded circle — sized for a 2009 desktop, lit as though from above — on a dark
+surface. Sixty lines each: a 16 px box with `Radius.Control` and the icon font's check glyph, a
+16 px ring with an accent dot. The label is inside the hit area now too, so a click no longer
+has to find a 13 px square.
+
+**Both TreeViews painted selection in Windows' highlight blue.** `ListBoxItem` was retemplated
+in the first pass *because* the system highlight is the loudest tell — and the project tree, the
+surface somebody looks at all day, was not a ListBox. It was a TreeView, so it kept the stock
+template: highlight-blue selection and the Aero expander triangle. When the history panel was
+added it inherited exactly the same thing. `TreeRowItem` is what `RowItem` already is for the
+lists — a tinted fill plus an accent bar — with a chevron rotated by a trigger rather than two
+glyph keys that can drift apart.
+
+Two details in it are deliberate and worth keeping:
+
+- **`IsSelected`, not `IsSelectionActive`.** The stock template greys the selection out when
+  focus leaves the tree, which happens the moment somebody clicks a file to read its diff — so
+  the file whose diff is on screen looked unselected. The row stays lit here.
+- **`IsExpanded` is not set by the style.** Both trees bind it two-way per row, and that binding
+  is what drives the project tree's lazy children and the history's demand-driven file lists. The
+  retemplate puts a `ToggleButton` on the same property, so the test that matters asserts the
+  round trip in both directions: expanding a node in the UI must still reach the row, or the
+  panels quietly stop loading anything and nothing else looks wrong.
+
+**And a style can be right and unused.** The tree tests build their own `TreeViewItem`, which
+proves the template and nothing about the app. A second test asserts both TreeViews actually
+name it — because the project tree needs a repository open before it has a single row, so a
+missing `BasedOn` would have shipped with every test still green. Checked by removing it from
+one of the two, where it fails. Same for the implicit styles: they are keyed by type, nothing in
+any view refers to them, and deleting one changes dozens of controls without a single lookup
+failing.
+
 ### A top bar crowded into its left third, with two control heights in one row
 
 Reported from use: *"the repo and branch bars should cover more real estate horizontally so it

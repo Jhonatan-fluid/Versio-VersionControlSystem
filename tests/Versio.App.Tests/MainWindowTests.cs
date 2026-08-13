@@ -158,6 +158,41 @@ public sealed class MainWindowTests
     }
 
     [Fact]
+    public void Both_trees_wear_the_themed_row_style()
+    {
+        // StockControlStyleTests proves TreeRowItem does the right thing; this proves the two
+        // TreeViews actually ask for it. Without this, the style could be perfect and unused -
+        // and the project tree, which needs a repository before it has any rows to look at,
+        // would go on painting Windows' highlight blue with every test still green.
+        //
+        // Asserted against the style objects rather than by reading the XAML, because a test
+        // that reads the file it is checking agrees with it by construction.
+        StaHarness.Run(() =>
+        {
+            var window = Build();
+            var content = Assert.IsAssignableFrom<FrameworkElement>(window.Content);
+
+            content.Measure(new Size(1400, 900));
+            content.Arrange(new Rect(0, 0, 1400, 900));
+            content.UpdateLayout();
+
+            var expected = Assert.IsType<Style>(Application.Current.Resources["TreeRowItem"]);
+            var trees = AllOf<TreeView>(content).ToList();
+
+            // The project tree and the history tree. If a third appears, it needs the same
+            // treatment, and this is where that gets noticed.
+            Assert.Equal(2, trees.Count);
+
+            foreach (var tree in trees)
+            {
+                var style = Assert.IsType<Style>(tree.ItemContainerStyle);
+
+                Assert.Same(expected, style.BasedOn);
+            }
+        });
+    }
+
+    [Fact]
     public void Everything_in_the_top_bar_is_the_same_height()
     {
         // The defect this pins: Size.Control.Height was 28 and IconButton hardcoded 32, so
@@ -285,6 +320,30 @@ public sealed class MainWindowTests
                 popup.IsOpen = false;
             }
         });
+    }
+
+    /// <summary>Every descendant of type <typeparamref name="T"/>, breadth-first.</summary>
+    private static IEnumerable<T> AllOf<T>(DependencyObject root)
+        where T : DependencyObject
+    {
+        var queue = new Queue<DependencyObject>();
+        queue.Enqueue(root);
+
+        while (queue.Count > 0)
+        {
+            var node = queue.Dequeue();
+
+            if (node is T wanted)
+            {
+                yield return wanted;
+            }
+
+            var count = VisualTreeHelper.GetChildrenCount(node);
+            for (var i = 0; i < count; i++)
+            {
+                queue.Enqueue(VisualTreeHelper.GetChild(node, i));
+            }
+        }
     }
 
     /// <summary>First descendant matching <paramref name="wanted"/>, breadth-first.</summary>

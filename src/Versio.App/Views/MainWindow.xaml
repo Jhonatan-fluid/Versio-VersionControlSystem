@@ -528,12 +528,17 @@
                                     </ItemsPanelTemplate>
                                 </TreeView.ItemsPanel>
 
+                                <!-- TreeRowItem is what RowItem is for the lists: a tinted
+                                     fill and an accent bar instead of Windows' own highlight
+                                     blue, and a chevron instead of the Aero triangle. The
+                                     IsExpanded binding stays here rather than in the style,
+                                     because it is per-row state and it is what drives the
+                                     lazy children. -->
                                 <TreeView.ItemContainerStyle>
-                                    <Style TargetType="TreeViewItem">
+                                    <Style TargetType="TreeViewItem"
+                                           BasedOn="{StaticResource TreeRowItem}">
                                         <Setter Property="IsExpanded"
                                                 Value="{Binding IsExpanded, Mode=TwoWay}" />
-                                        <Setter Property="Foreground"
-                                                Value="{DynamicResource Brush.Text.Primary}" />
                                     </Style>
                                 </TreeView.ItemContainerStyle>
 
@@ -712,12 +717,17 @@
                                     </ItemsPanelTemplate>
                                 </TreeView.ItemsPanel>
 
+                                <!-- TreeRowItem is what RowItem is for the lists: a tinted
+                                     fill and an accent bar instead of Windows' own highlight
+                                     blue, and a chevron instead of the Aero triangle. The
+                                     IsExpanded binding stays here rather than in the style,
+                                     because it is per-row state and it is what drives the
+                                     lazy children. -->
                                 <TreeView.ItemContainerStyle>
-                                    <Style TargetType="TreeViewItem">
+                                    <Style TargetType="TreeViewItem"
+                                           BasedOn="{StaticResource TreeRowItem}">
                                         <Setter Property="IsExpanded"
                                                 Value="{Binding IsExpanded, Mode=TwoWay}" />
-                                        <Setter Property="Foreground"
-                                                Value="{DynamicResource Brush.Text.Primary}" />
                                     </Style>
                                 </TreeView.ItemContainerStyle>
 
