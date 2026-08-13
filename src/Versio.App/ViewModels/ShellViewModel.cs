@@ -430,6 +430,127 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// Commit messages typed but not yet committed, per repository.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Not in <c>repo.json</c>.</b> That file is committed and shared, so a half-written
+    /// commit message would be pushed to everybody else on the project — a draft is exactly the
+    /// kind of thing that must not leave the machine it was typed on.
+    /// </para>
+    /// <para>
+    /// In memory, so it lasts the session rather than for ever. Switching to another repository
+    /// and back is the case this is for, and it happens within a session by definition. Surviving
+    /// a restart would need a store under <c>.versio/local/</c>, which is a bigger thing than the
+    /// problem asks for.
+    /// </para>
+    /// </remarks>
+    private readonly Dictionary<string, string> _commitDrafts = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Forget everything that belonged to the repository being left.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>One method, so a field added later has an obvious home.</b> Before this, switching
+    /// repository called <c>Sync.AttachAsync</c> and never <c>Sync.Detach</c>, so the panel kept
+    /// the previous repository's expanded folders, coverage, staleness and search — and the
+    /// shell kept its diff, its commit message and its branch list. Some of it was corrected a
+    /// moment later by the refresh, which made the rest look like a glitch rather than a bug.
+    /// </para>
+    /// <para>
+    /// <b>Called only once the switch is certain.</b> A folder git will not work in is refused
+    /// before this runs, so picking the wrong directory costs nothing — the repository already
+    /// open is still open, still showing its diff, still holding the message being typed. Doing
+    /// this first and asking questions afterwards would punish a misclick with the loss of
+    /// whatever was on screen.
+    /// </para>
+    /// <para>
+    /// The collections are cleared inside <see cref="WithoutSideEffects"/>: they are bound to
+    /// controls with a selection, and emptying one raises a selection change that would
+    /// otherwise be read as the user asking to switch branch.
+    /// </para>
+    /// </remarks>
+    /// <param name="leaving">The repository being closed, or null on the first open.</param>
+    /// <param name="arrivingAt">The repository about to be opened.</param>
+    internal void ResetForRepositoryChange(string? leaving, string arrivingAt)
+    {
+        if (leaving is not null)
+        {
+            _logger.Info(LogCategory.App, $"leaving {leaving} for {arrivingAt}");
+            RememberCommitDraft(leaving);
+        }
+
+        WithoutSideEffects(() =>
+        {
+            Changes.Clear();
+            Staged.Clear();
+            Unstaged.Clear();
+            Branches.Clear();
+
+            SelectedStaged = null;
+            SelectedUnstaged = null;
+            SelectedBranch = null;
+        });
+
+        BranchName = "—";
+        AheadBehind = string.Empty;
+        StatusSummary = "Opening…";
+        _lastRefreshUtc = null;
+        LastRefreshText = string.Empty;
+        WatchState = string.Empty;
+
+        // The diff pane, including which commit it was reading out of. A patch from the old
+        // repository's history is not merely stale here — that commit does not exist.
+        SelectedDiff = string.Empty;
+        SelectedDiffPath = string.Empty;
+        _shownCommit = null;
+        _selectedDiffStaged = false;
+        ShowFullFile = false;
+
+        // Handed back if this repository has one waiting. Empty otherwise, which is the point:
+        // a message typed for one project must not be sitting in another project's box next to
+        // a live Commit button.
+        CommitMessage = RecallCommitDraft(arrivingAt);
+
+        // The two panels that own their own state clear it themselves. Detach is what was
+        // never called, and it already knew what to forget.
+        Sync.Detach();
+        History.Detach();
+
+        RaiseGitCommandStates();
+    }
+
+    /// <summary>Keep the message being typed, if there is one.</summary>
+    private void RememberCommitDraft(string repository)
+    {
+        if (string.IsNullOrWhiteSpace(CommitMessage))
+        {
+            _commitDrafts.Remove(repository);
+            return;
+        }
+
+        _commitDrafts[repository] = CommitMessage;
+
+        _logger.Debug(LogCategory.App,
+            $"kept the unsent commit message for {repository} ({CommitMessage.Length} chars)");
+    }
+
+    /// <summary>The message that was being typed here last time, or empty.</summary>
+    private string RecallCommitDraft(string repository)
+    {
+        if (!_commitDrafts.TryGetValue(repository, out var draft))
+        {
+            return string.Empty;
+        }
+
+        _logger.Info(LogCategory.App,
+            $"restored the unsent commit message for {repository}");
+
+        return draft;
+    }
+
     /// <summary>Put the branch dropdown back on the branch we are actually on.</summary>
     /// <remarks>
     /// A dropdown showing a branch you are not on is worse than no dropdown: every other panel
@@ -814,6 +935,10 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             RepositoryRejected?.Invoke(rejected);
             return false;
         }
+
+        // Past every refusal, so the switch is certain. Everything on screen belongs to the
+        // repository being left, and this is the last moment at which that is still true.
+        ResetForRepositoryChange(_repositoryPath, path);
 
         _git = client;
         RepositoryPath = path;

@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | Document | **The interruption and destructive-action plan.** What Versio must refuse, ask about, or wait for — and why each answer is the one it is |
-| Status | **Phases 1–4 built and verified against real CODESYS** (§6) — the guard, its narrative, the cancellation plumbing, the dialog, the close guard and the context-switch guard. Phases 5–9 are still plan. Every "today" below is a reading of the code at the commit this was written against |
+| Status | **Phases 1–5 built and verified against real CODESYS** (§6) — the guard, its narrative, the cancellation plumbing, the dialog, the close guard, the context-switch guard and the repository reset. Phases 6–9 are still plan. Every "today" below is a reading of the code at the commit this was written against |
 | Related | [`PLAN.md`](PLAN.md) — the architecture · [`STATUS.md`](STATUS.md) — where the project is · [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) — what was measured |
 
 ---
@@ -537,7 +537,7 @@ this adequately — worth confirming rather than changing.
 | **2 ✅** | A real `CancellationTokenSource` per operation; `GuardPromptWindow`; the `AskGuard` hook | The two mechanisms every scenario needs. |
 | **3 ✅** | **Close guard** (§3.4) | Highest damage per line: an orphaned CODESYS mid-import is the worst outcome on this list. |
 | **4 ✅** | **Context-switch guard** (§3.3) — dropdowns disabled for uninterruptible work, prompt for the rest | Second highest, and reuses phase 3 wholesale. |
-| **5** | **`ResetForRepositoryChange`** (§3.2) | Self-contained, no new machinery, immediately visible. |
+| **5 ✅** | **`ResetForRepositoryChange`** (§3.2) | Self-contained, no new machinery, immediately visible. |
 | **6** | Git-write suppression window (§5.A) and the conflict gate (§5.B) | Correctness, and both are **prerequisites** for phase 7 — see §4.8 and §4.6. |
 | **7** | **Branch-switch guard with the full auto-stash** (§3.1, §4), plus the branch recorded in `BindingLock` | Needs the prompt from phase 2 and both defences from phase 6. |
 | **8** | Swap via trash-rename (§5.D), staging in the ignore plan (§5.F), leftover sweep at open | Small, independent, and §5.D closes a real window. |
@@ -777,6 +777,43 @@ construction rather than by null checks that could never fire.
 
 **16 new tests** (152 → 168). Verified able to fail: dropping the revert failed two, and pinning
 `CanChangeContext` to `true` failed one.
+
+### Phase 5, as built
+
+`ResetForRepositoryChange(leaving, arrivingAt)` is the one method a repo-scoped field now has an
+obvious home in. It runs **only once the switch is certain** — past the locator's refusal and past
+git's own — so picking the wrong folder still costs nothing that was on screen.
+
+`Sync.Detach()` finally has a caller. It was missing five things of its own, found while wiring it:
+
+| Missed | Consequence |
+|---|---|
+| `DetachRunSignals()` | The old orchestrator kept handlers into this view model, so a run finishing late reported itself into the new repository's panel. `BuildOrchestratorAsync` detaches before attaching, which hid it — the leak only shows on a `Detach` with no rebuild behind it |
+| `_lastStatus` | The next tree rebuild was handed the previous repository's file list to mark changes against |
+| `TreeSearch` | A search typed about one repository's objects, applied to another's |
+| `SelectedNode` | A selection pointing into a tree that no longer exists |
+| `FailedProject` / `FailureDetail` | *Try again* offered for a project the new repository does not have, against a binding id that no longer resolves |
+
+**The commit message is kept, per repository, in memory.** Silently binning somebody's typing is
+the thing they actually notice. Deliberately **not** `repo.json` as the plan suggested — that file
+is committed and shared, so a half-written message would be pushed to everyone else on the project.
+
+#### The mutation that was not caught
+
+Nine tests, all green, and deleting the call to `ResetForRepositoryChange` from
+`OpenRepositoryAsync` **left every one of them passing.** They called the method directly, so they
+proved it works and said nothing about whether opening a repository runs it — the identical shape
+to the guard intents that were defined and never asked, found an hour earlier.
+
+Closed by opening something real: `Versio.App.Tests` now takes `Xunit.SkippableFact` and one test
+builds two throwaway git repositories, opens each in turn and asserts the reset happened. It skips
+when git is absent, so the project still needs nothing but Windows. A second test does the same
+**through a live `MainWindow`**, because the two halves were otherwise covered separately — real
+git with no window, and bound collections with no git — and neither would notice a failure that
+needs both.
+
+**12 new tests** (168 → 180). Verified able to fail: removing the call site fails the real-repository
+test and nothing else, which is the point.
 
 #### Three intents that reached nothing
 

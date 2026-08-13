@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-13 · **Commits:** 55 · **Tests:** 919 unit + 170 UI + 107 integration, 0 skipped
+**Date:** 2026-08-13 · **Commits:** 56 · **Tests:** 919 unit + 180 UI + 107 integration, 0 skipped
 
 > All three measured on 2026-08-13. The integration suite was re-run in full against real
 > CODESYS 3.5.22.20 after the safeguards work — 107 passed, 0 skipped, 6 m 15 s — including

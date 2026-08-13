@@ -594,6 +594,14 @@ public sealed class SyncViewModel : ObservableObject
         // process - on a repository somebody is trying to move, a visible bug.
         StopWatching();
 
+        // The orchestrator's events, before the reference to it is dropped. Without this the
+        // old orchestrator keeps handlers pointing into this view model, and this view model
+        // keeps `_attachedTo` pointing at an orchestrator for a repository nobody is looking
+        // at any more — so a run finishing late would report itself into the new repository's
+        // panel. BuildOrchestratorAsync detaches before it attaches, which hid this: the leak
+        // only shows on a Detach that is not followed by a rebuild.
+        DetachRunSignals();
+
         _repositoryRoot = null;
         _git = null;
         _orchestrator = null;
@@ -603,6 +611,25 @@ public sealed class SyncViewModel : ObservableObject
         Projects.Clear();
         Findings.Clear();
         Tree.Clear();
+
+        // The last git status this panel was built from. Left behind, the next tree rebuild
+        // would be handed the previous repository's file list to mark changes against.
+        _lastStatus = null;
+
+        // A search typed about one repository's objects, applied to another's.
+        TreeSearch = string.Empty;
+
+        SelectedNode = null;
+
+        // A failure belongs to the binding that failed, in the repository that held it. Carried
+        // across, the panel would offer "Try again" for a project the new repository does not
+        // have — and the retry would run against a binding id that no longer resolves.
+        //
+        // Through RefreshFailure rather than by assigning the two properties, so the
+        // HasFailure notification and the command states are raised by the one method that
+        // owns them. With Projects already cleared and the orchestrator gone, it can only
+        // resolve to "nothing has failed".
+        RefreshFailure(null);
 
         // The expanded set is keyed by repo-relative path, and two repositories share those
         // freely - "docs" is open in both. Carrying it across would open folders in the new

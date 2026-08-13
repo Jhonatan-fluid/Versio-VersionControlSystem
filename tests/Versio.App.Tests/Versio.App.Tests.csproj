@@ -14,6 +14,11 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+
+    <!-- One test opens two real repositories, because the only way to prove the shell CALLS
+         its reset is to make it open something. It skips when git is absent, so this project
+         still needs nothing but Windows to run. -->
+    <PackageReference Include="Xunit.SkippableFact" Version="1.5.23" />
   </ItemGroup>
 
   <ItemGroup>
