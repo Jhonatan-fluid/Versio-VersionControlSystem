@@ -1509,6 +1509,123 @@ public sealed class SyncOrchestrator
         return ApplyAsync(bindingId, SyncTrigger.ChangesDiscarded, string.Empty, ct);
     }
 
+    /// <summary>
+    /// The copies of a project that survive, newest first.
+    /// </summary>
+    /// <remarks>
+    /// Read from the directory on each call rather than cached. These are written by imports
+    /// and pruned by the writer, so a cache would be a second account of a folder that changes
+    /// underneath it — and the list is read when somebody opens a window, not on a timer.
+    /// </remarks>
+    public IReadOnlyList<ProjectBackup> BackupsFor(string bindingId)
+    {
+        var folder = Absolute(BackupCatalog.FolderFor(bindingId));
+
+        if (!_fs.DirectoryExists(folder))
+        {
+            // No import has ever run for this binding. Not a fault, and the caller says
+            // "nothing to restore" rather than treating it as one.
+            return [];
+        }
+
+        try
+        {
+            // Relativised on the way out, because ProjectBackup.Path says repo-relative and a
+            // record whose comment disagrees with its contents is the defect this codebase
+            // keeps writing up. Absolute would also leak the engineer's home directory into
+            // anything that displayed it.
+            return BackupCatalog.Read(_fs.EnumerateFiles(folder).Select(Relative));
+        }
+        catch (IOException ex)
+        {
+            _log.Warn(LogCategory.Sync, $"{bindingId}: could not list backups - {ex.Message}");
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// Put a previous copy of the project back.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Restoring is itself the dangerous direction</b>, so it takes the same precautions the
+    /// import that created these took: it refuses while the IDE holds the project, and it
+    /// copies the current project aside <i>first</i>. Without that second step a restore would
+    /// be a one-way trip — somebody walking back one import too far would have destroyed the
+    /// state they were trying to get back to, using the feature that exists to prevent exactly
+    /// that.
+    /// </para>
+    /// <para>
+    /// <b>It deliberately does not export afterwards.</b> The project and its mirror now
+    /// disagree, and the project is right — which is an ordinary project-side change, and the
+    /// ordinary machinery exports it. Doing it here would mean a 17–31 s toolchain run inside a
+    /// call somebody made from a dialog, with no way to cancel it.
+    /// </para>
+    /// </remarks>
+    /// <param name="backupPath">One of the paths <see cref="BackupsFor"/> returned.</param>
+    public async Task<SyncOutcome> RestoreBackupAsync(
+        string bindingId, string backupPath, CancellationToken ct)
+    {
+        using var scope = _log.JoinOrBeginOperation(out _);
+
+        if (!_bindings.TryGetValue(bindingId, out var binding))
+        {
+            return Refuse(LogLevel.Warning, SyncVerdict.Failed, bindingId,
+                "there is no such project in this repository");
+        }
+
+        var source = Absolute(backupPath);
+        if (!_fs.FileExists(source))
+        {
+            return Refuse(LogLevel.Warning, SyncVerdict.Failed, bindingId,
+                $"that backup is no longer on disk: {backupPath}");
+        }
+
+        var occupancy = _occupancy is null
+            ? ProjectOccupancy.Free
+            : await _occupancy.CheckAsync(binding, Absolute(binding.ProjectPath), ct)
+                .ConfigureAwait(false);
+
+        if (occupancy.IsHeld)
+        {
+            // The same reasoning as an import: the IDE holds its own copy in memory and the
+            // next save would silently revert whatever was written underneath it.
+            return Refuse(LogLevel.Information, SyncVerdict.BlockedByOpenProject, bindingId,
+                $"{ProjectName(binding)} is open in the IDE ({occupancy.Owner}), so it cannot " +
+                "be replaced. Close it and try again.");
+        }
+
+        // The state being left, kept before it is overwritten. This is what makes a restore
+        // reversible, and it is the whole reason this method does not simply copy a file.
+        var safety = await BackUpProjectAsync(binding, ct).ConfigureAwait(false);
+
+        using (BeginOwnWrite(bindingId, ChangeSource.Project))
+        {
+            await _fs.CopyAsync(source, Absolute(binding.ProjectPath), ct).ConfigureAwait(false);
+        }
+
+        _log.Info(LogCategory.Sync,
+            $"{bindingId}: restored {ProjectName(binding)} from {backupPath}" +
+            (safety is null ? string.Empty : $"; the version it replaced is at {safety}"));
+
+        // The project has moved and its mirror has not. Announced as an ordinary project-side
+        // change so the export that follows is the ordinary one, with its coalescer, its
+        // breaker and its cancellation - rather than a second import path with its own rules.
+        await ApplyAsync(
+            bindingId, SyncTrigger.ProjectChanged,
+            await ProjectHashAsync(binding, ct).ConfigureAwait(false), ct).ConfigureAwait(false);
+
+        return new SyncOutcome
+        {
+            Verdict = SyncVerdict.Completed,
+            BindingId = bindingId,
+            Explanation = safety is null
+                ? $"restored {ProjectName(binding)} from {backupPath}"
+                : $"restored {ProjectName(binding)}; the version it replaced was kept",
+            State = StateOf(bindingId),
+        };
+    }
+
     public Task AcknowledgeFailureAsync(string bindingId, CancellationToken ct)
     {
         // Worth recording that a human intervened: everything after this point happens
@@ -1645,8 +1762,12 @@ public sealed class SyncOrchestrator
             return null;
         }
 
-        var folder = Combine(".versio", "local", "backups", binding.Id);
-        var stamp = _clock.UtcNow.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
+        // Through BackupCatalog rather than spelled out here, so the writer, the pruner and
+        // the restore list cannot disagree about where the copies are or how they are named.
+        // They did not disagree; there was simply nothing else that knew.
+        var folder = Absolute(BackupCatalog.FolderFor(binding.Id));
+        var stamp = _clock.UtcNow.ToString(
+            BackupCatalog.StampFormat, CultureInfo.InvariantCulture);
         var name = Path.GetFileName(binding.ProjectPath.Replace('/', Path.DirectorySeparatorChar));
         var destination = Path.Combine(folder, $"{stamp}-{name}");
 
@@ -1807,6 +1928,23 @@ public sealed class SyncOrchestrator
 
     private string Absolute(string relative) =>
         Path.IsPathRooted(relative) ? relative : Combine(relative);
+
+    /// <summary>The inverse of <see cref="Absolute"/>: repo-relative, forward slashes.</summary>
+    /// <remarks>
+    /// Everything this assembly hands out is repo-relative — a binding's paths, a manifest's,
+    /// a change's — so anything read back off the filesystem is put into that shape before it
+    /// leaves. A path that is not under the root is returned untouched rather than mangled by
+    /// a prefix trim that did not match.
+    /// </remarks>
+    private string Relative(string path)
+    {
+        var normalised = path.Replace('\\', '/');
+        var root = _repoRoot.Replace('\\', '/').TrimEnd('/') + "/";
+
+        return normalised.StartsWith(root, StringComparison.OrdinalIgnoreCase)
+            ? normalised[root.Length..]
+            : normalised;
+    }
 
     private string Combine(params string[] parts) =>
         Path.Combine([_repoRoot, .. parts.Select(p => p.Replace('/', Path.DirectorySeparatorChar))]);

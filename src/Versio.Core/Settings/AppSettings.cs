@@ -82,6 +82,36 @@ public static class RecentRepositories
     /// </remarks>
     public static readonly StringComparer PathComparer = StringComparer.OrdinalIgnoreCase;
 
+    /// <summary>
+    /// One spelling of a path, so the same repository cannot appear twice.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Case was not the only way a path gets typed differently, and separators are the way
+    /// that actually happened.</b> Git answers <c>rev-parse --show-toplevel</c> with forward
+    /// slashes and the Windows folder picker hands back backslashes, so opening one repository
+    /// both ways put two entries in the list for it — and the dropdown then showed the same
+    /// repository twice, same name, same location, with no way to tell them apart. The comment
+    /// above already had the right argument and only applied it to case.
+    /// </para>
+    /// <para>
+    /// Backslashes, because this ships on Windows and that is what a person sees everywhere
+    /// else in the operating system. A trailing separator is dropped because <c>C:\repo</c> and
+    /// <c>C:\repo\</c> are one directory — but a bare root keeps its own, since <c>C:</c> alone
+    /// means "the current directory on C" to Windows and is a different thing entirely.
+    /// </para>
+    /// <para>
+    /// Deliberately no <c>GetFullPath</c>: it consults the process's current directory and can
+    /// throw on a path this assembly is only ever comparing, and Core does no IO.
+    /// </para>
+    /// </remarks>
+    public static string Canonical(string? path)
+    {
+        var text = (path ?? string.Empty).Trim().Replace('/', '\\');
+
+        return text.Length > 3 && text.EndsWith('\\') ? text.TrimEnd('\\') : text;
+    }
+
     /// <summary>Put one repository at the top, keeping the list unique and capped.</summary>
     /// <remarks>
     /// Promotion rather than insertion: opening a repository already in the list moves it up
@@ -93,17 +123,23 @@ public static class RecentRepositories
     public static IReadOnlyList<RecentRepository> Promote(
         IReadOnlyList<RecentRepository> current, RecentRepository opened, int limit = Limit)
     {
-        var previous = current.FirstOrDefault(r => PathComparer.Equals(r.Path, opened.Path));
+        // Canonical on the way in AND on the way out. Comparing without storing would keep
+        // whichever spelling happened to arrive first, so the list would be correct and still
+        // look inconsistent to anybody reading settings.json — or to the folder picker, which
+        // is handed the stored path as its starting directory.
+        var path = Canonical(opened.Path);
+        var previous = current.FirstOrDefault(r => PathComparer.Equals(Canonical(r.Path), path));
 
         var entry = opened.RemoteUrl.Length > 0 || previous is null
-            ? opened
-            : opened with { RemoteUrl = previous.RemoteUrl };
+            ? opened with { Path = path }
+            : opened with { Path = path, RemoteUrl = previous.RemoteUrl };
 
         return
         [
             entry,
             .. current
-                .Where(r => !PathComparer.Equals(r.Path, opened.Path))
+                .Where(r => !PathComparer.Equals(Canonical(r.Path), path))
+                .Select(r => r with { Path = Canonical(r.Path) })
                 .Take(Math.Max(0, limit - 1)),
         ];
     }
@@ -117,5 +153,5 @@ public static class RecentRepositories
     /// </remarks>
     public static IReadOnlyList<RecentRepository> Remove(
         IReadOnlyList<RecentRepository> current, string path) =>
-        [.. current.Where(r => !PathComparer.Equals(r.Path, path))];
+        [.. current.Where(r => !PathComparer.Equals(Canonical(r.Path), Canonical(path)))];
 }

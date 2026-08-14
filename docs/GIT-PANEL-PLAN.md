@@ -6,6 +6,51 @@ interface does not expose, plus one new dialog.
 
 ---
 
+## Where this stands
+
+**Eleven of twelve phases are done**, on branch `GitPanel`, plus an audit pass over all of them.
+Each has a commit and an entry in the **phase log** at the end of this document saying what
+landed, what was decided, and what contact with the code changed.
+
+| | Phase | Landed |
+|---|---|---|
+| ✅ | **GP-0** — git presence probe, commit-identity preflight | `0a183d0` |
+| ✅ | **GP-A** — notifications | `2ce279a` |
+| ✅ | **GP-B** — remote state machine, publish, detached HEAD | `f71a60b` |
+| ✅ | **GP-C** — credential detection, sign in, forget credential | `938f67e` |
+| ✅ | **GP-D** — background remote polling | `437e0d1` |
+| ✅ | **GP-E** — per-file staging, two scrollable panes | `a7cc553` |
+| ✅ | *Audit* — dead API removed, fixtures consolidated, a flake fixed | `485cddb` |
+| ✅ | **GP-F** — one commit button, three behaviours, gating | `ac954b4` |
+| ✅ | **GP-G** — conflicts UI, diverged exit (§6, §9b) | `81865b7` |
+| ✅ | **GP-H** — branch identity, default branch, delete dialog (§7) | `15e24d3` |
+| ✅ | **GP-J** — PLC-aware naming, summary and draft (§9c, and §10.1 with it) | `1a01953`, fixed in `HEAD` |
+| ✅ | **GP-I** — merge-request button, five forges (§8) | `1a01953` |
+| — | GP-K / GP-L — previews and polish (§9d, rest of §10) | next |
+
+**GP-J was taken before GP-I**, out of the order this table used to imply. The table was a
+sequence, not a ranking, and §9c is the item this document itself calls *"the thing no other git
+client can do"* and *"highest value of anything here"* — while §8 opens a pre-filled browser page
+and carries the most external surface in the plan (five forge templates, undetectable self-hosted
+instances, PR-ref probing two of the five forges do not support). GP-J's data dependency was also
+already satisfied and sitting in the same process, and it subsumes §10.1, which would otherwise
+have been rewritten by it.
+
+**Four things are still owed to a human**, because nothing here can see the screen or reach a
+network: the credential-helper window's stacking order, a timed `ls-remote` against a real
+remote, the §13 scripts for anything visual, and — new with GP-I — **the merge-request button
+against a real GitHub or GitLab account**. That last one cannot be automated here at all: a
+reachable remote and a hostname a forge is detectable from are mutually exclusive offline, so the
+suite proves the git half against a bare repository and the URL half against a parser, and the
+join between them is §13's GP-I step 5.
+
+**How to read the rest.** Sections §1–§13 are the plan, written before the work and left as
+written — each now says at the top whether it is built. The **phase log** at the end is the
+history: what was actually done, and every decision that turned out differently from the plan.
+Where the two disagree, the phase log is right.
+
+---
+
 ## What the code actually does today
 
 **Re-verified 2026-08-13 against `a083356` on `Clean-up-and-continue-dev`**, after the
@@ -198,6 +243,8 @@ A phase is done when **all** of these are true:
 
 ## 1 · Notifications
 
+> **Built** in GP-A. What follows is the design as planned; the phase log at the end records what actually landed and what changed on contact with the code.
+
 ### Design
 
 One transient notification surface, owned by the shell, distinct from the status bar.
@@ -262,6 +309,8 @@ console and the notification never disagree about what happened.
 
 ## 2 · Remote state: needs pushing, needs pulling, not published
 
+> **Built** in GP-B, including detached HEAD, which was planned for GP-H and moved. See the phase log.
+
 These are three cases of one question — *is this branch in step with the remote?* — and all
 three are currently answered by two mono glyphs that look alike. They get one state machine
 and one prominent badge.
@@ -270,7 +319,7 @@ and one prominent badge.
 
 `TrackingState`, computed on the shell from `GitStatus.Branch` plus the remote list:
 
-| State | Condition | Badge | Primary action |
+| State | Condition | Badge | What is offered |
 |---|---|---|---|
 | `NoRepository` | no repo open | — | — |
 | `Unborn` | `Branch.IsUnborn` | "No commits yet" | Stage & commit |
@@ -320,6 +369,8 @@ and shows it nowhere.
 ---
 
 ## 3 · Background remote polling
+
+> **Built** in GP-D. The 10 s base interval is still a guess — see the measurement table in the pre-flight.
 
 The point of §2 is that behind-ness is visible. It is only *true*, though, as far as the last
 fetch — so the counts need to keep themselves fresh without the user asking and without
@@ -434,6 +485,8 @@ buffered sink, not a quieter poller.
 ---
 
 ## 4 · Per-item staging
+
+> **Built** in GP-E — *except §4a*, the `GitPanelViewModel` extraction, which was deliberately not done. The phase log gives the evidence.
 
 ### 4a · Extract `GitPanelViewModel` first
 
@@ -581,6 +634,8 @@ test must fail.
 
 ## 5 · Button model and gating
 
+> **Built** in GP-F. The gating matrix below is what shipped, with one row moved: the conflict gate landed here rather than waiting for §6, because git refuses the commit anyway and a button that says why beats one that fails.
+
 ### The buttons
 
 Remote row (in the branch card): **Fetch · Pull · Push/Publish**
@@ -653,6 +708,8 @@ the "commits only what is staged" test must fail.
 
 ## 6 · Conflicts — the UI half only
 
+> **Built** in GP-G, together with §9b's diverged exit — they are the same problem seen from two ends.
+
 **The engine half is built.** `IConflictProbe` / `GitConflictProbe` and
 `SyncVerdict.BlockedByConflict` already refuse both sync directions while any path under a
 binding is unmerged, with its sentence in `SyncNarrative.cs:79`. `TreeState()` already feeds
@@ -700,6 +757,8 @@ conflict case joins it.
 ---
 
 ## 7 · Branch identity and deletion
+
+> **Built** in GP-H.
 
 ### 7a · Local, remote, or both
 
@@ -814,7 +873,13 @@ Git refuses outright, so Versio handles it explicitly rather than surfacing the 
 
 ---
 
-## 8 · Merge / pull request button
+## 8 · Merge / pull request button — **built, as GP-I**
+
+> Built as specified, with three changes on contact with the code, all in the phase log: the
+> button is in the forge's **own vocabulary** rather than "merge request" everywhere; it has a
+> **row of its own** rather than a fourth place on the fetch/pull/push line; and `RemoteUrl`
+> grew a `Port`, without which every self-hosted forge on a non-default port produced a link to
+> the wrong service.
 
 A button in the branch card that changes with state: **Create merge request** → opens the
 forge's own pre-filled "new MR" page in the browser; **Go to merge request** → opens the
@@ -956,7 +1021,12 @@ Blocked entirely while a direction lock is held or a project is open, via 9a.
 
 **Cost:** medium. **Value:** removes the only dead-end left in the panel.
 
-### 9c · PLC-aware change summaries — *the thing no other git client can do*
+### 9c · PLC-aware change summaries — **built, as GP-J**
+
+> All three uses shipped. See the phase log for what changed on contact with the code — chiefly
+> that the summary describes *what the button will commit* rather than the working tree, and
+> that the row carries a fourth thing this section did not ask for: whether editing the file
+> reaches the project at all.
 
 `ProjectManifest` maps every exported path to an object `Name` and `Type`
 (`ProjectManifest.cs:14-29`), and `CodesysObjectType` knows POU from GVL from DUT. The git
@@ -1010,16 +1080,15 @@ a branch: push, pull and publish would all fail with git's own wording.
 **Cost:** small. **Value:** a state people reach by accident from the history panel and cannot
 currently get out of from inside the app.
 
-### 9f · Undo a branch delete
+### 9f · ~~Undo a branch delete~~ — **dropped**
 
-`git branch -d` prints the deleted SHA. Keeping it and putting **"Restore `feature/x`"** in the
-success toast turns a scary operation into a reversible one for the 4 seconds it takes to
-realise the mistake — which is when nearly all such mistakes are realised.
+Not wanted. Decided by the product owner on 2026-08-14, after GP-H shipped without it.
 
-Local only, deliberately. A deleted remote branch is not restorable in any sense the user would
-trust, and offering a button implying otherwise would be worse than offering nothing.
-
-**Cost:** small. **Value:** disproportionate, given §7c ships three ways to delete a branch.
+Kept as a heading rather than deleted so that somebody reading the numbered ideas does not
+wonder what happened to it, and so the reasoning survives: the useful version is harder than it
+looks — the forced and remote delete paths do not hand a SHA back the way <c>-d</c> does — and
+an undo offered for some deletes and not others is worse than none. **This is a decision, not a
+backlog item.**
 
 ### 9g · Commit identity preflight — **accepted, expanded into §12**
 
@@ -1055,7 +1124,12 @@ The three that need their own:
 
 ## 10 · Smaller UX fixes
 
-1. **Path trimming is backwards.** `ChangeRowTemplate` uses `TextTrimming="CharacterEllipsis"`,
+> **Item 1 is built, with GP-J. The other five are not.** The path-trimming fix could not
+> sensibly be done twice: GP-J replaces the row's single line of trimmed path with a name and a
+> directory beneath it, which is item 1's second suggestion — *"render the directory in
+> secondary grey with the filename in primary"* — arrived at from the other direction.
+
+1. ~~**Path trimming is backwards.**~~ — **done.** `ChangeRowTemplate` used `TextTrimming="CharacterEllipsis"`,
    which trims the **tail** — so an exported PLC tree shows `src/Project/PLC/POU/Applic…` on
    every row and hides the only part that differs. Trim from the head, or render the directory
    in secondary grey with the filename in primary. Cheap, and it fixes the list with the most
@@ -1119,6 +1193,8 @@ in `<remarks>`, exactly as `Vendor` does at `Binding.cs:30-39`.
 ---
 
 ## 12 · Git itself: presence, identity, credentials
+
+> **Built**: §12a and §12b in GP-0, §12c in GP-C.
 
 Three different things, currently conflated by having no surface at all. They fail at
 different times, for different reasons, with different remedies, and the panel has to keep
@@ -1399,17 +1475,13 @@ git clone /c/temp/versio-remote.git /c/temp/versio-scratch
    the log stops repeating. Reconnect and resume → polling restarts.
 7. Break authentication → the breaker trips on the **first** failure, not the fifth.
 
-### GP-E · The extraction (run this before anything else in GP-E)
+### ~~GP-E · The extraction~~ — not applicable
 
-1. Launch with `--trace-bindings` and a real repository; open the git panel; click a staged file,
-   an unstaged file, type in the commit box, hover every button.
-2. **Confirm the panel showed live data** — branch name, file counts, a diff. A blank panel makes
-   the trace worthless.
-3. Extract, then repeat steps 1–2 into a second file.
-4. Diff the two traces → **no new `BindingExpression path error` lines.**
-5. In the app after the move: the branch name, both file lists, the commit box, the subject
-   counter and every button caption **all still show their values**. An empty control here is the
-   silent failure; there is no other symptom.
+The `GitPanelViewModel` extraction was not done; §4a's protocol does not apply. See the GP-E
+phase log for why, and the audit note for what was extracted instead. If the *remote* surface is
+ever cut out — the seam that is actually clean — run §4a's trace protocol then, with the
+amendment GP-0 forced: **the trace run must show the git panel**, or it comes back empty and
+proves nothing.
 
 ### GP-E / GP-F · Staging and buttons
 
@@ -1462,26 +1534,62 @@ git clone /c/temp/versio-remote.git /c/temp/versio-scratch
 11. Detach HEAD → the badge says not on a branch; the remote row is dead except Fetch; the
     create-branch action is **in the badge**.
 
-### GP-I · Merge request
+### GP-I · Merge request — **owed to you now**
 
-1. On a pushed, clean, non-default branch → the button reads **Create merge request**; pressing
-   it opens the browser with source and target **already filled in** and nothing submitted.
-2. Make an uncommitted change → the button disables, tooltip says commit first.
-3. Commit without pushing → disabled, tooltip says push first.
-4. On the default branch → disabled with its own wording.
-5. Open a PR in the browser, then re-check → the button becomes **Go to merge request** and
-   opens the right one.
-6. On a repo whose host is unrecognised → **no button at all**, not a broken one.
+Needs a repository with a **real GitHub or GitLab remote you can push to**, which is the one
+thing no test here can supply: a reachable remote and a hostname a forge is detectable from are
+mutually exclusive without a network. Everything below step 5 works against any remote.
 
-### GP-J · PLC-aware summaries
+1. On a pushed, clean, non-default branch → the button reads **Create pull request** (or **merge
+   request** on GitLab — it uses the forge's own word); pressing it opens the browser with source
+   and target **already filled in** and nothing submitted. **Check the URL bar before pressing
+   Create**: the target must be your trunk, not `master` guessed at.
+2. Make an uncommitted change → disabled, tooltip says commit first.
+3. Commit without pushing → disabled, tooltip counts them: *"Push your 1 commit first"*.
+4. On the default branch → disabled, with its own wording.
+5. **Open a PR in the browser, then leave the panel alone for a minute.** The button becomes
+   **Go to pull request** on its own, with no refresh and no click — that is the background probe
+   working, and it is the one part of this phase with no automated coverage end to end. Press it
+   and confirm it lands on *that* request.
+6. On a repository whose host is unrecognised → **no button at all**, not a disabled one.
+7. Add `"forge": "GitLab"` to `.versio/repo.json` on that same repository → the button appears
+   and says *merge request*. Remove it → it goes away again.
+8. On an Azure DevOps or Bitbucket remote → the button reads **Open pull requests** and lands on
+   the repository's list. It must never show a number.
+9. A remote whose only URL is a UNC path or `C:\…` → no button.
 
-1. Change a POU and a GVL → rows read **`FB_Motor` · POU** with the path secondary, not a raw
-   path.
-2. The summary line above the commit box counts them by type.
-3. Press **Draft** → the message box fills with object names; **editing it works normally** and
-   nothing overwrites what you typed.
-4. Change a non-PLC file → it still appears, labelled by path, and is not mislabelled as an
-   object.
+**And one to watch for rather than to do:** the probe must not appear in the log every few
+seconds. It should write a line only when the answer *changes*.
+
+### GP-J · PLC-aware summaries — **owed to you now**
+
+Against `fixtures/projects/RefrigeratorControl`, which has 3 POUs, 2 GVLs, 3 visualisations and
+2 library managers in its manifest. Everything below is machine-checked except items 1, 6 and 8,
+which are geometry and wording and cannot be.
+
+1. **Open the repository and look at the panel before touching anything.** Rows read
+   `Glob_Var` with a `GVL` chip and the path beneath, **on the first paint** — not raw paths that
+   become names when you save something. This is the exact failure the phase log describes; if
+   raw paths appear and then correct themselves, the subscription is broken again.
+2. Change a POU and a GVL → two rows for the GVL (`.gvl.st` and `.gvl.xml`), both reading
+   `Glob_Var`, told apart by the filename on the second line.
+3. The summary line above the commit box says **`1 GVL and 1 POU changed in RefrigeratorControl`**
+   — one GVL, not two, though it is two rows.
+4. **Stage only the POU.** The summary drops to `1 POU changed in …` and the button caption drops
+   to plain `Commit`. The two must agree; that is the point of the line.
+5. Press **Draft** → the box fills with `Modify FB_Motor, Glob_Var`. Type a character: the button
+   goes dead. Clear the box: it comes back. **Nothing you typed is ever overwritten.**
+6. Change 8–10 objects at once → **does the list still read at a glance, and how many rows fit
+   before it scrolls?** Rows are two lines tall now. This is the one judgement no test makes.
+7. Edit `Library Manager.libraries.yaml` in the mirror → the row carries a lock glyph, and its
+   tooltip says the edit does not reach the project.
+8. Change `README.md` → it appears as `README.md` with **no chip** and, being at the repository
+   root, **no second line** — the summary line ends `, plus 1 other file`. It must never be
+   labelled as an object. **Your call to make:** a root-level file's blank second line still
+   occupies its height, so those rows are as tall as nested ones with less in them. Say if that
+   reads badly and it becomes a collapse on the empty case.
+9. Switch to a repository with no PLC projects → no summary line at all, no chips, and the rows
+   are filenames over directories.
 
 ### GP-K / GP-L · Previews and polish
 
@@ -1505,13 +1613,13 @@ different things is a coordination bug waiting to happen.
 
 | Phase | Work | Why here |
 |---|---|---|
-| GP-A | Notifications (§1) | Everything later needs a way to report success and failure. Fixes the invisible-push bug on its own. |
-| GP-B | Remote state machine + publish (§2) | Independent of staging; unblocks the gating in GP-F. |
-| GP-D | Background polling (§3) | Needs §2's state to have somewhere to put its answer. Makes every count in the panel true. |
-| GP-E | **Extract `GitPanelViewModel`**, then reconcile the staging lists, then the two-pane scrollable layout and checkboxes (§4) | The extraction is the first commit, before the file grows further — see the structural note at the top. The reconcile prerequisite lands next and is worth having alone: the lists stop being rebuilt every second. |
-| GP-F | Button model + gating matrix (§5) | Needs GP-B and GP-E to gate against real state. |
-| GP-G | Conflicts (§6, UI half) + the diverged-branch exit (§9b) | **No longer blocked** — safeguards phase 6 shipped both defences. One piece of work: both are "the remote and I disagree", and §2 currently advises a button that refuses. |
-| GP-H | Branch identity, default branch, deletion dialog (§7), undo-delete (§9f) | Largest single piece and the only new window; benefits from GP-A and GP-D already being in place. |
+| GP-A ✅ | Notifications (§1) | Everything later needs a way to report success and failure. Fixes the invisible-push bug on its own. |
+| GP-B ✅ | Remote state machine + publish (§2) | Independent of staging; unblocks the gating in GP-F. |
+| GP-D ✅ | Background polling (§3) | Needs §2's state to have somewhere to put its answer. Makes every count in the panel true. |
+| GP-E ✅ | Reconcile the staging lists, the two-pane scrollable layout and checkboxes (§4). **§4a's `GitPanelViewModel` extraction was deliberately not done** | The reconcile is the prerequisite everything else rests on — the lists stop being rebuilt every second, so a checkbox survives an editor save. The extraction was dropped once the seam was measured: eight shell collaborators reach into `CommitAsync` alone. Evidence in the phase log; the size concern stands and the seam worth cutting is the *remote* surface. |
+| GP-F ✅ | Button model + gating matrix (§5) | Needs GP-B and GP-E to gate against real state. |
+| GP-G ✅ | Conflicts (§6, UI half) + the diverged-branch exit (§9b) | **No longer blocked** — safeguards phase 6 shipped both defences. One piece of work: both are "the remote and I disagree", and §2 currently advises a button that refuses. |
+| GP-H ✅ | Branch identity, default branch, deletion dialog (§7). **Undo-delete (§9f) dropped by decision** | Largest single piece and the only new window; benefits from GP-A and GP-D already being in place. |
 | GP-I | Merge-request button (§8) | Needs §7b's default branch for the target, and extracting `RemoteUrl` from the clone dialog. |
 | GP-J | PLC-aware summaries and drafted commit messages (§9c) | Sequenced late because it is additive, not because it is low value — it is the highest-value item here. Nothing blocks it earlier if you want it sooner. |
 | GP-K | Push/pull previews (§9d), large-binary preflight (§9h) | Each independent and small. |
@@ -1521,9 +1629,9 @@ different things is a coordination bug waiting to happen.
 
 | Phase | Work | Why here |
 |---|---|---|
-| **GP-0** | **Git presence probe + identity preflight (§12a, §12b)** | **First, and alone. Both are one `git config --get` and a startup `--version`, and together they remove the two worst first-run failures — a `Win32Exception` from nowhere, and a 31-second export followed by a wall of text.** |
-| **GP-C** | **Credential detection, sign-in and sign-out (§12c)** | With GP-B, because both are about what stands between this branch and the remote, and they share the badge slot. Must land *before* GP-D — the poller running with prompts suppressed and no credential-failure classification would hammer an unreachable remote and could lock an account. |
-| GP-H2 | Detached HEAD (§9e) | Rides with GP-H: the same `TrackingState` work, and §7c's fallback checkout must never leave the user detached. |
+| **GP-0 ✅** | **Git presence probe + identity preflight (§12a, §12b)** | **First, and alone. Both are one `git config --get` and a startup `--version`, and together they remove the two worst first-run failures — a `Win32Exception` from nowhere, and a 31-second export followed by a wall of text.** |
+| **GP-C ✅** | **Credential detection, sign-in and sign-out (§12c)** | With GP-B, because both are about what stands between this branch and the remote, and they share the badge slot. Must land *before* GP-D — the poller running with prompts suppressed and no credential-failure classification would hammer an unreachable remote and could lock an account. |
+| ~~GP-H2~~ ✅ | Detached HEAD (§9e) — **landed early, in GP-B** | It is a `TrackingState` case, and splitting one state machine across two phases to honour a sequencing table would have been worse than moving it. Was: rides with GP-H: the same `TrackingState` work, and §7c's fallback checkout must never leave the user detached. |
 
 ---
 
@@ -1593,12 +1701,877 @@ Record the answers here when taken, rather than deciding the constants from a gu
 
 | # | Measurement | Why it matters | Result |
 |---|---|---|---|
-| 1 | `git credential fill` with `GIT_TERMINAL_PROMPT` unset: does the helper's own UI appear, and **does its window open behind Versio**? | Decides whether §12c's busy caption has to tell the user to look behind the window. `GIT_TERMINAL_PROMPT=0` is still unconditional at `GitCliClient.cs:720`, so making it per-call is the first thing GP-C does | *not yet taken* |
-| 2 | `git ls-remote --heads origin <branch>`, timed against the real remote, 5 runs | Sets GP-D's base interval. A LAN server and GitHub over HTTPS differ by an order of magnitude, and the plan's 10 s default is a guess until this is run | *not yet taken* |
+| 1 ◑ | `git credential fill` with `GIT_TERMINAL_PROMPT` unset: does the helper's own UI appear, and **does its window open behind Versio**? *Half answered in GP-C: with prompts suppressed the query returns in 0.7 s and does not prompt, verified in the running app. Whether the helper's window opens behind Versio still needs a human, because it only appears when prompting is allowed.* | Decides whether §12c's busy caption has to tell the user to look behind the window. `GIT_TERMINAL_PROMPT=0` is still unconditional at `GitCliClient.cs:720`, so making it per-call is the first thing GP-C does | *not yet taken* |
+| 2 ◑ | `git ls-remote --heads origin <branch>`, timed against the real remote, 5 runs | Sets GP-D's base interval | **91–95 ms against a local bare remote**, measured in the running app during GP-D. That is the floor, not the answer: a hosted remote over HTTPS adds a TLS handshake and an auth round trip per probe, and **that** number is what should set the interval. Still worth taking against your real `origin`. |
 | 3 | Does `RollingFileSink`'s `AutoFlush` lock ever make the UI thread wait, at the 5 s floor with Debug on? | Decides whether §3's logging needs a buffered sink. Only worth taking if the interval actually goes that low | *not yet taken* |
 
 Neither of the first two blocks writing code; both block *finishing* those phases with the right
 constants. The third is conditional and may never be needed.
+
+## Phase log
+
+What each phase actually taught, recorded as it landed. A plan never corrected by contact with
+the code is not evidence of a good plan.
+
+### GP-0 — git presence and identity · done 2026-08-13
+
+**Built:** `Core/Git/GitPresence.cs`, `Core/Git/GitIdentity.cs`;
+`IGitClient.IdentityAsync` / `SetIdentityAsync`; `GitCliClient.ProbeAsync` and its
+`where`/`which` executable resolution; a launch probe in `App.xaml.cs`; two banners in the git
+panel; identity added to `CanCommit`; `Path` and `Commits as` rows in System Info.
+
+**Tests:** 29 Core, 8 App (4 of them rendering the panel), 7 integration. 1,066 / 228 / 50 green.
+
+**Corrected in passing:** `IGitClient`'s Rev 9 remark claimed PortableGit was *vendored* for
+credentials and LFS. Nothing vendors it — `git` is resolved from `PATH`. The sentence was
+load-bearing in the argument for CLI-over-LibGit2Sharp, so it was rewritten rather than left.
+
+**What the phase taught — two things worth carrying forward:**
+
+1. **The first version of the commit-gate test was vacuous, and only the mutation check found
+   it.** It asserted `CommitCommand.CanExecute` was false with no repository open — true
+   because `Ready` is false without a git client, and equally true with the identity check
+   deleted. Reaching the identity term meant satisfying every other term of `CanCommit`: a real
+   repository, a staged file, a message. **The mutation check is not a formality.** It is the
+   only reason that test means anything, and it earned its place in the definition of done on
+   the first phase that used it.
+2. **`--trace-bindings` cannot verify this panel from a normal launch.** The trace file came
+   back *empty* — the git panel starts `Collapsed`, so its bindings were never evaluated, which
+   is precisely the trap `App.xaml.cs:274` documents. The substitute that cannot pass vacuously
+   is `GitPanelChromeTests`: click the rail, measure, arrange, then assert. **§4a's protocol
+   needs this amendment** — for the extraction, the trace run must show the git panel, or it
+   proves nothing.
+
+**Verified in the running app** against a repository with no identity: probe found
+`git version 2.53.0.windows.2` at `C:/Program Files/Git/mingw64/bin/git.exe`, and the log
+carried `commit identity incomplete — Git needs a name and an email address before it can
+record a commit.` Both at the levels §3 specifies.
+
+### GP-A — notifications · done 2026-08-13
+
+**Built:** `Core/Notifications/Notification.cs` and `NotificationLog.cs` (pure, clock-driven);
+`App/Mvvm/NotificationCenter.cs` with `NotificationRow`; a `Toast` style and four icon keys in
+`Controls.xaml`; a toast host and overflow pill in `MainWindow.xaml`; `OnCopyNotification` in
+the code-behind. **14 call sites converted** from `StatusSummary` to the new channel.
+
+**Tests:** 15 Core, 15 App, 2 more chrome tests that render a real card. 1,081 / 245 green.
+
+**The bug it fixes, confirmed in the code before it was changed:** `PushAsync` set
+`StatusSummary` and *then* called `RunRefreshAsync`, which overwrote it with the file count. A
+successful push produced no visible confirmation at all. It is fixed **by construction** rather
+than by re-ordering the awaits — events and state are now different properties with different
+lifetimes, so a refresh has nothing to clobber. `NotificationCenterTests.A_success_survives_the_refresh_that_used_to_overwrite_it`
+is the regression.
+
+**Decisions worth keeping:**
+
+- **Lifetime is a function of severity, and failures have none.** Success 4 s, warning 8 s,
+  failure until dismissed. The mutation that gives failures an expiry breaks two tests.
+- **"Dismiss all" spares the failures.** Somebody handed a screenful of cards is exactly the
+  person most likely to sweep them away unread, and one of them says a push did not happen.
+- **De-duplication keys on the headline**, so three retries against an unreachable remote are
+  one card rather than a wall of identical text.
+- **The timer only runs while something can expire.** A sticky failure alone on screen needs no
+  ticking, and neither does an idle app.
+- **Every notification is mirrored into the log at the matching level.** A card the user
+  dismissed and a log with no record of it is how a bug report arrives with nothing in it.
+
+**Verified in the running app:** launched against a repository with an unreachable remote; the
+window built with the new XAML and logged normally, with no `XamlParseException` and no new
+errors. **The click-driven half is yours** — §13's GP-A script, steps 1–6, needs a human to press
+Fetch and Push. What is machine-checked is that a posted card renders with its headline and
+git's detail visible on screen (`GitPanelChromeTests`), which is what GP-0 taught: a binding
+trace over a collapsed panel proves nothing.
+
+---
+
+### GP-B — remote state and publish · done 2026-08-13
+
+**Built:** `Core/Git/TrackingState.cs` — `TrackingState` and `RemoteStanding` (*and a `RemoteAction`, deleted in the GP-E audit — nothing ever read it*);
+`IGitClient.RemotesAsync` / `PublishBranchAsync`; `PublishCommand`; the worded badge in the
+branch card; Push and Publish swapping; counts on the Pull/Push labels; `BranchEntry.Tracking`
+finally bound after existing unbound since it was written.
+
+**Tests:** 18 Core, 7 App flow (against a real bare remote), 7 integration, 2 more chrome.
+**1,099 / 254 / 144 green.**
+
+**Detached HEAD (§9e) landed here rather than in GP-H.** It is a `TrackingState` case, and
+splitting one state machine across two phases to honour a sequencing table would have been
+worse than moving it.
+
+**The three states that were previously one:** in sync, no upstream, and no remote all rendered
+as an *empty string* in the old `AheadBehind`. So a branch nobody else could see looked exactly
+like a branch that was fully pushed. That is now three sentences, and `hasRemote` is passed in
+precisely because it cannot be derived from the branch — the mutation that collapses `NoRemote`
+into `NoUpstream` breaks two tests.
+
+**Decisions worth keeping:**
+
+- **Ahead is accent, not amber.** Work not yet pushed is the normal condition of somebody
+  mid-task; colouring it like a problem makes the colour mean nothing by the time it is needed.
+  Amber is reserved for *"somebody else moved"* and *"nobody can see your work"*.
+- **Push stays enabled while diverged.** Git will reject it. Disabling it hides the state the
+  user has to resolve, where git's own rejection — in a notification that does not expire — is
+  the clearest possible explanation.
+- **Pull is enabled whenever an upstream exists**, never gated on `Behind`. Behind-ness is only
+  as fresh as the last fetch. The count goes on the label, where it informs without gating.
+- **Publish picks `origin`, then a sole remote, then refuses.** With several remotes and no
+  `origin` it says so rather than guessing — pushing a branch to the wrong remote is not a coin
+  toss, and a repository with three remotes is one where somebody has already thought about it.
+- **Publish releases the direction locks exactly as push does.** The lock rule is about work
+  becoming visible to other people; a publish makes it visible for the first time.
+
+**A test caught a real gap.** `Every_remote_button_explains_itself_while_disabled` failed on
+first run — the Discard button carried a tooltip with no `ToolTipService.ShowOnDisabled`, so its
+explanation was invisible in exactly the state it was written for. Fixed, and the test now
+covers every commanded button in the panel rather than the two it was written for.
+
+**Verified in the running app** against a repository with a remote and no upstream: opened
+clean, `git remote` ran once at open as designed, and the status refresh computed a standing
+with no errors. **The badge and the Publish button need your eyes** — §13's GP-B script.
+
+---
+
+### GP-C — credentials · done 2026-08-13
+
+**Built:** `Core/Git/RemoteUrl.cs` (transport, host, owner, repository — GP-I reuses it);
+`Core/Git/GitAuthState.cs` with `GitAuthClassifier`; `HasStoredCredentialAsync`, `SignInAsync`,
+`SignOutAsync` on `IGitClient`; **`GIT_TERMINAL_PROMPT` is now per-call**; the credential banner
+with Sign in / Forget credential; classification wired into every remote operation's success
+and failure paths.
+
+**Tests:** 49 Core, 8 App, 5 integration. **1,148 / 262 / 149 green.**
+
+**Versio implements no login, and the code says why.** Driving `git.exe` is what makes GCM, SSH
+agents, 2FA and corporate proxies behave exactly as they do in the engineer's own terminal.
+Storing a token would mean owning a secret store, a rotation story and a breach story; a
+username/password box cannot do 2FA, SSO or device flow. So the job is **detect, explain, hand
+off** — through `git credential fill`, never by launching a named helper, which would break the
+moment somebody uses a different one.
+
+**The signature Versio creates itself is the best detector it has.** `GIT_TERMINAL_PROMPT=0`
+makes git fail rather than ask when no credential is stored, saying `terminal prompts disabled`.
+Inconvenient as an experience, unambiguous as a signal. Confirmed in the running app.
+
+**Two states that look like authentication failures and are not**, each with a test:
+
+- **HTTP 403** means the credential *worked* and the account lacks access. Telling that user to
+  sign in again is a loop that cannot terminate, so `CanSignIn` is false and the sentence says
+  *"signing in again will not change it"*. Checked **before** the 401 tests, because a 403 body
+  can mention authentication.
+- **An SSH key refusal** has no credential helper at all. `CanSignIn` is false there too — the
+  advice names keys and `ssh -T`. Offering Sign in would be the same sin as advising a pull that
+  `--ff-only` will refuse.
+
+`repository not found` is deliberately classified as **unreachable**, not as a credential
+problem: a private repository returns it for an unauthenticated request too, so it is genuinely
+ambiguous, and "check the address and your connection" is safe either way.
+
+**Security rules, enforced and verified:** nothing in the credential region logs what it sends
+or receives — `git credential` speaks key=value over stdin and one of those keys is `password`,
+which `Redact` would not catch. `SignInAsync` returns a result carrying only whether it worked,
+never the helper's stdout. Confirmed in a real run: the log line reads
+`credential for https://versio-demo.invalid: none` and carries no payload.
+
+**One mutation is not caught by an automated test, and that is worth writing down.** Removing
+the `!allowPrompt` guard — letting every git call prompt — leaves the suite green. The timing
+test only bites when the host resolves and the helper actually waits; against an `.invalid`
+host, DNS fails first. Catching it properly would need a remote that resolves and demands
+authentication, which in a test run means either a real credential store or a window appearing
+on somebody's machine. **Neither is acceptable in a suite**, so the guard is covered by the
+integration test's fast-fail timing, by the classifier test for the resulting message, and by
+this note — rather than by a test that pretends.
+
+**Observed in the running app, worth knowing:** the proactive check does reach the network
+through the helper (0.7 s here, against a host that does not resolve). On a slow or blocked
+network that cost lands on repository open. If it ever shows, the fix is to move the check off
+the open path rather than to drop it.
+
+**Still needs a human:** whether the helper's window opens *behind* Versio. It only appears when
+prompting is allowed, which is exactly the path no automated test may take. The busy caption
+already says "check behind Versio" on the assumption that it does; §13's GP-B/GP-C script step 7
+is where that gets confirmed or removed.
+
+---
+
+### GP-D — background polling · done 2026-08-13
+
+**Built:** `Core/Sync/RemotePollPolicy.cs` (pace, backoff, halting — pure and clock-driven);
+`App/ViewModels/RemotePoller.cs`; `IGitClient.LsRemoteAsync` / `RevParseAsync`; a `ModalScope`
+so every prompt suspends the loop; `WakeThePoller` on any git activity.
+
+**Tests:** 14 Core, 11 App. **1,162 / 273 / 149 green.**
+
+**It probes; it does not fetch.** `ls-remote` returns one line and no objects; a real fetch runs
+only when that differs from the local tracking ref. **And it never pulls** — that constraint is
+load-bearing rather than incidental: a pull rewrites the project and its mirror under the
+watcher, which `SAFEGUARDS` §5.A calls the one scenario able to corrupt a project through no
+user error at all. Automatic pulling would be that corruption on a timer.
+
+**Four rules keep it out of the way**, each with a test:
+
+1. **Never raises the `BusyTracker`** — every git button consults that flag, so a probe that
+   raised it would flicker the whole panel dead every ten seconds.
+2. **Skipped while anything else runs**, checked before spawning *and* before applying a result.
+   The second check is what stops a probe that started first landing mid-push; the test models
+   the user pressing Push while the probe is in flight.
+3. **A quiet probe changes nothing** — no property raised, no list rebuilt.
+4. **A refusal halts on the first occurrence**, not after the usual run. Retrying a rejected
+   credential every ten seconds cannot succeed and may lock an account. This is why GP-C had to
+   land first: `GitAuthClassifier.IsTerminal` is what makes the distinction.
+
+**Logging, as §3 specifies:** every probe leaves a Debug line with elapsed ms; movement is Info
+with both commits; a run of quiet probes collapses through `QuietRunTracker` into one periodic
+sentence. The test asserts fewer than 30 Information lines for 30 probes *and* at least 30 Debug
+lines — both halves, because "log every trigger" and "keep the panel readable" are in tension
+and the resolution is the level, not the omission.
+
+**`_modalOpen` needed a scope, not a flag.** The compiler caught it unassigned; six call sites
+each setting and clearing a bool would have one early return that forgot, silencing the remote
+watch for the rest of the session with nothing to show why. `ModalScope` is a `using`.
+
+**Verified in the running app**, end to end:
+
+```
+INF [Git] watching the remote for changes
+DBG [Git] probe origin/main: unchanged in 95 ms
+DBG [Git] probe origin/main: unchanged in 91 ms      <- exactly one interval later
+INF [Git] origin/main moved: d6d9299 -> ed66024      <- after a push from a second clone
+INF [Git] fetching
+DBG [Git] git fetch --progress ok in 0.2s
+DBG [Git] git rev-list --left-right --count origin/main...main ok in 0.0s
+```
+
+A colleague's push was noticed within one interval, with no click, and the ahead/behind counts
+recomputed — which is the entire point of the phase.
+
+**A real measurement came out of it:** `ls-remote` against a local bare remote is **91–95 ms**.
+That is the floor rather than the answer — a hosted remote adds a TLS handshake and an auth
+round trip per probe — so the 10 s default stands until somebody times it against a real
+`origin`. Changing it is one argument to `RemotePollPolicy`.
+
+---
+
+### GP-E — per-file staging · done 2026-08-13
+
+**Built:** `Core/Git/StagingSelection.cs` (tri-state, counts, labels — pure);
+`ChangeRow.IsSelected` with a change event; **`UpdateStagingLists` reconciles in place**;
+a `StageRowTemplate` with a checkbox; the two-pane grid with a splitter and min-heights; master
+checkboxes, selection captions and count-bearing button labels.
+
+**Tests:** 17 Core, 13 App (9 flow + 4 chrome). **1,179 / 286 / 149 green.**
+
+### The §4a extraction was not done, and the reason is evidence rather than preference
+
+§4a called for extracting a `GitPanelViewModel` first, on the grounds that `ShellViewModel` is
+heading for 4,500 lines. **That seam is not clean, and the code says so.** `CommitAsync` alone
+reaches `Sync`, `Busy`, `Notifications`, `_logger`, `_git`, `RunRefreshAsync`, `PushAsync` and
+`StageExportedTreesAsync` — eight distinct collaborators. `StageAsync` and the selection setters
+add `ShowPathAsync` and `DiscardCommand`. A child view model at that seam takes essentially the
+whole shell as a constructor argument, which is a **move dressed as a decomposition**: the same
+coupling, one more indirection, and a large silent-binding-failure risk for no reduction in what
+anybody has to hold in their head.
+
+What was extracted instead is the part that is genuinely separable and is where GP-E's new
+complexity lives: **the selection rules, into Core**, where the tri-state and the label logic are
+tested without a window. The shell grew by the wiring and shrank by the rules.
+
+**The size concern stands and is not addressed.** If it is to be fixed, the seam worth cutting
+is the *remote* surface — standing, poller, credentials, fetch/pull/push/publish — which is
+already self-contained and was built in GP-B/C/D as a unit. That is a real decomposition and it
+is a phase of its own, not a preamble to one.
+
+### The chrome test caught a crash that every other check missed
+
+`A_realised_staging_row_carries_a_checkbox` **crashed the test host**:
+
+```
+XamlParseException: Cannot find resource named 'ChangeRowTemplate'
+```
+
+`StaticResource` resolves in **declaration order**, and `StageRowTemplate` — which references
+the shared row body — had been declared above it. Nothing catches that until a row is realised:
+the window builds, the panel lays out, the suite passes, and **the application dies the moment
+somebody clicks the Git rail on a repository with a changed file.** The app run earlier in this
+phase opened cleanly for exactly the reason the binding trace keeps coming back empty — the
+panel starts collapsed, so no row was ever built.
+
+That is the third time this phase family has bitten in the same place, and the pattern is now
+explicit: **for this panel, the only check that is not vacuous is one that realises a row.**
+`LoadContent()` on the template in isolation is not enough either — it loses the resource
+context and throws for a different reason.
+
+### Decisions worth keeping
+
+- **Reconcile in place is a prerequisite, not a refinement.** A refresh fires whenever the
+  working tree moves; a checkbox on a row that is replaced a second later is a control that
+  forgets what you told it every time you save a file. The mutation — replacing rows instead of
+  updating them — breaks two tests. It also fixed something nobody had reported: the diff pane
+  used to reset roughly once a second while somebody typed in their editor.
+- **The checkbox is not the list selection**, and there is a test asserting each leaves the
+  other alone in both directions.
+- **Nothing ticked means the whole list**, which is what collapses "Stage all" and "Stage
+  selected" into one button; the label carries the difference (`Stage`, `Stage all`, `Stage 3`).
+- **An empty list is unticked, not fully ticked.** "Every one of no items is ticked" is true and
+  invites a click that does nothing.
+- **Rows unsubscribe as they leave.** The shell outlives every row, so a subscription left
+  behind would keep a dead row alive for the session.
+
+**Still needs a human:** §13's GP-E script — dragging the splitter, confirming both panes scroll
+independently with a large stage, and that a tick survives a real editor save. The last of those
+is machine-checked as well, but the first two are geometry.
+
+---
+
+### Audit · 2026-08-14, before GP-F
+
+A read-through of everything GP-0 to GP-E added, looking for what the phases were too close to
+see. Six findings, all fixed.
+
+**1. Three pieces of API with no caller — the rule this repository already learned.** Commit
+`6417f2a` deleted `GuardIntent.Clone` and `Discard` for exactly this, and left the rule in the
+enum's doc comment: *every member has a caller, or says why it does not.* I broke it three times
+in five phases:
+
+| Added | Tested | Called by |
+|---|---|---|
+| `RemoteAction` + `RemoteStanding.Primary` | yes | nothing — the XAML swaps on `CanPush`/`CanPublish` |
+| `StagingSelection.Affected` + `CanAct` | yes | nothing — the shell needs rows, not a count |
+| `NotificationLog.DismissTransient` | yes | nothing — there is no "dismiss all" button |
+
+All three are deleted. Each looked reasonable in isolation and each was a *plausible* API rather
+than a used one — which is precisely why tests over them proved nothing about whether anything
+asks. `RemoteUrl.UsesSshKeys` went the same way: the negation of a property that *is* used, read
+only by its own tests.
+
+**2. The same throwaway-repository fixture, four times.** `GitHealthTests`,
+`RemoteStandingFlowTests`, `CredentialFlowTests` and `StagingSelectionFlowTests` had each grown
+their own — and they had already drifted: one wrote empty identity values, one real ones, one
+added a bare remote, one staged its files. Four copies is four places to fix a Windows
+file-attribute problem and three that get missed. Now one `TempRepo`, ~220 lines of duplication
+gone.
+
+**3. A flaky test, found by the audit rather than by a red build.**
+`Setting_an_identity_from_the_panel_unblocks_the_commit` passed alone and failed in the full run.
+Not a defect: setting an identity spawns **four** git subprocesses, and the local `WaitUntil` gave
+it ten seconds while three hundred other tests competed for the machine. That is the worst kind
+of flake — it reads as a real failure and is a scheduling artefact. The three copies of
+`WaitUntil` are now one `Eventually.Until(condition, what)` with a thirty-second backstop and a
+message naming what never happened.
+
+**4. `WakeThePoller` was wired to half of what the plan specified.** §3 says the backoff snaps
+back when the user *touches the git panel*; it only fired on `Busy.IsBusy`. So somebody who
+opened the panel after an idle hour would read counts on a sixty-second cadence — stale numbers
+being exactly what they came to look at. Now woken on panel activation too.
+
+**5. `RemotePollPolicy.QuietRun` is read only by tests**, which by the rule above wants
+justifying rather than deleting: the backoff is otherwise observable only by elapsing real time,
+and a rule that can only be checked by waiting is a rule nobody checks. Documented as
+observability rather than quietly kept.
+
+**6. Doc drift, three places.** §2's table had a "Primary action" column naming the deleted
+enum; GP-B's log listed `RemoteAction` as built; and §13 still carried an extraction script for
+work that was deliberately not done.
+
+**Tests after: 1,175 Core** (four fewer — the deleted API's) **, 291 App, 149 integration.**
+
+**One unreproduced failure, recorded rather than dismissed.** The app suite failed once, on one
+test, on the run immediately after a real `Versio.exe` had been killed 25 seconds earlier — and
+passed on **four consecutive runs afterwards**. The failing test's name was not in the captured
+output, so there is nothing to point at. The likeliest explanation is a machine still tearing
+that process down, but **that is a guess, and it is written down so a second occurrence is a
+second data point rather than a first.** If it recurs, capture the run with
+`--logger "console;verbosity=detailed"` before doing anything else.
+
+**What this says about the phases.** Every one of these was introduced while the phase was
+green, tested and documented. The pattern is consistent: designing an API and testing it feels
+like finishing it, and *nothing in a green suite distinguishes a member with a caller from one
+without*. Worth a scheduled read-through per few phases rather than trusting the per-phase
+discipline to catch it — it demonstrably does not.
+
+---
+
+### GP-F — one commit button · done 2026-08-14
+
+**Built:** `Core/Git/CommitPlan.cs` — `CommitIntent`, the label, the blocked reason and the
+explanation; `CommitCommand` acting on the plan; `CommitAndPushCommand` **deleted**; the caption
+and tooltip bound; the conflict gate.
+
+**Tests:** 14 Core, 8 flow, 3 chrome. **1,189 / 301 / 149 green.**
+
+**One button, three behaviours, and the caption is the safeguard.**
+
+| Situation | Caption | Does |
+|---|---|---|
+| Rows ticked | `Stage & commit (3)` | Stages exactly those, then commits |
+| Nothing ticked, nothing staged | `Stage all & commit` | Stages everything, then commits |
+| Nothing ticked, something staged | **`Commit`** | **Commits only what is staged** |
+
+The third row is why this is a type rather than an `if`. Somebody who staged two files on
+purpose and left two out must not get the others swept in — they would find out by reading the
+commit, by which time it is history. The plain caption is what makes the difference visible
+*before* the press. The mutation that removes it breaks
+`A_deliberate_partial_stage_is_not_swept_up`, which asserts against **git's own** view of what
+landed rather than the view model's.
+
+**`Commit & Push` is gone.** It bundled two operations with different failure modes, and its
+failure story was the worst in the panel: the commit succeeds, the push fails, and one message
+has to describe both. Push is a deliberate act of its own in the remote row, where the
+ahead-count already lives — and `Committing_does_not_push` pins that.
+
+**The staging happens before the export gate, deliberately.** So the gate's own staging lands on
+top of the user's choice rather than racing it, and the `CommitStaged` case stages *nothing* —
+which is the whole safeguard. A staging refusal aborts the commit rather than producing one
+missing exactly the files that were ticked, which would look like it worked.
+
+**Two design flaws the tests found, both the same shape.** The commit caption is computed from
+the staging lists, and it went stale twice: once because nothing raised it when a collection
+changed, and once because a row added outside `ReconcileInto` never got its tick subscription.
+Both were arranged by *the one method that happened to build rows*. Now the collections
+themselves are watched — a row is tracked for **being in the list**, not for having been added
+by the right caller — and `Track()` is gone. Production never hit either, because production
+only ever adds rows one way; that is exactly what made them worth fixing rather than working
+around in the test.
+
+**The conflict gate arrived early.** §6 is GP-G, but `CanCommit` needed a `hasConflicts` term
+now: git refuses a commit over an unmerged path regardless, and a button that explains beats one
+that fails. The *surface* — banner, third section, ours/theirs — is still GP-G.
+
+**Geometry unchanged** at 372×729 with both lists at 207 px: one button where two were is
+strictly less to fit. **Verified in the running app** against a repository with 2 staged and 2
+unstaged — opened clean, no exceptions.
+
+---
+
+### GP-G — conflicts and the way out of a divergence · done 2026-08-14
+
+**Built:** `Core/Git/MergeState.cs`; `ResolveWithSideAsync`, `MergeUpstreamAsync`,
+`RebaseOntoUpstreamAsync`, `AbortMergeOrRebaseAsync`, `MergeStateAsync` on `IGitClient`; a
+conflict section with keep-mine / keep-theirs / abandon; the diverged banner offering rebase or
+merge; `RemoteStanding.IsDiverged`.
+
+**Tests:** 12 flow against real conflicts. **1,189 / 313 / 149 green.**
+
+**The panel's last dead end is closed.** §2's badge said *"diverged — pull first"* and
+`pull --ff-only` refuses a diverged branch by design, so the advice pointed at a button that
+could not work and the only way out was a terminal. `--ff-only` stays the default — it exists
+because auto-merging native CODESYS XML produces a file nobody reviewed — but the user can now
+ask for a rebase or a merge **by name**, having been told what each means. Both go through the
+guard on `GuardIntent.Pull`, because both rewrite the project and its mirror together.
+
+**No second detection path.** `IConflictProbe` and `SyncVerdict.BlockedByConflict` already own
+the engine half; this binds to what git reported rather than asking again. Conflicted files get
+their **own section**, because an unmerged path is reported in *both* of git's columns and is
+really in neither state — listing it in staged and unstaged would be three rows for one problem.
+
+**`MergeState` is read from git's marker files, not inferred from conflicts.** Resolving every
+conflict leaves the tree clean while the merge is still *in progress* and waiting to be
+committed; a panel reading "no conflicts" as "nothing happening" would offer a plain commit for
+what is the conclusion of a merge.
+
+**Abandon is not optional.** Offering an operation that can stop half-done without offering the
+way back is how somebody ends up in a state they cannot describe, in a tool meant to keep them
+out of the terminal. Confirmed, because unlike a discard what it destroys — conflict
+resolutions — is not visible as a list of files.
+
+### The flake finally explained, on its second sighting
+
+The pre-flight recorded an unreproduced failure and said a second occurrence would be a second
+data point. It happened, in this phase, and the cause turned out to be the same one that made
+four *new* tests here time out:
+
+**`AsyncCommand.Execute` silently returns when `CanExecute` is false.** Every git command is
+gated on one shared busy flag, so a press landing while a refresh or a diff load is still
+running does nothing at all — and the wait after it times out looking like a real defect. It
+passed alone and failed under load because that window is a scheduling artefact.
+
+Fixed with `Eventually.Press`, which waits for the command to be live and then presses it. **Not
+a test-only concession**: it is what a user does, since the button is disabled while something
+runs. A test that presses a disabled button is testing something that cannot happen. Twenty-seven
+unguarded presses existed; the ones driving real repositories are all converted. Three
+consecutive full runs clean afterwards.
+
+### Two other things worth recording
+
+**A test assertion was wrong, not the code.** Resolving with *"keep mine"* restores exactly what
+HEAD already holds, so the index matches HEAD and git reports no change — the file does not
+appear in Staged. Taking *"theirs"* would show one. The asymmetry is git being right.
+
+**Two layout tests indexed `ListBox` by position** and silently started measuring the conflict
+list when it arrived. Both now look up `StagedList` and `UnstagedList` by name — an
+index-based lookup is exactly the kind of test that keeps passing while it stops meaning
+anything.
+
+**Verified in the running app** against a repository left mid-merge with a real conflict: opened
+clean, reported `1 changed`, no exceptions. **The conflict banner and the diverged card need
+your eyes** — §13's GP-G script.
+
+---
+
+### GP-H — branches · done 2026-08-14
+
+**Built:** `Core/Git/BranchExistence.cs` with `BranchInventory`; `Core/Git/DefaultBranch.cs`;
+`Core/Git/BranchDeletion.cs` — `BranchCandidate`, `DeletePlan`, `DeleteOutcome`;
+`RepoConfig.DefaultBranch`; five methods on `IGitClient`; `BranchDeleteWindow`; the
+delete flow with its guard, confirmation and per-branch reporting.
+
+**Tests:** 38 Core, 16 App (6 window, 10 flow). **1,227 / 329 / 149 green.**
+
+**Remote-only branches were invisible.** `BranchesAsync` read `refs/heads`, so a colleague's
+branch, or one this clone had never checked out, did not exist as far as the application was
+concerned — the dropdown looked like the whole repository and was half of it. Now merged by
+short name, with `origin/HEAD` dropped (a symbolic ref, not a branch) and remote-only branches
+sorted last so a busy remote does not bury the three somebody works on.
+
+**Nothing knew which branch was the trunk.** Four rungs: `RepoConfig.DefaultBranch` (committed,
+so a team whose trunk is `develop` records it once), then the remote's own `HEAD`, then
+`main`/`master`, then **refuse**. The refusal is the important rung — guessing the trunk and
+then checking it out moves somebody's working tree to a branch nobody chose. Verified in the
+running app: `default branch is main (from Remote)`.
+
+### The `-d`-before-`-D` rule turned out to be load-bearing, and a mutation proved it was not tested
+
+The first mutation — swapping `force: false` for `force: true` — **survived**. Every test either
+stopped at `CanProceed` or had already acknowledged the force, so nothing exercised the gap.
+
+Rather than assume the rule was redundant, I checked what git actually does:
+
+```
+warning: not deleting branch 'tidy' that is not yet merged to
+         'refs/remotes/origin/tidy', even though it is merged to HEAD
+error: the branch 'tidy' is not fully merged
+```
+
+**`git branch --merged main` and `git branch -d` do not ask the same question.** `--merged`
+compares against one branch; `-d` also refuses a branch ahead of *its own upstream*. So a branch
+the dialog reports as merged — needing no acknowledgement — can still be carrying work nobody
+else has. Attempting `-d` first is what turns that into a refusal the user sees rather than a
+silent `-D`. `Git_gets_the_last_word_when_our_merged_check_is_wrong` constructs exactly that,
+and the mutation now fails.
+
+### That test then found a defect in every failure message in the application
+
+Its assertion failed on the detail text, which read:
+
+> `hint: Disable this message with "git config advice.forceDeleteBranch false"`
+
+`GitResult.FailureReason` took the **last** non-empty stderr line, and git appends `hint:` lines
+*after* the error. So the notification showed somebody how to turn the message off instead of
+telling them why the branch survived — and this is the string every failure card in the panel
+has been showing since GP-A. It now takes the last line that is not `hint:` or `warning:`,
+falling back to the last line when git said nothing else.
+
+### Other decisions
+
+- **The current branch is left before it is deleted**, through the ordinary `SwitchBranchAsync`
+  — so a dirty tree meets the auto-stash exactly as it does anywhere else. There is no second
+  dirty-tree story for this dialog. If the switch fails, **nothing is deleted**.
+- **The remote copy is only deleted when the local delete worked**, or when there was no local
+  copy. Deleting the shared one while the private one survives is the wrong direction to fail.
+- **`fetch --prune` after any remote delete**, or the branches linger as stale tracking refs and
+  reappear looking alive.
+- **The delete button moved off the remote row**, and the geometry suite is what settled it: a
+  fourth button there overflowed the 380 px panel outright. It sits on the branch line now,
+  which is where it belongs anyway — branch housekeeping is not part of the fetch/pull/push
+  rhythm, and a destructive action where Fetch sits reads with the same weight as a fetch.
+- **`ResourceKeyConverter` moved into the stylesheet.** `BranchDeleteWindow` is the second window
+  to want it, and a converter declared privately in one window is invisible to every other —
+  which is exactly how `SystemInfoWindow` once threw on open.
+
+### §9f, restoring a deleted branch — dropped, not deferred
+
+Shipped without it, and the product owner has since decided against it outright. The heading in
+§9 records the decision.
+
+---
+
+### GP-J — PLC-aware naming, summary and draft · done 2026-08-14
+
+**Built:** `Core/Projects/ObjectIndex.cs` (repo-relative path → the object the export wrote it
+from), `Core/Projects/ObjectTypeNames.cs` (chip, singular, plural — a table, not an algorithm)
+and `Core/Projects/ChangeSummary.cs` (the sentence, the drafted subject, the verb per object);
+`SyncViewModel.Objects` rebuilt with the tree and announcing itself; `ChangeRow.Describe` with
+`Primary` / `Secondary` / `TypeLabel` / `IsExportOnly`; a two-line `ChangeRowTemplate`; the
+summary line and the **Draft** button in the commit box.
+
+**Tests:** 40 Core, 15 App (7 row + 2 realised + 6 flow). **1,267 / 345 / 149 green**, integration
+re-run in full against real CODESYS 3.5.22.20 — 0 skipped, 7 m 20 s.
+
+### The wiring was the bug, and only the front-door test found it
+
+Every row test, every index test and every summary test passed against a panel that **named
+nothing at all**. `OpenRepositoryAsync` refreshes git and then calls `Sync.AttachAsync`, and the
+bindings are loaded inside *that* — so the one refresh an open performs runs before any manifest
+has been read, names nothing, and the index turns up afterwards from a path the git panel never
+hears about. It stayed wrong until the working tree next moved, which on a project nobody is
+editing is never: **open a repository, look at the panel, see raw paths.**
+
+That is the fourth time this codebase has produced a method with a green suite and no reachable
+caller — after `GuardIntent.Clone`, `ResetForRepositoryChange` and `TreeRow.Reconcile` — and the
+first time the test that caught it was written *before* the code shipped rather than after.
+`PlcAwareNamingFlowTests` opens a real repository with a real `repo.json` and a real manifest on
+disk and asserts the panel's rows; deleting the one subscription turns exactly that file red and
+nothing else.
+
+**The fix is an event, not a call.** `SyncViewModel.ObjectsChanged` fires when the index is
+rebuilt, and the shell subscribes once. The index is filled by a tree refresh, and a tree refresh
+happens on a status refresh, on attach, after a rescan and after an adoption — four callers, of
+which the panel controls one. A `DescribeRows()` after each would have been three chances to
+forget, and the one that was already forgotten is the one that mattered.
+
+### Decisions that changed on contact with the code
+
+- **The summary describes what the button will commit, not the working tree.** §9c says "a change
+  summary line above the commit box", which reads as the working tree — but the button beneath it
+  commits *staged only* whenever something is staged and nothing is ticked, which is GP-F's whole
+  safeguard. A line counting five objects over a button that would commit two is two controls
+  describing one press. The set comes from `CommitPlan` now, so the caption and the sentence
+  cannot disagree.
+- **Counted by object, not by file, and that is not cosmetic.** A GVL exports to `.gvl.st` *and*
+  `.gvl.xml`, so every count taken over paths reports one edit as two. `ProjectObject`'s own
+  remarks already said the GUID is the identity; this is the first reader outside the tree to
+  need it. The mutation — key by path — breaks two tests.
+- **A fourth thing on the row that §9c did not ask for: `IsExportOnly`.** `STATUS.md` has carried
+  "editing `Library Manager.libraries.yaml` changes nothing in the project" as a known limitation
+  with **"and the panel does not say so yet"** beside it, parked on tree work. The changed-files
+  row is where somebody is about to *stage* that edit, so it is where the sentence belongs. It is
+  a glyph and a tooltip, off `ExportCoverage.ExportOnlyForm`, which already existed.
+- **The type table is a table.** The tempting rule — lowercase, replace underscores, capitalise —
+  yields "Gvl", "Pou", "Textlist" and "Imagepool". Engineers read those daily and a tool that
+  renames them reads as one that does not know the domain. An unknown type is shown exactly as
+  the exporter wrote it: `versio_types.py`'s table grows, and inventing English for a type this
+  build has never seen is the same mistake as guessing an object from an extension.
+- **Truncation drops whole names.** Half of `FB_MotorControl` is `FB_Motor`, which may well be a
+  different function block in the same project. Over 50 characters the tail becomes "and 4 more";
+  a single object whose name alone exceeds the limit is shown whole, because there is no honest
+  shorter form and the counter beside the box already says it is long.
+- **Draft refuses rather than replaces.** The button is dead while the box has anything in it, so
+  no press can lose a half-written message. An "are you sure" over somebody's own sentence is a
+  worse answer than not offering the action.
+- **The tie-break in the sentence is alphabetical.** §9c's example reads "3 POUs, 1 GVL, 1 DUT",
+  which is not any ordering — it is illustrative prose. Equal counts sort by name so the middle
+  of the sentence does not reshuffle between refreshes, which would read as the counts changing.
+
+### It blanked the history panel, and every test was green
+
+**Found by the product owner, in the running app, after this shipped.** `ChangeRowTemplate` was
+shared with the history panel's commit-file list — deliberately, so a deletion is the same letter
+and the same colour wherever it is seen. This phase taught that template to show an *object*, and
+a `CommitFileRow` has no `Primary`, no `TypeLabel`, no `IsExportOnly`.
+
+WPF fails a binding to a missing property **silently**. So every row in the history panel drew
+with **no filename at all**, wearing a lock glyph it had no business showing — because the
+`Visibility` binding failed too, and a failed `Visibility` binding leaves the element `Visible`.
+
+The realised-row discipline this phase log makes so much of was followed, and it was followed in
+the wrong place: the tests build rows in the git panel's own lists and never came here. **A
+shared template needs a realised row in every list that uses it.** `HistoryRowChromeTests` is
+that row; reverting the fix fails both of its tests.
+
+The history list has its own template now. The glyph and its colour still come from
+`ChangeGlyph`, which is where that decision actually lives — what is no longer shared is the
+object surface. And a commit's files stay *paths* on purpose: the object index describes the
+**current** export, so naming a historical path from it would put today's name on yesterday's
+file.
+
+### Two things worth knowing before the next phase
+
+- **The `ChangeRow` is now two lines**, so the changed-files list is roughly twice as tall per
+  row. `GitPanelGeometryTests` passes and the panes have min-heights, but how many rows fit
+  before scrolling is a judgement nothing here can make — it is on the §13 script.
+- **A NUL byte reached a source file.** Two spaces inside an interpolated string were written as
+  `\x00`, which compiled and passed every test, made `ChangeSummary.cs` register as *binary* to
+  grep and diff, and would have been committed to a repository whose whole premise is reviewable
+  text. Caught by `grep` refusing to search the file. Worth a glance at `file src/**/*.cs` after
+  any bulk edit — the compiler will not tell you.
+
+---
+
+### GP-I — merge-request button · done 2026-08-14
+
+**Built:** `Core/Git/Forge.cs` (detection, five forges' create/existing/list templates, the
+request-ref patterns and their parser) and `Core/Git/MergeRequestPlan.cs` (the five gates, the
+label, the refusals); `RemoteUrl.Port` and `Authority`; `RepoConfig.Forge`;
+`IGitClient.LsRemoteRefsAsync` and its `GitCliClient` half; `RemotePoller`'s `onProbed`; the
+shell's `MergeRequest`, `OpenMergeRequestCommand` and `ProbeMergeRequestAsync`; the button, on
+its own row in the branch card.
+
+**Tests:** 53 Core, 11 App (8 flow + 3 poller), 5 integration against real git.
+**1,320 / 356 / 154 green** at the time this landed, on a clean in-tree build with `Versio.exe`
+closed: 0 warnings, 0 errors. *(The App total moved to 363 with safeguards §5.C, which followed
+this. The per-phase figures here are re-derived with
+`dotnet test --filter FullyQualifiedName~<TestClass>` rather than remembered — the first draft
+of this line said 4 poller tests and there are 3.)*
+
+### `RemoteUrl` was dropping the port, and every self-hosted forge needed it
+
+`RemoteUrl` strips the port from `Host` deliberately and says why: git scopes a stored credential
+to protocol and host, so a port in that key is wrong. But it was *discarded*, not set aside — and
+a GitLab on `https://git.acme.internal:8443/…` therefore produced a link to
+`https://git.acme.internal/…`, which is a different service or nothing at all. `Port` and
+`Authority` are additive and `Host` is untouched, so the credential path is unchanged: **two
+readers, two questions, one parse.** This is the case the plan's own test list asked for — "a
+host with a port and a path prefix" — and it could not have been satisfied without this.
+
+### The named mutation passed, and that was the finding
+
+§8 says to check this rule by defaulting an unknown host to GitHub's template. It passed the
+whole suite. The reason is worth more than the rule: `CreateUrl` tested `kind is Unknown` in a
+**guard** *and* returned empty from the switch's **default arm**, so the arm was unreachable and
+the mutation landed in dead code. Defence in depth reads as prudence and is the opposite here —
+**a rule enforced in two places is a rule whose test only reaches one of them.** The guard no
+longer tests for it; the switch is the single decision, and the mutation now breaks exactly
+`An_unidentifiable_host_yields_no_url_at_all`.
+
+### The wiring, again — and this time it was caught before it shipped
+
+GP-J's finding repeated in a new shape. `RemotePollerTests` proves the loop calls whatever it is
+handed; `MergeRequestFlowTests` proves the rules are right against a real repository. **Both stay
+green with `onProbed: null` at the one construction site** — verified by doing it. So
+`RemotePoller.AsksASecondQuestion` and `ShellViewModel.Poller` are internal, and one test asserts
+the link. That is a construction assertion and a weak one in general; it is the right strength
+here, because the specific thing that breaks is a constructor argument.
+
+The related trap was avoided rather than fixed: the forge would naturally be resolved once when
+the repository opens, beside `_remote` — and `repo.json` is loaded by `Sync.AttachAsync`, which
+runs *after* that. A cached forge would have been `Unknown` for exactly the repositories that
+need the setting. It is a computed property instead: an enum switch over two fields, cheaper than
+the notification the alternative would need. **GP-J needed an event for this; GP-I needed
+nothing, by not storing the answer.**
+
+### Decisions that changed on contact with the code
+
+- **The forge's own vocabulary.** The plan says "merge request" throughout, which is GitLab's
+  word and wrong on the other four. `Forge.Noun` returns "pull request" for GitHub, Azure,
+  Bitbucket and Gitea. A button that calls a GitHub pull request a merge request reads as a tool
+  built by somebody who has not used the forge it is opening.
+- **Its own row, full width.** GP-H already measured that a fourth button beside Fetch overflows
+  the 380 px panel. It does not belong there anyway: fetch/pull/push is one rhythm repeated all
+  day, and raising a request is a deliberate act that happens once per branch.
+- **Collapsed, not disabled, when the forge is unknown** — as §8 asked. Worth restating because
+  it is the only control in the panel that hides rather than explaining itself: the others are
+  states the user can leave by doing something, and "your remote is a UNC path" is not.
+- **Gitea publishes no request refs, as far as this code is concerned.** It very likely mirrors
+  GitHub's `refs/pull/*/head`, and "very likely" is not a measurement. The cost of being wrong is
+  a probe that always misses and a button that silently never upgrades from Create to Go to, so
+  it degrades to the list page until somebody has run one `ls-remote` against a real instance.
+- **The probe runs whether or not the remote moved.** Opening a pull request does not move the
+  branch head — the published ref points at a commit that already exists — so a probe conditioned
+  on movement would never notice one. That is why `onProbed` sits where it does in the loop
+  rather than inside `onMoved`.
+- **It costs nothing in the common case.** `ProbeMergeRequestAsync` returns before spawning
+  anything unless the button is actually offering to create a request on a forge with request
+  refs — which excludes the default branch, a dirty tree, unpushed work, every unidentified
+  forge, and Azure and Bitbucket entirely.
+- **The tooltip carries the URL when the button is live.** One binding for both states: a tooltip
+  that emptied itself when the button went live would take the explanation away at the moment
+  somebody is deciding whether to open a browser.
+
+### A test-isolation defect that only appears under load
+
+`The_button_is_in_the_branch_card_and_bound_to_the_plan` passed alone and failed in the full run,
+reporting the button `Visible` where it must be `Collapsed`. Not a product bug: the class builds
+`MainWindow` and lays it out, and it was **not in the `theme` collection** that serialises exactly
+those tests — so it raced a test swapping the palette dictionary and its bindings did not resolve.
+Every other class that builds and measures the window is in that collection; this one is now, and
+three consecutive full runs are green. The two remaining `MainWindow` classes outside the
+collection — `MainWindowClosingTests` and `RepositoryChangeResetTests` — were checked and neither
+lays out, so neither evaluates a binding and neither is exposed.
+
+---
+
+### Audit · 2026-08-14, phases GP-0 to GP-H
+
+Second read-through of everything these phases added. Smaller than the first, which is the
+point of doing it twice.
+
+**1. Four multi-step flows had no operation id.** §3 of this document says they should —
+*"multi-step operations open `logger.BeginOperation(...)` so every line from one push shares an
+id"* — and names the delete and sign-in flows specifically. `DeleteBranchesAsync`,
+`ReconcileAsync`, `SignInAsync` and `PublishAsync` all lacked it. A branch deletion writes a
+dozen interleaved lines across a merged check, a prompt, a checkout and N deletes; without an id
+"why did that branch survive" is answered by reading around them. Fixed.
+
+**2. The delete flow reconstructed an enum from a display string.**
+
+```csharp
+Existence = b.IsRemoteOnly ? BranchExistence.RemoteOnly
+          : b.Where == "local" ? BranchExistence.LocalOnly : BranchExistence.Both
+```
+
+`Where` is the *label shown in the dropdown*. Rewording it — "local" to "local only", say —
+would have silently reclassified every branch, and nothing would have failed until somebody
+deleted the wrong thing from a remote. `BranchEntry` carries the enum now.
+
+**3. `RepoEntry.Location` had never been bound**, and its own doc comment says it is *"shown
+beneath the name so two repos with the same folder name are still distinguishable"*. Exactly the
+`BranchEntry.Tracking` defect again: a comment describing a rule nothing enforced.
+
+**Found by using the application, not by reading it.** Manual verification runs left ten
+throwaway repositories in the recent list, several of them called `work` — and the dropdown
+showed three identical rows with no way to tell them apart. The list is normally short and the
+names normally differ, which is why it survived this long.
+
+**Also: those runs polluted the real recent list.** `ShellViewModel` defaults its settings store
+to `NullAppSettingsStore` precisely so tests cannot do this, and that held — the pollution came
+from launching the actual `Versio.exe` against temp repositories during verification. Cleaned.
+Worth knowing before the next round of manual checks: **verify against a repository you would be
+happy to see remembered**, or clear the list afterwards.
+
+---
+
+## Handoff
+
+**Branch:** `GitPanel`. **State:** GP-0 through GP-H shipped and audited twice; **GP-J and GP-I
+built, in `1a01953`**, with both §13 scripts outstanding.
+
+**Both phases share one commit**, which is the only entry in that table to do so. Three source
+files and all four documents carry changes from each, so splitting them would have produced a
+first commit that did not build — and rewriting the phase log, the table and the counts twice to
+achieve it.
+
+**Where to start reading.** *Where this stands* at the top of this document lists every phase
+with its commit. Sections §1–§13 are the plan as written before the work, each marked built or
+not; the **phase log** at the end is what actually happened and every decision that changed on
+contact with the code. Where the two disagree, the phase log is right.
+
+**How to verify.** Build with `%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe` — the `dotnet` on
+PATH has no SDK. **Close `Versio.exe` first**: a running instance locks `src/Versio.App/bin`, the
+build fails on the copy step, and it reports phantom warnings that are an artefact of that
+failure rather than real. `-p:OutputPath=<elsewhere>` builds around it when the app must stay up.
+
+**What is left.** GP-K / GP-L only: previews (§9d), and the five remaining items of §10 now that
+path trimming has gone with GP-J. Neither is blocked, and §9d is the smallest thing left in this
+document — `RecentCommitsAsync` already takes a count and a skip, so it needs a revision range
+and a place to put the list.
+
+**Run the two §13 scripts first**, GP-J's and GP-I's. Both have one step that no test reaches:
+
+- **GP-J step 1** — object names on the *first paint*, not after the first save. This was
+  genuinely broken during the work and is the whole reason `Sync.ObjectsChanged` exists.
+- **GP-I step 5** — the button turning into *Go to pull request* on its own, a minute after you
+  open a request in the browser. It needs a real forge and a real push, which is exactly what an
+  offline suite cannot have.
+
+**What is owed to a human**, because nothing here can see the screen: the three measurements in
+the pre-flight table, and §13's verification scripts for anything visual. The geometry suite
+(`GitPanelGeometryTests`) covers what is arithmetic — zero-size controls, horizontal overflow,
+panes crushed to nothing — and has caught two real overflows; it cannot tell you whether the
+panel reads well.
+
+**The three habits worth keeping**, each of which caught something these phases would otherwise
+have shipped:
+
+1. **Mutate before believing a test.** A vacuous commit-gate test, an untested `-d`-before-`-D`
+   rule, and a poller that did not suspend were all found this way.
+2. **Realise a row.** For this panel, a test that does not build a list row proves nothing — a
+   `StaticResource` inside a template resolves on instantiation, and a binding trace over a
+   collapsed panel comes back empty.
+3. **Run the application.** Two of the last three findings came from opening it, not reading it.
+
+---
+
+---
 
 ## Explicitly not doing
 
@@ -1609,5 +2582,7 @@ constants. The third is conditional and may never be needed.
   the case that was losing work. Revisit only if a workflow actually needs it.
 - **A three-way merge view.** Conflict resolution in §6 stops at ours/theirs. Anything richer
   is its own project.
+- **Undo for a deleted branch (§9f).** Decided against on 2026-08-14. The reasoning is under
+  that heading.
 - **Merging STAGED and NOT STAGED into one list.** The separation is being kept deliberately;
   both panes become properly scrollable instead (§4).

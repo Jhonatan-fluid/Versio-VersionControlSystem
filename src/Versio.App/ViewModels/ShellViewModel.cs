@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.Diagnostics;
 using System.IO;
 using Versio.App.Mvvm;
@@ -6,8 +7,10 @@ using Versio.Core.Abstractions;
 using Versio.Core.Diff;
 using Versio.Core.Git;
 using Versio.Core.Guarding;
+using Versio.Core.Locking;
 using Versio.Core.Logging;
 using Versio.Core.Plc;
+using Versio.Core.Projects;
 using Versio.Core.Settings;
 using Versio.Core.Sync;
 using Versio.Core.Watching;
@@ -59,8 +62,16 @@ public sealed class RepoEntry(string path, string remoteUrl = "", DateTimeOffset
 
     public string Name { get; } = System.IO.Path.GetFileName(path.TrimEnd('\\', '/'));
 
-    /// <summary>Parent directory, shown beneath the name so two repos with the same folder
-    /// name are still distinguishable.</summary>
+    /// <summary>
+    /// Parent directory, shown beside the name so two repositories with the same folder name
+    /// are still distinguishable.
+    /// </summary>
+    /// <remarks>
+    /// <b>Beside, not beneath.</b> This said "beneath" for a narrow list that never shipped,
+    /// and the dropdown it is actually in is several hundred pixels wide — stacking the two
+    /// doubled the height of the top bar to say what fits on one line. Corrected after the
+    /// first binding followed the comment rather than the control.
+    /// </remarks>
     public string Location { get; } = System.IO.Path.GetDirectoryName(path) ?? path;
 
     /// <summary><c>origin</c>'s URL when this repository was last opened, or empty.</summary>
@@ -86,6 +97,34 @@ public sealed class BranchEntry(BranchInfo branch)
     public bool IsCurrent { get; } = branch.IsCurrent;
 
     public string Tracking { get; } = branch.Upstream ?? "no upstream";
+
+    /// <summary>
+    /// Where this branch actually lives.
+    /// </summary>
+    /// <remarks>
+    /// The enum, not just the label. The delete flow reconstructed it by comparing
+    /// <see cref="Where"/> against the string <c>"local"</c> — so a change of wording would
+    /// have silently reclassified every branch, and nothing would have failed until somebody
+    /// deleted the wrong thing from a remote.
+    /// </remarks>
+    public BranchExistence Existence { get; } = branch.Existence;
+
+    /// <summary>Where it lives, in a word, for the dropdown.</summary>
+    /// <remarks>
+    /// A word rather than a colour: colour alone is not a label, and "local" and "remote" are
+    /// the difference between work nobody else can see and work not checked out here. Blank for
+    /// the ordinary case of a branch on both sides, because a label on every row is a label
+    /// nobody reads.
+    /// </remarks>
+    public string Where { get; } = branch.Existence switch
+    {
+        BranchExistence.LocalOnly => "local",
+        BranchExistence.RemoteOnly => "remote",
+        _ => string.Empty,
+    };
+
+    /// <summary>True when choosing this creates a local branch.</summary>
+    public bool IsRemoteOnly { get; } = branch.IsRemoteOnly;
 
     public string AheadBehind { get; } =
         branch is { Ahead: 0, Behind: 0 } ? string.Empty : $"↑{branch.Ahead} ↓{branch.Behind}";
@@ -155,6 +194,37 @@ public sealed class ChangeRow(FileChange change) : ObservableObject
 
     public bool IsStaged => _change.IsStaged;
 
+    private bool _isSelected;
+
+    /// <summary>
+    /// Ticked for the next staging action.
+    /// </summary>
+    /// <remarks>
+    /// <b>Not the list selection.</b> Clicking a row opens its diff; ticking its box says what
+    /// the next Stage, Unstage or Discard applies to. Two jobs, two pieces of state — a user
+    /// who lost their diff every time they changed what they were about to stage would stop
+    /// using one of the two.
+    /// <para>
+    /// Survives a refresh because <c>ReconcileInto</c> updates rows in place rather than
+    /// replacing them. Before that, this would have been cleared every time the working tree
+    /// moved.
+    /// </para>
+    /// </remarks>
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set
+        {
+            if (SetProperty(ref _isSelected, value))
+            {
+                SelectionChanged?.Invoke();
+            }
+        }
+    }
+
+    /// <summary>Raised so the owning list can recount without watching every row.</summary>
+    public event Action? SelectionChanged;
+
     /// <summary>
     /// What git says happened to this file, unglyphed.
     /// </summary>
@@ -166,6 +236,92 @@ public sealed class ChangeRow(FileChange change) : ObservableObject
     /// for how it looks.
     /// </remarks>
     public ChangeKind Kind => _change.Effective;
+
+    private NamedObject? _object;
+
+    /// <summary>
+    /// Name this row as the object it was exported from, or as nothing.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Set after the row exists rather than in the constructor, because it has to be. The
+    /// changed-files list is filled from <c>git status</c> and the index is built from the
+    /// manifests, and those land in that order on the first refresh after a repository opens —
+    /// so a row is created with a path and named a moment later. Handing the index to the
+    /// constructor would have shown raw paths until the working tree next moved, which on a
+    /// project nobody is editing is never.
+    /// </para>
+    /// <para>
+    /// Null is the ordinary answer for most of the repository and is not a failure: a file the
+    /// manifest does not describe is shown as its path, never as a guessed object.
+    /// </para>
+    /// </remarks>
+    public void Describe(NamedObject? found)
+    {
+        if (ReferenceEquals(_object, found))
+        {
+            return;
+        }
+
+        _object = found;
+        OnPropertyChanged(nameof(IsObject));
+        OnPropertyChanged(nameof(Primary));
+        OnPropertyChanged(nameof(Secondary));
+        OnPropertyChanged(nameof(TypeLabel));
+        OnPropertyChanged(nameof(IsExportOnly));
+    }
+
+    /// <summary>This row is a PLC object rather than an ordinary file.</summary>
+    public bool IsObject => _object is not null;
+
+    /// <summary>
+    /// The line the eye lands on: the object's name, or the file's.
+    /// </summary>
+    /// <remarks>
+    /// <b>Never the whole path.</b> The panel is 380 px wide and an exported path is routinely
+    /// sixty characters of shared prefix — <c>src/Project/PLC/POU/Applic…</c> on every row,
+    /// trimmed at the tail, hiding the only part that differed. The name is what distinguishes
+    /// one row from the next, so it is what gets the room; the directory is
+    /// <see cref="Secondary"/> and may be elided freely.
+    /// </remarks>
+    public string Primary => _object?.Name ?? FileNameOf(Path);
+
+    /// <summary>Where it lives: the directory, or the whole path when there is no name to lead with.</summary>
+    public string Secondary
+    {
+        get
+        {
+            var slash = Path.LastIndexOf('/');
+            var directory = slash > 0 ? Path[..slash] : string.Empty;
+
+            // An object's file name is not implied by its object name — Glob_Var exports to
+            // Glob_Var.gvl.st AND Glob_Var.gvl.xml, and two rows reading "Glob_Var" over the
+            // same directory would be indistinguishable. The layer is what tells them apart.
+            return _object is not null && directory.Length > 0
+                ? $"{directory}/{FileNameOf(Path)}"
+                : directory.Length > 0
+                    ? directory
+                    : string.Empty;
+        }
+    }
+
+    /// <summary>The type chip beside the name, empty for an ordinary file.</summary>
+    public string TypeLabel => _object?.TypeLabel ?? string.Empty;
+
+    /// <summary>
+    /// Editing this file changes nothing in the project.
+    /// </summary>
+    /// <remarks>
+    /// Library references are exported for review and never applied back, so an edit to one
+    /// sits in the working tree until the next export overwrites it from the project. The row
+    /// says so because this is where somebody is about to stage it, which is why it went here
+    /// rather than onto the tree row the plan originally suggested (§9.3): the tree says what
+    /// an object <i>is</i>, and this list is where a decision is about to be made about it.
+    /// </remarks>
+    public bool IsExportOnly => _object?.IsExportOnly ?? false;
+
+    private static string FileNameOf(string path) =>
+        path.Split('/').LastOrDefault() is { Length: > 0 } name ? name : path;
 }
 
 /// <summary>
@@ -230,6 +386,37 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     private IReadOnlyList<RecentRepository> _recent = [];
 
     private GitCliClient? _git;
+    private readonly RemotePoller _poller;
+
+    /// <summary>True while a question is on screen waiting for an answer.</summary>
+    /// <remarks>
+    /// Suspends the poller. A background fetch landing while somebody is deciding whether to
+    /// stash their work would change the thing they are deciding about.
+    /// </remarks>
+    private bool _modalOpen;
+
+    /// <summary>
+    /// Mark a modal question as being on screen for as long as this is held.
+    /// </summary>
+    /// <remarks>
+    /// A scope rather than a flag set at each call site, because there are six of them and one
+    /// that forgot to clear the flag on an early return would silence the remote watch for the
+    /// rest of the session with nothing to show why.
+    /// </remarks>
+    private ModalScope AskingSomething() => new(this);
+
+    private readonly struct ModalScope : IDisposable
+    {
+        private readonly ShellViewModel _shell;
+
+        public ModalScope(ShellViewModel shell)
+        {
+            _shell = shell;
+            shell._modalOpen = true;
+        }
+
+        public void Dispose() => _shell._modalOpen = false;
+    }
     private RepositoryWatcher? _watcher;
     private string? _repositoryPath;
     private string _branchName = "—";
@@ -249,8 +436,15 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                           IRepositoryProbe? probe = null,
                           IClock? clock = null,
                           Func<PlcVendor, IVersioLogger, IPlcToolchain?>? toolchains = null,
-                          IAppSettingsStore? settings = null)
+                          IAppSettingsStore? settings = null,
+                          IProcessProbe? processes = null)
     {
+        // Injected for the same reason IClock and IRepositoryProbe are. The real probe
+        // requires the process NAME to start with "Versio", so no pid a test can reach ever
+        // looks like a live instance — which would leave §5.G's refusal path the one branch
+        // with no coverage, and it is the branch the whole guard exists for.
+        _processes = processes ?? new ProcessProbe();
+
         _logger = logger;
         Log = log;
         _clock = clock ?? new SystemClock();
@@ -263,6 +457,45 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // records when it started, so a dialog can say how long the user has been waiting
         // rather than only that something is happening.
         Busy = new BusyTracker(_clock, logger);
+
+        // WATCHING THE LISTS THEMSELVES, RATHER THAN EVERY PLACE THAT WRITES TO THEM.
+        //
+        // Two things depend on a staging list changing: the commit button's caption and
+        // enabled state, which are computed from the counts, and the per-row tick subscription
+        // that keeps the header in step. Both used to be arranged by the one method that
+        // happened to build rows - so a row added from anywhere else got neither, and the
+        // caption went stale with nothing to show why.
+        //
+        // Subscribing to the collections instead means a row is tracked because it is IN the
+        // list, not because whoever put it there remembered to say so.
+        Staged.CollectionChanged += OnStagingListChanged;
+        Unstaged.CollectionChanged += OnStagingListChanged;
+
+        // Events, as against the state StatusSummary holds. The two were one property until
+        // now, and the collision was not theoretical - see NotificationCenter's remarks.
+        Notifications = new NotificationCenter(_clock, logger);
+
+        // Keeps the ahead/behind counts honest without anybody asking. It probes with
+        // ls-remote and fetches only when the remote has actually moved - and it NEVER pulls,
+        // because a pull rewrites the project and its mirror under the watcher, which is the
+        // one scenario SAFEGUARDS §5.A calls able to corrupt a project through no user error.
+        _poller = new RemotePoller(
+            logger,
+            _clock,
+            client: () => _git,
+
+            // One shared flag, so a probe cannot compete with a push for the network or the
+            // credential helper, and a modal question is never answered by a background fetch.
+            suspended: () => Busy.IsBusy || _modalOpen,
+            target: PollTarget,
+            onMoved: FetchBecauseTheRemoteMovedAsync,
+            onHalted: reason => OnUi(() => Notifications.Warning(
+                "Not watching the remote any more.", reason)),
+
+            // On the remote watch's schedule rather than a timer of its own, so it inherits the
+            // backoff, the suspension and the halt on a rejected credential. It asks nothing at
+            // all unless the button is actually offering to create a request.
+            onProbed: ProbeMergeRequestAsync);
 
         // The SHELL's tracker, not one of its own.
         //
@@ -291,6 +524,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // toolchain starts rewriting a lock marker a second later. Without this the watcher
         // would keep spending a git status on it until the next repository switch.
         Sync.IgnoredPathsChanged += globs => _watcher?.KnownIgnored(globs);
+
+        // The changed-files list names its rows from the manifests, and the manifests are read
+        // by the tree. Opening a repository refreshes git BEFORE the bindings are loaded, so
+        // the first pass names nothing and the index turns up afterwards from inside
+        // AttachAsync — a path this panel never hears about otherwise. Measured: without this
+        // every row showed a raw path until the working tree next moved.
+        Sync.ObjectsChanged += DescribeRows;
 
         // And the same for the history: the panel decides what was picked, this decides how
         // it is rendered. Keeping the render here is what stops a second diff pane growing
@@ -487,6 +727,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 ? "no longer on disk" : "no longer a git repository")}");
 
         var record = target.ToRecord(target.LastOpenedUtc ?? _clock.UtcNow);
+        using var asking = AskingSomething();
         var choice = AskAboutMissingRepository?.Invoke(MissingRepository.Prompt(record, why))
                      ?? MissingRepositoryChoice.Cancel;
 
@@ -644,6 +885,19 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         BranchName = "—";
         AheadBehind = string.Empty;
+        Standing = RemoteStanding.None;
+        _hasRemote = false;
+        _remote = RemoteUrl.None;
+        AuthState = GitAuthState.Fine;
+
+        // The poller is about a repository that is no longer open. Resume clears the halt as
+        // well, so a credential problem on the last one does not silence the next.
+        _poller.Stop();
+        _poller.Resume();
+
+        // These notifications are about a repository that is no longer open. Keeping them
+        // would attach a failed push to whatever is opened next.
+        Notifications.Clear();
         StatusSummary = "Opening…";
         _lastRefreshUtc = null;
         LastRefreshText = string.Empty;
@@ -846,6 +1100,24 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>Panel currently selected in the rail.</summary>
+    /// <summary>
+    /// Wake the remote watch: somebody is here.
+    /// </summary>
+    /// <remarks>
+    /// The backoff exists to stop polling for nobody. Any deliberate git action, or opening the
+    /// panel, means there is a somebody — and the counts should be as live as they were at the
+    /// start rather than on a sixty-second cadence inherited from an idle hour.
+    /// </remarks>
+    private void WakeThePoller() => _poller.Wake();
+
+    /// <summary>The remote watch, so a test can assert what this shell wired into it.</summary>
+    /// <remarks>
+    /// Internal for the same reason <c>IgnoredPaths()</c> is: trusting that a callback written
+    /// in this file reaches an object constructed in this file is exactly the assumption that
+    /// has been wrong three times here.
+    /// </remarks>
+    internal RemotePoller Poller => _poller;
+
     public ShellPanel ActivePanel
     {
         get => _activePanel;
@@ -863,6 +1135,15 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             // that happens. Everything else here is already loaded by the time the rail
             // can switch to it.
             History.IsVisible = value == ShellPanel.History;
+
+            // Somebody has come to look at the remote, so watch it closely again. The backoff
+            // exists to stop polling for nobody; opening this panel is the clearest possible
+            // evidence that there is a somebody, and stale counts are exactly what they came
+            // to read.
+            if (value == ShellPanel.Git)
+            {
+                WakeThePoller();
+            }
         }
     }
 
@@ -901,11 +1182,233 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref _aheadBehind, value);
     }
 
+    private RemoteStanding _standing = RemoteStanding.None;
+    private bool _hasRemote;
+
+    /// <summary>
+    /// Where this branch stands in relation to the remote, in words.
+    /// </summary>
+    /// <remarks>
+    /// Replaces reading the two arrows. <see cref="AheadBehind"/> survives for the branch
+    /// dropdown, where a compact glyph beside a name is the right shape; the panel itself now
+    /// says what the numbers mean, because that is the question people open it to answer.
+    /// </remarks>
+    public RemoteStanding Standing
+    {
+        get => _standing;
+        private set
+        {
+            if (SetProperty(ref _standing, value))
+            {
+                OnPropertyChanged(nameof(PushLabel));
+                OnPropertyChanged(nameof(PullLabel));
+                OnPropertyChanged(nameof(ShowPublish));
+                OnPropertyChanged(nameof(ShowPush));
+                RaiseGitCommandStates();
+            }
+        }
+    }
+
+    /// <summary>Push and Publish swap places: they are different operations, so only one is
+    /// offered at a time rather than one button meaning two things.</summary>
+    public bool ShowPublish => _standing.CanPublish;
+
+    public bool ShowPush => !_standing.CanPublish;
+
+    /// <summary>The count on the label, where it informs without gating.</summary>
+    public string PushLabel => "Push" + _standing.PushCountSuffix;
+
+    public string PullLabel => "Pull" + _standing.PullCountSuffix;
+
+    // ----------------------------------------------------------- credentials (plan §12c)
+
+    private RemoteUrl _remote = RemoteUrl.None;
+    private GitAuthState _authState = GitAuthState.Fine;
+
+    /// <summary>
+    /// What stands between this machine and the remote, as far as identity is concerned.
+    /// </summary>
+    /// <remarks>
+    /// Set from a proactive check when a repository opens, and from the classification of any
+    /// network operation that fails. Cleared the moment one succeeds — a stale "sign in needed"
+    /// banner above a working remote is worse than none.
+    /// </remarks>
+    public GitAuthState AuthState
+    {
+        get => _authState;
+        private set
+        {
+            if (SetProperty(ref _authState, value))
+            {
+                OnPropertyChanged(nameof(AuthExplanation));
+                OnPropertyChanged(nameof(NeedsAttentionForAuth));
+                OnPropertyChanged(nameof(CanSignIn));
+                SignInCommand.RaiseCanExecuteChanged();
+                SignOutCommand.RaiseCanExecuteChanged();
+        DeleteBranchesCommand.RaiseCanExecuteChanged();
+        ResolveCommand.RaiseCanExecuteChanged();
+        AbortMergeCommand.RaiseCanExecuteChanged();
+        ReconcileCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    /// <summary>The host the credential belongs to, for the sentence and the lookup.</summary>
+    public string RemoteHost => _remote.Host;
+
+    public string AuthExplanation => GitAuthClassifier.Explain(_authState, _remote.Host);
+
+    /// <summary>True whenever there is something to say about credentials.</summary>
+    public bool NeedsAttentionForAuth => _authState is not GitAuthState.Fine;
+
+    /// <summary>
+    /// True only when signing in could plausibly help.
+    /// </summary>
+    /// <remarks>
+    /// <b>False for a 403 and for an SSH key refusal.</b> Both read like authentication
+    /// failures and neither is one: a 403 means the credential worked and the account lacks
+    /// access, and SSH has no credential helper at all. Offering the button on either is
+    /// offering something that cannot work — and in the 403 case it is a loop that cannot
+    /// terminate.
+    /// </remarks>
+    public bool CanSignIn =>
+        _remote.UsesCredentialHelper && GitAuthClassifier.SignInWouldHelp(_authState);
+
+    public AsyncCommand SignInCommand { get; private set; } = null!;
+
+    public AsyncCommand SignOutCommand { get; private set; } = null!;
+
+    /// <summary>
+    /// What just happened, as against what is currently true.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="StatusSummary"/> keeps only durable state now - "3 changed", "No changes".
+    /// Every result of an operation goes here instead, which is why a refresh can no longer
+    /// overwrite the answer to what the user just pressed.
+    /// </remarks>
+    public NotificationCenter Notifications { get; }
+
     public string StatusSummary
     {
         get => _statusSummary;
         private set => SetProperty(ref _statusSummary, value);
     }
+
+    // ------------------------------------------------------- git's own health (plan §12a/§12b)
+
+    private GitPresence _gitPresence = GitPresence.Unknown;
+    private GitIdentity _identity = GitIdentity.None;
+
+    /// <summary>
+    /// Whether the git everything runs through is actually there.
+    /// </summary>
+    /// <remarks>
+    /// Probed once at launch by <see cref="ProbeGitAsync"/> rather than on first use, so a
+    /// machine without git is told in a sentence instead of discovering it as an exception from
+    /// somewhere deep. Starts <see cref="GitPresence.Unknown"/>, which is not
+    /// <c>Missing</c> — see that type.
+    /// </remarks>
+    public GitPresence GitPresence
+    {
+        get => _gitPresence;
+        private set
+        {
+            if (SetProperty(ref _gitPresence, value))
+            {
+                OnPropertyChanged(nameof(GitIsMissing));
+                OnPropertyChanged(nameof(GitPresenceExplanation));
+            }
+        }
+    }
+
+    /// <summary>True only once the probe has come back and said no.</summary>
+    public bool GitIsMissing => _gitPresence.Availability == GitAvailability.Missing;
+
+    public string GitPresenceExplanation => _gitPresence.Explanation;
+
+    /// <summary>
+    /// Who git will attribute a commit to in the open repository.
+    /// </summary>
+    /// <remarks>
+    /// Read at open, and again after the user sets it. <see cref="CanCommit"/> gates on it, so
+    /// the export gate never runs a 17–31 second CODESYS export for a commit that git was
+    /// always going to refuse.
+    /// </remarks>
+    public GitIdentity Identity
+    {
+        get => _identity;
+        private set
+        {
+            if (SetProperty(ref _identity, value))
+            {
+                OnPropertyChanged(nameof(IdentityIsMissing));
+                OnPropertyChanged(nameof(IdentityExplanation));
+                IdentityName = value.Name;
+                IdentityEmail = value.Email;
+                RaiseGitCommandStates();
+            }
+        }
+    }
+
+    /// <summary>True when a repository is open and git could not name a committer.</summary>
+    /// <remarks>
+    /// Gated on having a repository, because with none open there is nothing to be missing an
+    /// identity <i>for</i>, and a prompt on an empty shell is noise.
+    /// </remarks>
+    public bool IdentityIsMissing => _git is not null && !_identity.IsComplete;
+
+    public string IdentityExplanation => _identity.Explanation;
+
+    private string _identityName = string.Empty;
+    private string _identityEmail = string.Empty;
+    private bool _identityGlobal;
+
+    /// <summary>Edit buffer for the name field. Separate from <see cref="Identity"/> so typing
+    /// does not claim to have configured anything until Save is pressed.</summary>
+    public string IdentityName
+    {
+        get => _identityName;
+        set
+        {
+            if (SetProperty(ref _identityName, value))
+            {
+                SaveIdentityCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public string IdentityEmail
+    {
+        get => _identityEmail;
+        set
+        {
+            if (SetProperty(ref _identityEmail, value))
+            {
+                OnPropertyChanged(nameof(IdentityEmailLooksWrong));
+                SaveIdentityCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Write to the global config as well as this repository.
+    /// </summary>
+    /// <remarks>
+    /// Off by default. A work machine carrying a personal global identity is a common and
+    /// annoying way to attribute commits to the wrong person, and the repository in front of
+    /// the user is the one they are answering about.
+    /// </remarks>
+    public bool IdentityGlobal
+    {
+        get => _identityGlobal;
+        set => SetProperty(ref _identityGlobal, value);
+    }
+
+    /// <summary>Advisory: the address does not have the shape of one. Never blocks Save.</summary>
+    public bool IdentityEmailLooksWrong =>
+        _identityEmail.Length > 0 && !GitIdentity.From(_identityName, _identityEmail).LooksLikeEmail;
+
+    public AsyncCommand SaveIdentityCommand { get; private set; } = null!;
 
     public string SelectedDiff
     {
@@ -1065,6 +1568,79 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     public event Action<RepositoryLocation>? RepositoryRejected;
 
     /// <summary>
+    /// A repository another Versio already has open, with the sentence to show.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="RepositoryRejected"/> because it is not a rejection of the
+    /// folder: the repository is perfectly good and will open the moment the other window lets
+    /// go. Reusing that event would have meant inventing a <c>RepositoryKind</c> for a state
+    /// that is about this machine rather than about the folder.
+    /// </remarks>
+    public event Action<string>? RepositoryBusyElsewhere;
+
+    /// <summary>The marker store for the repository this window has open, if any.</summary>
+    private JsonSessionMarkerStore? _session;
+
+    /// <summary>This machine and this process, for the §5.G presence marker.</summary>
+    private readonly MachineIdentity _machine = new();
+
+    /// <summary>How this window decides whether another Versio is really running.</summary>
+    private readonly IProcessProbe _processes;
+
+    /// <summary>
+    /// Take the repository for this window, or refuse because another Versio has it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Every failure mode here resolves to "open it".</b> An unreadable marker, an
+    /// unwritable one, a crashed session, a marker from before the last restart — all of them
+    /// mean nobody is really there. The guard exists to stop two live orchestrators, not to
+    /// make a repository unusable because a file could not be written.
+    /// </para>
+    /// <para>
+    /// The previous repository is released first. Switching from A to B and back must not find
+    /// A still claimed by this same window.
+    /// </para>
+    /// </remarks>
+    private bool ClaimRepository(string path)
+    {
+        var store = new JsonSessionMarkerStore(path, _logger);
+        var verdict = RepositoryPresence.Evaluate(store.Read(), _machine, _processes);
+
+        if (!verdict.CanOpen)
+        {
+            _logger.Warn(LogCategory.App, $"{path}: {verdict.Explanation}");
+            StatusSummary = "Already open in another Versio window";
+            RepositoryBusyElsewhere?.Invoke(verdict.Explanation);
+            return false;
+        }
+
+        if (verdict.Availability is RepositoryAvailability.Free &&
+            verdict.Explanation.Length > 0)
+        {
+            // "the session that left it is gone", "from before the last restart". Worth a line:
+            // it is the difference between a clean open and one that stepped over somebody
+            // else's leftovers, and it is the only place that is ever said.
+            _logger.Info(LogCategory.App, $"{path}: {verdict.Explanation}");
+        }
+
+        ReleaseRepository();
+
+        _session = store;
+        store.Write(RepositoryPresence.MarkerFor(
+            _machine, RepositoryPresence.SessionIdOf(_machine), _clock.UtcNow));
+
+        return true;
+    }
+
+    /// <summary>Give up the claim on whatever this window had open.</summary>
+    private void ReleaseRepository()
+    {
+        _session?.Release(RepositoryPresence.SessionIdOf(_machine));
+        _session = null;
+    }
+
+    /// <summary>
     /// Open a repository by path.
     /// </summary>
     /// <remarks>
@@ -1124,6 +1700,18 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         rows.Add(Views.SystemInfoRow.Section("GIT"));
         rows.Add(new Views.SystemInfoRow("Version", await GitVersionAsync(ct).ConfigureAwait(true)));
+
+        // Which git, not just which version. A machine can carry a Git for Windows install, one
+        // inside a vendor toolchain and one on a build agent's PATH; they all answer --version
+        // and only one of them has the credentials. Blank until the launch probe has resolved
+        // it, and blank is not a failure - see GitPresence.ExecutablePath.
+        rows.Add(new Views.SystemInfoRow("Path",
+            GitPresence.ExecutablePath.Length > 0 ? GitPresence.ExecutablePath : "not resolved"));
+
+        rows.Add(new Views.SystemInfoRow("Commits as",
+            _identity.IsComplete
+                ? $"{_identity.Name} <{_identity.Email}>"
+                : _identity.Explanation));
 
         rows.Add(Views.SystemInfoRow.Section("RUNTIME"));
         rows.Add(new Views.SystemInfoRow(".NET",
@@ -1193,6 +1781,21 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return false;
         }
 
+        // ONE REPOSITORY, ONE VERSIO — safeguards §5.G.
+        //
+        // Two instances on one repository means two orchestrators writing repo.json and
+        // state.json over each other, and until now nothing stopped it: the only signal was
+        // LockRecovery.HeldByLiveSession, which promised "opening read-only" that nothing
+        // implemented AND only fired for a binding that happened to hold a lock.
+        //
+        // Checked here, after git has agreed it will work in this folder and before anything
+        // attaches: refusing later would mean tearing down a watcher and an orchestrator that
+        // had already started writing.
+        if (!ClaimRepository(path))
+        {
+            return false;
+        }
+
         // Past every refusal, so the switch is certain. Everything on screen belongs to the
         // repository being left, and this is the last moment at which that is still true.
         ResetForRepositoryChange(_repositoryPath, path);
@@ -1216,10 +1819,33 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         await RememberAsync(path, remoteUrl).ConfigureAwait(true);
 
+        // Before the first refresh, and long before anything can be committed, so the panel
+        // can say "git needs a name" while the user is still looking at an empty commit box
+        // rather than after a 17-31 s export has run for a commit git will refuse.
+        await LoadIdentityAsync(busy.Token).ConfigureAwait(true);
+
+        // Whether there is anywhere to push at all. Read here rather than in the refresh for
+        // the reason above, and before the first refresh so the very first Standing computed
+        // is already right - otherwise a repository with a remote would flash "no remote
+        // configured" for one frame on every open.
+        _hasRemote = (await client.RemotesAsync(busy.Token).ConfigureAwait(true)).Count > 0;
+
+        // The remote's shape decides what a credential failure will mean, so it is parsed once
+        // here rather than re-derived at each failure. remoteUrl was already read above for
+        // the recent-repositories list.
+        _remote = RemoteUrl.Parse(remoteUrl);
+        OnPropertyChanged(nameof(RemoteHost));
+
+        await CheckCredentialAsync(busy.Token).ConfigureAwait(true);
+
         RefreshCommand.RaiseCanExecuteChanged();
 
         // Watch before the first refresh, so a change landing during it is not missed.
         StartWatching(path);
+
+        // Only once there is something to watch. Start is idempotent, and PollTarget returns
+        // nothing until a Standing with an upstream has been computed.
+        _poller.Start();
 
         await RefreshCoreAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
 
@@ -1391,13 +2017,343 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// <summary>Files changed in the working tree but not staged.</summary>
     public ObservableCollection<ChangeRow> Unstaged { get; } = [];
 
+    // ------------------------------------------------------- per-file selection (plan §4)
+
+    /// <summary>How many staged rows are ticked.</summary>
+    public int StagedSelectedCount => Staged.Count(r => r.IsSelected);
+
+    public int UnstagedSelectedCount => Unstaged.Count(r => r.IsSelected);
+
+    /// <summary>
+    /// The staged list's master checkbox, three-state.
+    /// </summary>
+    /// <remarks>
+    /// Nullable bool because that is what WPF's <c>IsThreeState</c> reads: null is the
+    /// indeterminate middle. Setting it ticks or clears the whole list; the indeterminate value
+    /// is only ever produced, never accepted, because "set this to partially ticked" has no
+    /// meaning.
+    /// </remarks>
+    public bool? StagedAllSelected
+    {
+        get => ToCheck(StagingSelection.StateFor(Staged.Count, StagedSelectedCount));
+        set => SetAll(Staged, value == true);
+    }
+
+    public bool? UnstagedAllSelected
+    {
+        get => ToCheck(StagingSelection.StateFor(Unstaged.Count, UnstagedSelectedCount));
+        set => SetAll(Unstaged, value == true);
+    }
+
+    /// <summary>"3 of 12 selected", or nothing when nothing is ticked.</summary>
+    public string StagedSelectionCaption =>
+        StagingSelection.Caption(Staged.Count, StagedSelectedCount);
+
+    public string UnstagedSelectionCaption =>
+        StagingSelection.Caption(Unstaged.Count, UnstagedSelectedCount);
+
+    /// <summary>
+    /// What the commit button will do right now.
+    /// </summary>
+    /// <remarks>
+    /// Recomputed whenever the lists or the ticks move. The three behaviours it covers are why
+    /// the panel no longer carries a <c>Commit</c> and a <c>Commit &amp; Push</c>: push is its
+    /// own act in the remote row, and what is left is a commit that also does the step people
+    /// forget.
+    /// </remarks>
+    public CommitPlan Commit =>
+        CommitPlan.For(Staged.Count, Unstaged.Count, UnstagedSelectedCount);
+
+    /// <summary>Why the commit button is dead, or empty when it is live.</summary>
+    /// <remarks>
+    /// Bound to the button's tooltip with <c>ToolTipService.ShowOnDisabled</c>, because WPF
+    /// hides a tooltip on a disabled control by default — so without it the one moment the
+    /// explanation is wanted is the one moment it cannot be seen.
+    /// </remarks>
+    public string CommitBlockedReason =>
+        Commit.BlockedReason(
+            hasMessage: !string.IsNullOrWhiteSpace(CommitMessage),
+            hasIdentity: _identity.IsComplete,
+            hasConflicts: HasConflicts);
+
+    /// <summary>What the commit button will do, live or not.</summary>
+    public string CommitExplanation =>
+        CommitBlockedReason.Length > 0 ? CommitBlockedReason : Commit.Explanation;
+
+    /// <summary>
+    /// True while git reports an unmerged path.
+    /// </summary>
+    /// <remarks>
+    /// Read from the last status. The panel's conflict <i>surface</i> is GP-G and is not built;
+    /// what is here is the gate, because committing over a conflict is refused by git anyway
+    /// and a button that says why beats one that fails.
+    /// </remarks>
+    public bool HasConflicts => Changes.Any(c => c.Kind == ChangeKind.Conflicted);
+
+    // ------------------------------------------------------- conflicts (plan §6, §9b)
+
+    private MergeState _mergeState = MergeState.None;
+
+    /// <summary>Whether a merge or rebase is part-way through.</summary>
+    /// <remarks>
+    /// Read from git's own marker files, not inferred from unmerged paths. Resolving every
+    /// conflict leaves the tree clean while the merge is still <i>in progress</i>, and a panel
+    /// that read "no conflicts" as "nothing happening" would offer a plain commit for what is
+    /// the conclusion of a merge.
+    /// </remarks>
+    public MergeState MergeState
+    {
+        get => _mergeState;
+        private set
+        {
+            if (SetProperty(ref _mergeState, value))
+            {
+                OnPropertyChanged(nameof(IsMidMerge));
+                OnPropertyChanged(nameof(ConflictHeadline));
+                RaiseGitCommandStates();
+            }
+        }
+    }
+
+    public bool IsMidMerge => _mergeState is not MergeState.None;
+
+    /// <summary>The conflicted paths, as their own section.</summary>
+    /// <remarks>
+    /// Not "staged" and not "not staged" — they are <i>stuck</i>, and putting them in either
+    /// list would misrepresent what git will do with them. A third section is the honest shape.
+    /// </remarks>
+    public ObservableCollection<ChangeRow> Conflicted { get; } = [];
+
+    /// <summary>What is wrong and what to do, in one line.</summary>
+    public string ConflictHeadline
+    {
+        get
+        {
+            var count = Conflicted.Count;
+
+            if (count > 0)
+            {
+                var what = _mergeState == MergeState.Rebasing ? "rebase" : "merge";
+                return count == 1
+                    ? $"1 file conflicts. Resolve it, then finish the {what}."
+                    : $"{count} files conflict. Resolve them, then finish the {what}.";
+            }
+
+            return _mergeState switch
+            {
+                MergeState.Merging => "Every conflict is resolved. Commit to finish the merge.",
+                MergeState.Rebasing => "Every conflict is resolved. Continue the rebase.",
+                _ => string.Empty,
+            };
+        }
+    }
+
+    /// <summary>Take this side of the selected conflict.</summary>
+    public AsyncCommand<bool> ResolveCommand { get; private set; } = null!;
+
+    /// <summary>Undo the merge or rebase entirely.</summary>
+    public AsyncCommand AbortMergeCommand { get; private set; } = null!;
+
+    /// <summary>The way out of a diverged branch that a fast-forward pull cannot take.</summary>
+    public AsyncCommand<bool> ReconcileCommand { get; private set; } = null!;
+
+    private ChangeRow? _selectedConflict;
+
+    public ChangeRow? SelectedConflict
+    {
+        get => _selectedConflict;
+        set
+        {
+            if (SetProperty(ref _selectedConflict, value))
+            {
+                ResolveCommand.RaiseCanExecuteChanged();
+
+                if (value is not null)
+                {
+                    _ = ShowPathAsync(value.Path, staged: false);
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------- branches (plan §7)
+
+    private DefaultBranch _defaultBranch = DefaultBranch.None;
+
+    /// <summary>
+    /// Which branch this repository treats as its trunk.
+    /// </summary>
+    /// <remarks>
+    /// Nothing in the codebase knew until now, and two things need it: deleting the branch you
+    /// are standing on has to check something else out first, and a merge request has to name a
+    /// target. Resolved down a ladder that ends in a refusal rather than a guess.
+    /// </remarks>
+    public DefaultBranch DefaultBranch
+    {
+        get => _defaultBranch;
+        private set
+        {
+            if (SetProperty(ref _defaultBranch, value))
+            {
+                OnPropertyChanged(nameof(DefaultBranchName));
+                RaiseGitCommandStates();
+            }
+        }
+    }
+
+    public string DefaultBranchName => _defaultBranch.Name;
+
+    private int? _requestNumber;
+    private BranchInfo? _branch;
+
+    /// <summary>
+    /// Which hosting product this repository's remote belongs to.
+    /// </summary>
+    /// <remarks>
+    /// <b>Derived on each read rather than resolved once at open, and that is the point.</b> The
+    /// obvious version caches it beside <c>_remote</c> when the repository opens — but
+    /// <c>repo.json</c> is loaded by <c>Sync.AttachAsync</c>, which runs <i>after</i> that, so
+    /// a repository whose forge is only knowable from its config would have cached Unknown and
+    /// shown no button until the next repository switch. That is the same ordering trap the
+    /// object index hit; there it needed an event, and here it needs nothing at all, because
+    /// this is an enum switch over two fields and costs less than the notification would.
+    /// </remarks>
+    private ForgeKind Forge => Core.Git.Forge.Detect(_remote, Sync.ConfiguredForge);
+
+    /// <summary>
+    /// The merge-request button: whether it is there, what it says, and where it goes.
+    /// </summary>
+    /// <remarks>
+    /// Computed rather than stored, exactly like <see cref="Commit"/>: it is a function of the
+    /// branch, the remote standing, the trunk and whether the tree is clean, and every one of
+    /// those already raises when it moves. A stored copy would be a fifth thing to keep in step.
+    /// </remarks>
+    public MergeRequestPlan MergeRequest => MergeRequestPlan.For(
+        Forge,
+        _remote,
+        _branch,
+        Standing.State,
+        DefaultBranch,
+        _treeIsDirty,
+        _requestNumber);
+
+    /// <summary>
+    /// Anything staged, unstaged or conflicted, as of the last refresh.
+    /// </summary>
+    /// <remarks>
+    /// <b>A captured flag rather than three <c>Count</c> reads, because this is read off the UI
+    /// thread.</b> The remote watch calls <see cref="ProbeMergeRequestAsync"/> on its own loop
+    /// and that consults <see cref="MergeRequest"/> — so reading an
+    /// <see cref="ObservableCollection{T}"/> there would be racing the UI thread's own
+    /// <c>Insert</c> and <c>RemoveAt</c> as the lists reconcile. Set where the lists are set,
+    /// which is the only place it can change.
+    /// </remarks>
+    private bool _treeIsDirty;
+
+    /// <summary>
+    /// What the merge-request button will do, or why it cannot.
+    /// </summary>
+    /// <remarks>
+    /// One binding for both states, because a tooltip that went empty when the button went live
+    /// would take the explanation away at the moment somebody is deciding whether to press it.
+    /// Live, it says where the click goes — which is worth reading before opening a browser.
+    /// </remarks>
+    public string MergeRequestTooltip => MergeRequest.BlockedReason.Length > 0
+        ? MergeRequest.BlockedReason
+        : MergeRequest.Url;
+
+    /// <summary>Open the delete-branches dialog.</summary>
+    public AsyncCommand DeleteBranchesCommand { get; private set; } = null!;
+
+    /// <summary>
+    /// Asks the view to run the delete dialog, returning what the user chose or null.
+    /// </summary>
+    /// <remarks>
+    /// The same shape every other dialog here uses: the view model supplies the candidates and
+    /// performs the deletion, the view supplies the window. Unset means "no", which is the
+    /// right way round for a wiring mistake on a destructive operation.
+    /// </remarks>
+    public Func<IReadOnlyList<BranchCandidate>, DeletePlan?>? PromptForBranchDeletion { get; set; }
+
+    /// <summary>Button labels that say what will happen, not what the button is called.</summary>
+    public string StageLabel =>
+        StagingSelection.Label("Stage", Unstaged.Count, UnstagedSelectedCount);
+
+    public string UnstageLabel =>
+        StagingSelection.Label("Unstage", Staged.Count, StagedSelectedCount);
+
+    public string DiscardLabel =>
+        StagingSelection.Label("Discard", Unstaged.Count, UnstagedSelectedCount);
+
+    private static bool? ToCheck(SelectionState state) => state switch
+    {
+        SelectionState.All => true,
+        SelectionState.Some => null,
+        _ => false,
+    };
+
+    private void SetAll(ObservableCollection<ChangeRow> rows, bool selected)
+    {
+        foreach (var row in rows)
+        {
+            row.IsSelected = selected;
+        }
+
+        RaiseSelectionState();
+    }
+
+    /// <summary>
+    /// The rows an action applies to: the ticked ones, or all of them when none are.
+    /// </summary>
+    /// <remarks>
+    /// What makes "Stage all" and "Stage selected" one button. The label carries the difference
+    /// so nobody presses it expecting the other meaning.
+    /// </remarks>
+    private static IReadOnlyList<ChangeRow> Chosen(ObservableCollection<ChangeRow> rows)
+    {
+        var ticked = rows.Where(r => r.IsSelected).ToList();
+        return ticked.Count > 0 ? ticked : [.. rows];
+    }
+
+    /// <summary>Recount after anything that could have changed a tick.</summary>
+    private void RaiseSelectionState()
+    {
+        OnPropertyChanged(nameof(StagedSelectedCount));
+        OnPropertyChanged(nameof(UnstagedSelectedCount));
+        OnPropertyChanged(nameof(StagedAllSelected));
+        OnPropertyChanged(nameof(UnstagedAllSelected));
+        OnPropertyChanged(nameof(StagedSelectionCaption));
+        OnPropertyChanged(nameof(UnstagedSelectionCaption));
+        OnPropertyChanged(nameof(StageLabel));
+        OnPropertyChanged(nameof(UnstageLabel));
+        OnPropertyChanged(nameof(DiscardLabel));
+        RaiseCommitState();
+        RaiseGitCommandStates();
+    }
+
     public AsyncCommand StageCommand { get; private set; } = null!;
     public AsyncCommand UnstageCommand { get; private set; } = null!;
+    /// <summary>
+    /// Stage what the panel says it will, then commit.
+    /// </summary>
+    /// <remarks>
+    /// <b><c>CommitAndPushCommand</c> is gone.</b> It bundled two operations with different
+    /// failure modes into one button, and its failure story was the worst in the panel: the
+    /// commit succeeds, the push fails, and one message has to describe both. Push is a
+    /// deliberate act of its own now, in the remote row where the ahead-count already lives.
+    /// </remarks>
     public AsyncCommand CommitCommand { get; private set; } = null!;
-    public AsyncCommand CommitAndPushCommand { get; private set; } = null!;
     public AsyncCommand PullCommand { get; private set; } = null!;
     public AsyncCommand PushCommand { get; private set; } = null!;
     public AsyncCommand FetchCommand { get; private set; } = null!;
+
+    /// <summary>Put a branch on the remote for the first time.</summary>
+    /// <remarks>
+    /// Separate from <see cref="PushCommand"/> because it is a separate operation: a plain
+    /// push on a branch with no upstream fails outright, so folding the two together would
+    /// give one button two meanings and a failure that only appears sometimes.
+    /// </remarks>
+    public AsyncCommand PublishCommand { get; private set; } = null!;
 
     private string _commitMessage = string.Empty;
 
@@ -1417,8 +2373,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             if (SetProperty(ref _commitMessage, value))
             {
                 OnPropertyChanged(nameof(CommitSubjectLength));
+                RaiseCommitState();
                 CommitCommand.RaiseCanExecuteChanged();
-                CommitAndPushCommand.RaiseCanExecuteChanged();
+
+                // The draft is offered only into an empty box, so typing the first character
+                // withdraws it and clearing the box offers it again.
+                DraftCommitMessageCommand.RaiseCanExecuteChanged();
             }
         }
     }
@@ -1427,28 +2387,300 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     public int CommitSubjectLength =>
         (_commitMessage.Split('\n').FirstOrDefault() ?? string.Empty).TrimEnd('\r').Length;
 
+    private string _changeSummary = string.Empty;
+
+    /// <summary>
+    /// What the commit button is about to record, in one sentence about objects.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>It describes what will be committed, not what changed.</b> Those differ the moment
+    /// anything is staged, and a line above the button that counted the whole working tree
+    /// while the button beside it said <c>Commit</c> — staged only — would be two controls
+    /// disagreeing about the same press. The set comes from <see cref="Commit"/>, so there is
+    /// one answer to "what is about to happen" and the caption and this sentence are both
+    /// reading it.
+    /// </para>
+    /// <para>
+    /// Empty when nothing about to be committed belongs to a PLC project, and the line is
+    /// hidden rather than showing a count of files the list is already showing.
+    /// </para>
+    /// </remarks>
+    public string ChangeSummaryLine
+    {
+        get => _changeSummary;
+        private set
+        {
+            if (SetProperty(ref _changeSummary, value))
+            {
+                OnPropertyChanged(nameof(HasChangeSummary));
+            }
+        }
+    }
+
+    /// <summary>There is something to say about objects. Hides the line when there is not.</summary>
+    public bool HasChangeSummary => _changeSummary.Length > 0;
+
+    /// <summary>Fill the message box with a subject built from the objects.</summary>
+    public RelayCommand DraftCommitMessageCommand { get; private set; } = null!;
+
+    /// <summary>
+    /// The changed files the commit button is about to record.
+    /// </summary>
+    /// <remarks>
+    /// Reads <see cref="Commit"/> rather than reimplementing its three cases. The export gate
+    /// may stage more than this — it exports and stages a mirror before any commit — and that
+    /// is deliberately not modelled here for the reason <see cref="CommitPlan"/> gives: this
+    /// answers what the user asked for.
+    /// </remarks>
+    private IReadOnlyList<FileChange> Committing()
+    {
+        IEnumerable<string> paths = Commit.Intent switch
+        {
+            CommitIntent.CommitStaged => Staged.Select(r => r.Path),
+            CommitIntent.StageTickedThenCommit => Staged.Select(r => r.Path)
+                .Concat(Unstaged.Where(r => r.IsSelected).Select(r => r.Path)),
+            CommitIntent.StageAllThenCommit => Staged.Select(r => r.Path)
+                .Concat(Unstaged.Select(r => r.Path)),
+            _ => [],
+        };
+
+        var wanted = paths.ToHashSet(StringComparer.Ordinal);
+        return [.. _lastChanges.Where(c => wanted.Contains(c.Path))];
+    }
+
+    /// <summary>
+    /// Name every row from the current index, and restate what is about to be committed.
+    /// </summary>
+    /// <remarks>
+    /// Called after the staging lists move and again after the tree refresh that rebuilds the
+    /// index, because those land in that order: the lists come from <c>git status</c> and the
+    /// index from the manifests behind it. On the first refresh after a repository opens the
+    /// first pass names nothing and the second names everything; on every refresh after that
+    /// the index is already current and the first pass does the work.
+    /// </remarks>
+    private void DescribeRows()
+    {
+        var index = Sync.Objects;
+
+        foreach (var row in Conflicted.Concat(Staged).Concat(Unstaged))
+        {
+            row.Describe(index.Lookup(row.Path));
+        }
+
+        ChangeSummaryLine = ChangeSummary.Sentence(Committing(), index);
+        DraftCommitMessageCommand.RaiseCanExecuteChanged();
+    }
+
+    /// <summary>
+    /// Fill the box with a drafted subject, without overwriting anything typed.
+    /// </summary>
+    /// <remarks>
+    /// <b>Refuses rather than replaces.</b> The button is disabled once the box has anything in
+    /// it, so there is no press that can lose a half-written message — an "are you sure" over
+    /// somebody's own words is a worse answer than not offering the action. Clearing the box
+    /// makes the draft available again.
+    /// </remarks>
+    private void DraftCommitMessage()
+    {
+        var subject = ChangeSummary.DraftSubject(Committing(), Sync.Objects);
+        if (subject.Length == 0)
+        {
+            return;
+        }
+
+        _logger.Click("Git.DraftMessage");
+        CommitMessage = subject;
+        _logger.Info(LogCategory.Git, $"drafted commit subject: {subject}");
+    }
+
+    private bool CanDraftCommitMessage() =>
+        CommitMessage.Trim().Length == 0 &&
+        ChangeSummary.DraftSubject(Committing(), Sync.Objects).Length > 0;
+
+    /// <summary>Open this branch's merge request, or the page for creating one.</summary>
+    public RelayCommand OpenMergeRequestCommand { get; private set; } = null!;
+
+    /// <summary>
+    /// Open the forge page in the user's browser.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Opened, never submitted.</b> The URL carries the source and target branches already
+    /// chosen; a human presses Create in the forge's own interface. Nothing outward-facing
+    /// happens on Versio's say-so, and there is no code path here that posts anything.
+    /// </para>
+    /// <para>
+    /// <c>UseShellExecute</c> so Windows picks the default browser. The URL is built by
+    /// <see cref="Forge"/> from a parsed remote and a branch name — never from anything typed —
+    /// and the plan hands back an empty string rather than a guess, which is why this can
+    /// refuse on emptiness alone.
+    /// </para>
+    /// </remarks>
+    private void OpenMergeRequest()
+    {
+        var plan = MergeRequest;
+        if (!plan.CanOpen)
+        {
+            return;
+        }
+
+        _logger.Click("Git.MergeRequest");
+
+        // Logged whole, and safe to be: this URL is assembled from a parsed RemoteUrl, and
+        // RemoteUrl drops any embedded user:password before it records the host — precisely so
+        // credentials cannot reach a log line, a browser URL or a credential lookup key. There
+        // is no path by which one arrives here.
+        _logger.Info(LogCategory.Git, $"opening {plan.Url}");
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(plan.Url) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            // A machine with no browser association, or a policy that blocks the launch. The
+            // URL is the whole value here, so the failure card carries it: somebody can paste
+            // it themselves and is no worse off than before the button existed.
+            _logger.Error(LogCategory.Git, "could not open the browser", ex);
+            Notifications.Failure("Could not open the browser.", plan.Url);
+        }
+    }
+
+    /// <summary>
+    /// Ask the remote whether a request already exists for this branch.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Only when the answer would change something.</b> The probe costs a round trip, so it
+    /// is skipped unless the button is actually offering to create one on a forge that
+    /// publishes request refs — which excludes the default branch, a dirty tree, unpushed work,
+    /// every unidentified forge, and Azure and Bitbucket entirely. In the common case of
+    /// sitting on the trunk it never runs at all.
+    /// </para>
+    /// <para>
+    /// Called by the poller on its schedule rather than on one of its own, so it inherits the
+    /// backoff, the suspension while other git work runs, and the halt on a rejected
+    /// credential.
+    /// </para>
+    /// </remarks>
+    private async Task ProbeMergeRequestAsync(CancellationToken ct)
+    {
+        if (_git is null || MergeRequest.Intent is not MergeRequestIntent.Create)
+        {
+            return;
+        }
+
+        var pattern = Core.Git.Forge.RequestRefPattern(Forge);
+        if (pattern.Length == 0 || _branch is null)
+        {
+            return;
+        }
+
+        // Captured before the two round trips, and checked again after them. A probe takes as
+        // long as the network does, and switching branch in the middle of one is an ordinary
+        // thing to do — without this, the answer for the branch we were on would be stamped
+        // onto the branch we are now on, and the button would offer to open somebody else's
+        // pull request.
+        var asked = _branch.Name;
+
+        var tip = await _git.RevParseAsync(asked, ct).ConfigureAwait(false);
+        if (tip.Length == 0)
+        {
+            return;
+        }
+
+        var refs = await _git.LsRemoteRefsAsync("origin", pattern, ct).ConfigureAwait(false);
+        var found = Core.Git.Forge.RequestNumber(refs, tip);
+
+        if (found == _requestNumber)
+        {
+            return;
+        }
+
+        // Back to the UI thread: this runs on the poller's loop, and the property it changes
+        // is bound.
+        OnUi(() =>
+        {
+            if (!string.Equals(_branch?.Name, asked, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _requestNumber = found;
+
+            // Only when the answer MOVED — the early return above is what keeps this off the
+            // poller's cadence. A line per probe would be 360 an hour saying the same thing,
+            // which is how the log panel got drowned before.
+            _logger.Info(LogCategory.Git, found is { } n
+                ? $"{Core.Git.Forge.Noun(Forge)} #{n} already covers {asked}"
+                : $"no {Core.Git.Forge.Noun(Forge)} found for {asked}");
+
+            OnPropertyChanged(nameof(MergeRequest));
+            OnPropertyChanged(nameof(MergeRequestTooltip));
+            OpenMergeRequestCommand.RaiseCanExecuteChanged();
+        });
+    }
+
     private void BuildGitCommands()
     {
+        DraftCommitMessageCommand = new RelayCommand(DraftCommitMessage, CanDraftCommitMessage);
+        OpenMergeRequestCommand = new RelayCommand(OpenMergeRequest, () => MergeRequest.CanOpen);
+
+        // Chosen(), not the whole list: the ticked rows when any are, otherwise all of them.
         StageCommand = new AsyncCommand(
-            () => StageAsync(Unstaged, stage: true),
+            () => StageAsync(Chosen(Unstaged), stage: true),
             () => Ready && Unstaged.Count > 0, ReportError);
 
         UnstageCommand = new AsyncCommand(
-            () => StageAsync(Staged, stage: false),
+            () => StageAsync(Chosen(Staged), stage: false),
             () => Ready && Staged.Count > 0, ReportError);
 
-        CommitCommand = new AsyncCommand(
-            () => CommitAsync(push: false), CanCommit, ReportError);
-
-        CommitAndPushCommand = new AsyncCommand(
-            () => CommitAsync(push: true), CanCommit, ReportError);
+        CommitCommand = new AsyncCommand(CommitAsync, CanCommit, ReportError);
 
         BuildHunkCommand();
 
-        PullCommand = new AsyncCommand(PullAsync, () => Ready, ReportError);
+        // Pull is enabled whenever an upstream exists, NOT only when behind. Behind-ness is
+        // as fresh as the last fetch, and disabling a safe fast-forward on stale knowledge
+        // would leave somebody unable to act on a remote that moved a second ago.
+        PullCommand = new AsyncCommand(
+            PullAsync, () => Ready && Standing.CanPull, ReportError);
+        // Push stays live while diverged, where git will reject it. Disabling it would hide
+        // the state the user has to resolve; git's own rejection, in a notification that does
+        // not expire, is the clearest possible explanation of what is wrong.
         PushCommand = new AsyncCommand(() => PushAsync(afterCommit: false),
-                                       () => Ready, ReportError);
+                                       () => Ready && Standing.CanPush, ReportError);
         FetchCommand = new AsyncCommand(FetchAsync, () => Ready, ReportError);
+
+        PublishCommand = new AsyncCommand(
+            PublishAsync, () => Ready && Standing.CanPublish, ReportError);
+
+        SignInCommand = new AsyncCommand(SignInAsync, () => Ready && CanSignIn, ReportError);
+
+        // Needs somewhere to go if the current branch is deleted, and something to delete.
+        DeleteBranchesCommand = new AsyncCommand(
+            DeleteBranchesAsync,
+            () => Ready && Branches.Count > 1 && DefaultBranch.IsKnown, ReportError);
+
+        ResolveCommand = new AsyncCommand<bool>(
+            ResolveSelectedAsync,
+            _ => Ready && SelectedConflict is not null, ReportError);
+
+        AbortMergeCommand = new AsyncCommand(
+            AbortMergeAsync, () => Ready && IsMidMerge, ReportError);
+
+        // Enabled only while diverged. Before this there was no route forward at all from
+        // inside the application: the badge said "pull first" and --ff-only refuses a diverged
+        // branch, which is advice pointing at a button that cannot work.
+        ReconcileCommand = new AsyncCommand<bool>(
+            ReconcileAsync,
+            _ => Ready && Standing.State == TrackingState.Diverged, ReportError);
+
+        // Available whenever a credential could be stored, not only when one has failed:
+        // "sign out of this host" is a thing somebody may want to do deliberately, and a
+        // button that only appears after a failure cannot be found before one.
+        SignOutCommand = new AsyncCommand(
+            SignOutAsync, () => Ready && _remote.UsesCredentialHelper, ReportError);
 
         // Enabled only with a row selected. Discard is per-file on purpose: a "discard all"
         // beside "stage all" would put an irreversible button one pixel away from a routine
@@ -1462,6 +2694,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // whenever nothing else is running, unlike every other command here.
         CloneCommand = new AsyncCommand(() => CloneRepositoryAsync(), () => !Busy.IsBusy, ReportError);
 
+        SaveIdentityCommand = new AsyncCommand(SaveIdentityAsync, CanSaveIdentity, ReportError);
+
         // Every git button consults the same shared flag, so the moment one operation starts
         // they all go dead together. AsyncCommand.IsRunning only disables the button that was
         // pressed, which would leave Push live during a Pull.
@@ -1474,6 +2708,10 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             {
                 case nameof(BusyTracker.IsBusy):
                     OnUi(RaiseGitCommandStates);
+
+                    // Any deliberate git action means somebody is here, so the remote is worth
+                    // watching closely again. The backoff exists to stop polling for nobody.
+                    WakeThePoller();
                     break;
 
                 case nameof(BusyTracker.HasUninterruptible):
@@ -1505,23 +2743,138 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// </remarks>
     private bool Ready => _git is not null && !Busy.IsBusy;
 
+    /// <summary>
+    /// Whether a commit may be attempted at all.
+    /// </summary>
+    /// <remarks>
+    /// <b><see cref="Identity"/> is part of the gate, and that is the point of it.</b> The PLC
+    /// export gate runs before the commit, so without this check a machine with no
+    /// <c>user.email</c> spends 17–31 seconds exporting a CODESYS project and is then handed
+    /// git's nine-line lecture about configuring an identity. The wait is what makes that
+    /// failure expensive, and it is entirely avoidable from two <c>git config --get</c> calls
+    /// made when the repository opened.
+    /// </remarks>
+    /// <summary>Everything the commit button's caption, tooltip and enabled state read.</summary>
+    private void RaiseCommitState()
+    {
+        OnPropertyChanged(nameof(Commit));
+        OnPropertyChanged(nameof(CommitBlockedReason));
+        OnPropertyChanged(nameof(CommitExplanation));
+        OnPropertyChanged(nameof(HasConflicts));
+    }
+
     private bool CanCommit() =>
-        Ready && Staged.Count > 0 && !string.IsNullOrWhiteSpace(CommitMessage);
+        Ready
+        && Commit.CanCommit
+        && !string.IsNullOrWhiteSpace(CommitMessage)
+        && _identity.IsComplete
+        && !HasConflicts;
+
+    /// <summary>
+    /// Ask whether git can be run at all. Once, at launch.
+    /// </summary>
+    /// <remarks>
+    /// Called by the host before any repository is opened, because the machine that needs the
+    /// answer is the one where opening a repository is what fails. Never throws: a probe that
+    /// could take the application down with it would be worse than the absence it is reporting.
+    /// </remarks>
+    public async Task ProbeGitAsync(CancellationToken ct)
+    {
+        GitPresence = await GitCliClient.ProbeAsync("git", _logger, ct).ConfigureAwait(true);
+
+        if (!GitPresence.IsUsable)
+        {
+            StatusSummary = "Git is not available";
+        }
+    }
+
+    /// <summary>Read who git will attribute a commit to, and let the panel say so.</summary>
+    private async Task LoadIdentityAsync(CancellationToken ct)
+    {
+        if (_git is null)
+        {
+            Identity = GitIdentity.None;
+            return;
+        }
+
+        Identity = await _git.IdentityAsync(ct).ConfigureAwait(true);
+        OnPropertyChanged(nameof(IdentityIsMissing));
+
+        if (!_identity.IsComplete)
+        {
+            // Info, not Warn: an unconfigured machine is an ordinary state on a first run, and
+            // the panel is already saying so where the user can act on it.
+            _logger.Info(LogCategory.Git, $"commit identity incomplete — {_identity.Explanation}");
+        }
+    }
+
+    /// <summary>Write the name and email the user typed, then re-read what git now reports.</summary>
+    /// <remarks>
+    /// Re-read rather than assumed. Writing <c>--local</c> into a repository whose global config
+    /// already holds a different identity is a case where what git will use and what Versio just
+    /// wrote are not obviously the same thing, and the panel must report git's answer.
+    /// </remarks>
+    private async Task SaveIdentityAsync()
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        _logger.Click("Git.SaveIdentity");
+        using var busy = Busy.Begin(WorkKind.GitWrite, "Setting the git identity…");
+
+        var result = await _git.SetIdentityAsync(
+            IdentityName.Trim(), IdentityEmail.Trim(), IdentityGlobal, busy.Token)
+            .ConfigureAwait(true);
+
+        if (!result.Success)
+        {
+            Notifications.Failure("Could not save the identity.",
+                                  result.FailureReason ?? string.Empty);
+            return;
+        }
+
+        await LoadIdentityAsync(busy.Token).ConfigureAwait(true);
+        if (_identity.IsComplete)
+        {
+            Notifications.Success($"Committing as {_identity.Name} <{_identity.Email}>.");
+        }
+        else
+        {
+            Notifications.Warning("The identity is still incomplete.", _identity.Explanation);
+        }
+    }
+
+    private bool CanSaveIdentity() =>
+        _git is not null
+        && !Busy.IsBusy
+        && !string.IsNullOrWhiteSpace(IdentityName)
+        && !string.IsNullOrWhiteSpace(IdentityEmail);
 
     private void RaiseGitCommandStates()
     {
         StageCommand.RaiseCanExecuteChanged();
         UnstageCommand.RaiseCanExecuteChanged();
         CommitCommand.RaiseCanExecuteChanged();
-        CommitAndPushCommand.RaiseCanExecuteChanged();
         PullCommand.RaiseCanExecuteChanged();
         PushCommand.RaiseCanExecuteChanged();
         FetchCommand.RaiseCanExecuteChanged();
+        PublishCommand.RaiseCanExecuteChanged();
+        SignInCommand.RaiseCanExecuteChanged();
+        SignOutCommand.RaiseCanExecuteChanged();
         RefreshCommand.RaiseCanExecuteChanged();
         HunkCommand.RaiseCanExecuteChanged();
         DiscardCommand.RaiseCanExecuteChanged();
         CreateBranchCommand.RaiseCanExecuteChanged();
         CloneCommand.RaiseCanExecuteChanged();
+        SaveIdentityCommand.RaiseCanExecuteChanged();
+
+        // Every input the plan reads — branch, standing, trunk, dirtiness — has just moved or
+        // may have. It is computed, so raising it is the whole update.
+        OnPropertyChanged(nameof(MergeRequest));
+        OnPropertyChanged(nameof(MergeRequestTooltip));
+        OpenMergeRequestCommand.RaiseCanExecuteChanged();
     }
 
     /// <summary>Stage or unstage every row in a list.</summary>
@@ -1548,7 +2901,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         if (!result.Success)
         {
-            StatusSummary = result.FailureReason ?? "git refused that";
+            Notifications.Failure(stage ? "Could not stage." : "Could not unstage.",
+                                  result.FailureReason ?? string.Empty);
             return;
         }
 
@@ -1574,15 +2928,39 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// staged beforehand would produce it silently.
     /// </para>
     /// </remarks>
-    private async Task CommitAsync(bool push)
+    private async Task CommitAsync()
     {
         if (_git is null)
         {
             return;
         }
 
-        _logger.Click(push ? "Git.CommitAndPush" : "Git.Commit");
+        // Captured before anything runs. The gate below stages export trees and the refresh
+        // rebuilds the lists, so a plan read afterwards would describe a different panel than
+        // the one whose button was pressed.
+        var plan = Commit;
+
+        _logger.Click("Git.Commit");
         using var scope = _logger.BeginOperation(Guid.NewGuid().ToString("N")[..8]);
+
+        // WHAT THE USER ASKED FOR, BEFORE WHAT THE GATE INSISTS ON.
+        //
+        // Staging first means the export gate's own staging lands on top of a tree that
+        // already holds the user's choice, rather than racing it. And the CommitStaged case
+        // stages nothing at all - which is the whole safeguard: somebody who staged three
+        // files deliberately does not get the fourth swept in because they pressed a button
+        // whose caption said "Commit".
+        if (plan.Intent is CommitIntent.StageTickedThenCommit or CommitIntent.StageAllThenCommit)
+        {
+            var rows = Chosen(Unstaged);
+            _logger.Info(LogCategory.Git,
+                $"{plan.Label}: staging {rows.Count} file(s) before the commit");
+
+            if (!await StageForCommitAsync(rows).ConfigureAwait(true))
+            {
+                return;
+            }
+        }
 
         var gate = await Sync.EvaluateGateAsync(CancellationToken.None).ConfigureAwait(true);
         if (gate.Decision == GateDecision.Blocked)
@@ -1590,7 +2968,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             // Something an export will not fix, such as a failed binding awaiting
             // acknowledgement. Say so rather than running an export that cannot help.
             _logger.Warn(LogCategory.Sync, $"commit blocked: {gate.Explanation}");
-            StatusSummary = gate.Explanation;
+            Notifications.Failure("Nothing was committed.", gate.Explanation);
             return;
         }
 
@@ -1602,8 +2980,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             if (outcomes.Any(o => o.IsFailure))
             {
                 var failure = outcomes.First(o => o.IsFailure);
-                StatusSummary = $"Export failed, so nothing was committed: {failure.Explanation}";
-                _logger.Error(LogCategory.Sync, StatusSummary);
+                Notifications.Failure("Export failed, so nothing was committed.",
+                                      failure.Explanation);
                 return;
             }
 
@@ -1618,8 +2996,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         if (!result.Success)
         {
-            StatusSummary = result.FailureReason ?? "the commit failed";
-            _logger.Error(LogCategory.Git, StatusSummary);
+            Notifications.Failure("Commit failed.", result.FailureReason ?? string.Empty);
             return;
         }
 
@@ -1627,15 +3004,39 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         CommitMessage = string.Empty;
         await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
 
-        if (push)
+        // The most surprising rule in the tool, said where the decision was just made: a commit
+        // does not release the direction lock. Until the work is pushed nobody else can see it,
+        // so the direction is still meaningfully owned. Push is its own button now, which makes
+        // that easier to act on than it was when the two were bundled.
+        Notifications.Success("Committed.",
+                              "Not pushed, so the direction lock is still held.");
+    }
+
+    /// <summary>Stage the rows the commit plan chose, reporting a refusal rather than
+    /// committing without them.</summary>
+    /// <remarks>
+    /// Returns false when git refused. Carrying on would produce a commit missing exactly the
+    /// files the user ticked, which is worse than no commit: it looks like it worked.
+    /// </remarks>
+    private async Task<bool> StageForCommitAsync(IReadOnlyList<ChangeRow> rows)
+    {
+        if (_git is null || rows.Count == 0)
         {
-            await PushAsync(afterCommit: true).ConfigureAwait(true);
-            return;
+            return true;
         }
 
-        // Said plainly, because it is the most surprising rule in the tool: a commit does not
-        // release the direction lock. Until the work is pushed nobody else can see it.
-        StatusSummary = "Committed. Not pushed, so the direction lock is still held.";
+        var result = await _git
+            .StageAsync([.. rows.Select(r => r.Path)], CancellationToken.None)
+            .ConfigureAwait(true);
+
+        if (result.Success)
+        {
+            return true;
+        }
+
+        Notifications.Failure("Nothing was committed — the files could not be staged.",
+                              result.FailureReason ?? string.Empty);
+        return false;
     }
 
     /// <summary>Stage every tracked project's export directory.</summary>
@@ -1695,7 +3096,16 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             async () => result = await _git.PullAsync(null, busy.Token).ConfigureAwait(true))
             .ConfigureAwait(true);
 
-        StatusSummary = result.Success ? "Pulled." : result.FailureReason ?? "the pull failed";
+        if (result.Success)
+        {
+            NoteAuthSuccess();
+            Notifications.Success("Pulled.");
+        }
+        else
+        {
+            NoteAuthFailure(result);
+            Notifications.Failure("Pull failed.", result.FailureReason ?? string.Empty);
+        }
 
         await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
     }
@@ -1725,16 +3135,686 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         if (!result.Success)
         {
-            StatusSummary = result.FailureReason ?? "the push failed";
-            _logger.Error(LogCategory.Git, StatusSummary);
+            // Sticky, and that is the single most important lifetime rule in the panel. A
+            // failed push that quietly vanished after four seconds is how somebody goes home
+            // believing their work is on the remote.
+            NoteAuthFailure(result);
+            Notifications.Failure("Push failed.", result.FailureReason ?? string.Empty);
             return;
         }
 
         var head = await _git.HeadCommitAsync(busy.Token).ConfigureAwait(true);
         await Sync.ReleaseAfterPushAsync(head, busy.Token).ConfigureAwait(true);
 
-        StatusSummary = "Pushed. Every direction lock is released.";
+        NoteAuthSuccess();
+
+        // Posted BEFORE the refresh, and it survives it. That ordering used to be the bug:
+        // StatusSummary was set here and RunRefreshAsync then overwrote it with the file
+        // count, so a successful push said nothing at all.
+        Notifications.Success("Pushed.", "Every direction lock is released.");
         await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Put this branch on the remote for the first time.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The remote is chosen, never guessed silently.</b> <c>origin</c> when it exists — which
+    /// it does for anything that was cloned — then the sole remote if there is exactly one.
+    /// With several and no <c>origin</c>, this refuses and says so rather than picking: pushing
+    /// a branch to the wrong remote is not something to do on a coin toss, and a repository
+    /// with three remotes is one where somebody has already thought about which is which.
+    /// </para>
+    /// <para>
+    /// Releases the direction locks on success exactly as <see cref="PushAsync"/> does. The
+    /// lock rule is about work becoming visible to other people, and a publish makes it visible
+    /// for the first time — if anything it is the more complete case.
+    /// </para>
+    /// </remarks>
+    private async Task PublishAsync()
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        _logger.Click("Git.Publish");
+        using var scope = _logger.BeginOperation(LoggerExtensions.NewOperationId());
+
+        var remotes = await _git.RemotesAsync(CancellationToken.None).ConfigureAwait(true);
+
+        var remote = remotes.FirstOrDefault(r => r == "origin")
+                     ?? (remotes.Count == 1 ? remotes[0] : null);
+
+        if (remote is null)
+        {
+            Notifications.Failure(
+                "Versio does not know which remote to publish to.",
+                remotes.Count == 0
+                    ? "This repository has no remote."
+                    : $"It has {remotes.Count} remotes and none is called origin: " +
+                      string.Join(", ", remotes));
+            return;
+        }
+
+        using var busy = Busy.Begin(WorkKind.GitPush, $"Publishing {BranchName} to {remote}…");
+        var result = await _git.PublishBranchAsync(remote, BranchName, null, busy.Token)
+            .ConfigureAwait(true);
+
+        if (!result.Success)
+        {
+            NoteAuthFailure(result);
+            Notifications.Failure($"Could not publish {BranchName}.",
+                                  result.FailureReason ?? string.Empty);
+            return;
+        }
+
+        var head = await _git.HeadCommitAsync(busy.Token).ConfigureAwait(true);
+        await Sync.ReleaseAfterPushAsync(head, busy.Token).ConfigureAwait(true);
+
+        NoteAuthSuccess();
+        Notifications.Success($"{BranchName} is on {remote} now.",
+                              "Every direction lock is released.");
+
+        await RunRefreshAsync(RefreshTrigger.GitMetadata, null).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Ask, before anything fails, whether this machine can talk to the remote.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// One <c>git credential fill</c> with prompts suppressed. It makes no network call and
+    /// cannot prompt, so it costs a process and tells the panel to say "sign in needed" while
+    /// the user is still looking at the window — rather than after their first push fails.
+    /// </para>
+    /// <para>
+    /// Only for a remote with a credential helper. An SSH remote's readiness is a question
+    /// about keys and an agent, which this cannot answer and must not pretend to.
+    /// </para>
+    /// </remarks>
+    private async Task CheckCredentialAsync(CancellationToken ct)
+    {
+        if (_git is null || !_remote.UsesCredentialHelper)
+        {
+            AuthState = GitAuthState.Fine;
+            return;
+        }
+
+        var stored = await _git.HasStoredCredentialAsync(_remote.Protocol, _remote.Host, ct)
+            .ConfigureAwait(true);
+
+        AuthState = stored ? GitAuthState.Fine : GitAuthState.NoCredential;
+
+        if (!stored)
+        {
+            _logger.Info(LogCategory.Git,
+                $"no credential stored for {_remote.Host} — sign-in will be needed");
+        }
+    }
+
+    /// <summary>
+    /// Read a failed network operation and record what it was actually complaining about.
+    /// </summary>
+    /// <remarks>
+    /// Called from every remote operation's failure path, so the banner and the Sign in button
+    /// follow the most recent real answer rather than the state at open.
+    /// </remarks>
+    private void NoteAuthFailure(GitResult result)
+    {
+        var state = GitAuthClassifier.Classify(result.StdErr, _remote.Transport);
+
+        if (state is not GitAuthState.Fine)
+        {
+            AuthState = state;
+        }
+    }
+
+    /// <summary>Clear the banner: something reached the remote and worked.</summary>
+    private void NoteAuthSuccess()
+    {
+        if (_authState is not GitAuthState.Fine)
+        {
+            _logger.Info(LogCategory.Git, $"the remote accepted us — clearing {_authState}");
+            AuthState = GitAuthState.Fine;
+        }
+    }
+
+    /// <summary>
+    /// Hand off to the credential helper.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Versio never sees the credential.</b> git invokes whatever helper is configured and
+    /// that helper does its own thing — a window, a browser for OAuth, a token prompt. What
+    /// comes back here is whether it worked.
+    /// </para>
+    /// <para>
+    /// A rejected credential is <b>erased first</b>. The maddening case is not a missing
+    /// credential but a stale one: an expired token the helper keeps cheerfully returning, so
+    /// every attempt fails identically. Without the erase, asking again just replays it.
+    /// </para>
+    /// </remarks>
+    private async Task SignInAsync()
+    {
+        if (_git is null || !_remote.UsesCredentialHelper)
+        {
+            return;
+        }
+
+        _logger.Click("Git.SignIn");
+
+        // Two git calls when a stale credential has to be erased first, and the second only
+        // makes sense read beside the first.
+        using var scope = _logger.BeginOperation(LoggerExtensions.NewOperationId());
+
+        if (GitAuthClassifier.ShouldEraseFirst(_authState))
+        {
+            await _git.SignOutAsync(_remote.Protocol, _remote.Host, CancellationToken.None)
+                .ConfigureAwait(true);
+        }
+
+        // The caption is loud on purpose. The helper's window is a separate process and can
+        // come up BEHIND Versio, at which point the application looks frozen while something
+        // off-screen waits for a password.
+        using var busy = Busy.Begin(
+            WorkKind.GitRead,
+            $"Signing in to {_remote.Host} — finish in the window that opened (check behind Versio)…");
+
+        var result = await _git.SignInAsync(_remote.Protocol, _remote.Host, busy.Token)
+            .ConfigureAwait(true);
+
+        if (!result.Success)
+        {
+            Notifications.Failure($"Not signed in to {_remote.Host}.",
+                                  result.FailureReason ?? string.Empty);
+            return;
+        }
+
+        AuthState = GitAuthState.Fine;
+        Notifications.Success($"Signed in to {_remote.Host}.");
+    }
+
+    /// <summary>
+    /// Erase the stored credential for this host.
+    /// </summary>
+    /// <remarks>
+    /// The button no git GUI offers, and the one that fixes the failure people actually hit.
+    /// Destructive only in the sense that the next network operation will ask again, so it is
+    /// not confirmed — nothing is lost that a sign-in cannot restore.
+    /// </remarks>
+    private async Task SignOutAsync()
+    {
+        if (_git is null || !_remote.UsesCredentialHelper)
+        {
+            return;
+        }
+
+        _logger.Click("Git.SignOut");
+        using var busy = Busy.Begin(WorkKind.GitRead, $"Forgetting the credential for {_remote.Host}…");
+
+        var result = await _git.SignOutAsync(_remote.Protocol, _remote.Host, busy.Token)
+            .ConfigureAwait(true);
+
+        if (!result.Success)
+        {
+            Notifications.Failure("Could not erase the stored credential.",
+                                  result.FailureReason ?? string.Empty);
+            return;
+        }
+
+        AuthState = GitAuthState.NoCredential;
+        Notifications.Success($"Forgot the credential for {_remote.Host}.",
+                              "The next fetch or push will ask for a new one.");
+    }
+
+    /// <summary>Which remote and branch the poller should watch, or nothing.</summary>
+    /// <remarks>
+    /// Nothing unless there is an upstream: a branch that has never been published has no
+    /// remote counterpart to compare against, and asking about one would fail on every probe.
+    /// </remarks>
+    private (string Remote, string Branch)? PollTarget()
+    {
+        if (_git is null || !_standing.HasUpstream)
+        {
+            return null;
+        }
+
+        // "origin/main" -> ("origin", "main"). The upstream is stored in exactly that shape by
+        // porcelain v2, and a branch name may itself contain slashes, so only the first is a
+        // separator.
+        var slash = _standing.Upstream.IndexOf('/');
+        return slash <= 0
+            ? null
+            : (_standing.Upstream[..slash], _standing.Upstream[(slash + 1)..]);
+    }
+
+    /// <summary>
+    /// The remote moved, so learn what it moved to.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A fetch, never a pull. This is the only expensive call the poller makes and it runs only
+    /// when a probe has already established there is something new.
+    /// </para>
+    /// <para>
+    /// <b>It does not raise the <see cref="BusyTracker"/>.</b> Every git button consults that
+    /// flag, so raising it here would make the panel flicker dead whenever a colleague pushed —
+    /// the same reasoning that keeps automatic status refreshes off the progress bar.
+    /// </para>
+    /// </remarks>
+    private async Task FetchBecauseTheRemoteMovedAsync(CancellationToken ct)
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        var result = await _git.FetchAsync(null, ct).ConfigureAwait(false);
+
+        if (!result.Success)
+        {
+            var state = GitAuthClassifier.Classify(result.StdErr, _remote.Transport);
+
+            if (GitAuthClassifier.IsTerminal(state))
+            {
+                // Stops on the first refusal rather than after the usual run: retrying a
+                // rejected credential every few seconds cannot succeed and may lock an account.
+                _poller.NoteRefused(GitAuthClassifier.Explain(state, _remote.Host));
+                OnUi(() => AuthState = state);
+            }
+
+            return;
+        }
+
+        // Back onto the UI thread before anything observable moves. Watcher and timer callbacks
+        // arrive on threadpool threads, and touching a bound collection from one throws.
+        OnUi(() => _ = RunRefreshAsync(RefreshTrigger.GitMetadata, null));
+    }
+
+    /// <summary>
+    /// Take one side of the selected conflict.
+    /// </summary>
+    /// <remarks>
+    /// <b>"Ours" and "theirs" swap meaning under a rebase</b> — git replays your commits onto
+    /// the upstream, so during a rebase "ours" is the upstream's version. The labels are chosen
+    /// in the view from <see cref="MergeState"/>; this passes through what the user picked, and
+    /// the log records which side git was actually given.
+    /// </remarks>
+    private async Task ResolveSelectedAsync(bool ours)
+    {
+        if (_git is null || SelectedConflict is not { } row)
+        {
+            return;
+        }
+
+        _logger.Click(ours ? "Git.ResolveOurs" : "Git.ResolveTheirs");
+        using var busy = Busy.Begin(WorkKind.GitWrite, $"Resolving {row.Path}…");
+
+        var result = await _git.ResolveWithSideAsync(row.Path, ours, busy.Token)
+            .ConfigureAwait(true);
+
+        if (!result.Success)
+        {
+            Notifications.Failure($"Could not resolve {row.Path}.",
+                                  result.FailureReason ?? string.Empty);
+            return;
+        }
+
+        Notifications.Success($"Resolved {row.Path}.");
+        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Undo a merge or rebase that is part-way through.
+    /// </summary>
+    /// <remarks>
+    /// Confirmed, because it throws away conflict resolutions the user may have spent real time
+    /// on — and unlike a discard, what it destroys is not visible as a list of files. Offering
+    /// the operation without offering the way back is how somebody ends up in a state they
+    /// cannot describe, in a tool meant to keep them out of the terminal.
+    /// </remarks>
+    private async Task AbortMergeAsync()
+    {
+        if (_git is null || !IsMidMerge)
+        {
+            return;
+        }
+
+        var what = _mergeState == MergeState.Rebasing ? "rebase" : "merge";
+
+        using (AskingSomething())
+        {
+            var confirmed = ConfirmDestructive?.Invoke(
+                $"Abandon this {what}?",
+                $"The branch goes back to where it was before the {what} started.\n\n" +
+                "Any conflicts you have already resolved are thrown away.") ?? false;
+
+            if (!confirmed)
+            {
+                _logger.Info(LogCategory.Git, $"{what} abort cancelled");
+                return;
+            }
+        }
+
+        _logger.Click("Git.AbortMerge");
+        using var busy = Busy.Begin(WorkKind.GitWrite, $"Abandoning the {what}…");
+
+        // Same as a checkout: this rewrites the working tree wholesale, and an unheld watcher
+        // would report the result as an edit to the exported text and import it.
+        GitResult result = default!;
+
+        await Sync.WhileGitRewritesTheTreeAsync(
+            $"{what} --abort",
+            async () => result = await _git.AbortMergeOrRebaseAsync(busy.Token)
+                .ConfigureAwait(true)).ConfigureAwait(true);
+
+        if (!result.Success)
+        {
+            Notifications.Failure($"Could not abandon the {what}.",
+                                  result.FailureReason ?? string.Empty);
+            return;
+        }
+
+        Notifications.Success($"The {what} was abandoned.", "The branch is back where it was.");
+        await RunRefreshAsync(RefreshTrigger.GitMetadata, null).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Reconcile a diverged branch, by rebase or by merge.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The panel's only remaining dead end, until now.</b> The badge says "diverged — pull
+    /// first", and <c>pull --ff-only</c> refuses a diverged branch by design, so the advice
+    /// pointed at a button that could not work and the way out was a terminal.
+    /// </para>
+    /// <para>
+    /// <b><c>--ff-only</c> stays the default and this is not a relaxation of it.</b> That
+    /// default exists because auto-merging native CODESYS XML would produce a file nobody
+    /// reviewed; what changes here is that the user can ask for a merge <i>by name</i>, having
+    /// been told what it means. The guard runs first, so a held direction lock or an open
+    /// project refuses it exactly as it refuses a branch switch — both rewrite the working tree.
+    /// </para>
+    /// </remarks>
+    private async Task ReconcileAsync(bool rebase)
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        var what = rebase ? "rebase" : "merge";
+        _logger.Click(rebase ? "Git.Rebase" : "Git.Merge");
+        using var scope = _logger.BeginOperation(LoggerExtensions.NewOperationId());
+
+        // The same intent a pull uses: both rewrite the project and its mirror together, which
+        // is the scenario SAFEGUARDS §5.A calls able to corrupt a project through no user error.
+        if (!await ClearForContextChangeAsync(GuardIntent.Pull, what).ConfigureAwait(true))
+        {
+            return;
+        }
+
+        using var busy = Busy.Begin(WorkKind.GitWrite, $"Running the {what}…");
+
+        GitResult result = default!;
+
+        await Sync.WhileGitRewritesTheTreeAsync(
+            what,
+            async () => result = rebase
+                ? await _git.RebaseOntoUpstreamAsync(null, busy.Token).ConfigureAwait(true)
+                : await _git.MergeUpstreamAsync(null, busy.Token).ConfigureAwait(true))
+            .ConfigureAwait(true);
+
+        await RunRefreshAsync(RefreshTrigger.GitMetadata, null).ConfigureAwait(true);
+
+        if (result.Success)
+        {
+            NoteAuthSuccess();
+            Notifications.Success($"The {what} finished.");
+            return;
+        }
+
+        // A conflict is not a failure here - it is the expected outcome of reconciling two
+        // branches that touched the same thing, and the panel is now equipped to show it. Only
+        // say something went wrong when nothing is waiting to be resolved.
+        if (Conflicted.Count > 0 || IsMidMerge)
+        {
+            Notifications.Warning(
+                $"The {what} stopped at a conflict.",
+                "Resolve the files below, or abandon it and nothing changes.");
+            return;
+        }
+
+        Notifications.Failure($"The {what} did not run.", result.FailureReason ?? string.Empty);
+    }
+
+    /// <summary>
+    /// Gather the branches, ask, and delete what came back.
+    /// </summary>
+    /// <remarks>
+    /// The dialog decides <i>what</i>; every rule about whether it may happen lives here, where
+    /// the repository is.
+    /// </remarks>
+    private async Task DeleteBranchesAsync()
+    {
+        if (_git is null || !DefaultBranch.IsKnown)
+        {
+            return;
+        }
+
+        _logger.Click("Git.DeleteBranches");
+
+        // One id across the whole flow: the merged check, the prompt, the confirmation, the
+        // checkout off a branch being deleted, one delete per branch, the prune and the
+        // refresh. Filtering the log to it is how "why did that branch survive" is answered in
+        // seconds rather than by reading around a dozen interleaved lines.
+        using var scope = _logger.BeginOperation(LoggerExtensions.NewOperationId());
+
+        var merged = await _git.MergedBranchesAsync(DefaultBranch.Name, CancellationToken.None)
+            .ConfigureAwait(true);
+
+        var mergedSet = merged.ToHashSet(StringComparer.Ordinal);
+
+        var candidates = Branches
+            .Select(b => new BranchCandidate
+            {
+                Name = b.Name,
+                Existence = b.Existence,
+                IsMerged = mergedSet.Contains(b.Name),
+                IsCurrent = b.IsCurrent,
+                IsDefault = string.Equals(b.Name, DefaultBranch.Name, StringComparison.Ordinal),
+            })
+            .ToList();
+
+        DeletePlan? plan;
+        using (AskingSomething())
+        {
+            plan = PromptForBranchDeletion?.Invoke(candidates);
+        }
+
+        if (plan is null || !plan.CanProceed)
+        {
+            _logger.Info(LogCategory.Git, "branch deletion cancelled");
+            return;
+        }
+
+        // Outward-facing, and effectively irreversible for anybody who has already fetched.
+        // Confirmed with every branch named, because the consequences land on people who are
+        // not in the room.
+        if (plan.TouchesRemote)
+        {
+            using var asking = AskingSomething();
+            var confirmed = ConfirmDestructive?.Invoke(
+                plan.Count == 1 ? "Delete this branch from the remote?"
+                                : $"Delete {plan.Count} branches from the remote?",
+                plan.RemoteConfirmation("origin")) ?? false;
+
+            if (!confirmed)
+            {
+                _logger.Info(LogCategory.Git, "remote branch deletion cancelled");
+                return;
+            }
+        }
+
+        // Standing on one of them: git refuses outright, so this is handled explicitly rather
+        // than surfacing the refusal. The switch goes through the ordinary branch-switch guard,
+        // which means a dirty tree is offered the auto-stash exactly as it is anywhere else -
+        // there is no second dirty-tree story for this dialog.
+        if (plan.IncludesCurrent && !await LeaveTheBranchBeingDeletedAsync().ConfigureAwait(true))
+        {
+            return;
+        }
+
+        var outcomes = await DeleteEachAsync(plan).ConfigureAwait(true);
+        await ReportDeletionAsync(plan, outcomes).ConfigureAwait(true);
+    }
+
+    /// <summary>Move off the branch about to be deleted, onto the trunk.</summary>
+    /// <remarks>
+    /// Returns false when the switch did not happen, and <b>nothing is deleted in that case</b>.
+    /// A failed checkout followed by a successful delete would leave somebody on a branch that
+    /// no longer exists.
+    /// </remarks>
+    private async Task<bool> LeaveTheBranchBeingDeletedAsync()
+    {
+        _logger.Info(LogCategory.Git,
+            $"switching to {DefaultBranch.Name} before deleting the current branch");
+
+        // Through the ordinary branch-switch path, entry and all, so this inherits every rule
+        // that already applies: the guard, the auto-stash for a dirty tree, the direction-lock
+        // refusal. A second checkout written here would be a second set of those rules.
+        if (Branches.FirstOrDefault(
+                b => string.Equals(b.Name, DefaultBranch.Name, StringComparison.Ordinal))
+            is not { } trunk)
+        {
+            Notifications.Failure(
+                "Nothing was deleted.",
+                $"{DefaultBranch.Name} is not in this repository's branch list.");
+            return false;
+        }
+
+        await SwitchBranchAsync(trunk).ConfigureAwait(true);
+
+        if (string.Equals(BranchName, DefaultBranch.Name, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        Notifications.Failure(
+            "Nothing was deleted.",
+            $"Versio could not switch to {DefaultBranch.Name} first, and git will not delete " +
+            "the branch you are standing on.");
+
+        return false;
+    }
+
+    /// <summary>
+    /// Delete each branch, recording what happened to it.
+    /// </summary>
+    /// <remarks>
+    /// <b><c>-d</c> is attempted first, always.</b> Git refuses an unmerged branch and that
+    /// refusal is information; force is a separate, already-acknowledged decision rather than
+    /// an escalation this code makes on its own.
+    /// </remarks>
+    private async Task<List<DeleteOutcome>> DeleteEachAsync(DeletePlan plan)
+    {
+        var outcomes = new List<DeleteOutcome>();
+
+        using var busy = Busy.Begin(WorkKind.GitWrite, "Deleting branches…");
+
+        foreach (var branch in plan.Selected)
+        {
+            var localOk = true;
+            var failure = string.Empty;
+
+            if (branch.HasLocal)
+            {
+                var gentle = await _git!.DeleteBranchAsync(branch.Name, force: false, busy.Token)
+                    .ConfigureAwait(true);
+
+                if (!gentle.Success && plan.ForceAcknowledged)
+                {
+                    var forced = await _git.DeleteBranchAsync(branch.Name, force: true, busy.Token)
+                        .ConfigureAwait(true);
+
+                    localOk = forced.Success;
+                    failure = forced.Success ? string.Empty : forced.FailureReason ?? string.Empty;
+                }
+                else if (!gentle.Success)
+                {
+                    localOk = false;
+                    failure = gentle.FailureReason ?? string.Empty;
+                }
+            }
+
+            var remoteOk = false;
+
+            // Only when the local half worked, or when there was no local half. Deleting the
+            // remote copy of a branch that is still here would leave the two disagreeing in the
+            // direction that loses the shared one.
+            if (plan.Scope == DeleteScope.LocalAndRemote && branch.HasRemote && localOk)
+            {
+                var pushed = await _git!.DeleteRemoteBranchAsync("origin", branch.Name, busy.Token)
+                    .ConfigureAwait(true);
+
+                remoteOk = pushed.Success;
+
+                if (!pushed.Success && failure.Length == 0)
+                {
+                    failure = pushed.FailureReason ?? string.Empty;
+                }
+            }
+
+            outcomes.Add(new DeleteOutcome
+            {
+                Branch = branch.Name,
+                LocalDeleted = branch.HasLocal && localOk,
+                RemoteDeleted = remoteOk,
+                Failure = failure,
+            });
+        }
+
+        return outcomes;
+    }
+
+    /// <summary>
+    /// Say what happened, per branch.
+    /// </summary>
+    /// <remarks>
+    /// A single "some branches could not be deleted" is useless: it sends somebody to the
+    /// terminal to find out which, which is the trip this panel exists to remove.
+    /// </remarks>
+    private async Task ReportDeletionAsync(DeletePlan plan, List<DeleteOutcome> outcomes)
+    {
+        var gone = outcomes.Where(o => o.Succeeded).ToList();
+        var failed = outcomes.Where(o => !o.Succeeded).ToList();
+
+        // Or the deleted branches linger as stale tracking refs and reappear in the dropdown
+        // looking alive.
+        if (gone.Any(o => o.RemoteDeleted))
+        {
+            await _git!.FetchPruneAsync(CancellationToken.None).ConfigureAwait(true);
+        }
+
+        if (failed.Count > 0)
+        {
+            Notifications.Failure(
+                gone.Count == 0
+                    ? "No branches were deleted."
+                    : $"{gone.Count} deleted, {failed.Count} could not be.",
+                string.Join(Environment.NewLine,
+                            failed.Select(o => $"{o.Branch}: {o.Failure}")));
+        }
+        else
+        {
+            Notifications.Success(
+                gone.Count == 1 ? $"Deleted {gone[0].Branch}." : $"Deleted {gone.Count} branches.",
+                plan.TouchesRemote ? "Removed from origin as well." : string.Empty);
+        }
+
+        await RunRefreshAsync(RefreshTrigger.GitMetadata, null).ConfigureAwait(true);
     }
 
     private async Task FetchAsync()
@@ -1748,7 +3828,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         using var busy = Busy.Begin(WorkKind.GitRead, "Fetching…");
 
         var result = await _git.FetchAsync(null, busy.Token).ConfigureAwait(true);
-        StatusSummary = result.Success ? "Fetched." : result.FailureReason ?? "the fetch failed";
+
+        if (result.Success)
+        {
+            NoteAuthSuccess();
+            Notifications.Success("Fetched.");
+        }
+        else
+        {
+            NoteAuthFailure(result);
+            Notifications.Failure("Fetch failed.", result.FailureReason ?? string.Empty);
+        }
 
         await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
     }
@@ -1898,7 +3988,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return GuardChoice.Cancel;
         }
 
-        var answer = AskGuard?.Invoke(prompt) ?? GuardChoice.Cancel;
+        GuardChoice answer;
+        using (AskingSomething())
+        {
+            answer = AskGuard?.Invoke(prompt) ?? GuardChoice.Cancel;
+        }
 
         // A REFUSAL IS NOT A QUESTION.
         //
@@ -2177,6 +4271,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         {
             var offer = arrival.Restorable[i];
             var remaining = arrival.Restorable.Count - i;
+            using var asking = AskingSomething();
             var choice = AskAboutStashedWork?.Invoke(
                              AutoStashNarrative.Arrival(arrival, offer, remaining, _clock.UtcNow))
                          ?? StashedWorkChoice.Leave;
@@ -2382,7 +4477,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         var patch = HunkPatchBuilder.Build(SelectedDiff, hunkIndex);
         if (patch is null)
         {
-            StatusSummary = "That hunk is no longer in the diff on screen.";
+            Notifications.Warning("That hunk is no longer in the diff on screen.");
             return;
         }
 
@@ -2400,12 +4495,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         {
             // Almost always a context mismatch: the file moved on under a diff that was read
             // a moment ago. Git's own wording is the diagnosis, so it is passed through.
-            StatusSummary = result.FailureReason ?? "git would not apply that hunk";
+            Notifications.Failure("git would not apply that hunk.",
+                                  result.FailureReason ?? string.Empty);
             _logger.Warn(LogCategory.Git, StatusSummary);
             return;
         }
 
-        StatusSummary = unstaging ? "Hunk unstaged." : "Hunk staged.";
+        Notifications.Success(unstaging ? "Hunk unstaged." : "Hunk staged.");
         await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
     }
 
@@ -2416,19 +4512,128 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// </remarks>
     private void UpdateStagingLists(GitStatus status)
     {
-        Staged.Clear();
-        foreach (var change in status.Staged.OrderBy(c => c.Path, StringComparer.Ordinal))
-        {
-            Staged.Add(new ChangeRow(change));
-        }
+        _lastChanges = status.Changes;
 
-        Unstaged.Clear();
-        foreach (var change in status.Unstaged.OrderBy(c => c.Path, StringComparer.Ordinal))
-        {
-            Unstaged.Add(new ChangeRow(change));
-        }
+        // Conflicted paths come out of BOTH of git's columns - an unmerged file is reported
+        // with a staged and an unstaged side - so they are taken first and excluded from the
+        // other two. A file listed in all three sections would be three rows for one problem.
+        var conflicted = status.Changes
+            .Where(c => c.IsConflicted)
+            .OrderBy(c => c.Path, StringComparer.Ordinal)
+            .ToList();
 
+        var stuck = conflicted.Select(c => c.Path).ToHashSet(StringComparer.Ordinal);
+
+        ReconcileInto(Conflicted, conflicted);
+        ReconcileInto(Staged, [.. status.Staged
+            .Where(c => !stuck.Contains(c.Path))
+            .OrderBy(c => c.Path, StringComparer.Ordinal)]);
+        ReconcileInto(Unstaged, [.. status.Unstaged
+            .Where(c => !stuck.Contains(c.Path))
+            .OrderBy(c => c.Path, StringComparer.Ordinal)]);
+
+        OnPropertyChanged(nameof(ConflictHeadline));
+
+        _treeIsDirty = Staged.Count > 0 || Unstaged.Count > 0 || Conflicted.Count > 0;
+
+        // Named from the index the last tree refresh left behind, which is current except on
+        // the first refresh after a repository opens. The pass after RefreshTreeAsync catches
+        // that one.
+        DescribeRows();
+
+        RaiseSelectionState();
         RaiseGitCommandStates();
+    }
+
+    /// <summary>
+    /// What git reported at the last refresh.
+    /// </summary>
+    /// <remarks>
+    /// Kept because the summary line and the drafted subject describe a <i>subset</i> of it —
+    /// whatever the commit button is about to record — and a <see cref="ChangeRow"/> carries
+    /// its <see cref="FileChange"/> privately. Deriving the subset from paths here is cheaper
+    /// than widening the row's surface for two readers.
+    /// </remarks>
+    private IReadOnlyList<FileChange> _lastChanges = [];
+
+    /// <summary>
+    /// Bring one staging list in step with git, in place.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Reconciled rather than rebuilt, and that is a prerequisite rather than a
+    /// refinement.</b> This used to <c>Clear()</c> both collections and refill them on every
+    /// refresh — which is fine for a list whose rows carry nothing, and fatal for one whose
+    /// rows carry a checkbox. A refresh fires whenever the working tree moves, so a user
+    /// ticking three files out of forty would lose the ticks the next time they saved a file
+    /// in their editor.
+    /// </para>
+    /// <para>
+    /// Matched on <see cref="ChangeRow.Path"/>, which is a row's identity: a path can change
+    /// status but a row never changes path, and a renamed file is a different row.
+    /// </para>
+    /// <para>
+    /// It also fixes something nobody had complained about: rebuilding dropped the WPF list
+    /// selection on every refresh, so the diff pane reset roughly once a second while somebody
+    /// typed in their editor.
+    /// </para>
+    /// </remarks>
+    private static void ReconcileInto(
+        ObservableCollection<ChangeRow> rows, IReadOnlyList<FileChange> fresh)
+    {
+        var live = fresh.Select(c => c.Path).ToHashSet(StringComparer.Ordinal);
+
+        // Backwards, so removing does not shift the indices still to be examined. Nothing
+        // subscribes or unsubscribes here - OnStagingListChanged does it, because a row is
+        // tracked for being in the list rather than for having been added by this method.
+        for (var i = rows.Count - 1; i >= 0; i--)
+        {
+            if (!live.Contains(rows[i].Path))
+            {
+                rows.RemoveAt(i);
+            }
+        }
+
+        for (var i = 0; i < fresh.Count; i++)
+        {
+            if (i >= rows.Count)
+            {
+                rows.Add(new ChangeRow(fresh[i]));
+                continue;
+            }
+
+            if (string.Equals(rows[i].Path, fresh[i].Path, StringComparison.Ordinal))
+            {
+                // Same row, possibly a different status. Updated in place so whatever the user
+                // has set on it survives.
+                rows[i].Update(fresh[i]);
+                continue;
+            }
+
+            rows.Insert(i, new ChangeRow(fresh[i]));
+        }
+    }
+
+    /// <summary>
+    /// Keep the tick subscriptions and the commit state in step with a list that just moved.
+    /// </summary>
+    /// <remarks>
+    /// Rows are unsubscribed as they leave: the shell outlives every row, so a subscription
+    /// left behind would keep a dead row alive for the rest of the session.
+    /// </remarks>
+    private void OnStagingListChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        foreach (var row in e.OldItems?.OfType<ChangeRow>() ?? [])
+        {
+            row.SelectionChanged -= RaiseSelectionState;
+        }
+
+        foreach (var row in e.NewItems?.OfType<ChangeRow>() ?? [])
+        {
+            row.SelectionChanged += RaiseSelectionState;
+        }
+
+        RaiseCommitState();
     }
 
     /// <summary>
@@ -2539,6 +4744,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
+        using var asking = AskingSomething();
         var confirmed = ConfirmDestructive?.Invoke(
             "Discard changes to this file?",
             $"{row.Path}\n\n" +
@@ -2561,12 +4767,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         if (!result.Success)
         {
             _logger.Warn(LogCategory.Git, $"discard failed: {result.FailureReason}");
-            StatusSummary = result.FailureReason ?? "the changes could not be discarded";
+            Notifications.Failure("Could not discard.", result.FailureReason ?? string.Empty);
             await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
             return;
         }
 
-        StatusSummary = $"Discarded the changes to {row.Path}.";
+        Notifications.Success($"Discarded the changes to {row.Path}.");
 
         // Only when the file was part of a mirror. A discarded README has nothing to do with
         // the direction lock, and releasing every lock because one unrelated file was
@@ -2607,6 +4813,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         _logger.Click("TopBar.CreateBranch");
 
+        using var asking = AskingSomething();
         if (PromptForBranchName?.Invoke() is not { } name)
         {
             return;
@@ -2698,7 +4905,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             // Almost always a dirty working tree whose changes collide with the target.
             _logger.Warn(LogCategory.Git, $"checkout failed: {result.FailureReason}");
 
-            StatusSummary = result.FailureReason ?? "checkout failed";
+            Notifications.Failure("Checkout failed.", result.FailureReason ?? string.Empty);
 
             // Explicitly, and not left to the refresh below. That reloads the branch list only
             // on some of its paths, so the selection sitting on a branch we are not on would
@@ -2779,11 +4986,38 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
             var previousBranch = BranchName;
             BranchName = status.Branch.IsDetached ? "(detached)" : status.Branch.Name;
+
+            // Kept whole rather than as the name alone, because the merge-request gate needs
+            // the ahead count and the detached flag from the same reading. Two properties
+            // derived separately from one status is how two of them come to disagree.
+            _branch = status.Branch;
+
+            // A merge request found for the branch we were on says nothing about the one we
+            // are on now, and leaving it would send somebody to another branch's request. The
+            // next probe answers for this branch.
+            if (!string.Equals(previousBranch, BranchName, StringComparison.Ordinal))
+            {
+                _requestNumber = null;
+            }
             AheadBehind = status.Branch is { Ahead: 0, Behind: 0 }
                 ? string.Empty
                 : $"↑{status.Branch.Ahead} ↓{status.Branch.Behind}";
 
+            // The remote list is read once per repository rather than per refresh: remotes are
+            // configuration, they change when somebody edits them, and a process spawn on
+            // every working-tree save to re-learn that origin still exists is waste.
+            Standing = RemoteStanding.For(status.Branch, _hasRemote);
+
             var changed = Reconcile(status.Changes);
+
+            // Read whenever the tree has conflicts OR we thought it was mid-merge, so the
+            // banner both appears and goes away. Skipped otherwise: it costs a rev-parse and
+            // two file probes, and the overwhelmingly common answer is None.
+            if (status.HasConflicts || IsMidMerge)
+            {
+                MergeState = await _git.MergeStateAsync(busy?.Token ?? CancellationToken.None)
+                    .ConfigureAwait(true);
+            }
 
             UpdateStagingLists(status);
 
@@ -2951,19 +5185,62 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
-        var branches = await _git.BranchesAsync(CancellationToken.None).ConfigureAwait(true);
+        var local = await _git.BranchesAsync(CancellationToken.None).ConfigureAwait(true);
+        var remote = await _git.RemoteBranchesAsync(CancellationToken.None).ConfigureAwait(true);
+
+        // Both halves, merged by short name. refs/heads alone is local branches, so before this
+        // a branch existing only on the remote was invisible to the application entirely.
+        var branches = BranchInventory.Combine(local, remote);
+
+        await ResolveDefaultBranchAsync(local).ConfigureAwait(true);
 
         WithoutSideEffects(() =>
         {
+            // Already ordered by BranchInventory: current first, then local, then remote-only.
+            // A busy remote carries hundreds nobody here has checked out and they must not bury
+            // the three somebody works on.
             Branches.Clear();
-            foreach (var branch in branches.OrderByDescending(b => b.IsCurrent)
-                                           .ThenBy(b => b.Name, StringComparer.Ordinal))
+            foreach (var branch in branches)
             {
                 Branches.Add(new BranchEntry(branch));
             }
 
             SelectedBranch = Branches.FirstOrDefault(b => b.IsCurrent);
         });
+    }
+
+    /// <summary>
+    /// Work out which branch is the trunk, down the ladder in <see cref="Git.DefaultBranch"/>.
+    /// </summary>
+    /// <remarks>
+    /// The configured value comes from <c>.versio/repo.json</c>, which the sync panel already
+    /// loads for its bindings — so this reads what is in memory rather than the file, and one
+    /// answer serves both.
+    /// </remarks>
+    private async Task ResolveDefaultBranchAsync(IReadOnlyList<BranchInfo> local)
+    {
+        if (_git is null)
+        {
+            DefaultBranch = DefaultBranch.None;
+            return;
+        }
+
+        var remoteHead = _hasRemote
+            ? await _git.RemoteHeadAsync("origin", CancellationToken.None).ConfigureAwait(true)
+            : string.Empty;
+
+        var resolved = DefaultBranch.Resolve(
+            Sync.ConfiguredDefaultBranch,
+            remoteHead,
+            [.. local.Select(b => b.Name)]);
+
+        if (resolved.IsKnown && resolved.Name != _defaultBranch.Name)
+        {
+            _logger.Info(LogCategory.Git,
+                $"default branch is {resolved.Name} (from {resolved.Source})");
+        }
+
+        DefaultBranch = resolved;
     }
 
     private string _selectedDiffPath = string.Empty;
@@ -3178,7 +5455,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
 
         _logger.Error(LogCategory.App, ex.Message, ex);
-        StatusSummary = ex.Message;
+        Notifications.Failure("Something went wrong.", ex.Message);
     }
 
     /// <summary>
@@ -3193,10 +5470,18 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     {
         StopWatching();
 
+        // A background loop outliving the window would keep spawning git processes against a
+        // repository nobody is looking at.
+        _poller.Dispose();
+
         // The sync panel holds its own watcher over every tracked project and its export
         // tree. Releasing only the shell's would leave those handles open and the repository
         // folder locked against rename or delete after the window closes.
         Sync.Detach();
         History.Detach();
+
+        // Let go of the repository, so the next Versio - or the next launch of this one - does
+        // not have to work out that this process is gone before it can open it.
+        ReleaseRepository();
     }
 }

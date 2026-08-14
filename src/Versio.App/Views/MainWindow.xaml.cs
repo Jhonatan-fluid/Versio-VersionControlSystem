@@ -1,7 +1,9 @@
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using Versio.App.Mvvm;
 using Versio.App.Theme;
 using Versio.App.ViewModels;
 using Versio.Core.Git;
@@ -42,6 +44,12 @@ public partial class MainWindow : Window
         // event rather than showing one itself, so opening a repository stays testable.
         shell.RepositoryRejected += ShowRepositoryRejected;
 
+        // A repository another Versio already has open. Not a rejection of the folder - it is
+        // perfectly good and will open the moment the other window lets go - so it says that
+        // rather than anything about the path being wrong.
+        shell.RepositoryBusyElsewhere += why => MessageBox.Show(
+            this, why, "Already open", MessageBoxButton.OK, MessageBoxImage.Information);
+
         // Discarding a file destroys work git cannot give back, so it is asked about here
         // rather than assumed. Unset would mean "no", which is the right way round for a
         // wiring mistake to fail.
@@ -49,6 +57,33 @@ public partial class MainWindow : Window
             MessageBox.Show(this, body, caption, MessageBoxButton.OKCancel,
                             MessageBoxImage.Warning, MessageBoxResult.Cancel)
             == MessageBoxResult.OK;
+
+        // An import writes into a .project - a binary compound document nobody can diff
+        // afterwards - so it is asked about rather than assumed. This is the setting
+        // RequireImportConfirmation has described since it shipped, and this line is what
+        // stops it being a fiction: for as long as it was missing, the only caller answered
+        // "confirmed, because there is nobody to ask".
+        //
+        // Warning rather than Question, and defaulting to Cancel, for the same reason the
+        // discard prompt does: the dangerous answer must never be the one a stray Enter picks.
+        shell.Sync.ConfirmImport = (caption, body) =>
+            MessageBox.Show(this, body, caption, MessageBoxButton.OKCancel,
+                            MessageBoxImage.Warning, MessageBoxResult.Cancel)
+            == MessageBoxResult.OK;
+
+        // The copies taken before every import, which until now nothing could reach. Owned, so
+        // it centres on the window and cannot be lost behind it. Null means cancel, and the
+        // window's own text is the confirmation — there is no second dialog on top.
+        shell.Sync.AskWhichBackup = (project, backups) =>
+        {
+            var window = new BackupRestoreWindow(project, backups, DateTimeOffset.UtcNow)
+            {
+                Owner = this,
+            };
+
+            window.ShowDialog();
+            return window.Chosen;
+        };
 
         // The guard's questions have three answers, not two, so they need a real dialog for
         // the same reason the branch prompt does. Owned, so it centres on the window and
@@ -101,6 +136,16 @@ public partial class MainWindow : Window
             };
 
             return Task.FromResult(prompt.ShowDialog() == true ? prompt.ClonedPath : null);
+        };
+
+        // Deleting branches needs a list with checkboxes and three answers, which no
+        // MessageBox can do. The dialog collects the choice; every rule about whether it may
+        // happen - the guard, the remote confirmation, the checkout off a branch being
+        // deleted - stays in the view model where the repository is.
+        shell.PromptForBranchDeletion = candidates =>
+        {
+            var window = new BranchDeleteWindow(candidates) { Owner = this };
+            return window.ShowDialog() == true ? window.Result : null;
         };
 
         // A repository the user was told they could come back to, which is not there any
@@ -257,6 +302,40 @@ public partial class MainWindow : Window
         if (dialog.ShowDialog(this) == true)
         {
             await _shell.OpenAsync(dialog.FolderName);
+        }
+    }
+
+    /// <summary>
+    /// Put a failure notification's whole message on the clipboard.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// In the code-behind rather than on a command, because the clipboard is a view concern
+    /// and a view model that reached for <see cref="Clipboard"/> could not be constructed in a
+    /// test host without an STA thread — which is a real cost for what is three lines here.
+    /// </para>
+    /// <para>
+    /// <b>The clipboard genuinely fails sometimes.</b> Another process can hold it open, and
+    /// <see cref="Clipboard.SetText(string)"/> then throws <see cref="ExternalException"/>.
+    /// Letting that reach the dispatcher would take the window down while the user was trying
+    /// to copy an error message, which would be a memorable way to lose a bug report.
+    /// </para>
+    /// </remarks>
+    private void OnCopyNotification(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: NotificationRow row })
+        {
+            return;
+        }
+
+        try
+        {
+            Clipboard.SetText(row.ClipboardText);
+        }
+        catch (ExternalException)
+        {
+            // Another process has the clipboard. Nothing useful to do, and nothing worth
+            // interrupting the user over — they can still read the text on the card.
         }
     }
 

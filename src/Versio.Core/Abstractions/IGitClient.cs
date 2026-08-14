@@ -15,9 +15,17 @@ namespace Versio.Core.Abstractions;
 ///   <item><b>It removes R19 outright.</b> LibGit2Sharp carries native <c>git2-*.dll</c>
 ///     binaries, which are the documented way <c>PublishSingleFile</c> breaks. A pure-CLI
 ///     client has no native payload at all.</item>
-///   <item><b>git.exe is already a hard dependency.</b> PortableGit is vendored for
-///     credentials, LFS and network operations regardless, so the CLI costs nothing extra
-///     while LibGit2Sharp adds a second thing to keep in step with it.</item>
+///   <item><b>git.exe is already a hard dependency.</b> Credentials, LFS and network
+///     operations all go through the engineer's own git regardless, so the CLI costs nothing
+///     extra while LibGit2Sharp adds a second thing to keep in step with it.
+///     <para>
+///     This item used to claim PortableGit was <i>vendored</i> for those. It is not, and never
+///     was: <see cref="GitProbe"/> resolves <c>git</c> from <c>PATH</c>, which is why a machine
+///     without it gets an explained empty state rather than a working application. Vendoring
+///     remains an option and would not change this interface; the sentence was corrected
+///     rather than the code, because a doc comment asserting a dependency that does not exist
+///     is the same defect class as a comment claiming a rule nothing enforces.
+///     </para></item>
 ///   <item><b>Porcelain v2 is a stable machine format</b>, explicitly guaranteed across
 ///     versions. Parsing it is a bounded, testable problem — and it is now covered by
 ///     unit tests over real output shapes, which is more verification than the
@@ -41,6 +49,33 @@ public interface IGitClient
     /// </remarks>
     Task<string> VersionAsync(CancellationToken ct);
 
+    /// <summary>
+    /// Who git will attribute a commit in this repository to.
+    /// </summary>
+    /// <remarks>
+    /// Read at repository open rather than discovered at commit time. A commit with no identity
+    /// fails with a lecture from git — and in Versio it fails <i>after</i> the export gate has
+    /// run a 17–31 second CODESYS export, because the gate goes first so the mirror is never
+    /// committed stale. Two <c>git config --get</c> calls remove that entirely.
+    /// <para>
+    /// Resolved the way git itself resolves it, so a value inherited from the global or system
+    /// config counts as present: what matters is whether the commit will succeed, not where the
+    /// setting was written.
+    /// </para>
+    /// </remarks>
+    Task<GitIdentity> IdentityAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Write a name and email into git's configuration.
+    /// </summary>
+    /// <param name="global">
+    /// Write to the user's global config rather than this repository's. <b>Local is the
+    /// default</b>, because a work machine carrying a personal global identity is a common and
+    /// annoying way to attribute commits to the wrong person, and the repository in front of
+    /// the user is the one they are answering about.
+    /// </param>
+    Task<GitResult> SetIdentityAsync(string name, string email, bool global, CancellationToken ct);
+
     Task<GitStatus> StatusAsync(CancellationToken ct);
 
     Task<IReadOnlyList<BranchInfo>> BranchesAsync(CancellationToken ct);
@@ -57,6 +92,183 @@ public interface IGitClient
 
     Task<GitResult> CheckoutAsync(string branch, CancellationToken ct);
 
+    /// <summary>
+    /// Whether a credential is already stored for this host, without asking for one.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>git credential fill</c> in a mode that cannot prompt. It consults the configured
+    /// helper and answers from what is already there, so the panel can say "sign in needed"
+    /// when a repository opens rather than waiting for the first push to fail.
+    /// </para>
+    /// <para>
+    /// <b>The value is never returned.</b> Only whether one exists. Versio has no reason to
+    /// hold a secret and every reason not to: the whole point of driving <c>git.exe</c> is
+    /// that the credential lives where the engineer's own terminal keeps it.
+    /// </para>
+    /// </remarks>
+    Task<bool> HasStoredCredentialAsync(string protocol, string host, CancellationToken ct);
+
+    /// <summary>
+    /// Ask the configured credential helper to obtain a credential, prompting if it must.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Through <c>git credential fill</c> rather than by launching a helper directly.</b>
+    /// Git invokes whatever is configured — Git Credential Manager, a corporate helper, a
+    /// bare <c>store</c> — and that helper does its own thing: a window, a browser for OAuth,
+    /// a token prompt. Shelling <c>git-credential-manager</c> by name would be brittle and
+    /// would break the moment somebody uses a different helper.
+    /// </para>
+    /// <para>
+    /// This is the <b>only</b> call in the application permitted to let git prompt, because it
+    /// is the only one a user pressed a button to start.
+    /// </para>
+    /// </remarks>
+    Task<GitResult> SignInAsync(string protocol, string host, CancellationToken ct);
+
+    /// <summary>
+    /// Erase the stored credential for a host.
+    /// </summary>
+    /// <remarks>
+    /// <c>git credential reject</c>. The genuinely maddening failure is not a missing
+    /// credential but a <i>stale</i> one — an expired token the helper keeps cheerfully
+    /// returning, so every push fails identically and nothing the user does from inside the
+    /// application changes it. This is the button that fixes that, and no git GUI offers it.
+    /// </remarks>
+    Task<GitResult> SignOutAsync(string protocol, string host, CancellationToken ct);
+
+    /// <summary>
+    /// Ask the remote what a branch currently points at, transferring no objects.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>git ls-remote</c>. This is the cheap half of keeping the ahead/behind counts honest:
+    /// one line back and no object transfer, against a fetch's connection, negotiation and
+    /// download. A real fetch runs only when this says the remote has actually moved.
+    /// </para>
+    /// <para>
+    /// Empty when the branch is not on the remote, which is an answer rather than a failure —
+    /// a branch that has never been published has nothing there to compare against.
+    /// </para>
+    /// </remarks>
+    Task<string> LsRemoteAsync(string remote, string branch, CancellationToken ct);
+
+    /// <summary>
+    /// Resolve a revision to a commit id, locally.
+    /// </summary>
+    /// <remarks>
+    /// The other half of the probe, and the reason it is cheap: comparing the remote's answer
+    /// against the local remote-tracking ref is a few milliseconds of local reading. Empty when
+    /// the revision does not resolve, which is ordinary for a branch with no upstream yet.
+    /// </remarks>
+    Task<string> RevParseAsync(string revision, CancellationToken ct);
+
+    /// <summary>
+    /// Take one side of a conflicted file and stage it.
+    /// </summary>
+    /// <param name="ours">
+    /// True for the version already on this branch, false for the one arriving. <b>"Ours" and
+    /// "theirs" swap meaning under a rebase</b> — git replays your commits onto theirs, so
+    /// during a rebase "ours" is the upstream. The caller passes what the user chose and this
+    /// passes it straight through; deciding which word to show belongs where the operation is
+    /// known.
+    /// </param>
+    /// <remarks>
+    /// Staged immediately afterwards, because <c>checkout --ours</c> writes the file and leaves
+    /// it unmerged. A file that looks resolved on disk and is still conflicted in the index is
+    /// the state that makes somebody think the button did nothing.
+    /// </remarks>
+    Task<GitResult> ResolveWithSideAsync(string path, bool ours, CancellationToken ct);
+
+    /// <summary>
+    /// Merge the upstream into this branch, producing conflicts rather than refusing.
+    /// </summary>
+    /// <remarks>
+    /// The exit from a diverged branch that <c>pull --ff-only</c> cannot take. Deliberately a
+    /// separate method rather than a flag on pull: the fast-forward-only default exists because
+    /// auto-merging native CODESYS XML would produce a file nobody reviewed, and a merge is a
+    /// thing the user has to ask for by name.
+    /// </remarks>
+    Task<GitResult> MergeUpstreamAsync(IProgress<GitProgress>? progress, CancellationToken ct);
+
+    /// <summary>Replay this branch's commits on top of the upstream.</summary>
+    /// <remarks>
+    /// The usual answer for a feature branch, and it keeps the exported history linear — which
+    /// matters more here than in most repositories, because the diff being read is generated
+    /// text and a merge commit in the middle of it explains nothing.
+    /// </remarks>
+    Task<GitResult> RebaseOntoUpstreamAsync(IProgress<GitProgress>? progress, CancellationToken ct);
+
+    /// <summary>
+    /// Undo a merge or rebase that is part-way through, back to where it started.
+    /// </summary>
+    /// <remarks>
+    /// <b>Not optional.</b> Offering an operation that can stop half-done without offering the
+    /// way back is how somebody ends up in a state they cannot describe, in a tool that was
+    /// supposed to keep them out of the terminal.
+    /// </remarks>
+    Task<GitResult> AbortMergeOrRebaseAsync(CancellationToken ct);
+
+    /// <summary>Whether a merge or rebase is part-way through right now.</summary>
+    Task<MergeState> MergeStateAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Every remote-tracking ref, as <c>origin/branch</c>.
+    /// </summary>
+    /// <remarks>
+    /// The other half of the branch list. <see cref="BranchesAsync"/> reads <c>refs/heads</c>,
+    /// which is local branches only — so without this a branch that exists solely on the remote
+    /// is invisible to the application, and the dropdown looks like the whole repository while
+    /// being half of it.
+    /// </remarks>
+    Task<IReadOnlyList<string>> RemoteBranchesAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Branches whose every commit is already on <paramref name="into"/>.
+    /// </summary>
+    /// <remarks>
+    /// The single most useful fact in a delete dialog: the difference between deleting a
+    /// tidy-up and deleting somebody's afternoon.
+    /// </remarks>
+    Task<IReadOnlyList<string>> MergedBranchesAsync(string into, CancellationToken ct);
+
+    /// <summary>What the remote says its default branch is, or empty.</summary>
+    /// <remarks>
+    /// <c>origin/HEAD</c>, which most clones have and some do not — it is written at clone time
+    /// and a repository that gained its remote later may never have had one. Empty is an answer.
+    /// </remarks>
+    Task<string> RemoteHeadAsync(string remote, CancellationToken ct);
+
+    /// <summary>
+    /// Delete a local branch.
+    /// </summary>
+    /// <param name="force">
+    /// <c>-D</c> rather than <c>-d</c>. <b>Always try without it first.</b> Git refuses to
+    /// delete an unmerged branch, and that refusal is information the user should see rather
+    /// than something to escalate past.
+    /// </param>
+    Task<GitResult> DeleteBranchAsync(string name, bool force, CancellationToken ct);
+
+    /// <summary>
+    /// Delete a branch from the remote.
+    /// </summary>
+    /// <remarks>
+    /// Outward-facing and effectively irreversible for teammates, so callers confirm with the
+    /// branches and the remote named. There is no gentle form of this: git has no
+    /// <c>--dry-run</c> equivalent that would tell you whether anybody else had it checked out.
+    /// </remarks>
+    Task<GitResult> DeleteRemoteBranchAsync(string remote, string name, CancellationToken ct);
+
+    /// <summary>
+    /// Fetch, dropping remote-tracking refs whose branches are gone.
+    /// </summary>
+    /// <remarks>
+    /// Run after deleting from a remote, or the deleted branches linger as stale tracking refs
+    /// and reappear in the dropdown looking alive.
+    /// </remarks>
+    Task<GitResult> FetchPruneAsync(CancellationToken ct);
+
     /// <summary>Verify a remote is reachable without cloning it.</summary>
     Task<GitResult> VerifyRemoteAsync(string url, CancellationToken ct);
 
@@ -69,6 +281,36 @@ public interface IGitClient
     /// A repository with no remote is an ordinary local repository, not a failure.
     /// </remarks>
     Task<string> RemoteUrlAsync(string remote, CancellationToken ct);
+
+    /// <summary>
+    /// List refs on the remote matching a pattern, transferring no objects.
+    /// </summary>
+    /// <param name="pattern">
+    /// A ref glob, e.g. <c>refs/pull/*/head</c>. Passed to git as an argument, never
+    /// interpolated into a shell.
+    /// </param>
+    /// <returns>Raw <c>sha\tref</c> lines, or empty when nothing matched or the call failed.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Separate from <see cref="LsRemoteAsync"/> because that one is about branches</b> — it
+    /// passes <c>--heads</c> and builds <c>refs/heads/&lt;name&gt;</c> itself, which is exactly
+    /// right for the poller and cannot reach the hidden namespaces a forge publishes its pull
+    /// requests under. Widening it would have made the poller's own call able to match a tag.
+    /// </para>
+    /// <para>
+    /// <b>This is what makes "does a merge request already exist?" answerable with no API
+    /// token.</b> Both major forges publish request heads as refs readable with the same
+    /// credentials as a fetch. The alternatives are worse in ways that do not announce
+    /// themselves: <c>.git/config</c> knows nothing about requests, and a REST call means
+    /// storing a token — a security surface of its own, for a link.
+    /// </para>
+    /// <para>
+    /// Empty on failure rather than throwing, like the rest of the read-only probes here: this
+    /// runs on the poller's schedule and a network blip must degrade the button's label, not
+    /// take a panel down.
+    /// </para>
+    /// </remarks>
+    Task<string> LsRemoteRefsAsync(string remote, string pattern, CancellationToken ct);
 
     /// <summary>
     /// The absolute path of this repository's <c>.git</c> directory.
@@ -85,6 +327,36 @@ public interface IGitClient
     Task<GitResult> PullAsync(IProgress<GitProgress>? progress, CancellationToken ct);
 
     Task<GitResult> PushAsync(IProgress<GitProgress>? progress, CancellationToken ct);
+
+    /// <summary>
+    /// Every remote this repository has, in git's order.
+    /// </summary>
+    /// <remarks>
+    /// Asked so that "this repository has no remote" and "this branch has no upstream" can be
+    /// told apart. They are indistinguishable from the branch alone and their remedies have
+    /// nothing in common — one is "add a remote", the other is "press Publish" — so answering
+    /// the wrong one sends somebody hunting for a setting that is already correct.
+    /// </remarks>
+    Task<IReadOnlyList<string>> RemotesAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Push a branch that has no upstream, and set one.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A different command, so a different button.</b> A plain <c>git push</c> on a branch
+    /// with no upstream fails outright — git has nowhere to send it — so this is not a push
+    /// with a flag, it is the operation that makes a branch exist on the remote. Folding it
+    /// into <see cref="PushAsync"/> would give one button two meanings and one failure mode
+    /// that only appears sometimes.
+    /// </para>
+    /// <para>
+    /// It releases the direction locks on success exactly as a push does. The lock rule is
+    /// about work becoming visible to other people, not about which flag was passed.
+    /// </para>
+    /// </remarks>
+    Task<GitResult> PublishBranchAsync(
+        string remote, string branch, IProgress<GitProgress>? progress, CancellationToken ct);
 
     /// <summary>
     /// Unified diff for one path. <paramref name="staged"/> selects the index.

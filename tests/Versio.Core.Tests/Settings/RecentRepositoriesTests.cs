@@ -100,6 +100,69 @@ public sealed class RecentRepositoriesTests
 
         Assert.Equal(@"C:\a", Assert.Single(list).Path);
     }
+    // ---- one repository, one entry, whatever spelling it arrived in --------------------
+
+    [Fact]
+    public void The_same_repository_typed_two_ways_is_one_entry()
+    {
+        // FOUND IN THE RUNNING APP. Git answers rev-parse --show-toplevel with forward
+        // slashes and the Windows folder picker hands back backslashes, so opening one
+        // repository both ways put two rows in the dropdown - same name, same location,
+        // no way to tell them apart.
+        var list = RecentRepositories.Promote([], Repo("C:/GIT/Versio"));
+        list = RecentRepositories.Promote(list, Repo(@"C:\GIT\Versio"));
+
+        Assert.Single(list);
+    }
+
+    [Fact]
+    public void The_stored_spelling_is_the_one_Windows_uses()
+    {
+        // Stored canonical, not merely compared canonical: the folder picker is handed this
+        // string as its starting directory, and settings.json is a file people open.
+        var list = RecentRepositories.Promote([], Repo("C:/GIT/Versio"));
+
+        Assert.Equal(@"C:\GIT\Versio", list[0].Path);
+    }
+
+    [Fact]
+    public void An_entry_already_stored_the_old_way_is_tidied_as_it_moves()
+    {
+        // Everybody who has run Versio already has a settings.json with both spellings in it.
+        // Promoting anything rewrites the rest, so the duplicate clears itself.
+        var mixed = RecentRepositories.Promote([], Repo("C:/GIT/Other"));
+        var list = RecentRepositories.Promote(mixed, Repo(@"C:\GIT\Versio"));
+
+        Assert.All(list, r => Assert.DoesNotContain('/', r.Path));
+    }
+
+    [Fact]
+    public void Removing_works_whichever_way_the_path_is_spelled()
+    {
+        var list = RecentRepositories.Promote([], Repo("C:/GIT/Versio"));
+
+        Assert.Empty(RecentRepositories.Remove(list, @"C:\GIT\Versio"));
+    }
+
+    [Theory]
+    [InlineData("C:/GIT/Versio", @"C:\GIT\Versio")]
+    [InlineData(@"C:\GIT\Versio\", @"C:\GIT\Versio")]
+    [InlineData("C:/GIT/Versio/", @"C:\GIT\Versio")]
+    [InlineData(@"  C:\GIT\Versio  ", @"C:\GIT\Versio")]
+    [InlineData(@"\server\share\repo", @"\server\share\repo")]
+    [InlineData("", "")]
+    public void A_path_has_one_spelling(string given, string expected) =>
+        Assert.Equal(expected, RecentRepositories.Canonical(given));
+
+    [Fact]
+    public void A_bare_root_keeps_its_separator()
+    {
+        // "C:" alone means "the current directory on C" to Windows, which is a different
+        // thing from "C:\" entirely.
+        Assert.Equal(@"C:\", RecentRepositories.Canonical(@"C:\"));
+        Assert.Equal(@"C:\", RecentRepositories.Canonical("C:/"));
+    }
+
 }
 
 /// <summary>What to offer for a remembered repository that is no longer there.</summary>

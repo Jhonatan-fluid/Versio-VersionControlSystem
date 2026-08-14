@@ -189,6 +189,10 @@ public sealed class SyncViewModel : ObservableObject
         _heartbeat.Beat += op => Activity = op.Describe(clock);
 
         RetryCommand = new AsyncCommand(RetryAsync, CanRetry, onError: Report);
+        ConfirmImportCommand = new AsyncCommand(
+            ConfirmImportAsync, CanConfirmImport, onError: Report);
+        RestoreBackupCommand = new AsyncCommand(
+            RestoreBackupAsync, CanRestoreBackup, onError: Report);
     }
 
     /// <summary>
@@ -222,6 +226,25 @@ public sealed class SyncViewModel : ObservableObject
     /// finding, so it is either shown or deleted, and these are worth showing: every one of
     /// them is a repository in a state Versio cannot resolve on its own.
     /// </remarks>
+    /// <summary>
+    /// The trunk this repository records, or empty when it records none.
+    /// </summary>
+    /// <remarks>
+    /// From <c>.versio/repo.json</c>, which this panel already loads for its bindings — so the
+    /// shell reads what is in memory rather than the file, and there is one answer rather than
+    /// two that can disagree.
+    /// </remarks>
+    public string ConfiguredDefaultBranch => _config.DefaultBranch;
+
+    /// <summary>
+    /// The forge this repository records, or Unknown when it records none.
+    /// </summary>
+    /// <remarks>
+    /// From the same in-memory <c>repo.json</c> as <see cref="ConfiguredDefaultBranch"/>, for
+    /// the same reason: one answer rather than two that can disagree.
+    /// </remarks>
+    public ForgeKind ConfiguredForge => _config.Forge;
+
     public ObservableCollection<string> Findings { get; } = [];
 
     /// <summary>The findings as one sentence, or empty when the scan found nothing wrong.</summary>
@@ -420,6 +443,11 @@ public sealed class SyncViewModel : ObservableObject
             LockState = value is { Tracked: true } && _orchestrator is not null
                 ? SyncNarrative.Describe(_orchestrator.StateOf(value.BindingId!))
                 : string.Empty;
+
+            // Read here rather than in CanExecute: the answer needs the disk, and CanExecute
+            // is called on every command-state refresh in the panel. The selection moving is
+            // the only thing that changes it.
+            RefreshBackupAvailability();
 
             RaiseCommandStates();
         }
@@ -718,6 +746,19 @@ public sealed class SyncViewModel : ObservableObject
         _treeSignature = string.Empty;
         _coverage.Clear();
         CoverageSummary = string.Empty;
+
+        // Object names belong to the repository that was open. Carrying them across would let
+        // a path that happens to match in the new repository be labelled with the old one's
+        // object — the same reasoning as the expanded set above.
+        Objects = ObjectIndex.Empty;
+
+        // And so does a waiting import. Binding ids are unique per repository, so a leftover
+        // would offer to write into a project that is no longer open — the same defect the
+        // failure banner was fixed for two lines below.
+        _pendingImports.Clear();
+        PendingImportDetail = string.Empty;
+        OnPropertyChanged(nameof(PendingImportProject));
+        OnPropertyChanged(nameof(HasPendingImport));
 
         SelectedProject = null;
         Summary = "No repository open";
@@ -1670,6 +1711,49 @@ public sealed class SyncViewModel : ObservableObject
         private set => SetProperty(ref _treeSummary, value);
     }
 
+    /// <summary>
+    /// Every exported file in the workspace, by the path git reports it under.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Rebuilt with the tree and from the same manifests, so the git panel names a changed
+    /// file exactly as the tree names the object it belongs to. Read by the shell rather than
+    /// pushed to it: the panel already relabels after every tree refresh, and an event here
+    /// would be a second path to the same update.
+    /// </para>
+    /// <para>
+    /// <b>Empty until the first tree refresh completes.</b> The changed-files list is filled
+    /// before the manifests are parsed — deliberately, so the panel is not held behind file IO
+    /// — so the first paint after opening a repository shows paths and the refresh that
+    /// follows names them. Rows that arrive before the index are relabelled, not rebuilt.
+    /// </para>
+    /// </remarks>
+    public ObjectIndex Objects
+    {
+        get => _objects;
+        private set
+        {
+            _objects = value;
+            ObjectsChanged?.Invoke();
+        }
+    }
+
+    private ObjectIndex _objects = ObjectIndex.Empty;
+
+    /// <summary>
+    /// The index was rebuilt, and whatever is showing paths can be named again.
+    /// </summary>
+    /// <remarks>
+    /// <b>An event rather than a call at each site, because the sites are not all in the git
+    /// panel's control.</b> The index is filled by a tree refresh, and a tree refresh happens
+    /// on a status refresh, on <c>AttachAsync</c>, after a rescan and after an adoption. The
+    /// first of those is the one that catches people out: opening a repository refreshes git
+    /// <i>before</i> the bindings are loaded, so the first pass names nothing and the index
+    /// arrives afterwards, from a path the panel never hears about. It stayed wrong until the
+    /// working tree next moved — which, on a project nobody is editing, is never.
+    /// </remarks>
+    public event Action? ObjectsChanged;
+
     private TreeRow? _selectedNode;
 
     /// <summary>
@@ -1930,7 +2014,13 @@ public sealed class SyncViewModel : ObservableObject
                         new ProjectTreeOptions { ChangedOnly = false, Search = search }),
                     Coverage: coverage,
                     Tracked: projects.Count,
-                    Unreadable: unreadable);
+                    Unreadable: unreadable,
+
+                    // Built here rather than by the git panel, off the same parsed manifests
+                    // the tree is assembled from. A second reader would be a second answer to
+                    // "what is this file called", which is the disagreement WorkspaceTreeBuilder
+                    // itself was written to end.
+                    Objects: ObjectIndex.Of(projects));
         }).ConfigureAwait(true);
 
         foreach (var problem in built.Unreadable)
@@ -1981,6 +2071,10 @@ public sealed class SyncViewModel : ObservableObject
         _logger.Debug(LogCategory.Sync,
             $"tree: {Tree.Count} root(s), {objects} object(s), {changed} changed file(s), " +
             $"{hidden} project(s) hidden as in sync");
+
+        // Last, and it raises. Whatever is listening runs synchronously on the back of this
+        // assignment, so it has to find the tree already settled rather than half-reconciled.
+        Objects = built.Objects;
     }
 
     /// <summary>A manifest's identity for change detection: when it was written, and how big.</summary>
@@ -2264,7 +2358,14 @@ public sealed class SyncViewModel : ObservableObject
     /// an export we just wrote.
     /// </para>
     /// </remarks>
-    private async Task SyncSettledChangeAsync(WatchedChange change)
+    /// <remarks>
+    /// Internal rather than private so a test can drive it with a real orchestrator and a real
+    /// repository. The watcher above it is a timer, and a test that waits on one proves less
+    /// while taking longer — but everything <i>below</i> this line is where the decisions are,
+    /// including whether an import is answered on the user's behalf. That question was answered
+    /// "yes" here for the whole life of the setting that asks it, and nothing failed.
+    /// </remarks>
+    internal async Task SyncSettledChangeAsync(WatchedChange change)
     {
         if (_orchestrator is null || _repositoryRoot is null)
         {
@@ -2296,9 +2397,19 @@ public sealed class SyncViewModel : ObservableObject
                 BindingId = binding.Id,
                 Source = source,
 
-                // Confirmed, because there is nobody to ask. The project is copied aside before
-                // an import writes into it, which is what makes that answer defensible.
-                Confirmed = true,
+                // NOT confirmed, and there IS somebody to ask now.
+                //
+                // This said "confirmed, because there is nobody to ask" for as long as the
+                // orchestrator has had the gate — so RequireImportConfirmation shipped as true,
+                // was consulted on every import, and was answered yes by the only caller.
+                // A setting that is switched on and always answered is a fiction, and this is
+                // the direction that writes a binary file nobody can diff afterwards.
+                //
+                // The refusal comes back as AwaitingConfirmation and is surfaced on the
+                // project's own row rather than as a modal: the orchestrator's own wording is
+                // "review the diff and confirm", and a dialog thrown up the instant a file
+                // settles is a dialog that arrives before the review. See ConfirmImportAsync.
+                Confirmed = false,
                 Reason = $"automatic, {source}",
             }, cancel.Token).ConfigureAwait(true);
 
@@ -2325,6 +2436,15 @@ public sealed class SyncViewModel : ObservableObject
                     Projects.FirstOrDefault(p => p.BindingId == binding.Id) is { Busy: false } row)
                 {
                     row.State = "queued…";
+                }
+
+                // The import that is waiting for a person. Raised here rather than polled,
+                // because this is the only place that learns of it — the state machine is
+                // happy, nothing failed, and the row would otherwise say "text ahead" with no
+                // hint that anything is expected of anybody.
+                if (outcome.Verdict is SyncVerdict.AwaitingConfirmation)
+                {
+                    NotePendingImport(binding.Id);
                 }
             }
 
@@ -2436,6 +2556,277 @@ public sealed class SyncViewModel : ObservableObject
     /// <summary>True when the failure pane has something to show.</summary>
     public bool HasFailure => FailedProject is not null;
 
+    // ------------------------------------------------------------------ pending imports
+
+    /// <summary>
+    /// Bindings whose exported text has changed and which are waiting for a human.
+    /// </summary>
+    /// <remarks>
+    /// <b>A set, not a single value like <see cref="FailedProject"/>.</b> A pull can land edits
+    /// in several mirrors at once, and a panel that could only remember the last one would
+    /// silently drop the rest — each of which is a project that will not be updated until
+    /// somebody says so. The banner names the first and counts the others.
+    /// </remarks>
+    private readonly HashSet<string> _pendingImports = new(StringComparer.Ordinal);
+
+    /// <summary>The project whose import is waiting, or null when none is.</summary>
+    public ProjectRow? PendingImportProject =>
+        _pendingImports.Count == 0
+            ? null
+            : Projects.FirstOrDefault(p => p.BindingId is { } id && _pendingImports.Contains(id));
+
+    /// <summary>Something is waiting to be imported.</summary>
+    public bool HasPendingImport => PendingImportProject is not null;
+
+    /// <summary>
+    /// What an import would do, in the words somebody needs before agreeing to it.
+    /// </summary>
+    /// <remarks>
+    /// It names the <c>.project</c> by path rather than the mirror, because the mirror is what
+    /// they edited and the project is what is about to be rewritten — and those are different
+    /// files. The backup is stated in the same breath: it is the reason this is recoverable,
+    /// and somebody weighing the decision should not have to already know it exists.
+    /// </remarks>
+    public string PendingImportDetail
+    {
+        get => _pendingImportDetail;
+        private set => SetProperty(ref _pendingImportDetail, value);
+    }
+
+    private string _pendingImportDetail = string.Empty;
+
+    /// <summary>Import the exported text into the project. Asks first.</summary>
+    public AsyncCommand ConfirmImportCommand { get; private set; } = null!;
+
+    /// <summary>
+    /// Ask before writing into a <c>.project</c>, and never on the app's own initiative.
+    /// </summary>
+    /// <remarks>
+    /// A delegate rather than a window, for the reason <c>ShellViewModel.ConfirmDestructive</c>
+    /// gives: a view model that opens a window cannot be tested on the STA harness without one
+    /// appearing. <b>Unset means no</b> — the wrong way round for a wiring mistake would be a
+    /// silent import.
+    /// </remarks>
+    public Func<string, string, bool>? ConfirmImport { get; set; }
+
+    private void NotePendingImport(string bindingId)
+    {
+        if (!_pendingImports.Add(bindingId))
+        {
+            return;
+        }
+
+        RefreshPendingImport();
+
+        _logger.Info(LogCategory.Sync,
+            $"{bindingId}: exported text has changed and is waiting to be imported; " +
+            "nothing has been written to the project");
+    }
+
+    private void RefreshPendingImport()
+    {
+        // Bindings that have gone away with a repository switch, or been imported since.
+        _pendingImports.RemoveWhere(
+            id => Projects.All(p => !string.Equals(p.BindingId, id, StringComparison.Ordinal)));
+
+        var row = PendingImportProject;
+        var others = _pendingImports.Count - 1;
+
+        PendingImportDetail = row is null
+            ? string.Empty
+            : $"The exported text under this project has changed. Importing rewrites " +
+              $"{row.Path} from it. A copy of the project is kept first, under .versio/local/." +
+              (others > 0
+                  ? $" {others} other project{(others == 1 ? " is" : "s are")} also waiting."
+                  : string.Empty);
+
+        OnPropertyChanged(nameof(PendingImportProject));
+        OnPropertyChanged(nameof(HasPendingImport));
+        ConfirmImportCommand.RaiseCanExecuteChanged();
+    }
+
+    private bool CanConfirmImport() => _orchestrator is not null && HasPendingImport;
+
+    /// <summary>
+    /// Import the exported text, once a person has agreed to it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The same job the watcher raised, run again with <c>Confirmed</c> set — rather than a
+    /// second code path into the orchestrator. Everything the automatic attempt applies still
+    /// applies: the direction lock, the hash gate, the circuit breaker, the open-project check
+    /// and the backup. The only thing that changes is the answer to the one question that was
+    /// outstanding.
+    /// </para>
+    /// <para>
+    /// <b>The confirmation is refused by default.</b> An unset hook, a dismissed dialog and a
+    /// closed window all mean no, and no means nothing is written.
+    /// </para>
+    /// </remarks>
+    private async Task ConfirmImportAsync()
+    {
+        if (_orchestrator is null || PendingImportProject is not { BindingId: { } id } row)
+        {
+            return;
+        }
+
+        // One id across the whole flow, per §3 of the git-panel plan: the question, the
+        // orchestrator's own dozen lines, the rescan and the staleness refresh. Without it,
+        // "why did that import do what it did" is answered by reading around the lines of
+        // whatever else was happening — which is the finding that came out of auditing the
+        // branch-delete and sign-in flows, and this is the same shape.
+        using var scope = _logger.BeginOperation(LoggerExtensions.NewOperationId());
+
+        _logger.Click("Sync.ConfirmImport");
+
+        if (ConfirmImport?.Invoke($"Import into {row.Name}?", PendingImportDetail) != true)
+        {
+            _logger.Info(LogCategory.Sync,
+                $"{id}: import declined; the project is unchanged");
+            return;
+        }
+
+        using var busy = _busy.Begin(WorkKind.Import, $"Importing into {row.Name}…");
+
+        var outcome = await _orchestrator.HandleChangeAsync(new SyncJob
+        {
+            BindingId = id,
+            Source = ChangeSource.ExportedText,
+            Confirmed = true,
+            Synchronous = true,
+            Reason = "confirmed by the user",
+        }, busy.Token).ConfigureAwait(true);
+
+        Summary = SyncNarrative.Describe(outcome);
+
+        if (outcome.IsFailure)
+        {
+            _logger.Error(LogCategory.Sync, Summary);
+        }
+        else
+        {
+            _logger.Info(LogCategory.Sync, Summary);
+        }
+
+        // Cleared whatever happened, including on failure: a failure is reported by the failure
+        // banner, and leaving this one up as well would offer the same button again for a
+        // project that has just refused it.
+        _pendingImports.Remove(id);
+        RefreshPendingImport();
+
+        await RescanAsync().ConfigureAwait(true);
+        await RefreshStalenessAsync().ConfigureAwait(true);
+    }
+
+    // ------------------------------------------------------------------ restoring a backup
+
+    /// <summary>Offer the copies of the selected project and put one back.</summary>
+    public AsyncCommand RestoreBackupCommand { get; private set; } = null!;
+
+    /// <summary>
+    /// Show the copies and return the one chosen, or null.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A delegate rather than a window, for the reason <c>ConfirmDestructive</c> gives: a view
+    /// model that opens a window cannot be tested without one appearing. <b>Null means
+    /// cancel</b>, which is the right way round for a wiring mistake to fail.
+    /// </para>
+    /// <para>
+    /// <b>Choosing is the confirmation.</b> There is no second "are you sure" on top: the
+    /// window states what restoring does and what it keeps, and picking a named version from a
+    /// list is already a deliberate act. A dialog on top of a dialog is how people learn to
+    /// dismiss both without reading either.
+    /// </para>
+    /// </remarks>
+    public Func<string, IReadOnlyList<ProjectBackup>, ProjectBackup?>? AskWhichBackup { get; set; }
+
+    private bool _selectedHasBackups;
+
+    /// <summary>The selected project has copies to go back to.</summary>
+    /// <remarks>
+    /// Cached when the selection moves rather than read in <c>CanExecute</c>, which WPF calls
+    /// far more often than anybody expects — a directory enumeration per raise would put the
+    /// disk in the path of every command-state refresh in the panel.
+    /// </remarks>
+    public bool SelectedHasBackups
+    {
+        get => _selectedHasBackups;
+        private set
+        {
+            if (SetProperty(ref _selectedHasBackups, value))
+            {
+                RestoreBackupCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    private void RefreshBackupAvailability() =>
+        SelectedHasBackups =
+            _orchestrator is not null &&
+            SelectedProject is { Tracked: true, BindingId: { } id } &&
+            _orchestrator.BackupsFor(id).Count > 0;
+
+    private bool CanRestoreBackup() => _orchestrator is not null && SelectedHasBackups;
+
+    /// <summary>
+    /// Put a previous copy of the selected project back.
+    /// </summary>
+    /// <remarks>
+    /// The orchestrator does the dangerous part and its own guarding: it refuses while the IDE
+    /// holds the project, and it copies the current state aside before overwriting it. What is
+    /// here is the choosing and the reporting.
+    /// </remarks>
+    private async Task RestoreBackupAsync()
+    {
+        if (_orchestrator is null ||
+            SelectedProject is not { Tracked: true, BindingId: { } id } row)
+        {
+            return;
+        }
+
+        using var scope = _logger.BeginOperation(LoggerExtensions.NewOperationId());
+        _logger.Click("Sync.RestoreBackup");
+
+        var available = _orchestrator.BackupsFor(id);
+        if (available.Count == 0)
+        {
+            // The folder emptied between the button lighting up and the press — a prune, or
+            // somebody clearing .versio/local by hand. Said rather than opening an empty list.
+            Summary = $"{row.Name} has no saved copies to restore.";
+            RefreshBackupAvailability();
+            return;
+        }
+
+        var chosen = AskWhichBackup?.Invoke(row.Name, available);
+        if (chosen is null)
+        {
+            _logger.Info(LogCategory.Sync, $"{id}: restore cancelled; the project is unchanged");
+            return;
+        }
+
+        using var busy = _busy.Begin(WorkKind.Import, $"Restoring {row.Name}…");
+
+        var outcome = await _orchestrator
+            .RestoreBackupAsync(id, chosen.Path, busy.Token)
+            .ConfigureAwait(true);
+
+        Summary = SyncNarrative.Describe(outcome);
+
+        if (outcome.IsFailure || outcome.Verdict is SyncVerdict.BlockedByOpenProject)
+        {
+            _logger.Warn(LogCategory.Sync, Summary);
+        }
+        else
+        {
+            _logger.Info(LogCategory.Sync, Summary);
+        }
+
+        RefreshBackupAvailability();
+        await RescanAsync().ConfigureAwait(true);
+        await RefreshStalenessAsync().ConfigureAwait(true);
+    }
+
     private bool CanRetry() => _orchestrator is not null && FailedProject is not null;
 
     /// <summary>
@@ -2473,7 +2864,12 @@ public sealed class SyncViewModel : ObservableObject
         RefreshFailure(row.Path);
     }
 
-    private void RaiseCommandStates() => RetryCommand.RaiseCanExecuteChanged();
+    private void RaiseCommandStates()
+    {
+        RetryCommand.RaiseCanExecuteChanged();
+        ConfirmImportCommand.RaiseCanExecuteChanged();
+        RestoreBackupCommand.RaiseCanExecuteChanged();
+    }
 
     private void Report(Exception ex)
     {

@@ -76,6 +76,71 @@ internal sealed class CountingGitClient : IGitClient
 
     public Task<string> VersionAsync(CancellationToken ct) => Task.FromResult("git version 2.0");
 
+    public Task<GitIdentity> IdentityAsync(CancellationToken ct) =>
+        throw new NotSupportedException();
+
+    public Task<GitResult> ResolveWithSideAsync(string path, bool ours, CancellationToken ct) =>
+        throw new NotSupportedException();
+
+    public Task<GitResult> MergeUpstreamAsync(IProgress<GitProgress>? p, CancellationToken ct) =>
+        throw new NotSupportedException();
+
+    public Task<GitResult> RebaseOntoUpstreamAsync(IProgress<GitProgress>? p, CancellationToken ct) =>
+        throw new NotSupportedException();
+
+    public Task<GitResult> AbortMergeOrRebaseAsync(CancellationToken ct) =>
+        throw new NotSupportedException();
+
+    public Task<MergeState> MergeStateAsync(CancellationToken ct) =>
+        throw new NotSupportedException();
+
+    public Task<IReadOnlyList<string>> RemoteBranchesAsync(CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<string>>([]);
+
+    public Task<IReadOnlyList<string>> MergedBranchesAsync(string into, CancellationToken ct) =>
+        throw new NotSupportedException();
+
+    public Task<string> RemoteHeadAsync(string remote, CancellationToken ct) =>
+        throw new NotSupportedException();
+
+    public Task<GitResult> DeleteBranchAsync(string name, bool force, CancellationToken ct) =>
+        throw new NotSupportedException();
+
+    public Task<GitResult> DeleteRemoteBranchAsync(string remote, string name, CancellationToken ct) =>
+        throw new NotSupportedException();
+
+    public Task<GitResult> FetchPruneAsync(CancellationToken ct) =>
+        throw new NotSupportedException();
+
+    public Task<IReadOnlyList<string>> RemotesAsync(CancellationToken ct) =>
+        throw new NotSupportedException();
+
+    public Task<bool> HasStoredCredentialAsync(string protocol, string host, CancellationToken ct) =>
+        throw new NotSupportedException();
+
+    public Task<string> LsRemoteAsync(string remote, string branch, CancellationToken ct) =>
+        throw new NotSupportedException();
+
+    public Task<string> LsRemoteRefsAsync(string remote, string pattern, CancellationToken ct) =>
+        throw new NotSupportedException();
+
+    public Task<string> RevParseAsync(string revision, CancellationToken ct) =>
+        throw new NotSupportedException();
+
+    public Task<GitResult> SignInAsync(string protocol, string host, CancellationToken ct) =>
+        throw new NotSupportedException();
+
+    public Task<GitResult> SignOutAsync(string protocol, string host, CancellationToken ct) =>
+        throw new NotSupportedException();
+
+    public Task<GitResult> PublishBranchAsync(
+        string remote, string branch, IProgress<GitProgress>? progress, CancellationToken ct) =>
+        throw new NotSupportedException();
+
+    public Task<GitResult> SetIdentityAsync(
+        string name, string email, bool global, CancellationToken ct) =>
+        throw new NotSupportedException();
+
     public Task<GitStatus> StatusAsync(CancellationToken ct) =>
         throw new NotSupportedException();
 

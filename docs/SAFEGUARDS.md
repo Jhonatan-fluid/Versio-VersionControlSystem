@@ -28,9 +28,42 @@ the code, two of which (§5.A and §5.D) can lose work with no user error at all
 
 ## 0. Handover — where this stands
 
-**Branch:** `Clean-up-and-continue-dev`. **Built:** phases 1–8 — see *Phase 7, as built* at the end of §4 and
-*Phase 8, as built* below it. **Next: phase 9** (§5.C import confirmation, §5.E backup restore,
-§5.G read-only second instance) — features rather than guards, and each its own conversation.
+**Branch:** `GitPanel`. **Built: all nine phases.** Phases 1–8 — see *Phase 7, as built* at the
+end of §4 and *Phase 8, as built* below it — and phase 9 in full on 2026-08-14: §5.C the import
+confirmation, §5.E the backup restore path, and §5.G a one-repository-one-Versio guard in place
+of the read-only mode the enum had been promising. **What remains in §5** is §5.H, the repository
+disappearing while it is open, which nobody has costed.
+
+> **Versio no longer answers its own confirmation.** `RequireImportConfirmation` shipped as
+> `true` and was answered `Confirmed = true` by its only caller for the whole life of the
+> setting. An edit to an exported mirror now writes nothing until a person says so: it is
+> surfaced on the project panel and confirmed by a dialog naming the project. §5.C has the
+> reasoning, including why it is a banner rather than the modal this document originally
+> called for.
+
+> **Work since, on the git panel, that touches this document.** Eleven phases of
+> [`GIT-PANEL-PLAN.md`](GIT-PANEL-PLAN.md) have landed and four of them interact with the
+> safeguards here:
+>
+> - **A background remote watch** (GP-D) probes with `ls-remote` and fetches when the remote
+>   moves. It **never pulls**, and that is a safeguard rather than a preference: a pull rewrites
+>   the project and its mirror under the watcher, which is §5.A — the one scenario here that can
+>   corrupt a project through no user error at all. Automatic pulling would be §5.A on a timer.
+> - **It suspends while anything else runs**, including while a guard prompt is on screen. A
+>   background fetch landing while somebody decides whether to stash their work would change the
+>   thing they are deciding about.
+> - **It stops dead on an authentication refusal** rather than after the usual run of failures.
+>   The circuit-breaker threshold is for things that might recover; a rejected credential is not
+>   one, and retrying it every ten seconds may lock an account.
+> - **Credentials are never stored** (GP-C). Versio hands off to the engineer's own helper
+>   through `git credential fill` and keeps nothing. Nothing in that path logs what it sends or
+>   receives — `git credential` speaks key=value over stdin and one of those keys is `password`,
+>   which `Redact` would not catch.
+> - **The changed files are named as objects** (GP-J), which is what makes §5.C's banner
+>   workable: "review the diff and confirm" is a reasonable thing to ask when the panel beside
+>   it says *FB_Motor · POU* rather than a column of near-identical paths.
+>
+> §6's phase table is unchanged: none of this is a safeguards phase.
 
 Everything below §1 is the original plan, kept as written, with each phase's *"as built"* notes
 appended where it was planned. Read §6 for the order and what is done.
@@ -39,8 +72,8 @@ appended where it was planned. Read §6 for the order and what is done.
 
 | | |
 |---|---|
-| 1,037 Core + 214 UI unit tests | `dotnet test tests/Versio.Core.Tests`, `…/Versio.App.Tests` |
-| 130 integration tests | Real git and **real CODESYS 3.5.22.20**; 0 skipped, 8 m 15 s |
+| 1,363 Core + 387 UI unit tests | `dotnet test tests/Versio.Core.Tests`, `…/Versio.App.Tests` |
+| 154 integration tests | Real git and **real CODESYS 3.5.22.20**; 0 skipped, ~7 m |
 | The application itself | Started, driven, closed. Two bugs found this way that no test caught |
 | Every new behaviour | Deliberately broken and the tests re-run, per the README's `-MutateFirst` rule |
 
@@ -75,22 +108,34 @@ and **Versio could not be closed at all**. Only running the application found it
   scheduled deterministically from a test (phase 3).
 - **No mouse has driven the guards.** Every path below the click is exercised with real git and
   real bindings; the `ComboBox` interaction itself is not.
-- **`GuardIntent.Pull` is implemented and deliberately unwired** — its verdicts all resolve to the
-  auto-stash. Phase 7 wires it and deletes `ShellViewModel.AskAboutWork`.
+- ~~**`GuardIntent.Pull` is implemented and deliberately unwired**~~ — **wired, in phase 7 as
+  planned.** `PullAsync` and the divergence exit both go through
+  `ClearForContextChangeAsync(GuardIntent.Pull, …)`, and `ShellViewModel.AskAboutWork` is gone.
+  Kept as a struck-through line rather than deleted because this bullet outlived the work it
+  describes by long enough to be quoted elsewhere; the git panel plan's §9a has the fuller
+  account, including the two drafts of it that were wrong in opposite directions.
 
-### Starting phase 9
+### Phase 9, in progress
 
-§5.C, §5.E and §5.G are the three that remain, and none of them is a guard: each adds a
-capability the app describes and does not have.
+§5.C, §5.E and §5.G were the three that remained, and none of them is a guard in the phase 1–8
+sense: each added a capability the app described and did not have. **All three are built.**
 
-- **§5.C** is the smallest and the most dishonest as it stands: `RequireImportConfirmation` is
-  `true` by default and the only caller answers `Confirmed = true` with the comment *"there is
-  nobody to ask"*. There is somebody to ask now — the prompt from phase 2 renders any question
-  with named answers.
-- **§5.E** is a window over the ten backups per binding that already exist and are reachable by
-  nothing.
-- **§5.G** is the sentence `LockRecovery` already produces — *"opening read-only"* — which
-  nothing implements.
+- ~~**§5.C**~~ — **done 2026-08-14.** It was the smallest and the most dishonest as it stood:
+  `RequireImportConfirmation` was `true` by default and the only caller answered
+  `Confirmed = true` with the comment *"there is nobody to ask"*. There is somebody to ask now.
+  See §5.C for what was built and why it is a banner rather than the modal this list expected.
+  **What it cost:** one line at the call site, a pending-import surface on the sync view model,
+  a banner, and seven tests — of which the load-bearing one asserts that the `.project`'s bytes
+  are unchanged after an edit to its mirror settles.
+- ~~**§5.E**~~ — **done 2026-08-14.** It was a window over the ten backups per binding that
+  already existed and were reachable by nothing. See §5.E. **What it cost:** `BackupCatalog` in
+  Core, two methods on the orchestrator, a window, a button that hides itself, and 26 tests.
+  The rule that took the most thought is that **restoring keeps a copy of what it replaced** —
+  without it, going back one copy too far is the last mistake somebody makes that afternoon.
+- ~~**§5.G**~~ — **done 2026-08-14.** It was the sentence `LockRecovery` already produced —
+  *"opening read-only"* — which nothing implemented. It is a single-instance guard now rather
+  than a read-only mode, and §5.G says why that trade is the safer one. **What it cost:**
+  `RepositoryPresence` in Core, a JSON marker store, a claim in the open path, and 17 tests.
 
 Nothing in phase 9 is blocked. §5.H (the repository disappearing while it is open) is still
 unwritten and is the one remaining item in §5 that nobody has costed.
@@ -701,7 +746,28 @@ App ever reads it**. Conflict markers in a `.st` file are, to the importer, just
 `SyncVerdict.BlockedByConflict` with its `SyncNarrative` sentence. Cheap, and it is also the backstop
 for a conflicted `stash pop` (§4.6).
 
-### C. Imports run with no human confirmation, contradicting the default
+### C. Imports run with no human confirmation, contradicting the default — **BUILT**
+
+> **Built 2026-08-14, as phase 9's first item.** The one caller passes `Confirmed = false` now,
+> and the `AwaitingConfirmation` verdict the orchestrator has always returned finally has
+> somewhere to go: a banner on the project panel naming the project, what an import would
+> rewrite, and the backup kept first — then a confirmation before anything is written.
+>
+> **A banner, not a modal, and that is the decision worth recording.** This section says
+> "prompting is the better answer" and §2.4 offers the prompt window — but the orchestrator's own
+> refusal reads *"review the diff and confirm before importing"*, and a dialog thrown up the
+> instant a file settles arrives **before** the review, while the user is still typing in the
+> editor that caused it. The tree beside the banner already shows exactly what changed, by object
+> name, since GP-J. So: the banner surfaces it without interrupting, and the prompt confirms it
+> once they have looked. Both, in that order.
+>
+> **Declining leaves the offer up.** "No" means not now: the exported text is still ahead, and a
+> banner that vanished on a refusal would leave the repository in that state with nothing on
+> screen saying so — reachable again only by editing the mirror a second time.
+>
+> **Several projects can be waiting at once**, which a single-valued field like `FailedProject`
+> could not express. A pull lands edits in every mirror it touches; the banner names the first
+> and counts the rest.
 
 `RequireImportConfirmation = true` is the shipped default (`SyncOrchestrator.cs:17`), and the only
 caller sets `Confirmed = true` with the comment *"there is nobody to ask"* (`SyncViewModel.cs:1692`).
@@ -721,13 +787,49 @@ or power loss between those two statements leaves **no mirror at all** — and o
 Three renames and no window in which nothing exists. Clear a leftover `.versio_trash` on the next
 run, exactly as staging is already cleared and announced.
 
-### E. There is no backup restore path
+### E. There is no backup restore path — **BUILT**
+
+> **Built 2026-08-14.** `BackupCatalog` reads the folder the writer has always written to,
+> `SyncOrchestrator.BackupsFor` and `RestoreBackupAsync` list and apply, and a
+> `BackupRestoreWindow` offers them by time. The button appears on the project panel only when
+> the selected project has copies — which is not most of them, and a permanently dead *Restore*
+> on every project would be furniture.
+>
+> **Restoring keeps a copy of what it replaced, and that is the load-bearing rule.** A restore
+> overwrites the project, so without it a restore is a one-way trip: somebody walking back one
+> import too far would destroy the state they were trying to reach, using the feature that
+> exists to prevent exactly that. The mutation that removes it breaks two tests.
+>
+> **It refuses while the IDE holds the project**, for the same reason an import does — CODESYS
+> keeps its own copy in memory and the next save would silently revert whatever was written
+> underneath it.
+>
+> **It does not export afterwards.** The project and its mirror now disagree and the project is
+> right, which is an ordinary project-side change; the ordinary machinery exports it, with its
+> coalescer, breaker and cancellation. Doing it inline would mean a 17–31 s toolchain run inside
+> a call somebody made from a dialog, with no way to cancel it.
+>
+> **A copy whose name cannot be parsed is still listed**, named by its filename with "Versio did
+> not write this copy" beside it. One dropped in by hand is very possibly the one being looked
+> for, and hiding it would be indistinguishable from Versio having lost it.
+>
+> **Found while building it:** `ProjectBackup.Path` documented itself as repo-relative while
+> `BackupsFor` returned whatever `EnumerateFiles` gave, which is absolute — a record whose
+> comment disagreed with its contents, and it would have put the engineer's home directory on
+> screen. The orchestrator grew a `Relative` to match its long-standing `Absolute`.
 
 Ten backups are kept per binding under `.versio/local/` (`BackupsKept`, `SyncOrchestrator.cs:78`) and
 nothing in the UI can list or restore one. After a corrupting import — the scenario the backups exist
 for — the user has an unusable project and no way to reach the copy that would fix it.
 
-### F. `*.versio_staging/` is not in the adoption ignore plan
+### F. `*.versio_staging/` is not in the adoption ignore plan — **BUILT**
+
+> Fixed with §5.D, in the same work that gave the swap a trash directory — the two are one
+> mechanism and one ignore rule each. `RepoSetup` writes both `<mirror>.versio_staging/` and
+> `<mirror>.versio_trash/` into the plan now, with a comment saying why they are there and not
+> in the vendor's `TransientPatternsFor`. **The heading kept its unfixed wording for a while
+> after the code changed**, unlike §5.A and §5.B which were marked; recorded because a document
+> that says a hole is open when it is closed costs somebody a second fix.
 
 `TransientPatternsFor` returns `<stem>.~u` and `<stem>-*.opt` (`CodesysProjectFormat.cs:80`);
 `RepoSetup` adds `.versio/local/` (`RepoSetup.cs:149`). Neither covers the staging directory. **This
@@ -738,7 +840,39 @@ all" will happily commit. Same class of problem as the three comments that descr
 
 → Add the pattern to the ignore plan, and sweep leftover staging and trash directories at open.
 
-### G. Two Versio instances on one repository
+### G. Two Versio instances on one repository — **BUILT**
+
+> **Built 2026-08-14, as a guard rather than a read-only mode**, and that choice is the point of
+> this entry. This section offered either. The guard was taken because **it can be complete and a
+> read-only mode cannot**: read-only means finding every write in the application — git commands,
+> exports, imports, adoption, config, the lock store, the auto-stash — and gating each one, and
+> missing a single path is not a cosmetic bug there. It is exactly the concurrent write the
+> feature exists to prevent, arriving silently, in the one mode nobody exercises carefully. A
+> guard is one decision, made once, in a place a test can reach.
+>
+> **The per-binding lock could never have answered this.** `LockRecoveryPolicy` only reaches
+> `HeldByLiveSession` for a binding that *holds a lock*, so a second instance opened on a
+> repository where nothing happened to be locked saw `NothingToRecover` and carried on. The
+> hazard is two orchestrators, not two locks — so the marker is repository-level and written
+> whenever a repository opens.
+>
+> **`RepositoryPresence` decides; `.versio/local/session.json` records.** Gitignored, beside
+> `state.json`, for the same reason: who has a repository open on one machine is not something to
+> commit and hand to everyone who clones it.
+>
+> **Every doubt resolves towards "somebody is there".** A marker from another machine is believed,
+> because its processes cannot be probed from here and the repository is very possibly on a share
+> — the same rule the vendor's own open-project marker follows. Being wrong that way costs a
+> person a message; being wrong the other way costs two writers on one repository. The message
+> names the file so a machine that is never coming back can be cleared by hand.
+>
+> **And every failure resolves towards "open it".** A corrupt marker, an unwritable one, a dead
+> session, one from before the last restart — all of them mean nobody is really there. A guard
+> that turned one bad file into a repository nobody can open would be causing the outage it
+> exists to prevent.
+>
+> **The sentence that started this is gone.** `LockRecovery.HeldByLiveSession` said *"opening
+> read-only"* and now says *"leaving it alone"*, which is what it always did.
 
 `LockRecovery.HeldByLiveSession` produces the sentence *"held by a running Versio session (pid N);
 opening read-only"* — and **there is no read-only mode**. The second instance opens fully writable.
@@ -790,9 +924,9 @@ this adequately — worth confirming rather than changing.
 | **4 ✅** | **Context-switch guard** (§3.3) — dropdowns disabled for uninterruptible work, prompt for the rest | Second highest, and reuses phase 3 wholesale. |
 | **5 ✅** | **`ResetForRepositoryChange`** (§3.2) | Self-contained, no new machinery, immediately visible. |
 | **6 ✅** | Git-write suppression window (§5.A) and the conflict gate (§5.B) | Correctness, and both are **prerequisites** for phase 7 — see §4.8 and §4.6. |
-| **7** | **Branch-switch guard with the full auto-stash** (§3.1, §4), plus the branch recorded in `BindingLock` | Needs the prompt from phase 2 and both defences from phase 6. |
+| **7 ✅** | **Branch-switch guard with the full auto-stash** (§3.1, §4), plus the branch recorded in `BindingLock` | Needs the prompt from phase 2 and both defences from phase 6. |
 | **8 ✅** | Swap via trash-rename (§5.D), staging in the ignore plan (§5.F), leftover sweep at open | Small, independent, and §5.D closes a real window. |
-| **9** | Import confirmation made real (§5.C), backup restore UI (§5.E), read-only second instance (§5.G) | Features rather than guards. Each is its own conversation. |
+| **9 ✅** | ~~Import confirmation made real (§5.C)~~, ~~backup restore UI (§5.E)~~, ~~read-only second instance (§5.G)~~ — **all three done**, the last as a single-instance guard rather than a read-only mode; see §5.G | Features rather than guards. Each was its own conversation. |
 
 Phases 6 and 7 are ordered deliberately: **the auto-stash cannot ship before the suppression window
 and the conflict gate**, or restoring a stash becomes a way to trigger an unwanted import, and a
@@ -801,6 +935,60 @@ conflicted `pop` becomes a way to import conflict markers into a project.
 Tests follow the existing split: guard and stash policy in `Versio.Core.Tests` (pure, ~0.3 s), the
 prompt window in `Versio.App.Tests` on the STA harness, and the stash round trip, conflict gate and
 suppression window in `Versio.Integration.Tests` against real git.
+
+### Verifying §5.C in the running app — **owed to a human**
+
+Automated tests cover everything below except what it looks like. Seven of them assert that the
+`.project`'s bytes do not move; none can tell you whether the banner reads well.
+
+1. Open a repository with a tracked project. **Edit an exported `.st` in the mirror** and save.
+2. Within a few seconds a banner appears on the project panel naming the project. **No dialog
+   appears, and nothing is written** — check the `.project`'s modified time if you want proof.
+3. The tree beside it shows the changed object by name. **Review it**, which is the whole reason
+   this is a banner and not a modal.
+4. Press **Review and import** → a dialog names the project and says a copy is kept. Press
+   **Cancel** → nothing is written **and the banner is still there**.
+5. Press it again and confirm → the import runs, the banner goes, and the project's bytes change.
+6. Edit mirrors under **two** projects → the banner names one and says the other is waiting.
+7. Switch repository while a banner is up → it goes with the repository, and does not follow you.
+
+### Verifying §5.E in the running app — **owed to a human**
+
+Needs a project that has been imported at least once, so there is something to restore. Steps 1
+and 2 are the ones no test can make a judgement about.
+
+1. Select a project that has never been imported → **no Restore button at all**, not a dead one.
+2. Select one that has → *Restore a saved copy…* appears above the search box. **Is that where
+   you would look for it?** It is the one placement decision here with no right answer.
+3. Press it → the copies are listed newest first, in **your** local time, each saying how long
+   ago. Restore is dead until you pick one.
+4. Pick one → the line beneath says which copy and when, in the same words the row used.
+5. **Cancel** → nothing is written. Check the `.project`'s modified time.
+6. Press it again, choose the newest, **Restore** → the project's bytes change, and the panel
+   then reports the project as needing an export, because its mirror is now behind.
+7. **Press it again.** The copy taken *at step 6* is now at the top of the list — that is the
+   state you just replaced, and being able to go back to it is what makes step 6 safe to try.
+8. Open the project in CODESYS, then try to restore → refused, naming who holds it.
+9. Drop a file called something arbitrary into `.versio/local/backups/<id>/` → it is listed,
+   named by its filename, saying Versio did not write it. It must not be hidden and it must not
+   be given an invented time.
+
+### Verifying §5.G in the running app — **owed to a human**
+
+Needs two Versio windows, which is the whole point and is also the one thing no test can have.
+
+1. Open a repository in Versio. Check `.versio/local/session.json` exists and names your pid.
+2. **Start a second Versio and open the same repository** → it says the repository is already
+   open in another window and names the pid. Nothing else in that window changes.
+3. Open a *different* repository in the second window → it opens normally. The guard is
+   per repository, not per application.
+4. Close the first window → `session.json` is gone, and the second window can now open it.
+5. **Kill the first window with Task Manager** rather than closing it, then open that repository
+   in the second → it opens, and the log says the session that left the marker is gone. A crash
+   must never lock somebody out of their own repository.
+6. Reboot with a marker left behind, then open → same, saying the marker predates the restart.
+7. Corrupt `session.json` by hand → the repository still opens. The guard is a courtesy; being
+   unable to open a repository is not.
 
 ### Phase 1, as built
 

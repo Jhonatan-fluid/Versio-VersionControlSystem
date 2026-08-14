@@ -50,6 +50,48 @@ public sealed record RepoConfig
     public IReadOnlyList<string> Ignore { get; init; } = [];
 
     public bool AutoAdoptNewProjects { get; init; }
+
+    /// <summary>
+    /// Which branch this repository treats as its trunk.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Empty by default, and that is not the same as <c>main</c>. An empty value falls through
+    /// to what the remote says and then to convention — see <see cref="Git.DefaultBranch"/> —
+    /// and if none of those answers, the operations that need a trunk are disabled and say why.
+    /// <b>Guessing it would move somebody's working tree to a branch nobody chose.</b>
+    /// </para>
+    /// <para>
+    /// <b>Committed and shared, like the bindings beside it.</b> A team whose trunk is
+    /// <c>develop</c> records it once and every clone agrees; a per-machine setting would have
+    /// each engineer discovering the answer separately.
+    /// </para>
+    /// <para>
+    /// Absent from a config written before this existed, which deserializes to empty and
+    /// therefore to the fallback ladder — the same backward-compatibility shape
+    /// <see cref="ProjectBinding.Vendor"/> uses, and for the same reason: a file written by an
+    /// older Versio must keep meaning what it meant.
+    /// </para>
+    /// </remarks>
+    public string DefaultBranch { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Which hosting product this repository's remote is, when the hostname cannot say.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The only way a self-hosted forge is identifiable.</b> A GitLab at
+    /// <c>git.acme.internal</c> looks like nothing in particular from its URL, and guessing
+    /// would open a browser on a 404. Set once here, committed, and every clone agrees — the
+    /// same argument as <see cref="DefaultBranch"/> above.
+    /// </para>
+    /// <para>
+    /// It also <b>overrides</b> a hostname that does match, which is the case an enterprise
+    /// GitHub behind its own domain needs. Unknown is the default and means "work it out from
+    /// the URL, and show nothing if you cannot".
+    /// </para>
+    /// </remarks>
+    public Git.ForgeKind Forge { get; init; } = Git.ForgeKind.Unknown;
 }
 
 /// <summary>The names and layout a binding assumes when nothing overrides them.</summary>

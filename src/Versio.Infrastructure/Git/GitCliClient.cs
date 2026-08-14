@@ -245,10 +245,166 @@ public sealed partial class GitCliClient(
         return result.Success ? result.StdOut.Trim() : string.Empty;
     }
 
+    /// <summary>Who git will attribute a commit to, as git itself resolves it.</summary>
+    /// <remarks>
+    /// Plain <c>--get</c> rather than <c>--local --get</c>: a name inherited from the global or
+    /// system config is a working identity, and reporting it as missing would nag every user
+    /// who configured git once, years ago, the way everybody is told to.
+    /// <para>
+    /// Exit 1 means "no such key", which is the ordinary answer on a fresh machine and not a
+    /// failure worth logging as one — so both calls fall back to empty rather than throwing.
+    /// </para>
+    /// </remarks>
+    public async Task<GitIdentity> IdentityAsync(CancellationToken ct)
+    {
+        var name = await RunAsync(["config", "--get", "user.name"], null, ct,
+                                  TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+        var email = await RunAsync(["config", "--get", "user.email"], null, ct,
+                                   TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+
+        var identity = GitIdentity.From(
+            name.Success ? name.StdOut : string.Empty,
+            email.Success ? email.StdOut : string.Empty);
+
+        _log.Debug(LogCategory.Git,
+            identity.IsComplete
+                ? $"identity: {identity.Name} <{identity.Email}>"
+                : $"identity incomplete: {identity.Explanation}");
+
+        return identity;
+    }
+
+    /// <summary>Write a name and email into git's configuration.</summary>
+    /// <remarks>
+    /// Two writes, and the second is attempted even when the first fails, so a half-configured
+    /// machine does not stay half-configured because of one bad value. The failure returned is
+    /// the first one, since that is the one whose message explains what went wrong.
+    /// </remarks>
+    public async Task<GitResult> SetIdentityAsync(
+        string name, string email, bool global, CancellationToken ct)
+    {
+        var scope = global ? "--global" : "--local";
+        _log.Info(LogCategory.Git, $"setting {scope} identity to {name} <{email}>");
+
+        var wroteName = await RunAsync(["config", scope, "user.name", name], null, ct,
+                                       TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+        var wroteEmail = await RunAsync(["config", scope, "user.email", email], null, ct,
+                                        TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+
+        if (!wroteName.Success)
+        {
+            _log.Error(LogCategory.Git, $"could not write user.name: {wroteName.FailureReason}");
+            return wroteName;
+        }
+
+        if (!wroteEmail.Success)
+        {
+            _log.Error(LogCategory.Git, $"could not write user.email: {wroteEmail.FailureReason}");
+        }
+
+        return wroteEmail;
+    }
+
     public Task<GitResult> VerifyRemoteAsync(string url, CancellationToken ct)
     {
         _log.Info(LogCategory.Git, $"verifying remote {Redact(url)}");
         return RunAsync(["ls-remote", "--heads", url], null, ct, TimeSpan.FromSeconds(20));
+    }
+
+    /// <summary>
+    /// Ask whether git can be run at all, before any repository is open.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Static, for the same reason <see cref="CloneAsync"/> is:</b> it runs where there is no
+    /// repository. It runs at launch, so the one machine that needs this answered — the one
+    /// without git — gets it before anything else has a chance to fail obscurely.
+    /// </para>
+    /// <para>
+    /// A missing executable surfaces as <see cref="System.ComponentModel.Win32Exception"/> from
+    /// the process start, not as a non-zero exit code, so it is caught rather than read off a
+    /// <see cref="GitResult"/>. <see cref="IOException"/> comes with it because a PATH entry on
+    /// a dead network share throws that instead, and both mean the same thing to a user.
+    /// </para>
+    /// <para>
+    /// The executable's own path is resolved separately and its failure is not the probe's
+    /// failure: <c>--version</c> having succeeded already proves git runs, and the path is a
+    /// diagnostic nicety for the machines carrying several gits.
+    /// </para>
+    /// </remarks>
+    public static async Task<GitPresence> ProbeAsync(
+        string gitExecutable, IVersioLogger? logger, CancellationToken ct)
+    {
+        var log = logger ?? NullLogger.Instance;
+
+        try
+        {
+            var client = new GitCliClient(Path.GetTempPath(), gitExecutable, logger);
+            var version = await client.VersionAsync(ct).ConfigureAwait(false);
+
+            if (string.IsNullOrWhiteSpace(version))
+            {
+                log.Warn(LogCategory.Git, "git ran but reported no version");
+                return GitPresence.NotFound("git ran but reported no version");
+            }
+
+            var path = await ResolveExecutableAsync(gitExecutable, ct).ConfigureAwait(false);
+            log.Info(LogCategory.Git,
+                     $"git found: {version.Trim()}" + (path.Length == 0 ? "" : $" at {path}"));
+
+            return GitPresence.Found(version, path);
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or IOException)
+        {
+            log.Error(LogCategory.Git, $"git could not be run: {ex.Message}", ex);
+            return GitPresence.NotFound(ex.Message);
+        }
+    }
+
+    /// <summary>Where the <c>git</c> that will run actually lives, or empty.</summary>
+    /// <remarks>
+    /// <c>git --exec-path</c> reports git's own libexec directory rather than the executable, so
+    /// the question is put to the OS instead. A failure here is silent by design — see
+    /// <see cref="ProbeAsync"/>.
+    /// </remarks>
+    private static async Task<string> ResolveExecutableAsync(string gitExecutable, CancellationToken ct)
+    {
+        if (Path.IsPathRooted(gitExecutable))
+        {
+            return gitExecutable;
+        }
+
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = OperatingSystem.IsWindows() ? "where" : "which",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                StandardOutputEncoding = new UTF8Encoding(false),
+            };
+            psi.ArgumentList.Add(gitExecutable);
+
+            using var process = Process.Start(psi);
+            if (process is null)
+            {
+                return string.Empty;
+            }
+
+            var output = await process.StandardOutput.ReadToEndAsync(ct).ConfigureAwait(false);
+            await process.WaitForExitAsync(ct).ConfigureAwait(false);
+
+            // `where` lists every match, one per line. The first is the one PATH resolves to.
+            return process.ExitCode == 0
+                ? output.Split('\n').FirstOrDefault()?.Trim() ?? string.Empty
+                : string.Empty;
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or IOException)
+        {
+            return string.Empty;
+        }
     }
 
     /// <summary>
@@ -352,6 +508,400 @@ public sealed partial class GitCliClient(
     {
         _log.Info(LogCategory.Git, "pushing");
         return RunAsync(["push", "--progress"], progress, ct, TimeSpan.FromMinutes(10));
+    }
+
+    // ------------------------------------------------------------------- credentials
+    //
+    // NOTHING IN THIS REGION LOGS WHAT IT SENDS OR RECEIVES.
+    //
+    // `git credential` speaks a key=value protocol over stdin and stdout, and one of those
+    // keys is `password`. Redact() covers URLs and would not help here, because the secret
+    // arrives on its own line with a label. The host, the outcome and the elapsed time are
+    // logged; the payload never is, at any level.
+
+    /// <summary>Whether a credential is already stored for this host, without asking for one.</summary>
+    /// <remarks>
+    /// <para>
+    /// Runs with prompts suppressed, which is what makes it a query rather than a request: with
+    /// no credential stored and no way to ask, the helper returns nothing and git fails. That
+    /// is the answer, not an error.
+    /// </para>
+    /// <para>
+    /// The presence of a <c>password</c> or <c>username</c> line in the reply is what counts.
+    /// A successful exit is not enough on its own — a helper with nothing to say can still exit
+    /// zero after echoing back only the protocol and host it was given.
+    /// </para>
+    /// </remarks>
+    public async Task<bool> HasStoredCredentialAsync(
+        string protocol, string host, CancellationToken ct)
+    {
+        if (protocol.Length == 0 || host.Length == 0)
+        {
+            return false;
+        }
+
+        var result = await RunAsync(
+            ["credential", "fill"], null, ct, TimeSpan.FromSeconds(15),
+            stdin: Query(protocol, host)).ConfigureAwait(false);
+
+        var stored = result.Success && HasSecret(result.StdOut);
+
+        _log.Debug(LogCategory.Git,
+                   $"credential for {protocol}://{host}: {(stored ? "stored" : "none")}");
+
+        return stored;
+    }
+
+    /// <summary>Ask the configured helper for a credential, letting it prompt.</summary>
+    /// <remarks>
+    /// The one call in the application that passes <c>allowPrompt</c>. The helper's own window
+    /// is the entire point of pressing Sign in, and it can take as long as a person takes —
+    /// hence the five-minute ceiling rather than the seconds every other call gets.
+    /// </remarks>
+    public async Task<GitResult> SignInAsync(string protocol, string host, CancellationToken ct)
+    {
+        _log.Info(LogCategory.Git, $"asking the credential helper for {protocol}://{host}");
+
+        var result = await RunAsync(
+            ["credential", "fill"], null, ct, TimeSpan.FromMinutes(5),
+            stdin: Query(protocol, host), allowPrompt: true).ConfigureAwait(false);
+
+        var ok = result.Success && HasSecret(result.StdOut);
+
+        _log.Info(LogCategory.Git,
+                  ok ? $"signed in to {host}" : $"no credential obtained for {host}");
+
+        // The stdout carries the secret. Return a result that says only whether it worked.
+        return ok
+            ? new GitResult { Success = true, ExitCode = 0, Duration = result.Duration }
+            : new GitResult
+            {
+                Success = false,
+                ExitCode = result.ExitCode,
+                StdErr = result.StdErr,
+                Duration = result.Duration,
+            };
+    }
+
+    /// <summary>Erase the stored credential for a host.</summary>
+    /// <remarks>
+    /// <c>reject</c> rather than <c>erase</c>: they are the same operation to every helper, and
+    /// <c>reject</c> is the documented spelling for "this credential did not work".
+    /// </remarks>
+    public async Task<GitResult> SignOutAsync(string protocol, string host, CancellationToken ct)
+    {
+        _log.Info(LogCategory.Git, $"erasing the stored credential for {protocol}://{host}");
+
+        var result = await RunAsync(
+            ["credential", "reject"], null, ct, TimeSpan.FromSeconds(30),
+            stdin: Query(protocol, host)).ConfigureAwait(false);
+
+        return new GitResult
+        {
+            Success = result.Success,
+            ExitCode = result.ExitCode,
+            StdErr = result.StdErr,
+            Duration = result.Duration,
+        };
+    }
+
+    /// <summary>
+    /// The credential protocol's request form: key=value lines, then a blank one.
+    /// </summary>
+    /// <remarks>
+    /// The trailing blank line is required and is not decorative — it is what tells git the
+    /// request is complete. Without it the helper waits for more input and the call times out.
+    /// </remarks>
+    private static string Query(string protocol, string host) =>
+        $"protocol={protocol}\nhost={host}\n\n";
+
+    /// <summary>Whether a helper's reply actually carried a credential.</summary>
+    private static bool HasSecret(string reply) =>
+        reply.Contains("password=", StringComparison.Ordinal)
+        || reply.Contains("username=", StringComparison.Ordinal);
+
+    /// <summary>Ask the remote what a branch points at, transferring no objects.</summary>
+    /// <remarks>
+    /// <para>
+    /// The full ref name rather than the short one: <c>ls-remote origin main</c> would also
+    /// match a tag called <c>main</c>, and answering with the wrong one would make the poller
+    /// fetch on every probe for as long as the tag existed.
+    /// </para>
+    /// <para>
+    /// A short timeout because this runs on a timer. A probe that sits for minutes behind a
+    /// stalled connection is a probe that has already failed as far as the panel is concerned,
+    /// and the next one will ask again anyway.
+    /// </para>
+    /// </remarks>
+    public async Task<string> LsRemoteAsync(string remote, string branch, CancellationToken ct)
+    {
+        var result = await RunAsync(
+            ["ls-remote", "--heads", remote, $"refs/heads/{branch}"],
+            null, ct, TimeSpan.FromSeconds(30)).ConfigureAwait(false);
+
+        if (!result.Success)
+        {
+            return string.Empty;
+        }
+
+        // "<sha>\trefs/heads/<branch>". No line at all means the branch is not on the remote,
+        // which is an answer rather than a failure.
+        var line = result.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                                .FirstOrDefault();
+
+        return line?.Split('\t', ' ')[0].Trim() ?? string.Empty;
+    }
+
+    /// <summary>List refs on the remote matching a pattern, transferring no objects.</summary>
+    /// <remarks>
+    /// <para>
+    /// No <c>--heads</c>, which is the whole point: the refs this is for —
+    /// <c>refs/pull/*/head</c> and <c>refs/merge-requests/*/head</c> — are outside
+    /// <c>refs/heads</c>, and <c>--heads</c> filters them all away. That is also why this could
+    /// not be folded into <see cref="LsRemoteAsync"/>.
+    /// </para>
+    /// <para>
+    /// The pattern is one argument in the array, so it reaches git literally: it is never
+    /// expanded by a shell, and the glob is git's to interpret. A short timeout because this
+    /// runs on the poller's schedule, and the raw lines go back unparsed because parsing
+    /// belongs in Core.
+    /// </para>
+    /// </remarks>
+    public async Task<string> LsRemoteRefsAsync(
+        string remote, string pattern, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(pattern))
+        {
+            return string.Empty;
+        }
+
+        var result = await RunAsync(
+            ["ls-remote", remote, pattern], null, ct, TimeSpan.FromSeconds(30))
+            .ConfigureAwait(false);
+
+        // Empty on failure. A forge that refuses the probe, a network blip or a remote with no
+        // such namespace are indistinguishable here and all mean the same thing to the caller:
+        // no number, so the button offers to create one.
+        return result.Success ? result.StdOut : string.Empty;
+    }
+
+    /// <summary>Resolve a revision locally.</summary>
+    /// <remarks>
+    /// <c>--verify</c> so an unresolvable revision exits non-zero instead of echoing back what
+    /// it was given — without it, a missing upstream would return the string "origin/main" and
+    /// be compared against a SHA, which never matches and would fetch on every probe.
+    /// </remarks>
+    public async Task<string> RevParseAsync(string revision, CancellationToken ct)
+    {
+        var result = await RunAsync(
+            ["rev-parse", "--verify", "--quiet", revision], null, ct, TimeSpan.FromSeconds(10))
+            .ConfigureAwait(false);
+
+        return result.Success ? result.StdOut.Trim() : string.Empty;
+    }
+
+    // ------------------------------------------------------------------- conflicts
+
+    /// <summary>Take one side of a conflicted file and stage it.</summary>
+    /// <remarks>
+    /// Two commands, because <c>checkout --ours</c> writes the working-tree file and leaves the
+    /// index entry unmerged. A file that looks resolved on disk and is still conflicted to git
+    /// is the state that makes somebody think the button did nothing.
+    /// </remarks>
+    public async Task<GitResult> ResolveWithSideAsync(string path, bool ours, CancellationToken ct)
+    {
+        var side = ours ? "--ours" : "--theirs";
+        _log.Info(LogCategory.Git, $"resolving {path} with {side}");
+
+        var taken = await RunAsync(["checkout", side, "--", path], null, ct,
+                                   TimeSpan.FromSeconds(30)).ConfigureAwait(false);
+
+        if (!taken.Success)
+        {
+            return taken;
+        }
+
+        return await RunAsync(["add", "--", path], null, ct, TimeSpan.FromSeconds(30))
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>Merge the upstream in, producing conflicts rather than refusing.</summary>
+    /// <remarks>
+    /// <c>--no-ff</c> is deliberately absent: when the merge <i>can</i> fast-forward there is no
+    /// reason to manufacture a merge commit, and the caller only reaches this because
+    /// <c>--ff-only</c> already refused.
+    /// </remarks>
+    public Task<GitResult> MergeUpstreamAsync(
+        IProgress<GitProgress>? progress, CancellationToken ct)
+    {
+        _log.Info(LogCategory.Git, "merging the upstream in");
+        return RunAsync(["merge", "--progress", "@{u}"], progress, ct, TimeSpan.FromMinutes(10));
+    }
+
+    /// <summary>Replay this branch onto the upstream.</summary>
+    public Task<GitResult> RebaseOntoUpstreamAsync(
+        IProgress<GitProgress>? progress, CancellationToken ct)
+    {
+        _log.Info(LogCategory.Git, "rebasing onto the upstream");
+        return RunAsync(["rebase", "@{u}"], progress, ct, TimeSpan.FromMinutes(10));
+    }
+
+    /// <summary>Undo whichever of the two is part-way through.</summary>
+    /// <remarks>
+    /// The state is read first rather than trying both and ignoring the failure: <c>git merge
+    /// --abort</c> outside a merge is an error, and an error swallowed on the way to a
+    /// successful-looking result is how a tool ends up lying about what it did.
+    /// </remarks>
+    public async Task<GitResult> AbortMergeOrRebaseAsync(CancellationToken ct)
+    {
+        var state = await MergeStateAsync(ct).ConfigureAwait(false);
+        _log.Info(LogCategory.Git, $"aborting the {state.ToString().ToLowerInvariant()}");
+
+        return state switch
+        {
+            MergeState.Merging => await RunAsync(["merge", "--abort"], null, ct,
+                                                 TimeSpan.FromMinutes(2)).ConfigureAwait(false),
+            MergeState.Rebasing => await RunAsync(["rebase", "--abort"], null, ct,
+                                                  TimeSpan.FromMinutes(2)).ConfigureAwait(false),
+            _ => NoOp(),
+        };
+    }
+
+    /// <summary>Whether a merge or rebase is part-way through.</summary>
+    /// <remarks>
+    /// From git's own marker files rather than from the presence of unmerged paths. Resolving
+    /// every conflict leaves the tree clean while the merge is still in progress and waiting to
+    /// be committed, and reading "no conflicts" as "nothing happening" would offer a plain
+    /// commit for what is the conclusion of a merge.
+    /// </remarks>
+    public async Task<MergeState> MergeStateAsync(CancellationToken ct)
+    {
+        var gitDir = await GitDirectoryAsync(ct).ConfigureAwait(false);
+
+        if (gitDir.Length == 0)
+        {
+            return MergeState.None;
+        }
+
+        // rebase-merge is the interactive machinery, rebase-apply the older patch-based path.
+        // Both mean the same thing to everything above this.
+        if (Directory.Exists(Path.Combine(gitDir, "rebase-merge"))
+            || Directory.Exists(Path.Combine(gitDir, "rebase-apply")))
+        {
+            return MergeState.Rebasing;
+        }
+
+        return File.Exists(Path.Combine(gitDir, "MERGE_HEAD"))
+            ? MergeState.Merging
+            : MergeState.None;
+    }
+
+    // ------------------------------------------------------------------- branches
+
+    /// <summary>Every remote-tracking ref, as <c>origin/branch</c>.</summary>
+    public async Task<IReadOnlyList<string>> RemoteBranchesAsync(CancellationToken ct)
+    {
+        var result = await RunAsync(
+            ["for-each-ref", "--format=%(refname:short)", "refs/remotes"], null, ct)
+            .ConfigureAwait(false);
+
+        return result.Success
+            ? [.. result.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                               .Select(l => l.Trim())
+                               .Where(l => l.Length > 0)]
+            : [];
+    }
+
+    /// <summary>Branches already merged into another.</summary>
+    /// <remarks>
+    /// The leading <c>*</c> git puts on the current branch is stripped: it is decoration in a
+    /// list that is otherwise names, and leaving it would make the current branch fail every
+    /// comparison against itself.
+    /// </remarks>
+    public async Task<IReadOnlyList<string>> MergedBranchesAsync(string into, CancellationToken ct)
+    {
+        var result = await RunAsync(["branch", "--merged", into], null, ct)
+            .ConfigureAwait(false);
+
+        return result.Success
+            ? [.. result.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                               .Select(l => l.TrimStart('*', ' ').Trim())
+                               .Where(l => l.Length > 0)]
+            : [];
+    }
+
+    /// <summary>What the remote says its default branch is.</summary>
+    /// <remarks>
+    /// Not every clone has one: <c>origin/HEAD</c> is written at clone time, and a repository
+    /// that gained its remote afterwards may never have had it. Empty is the answer rather than
+    /// an error, and the caller falls through to convention.
+    /// </remarks>
+    public async Task<string> RemoteHeadAsync(string remote, CancellationToken ct)
+    {
+        var result = await RunAsync(
+            ["symbolic-ref", "--quiet", $"refs/remotes/{remote}/HEAD"], null, ct,
+            TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+
+        return result.Success ? result.StdOut.Trim() : string.Empty;
+    }
+
+    /// <summary>Delete a local branch.</summary>
+    public Task<GitResult> DeleteBranchAsync(string name, bool force, CancellationToken ct)
+    {
+        _log.Info(LogCategory.Git, $"deleting branch {name}{(force ? " (forced)" : "")}");
+        return RunAsync(["branch", force ? "-D" : "-d", "--", name], null, ct,
+                        TimeSpan.FromSeconds(30));
+    }
+
+    /// <summary>Delete a branch from the remote.</summary>
+    /// <remarks>
+    /// <c>push --delete</c> rather than the older colon refspec, which is the same operation
+    /// spelled in a way nobody reads correctly.
+    /// </remarks>
+    public Task<GitResult> DeleteRemoteBranchAsync(
+        string remote, string name, CancellationToken ct)
+    {
+        _log.Info(LogCategory.Git, $"deleting {name} from {remote}");
+        return RunAsync(["push", remote, "--delete", name], null, ct, TimeSpan.FromMinutes(5));
+    }
+
+    /// <summary>Fetch, dropping tracking refs for branches that are gone.</summary>
+    public Task<GitResult> FetchPruneAsync(CancellationToken ct)
+    {
+        _log.Info(LogCategory.Git, "fetching with prune");
+        return RunAsync(["fetch", "--prune", "--progress"], null, ct, TimeSpan.FromMinutes(10));
+    }
+
+    /// <summary>Every remote this repository has.</summary>
+    /// <remarks>
+    /// A repository with none is ordinary, not a failure, so an empty list is the answer rather
+    /// than an error — the same reasoning <see cref="RemoteUrlAsync"/> applies.
+    /// </remarks>
+    public async Task<IReadOnlyList<string>> RemotesAsync(CancellationToken ct)
+    {
+        var result = await RunAsync(["remote"], null, ct, TimeSpan.FromSeconds(10))
+            .ConfigureAwait(false);
+
+        return result.Success
+            ? [.. result.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                               .Select(l => l.Trim())
+                               .Where(l => l.Length > 0)]
+            : [];
+    }
+
+    /// <summary>Push a branch that has no upstream, and set one.</summary>
+    /// <remarks>
+    /// <c>--set-upstream</c> with the remote and branch named explicitly rather than relying on
+    /// <c>push.default</c> or <c>push.autoSetupRemote</c>: both are configuration this
+    /// application does not own, and a publish that behaved differently on two machines in the
+    /// same team would be a genuinely confusing thing to debug.
+    /// </remarks>
+    public Task<GitResult> PublishBranchAsync(
+        string remote, string branch, IProgress<GitProgress>? progress, CancellationToken ct)
+    {
+        _log.Info(LogCategory.Git, $"publishing {branch} to {remote}");
+        return RunAsync(["push", "--set-upstream", remote, branch, "--progress"],
+                        progress, ct, TimeSpan.FromMinutes(10));
     }
 
     /// <summary>Unified diff for one path.</summary>
@@ -682,9 +1232,23 @@ public sealed partial class GitCliClient(
     /// Written to the child's standard input and then closed, for the commands that read a
     /// patch rather than take one as an argument.
     /// </param>
+    /// <param name="allowPrompt">
+    /// Let git's credential helper put its own window up.
+    /// <para>
+    /// <b>False for everything except an explicit, user-pressed sign-in.</b> Every other call
+    /// here can run without anybody watching - a status refresh, the background poller, a fetch
+    /// - and a credential prompt on one of those either hangs behind a console that does not
+    /// exist or pops a window nobody asked for. So prompts are suppressed by default and git
+    /// fails fast instead, with a message this application recognises.
+    /// </para>
+    /// <para>
+    /// It is exactly one moment that wants the opposite: the user pressed Sign in, and the
+    /// helper's own window - GCM, a browser for OAuth, a token box - is the entire point.
+    /// </para>
+    /// </param>
     private async Task<GitResult> RunAsync(
         string[] args, IProgress<GitProgress>? progress, CancellationToken ct,
-        TimeSpan? timeout = null, string? stdin = null)
+        TimeSpan? timeout = null, string? stdin = null, bool allowPrompt = false)
     {
         var psi = new ProcessStartInfo
         {
@@ -715,9 +1279,17 @@ public sealed partial class GitCliClient(
             psi.ArgumentList.Add(arg);
         }
 
-        // Never let git open an interactive prompt: under a redirected console it would
-        // hang forever with nothing on screen to explain why.
-        psi.Environment["GIT_TERMINAL_PROMPT"] = "0";
+        // Never let git open an interactive prompt - except for the one call that asked for
+        // one. Under a redirected console a prompt hangs forever with nothing on screen to
+        // explain why, which is why this is the default and not the exception.
+        //
+        // The cost of suppressing it is a specific failure message, and that turned out to be
+        // a benefit: "terminal prompts disabled" is unambiguous, because we are the ones who
+        // caused it. GitAuthClassifier reads it as "no credential stored".
+        if (!allowPrompt)
+        {
+            psi.Environment["GIT_TERMINAL_PROMPT"] = "0";
+        }
         psi.Environment["GIT_OPTIONAL_LOCKS"] = "0";
 
         var stdout = new StringBuilder();

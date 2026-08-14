@@ -38,3 +38,8 @@
 third_party/**/*.nupkg   filter=lfs diff=lfs merge=lfs -text
 third_party/**/*.7z.exe  filter=lfs diff=lfs merge=lfs -text
 third_party/**/*.zip     filter=lfs diff=lfs merge=lfs -text
+
+# Added by Versio: the mirror is text, and must arrive byte-identical everywhere.
+# Without eol=lf a core.autocrlf=true clone lands CRLF, which git calls clean and
+# Versio's hash gate calls an edit to every file in it.
+fixtures/projects/RefrigeratorControl/** text eol=lf

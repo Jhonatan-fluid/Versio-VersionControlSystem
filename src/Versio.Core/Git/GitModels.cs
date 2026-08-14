@@ -56,6 +56,27 @@ public sealed record BranchInfo
 
     /// <summary>True for a repo with no commits yet, where HEAD points nowhere.</summary>
     public bool IsUnborn { get; init; }
+
+    /// <summary>
+    /// Whether this branch is on this machine, on the remote, or both.
+    /// </summary>
+    /// <remarks>
+    /// Defaults to <see cref="BranchExistence.LocalOnly"/> because that is what a
+    /// <c>refs/heads</c> read alone can establish. <see cref="BranchInventory.Combine"/> is what
+    /// upgrades it, and until this existed a branch that lived only on the remote was invisible
+    /// to the application entirely.
+    /// </remarks>
+    public BranchExistence Existence { get; init; } = BranchExistence.LocalOnly;
+
+    /// <summary>The remote-tracking ref for a branch not checked out here, e.g.
+    /// <c>origin/feature/x</c>. Empty otherwise.</summary>
+    public string RemoteRef { get; init; } = string.Empty;
+
+    /// <summary>True when checking this out would create the local branch.</summary>
+    public bool IsRemoteOnly => Existence == BranchExistence.RemoteOnly;
+
+    /// <summary>True when nobody else can see this branch.</summary>
+    public bool IsLocalOnly => Existence == BranchExistence.LocalOnly;
 }
 
 /// <summary>The working tree as porcelain v2 reported it: current branch, plus every change.</summary>
@@ -83,12 +104,46 @@ public sealed record GitResult
     public TimeSpan Duration { get; init; }
 
     /// <summary>Best available explanation for a failure, preferring git's own words.</summary>
-    public string? FailureReason => Success
-        ? null
-        : string.IsNullOrWhiteSpace(StdErr)
-            ? $"git exited with code {ExitCode}"
-            : StdErr.Trim().Split('\n').LastOrDefault(l => !string.IsNullOrWhiteSpace(l))?.Trim()
-              ?? StdErr.Trim();
+    public string? FailureReason
+    {
+        get
+        {
+            if (Success)
+            {
+                return null;
+            }
+
+            if (string.IsNullOrWhiteSpace(StdErr))
+            {
+                return $"git exited with code {ExitCode}";
+            }
+
+            var lines = StdErr.Trim()
+                              .Split('\n')
+                              .Select(l => l.Trim())
+                              .Where(l => l.Length > 0)
+                              .ToList();
+
+            // The last line that is not advice. Git frequently appends `hint:` lines AFTER the
+            // error, and taking the last line outright surfaced those instead - so refusing to
+            // delete a branch reported as:
+            //
+            //     hint: Disable this message with "git config advice.forceDeleteBranch false"
+            //
+            // rather than "the branch 'tidy' is not fully merged". This message goes straight
+            // into a notification the user reads, so the wrong line is the whole failure as far
+            // as they are concerned.
+            //
+            // `warning:` is skipped for the same reason: git emits one before the error it is
+            // explaining, and the error is the more useful of the two.
+            var meaningful = lines.LastOrDefault(
+                l => !l.StartsWith("hint:", StringComparison.OrdinalIgnoreCase)
+                     && !l.StartsWith("warning:", StringComparison.OrdinalIgnoreCase));
+
+            // Everything git said was advice. Better its own words than an exit code.
+            return meaningful ?? lines[^1];
+        }
+    }
 }
 
 /// <summary>One progress report parsed out of git stderr, such as receiving objects at 47%.</summary>

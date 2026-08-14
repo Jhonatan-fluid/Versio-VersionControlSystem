@@ -32,6 +32,9 @@ Both directions run automatically and deterministically. A per-project **directi
 | Export a project to per-object `.st` / native `.xml` | ✅ verified on a real project |
 | **Deterministic export** — same project, byte-identical output | ✅ 3 consecutive runs, all 11 files |
 | Import edited `.st` back into a project | ✅ round-trip proven byte-identical |
+| **An import is never applied without being agreed to** | ✅ an edit to the mirror is detected, exported nowhere and written nowhere until a person confirms it. The project panel says which project is waiting and what would be rewritten; a dialog names it again before anything is written; and a copy of the `.project` is kept first. Declining leaves the offer up rather than forgetting it |
+| **One repository, one Versio** | ✅ a second instance is told which window already has it, rather than opening beside it and letting two orchestrators write `repo.json` over each other. A crashed instance never locks anybody out: the marker is checked against a live process, and a corrupt or unwritable one means the repository opens anyway |
+| **Ten copies of every project, and a way back to them** | ✅ one is taken before every import and the last ten survive. A *Restore a saved copy…* button appears on a project that has them, listing each by local time and how long ago. **Restoring keeps a copy of what it replaced**, so going back one copy too far is recoverable rather than final. Refused while the IDE holds the project |
 | Import native XML **in place**, GUID preserved | ✅ no delete-and-recreate |
 | Create objects that do not exist yet | ✅ POU / FB / FUNCTION / INTERFACE / DUT / GVL |
 | Drive CODESYS headlessly from C# | ✅ `LocalCodesysRunner` |
@@ -83,6 +86,9 @@ Both directions run automatically and deterministically. A per-project **directi
 | Template generation | ⛔ needs a new operation and script — not assembly |
 | A second vendor (TwinCAT / Studio 5000 / TIA Portal) | ⛔ the seam is ready and unproven |
 | **Git side panel** — staging, commit message, fetch/pull/push | ✅ one operation at a time across every button |
+| **Changed files named as objects** — `FB_Motor · POU`, not `src/…/POU/FB_Motor.st` | ✅ resolved through the export manifest, so it costs no extra read. A file the manifest does not describe stays a path and is **never** guessed at. A library-reference file carries a lock: editing it does not reach the project |
+| **Change summary and drafted commit subject** — *"1 GVL and 1 POU changed in RefrigeratorControl"*, and a **Draft** button that writes `Modify FB_Motor, Glob_Var` | ✅ counted by object, not by file — one GVL is two files and one edit. Both describe exactly what the commit button will record, and Draft refuses to overwrite anything you have typed |
+| **Merge / pull request button** — GitHub, GitLab, Azure DevOps, Bitbucket, Gitea | ✅ opens the forge's own page with both branches **pre-filled and nothing submitted**. Says *pull request* or *merge request* as that forge does. Turns into **Go to** on its own when one already exists, found through the forge's hidden refs — **no API token, nothing stored**. A host it cannot identify gets **no button**, never a guess; set `"forge"` in `repo.json` for a self-hosted instance |
 | **The commit gate, enforced** — a stale export is exported and staged first | ✅ push releases the direction locks, commit does not |
 | **History panel** — commits with hash, local date and time, author and subject; expand for the files, click a file for its diff | ✅ its own rail button, and lazy at four levels: the log is not read until the panel is opened, then a page at a time; a commit's files when it is expanded; a patch when a file is clicked |
 | **Stash** — push, apply, pop, drop | ✅ **not as buttons.** The six permanent controls were withdrawn and the operations kept; they drive the auto-stash now, which is where a stash is actually wanted — at the moment a branch switch would otherwise strand uncommitted work. A manual stash UI is still deliberately absent |
@@ -104,9 +110,11 @@ Both directions run automatically and deterministically. A per-project **directi
 **[docs/STATUS.md](docs/STATUS.md)** has the current state and the route to completion.
 **[docs/SAFEGUARDS.md](docs/SAFEGUARDS.md)** is what Versio refuses, asks about or waits for —
 the interruption guard, the auto-stash, and the ways this could lose work. Eight of its nine
-phases are built; the ninth is features rather than guards.
-**[docs/GIT-PANEL-PLAN.md](docs/GIT-PANEL-PLAN.md)** is the git panel's functionality and UX,
-and nothing in it is built yet.
+phases are built, and so is the ninth. What is left in its scenario list is §5.H, a repository
+that disappears while it is open.
+**[docs/GIT-PANEL-PLAN.md](docs/GIT-PANEL-PLAN.md)** is the git panel's functionality and UX.
+Eleven of its twelve phases are built; what is left is the ahead/behind previews and a list of
+smaller polish items.
 **[docs/PHASE0-FINDINGS.md](docs/PHASE0-FINDINGS.md)** records the measurements and the known limitations — including one real CODESYS mutation (`Core2` in task configuration) that keeps task config **diff-only** for now.
 
 ---
@@ -160,7 +168,7 @@ Versio.sln
    ├─ PLAN.md                   the full architecture plan
    ├─ STATUS.md                 where the project is and what remains
    ├─ SAFEGUARDS.md             what Versio refuses, asks about, or waits for
-   ├─ GIT-PANEL-PLAN.md         the git panel's functionality and UX — unbuilt
+   ├─ GIT-PANEL-PLAN.md         the git panel's functionality and UX — eleven of twelve phases built
    └─ PHASE0-FINDINGS.md        measured results and known limitations
 ```
 
@@ -208,7 +216,10 @@ That is not tidiness for its own sake — it is what makes the risky parts (the 
 | | |
 |---|---|
 | .NET SDK | 9.0.317 (pinned in `global.json`) |
-| git | 2.x with `git-lfs` |
+| git | 2.x with `git-lfs`, **on `PATH`** — Versio resolves `git` from `PATH` and drives it for
+  everything, so a machine without it starts and says so rather than working. Nothing is
+  vendored: that is what makes Git Credential Manager, SSH agents, 2FA and corporate proxies
+  behave exactly as they do in your own terminal. |
 | CODESYS | 3.5 SP22 — **integration tests only**, unit tests need none |
 
 ```bash

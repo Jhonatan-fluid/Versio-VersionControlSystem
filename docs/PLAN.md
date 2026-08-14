@@ -790,6 +790,23 @@ codescribe derives the export folder purely by convention — `dirname(project) 
 }
 ```
 
+> **The sample above is the plan as written, and the file has moved on twice.** The binding keys
+> are `projectPath`, `templatePath` and `exportPath` as built, not `project` / `template` /
+> `export`; and two **repository-level** fields have been added beside `ignore`, both committed
+> so a team sets them once and every clone agrees:
+>
+> - **`defaultBranch`** — which branch is the trunk. Empty is not `main`: it falls through to the
+>   remote's own `HEAD` and then to convention, and when none of those answers, the operations
+>   that need a trunk are disabled and say why rather than moving somebody's working tree to a
+>   branch nobody chose.
+> - **`forge`** — `GitHub`, `GitLab`, `AzureDevOps`, `Bitbucket` or `Gitea`. The only way a
+>   self-hosted instance is identifiable: `git.acme.internal` looks like nothing in particular
+>   from its URL. Absent means "work it out from the hostname, and show no merge-request button
+>   if you cannot". It also *overrides* a hostname that does match, for an enterprise GitHub
+>   behind its own domain.
+>
+> `RepoConfig` in `Core/Bindings/Binding.cs` is the authority on both.
+
 **The `id` is the identity; the paths are attributes.** Renaming a project becomes a path update against a persistent identity, so history, baseline and lock state survive a rename intact.
 
 **And the binding is recorded from both ends.** The export tree's `_manifest.json` carries a back-reference:
@@ -1283,6 +1300,31 @@ Two implementation details that cost real debugging time and are now pinned by t
 | Pull | `git pull --ff-only` by default (surface conflicts rather than auto-merging PLCopenXML); rebase/merge selectable in settings |
 | Push | `git push --progress`; on success → **release direction lock** |
 | Discard | LibGit2Sharp `Reset`/`Checkout --force` on selected paths → **release direction lock** |
+
+> **Rev 15 — what the git panel work added to this table.** Six operations, none of which was
+> here, and one correction. See [`GIT-PANEL-PLAN.md`](GIT-PANEL-PLAN.md) for the reasoning behind
+> each.
+>
+> | Operation | How |
+> |---|---|
+> | Publish a branch | `git push --set-upstream <remote> <branch> --progress`. **A separate command, not a flag on Push**: a plain push on a branch with no upstream fails outright, so one button meaning both would have a failure mode that only appears sometimes. Releases the direction lock exactly as a push does — the rule is about work becoming visible, and a publish makes it visible for the first time |
+> | List remotes | `git remote`. Needed to tell *"this repository has no remote"* from *"this branch has no upstream"*, which are indistinguishable from the branch alone and have unrelated remedies |
+> | Probe the remote | `git ls-remote --heads <remote> refs/heads/<branch>` on a timer, compared against `git rev-parse --verify <remote>/<branch>`. One line back, **no object transfer**; a real fetch runs only when the two differ |
+> | Read / write identity | `git config --get user.name` · `user.email` at repository open, and `config --local` to set. Checked **before** the export gate, so a commit git will refuse does not cost a 17–31 s CODESYS export first |
+> | Credentials | `git credential fill` to obtain, `git credential reject` to erase. **Nothing is stored by Versio.** `GIT_TERMINAL_PROMPT` is now per-call: suppressed everywhere, allowed only for the one call a user pressed a button to start |
+> | Probe for git itself | `git --version` at launch, plus `where`/`which` for the resolved path. A machine without git gets a sentence naming PATH rather than a `Win32Exception` from somewhere deep |
+>
+> **Correction to the Pull row above:** *"rebase/merge selectable in settings"* was never built,
+> and is not what shipped. `--ff-only` remains the only pull. What GP-G added is a rebase and a
+> merge offered **only on a diverged branch**, by name, in the panel — not a setting, because a
+> mode chosen once in a dialog is a mode nobody remembers choosing. Both are guarded on
+> `GuardIntent.Pull`.
+>
+> Superseded detail follows.
+> `--ff-only` is the only mode, and a divergence is surfaced rather than auto-merged — which is
+> deliberate for native CODESYS XML. The exit from a diverged branch is `§9b` of the git-panel
+> plan and is not built either, so **a diverged branch currently has no route forward inside the
+> application**.
 
 ### 8.3 Diff view
 
