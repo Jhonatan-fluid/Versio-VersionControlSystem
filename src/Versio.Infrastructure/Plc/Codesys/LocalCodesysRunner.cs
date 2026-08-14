@@ -115,9 +115,11 @@ public sealed class LocalCodesysRunner(
         IProgress<CodesysProgress>? progress,
         CancellationToken cancellationToken)
     {
-        // The job carries its own id, and it is the same id the Python script stamps on its
-        // JSON-lines output — so opening the scope here correlates the C# side, the
-        // subprocess chatter and the heartbeat into one filterable stream.
+        // The job carries its own id, and this scope is what correlates the C# side, the
+        // subprocess chatter and the heartbeat into one filterable stream. The scope does all
+        // the work: the id travels into the job file as "operationId" and no script reads it
+        // back or stamps it on a protocol line, so every event is attributed by virtue of
+        // being parsed inside this scope rather than by carrying the id itself.
         using var scope = _log.BeginOperation(job.OperationId);
 
         var script = ScriptFor(job.Operation);
@@ -390,6 +392,10 @@ public sealed class LocalCodesysRunner(
         {
             switch (evt.Type)
             {
+                // One per object the export walks, carrying the name being worked on and a
+                // denominator from the pre-count. `total` is absent when nobody counted, and
+                // a null total is what the bar reads as indeterminate — so an old script and
+                // a new host still agree.
                 case "progress":
                     progress.Report(new CodesysProgress(job.OperationId, "working",
                         evt.Int("done"), evt.Int("total"), evt.String("obj"), elapsed));
@@ -486,6 +492,23 @@ public sealed class LocalCodesysRunner(
                     _log.Info(LogCategory.Codesys,
                         $"not applied to the project ({evt.String("reason")}): " +
                         $"{evt.String("path")} — change this in the IDE");
+                    break;
+
+                case "counted":
+                    // The progress denominator, said once. Worth a line because it is the
+                    // only place the two numbers in "walked N" can be checked against what
+                    // the export expected to walk before it started — a large gap between
+                    // them means the pre-count and the walk disagree about descent.
+                    _log.Debug(LogCategory.Codesys,
+                        $"expecting to walk {evt.Int("objects")} object(s)");
+                    break;
+
+                case "progress":
+                    // Deliberately silent. It already drove the progress bar in
+                    // ReportProgress, there is one per object walked, and the objects that
+                    // produced a file are logged by "object" a few lines below. Letting it
+                    // fall through to the default would double the Debug volume of every
+                    // export to say nothing new.
                     break;
 
                 case "summary":

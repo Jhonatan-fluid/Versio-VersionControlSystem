@@ -25,8 +25,8 @@ from versio_text import (content_hash, join_st, normalize_decl_only,  # noqa: E4
 from versio_types import (FORM_CONTAINER, FORM_GVL_BOTH, FORM_LIBRARIES,  # noqa: E402
                           FORM_NATIVE, FORM_NATIVE_R, FORM_SKIP, FORM_ST_DECL,
                           FORM_ST_FULL, FORM_ST_IMPL, SKIP_EXPLANATION,
-                          SKIP_GAP, decide_form, file_name_for, skip_reason,
-                          type_of)
+                          SKIP_GAP, decide_form, descends_into_children,
+                          file_name_for, skip_reason, type_of)
 import versio_libraries  # noqa: E402
 import versio_yaml  # noqa: E402
 
@@ -87,13 +87,19 @@ class Exporter(object):
     native XML - is decided by versio_types.decide_form.
     """
 
-    def __init__(self, out_root):
+    def __init__(self, out_root, expected=0):
         self.out_root = out_root
         self.records = []
         self.warnings = []
         self.skips = []
         self.total = 0
         self.skipped = 0
+
+        # How many objects the pre-count expects to reach. Used only for the progress
+        # denominator, so a wrong answer costs a bar that does not land on 100% - never
+        # a wrong export. Zero means "nobody counted", and progress is emitted without
+        # a total rather than with a made-up one.
+        self.expected = expected
 
     def warn(self, code, path, detail=None):
         """Record a warning and emit it immediately.
@@ -107,6 +113,24 @@ class Exporter(object):
             w["detail"] = detail
         self.warnings.append(w)
         emit({"t": "warning", "code": code, "path": path, "detail": detail})
+
+    def progress(self, name):
+        """Say which object is being exported, and how far through the tree we are.
+
+        Emitted BEFORE the object is written rather than after, because the field the
+        host shows is the name of the thing currently being worked on - and the objects
+        worth naming are exactly the ones slow enough to still be on screen. The
+        fixture's Live_Visu is 2.5 MB on its own.
+
+        `total` is omitted when nobody counted, which the host reads as an
+        indeterminate bar rather than as a total of zero. Before this the host had a
+        handler for these events and no script emitted one, so an export was a
+        featureless 17-31 seconds no matter how much of it was left.
+        """
+        evt = {"t": "progress", "done": self.total, "obj": name}
+        if self.expected > 0:
+            evt["total"] = self.expected
+        emit(evt)
 
     def record(self, obj, obj_type, form, rel_path, text, parent_guid=None):
         """Note one written file in the manifest, keyed by the object's GUID.
@@ -226,6 +250,7 @@ class Exporter(object):
 
         form = decide_form(obj_type, has_impl, has_decl)
         self.total += 1
+        self.progress(name)
 
         if form == FORM_SKIP:
             # Recorded, not merely counted. A count says "8 objects were not
@@ -309,6 +334,38 @@ class Exporter(object):
             own_guid = safe(lambda: str(obj.guid), "")
             for child in safe(lambda: obj.get_children(), []) or []:
                 self.handle(child, rel_dir, name, own_guid)
+
+
+def count_objects(obj, depth=0):
+    """How many objects the export walk will reach, from this node down.
+
+    A denominator for the progress bar, and nothing else. It exists because the host
+    cannot show "9 of 25" without knowing 25, and the walk itself only learns the total
+    by finishing.
+
+    DESCENT MATCHES Exporter.handle EXACTLY, and cheaply: versio_types.descends_into_children
+    answers from the type GUID alone, so this second pass costs one get_children() and one
+    .type per node - and crucially NOT has_textual_declaration / has_textual_implementation,
+    which are the expensive properties and the ones that raise. See that function for why
+    deciding descent without them is sound.
+
+    Wrong here is cheap by construction: the count feeds a progress fraction and nothing
+    reads it afterwards. An exception anywhere returns what was counted so far, because a
+    progress bar is never worth failing an export over.
+    """
+    if depth > 40:                     # same cycle guard the probe uses
+        return 0
+
+    total = 1
+    try:
+        obj_type = type_of(safe(lambda: str(obj.type), ""))
+        if not descends_into_children(obj_type):
+            return total
+        for child in safe(lambda: obj.get_children(), []) or []:
+            total += count_objects(child, depth + 1)
+    except Exception:
+        pass
+    return total
 
 
 def count_files(path):
@@ -453,8 +510,15 @@ def main():
     proj = scriptengine.projects.open(job["project"])
     emit({"t": "opened", "path": str(proj.path)})
 
-    ex = Exporter(staging)
-    for child in proj.get_children():
+    # Counted before the walk so progress has a denominator. One extra pass over the tree
+    # reading only .type and get_children(), which is noise beside a 17-31 s cold start -
+    # and the alternative is a bar that cannot move for the whole of an export.
+    roots = list(proj.get_children())
+    expected = sum(count_objects(child) for child in roots)
+    emit({"t": "counted", "objects": expected})
+
+    ex = Exporter(staging, expected)
+    for child in roots:
         ex.handle(child, "", None)
 
     manifest = {

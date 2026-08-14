@@ -26,7 +26,7 @@ param(
 $ErrorActionPreference = "Stop"
 $tools = Split-Path -Parent $PSCommandPath
 $repoRoot = Split-Path -Parent $tools
-$scripts = Join-Path $repoRoot "src\Versio.Scripts"
+$scripts = Join-Path $repoRoot "src\Versio.Scripts.Codesys"
 
 if (Test-Path $WorkRoot) { Remove-Item $WorkRoot -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $WorkRoot | Out-Null

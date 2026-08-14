@@ -271,6 +271,26 @@ def decide_form(obj_type, has_textual_impl, has_textual_decl):
     return form
 
 
+def descends_into_children(obj_type):
+    """True when the exporter walks this type's children as objects of their own.
+
+    Decidable from the TYPE ALONE, which is the whole point: it lets the exporter count
+    the tree before walking it - for a progress total - without probing
+    has_textual_declaration / has_textual_implementation on every object, which are the
+    two expensive properties and the two that raise.
+
+    That is sound because decide_form only ever downgrades ST_FULL / ST_DECL / ST_IMPL /
+    GVL_BOTH to FORM_NATIVE, and FORM_NATIVE descends. It never turns a descending type
+    into a non-descending one, so the count and the walk cannot disagree:
+
+      FORM_SKIP      the exporter returns before recursing
+      FORM_NATIVE_R  the children are already inside its own recursive export
+      anything else  walked, including an unmapped type, which is why the default is True
+    """
+    form = TYPE_FORM.get(obj_type)
+    return form not in (FORM_SKIP, FORM_NATIVE_R)
+
+
 def file_name_for(name, obj_type, form, parent_name=None):
     """Build the on-disk file name. Sub-POU members are prefixed with their parent so
     a flat folder can still reconstruct ownership on import."""

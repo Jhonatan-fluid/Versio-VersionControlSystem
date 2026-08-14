@@ -250,7 +250,7 @@ The whole guarded section now runs on one dedicated long-running thread, so acqu
 
 ```
 C:\GIT\Versio\
-├─ src\Versio.Scripts\          probe, export, import, types, text, decl  (+ 2 probe helpers)
+├─ src\Versio.Scripts.Codesys\  probe, export, import, types, text, decl  (+ 2 probe helpers)
 ├─ src\Versio.Core\             pure domain logic - no IO, no processes, no UI
 │   ├─ Bindings\ Codesys\ Equivalence\ Locking\ Model\
 │   └─ Serialization\ Sync\ Watching\ Abstractions\

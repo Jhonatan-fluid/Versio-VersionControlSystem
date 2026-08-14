@@ -88,7 +88,7 @@ public class ObjectTypeTests
 /// the exporter and the app disagree about what an object is - and that is a silent,
 /// data-shaped bug. Compared directly rather than trusted.
 /// </summary>
-public class TypeTablePartityTests
+public class TypeTableParityTests
 {
     private static readonly Regex Entry =
         new("""^\s*"(?<guid>[0-9a-fA-F-]{36})"\s*:\s*"(?<name>[A-Z_]+)",""",

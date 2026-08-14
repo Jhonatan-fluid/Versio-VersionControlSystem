@@ -8,7 +8,7 @@ namespace Versio.Core.Plc.Codesys;
 /// published list and deriving it independently costs days. Entries marked [VERSIO] were
 /// discovered by probing a real CODESYS 3.5.22.20 project and are not in codescribe's table.
 /// <para>
-/// This must stay in lockstep with <c>src/Versio.Scripts/versio_types.py</c>. The
+/// This must stay in lockstep with <c>src/Versio.Scripts.Codesys/versio_types.py</c>. The
 /// <c>TypeTableParityTests</c> assert that they have not drifted.
 /// </para>
 /// </remarks>

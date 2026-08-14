@@ -59,7 +59,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | **New files diff as entirely added**, not as "no diff available" | ✅ `--no-index` against `/dev/null`, all lines green |
 | **Show full file** — every line, changes still highlighted | ✅ large `-U`, so it stays a diff rather than becoming a file viewer |
 | Diff view survives a 2.5 MB / 33,644-line visualisation export | ✅ rows built only when realised; parse off the UI thread |
-| **App-wide progress bar** — one signal for git, export and import alike | ✅ counted `BusyTracker`, indeterminate, with a caption |
+| **App-wide progress bar** — one signal for git, export and import alike | ✅ counted `BusyTracker`, with a caption. **An export now counts**: the exporter walks the tree once to get a denominator and reports each object as it starts it, so the bar moves and names what it is on. Everything else stays indeterminate |
 | CODESYS runs with no visible window | ✅ `CREATE_NO_WINDOW` **and** `SW_HIDE` — different subsystems |
 | Repository validation — walks up to `.git`, refuses non-repos with a reason | ✅ handles subdirectories, bare repos and linked worktrees |
 | **The repository dropdown remembers** — recent repositories across restarts | ✅ `%LOCALAPPDATA%\Versio\settings.json`, atomic write, capped at ten. The remote is recorded while the repository is open, so one that has vanished offers *clone it again* / *remove from list* / *cancel* rather than a folder picker. Startup falls back to the most recent repository still on disk |
@@ -115,6 +115,10 @@ that disappears while it is open.
 **[docs/GIT-PANEL-PLAN.md](docs/GIT-PANEL-PLAN.md)** is the git panel's functionality and UX.
 Eleven of its twelve phases are built; what is left is the ahead/behind previews and a list of
 smaller polish items.
+**[docs/CODESYS.md](docs/CODESYS.md)** is how CODESYS is actually driven — the ScriptEngine
+surface, the command line, both sides of the JSON-lines protocol, every script, and the export
+and import mechanics. Its §12 is a standing audit of that integration: what is broken, what is
+merely stale, and where the C# and the python have drifted apart.
 **[docs/PHASE0-FINDINGS.md](docs/PHASE0-FINDINGS.md)** records the measurements and the known limitations — including one real CODESYS mutation (`Core2` in task configuration) that keeps task config **diff-only** for now.
 
 ---
@@ -169,6 +173,7 @@ Versio.sln
    ├─ STATUS.md                 where the project is and what remains
    ├─ SAFEGUARDS.md             what Versio refuses, asks about, or waits for
    ├─ GIT-PANEL-PLAN.md         the git panel's functionality and UX — eleven of twelve phases built
+   ├─ CODESYS.md                how CODESYS is driven end to end, and the audit of it
    └─ PHASE0-FINDINGS.md        measured results and known limitations
 ```
 
@@ -257,6 +262,10 @@ pwsh tools/Test-RoundTrip.ps1 -Project fixtures/projects/RefrigeratorControl.pro
 ```
 
 `-MutateFirst` edits an exported `.st` before importing it. **Use it.** Without a deliberate change, a round-trip comparison can pass while the import silently did nothing — a green result that cannot fail is worse than a red one.
+
+> **Expect `Lossless: False`, and read the line above it.** The harness byte-compares the whole tree, and `import_native` legitimately perturbs native XML — re-minted counters, reordered unordered collections, regenerated internal GUIDs. The verdict that means something is `PROBE SURVIVED the round trip`, which is the textual path. See [docs/CODESYS.md](docs/CODESYS.md) §7 for the three volatility classes and §12 A4 for why the harness's own verdict is being fixed.
+
+> These harnesses start CODESYS directly and **do not take the machine-wide lock** the app uses, so running one while Versio is open on the same repository can put two headless CODESYS instances on one profile. Close the app first.
 
 > The profile string cannot be guessed from the install folder: `CODESYS 3.5.22.20` on disk is profile `CODESYS V3.5 SP22 Patch 2`. Read it from `…\CODESYS\Profiles\*.profile.xml`, or let `CodesysLocator` find it.
 

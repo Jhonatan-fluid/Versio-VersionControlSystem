@@ -1,6 +1,17 @@
 # -*- coding: utf-8 -*-
 # Test fixture helper: deletes named objects from a project so the importer has to
-# recreate them. Used by Test-ObjectCreation.ps1 - never part of the product.
+# recreate them. Never part of the product, though it is embedded in it - the
+# resource glob in Versio.Infrastructure.csproj takes every .py in this folder.
+#
+# Run it by hand through the phase 0 harness (one line; PowerShell continues with a
+# backtick, not a backslash):
+#   tools/Run-Codesys.ps1 -Script src/Versio.Scripts.Codesys/versio_delete_objects.py
+#       -Profile "CODESYS V3.5 SP22 Patch 2"
+#       -Job @{ project = "...\Machine.project"; objects = @("Device/Plc Logic/Application/Simulation") }
+#
+# The job takes "objects": a list of tree paths, each navigated by object NAME from the
+# project root - the same shape versio_import.py resolves, so a name needing percent
+# encoding will not be found here either.
 
 import json
 import sys

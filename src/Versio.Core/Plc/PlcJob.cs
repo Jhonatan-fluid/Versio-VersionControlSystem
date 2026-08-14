@@ -30,10 +30,16 @@ public sealed record PlcProjectJob
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Carries a list of projects on purpose.</b> Starting an engineering tool is expensive —
-/// CODESYS measures 17–31 s — so a job opens, processes and closes every project in one
-/// session. That is a property of engineering tools generally, not of one brand, which is why
-/// it lives here rather than in a vendor's own job type.
+/// <b>Carries a list of projects so a runner that can batch is allowed to.</b> Starting an
+/// engineering tool is expensive — CODESYS measures 17–31 s — and that cost is a property of
+/// engineering tools generally rather than of one brand, so the room to open, process and
+/// close several projects in one session belongs here rather than in a vendor's own job type.
+/// </para>
+/// <para>
+/// <b>No runner batches today.</b> The CODESYS one refuses a job carrying anything but a
+/// single project, because its scripts read a flat <c>project</c> key and have no loop —
+/// see the remarks on <c>CodesysJob</c>. Whether a list is honoured is the runner's answer to
+/// give, and callers must not read the plural as a promise it will be.
 /// </para>
 /// <para>
 /// <see cref="Profile"/> is the vendor's notion of which toolchain version to use: a CODESYS
