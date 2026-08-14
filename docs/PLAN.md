@@ -1297,7 +1297,13 @@ Two implementation details that cost real debugging time and are now pinned by t
 > | Credentials | `git credential fill` to obtain, `git credential reject` to erase. **Nothing is stored by Versio.** `GIT_TERMINAL_PROMPT` is now per-call: suppressed everywhere, allowed only for the one call a user pressed a button to start |
 > | Probe for git itself | `git --version` at launch, plus `where`/`which` for the resolved path. A machine without git gets a sentence naming PATH rather than a `Win32Exception` from somewhere deep |
 >
-> **Correction to the Pull row above:** *"rebase/merge selectable in settings"* was never built.
+> **Correction to the Pull row above:** *"rebase/merge selectable in settings"* was never built,
+> and is not what shipped. `--ff-only` remains the only pull. What GP-G added is a rebase and a
+> merge offered **only on a diverged branch**, by name, in the panel — not a setting, because a
+> mode chosen once in a dialog is a mode nobody remembers choosing. Both are guarded on
+> `GuardIntent.Pull`.
+>
+> Superseded detail follows.
 > `--ff-only` is the only mode, and a divergence is surfaced rather than auto-merged — which is
 > deliberate for native CODESYS XML. The exit from a diverged branch is `§9b` of the git-panel
 > plan and is not built either, so **a diverged branch currently has no route forward inside the

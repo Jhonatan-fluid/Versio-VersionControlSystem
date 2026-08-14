@@ -108,6 +108,14 @@ public sealed record RemoteStanding
     /// <summary>True when this branch is not on the remote and could be put there.</summary>
     public bool CanPublish => State == TrackingState.NoUpstream;
 
+    /// <summary>True when a fast-forward cannot resolve this and the user must choose.</summary>
+    /// <remarks>
+    /// The panel offers a rebase or a merge only here. Everywhere else the choice would be
+    /// noise, and `--ff-only` is the right default precisely because auto-merging native
+    /// CODESYS XML produces a file nobody reviewed.
+    /// </remarks>
+    public bool IsDiverged => State == TrackingState.Diverged;
+
     /// <summary>
     /// True whenever there is an upstream at all.
     /// </summary>

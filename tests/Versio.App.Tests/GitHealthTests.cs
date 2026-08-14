@@ -137,7 +137,7 @@ public sealed class GitHealthTests
         shell.IdentityEmail = "jane@example.com";
         Assert.True(shell.SaveIdentityCommand.CanExecute(null));
 
-        shell.SaveIdentityCommand.Execute(null);
+        await Eventually.Press(shell.SaveIdentityCommand, "save identity");
         await Eventually.Until(() => shell.Identity.IsComplete, "the identity was written");
 
         // Re-read from git rather than assumed from what was typed — writing --local into a

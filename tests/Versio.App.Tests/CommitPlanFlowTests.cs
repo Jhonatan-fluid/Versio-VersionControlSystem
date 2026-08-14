@@ -66,7 +66,7 @@ public sealed class CommitPlanFlowTests
         Assert.Equal("Stage all & commit", shell.Commit.Label);
 
         shell.CommitMessage = "everything";
-        shell.CommitCommand.Execute(null);
+        await Eventually.Press(shell.CommitCommand, "commit");
         await Eventually.Until(() => shell.Unstaged.Count == 0, "the commit landed");
 
         Assert.Equal(3, FilesInHead(repo).Length);
@@ -87,7 +87,7 @@ public sealed class CommitPlanFlowTests
         Assert.Equal("Stage & commit (2)", shell.Commit.Label);
 
         shell.CommitMessage = "two of four";
-        shell.CommitCommand.Execute(null);
+        await Eventually.Press(shell.CommitCommand, "commit");
         await Eventually.Until(() => shell.Unstaged.Count == 2, "the commit landed");
 
         var committed = FilesInHead(repo);
@@ -124,7 +124,7 @@ public sealed class CommitPlanFlowTests
         Assert.Contains("left alone", shell.Commit.Explanation);
 
         shell.CommitMessage = "only what I staged";
-        shell.CommitCommand.Execute(null);
+        await Eventually.Press(shell.CommitCommand, "commit");
         await Eventually.Until(() => shell.Staged.Count == 0, "the commit landed");
 
         var committed = FilesInHead(repo);
@@ -152,7 +152,7 @@ public sealed class CommitPlanFlowTests
         Assert.Equal("Stage & commit (1)", shell.Commit.Label);
 
         shell.CommitMessage = "staged plus the ticked one";
-        shell.CommitCommand.Execute(null);
+        await Eventually.Press(shell.CommitCommand, "commit");
         await Eventually.Until(() => shell.Unstaged.Count == 1, "the commit landed");
 
         // The two already staged plus the one ticked. Ticking adds to the index rather than

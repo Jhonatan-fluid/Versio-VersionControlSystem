@@ -1094,6 +1094,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 OnPropertyChanged(nameof(CanSignIn));
                 SignInCommand.RaiseCanExecuteChanged();
                 SignOutCommand.RaiseCanExecuteChanged();
+        ResolveCommand.RaiseCanExecuteChanged();
+        AbortMergeCommand.RaiseCanExecuteChanged();
+        ReconcileCommand.RaiseCanExecuteChanged();
             }
         }
     }
@@ -1847,6 +1850,92 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// </remarks>
     public bool HasConflicts => Changes.Any(c => c.Kind == ChangeKind.Conflicted);
 
+    // ------------------------------------------------------- conflicts (plan §6, §9b)
+
+    private MergeState _mergeState = MergeState.None;
+
+    /// <summary>Whether a merge or rebase is part-way through.</summary>
+    /// <remarks>
+    /// Read from git's own marker files, not inferred from unmerged paths. Resolving every
+    /// conflict leaves the tree clean while the merge is still <i>in progress</i>, and a panel
+    /// that read "no conflicts" as "nothing happening" would offer a plain commit for what is
+    /// the conclusion of a merge.
+    /// </remarks>
+    public MergeState MergeState
+    {
+        get => _mergeState;
+        private set
+        {
+            if (SetProperty(ref _mergeState, value))
+            {
+                OnPropertyChanged(nameof(IsMidMerge));
+                OnPropertyChanged(nameof(ConflictHeadline));
+                RaiseGitCommandStates();
+            }
+        }
+    }
+
+    public bool IsMidMerge => _mergeState is not MergeState.None;
+
+    /// <summary>The conflicted paths, as their own section.</summary>
+    /// <remarks>
+    /// Not "staged" and not "not staged" — they are <i>stuck</i>, and putting them in either
+    /// list would misrepresent what git will do with them. A third section is the honest shape.
+    /// </remarks>
+    public ObservableCollection<ChangeRow> Conflicted { get; } = [];
+
+    /// <summary>What is wrong and what to do, in one line.</summary>
+    public string ConflictHeadline
+    {
+        get
+        {
+            var count = Conflicted.Count;
+
+            if (count > 0)
+            {
+                var what = _mergeState == MergeState.Rebasing ? "rebase" : "merge";
+                return count == 1
+                    ? $"1 file conflicts. Resolve it, then finish the {what}."
+                    : $"{count} files conflict. Resolve them, then finish the {what}.";
+            }
+
+            return _mergeState switch
+            {
+                MergeState.Merging => "Every conflict is resolved. Commit to finish the merge.",
+                MergeState.Rebasing => "Every conflict is resolved. Continue the rebase.",
+                _ => string.Empty,
+            };
+        }
+    }
+
+    /// <summary>Take this side of the selected conflict.</summary>
+    public AsyncCommand<bool> ResolveCommand { get; private set; } = null!;
+
+    /// <summary>Undo the merge or rebase entirely.</summary>
+    public AsyncCommand AbortMergeCommand { get; private set; } = null!;
+
+    /// <summary>The way out of a diverged branch that a fast-forward pull cannot take.</summary>
+    public AsyncCommand<bool> ReconcileCommand { get; private set; } = null!;
+
+    private ChangeRow? _selectedConflict;
+
+    public ChangeRow? SelectedConflict
+    {
+        get => _selectedConflict;
+        set
+        {
+            if (SetProperty(ref _selectedConflict, value))
+            {
+                ResolveCommand.RaiseCanExecuteChanged();
+
+                if (value is not null)
+                {
+                    _ = ShowPathAsync(value.Path, staged: false);
+                }
+            }
+        }
+    }
+
     /// <summary>Button labels that say what will happen, not what the button is called.</summary>
     public string StageLabel =>
         StagingSelection.Label("Stage", Unstaged.Count, UnstagedSelectedCount);
@@ -1986,6 +2075,20 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             PublishAsync, () => Ready && Standing.CanPublish, ReportError);
 
         SignInCommand = new AsyncCommand(SignInAsync, () => Ready && CanSignIn, ReportError);
+
+        ResolveCommand = new AsyncCommand<bool>(
+            ResolveSelectedAsync,
+            _ => Ready && SelectedConflict is not null, ReportError);
+
+        AbortMergeCommand = new AsyncCommand(
+            AbortMergeAsync, () => Ready && IsMidMerge, ReportError);
+
+        // Enabled only while diverged. Before this there was no route forward at all from
+        // inside the application: the badge said "pull first" and --ff-only refuses a diverged
+        // branch, which is advice pointing at a button that cannot work.
+        ReconcileCommand = new AsyncCommand<bool>(
+            ReconcileAsync,
+            _ => Ready && Standing.State == TrackingState.Diverged, ReportError);
 
         // Available whenever a credential could be stored, not only when one has failed:
         // "sign out of this host" is a thing somebody may want to do deliberately, and a
@@ -2733,6 +2836,162 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         OnUi(() => _ = RunRefreshAsync(RefreshTrigger.GitMetadata, null));
     }
 
+    /// <summary>
+    /// Take one side of the selected conflict.
+    /// </summary>
+    /// <remarks>
+    /// <b>"Ours" and "theirs" swap meaning under a rebase</b> — git replays your commits onto
+    /// the upstream, so during a rebase "ours" is the upstream's version. The labels are chosen
+    /// in the view from <see cref="MergeState"/>; this passes through what the user picked, and
+    /// the log records which side git was actually given.
+    /// </remarks>
+    private async Task ResolveSelectedAsync(bool ours)
+    {
+        if (_git is null || SelectedConflict is not { } row)
+        {
+            return;
+        }
+
+        _logger.Click(ours ? "Git.ResolveOurs" : "Git.ResolveTheirs");
+        using var busy = Busy.Begin(WorkKind.GitWrite, $"Resolving {row.Path}…");
+
+        var result = await _git.ResolveWithSideAsync(row.Path, ours, busy.Token)
+            .ConfigureAwait(true);
+
+        if (!result.Success)
+        {
+            Notifications.Failure($"Could not resolve {row.Path}.",
+                                  result.FailureReason ?? string.Empty);
+            return;
+        }
+
+        Notifications.Success($"Resolved {row.Path}.");
+        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Undo a merge or rebase that is part-way through.
+    /// </summary>
+    /// <remarks>
+    /// Confirmed, because it throws away conflict resolutions the user may have spent real time
+    /// on — and unlike a discard, what it destroys is not visible as a list of files. Offering
+    /// the operation without offering the way back is how somebody ends up in a state they
+    /// cannot describe, in a tool meant to keep them out of the terminal.
+    /// </remarks>
+    private async Task AbortMergeAsync()
+    {
+        if (_git is null || !IsMidMerge)
+        {
+            return;
+        }
+
+        var what = _mergeState == MergeState.Rebasing ? "rebase" : "merge";
+
+        using (AskingSomething())
+        {
+            var confirmed = ConfirmDestructive?.Invoke(
+                $"Abandon this {what}?",
+                $"The branch goes back to where it was before the {what} started.\n\n" +
+                "Any conflicts you have already resolved are thrown away.") ?? false;
+
+            if (!confirmed)
+            {
+                _logger.Info(LogCategory.Git, $"{what} abort cancelled");
+                return;
+            }
+        }
+
+        _logger.Click("Git.AbortMerge");
+        using var busy = Busy.Begin(WorkKind.GitWrite, $"Abandoning the {what}…");
+
+        // Same as a checkout: this rewrites the working tree wholesale, and an unheld watcher
+        // would report the result as an edit to the exported text and import it.
+        GitResult result = default!;
+
+        await Sync.WhileGitRewritesTheTreeAsync(
+            $"{what} --abort",
+            async () => result = await _git.AbortMergeOrRebaseAsync(busy.Token)
+                .ConfigureAwait(true)).ConfigureAwait(true);
+
+        if (!result.Success)
+        {
+            Notifications.Failure($"Could not abandon the {what}.",
+                                  result.FailureReason ?? string.Empty);
+            return;
+        }
+
+        Notifications.Success($"The {what} was abandoned.", "The branch is back where it was.");
+        await RunRefreshAsync(RefreshTrigger.GitMetadata, null).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Reconcile a diverged branch, by rebase or by merge.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The panel's only remaining dead end, until now.</b> The badge says "diverged — pull
+    /// first", and <c>pull --ff-only</c> refuses a diverged branch by design, so the advice
+    /// pointed at a button that could not work and the way out was a terminal.
+    /// </para>
+    /// <para>
+    /// <b><c>--ff-only</c> stays the default and this is not a relaxation of it.</b> That
+    /// default exists because auto-merging native CODESYS XML would produce a file nobody
+    /// reviewed; what changes here is that the user can ask for a merge <i>by name</i>, having
+    /// been told what it means. The guard runs first, so a held direction lock or an open
+    /// project refuses it exactly as it refuses a branch switch — both rewrite the working tree.
+    /// </para>
+    /// </remarks>
+    private async Task ReconcileAsync(bool rebase)
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        var what = rebase ? "rebase" : "merge";
+        _logger.Click(rebase ? "Git.Rebase" : "Git.Merge");
+
+        // The same intent a pull uses: both rewrite the project and its mirror together, which
+        // is the scenario SAFEGUARDS §5.A calls able to corrupt a project through no user error.
+        if (!await ClearForContextChangeAsync(GuardIntent.Pull, what).ConfigureAwait(true))
+        {
+            return;
+        }
+
+        using var busy = Busy.Begin(WorkKind.GitWrite, $"Running the {what}…");
+
+        GitResult result = default!;
+
+        await Sync.WhileGitRewritesTheTreeAsync(
+            what,
+            async () => result = rebase
+                ? await _git.RebaseOntoUpstreamAsync(null, busy.Token).ConfigureAwait(true)
+                : await _git.MergeUpstreamAsync(null, busy.Token).ConfigureAwait(true))
+            .ConfigureAwait(true);
+
+        await RunRefreshAsync(RefreshTrigger.GitMetadata, null).ConfigureAwait(true);
+
+        if (result.Success)
+        {
+            NoteAuthSuccess();
+            Notifications.Success($"The {what} finished.");
+            return;
+        }
+
+        // A conflict is not a failure here - it is the expected outcome of reconciling two
+        // branches that touched the same thing, and the panel is now equipped to show it. Only
+        // say something went wrong when nothing is waiting to be resolved.
+        if (Conflicted.Count > 0 || IsMidMerge)
+        {
+            Notifications.Warning(
+                $"The {what} stopped at a conflict.",
+                "Resolve the files below, or abandon it and nothing changes.");
+            return;
+        }
+
+        Notifications.Failure($"The {what} did not run.", result.FailureReason ?? string.Empty);
+    }
+
     private async Task FetchAsync()
     {
         if (_git is null)
@@ -3428,8 +3687,25 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// </remarks>
     private void UpdateStagingLists(GitStatus status)
     {
-        ReconcileInto(Staged, [.. status.Staged.OrderBy(c => c.Path, StringComparer.Ordinal)]);
-        ReconcileInto(Unstaged, [.. status.Unstaged.OrderBy(c => c.Path, StringComparer.Ordinal)]);
+        // Conflicted paths come out of BOTH of git's columns - an unmerged file is reported
+        // with a staged and an unstaged side - so they are taken first and excluded from the
+        // other two. A file listed in all three sections would be three rows for one problem.
+        var conflicted = status.Changes
+            .Where(c => c.IsConflicted)
+            .OrderBy(c => c.Path, StringComparer.Ordinal)
+            .ToList();
+
+        var stuck = conflicted.Select(c => c.Path).ToHashSet(StringComparer.Ordinal);
+
+        ReconcileInto(Conflicted, conflicted);
+        ReconcileInto(Staged, [.. status.Staged
+            .Where(c => !stuck.Contains(c.Path))
+            .OrderBy(c => c.Path, StringComparer.Ordinal)]);
+        ReconcileInto(Unstaged, [.. status.Unstaged
+            .Where(c => !stuck.Contains(c.Path))
+            .OrderBy(c => c.Path, StringComparer.Ordinal)]);
+
+        OnPropertyChanged(nameof(ConflictHeadline));
 
 
         RaiseSelectionState();
@@ -3876,6 +4152,15 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             Standing = RemoteStanding.For(status.Branch, _hasRemote);
 
             var changed = Reconcile(status.Changes);
+
+            // Read whenever the tree has conflicts OR we thought it was mid-merge, so the
+            // banner both appears and goes away. Skipped otherwise: it costs a rev-parse and
+            // two file probes, and the overwhelmingly common answer is None.
+            if (status.HasConflicts || IsMidMerge)
+            {
+                MergeState = await _git.MergeStateAsync(busy?.Token ?? CancellationToken.None)
+                    .ConfigureAwait(true);
+            }
 
             UpdateStagingLists(status);
 

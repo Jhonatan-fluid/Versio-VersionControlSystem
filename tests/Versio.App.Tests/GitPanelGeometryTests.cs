@@ -103,13 +103,12 @@ public sealed class GitPanelGeometryTests(ITestOutputHelper output)
     {
         StaHarness.Run(() =>
         {
-            var (_, _, panel, _) = Loaded();
+            var (window, _, _, _) = Loaded();
 
-            var lists = AllOf<ListBox>(panel).ToList();
-            Assert.Equal(2, lists.Count);
-
-            var staged = lists[0];
-            var unstaged = lists[1];
+            // By name: the conflict section added a third ListBox to this panel, and indexing
+            // by position would quietly start measuring that one instead.
+            var staged = Assert.IsType<ListBox>(window.FindName("StagedList"));
+            var unstaged = Assert.IsType<ListBox>(window.FindName("UnstagedList"));
 
             output.WriteLine($"staged list:   {staged.ActualHeight:F0} px for 4 rows");
             output.WriteLine($"unstaged list: {unstaged.ActualHeight:F0} px for 12 rows");
@@ -169,16 +168,16 @@ public sealed class GitPanelGeometryTests(ITestOutputHelper output)
     {
         StaHarness.Run(() =>
         {
-            var (_, _, panel, _) = Loaded();
+            var (window, _, _, _) = Loaded();
 
-            var lists = AllOf<ListBox>(panel).ToList();
-            var item = AllOf<ListBoxItem>(lists[1]).FirstOrDefault();
+            var unstaged = Assert.IsType<ListBox>(window.FindName("UnstagedList"));
+            var item = AllOf<ListBoxItem>(unstaged).FirstOrDefault();
 
             Assert.True(item is not null, "no unstaged row was realised");
             output.WriteLine($"row: {item!.ActualWidth:F0} x {item.ActualHeight:F0}");
 
             Assert.True(item.ActualHeight > 0, "a realised row has no height");
-            Assert.True(item.ActualWidth <= lists[1].ActualWidth + 1,
+            Assert.True(item.ActualWidth <= unstaged.ActualWidth + 1,
                         "a row is wider than the list holding it");
         });
     }

@@ -73,6 +73,21 @@ public sealed class RemotePollerTests
         public Task<GitResult> FetchAsync(IProgress<GitProgress>? p, CancellationToken ct) => throw new NotSupportedException();
         public Task<GitResult> PullAsync(IProgress<GitProgress>? p, CancellationToken ct) => throw new NotSupportedException();
         public Task<GitResult> PushAsync(IProgress<GitProgress>? p, CancellationToken ct) => throw new NotSupportedException();
+        public Task<GitResult> ResolveWithSideAsync(string path, bool ours, CancellationToken ct) =>
+            throw new NotSupportedException();
+
+        public Task<GitResult> MergeUpstreamAsync(IProgress<GitProgress>? p, CancellationToken ct) =>
+            throw new NotSupportedException();
+
+        public Task<GitResult> RebaseOntoUpstreamAsync(IProgress<GitProgress>? p, CancellationToken ct) =>
+            throw new NotSupportedException();
+
+        public Task<GitResult> AbortMergeOrRebaseAsync(CancellationToken ct) =>
+            throw new NotSupportedException();
+
+        public Task<MergeState> MergeStateAsync(CancellationToken ct) =>
+            throw new NotSupportedException();
+
         public Task<IReadOnlyList<string>> RemotesAsync(CancellationToken ct) => throw new NotSupportedException();
         public Task<GitResult> PublishBranchAsync(string r, string b, IProgress<GitProgress>? p, CancellationToken ct) => throw new NotSupportedException();
         public Task<string> DiffAsync(string p, bool s, CancellationToken ct, int c = 3) => throw new NotSupportedException();

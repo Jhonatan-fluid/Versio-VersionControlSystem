@@ -89,7 +89,7 @@ public sealed class StagingSelectionFlowTests
         shell.Unstaged[0].IsSelected = true;
         shell.Unstaged[2].IsSelected = true;
 
-        shell.StageCommand.Execute(null);
+        await Eventually.Press(shell.StageCommand, "stage");
         await Eventually.Until(() => shell.Staged.Count == 2, "two files were staged");
 
         // Two staged, two left alone. Asked of git rather than of the view model, because what
@@ -109,7 +109,7 @@ public sealed class StagingSelectionFlowTests
         await shell.OpenAsync(repo.Path);
         Assert.Equal(0, shell.UnstagedSelectedCount);
 
-        shell.StageCommand.Execute(null);
+        await Eventually.Press(shell.StageCommand, "stage");
         await Eventually.Until(() => shell.Unstaged.Count == 0, "the list was staged");
 
         Assert.Equal(3, shell.Staged.Count);

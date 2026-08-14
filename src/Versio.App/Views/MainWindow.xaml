@@ -530,6 +530,133 @@
                                 </StackPanel>
                             </Border>
 
+                            <!-- CONFLICTS, AND THE WAY OUT OF A DIVERGED BRANCH.
+
+                                 First, above everything, because nothing else in the panel can
+                                 proceed while the tree is mid-merge: git refuses the commit,
+                                 and the sync engine refuses both directions
+                                 (SyncVerdict.BlockedByConflict).
+
+                                 The DETECTION is not here. IConflictProbe and the sync
+                                 narrative already own it, and a second detection path would
+                                 give the panel and the engine two ways to disagree about the
+                                 same tree. This binds to what git reported.
+
+                                 The conflicted files are their OWN section rather than being
+                                 folded into staged or not-staged. An unmerged file is reported
+                                 in both of git's columns and is really in neither state - it is
+                                 stuck - so putting it in either list would misrepresent what
+                                 git will do with it. -->
+                            <Border DockPanel.Dock="Top"
+                                    Background="{DynamicResource Brush.Surface.Sunken}"
+                                    CornerRadius="{DynamicResource Radius.Control}"
+                                    Padding="10,8" Margin="0,0,0,10"
+                                    Visibility="{Binding IsMidMerge,
+                                        Converter={StaticResource BoolToVisibility}}">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding ConflictHeadline}"
+                                               TextWrapping="Wrap"
+                                               FontFamily="{DynamicResource Font.UI}"
+                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                               Foreground="{DynamicResource Brush.Status.Conflict}" />
+
+                                    <ListBox ItemsSource="{Binding Conflicted}"
+                                             SelectedItem="{Binding SelectedConflict}"
+                                             Background="Transparent" BorderThickness="0"
+                                             Margin="0,6,0,0" MaxHeight="120"
+                                             ItemContainerStyle="{StaticResource RowItem}"
+                                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                             ItemTemplate="{StaticResource ChangeRowTemplate}" />
+
+                                    <!-- "Ours" and "theirs" swap meaning under a rebase - git
+                                         replays your commits onto the upstream - so the labels
+                                         say which BRANCH rather than which pronoun. Nobody
+                                         should have to remember that rule to press a button. -->
+                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                        <Button Content="Keep mine" Padding="8,2"
+                                                Height="{DynamicResource Size.Control.Compact}"
+                                                Style="{StaticResource GhostButton}"
+                                                ToolTipService.ShowOnDisabled="True"
+                                                ToolTip="Take this branch's version of the selected file"
+                                                Command="{Binding ResolveCommand}"
+                                                CommandParameter="True" />
+                                        <Button Content="Keep theirs" Padding="8,2" Margin="6,0,0,0"
+                                                Height="{DynamicResource Size.Control.Compact}"
+                                                Style="{StaticResource GhostButton}"
+                                                ToolTipService.ShowOnDisabled="True"
+                                                ToolTip="Take the incoming version of the selected file"
+                                                Command="{Binding ResolveCommand}"
+                                                CommandParameter="False" />
+
+                                        <!-- The way back. Offering an operation that can stop
+                                             half-done without offering the undo is how somebody
+                                             ends up in a state they cannot describe. -->
+                                        <Button Content="Abandon" Padding="8,2" Margin="6,0,0,0"
+                                                Height="{DynamicResource Size.Control.Compact}"
+                                                Style="{StaticResource GhostButton}"
+                                                Foreground="{DynamicResource Brush.Status.Deleted}"
+                                                ToolTipService.ShowOnDisabled="True"
+                                                ToolTip="Put the branch back where it was before this started"
+                                                Command="{Binding AbortMergeCommand}" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- THE DIVERGED BRANCH'S ONLY EXIT.
+
+                                 Until this existed the panel's own badge said "diverged, pull
+                                 first" and a fast-forward-only pull refuses a diverged branch by
+                                 design, so the advice pointed at a button that could not work and
+                                 the way out was a terminal.
+
+                                 Fast-forward-only stays the default and this is not a relaxation
+                                 of it: that default exists because auto-merging native CODESYS XML
+                                 produces a file nobody reviewed. What changes is that the user
+                                 can ask for one BY NAME, having been told what it means.
+
+                                 Rebase leads, because it is the usual answer for a feature
+                                 branch and it keeps the exported history linear - which matters
+                                 more here than in most repositories, since the diff being read
+                                 is generated text. -->
+                            <Border DockPanel.Dock="Top"
+                                    Background="{DynamicResource Brush.Surface.Sunken}"
+                                    CornerRadius="{DynamicResource Radius.Control}"
+                                    Padding="10,8" Margin="0,0,0,10"
+                                    Visibility="{Binding Standing.IsDiverged,
+                                        Converter={StaticResource BoolToVisibility}}">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Standing.Headline}"
+                                               TextWrapping="Wrap"
+                                               FontFamily="{DynamicResource Font.UI}"
+                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                               Foreground="{DynamicResource Brush.Status.Modified}" />
+
+                                    <TextBlock TextWrapping="Wrap" Margin="0,6,0,0"
+                                               FontFamily="{DynamicResource Font.UI}"
+                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                               Foreground="{DynamicResource Brush.Text.Secondary}"
+                                               Text="A fast-forward cannot resolve this. Replaying your commits on top keeps the history linear; merging records both sides." />
+
+                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                        <Button Content="Rebase onto the remote"
+                                                Style="{StaticResource AccentButton}"
+                                                Height="{DynamicResource Size.Control.Compact}"
+                                                ToolTipService.ShowOnDisabled="True"
+                                                ToolTip="Replay your commits on top of the remote's"
+                                                Command="{Binding ReconcileCommand}"
+                                                CommandParameter="True" />
+                                        <Button Content="Merge" Margin="6,0,0,0" Padding="8,2"
+                                                Height="{DynamicResource Size.Control.Compact}"
+                                                Style="{StaticResource GhostButton}"
+                                                ToolTipService.ShowOnDisabled="True"
+                                                ToolTip="Bring the remote's commits in and record both sides"
+                                                Command="{Binding ReconcileCommand}"
+                                                CommandParameter="False" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
                             <!-- CREDENTIALS.
 
                                  Versio implements no login and must not start. Driving git.exe
@@ -831,7 +958,8 @@
                                             Command="{Binding UnstageCommand}" />
                                 </Grid>
 
-                                <ListBox Grid.Row="1" ItemsSource="{Binding Staged}"
+                                <ListBox Grid.Row="1" x:Name="StagedList"
+                                         ItemsSource="{Binding Staged}"
                                          SelectedItem="{Binding SelectedStaged}"
                                          Background="Transparent" BorderThickness="0"
                                          ItemContainerStyle="{StaticResource RowItem}"
@@ -900,7 +1028,8 @@
                                     </StackPanel>
                                 </Grid>
 
-                                <ListBox Grid.Row="4" ItemsSource="{Binding Unstaged}"
+                                <ListBox Grid.Row="4" x:Name="UnstagedList"
+                                         ItemsSource="{Binding Unstaged}"
                                          SelectedItem="{Binding SelectedUnstaged}"
                                          Background="Transparent" BorderThickness="0"
                                          ItemContainerStyle="{StaticResource RowItem}"

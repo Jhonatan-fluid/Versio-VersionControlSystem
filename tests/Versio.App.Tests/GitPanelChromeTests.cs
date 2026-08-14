@@ -278,11 +278,12 @@ public sealed class GitPanelChromeTests
             var (window, _) = Build();
             var (panel, _) = ShowGitPanel(window);
 
-            var lists = AllOf<ListBox>(panel).ToList();
-
-            // Staged and unstaged. A third would need the same treatment, and this is where
-            // that gets noticed.
-            Assert.Equal(2, lists.Count);
+            // BY NAME, not by position. A third ListBox arrived with the conflict section, and
+            // an index-based lookup silently started measuring the wrong control - which is
+            // exactly the kind of test that keeps passing while it stops meaning anything.
+            var lists = new[] { "StagedList", "UnstagedList" }
+                .Select(n => Assert.IsType<ListBox>(window.FindName(n)))
+                .ToList();
 
             foreach (var list in lists)
             {

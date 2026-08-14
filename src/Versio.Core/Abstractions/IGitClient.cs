@@ -164,6 +164,55 @@ public interface IGitClient
     /// </remarks>
     Task<string> RevParseAsync(string revision, CancellationToken ct);
 
+    /// <summary>
+    /// Take one side of a conflicted file and stage it.
+    /// </summary>
+    /// <param name="ours">
+    /// True for the version already on this branch, false for the one arriving. <b>"Ours" and
+    /// "theirs" swap meaning under a rebase</b> — git replays your commits onto theirs, so
+    /// during a rebase "ours" is the upstream. The caller passes what the user chose and this
+    /// passes it straight through; deciding which word to show belongs where the operation is
+    /// known.
+    /// </param>
+    /// <remarks>
+    /// Staged immediately afterwards, because <c>checkout --ours</c> writes the file and leaves
+    /// it unmerged. A file that looks resolved on disk and is still conflicted in the index is
+    /// the state that makes somebody think the button did nothing.
+    /// </remarks>
+    Task<GitResult> ResolveWithSideAsync(string path, bool ours, CancellationToken ct);
+
+    /// <summary>
+    /// Merge the upstream into this branch, producing conflicts rather than refusing.
+    /// </summary>
+    /// <remarks>
+    /// The exit from a diverged branch that <c>pull --ff-only</c> cannot take. Deliberately a
+    /// separate method rather than a flag on pull: the fast-forward-only default exists because
+    /// auto-merging native CODESYS XML would produce a file nobody reviewed, and a merge is a
+    /// thing the user has to ask for by name.
+    /// </remarks>
+    Task<GitResult> MergeUpstreamAsync(IProgress<GitProgress>? progress, CancellationToken ct);
+
+    /// <summary>Replay this branch's commits on top of the upstream.</summary>
+    /// <remarks>
+    /// The usual answer for a feature branch, and it keeps the exported history linear — which
+    /// matters more here than in most repositories, because the diff being read is generated
+    /// text and a merge commit in the middle of it explains nothing.
+    /// </remarks>
+    Task<GitResult> RebaseOntoUpstreamAsync(IProgress<GitProgress>? progress, CancellationToken ct);
+
+    /// <summary>
+    /// Undo a merge or rebase that is part-way through, back to where it started.
+    /// </summary>
+    /// <remarks>
+    /// <b>Not optional.</b> Offering an operation that can stop half-done without offering the
+    /// way back is how somebody ends up in a state they cannot describe, in a tool that was
+    /// supposed to keep them out of the terminal.
+    /// </remarks>
+    Task<GitResult> AbortMergeOrRebaseAsync(CancellationToken ct);
+
+    /// <summary>Whether a merge or rebase is part-way through right now.</summary>
+    Task<MergeState> MergeStateAsync(CancellationToken ct);
+
     /// <summary>Verify a remote is reachable without cloning it.</summary>
     Task<GitResult> VerifyRemoteAsync(string url, CancellationToken ct);
 

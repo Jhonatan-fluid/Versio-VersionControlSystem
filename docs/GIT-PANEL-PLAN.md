@@ -8,7 +8,7 @@ interface does not expose, plus one new dialog.
 
 ## Where this stands
 
-**Seven of twelve phases are done**, on branch `GitPanel`, plus an audit pass over all of them.
+**Eight of twelve phases are done**, on branch `GitPanel`, plus an audit pass over all of them.
 Each has a commit and an entry in the **phase log** at the end of this document saying what
 landed, what was decided, and what contact with the code changed.
 
@@ -22,8 +22,8 @@ landed, what was decided, and what contact with the code changed.
 | ✅ | **GP-E** — per-file staging, two scrollable panes | `a7cc553` |
 | ✅ | *Audit* — dead API removed, fixtures consolidated, a flake fixed | `485cddb` |
 | ✅ | **GP-F** — one commit button, three behaviours, gating | `ac954b4` |
-| — | **GP-G** — conflicts UI, diverged exit (§6, §9b) | next |
-| — | GP-H — branch identity, default branch, delete dialog (§7) | |
+| ✅ | **GP-G** — conflicts UI, diverged exit (§6, §9b) | `81865b7` |
+| — | **GP-H** — branch identity, default branch, delete dialog (§7) | next |
 | — | GP-I — merge-request button (§8) | |
 | — | GP-J — PLC-aware summaries (§9c) | |
 | — | GP-K / GP-L — previews and polish (§9d, §10) | |
@@ -696,7 +696,7 @@ the "commits only what is staged" test must fail.
 
 ## 6 · Conflicts — the UI half only
 
-> **Not built yet.**
+> **Built** in GP-G, together with §9b's diverged exit — they are the same problem seen from two ends.
 
 **The engine half is built.** `IConflictProbe` / `GitConflictProbe` and
 `SyncVerdict.BlockedByConflict` already refuse both sync directions while any path under a
@@ -1559,7 +1559,7 @@ different things is a coordination bug waiting to happen.
 | GP-D ✅ | Background polling (§3) | Needs §2's state to have somewhere to put its answer. Makes every count in the panel true. |
 | GP-E ✅ | Reconcile the staging lists, the two-pane scrollable layout and checkboxes (§4). **§4a's `GitPanelViewModel` extraction was deliberately not done** | The reconcile is the prerequisite everything else rests on — the lists stop being rebuilt every second, so a checkbox survives an editor save. The extraction was dropped once the seam was measured: eight shell collaborators reach into `CommitAsync` alone. Evidence in the phase log; the size concern stands and the seam worth cutting is the *remote* surface. |
 | GP-F ✅ | Button model + gating matrix (§5) | Needs GP-B and GP-E to gate against real state. |
-| GP-G | Conflicts (§6, UI half) + the diverged-branch exit (§9b) | **No longer blocked** — safeguards phase 6 shipped both defences. One piece of work: both are "the remote and I disagree", and §2 currently advises a button that refuses. |
+| GP-G ✅ | Conflicts (§6, UI half) + the diverged-branch exit (§9b) | **No longer blocked** — safeguards phase 6 shipped both defences. One piece of work: both are "the remote and I disagree", and §2 currently advises a button that refuses. |
 | GP-H | Branch identity, default branch, deletion dialog (§7), undo-delete (§9f) | Largest single piece and the only new window; benefits from GP-A and GP-D already being in place. |
 | GP-I | Merge-request button (§8) | Needs §7b's default branch for the target, and extracting `RemoteUrl` from the clone dialog. |
 | GP-J | PLC-aware summaries and drafted commit messages (§9c) | Sequenced late because it is additive, not because it is low value — it is the highest-value item here. Nothing blocks it earlier if you want it sooner. |
@@ -2081,6 +2081,71 @@ that fails. The *surface* — banner, third section, ours/theirs — is still GP
 **Geometry unchanged** at 372×729 with both lists at 207 px: one button where two were is
 strictly less to fit. **Verified in the running app** against a repository with 2 staged and 2
 unstaged — opened clean, no exceptions.
+
+---
+
+### GP-G — conflicts and the way out of a divergence · done 2026-08-14
+
+**Built:** `Core/Git/MergeState.cs`; `ResolveWithSideAsync`, `MergeUpstreamAsync`,
+`RebaseOntoUpstreamAsync`, `AbortMergeOrRebaseAsync`, `MergeStateAsync` on `IGitClient`; a
+conflict section with keep-mine / keep-theirs / abandon; the diverged banner offering rebase or
+merge; `RemoteStanding.IsDiverged`.
+
+**Tests:** 12 flow against real conflicts. **1,189 / 313 / 149 green.**
+
+**The panel's last dead end is closed.** §2's badge said *"diverged — pull first"* and
+`pull --ff-only` refuses a diverged branch by design, so the advice pointed at a button that
+could not work and the only way out was a terminal. `--ff-only` stays the default — it exists
+because auto-merging native CODESYS XML produces a file nobody reviewed — but the user can now
+ask for a rebase or a merge **by name**, having been told what each means. Both go through the
+guard on `GuardIntent.Pull`, because both rewrite the project and its mirror together.
+
+**No second detection path.** `IConflictProbe` and `SyncVerdict.BlockedByConflict` already own
+the engine half; this binds to what git reported rather than asking again. Conflicted files get
+their **own section**, because an unmerged path is reported in *both* of git's columns and is
+really in neither state — listing it in staged and unstaged would be three rows for one problem.
+
+**`MergeState` is read from git's marker files, not inferred from conflicts.** Resolving every
+conflict leaves the tree clean while the merge is still *in progress* and waiting to be
+committed; a panel reading "no conflicts" as "nothing happening" would offer a plain commit for
+what is the conclusion of a merge.
+
+**Abandon is not optional.** Offering an operation that can stop half-done without offering the
+way back is how somebody ends up in a state they cannot describe, in a tool meant to keep them
+out of the terminal. Confirmed, because unlike a discard what it destroys — conflict
+resolutions — is not visible as a list of files.
+
+### The flake finally explained, on its second sighting
+
+The pre-flight recorded an unreproduced failure and said a second occurrence would be a second
+data point. It happened, in this phase, and the cause turned out to be the same one that made
+four *new* tests here time out:
+
+**`AsyncCommand.Execute` silently returns when `CanExecute` is false.** Every git command is
+gated on one shared busy flag, so a press landing while a refresh or a diff load is still
+running does nothing at all — and the wait after it times out looking like a real defect. It
+passed alone and failed under load because that window is a scheduling artefact.
+
+Fixed with `Eventually.Press`, which waits for the command to be live and then presses it. **Not
+a test-only concession**: it is what a user does, since the button is disabled while something
+runs. A test that presses a disabled button is testing something that cannot happen. Twenty-seven
+unguarded presses existed; the ones driving real repositories are all converted. Three
+consecutive full runs clean afterwards.
+
+### Two other things worth recording
+
+**A test assertion was wrong, not the code.** Resolving with *"keep mine"* restores exactly what
+HEAD already holds, so the index matches HEAD and git reports no change — the file does not
+appear in Staged. Taking *"theirs"* would show one. The asymmetry is git being right.
+
+**Two layout tests indexed `ListBox` by position** and silently started measuring the conflict
+list when it arrived. Both now look up `StagedList` and `UnstagedList` by name — an
+index-based lookup is exactly the kind of test that keeps passing while it stops meaning
+anything.
+
+**Verified in the running app** against a repository left mid-merge with a real conflict: opened
+clean, reported `1 changed`, no exceptions. **The conflict banner and the diverged card need
+your eyes** — §13's GP-G script.
 
 ---
 

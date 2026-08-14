@@ -166,21 +166,39 @@ public sealed class TempRepo : IDisposable
         return value.Trim();
     }
 
-    public void Dispose()
+    /// <summary>
+    /// Delete a directory git has written into.
+    /// </summary>
+    /// <remarks>
+    /// <b>git marks objects read-only</b>, so a plain recursive delete throws
+    /// <see cref="UnauthorizedAccessException"/> on Windows — not <see cref="IOException"/>,
+    /// which is the one everybody catches. Every attribute is cleared first. Shared as a static
+    /// because any test that makes a second clone needs exactly this and gets it wrong the same
+    /// way.
+    /// </remarks>
+    public static void DeleteTree(string path)
     {
         try
         {
-            // git marks objects read-only, so a plain recursive delete fails on Windows.
-            foreach (var file in Directory.EnumerateFiles(_root, "*", SearchOption.AllDirectories))
+            if (!Directory.Exists(path))
+            {
+                return;
+            }
+
+            foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
             {
                 File.SetAttributes(file, FileAttributes.Normal);
             }
 
-            Directory.Delete(_root, recursive: true);
+            Directory.Delete(path, recursive: true);
         }
-        catch (Exception ex) when (ex is IOException or DirectoryNotFoundException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException
+                                      or DirectoryNotFoundException
+                                      or UnauthorizedAccessException)
         {
             // A leftover temp directory is not worth failing a test over.
         }
     }
+
+    public void Dispose() => DeleteTree(_root);
 }

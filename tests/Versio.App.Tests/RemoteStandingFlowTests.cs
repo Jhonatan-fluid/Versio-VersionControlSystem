@@ -72,7 +72,7 @@ public sealed class RemoteStandingFlowTests
         await shell.OpenAsync(repo.Path);
         Assert.True(shell.ShowPublish);
 
-        shell.PublishCommand.Execute(null);
+        await Eventually.Press(shell.PublishCommand, "publish");
         await Eventually.Until(() => shell.Standing.State == TrackingState.InSync,
                                "the branch became published");
 
