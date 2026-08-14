@@ -1,7 +1,9 @@
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using Versio.App.Mvvm;
 using Versio.App.Theme;
 using Versio.App.ViewModels;
 using Versio.Core.Git;
@@ -257,6 +259,40 @@ public partial class MainWindow : Window
         if (dialog.ShowDialog(this) == true)
         {
             await _shell.OpenAsync(dialog.FolderName);
+        }
+    }
+
+    /// <summary>
+    /// Put a failure notification's whole message on the clipboard.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// In the code-behind rather than on a command, because the clipboard is a view concern
+    /// and a view model that reached for <see cref="Clipboard"/> could not be constructed in a
+    /// test host without an STA thread — which is a real cost for what is three lines here.
+    /// </para>
+    /// <para>
+    /// <b>The clipboard genuinely fails sometimes.</b> Another process can hold it open, and
+    /// <see cref="Clipboard.SetText(string)"/> then throws <see cref="ExternalException"/>.
+    /// Letting that reach the dispatcher would take the window down while the user was trying
+    /// to copy an error message, which would be a memorable way to lose a bug report.
+    /// </para>
+    /// </remarks>
+    private void OnCopyNotification(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: NotificationRow row })
+        {
+            return;
+        }
+
+        try
+        {
+            Clipboard.SetText(row.ClipboardText);
+        }
+        catch (ExternalException)
+        {
+            // Another process has the clipboard. Nothing useful to do, and nothing worth
+            // interrupting the user over — they can still read the text on the card.
         }
     }
 

@@ -1505,7 +1505,7 @@ different things is a coordination bug waiting to happen.
 
 | Phase | Work | Why here |
 |---|---|---|
-| GP-A | Notifications (§1) | Everything later needs a way to report success and failure. Fixes the invisible-push bug on its own. |
+| GP-A ✅ | Notifications (§1) | Everything later needs a way to report success and failure. Fixes the invisible-push bug on its own. |
 | GP-B | Remote state machine + publish (§2) | Independent of staging; unblocks the gating in GP-F. |
 | GP-D | Background polling (§3) | Needs §2's state to have somewhere to put its answer. Makes every count in the panel true. |
 | GP-E | **Extract `GitPanelViewModel`**, then reconcile the staging lists, then the two-pane scrollable layout and checkboxes (§4) | The extraction is the first commit, before the file grows further — see the structural note at the top. The reconcile prerequisite lands next and is worth having alone: the lists stop being rebuilt every second. |
@@ -1638,6 +1638,44 @@ load-bearing in the argument for CLI-over-LibGit2Sharp, so it was rewritten rath
 `git version 2.53.0.windows.2` at `C:/Program Files/Git/mingw64/bin/git.exe`, and the log
 carried `commit identity incomplete — Git needs a name and an email address before it can
 record a commit.` Both at the levels §3 specifies.
+
+### GP-A — notifications · done 2026-08-13
+
+**Built:** `Core/Notifications/Notification.cs` and `NotificationLog.cs` (pure, clock-driven);
+`App/Mvvm/NotificationCenter.cs` with `NotificationRow`; a `Toast` style and four icon keys in
+`Controls.xaml`; a toast host and overflow pill in `MainWindow.xaml`; `OnCopyNotification` in
+the code-behind. **14 call sites converted** from `StatusSummary` to the new channel.
+
+**Tests:** 15 Core, 15 App, 2 more chrome tests that render a real card. 1,081 / 245 green.
+
+**The bug it fixes, confirmed in the code before it was changed:** `PushAsync` set
+`StatusSummary` and *then* called `RunRefreshAsync`, which overwrote it with the file count. A
+successful push produced no visible confirmation at all. It is fixed **by construction** rather
+than by re-ordering the awaits — events and state are now different properties with different
+lifetimes, so a refresh has nothing to clobber. `NotificationCenterTests.A_success_survives_the_refresh_that_used_to_overwrite_it`
+is the regression.
+
+**Decisions worth keeping:**
+
+- **Lifetime is a function of severity, and failures have none.** Success 4 s, warning 8 s,
+  failure until dismissed. The mutation that gives failures an expiry breaks two tests.
+- **"Dismiss all" spares the failures.** Somebody handed a screenful of cards is exactly the
+  person most likely to sweep them away unread, and one of them says a push did not happen.
+- **De-duplication keys on the headline**, so three retries against an unreachable remote are
+  one card rather than a wall of identical text.
+- **The timer only runs while something can expire.** A sticky failure alone on screen needs no
+  ticking, and neither does an idle app.
+- **Every notification is mirrored into the log at the matching level.** A card the user
+  dismissed and a log with no record of it is how a bug report arrives with nothing in it.
+
+**Verified in the running app:** launched against a repository with an unreachable remote; the
+window built with the new XAML and logged normally, with no `XamlParseException` and no new
+errors. **The click-driven half is yours** — §13's GP-A script, steps 1–6, needs a human to press
+Fetch and Push. What is machine-checked is that a posted card renders with its headline and
+git's detail visible on screen (`GitPanelChromeTests`), which is what GP-0 taught: a binding
+trace over a collapsed panel proves nothing.
+
+---
 
 ---
 

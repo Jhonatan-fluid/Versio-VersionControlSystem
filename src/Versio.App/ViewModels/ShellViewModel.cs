@@ -264,6 +264,10 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // rather than only that something is happening.
         Busy = new BusyTracker(_clock, logger);
 
+        // Events, as against the state StatusSummary holds. The two were one property until
+        // now, and the collision was not theoretical - see NotificationCenter's remarks.
+        Notifications = new NotificationCenter(_clock, logger);
+
         // The SHELL's tracker, not one of its own.
         //
         // This defaulted, so the sync view model built a private BusyTracker while the
@@ -900,6 +904,16 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         get => _aheadBehind;
         private set => SetProperty(ref _aheadBehind, value);
     }
+
+    /// <summary>
+    /// What just happened, as against what is currently true.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="StatusSummary"/> keeps only durable state now - "3 changed", "No changes".
+    /// Every result of an operation goes here instead, which is why a refresh can no longer
+    /// overwrite the answer to what the user just pressed.
+    /// </remarks>
+    public NotificationCenter Notifications { get; }
 
     public string StatusSummary
     {
@@ -1715,14 +1729,20 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         if (!result.Success)
         {
-            StatusSummary = result.FailureReason ?? "git would not write that identity";
+            Notifications.Failure("Could not save the identity.",
+                                  result.FailureReason ?? string.Empty);
             return;
         }
 
         await LoadIdentityAsync(busy.Token).ConfigureAwait(true);
-        StatusSummary = _identity.IsComplete
-            ? $"Committing as {_identity.Name} <{_identity.Email}>."
-            : _identity.Explanation;
+        if (_identity.IsComplete)
+        {
+            Notifications.Success($"Committing as {_identity.Name} <{_identity.Email}>.");
+        }
+        else
+        {
+            Notifications.Warning("The identity is still incomplete.", _identity.Explanation);
+        }
     }
 
     private bool CanSaveIdentity() =>
@@ -1772,7 +1792,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         if (!result.Success)
         {
-            StatusSummary = result.FailureReason ?? "git refused that";
+            Notifications.Failure(stage ? "Could not stage." : "Could not unstage.",
+                                  result.FailureReason ?? string.Empty);
             return;
         }
 
@@ -1814,7 +1835,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             // Something an export will not fix, such as a failed binding awaiting
             // acknowledgement. Say so rather than running an export that cannot help.
             _logger.Warn(LogCategory.Sync, $"commit blocked: {gate.Explanation}");
-            StatusSummary = gate.Explanation;
+            Notifications.Failure("Nothing was committed.", gate.Explanation);
             return;
         }
 
@@ -1826,8 +1847,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             if (outcomes.Any(o => o.IsFailure))
             {
                 var failure = outcomes.First(o => o.IsFailure);
-                StatusSummary = $"Export failed, so nothing was committed: {failure.Explanation}";
-                _logger.Error(LogCategory.Sync, StatusSummary);
+                Notifications.Failure("Export failed, so nothing was committed.",
+                                      failure.Explanation);
                 return;
             }
 
@@ -1842,8 +1863,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         if (!result.Success)
         {
-            StatusSummary = result.FailureReason ?? "the commit failed";
-            _logger.Error(LogCategory.Git, StatusSummary);
+            Notifications.Failure("Commit failed.", result.FailureReason ?? string.Empty);
             return;
         }
 
@@ -1859,7 +1879,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         // Said plainly, because it is the most surprising rule in the tool: a commit does not
         // release the direction lock. Until the work is pushed nobody else can see it.
-        StatusSummary = "Committed. Not pushed, so the direction lock is still held.";
+        // The most surprising rule in the tool, said where the decision was just made: a
+        // commit does not release the direction lock. Until the work is pushed nobody else can
+        // see it, so the direction is still meaningfully owned.
+        Notifications.Success("Committed.",
+                              "Not pushed, so the direction lock is still held.");
     }
 
     /// <summary>Stage every tracked project's export directory.</summary>
@@ -1919,7 +1943,14 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             async () => result = await _git.PullAsync(null, busy.Token).ConfigureAwait(true))
             .ConfigureAwait(true);
 
-        StatusSummary = result.Success ? "Pulled." : result.FailureReason ?? "the pull failed";
+        if (result.Success)
+        {
+            Notifications.Success("Pulled.");
+        }
+        else
+        {
+            Notifications.Failure("Pull failed.", result.FailureReason ?? string.Empty);
+        }
 
         await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
     }
@@ -1949,15 +1980,20 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         if (!result.Success)
         {
-            StatusSummary = result.FailureReason ?? "the push failed";
-            _logger.Error(LogCategory.Git, StatusSummary);
+            // Sticky, and that is the single most important lifetime rule in the panel. A
+            // failed push that quietly vanished after four seconds is how somebody goes home
+            // believing their work is on the remote.
+            Notifications.Failure("Push failed.", result.FailureReason ?? string.Empty);
             return;
         }
 
         var head = await _git.HeadCommitAsync(busy.Token).ConfigureAwait(true);
         await Sync.ReleaseAfterPushAsync(head, busy.Token).ConfigureAwait(true);
 
-        StatusSummary = "Pushed. Every direction lock is released.";
+        // Posted BEFORE the refresh, and it survives it. That ordering used to be the bug:
+        // StatusSummary was set here and RunRefreshAsync then overwrote it with the file
+        // count, so a successful push said nothing at all.
+        Notifications.Success("Pushed.", "Every direction lock is released.");
         await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
     }
 
@@ -1972,7 +2008,15 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         using var busy = Busy.Begin(WorkKind.GitRead, "Fetching…");
 
         var result = await _git.FetchAsync(null, busy.Token).ConfigureAwait(true);
-        StatusSummary = result.Success ? "Fetched." : result.FailureReason ?? "the fetch failed";
+
+        if (result.Success)
+        {
+            Notifications.Success("Fetched.");
+        }
+        else
+        {
+            Notifications.Failure("Fetch failed.", result.FailureReason ?? string.Empty);
+        }
 
         await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
     }
@@ -2606,7 +2650,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         var patch = HunkPatchBuilder.Build(SelectedDiff, hunkIndex);
         if (patch is null)
         {
-            StatusSummary = "That hunk is no longer in the diff on screen.";
+            Notifications.Warning("That hunk is no longer in the diff on screen.");
             return;
         }
 
@@ -2624,12 +2668,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         {
             // Almost always a context mismatch: the file moved on under a diff that was read
             // a moment ago. Git's own wording is the diagnosis, so it is passed through.
-            StatusSummary = result.FailureReason ?? "git would not apply that hunk";
+            Notifications.Failure("git would not apply that hunk.",
+                                  result.FailureReason ?? string.Empty);
             _logger.Warn(LogCategory.Git, StatusSummary);
             return;
         }
 
-        StatusSummary = unstaging ? "Hunk unstaged." : "Hunk staged.";
+        Notifications.Success(unstaging ? "Hunk unstaged." : "Hunk staged.");
         await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
     }
 
@@ -2785,12 +2830,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         if (!result.Success)
         {
             _logger.Warn(LogCategory.Git, $"discard failed: {result.FailureReason}");
-            StatusSummary = result.FailureReason ?? "the changes could not be discarded";
+            Notifications.Failure("Could not discard.", result.FailureReason ?? string.Empty);
             await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
             return;
         }
 
-        StatusSummary = $"Discarded the changes to {row.Path}.";
+        Notifications.Success($"Discarded the changes to {row.Path}.");
 
         // Only when the file was part of a mirror. A discarded README has nothing to do with
         // the direction lock, and releasing every lock because one unrelated file was
@@ -2922,7 +2967,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             // Almost always a dirty working tree whose changes collide with the target.
             _logger.Warn(LogCategory.Git, $"checkout failed: {result.FailureReason}");
 
-            StatusSummary = result.FailureReason ?? "checkout failed";
+            Notifications.Failure("Checkout failed.", result.FailureReason ?? string.Empty);
 
             // Explicitly, and not left to the refresh below. That reloads the branch list only
             // on some of its paths, so the selection sitting on a branch we are not on would
@@ -3402,7 +3447,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
 
         _logger.Error(LogCategory.App, ex.Message, ex);
-        StatusSummary = ex.Message;
+        Notifications.Failure("Something went wrong.", ex.Message);
     }
 
     /// <summary>

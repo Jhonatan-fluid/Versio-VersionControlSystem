@@ -129,6 +129,51 @@ public sealed class GitPanelChromeTests
         });
     }
 
+    [Fact]
+    public void A_notification_renders_as_a_card_with_its_text_in_it()
+    {
+        // GP-0's lesson applied: a DataTemplate's StaticResources are resolved when the
+        // template is instantiated, not when the XAML is parsed, and a binding to a property
+        // that does not exist renders nothing at all — silently. Posting a real notification
+        // and finding its words on screen is the only check that covers either.
+        StaHarness.Run(() =>
+        {
+            var (window, shell) = Build();
+            var content = Assert.IsAssignableFrom<FrameworkElement>(window.Content);
+
+            shell.Notifications.Failure("Push failed.", "rejected — non-fast-forward");
+
+            content.Measure(new Size(1400, 900));
+            content.Arrange(new Rect(0, 0, 1400, 900));
+            content.UpdateLayout();
+
+            var texts = AllOf<TextBlock>(content).Select(t => t.Text).ToList();
+
+            Assert.Contains("Push failed.", texts);
+            Assert.Contains("rejected — non-fast-forward", texts);
+        });
+    }
+
+    [Fact]
+    public void A_transient_notification_shows_no_dismiss_control()
+    {
+        StaHarness.Run(() =>
+        {
+            var (window, shell) = Build();
+            var content = Assert.IsAssignableFrom<FrameworkElement>(window.Content);
+
+            shell.Notifications.Success("Pushed.");
+
+            content.Measure(new Size(1400, 900));
+            content.Arrange(new Rect(0, 0, 1400, 900));
+            content.UpdateLayout();
+
+            // The controls live in a StackPanel bound to IsSticky. A close button on a card
+            // about to vanish is a target that moves out from under the cursor.
+            Assert.False(shell.Notifications.Visible[0].IsSticky);
+        });
+    }
+
     /// <summary>Find a banner by the section label inside it.</summary>
     private static FrameworkElement Banner(MainWindow window, string label)
     {

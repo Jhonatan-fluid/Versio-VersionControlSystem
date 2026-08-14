@@ -1139,6 +1139,105 @@
                     </views:DiffView>
                 </DockPanel>
             </Border>
+
+            <!-- ============================ NOTIFICATIONS ============================
+
+                 Events, as against state. The status bar below says what IS true - "3
+                 changed" - and these say what just HAPPENED - "Pushed."
+
+                 They were the same property until now, and the collision was not
+                 theoretical: PushAsync set the message and then called RunRefreshAsync,
+                 which overwrote it with the file count. A successful push produced no
+                 visible confirmation at all.
+
+                 Bottom-right, over the content and NOT modal: a failure card stays until it
+                 is dismissed, so the panel underneath has to remain usable the whole time it
+                 is up. IsHitTestVisible is left alone on the cards themselves - they carry
+                 buttons - but the host is transparent to the mouse everywhere else, or an
+                 invisible 420px column would swallow clicks along the whole right edge.
+
+                 Last child of the Grid, spanning every column, so it paints above the panels
+                 rather than reserving space beside them.
+            -->
+            <ItemsControl Grid.ColumnSpan="3"
+                          Margin="0,0,18,14"
+                          VerticalAlignment="Bottom" HorizontalAlignment="Right"
+                          Background="Transparent"
+                          ItemsSource="{Binding Notifications.Visible}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Style="{StaticResource Toast}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <!-- The severity colour lives here rather than on the card's
+                                     background: a card that is entirely red shouts, where the
+                                     point is to be noticed and then leave. -->
+                                <TextBlock Grid.Column="0" Grid.RowSpan="2"
+                                           Style="{StaticResource IconText}"
+                                           FontSize="13" Margin="0,1,9,0"
+                                           VerticalAlignment="Top"
+                                           Text="{Binding Glyph,
+                                               Converter={StaticResource ResourceKey}}"
+                                           Foreground="{Binding BrushKey,
+                                               Converter={StaticResource ResourceKey}}" />
+
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="{Binding Headline}"
+                                               TextWrapping="Wrap"
+                                               FontFamily="{DynamicResource Font.UI}"
+                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                               FontWeight="{DynamicResource Font.Weight.Medium}"
+                                               Foreground="{DynamicResource Brush.Text.Primary}" />
+
+                                    <!-- Git's own words, verbatim and unabridged. This is the
+                                         line that gets pasted into a message asking for help,
+                                         and a paraphrase is useless for that. -->
+                                    <TextBlock Text="{Binding Detail}"
+                                               TextWrapping="Wrap" Margin="0,4,0,0"
+                                               FontFamily="{DynamicResource Font.Mono}"
+                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                               Foreground="{DynamicResource Brush.Text.Secondary}"
+                                               Visibility="{Binding HasDetail,
+                                                   Converter={StaticResource BoolToVisibility}}" />
+                                </StackPanel>
+
+                                <!-- Only on the cards that stay. A close button on something
+                                     about to vanish is a target that moves out from under the
+                                     cursor, which is worse than no button. -->
+                                <StackPanel Grid.Column="2" Orientation="Horizontal"
+                                            VerticalAlignment="Top" Margin="8,0,0,0"
+                                            Visibility="{Binding IsSticky,
+                                                Converter={StaticResource BoolToVisibility}}">
+                                    <Button Style="{StaticResource IconButton}"
+                                            Padding="4,0" Click="OnCopyNotification"
+                                            ToolTip="Copy this message"
+                                            Content="{DynamicResource Icon.Copy}" />
+                                    <Button Style="{StaticResource IconButton}"
+                                            Padding="4,0"
+                                            ToolTip="Dismiss"
+                                            Command="{Binding DismissCommand}"
+                                            Content="{DynamicResource Icon.Close}" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- What is being held back, when more has happened than fits. -->
+            <Border Grid.ColumnSpan="3" Style="{StaticResource Pill}"
+                    Margin="0,0,18,4" Padding="8,2"
+                    VerticalAlignment="Bottom" HorizontalAlignment="Right"
+                    Visibility="{Binding Notifications.HasOverflow,
+                        Converter={StaticResource BoolToVisibility}}">
+                <TextBlock Style="{StaticResource PillText}"
+                           Text="{Binding Notifications.OverflowText}" />
+            </Border>
         </Grid>
 
         <!-- ============================= LOG PANEL ============================= -->

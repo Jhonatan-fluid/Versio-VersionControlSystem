@@ -66,6 +66,14 @@
     <sys:String x:Key="Icon.Check">&#xE73E;</sys:String>
     <sys:String x:Key="Icon.History">&#xE81C;</sys:String>
 
+    <!-- Notification glyphs. Error is the filled circle rather than the outlined one: a failed
+         push is the card that must not be mistaken for a caution, and at caption size the
+         outlined variants of these two are hard to tell apart. -->
+    <sys:String x:Key="Icon.Warning">&#xE7BA;</sys:String>
+    <sys:String x:Key="Icon.Error">&#xEA39;</sys:String>
+    <sys:String x:Key="Icon.Close">&#xE711;</sys:String>
+    <sys:String x:Key="Icon.Copy">&#xE8C8;</sys:String>
+
     <!-- ==================================================================== ICON -->
     <Style x:Key="IconText" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{DynamicResource Font.Icon}" />
@@ -531,6 +539,29 @@
         <Setter Property="Padding" Value="8,1" />
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="Background" Value="{DynamicResource Brush.Surface.Sunken}" />
+    </Style>
+
+    <!--
+        Toast card.
+
+        Raised rather than sunken, and bordered: this sits ON TOP of whatever panel is open, so
+        it has to read as a separate surface rather than as another section of the page. The
+        severity colour arrives on a child rather than on this style, because a card whose whole
+        background is red would be shouting where the point is to be noticed and then leave.
+
+        Deliberately not shaped like a button. Only the failure cards carry controls, and only
+        two: dismiss, and copy git's own words - which is the line that gets pasted into a
+        message asking a colleague for help.
+    -->
+    <Style x:Key="Toast" TargetType="Border">
+        <Setter Property="CornerRadius" Value="{DynamicResource Radius.Control}" />
+        <Setter Property="Padding" Value="10,8" />
+        <Setter Property="Margin" Value="0,6,0,0" />
+        <Setter Property="MaxWidth" Value="420" />
+        <Setter Property="HorizontalAlignment" Value="Right" />
+        <Setter Property="Background" Value="{DynamicResource Brush.Surface.Raised}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Subtle}" />
     </Style>
 
     <Style x:Key="PillText" TargetType="TextBlock">
