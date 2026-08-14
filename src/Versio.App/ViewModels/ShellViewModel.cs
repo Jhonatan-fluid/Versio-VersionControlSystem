@@ -9,6 +9,7 @@ using Versio.Core.Git;
 using Versio.Core.Guarding;
 using Versio.Core.Logging;
 using Versio.Core.Plc;
+using Versio.Core.Projects;
 using Versio.Core.Settings;
 using Versio.Core.Sync;
 using Versio.Core.Watching;
@@ -60,8 +61,16 @@ public sealed class RepoEntry(string path, string remoteUrl = "", DateTimeOffset
 
     public string Name { get; } = System.IO.Path.GetFileName(path.TrimEnd('\\', '/'));
 
-    /// <summary>Parent directory, shown beneath the name so two repos with the same folder
-    /// name are still distinguishable.</summary>
+    /// <summary>
+    /// Parent directory, shown beside the name so two repositories with the same folder name
+    /// are still distinguishable.
+    /// </summary>
+    /// <remarks>
+    /// <b>Beside, not beneath.</b> This said "beneath" for a narrow list that never shipped,
+    /// and the dropdown it is actually in is several hundred pixels wide — stacking the two
+    /// doubled the height of the top bar to say what fits on one line. Corrected after the
+    /// first binding followed the comment rather than the control.
+    /// </remarks>
     public string Location { get; } = System.IO.Path.GetDirectoryName(path) ?? path;
 
     /// <summary><c>origin</c>'s URL when this repository was last opened, or empty.</summary>
@@ -226,6 +235,91 @@ public sealed class ChangeRow(FileChange change) : ObservableObject
     /// for how it looks.
     /// </remarks>
     public ChangeKind Kind => _change.Effective;
+
+    private NamedObject? _object;
+
+    /// <summary>
+    /// Name this row as the object it was exported from, or as nothing.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Set after the row exists rather than in the constructor, because it has to be. The
+    /// changed-files list is filled from <c>git status</c> and the index is built from the
+    /// manifests, and those land in that order on the first refresh after a repository opens —
+    /// so a row is created with a path and named a moment later. Handing the index to the
+    /// constructor would have shown raw paths until the working tree next moved, which on a
+    /// project nobody is editing is never.
+    /// </para>
+    /// <para>
+    /// Null is the ordinary answer for most of the repository and is not a failure: a file the
+    /// manifest does not describe is shown as its path, never as a guessed object.
+    /// </para>
+    /// </remarks>
+    public void Describe(NamedObject? found)
+    {
+        if (ReferenceEquals(_object, found))
+        {
+            return;
+        }
+
+        _object = found;
+        OnPropertyChanged(nameof(IsObject));
+        OnPropertyChanged(nameof(Primary));
+        OnPropertyChanged(nameof(Secondary));
+        OnPropertyChanged(nameof(TypeLabel));
+        OnPropertyChanged(nameof(IsExportOnly));
+    }
+
+    /// <summary>This row is a PLC object rather than an ordinary file.</summary>
+    public bool IsObject => _object is not null;
+
+    /// <summary>
+    /// The line the eye lands on: the object's name, or the file's.
+    /// </summary>
+    /// <remarks>
+    /// <b>Never the whole path.</b> The panel is 380 px wide and an exported path is routinely
+    /// sixty characters of shared prefix — <c>src/Project/PLC/POU/Applic…</c> on every row,
+    /// trimmed at the tail, hiding the only part that differed. The name is what distinguishes
+    /// one row from the next, so it is what gets the room; the directory is
+    /// <see cref="Secondary"/> and may be elided freely.
+    /// </remarks>
+    public string Primary => _object?.Name ?? FileNameOf(Path);
+
+    /// <summary>Where it lives: the directory, or the whole path when there is no name to lead with.</summary>
+    public string Secondary
+    {
+        get
+        {
+            var slash = Path.LastIndexOf('/');
+            var directory = slash > 0 ? Path[..slash] : string.Empty;
+
+            // An object's file name is not implied by its object name — Glob_Var exports to
+            // Glob_Var.gvl.st AND Glob_Var.gvl.xml, and two rows reading "Glob_Var" over the
+            // same directory would be indistinguishable. The layer is what tells them apart.
+            return _object is not null && directory.Length > 0
+                ? $"{directory}/{FileNameOf(Path)}"
+                : directory.Length > 0
+                    ? directory
+                    : string.Empty;
+        }
+    }
+
+    /// <summary>The type chip beside the name, empty for an ordinary file.</summary>
+    public string TypeLabel => _object?.TypeLabel ?? string.Empty;
+
+    /// <summary>
+    /// Editing this file changes nothing in the project.
+    /// </summary>
+    /// <remarks>
+    /// Library references are exported for review and never applied back, so an edit to one
+    /// sits in the working tree until the next export overwrites it from the project. The row
+    /// says so because this is where somebody is about to stage it — <c>STATUS.md</c> has
+    /// carried this as a known limitation with "the panel does not say so yet" beside it.
+    /// </remarks>
+    public bool IsExportOnly => _object?.IsExportOnly ?? false;
+
+    private static string FileNameOf(string path) =>
+        path.Split('/').LastOrDefault() is { Length: > 0 } name ? name : path;
 }
 
 /// <summary>
@@ -387,7 +481,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             target: PollTarget,
             onMoved: FetchBecauseTheRemoteMovedAsync,
             onHalted: reason => OnUi(() => Notifications.Warning(
-                "Not watching the remote any more.", reason)));
+                "Not watching the remote any more.", reason)),
+
+            // On the remote watch's schedule rather than a timer of its own, so it inherits the
+            // backoff, the suspension and the halt on a rejected credential. It asks nothing at
+            // all unless the button is actually offering to create a request.
+            onProbed: ProbeMergeRequestAsync);
 
         // The SHELL's tracker, not one of its own.
         //
@@ -416,6 +515,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // toolchain starts rewriting a lock marker a second later. Without this the watcher
         // would keep spending a git status on it until the next repository switch.
         Sync.IgnoredPathsChanged += globs => _watcher?.KnownIgnored(globs);
+
+        // The changed-files list names its rows from the manifests, and the manifests are read
+        // by the tree. Opening a repository refreshes git BEFORE the bindings are loaded, so
+        // the first pass names nothing and the index turns up afterwards from inside
+        // AttachAsync — a path this panel never hears about otherwise. Measured: without this
+        // every row showed a raw path until the working tree next moved.
+        Sync.ObjectsChanged += DescribeRows;
 
         // And the same for the history: the panel decides what was picked, this decides how
         // it is rendered. Keeping the render here is what stops a second diff pane growing
@@ -994,6 +1100,14 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// start rather than on a sixty-second cadence inherited from an idle hour.
     /// </remarks>
     private void WakeThePoller() => _poller.Wake();
+
+    /// <summary>The remote watch, so a test can assert what this shell wired into it.</summary>
+    /// <remarks>
+    /// Internal for the same reason <c>IgnoredPaths()</c> is: trusting that a callback written
+    /// in this file reaches an object constructed in this file is exactly the assumption that
+    /// has been wrong three times here.
+    /// </remarks>
+    internal RemotePoller Poller => _poller;
 
     public ShellPanel ActivePanel
     {
@@ -1992,6 +2106,65 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
     public string DefaultBranchName => _defaultBranch.Name;
 
+    private int? _requestNumber;
+    private BranchInfo? _branch;
+
+    /// <summary>
+    /// Which hosting product this repository's remote belongs to.
+    /// </summary>
+    /// <remarks>
+    /// <b>Derived on each read rather than resolved once at open, and that is the point.</b> The
+    /// obvious version caches it beside <c>_remote</c> when the repository opens — but
+    /// <c>repo.json</c> is loaded by <c>Sync.AttachAsync</c>, which runs <i>after</i> that, so
+    /// a repository whose forge is only knowable from its config would have cached Unknown and
+    /// shown no button until the next repository switch. That is the same ordering trap the
+    /// object index hit; there it needed an event, and here it needs nothing at all, because
+    /// this is an enum switch over two fields and costs less than the notification would.
+    /// </remarks>
+    private ForgeKind Forge => Core.Git.Forge.Detect(_remote, Sync.ConfiguredForge);
+
+    /// <summary>
+    /// The merge-request button: whether it is there, what it says, and where it goes.
+    /// </summary>
+    /// <remarks>
+    /// Computed rather than stored, exactly like <see cref="Commit"/>: it is a function of the
+    /// branch, the remote standing, the trunk and whether the tree is clean, and every one of
+    /// those already raises when it moves. A stored copy would be a fifth thing to keep in step.
+    /// </remarks>
+    public MergeRequestPlan MergeRequest => MergeRequestPlan.For(
+        Forge,
+        _remote,
+        _branch,
+        Standing.State,
+        DefaultBranch,
+        _treeIsDirty,
+        _requestNumber);
+
+    /// <summary>
+    /// Anything staged, unstaged or conflicted, as of the last refresh.
+    /// </summary>
+    /// <remarks>
+    /// <b>A captured flag rather than three <c>Count</c> reads, because this is read off the UI
+    /// thread.</b> The remote watch calls <see cref="ProbeMergeRequestAsync"/> on its own loop
+    /// and that consults <see cref="MergeRequest"/> — so reading an
+    /// <see cref="ObservableCollection{T}"/> there would be racing the UI thread's own
+    /// <c>Insert</c> and <c>RemoveAt</c> as the lists reconcile. Set where the lists are set,
+    /// which is the only place it can change.
+    /// </remarks>
+    private bool _treeIsDirty;
+
+    /// <summary>
+    /// What the merge-request button will do, or why it cannot.
+    /// </summary>
+    /// <remarks>
+    /// One binding for both states, because a tooltip that went empty when the button went live
+    /// would take the explanation away at the moment somebody is deciding whether to press it.
+    /// Live, it says where the click goes — which is worth reading before opening a browser.
+    /// </remarks>
+    public string MergeRequestTooltip => MergeRequest.BlockedReason.Length > 0
+        ? MergeRequest.BlockedReason
+        : MergeRequest.Url;
+
     /// <summary>Open the delete-branches dialog.</summary>
     public AsyncCommand DeleteBranchesCommand { get; private set; } = null!;
 
@@ -2105,6 +2278,10 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 OnPropertyChanged(nameof(CommitSubjectLength));
                 RaiseCommitState();
                 CommitCommand.RaiseCanExecuteChanged();
+
+                // The draft is offered only into an empty box, so typing the first character
+                // withdraws it and clearing the box offers it again.
+                DraftCommitMessageCommand.RaiseCanExecuteChanged();
             }
         }
     }
@@ -2113,8 +2290,230 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     public int CommitSubjectLength =>
         (_commitMessage.Split('\n').FirstOrDefault() ?? string.Empty).TrimEnd('\r').Length;
 
+    private string _changeSummary = string.Empty;
+
+    /// <summary>
+    /// What the commit button is about to record, in one sentence about objects.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>It describes what will be committed, not what changed.</b> Those differ the moment
+    /// anything is staged, and a line above the button that counted the whole working tree
+    /// while the button beside it said <c>Commit</c> — staged only — would be two controls
+    /// disagreeing about the same press. The set comes from <see cref="Commit"/>, so there is
+    /// one answer to "what is about to happen" and the caption and this sentence are both
+    /// reading it.
+    /// </para>
+    /// <para>
+    /// Empty when nothing about to be committed belongs to a PLC project, and the line is
+    /// hidden rather than showing a count of files the list is already showing.
+    /// </para>
+    /// </remarks>
+    public string ChangeSummaryLine
+    {
+        get => _changeSummary;
+        private set
+        {
+            if (SetProperty(ref _changeSummary, value))
+            {
+                OnPropertyChanged(nameof(HasChangeSummary));
+            }
+        }
+    }
+
+    /// <summary>There is something to say about objects. Hides the line when there is not.</summary>
+    public bool HasChangeSummary => _changeSummary.Length > 0;
+
+    /// <summary>Fill the message box with a subject built from the objects.</summary>
+    public RelayCommand DraftCommitMessageCommand { get; private set; } = null!;
+
+    /// <summary>
+    /// The changed files the commit button is about to record.
+    /// </summary>
+    /// <remarks>
+    /// Reads <see cref="Commit"/> rather than reimplementing its three cases. The export gate
+    /// may stage more than this — it exports and stages a mirror before any commit — and that
+    /// is deliberately not modelled here for the reason <see cref="CommitPlan"/> gives: this
+    /// answers what the user asked for.
+    /// </remarks>
+    private IReadOnlyList<FileChange> Committing()
+    {
+        IEnumerable<string> paths = Commit.Intent switch
+        {
+            CommitIntent.CommitStaged => Staged.Select(r => r.Path),
+            CommitIntent.StageTickedThenCommit => Staged.Select(r => r.Path)
+                .Concat(Unstaged.Where(r => r.IsSelected).Select(r => r.Path)),
+            CommitIntent.StageAllThenCommit => Staged.Select(r => r.Path)
+                .Concat(Unstaged.Select(r => r.Path)),
+            _ => [],
+        };
+
+        var wanted = paths.ToHashSet(StringComparer.Ordinal);
+        return [.. _lastChanges.Where(c => wanted.Contains(c.Path))];
+    }
+
+    /// <summary>
+    /// Name every row from the current index, and restate what is about to be committed.
+    /// </summary>
+    /// <remarks>
+    /// Called after the staging lists move and again after the tree refresh that rebuilds the
+    /// index, because those land in that order: the lists come from <c>git status</c> and the
+    /// index from the manifests behind it. On the first refresh after a repository opens the
+    /// first pass names nothing and the second names everything; on every refresh after that
+    /// the index is already current and the first pass does the work.
+    /// </remarks>
+    private void DescribeRows()
+    {
+        var index = Sync.Objects;
+
+        foreach (var row in Conflicted.Concat(Staged).Concat(Unstaged))
+        {
+            row.Describe(index.Lookup(row.Path));
+        }
+
+        ChangeSummaryLine = ChangeSummary.Sentence(Committing(), index);
+        DraftCommitMessageCommand.RaiseCanExecuteChanged();
+    }
+
+    /// <summary>
+    /// Fill the box with a drafted subject, without overwriting anything typed.
+    /// </summary>
+    /// <remarks>
+    /// <b>Refuses rather than replaces.</b> The button is disabled once the box has anything in
+    /// it, so there is no press that can lose a half-written message — an "are you sure" over
+    /// somebody's own words is a worse answer than not offering the action. Clearing the box
+    /// makes the draft available again.
+    /// </remarks>
+    private void DraftCommitMessage()
+    {
+        var subject = ChangeSummary.DraftSubject(Committing(), Sync.Objects);
+        if (subject.Length == 0)
+        {
+            return;
+        }
+
+        _logger.Click("Git.DraftMessage");
+        CommitMessage = subject;
+        _logger.Info(LogCategory.Git, $"drafted commit subject: {subject}");
+    }
+
+    private bool CanDraftCommitMessage() =>
+        CommitMessage.Trim().Length == 0 &&
+        ChangeSummary.DraftSubject(Committing(), Sync.Objects).Length > 0;
+
+    /// <summary>Open this branch's merge request, or the page for creating one.</summary>
+    public RelayCommand OpenMergeRequestCommand { get; private set; } = null!;
+
+    /// <summary>
+    /// Open the forge page in the user's browser.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Opened, never submitted.</b> The URL carries the source and target branches already
+    /// chosen; a human presses Create in the forge's own interface. Nothing outward-facing
+    /// happens on Versio's say-so, and there is no code path here that posts anything.
+    /// </para>
+    /// <para>
+    /// <c>UseShellExecute</c> so Windows picks the default browser. The URL is built by
+    /// <see cref="Forge"/> from a parsed remote and a branch name — never from anything typed —
+    /// and the plan hands back an empty string rather than a guess, which is why this can
+    /// refuse on emptiness alone.
+    /// </para>
+    /// </remarks>
+    private void OpenMergeRequest()
+    {
+        var plan = MergeRequest;
+        if (!plan.CanOpen)
+        {
+            return;
+        }
+
+        _logger.Click("Git.MergeRequest");
+
+        // Logged whole, and safe to be: this URL is assembled from a parsed RemoteUrl, and
+        // RemoteUrl drops any embedded user:password before it records the host — precisely so
+        // credentials cannot reach a log line, a browser URL or a credential lookup key. There
+        // is no path by which one arrives here.
+        _logger.Info(LogCategory.Git, $"opening {plan.Url}");
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(plan.Url) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            // A machine with no browser association, or a policy that blocks the launch. The
+            // URL is the whole value here, so the failure card carries it: somebody can paste
+            // it themselves and is no worse off than before the button existed.
+            _logger.Error(LogCategory.Git, "could not open the browser", ex);
+            Notifications.Failure("Could not open the browser.", plan.Url);
+        }
+    }
+
+    /// <summary>
+    /// Ask the remote whether a request already exists for this branch.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Only when the answer would change something.</b> The probe costs a round trip, so it
+    /// is skipped unless the button is actually offering to create one on a forge that
+    /// publishes request refs — which excludes the default branch, a dirty tree, unpushed work,
+    /// every unidentified forge, and Azure and Bitbucket entirely. In the common case of
+    /// sitting on the trunk it never runs at all.
+    /// </para>
+    /// <para>
+    /// Called by the poller on its schedule rather than on one of its own, so it inherits the
+    /// backoff, the suspension while other git work runs, and the halt on a rejected
+    /// credential.
+    /// </para>
+    /// </remarks>
+    private async Task ProbeMergeRequestAsync(CancellationToken ct)
+    {
+        if (_git is null || MergeRequest.Intent is not MergeRequestIntent.Create)
+        {
+            return;
+        }
+
+        var pattern = Core.Git.Forge.RequestRefPattern(Forge);
+        if (pattern.Length == 0 || _branch is null)
+        {
+            return;
+        }
+
+        var tip = await _git.RevParseAsync(_branch.Name, ct).ConfigureAwait(false);
+        if (tip.Length == 0)
+        {
+            return;
+        }
+
+        var refs = await _git.LsRemoteRefsAsync("origin", pattern, ct).ConfigureAwait(false);
+        var found = Core.Git.Forge.RequestNumber(refs, tip);
+
+        if (found == _requestNumber)
+        {
+            return;
+        }
+
+        // Back to the UI thread: this runs on the poller's loop, and the property it changes
+        // is bound.
+        OnUi(() =>
+        {
+            _requestNumber = found;
+            _logger.Info(LogCategory.Git, found is { } n
+                ? $"{Core.Git.Forge.Noun(Forge)} #{n} already covers {_branch.Name}"
+                : $"no {Core.Git.Forge.Noun(Forge)} found for {_branch.Name}");
+
+            OnPropertyChanged(nameof(MergeRequest));
+            OnPropertyChanged(nameof(MergeRequestTooltip));
+            OpenMergeRequestCommand.RaiseCanExecuteChanged();
+        });
+    }
+
     private void BuildGitCommands()
     {
+        DraftCommitMessageCommand = new RelayCommand(DraftCommitMessage, CanDraftCommitMessage);
+        OpenMergeRequestCommand = new RelayCommand(OpenMergeRequest, () => MergeRequest.CanOpen);
+
         // Chosen(), not the whole list: the ticked rows when any are, otherwise all of them.
         StageCommand = new AsyncCommand(
             () => StageAsync(Chosen(Unstaged), stage: true),
@@ -2357,6 +2756,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         CreateBranchCommand.RaiseCanExecuteChanged();
         CloneCommand.RaiseCanExecuteChanged();
         SaveIdentityCommand.RaiseCanExecuteChanged();
+
+        // Every input the plan reads — branch, standing, trunk, dirtiness — has just moved or
+        // may have. It is computed, so raising it is the whole update.
+        OnPropertyChanged(nameof(MergeRequest));
+        OnPropertyChanged(nameof(MergeRequestTooltip));
+        OpenMergeRequestCommand.RaiseCanExecuteChanged();
     }
 
     /// <summary>Stage or unstage every row in a list.</summary>
@@ -3994,6 +4399,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// </remarks>
     private void UpdateStagingLists(GitStatus status)
     {
+        _lastChanges = status.Changes;
+
         // Conflicted paths come out of BOTH of git's columns - an unmerged file is reported
         // with a staged and an unstaged side - so they are taken first and excluded from the
         // other two. A file listed in all three sections would be three rows for one problem.
@@ -4014,10 +4421,27 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         OnPropertyChanged(nameof(ConflictHeadline));
 
+        _treeIsDirty = Staged.Count > 0 || Unstaged.Count > 0 || Conflicted.Count > 0;
+
+        // Named from the index the last tree refresh left behind, which is current except on
+        // the first refresh after a repository opens. The pass after RefreshTreeAsync catches
+        // that one.
+        DescribeRows();
 
         RaiseSelectionState();
         RaiseGitCommandStates();
     }
+
+    /// <summary>
+    /// What git reported at the last refresh.
+    /// </summary>
+    /// <remarks>
+    /// Kept because the summary line and the drafted subject describe a <i>subset</i> of it —
+    /// whatever the commit button is about to record — and a <see cref="ChangeRow"/> carries
+    /// its <see cref="FileChange"/> privately. Deriving the subset from paths here is cheaper
+    /// than widening the row's surface for two readers.
+    /// </remarks>
+    private IReadOnlyList<FileChange> _lastChanges = [];
 
     /// <summary>
     /// Bring one staging list in step with git, in place.
@@ -4449,6 +4873,19 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
             var previousBranch = BranchName;
             BranchName = status.Branch.IsDetached ? "(detached)" : status.Branch.Name;
+
+            // Kept whole rather than as the name alone, because the merge-request gate needs
+            // the ahead count and the detached flag from the same reading. Two properties
+            // derived separately from one status is how two of them come to disagree.
+            _branch = status.Branch;
+
+            // A merge request found for the branch we were on says nothing about the one we
+            // are on now, and leaving it would send somebody to another branch's request. The
+            // next probe answers for this branch.
+            if (!string.Equals(previousBranch, BranchName, StringComparison.Ordinal))
+            {
+                _requestNumber = null;
+            }
             AheadBehind = status.Branch is { Ahead: 0, Behind: 0 }
                 ? string.Empty
                 : $"↑{status.Branch.Ahead} ↓{status.Branch.Behind}";

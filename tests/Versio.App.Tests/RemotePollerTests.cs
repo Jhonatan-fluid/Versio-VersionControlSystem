@@ -49,6 +49,17 @@ public sealed class RemotePollerTests
         public Task<string> RevParseAsync(string revision, CancellationToken ct) =>
             Task.FromResult(LocalHead);
 
+        /// <summary>What the forge's request refs come back as.</summary>
+        public string RequestRefs { get; set; } = string.Empty;
+
+        public int LsRemoteRefsCalls { get; private set; }
+
+        public Task<string> LsRemoteRefsAsync(string remote, string pattern, CancellationToken ct)
+        {
+            LsRemoteRefsCalls++;
+            return Task.FromResult(RequestRefs);
+        }
+
         // Nothing else is reachable from a probe. Throwing rather than returning a default is
         // deliberate: if the poller ever starts calling something else, this says so loudly
         // instead of quietly succeeding.
@@ -154,8 +165,16 @@ public sealed class RemotePollerTests
                     Fetches++;
                     return Task.CompletedTask;
                 },
-                onHalted: Halts.Add);
+                onHalted: Halts.Add,
+                onProbed: _ =>
+                {
+                    SecondQuestions++;
+                    return Task.CompletedTask;
+                });
         }
+
+        /// <summary>How many times the loop asked its caller's extra question.</summary>
+        public int SecondQuestions { get; private set; }
 
         public Task TickAsync() => Poller.TickAsync(CancellationToken.None);
     }
@@ -171,6 +190,44 @@ public sealed class RemotePollerTests
         // fetch: one small round trip, no object transfer, nothing changed.
         Assert.Equal(1, h.Git.LsRemoteCalls);
         Assert.Equal(0, h.Fetches);
+    }
+
+    [Fact]
+    public async Task The_callers_second_question_is_asked_even_when_nothing_moved()
+    {
+        // THE POINT OF onProbed. Opening a pull request does not move the branch head — the
+        // ref the forge publishes points at a commit that already exists — so a question
+        // conditioned on movement would never notice one being opened, and the button would
+        // sit on "Create pull request" for a branch that already has one.
+        var h = new Harness();
+
+        await h.TickAsync();
+
+        Assert.Equal(0, h.Fetches);
+        Assert.Equal(1, h.SecondQuestions);
+    }
+
+    [Fact]
+    public async Task The_second_question_is_not_asked_when_the_remote_did_not_answer()
+    {
+        // No answer means no connection or no credentials. Asking a second question down the
+        // same pipe is a second timeout for the same information.
+        var h = new Harness();
+        h.Git.RemoteHead = string.Empty;
+
+        await h.TickAsync();
+
+        Assert.Equal(0, h.SecondQuestions);
+    }
+
+    [Fact]
+    public async Task The_second_question_is_suspended_with_everything_else()
+    {
+        var h = new Harness { Suspended = true };
+
+        await h.TickAsync();
+
+        Assert.Equal(0, h.SecondQuestions);
     }
 
     [Fact]

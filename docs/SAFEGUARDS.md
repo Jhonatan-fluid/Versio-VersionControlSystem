@@ -748,7 +748,14 @@ Ten backups are kept per binding under `.versio/local/` (`BackupsKept`, `SyncOrc
 nothing in the UI can list or restore one. After a corrupting import — the scenario the backups exist
 for — the user has an unusable project and no way to reach the copy that would fix it.
 
-### F. `*.versio_staging/` is not in the adoption ignore plan
+### F. `*.versio_staging/` is not in the adoption ignore plan — **BUILT**
+
+> Fixed with §5.D, in the same work that gave the swap a trash directory — the two are one
+> mechanism and one ignore rule each. `RepoSetup` writes both `<mirror>.versio_staging/` and
+> `<mirror>.versio_trash/` into the plan now, with a comment saying why they are there and not
+> in the vendor's `TransientPatternsFor`. **The heading kept its unfixed wording for a while
+> after the code changed**, unlike §5.A and §5.B which were marked; recorded because a document
+> that says a hole is open when it is closed costs somebody a second fix.
 
 `TransientPatternsFor` returns `<stem>.~u` and `<stem>-*.opt` (`CodesysProjectFormat.cs:80`);
 `RepoSetup` adds `.versio/local/` (`RepoSetup.cs:149`). Neither covers the staging directory. **This

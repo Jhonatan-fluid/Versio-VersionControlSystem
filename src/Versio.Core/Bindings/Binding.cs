@@ -74,6 +74,24 @@ public sealed record RepoConfig
     /// </para>
     /// </remarks>
     public string DefaultBranch { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Which hosting product this repository's remote is, when the hostname cannot say.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The only way a self-hosted forge is identifiable.</b> A GitLab at
+    /// <c>git.acme.internal</c> looks like nothing in particular from its URL, and guessing
+    /// would open a browser on a 404. Set once here, committed, and every clone agrees — the
+    /// same argument as <see cref="DefaultBranch"/> above.
+    /// </para>
+    /// <para>
+    /// It also <b>overrides</b> a hostname that does match, which is the case an enterprise
+    /// GitHub behind its own domain needs. Unknown is the default and means "work it out from
+    /// the URL, and show nothing if you cannot".
+    /// </para>
+    /// </remarks>
+    public Git.ForgeKind Forge { get; init; } = Git.ForgeKind.Unknown;
 }
 
 /// <summary>The names and layout a binding assumes when nothing overrides them.</summary>

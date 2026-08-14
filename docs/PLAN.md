@@ -790,6 +790,23 @@ codescribe derives the export folder purely by convention — `dirname(project) 
 }
 ```
 
+> **The sample above is the plan as written, and the file has moved on twice.** The binding keys
+> are `projectPath`, `templatePath` and `exportPath` as built, not `project` / `template` /
+> `export`; and two **repository-level** fields have been added beside `ignore`, both committed
+> so a team sets them once and every clone agrees:
+>
+> - **`defaultBranch`** — which branch is the trunk. Empty is not `main`: it falls through to the
+>   remote's own `HEAD` and then to convention, and when none of those answers, the operations
+>   that need a trunk are disabled and say why rather than moving somebody's working tree to a
+>   branch nobody chose.
+> - **`forge`** — `GitHub`, `GitLab`, `AzureDevOps`, `Bitbucket` or `Gitea`. The only way a
+>   self-hosted instance is identifiable: `git.acme.internal` looks like nothing in particular
+>   from its URL. Absent means "work it out from the hostname, and show no merge-request button
+>   if you cannot". It also *overrides* a hostname that does match, for an enterprise GitHub
+>   behind its own domain.
+>
+> `RepoConfig` in `Core/Bindings/Binding.cs` is the authority on both.
+
 **The `id` is the identity; the paths are attributes.** Renaming a project becomes a path update against a persistent identity, so history, baseline and lock state survive a rename intact.
 
 **And the binding is recorded from both ends.** The export tree's `_manifest.json` carries a back-reference:

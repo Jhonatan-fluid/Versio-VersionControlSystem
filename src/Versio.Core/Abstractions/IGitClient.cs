@@ -283,6 +283,36 @@ public interface IGitClient
     Task<string> RemoteUrlAsync(string remote, CancellationToken ct);
 
     /// <summary>
+    /// List refs on the remote matching a pattern, transferring no objects.
+    /// </summary>
+    /// <param name="pattern">
+    /// A ref glob, e.g. <c>refs/pull/*/head</c>. Passed to git as an argument, never
+    /// interpolated into a shell.
+    /// </param>
+    /// <returns>Raw <c>sha\tref</c> lines, or empty when nothing matched or the call failed.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Separate from <see cref="LsRemoteAsync"/> because that one is about branches</b> — it
+    /// passes <c>--heads</c> and builds <c>refs/heads/&lt;name&gt;</c> itself, which is exactly
+    /// right for the poller and cannot reach the hidden namespaces a forge publishes its pull
+    /// requests under. Widening it would have made the poller's own call able to match a tag.
+    /// </para>
+    /// <para>
+    /// <b>This is what makes "does a merge request already exist?" answerable with no API
+    /// token.</b> Both major forges publish request heads as refs readable with the same
+    /// credentials as a fetch. The alternatives are worse in ways that do not announce
+    /// themselves: <c>.git/config</c> knows nothing about requests, and a REST call means
+    /// storing a token — a security surface of its own, for a link.
+    /// </para>
+    /// <para>
+    /// Empty on failure rather than throwing, like the rest of the read-only probes here: this
+    /// runs on the poller's schedule and a network blip must degrade the button's label, not
+    /// take a panel down.
+    /// </para>
+    /// </remarks>
+    Task<string> LsRemoteRefsAsync(string remote, string pattern, CancellationToken ct);
+
+    /// <summary>
     /// The absolute path of this repository's <c>.git</c> directory.
     /// </summary>
     /// <remarks>

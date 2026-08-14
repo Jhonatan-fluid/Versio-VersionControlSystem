@@ -25,27 +25,72 @@
 
 
             <!-- One row template for every list of changed files. Three copies of it would
-                 be three chances for the glyph and its colour to disagree. -->
+                 be three chances for the glyph and its colour to disagree.
+
+                 TWO LINES, AND THE NAME LEADS. This drew {Binding Path} on one line with
+                 TextTrimming="CharacterEllipsis", which trims the TAIL - so in a 380 px panel
+                 an exported PLC tree showed "Device/Plc Logic/Applic..." on every row and hid
+                 the only part that differed. The filename was never on screen.
+
+                 Now the first line is what distinguishes one row from the next - the OBJECT's
+                 name where Versio knows it (FB_Motor, not FB_Motor.st) with its type beside
+                 it - and the directory drops to a secondary line where eliding it costs
+                 nothing. The tooltip still carries the whole path, because that is what git
+                 will commit and somebody will want to copy it. -->
             <DataTemplate x:Key="ChangeRowTemplate">
-                <Grid>
+                <Grid ToolTip="{Binding Path}">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="18" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <TextBlock Grid.Column="0" Text="{Binding Glyph}"
-                               VerticalAlignment="Center"
+                               VerticalAlignment="Top" Margin="0,1,0,0"
                                FontFamily="{DynamicResource Font.Mono}"
                                FontSize="{DynamicResource Font.Size.Caption}"
                                FontWeight="{DynamicResource Font.Weight.Semibold}"
                                Foreground="{Binding BrushKey,
                                    Converter={StaticResource ResourceKey}}" />
-                    <TextBlock Grid.Column="1" Text="{Binding Path}"
-                               VerticalAlignment="Center"
-                               FontFamily="{DynamicResource Font.Mono}"
-                               FontSize="{DynamicResource Font.Size.Caption}"
-                               Foreground="{DynamicResource Brush.Text.Primary}"
-                               TextTrimming="CharacterEllipsis"
-                               ToolTip="{Binding Path}" />
+
+                    <StackPanel Grid.Column="1">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding Primary}"
+                                       FontFamily="{DynamicResource Font.Mono}"
+                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                       Foreground="{DynamicResource Brush.Text.Primary}"
+                                       TextTrimming="CharacterEllipsis" />
+
+                            <!-- The type, and the fact that an edit here goes nowhere. Both
+                                 collapse for an ordinary file rather than rendering empty:
+                                 a blank chip is a control that looks broken. -->
+                            <Border Margin="6,0,0,0" Padding="4,0" CornerRadius="2"
+                                    VerticalAlignment="Center"
+                                    Background="{DynamicResource Brush.Surface.Raised}"
+                                    BorderThickness="1"
+                                    BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                                    Visibility="{Binding IsObject,
+                                        Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Text="{Binding TypeLabel}"
+                                           FontFamily="{DynamicResource Font.UI}"
+                                           FontSize="{DynamicResource Font.Size.Caption}"
+                                           Foreground="{DynamicResource Brush.Text.Secondary}" />
+                            </Border>
+
+                            <TextBlock Text="&#xE72E;" Margin="6,0,0,0"
+                                       VerticalAlignment="Center"
+                                       FontFamily="{DynamicResource Font.Icon}"
+                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                       Foreground="{DynamicResource Brush.Text.Secondary}"
+                                       ToolTip="Exported for review only. Editing this file does not change the project - the next export rewrites it."
+                                       Visibility="{Binding IsExportOnly,
+                                           Converter={StaticResource BoolToVisibility}}" />
+                        </StackPanel>
+
+                        <TextBlock Text="{Binding Secondary}"
+                                   FontFamily="{DynamicResource Font.Mono}"
+                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                   Foreground="{DynamicResource Brush.Text.Secondary}"
+                                   TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
                 </Grid>
             </DataTemplate>
 
@@ -181,23 +226,39 @@
                          usually differ. Opening a handful of repositories that all happened to
                          live in a folder called "work" produced three identical rows with no
                          way to tell them apart, which is when it stopped being theoretical. -->
+                    <!-- ON ONE LINE. The control is several hundred pixels wide and the two
+                         values together are shorter than most branch names, so stacking them
+                         doubled the height of the whole top bar to say what fits beside itself.
+
+                         The first attempt did stack them, because RepoEntry.Location's comment
+                         says "shown BENEATH the name" - written for a narrow list that never
+                         shipped. Following the comment rather than looking at the control is
+                         how a doc comment outlives the design it described. -->
                     <ComboBox.ItemTemplate>
                         <DataTemplate>
-                            <StackPanel>
-                                <TextBlock Text="{Binding Name}"
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Grid.Column="0" Text="{Binding Name}"
+                                           VerticalAlignment="Center"
                                            FontFamily="{DynamicResource Font.UI}"
                                            FontSize="{DynamicResource Font.Size.Body}"
-                                           Foreground="{DynamicResource Brush.Text.Primary}"
-                                           TextTrimming="CharacterEllipsis" />
+                                           Foreground="{DynamicResource Brush.Text.Primary}" />
 
-                                <!-- Trimmed from the HEAD, not the tail: what distinguishes two
-                                     folders called "work" is the part nearest the end. -->
-                                <TextBlock Text="{Binding Location}"
+                                <!-- Takes whatever is left, and trims only if it runs out.
+                                     Quiet, because it is the tie-breaker rather than the
+                                     label: two repositories called "work" differ here and
+                                     nowhere else. -->
+                                <TextBlock Grid.Column="1" Text="{Binding Location}"
+                                           Margin="10,0,0,0" VerticalAlignment="Center"
                                            FontFamily="{DynamicResource Font.UI}"
                                            FontSize="{DynamicResource Font.Size.Caption}"
                                            Foreground="{DynamicResource Brush.Text.Disabled}"
-                                           TextTrimming="WordEllipsis" />
-                            </StackPanel>
+                                           TextTrimming="CharacterEllipsis" />
+                            </Grid>
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
@@ -858,6 +919,38 @@
                                                 Visibility="{Binding ShowPublish,
                                                     Converter={StaticResource BoolToVisibility}}" />
                                     </StackPanel>
+
+                                    <!-- ITS OWN ROW, FULL WIDTH, AND NOT BESIDE FETCH.
+
+                                         GP-H already measured what a fourth button on that row
+                                         does: it overflows the 380 px panel outright. And it
+                                         does not belong there anyway - fetch, pull and push are
+                                         one rhythm somebody repeats all day, and raising a
+                                         merge request is a deliberate act that happens once per
+                                         branch. Different weight, different row.
+
+                                         COLLAPSED, NOT DISABLED, when the forge is unknown. A
+                                         self-hosted GitLab is unidentifiable from its URL and a
+                                         local-only repository has no forge at all - and neither
+                                         is a problem the user can fix from this panel, so a
+                                         permanently dead control with a tooltip about repo.json
+                                         would be clutter on every repository that will never
+                                         have one.
+
+                                         The caption is bound because it means three different
+                                         things: create one, go to the one that exists, or open
+                                         the list on a forge that cannot tell us which. It is
+                                         also in the forge's own vocabulary - GitLab has merge
+                                         requests, the other four have pull requests. -->
+                                    <Button Content="{Binding MergeRequest.Label}"
+                                            Margin="0,8,0,0" HorizontalAlignment="Stretch"
+                                            Style="{StaticResource GhostButton}"
+                                            Height="{DynamicResource Size.Control.Compact}"
+                                            ToolTipService.ShowOnDisabled="True"
+                                            ToolTip="{Binding MergeRequestTooltip}"
+                                            Command="{Binding OpenMergeRequestCommand}"
+                                            Visibility="{Binding MergeRequest.IsVisible,
+                                                Converter={StaticResource BoolToVisibility}}" />
                                 </StackPanel>
                             </Border>
 
@@ -881,6 +974,29 @@
                                                Foreground="{DynamicResource Brush.Text.Disabled}"
                                                ToolTip="Subject length. The convention is 50 characters, hard limit 72." />
                                 </Grid>
+
+                                <!-- What this commit is about to record, counted as OBJECTS.
+
+                                     "5 changed" is what git can say. "3 POUs, 1 GVL and 1 DUT
+                                     changed in RefrigeratorControl" is the sentence the
+                                     engineer would have written, and it is available only
+                                     because the export wrote the manifest beside the files.
+
+                                     It counts what the button will commit, not the working
+                                     tree - those differ the moment anything is staged, and a
+                                     line that disagreed with the caption under it would be
+                                     two controls describing one press.
+
+                                     Hidden rather than empty when nothing here belongs to a
+                                     PLC project: the rows are ordinary paths then, and the
+                                     list already says how many. -->
+                                <TextBlock Text="{Binding ChangeSummaryLine}"
+                                           TextWrapping="Wrap" Margin="0,0,0,6"
+                                           FontFamily="{DynamicResource Font.UI}"
+                                           FontSize="{DynamicResource Font.Size.Caption}"
+                                           Foreground="{DynamicResource Brush.Text.Secondary}"
+                                           Visibility="{Binding HasChangeSummary,
+                                               Converter={StaticResource BoolToVisibility}}" />
 
                                 <TextBox x:Name="CommitMessageBox" Height="72"
                                          Style="{StaticResource FlatTextBox}"
@@ -919,6 +1035,20 @@
                                             Command="{Binding CommitCommand}"
                                             ToolTipService.ShowOnDisabled="True"
                                             ToolTip="{Binding CommitExplanation}" />
+
+                                    <!-- OFFERED, NEVER APPLIED, AND NEVER OVER TYPED WORDS.
+
+                                         The button goes dead the moment the box has anything
+                                         in it, so there is no press that can lose a
+                                         half-written message. An "are you sure" over
+                                         somebody's own sentence is a worse answer than not
+                                         offering the action; clearing the box offers it
+                                         again. -->
+                                    <Button Content="Draft" Margin="8,0,0,0"
+                                            Style="{StaticResource GhostButton}"
+                                            Command="{Binding DraftCommitMessageCommand}"
+                                            ToolTipService.ShowOnDisabled="True"
+                                            ToolTip="Fill the box with a subject built from the changed objects. Available while the box is empty." />
                                 </StackPanel>
 
                                 <!-- The most surprising rule in the tool, stated where the

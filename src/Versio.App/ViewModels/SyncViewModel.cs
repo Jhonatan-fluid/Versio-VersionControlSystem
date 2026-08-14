@@ -232,6 +232,15 @@ public sealed class SyncViewModel : ObservableObject
     /// </remarks>
     public string ConfiguredDefaultBranch => _config.DefaultBranch;
 
+    /// <summary>
+    /// The forge this repository records, or Unknown when it records none.
+    /// </summary>
+    /// <remarks>
+    /// From the same in-memory <c>repo.json</c> as <see cref="ConfiguredDefaultBranch"/>, for
+    /// the same reason: one answer rather than two that can disagree.
+    /// </remarks>
+    public ForgeKind ConfiguredForge => _config.Forge;
+
     public ObservableCollection<string> Findings { get; } = [];
 
     /// <summary>The findings as one sentence, or empty when the scan found nothing wrong.</summary>
@@ -728,6 +737,11 @@ public sealed class SyncViewModel : ObservableObject
         _treeSignature = string.Empty;
         _coverage.Clear();
         CoverageSummary = string.Empty;
+
+        // Object names belong to the repository that was open. Carrying them across would let
+        // a path that happens to match in the new repository be labelled with the old one's
+        // object — the same reasoning as the expanded set above.
+        Objects = ObjectIndex.Empty;
 
         SelectedProject = null;
         Summary = "No repository open";
@@ -1680,6 +1694,49 @@ public sealed class SyncViewModel : ObservableObject
         private set => SetProperty(ref _treeSummary, value);
     }
 
+    /// <summary>
+    /// Every exported file in the workspace, by the path git reports it under.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Rebuilt with the tree and from the same manifests, so the git panel names a changed
+    /// file exactly as the tree names the object it belongs to. Read by the shell rather than
+    /// pushed to it: the panel already relabels after every tree refresh, and an event here
+    /// would be a second path to the same update.
+    /// </para>
+    /// <para>
+    /// <b>Empty until the first tree refresh completes.</b> The changed-files list is filled
+    /// before the manifests are parsed — deliberately, so the panel is not held behind file IO
+    /// — so the first paint after opening a repository shows paths and the refresh that
+    /// follows names them. Rows that arrive before the index are relabelled, not rebuilt.
+    /// </para>
+    /// </remarks>
+    public ObjectIndex Objects
+    {
+        get => _objects;
+        private set
+        {
+            _objects = value;
+            ObjectsChanged?.Invoke();
+        }
+    }
+
+    private ObjectIndex _objects = ObjectIndex.Empty;
+
+    /// <summary>
+    /// The index was rebuilt, and whatever is showing paths can be named again.
+    /// </summary>
+    /// <remarks>
+    /// <b>An event rather than a call at each site, because the sites are not all in the git
+    /// panel's control.</b> The index is filled by a tree refresh, and a tree refresh happens
+    /// on a status refresh, on <c>AttachAsync</c>, after a rescan and after an adoption. The
+    /// first of those is the one that catches people out: opening a repository refreshes git
+    /// <i>before</i> the bindings are loaded, so the first pass names nothing and the index
+    /// arrives afterwards, from a path the panel never hears about. It stayed wrong until the
+    /// working tree next moved — which, on a project nobody is editing, is never.
+    /// </remarks>
+    public event Action? ObjectsChanged;
+
     private TreeRow? _selectedNode;
 
     /// <summary>
@@ -1940,7 +1997,13 @@ public sealed class SyncViewModel : ObservableObject
                         new ProjectTreeOptions { ChangedOnly = false, Search = search }),
                     Coverage: coverage,
                     Tracked: projects.Count,
-                    Unreadable: unreadable);
+                    Unreadable: unreadable,
+
+                    // Built here rather than by the git panel, off the same parsed manifests
+                    // the tree is assembled from. A second reader would be a second answer to
+                    // "what is this file called", which is the disagreement WorkspaceTreeBuilder
+                    // itself was written to end.
+                    Objects: ObjectIndex.Of(projects));
         }).ConfigureAwait(true);
 
         foreach (var problem in built.Unreadable)
@@ -1991,6 +2054,10 @@ public sealed class SyncViewModel : ObservableObject
         _logger.Debug(LogCategory.Sync,
             $"tree: {Tree.Count} root(s), {objects} object(s), {changed} changed file(s), " +
             $"{hidden} project(s) hidden as in sync");
+
+        // Last, and it raises. Whatever is listening runs synchronously on the back of this
+        // assignment, so it has to find the tree already settled rather than half-reconciled.
+        Objects = built.Objects;
     }
 
     /// <summary>A manifest's identity for change detection: when it was written, and how big.</summary>

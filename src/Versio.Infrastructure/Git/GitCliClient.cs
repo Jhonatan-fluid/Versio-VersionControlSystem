@@ -652,6 +652,39 @@ public sealed partial class GitCliClient(
         return line?.Split('\t', ' ')[0].Trim() ?? string.Empty;
     }
 
+    /// <summary>List refs on the remote matching a pattern, transferring no objects.</summary>
+    /// <remarks>
+    /// <para>
+    /// No <c>--heads</c>, which is the whole point: the refs this is for —
+    /// <c>refs/pull/*/head</c> and <c>refs/merge-requests/*/head</c> — are outside
+    /// <c>refs/heads</c>, and <c>--heads</c> filters them all away. That is also why this could
+    /// not be folded into <see cref="LsRemoteAsync"/>.
+    /// </para>
+    /// <para>
+    /// The pattern is one argument in the array, so it reaches git literally: it is never
+    /// expanded by a shell, and the glob is git's to interpret. A short timeout because this
+    /// runs on the poller's schedule, and the raw lines go back unparsed because parsing
+    /// belongs in Core.
+    /// </para>
+    /// </remarks>
+    public async Task<string> LsRemoteRefsAsync(
+        string remote, string pattern, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(pattern))
+        {
+            return string.Empty;
+        }
+
+        var result = await RunAsync(
+            ["ls-remote", remote, pattern], null, ct, TimeSpan.FromSeconds(30))
+            .ConfigureAwait(false);
+
+        // Empty on failure. A forge that refuses the probe, a network blip or a remote with no
+        // such namespace are indistinguishable here and all mean the same thing to the caller:
+        // no number, so the button offers to create one.
+        return result.Success ? result.StdOut : string.Empty;
+    }
+
     /// <summary>Resolve a revision locally.</summary>
     /// <remarks>
     /// <c>--verify</c> so an unresolvable revision exits non-zero instead of echoing back what

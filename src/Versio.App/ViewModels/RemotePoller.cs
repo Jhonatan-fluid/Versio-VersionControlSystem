@@ -85,6 +85,9 @@ public sealed class RemotePoller : IDisposable
     /// <param name="target">Which remote and branch to watch, or null when there is nothing.</param>
     /// <param name="onMoved">Run a real fetch and refresh. Called on the UI context.</param>
     /// <param name="onHalted">Say once that polling has stopped, and why.</param>
+    /// <param name="onProbed">
+    /// Anything else worth asking the remote while the connection is warranted anyway.
+    /// </param>
     public RemotePoller(
         IVersioLogger logger,
         IClock clock,
@@ -93,7 +96,8 @@ public sealed class RemotePoller : IDisposable
         Func<(string Remote, string Branch)?> target,
         Func<CancellationToken, Task> onMoved,
         Action<string> onHalted,
-        TimeSpan? interval = null)
+        TimeSpan? interval = null,
+        Func<CancellationToken, Task>? onProbed = null)
     {
         _logger = logger;
         _clock = clock;
@@ -102,11 +106,42 @@ public sealed class RemotePoller : IDisposable
         _target = target;
         _onMoved = onMoved;
         _onHalted = onHalted;
+        _onProbed = onProbed;
         _policy = new RemotePollPolicy(clock, interval);
     }
 
+    /// <summary>
+    /// A second question for the remote, asked on this loop's schedule rather than its own.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The merge-request button needs to know whether a request already exists, which is a
+    /// <c>ls-remote</c> against a hidden ref namespace. It gets this loop's cadence, backoff and
+    /// suspension for free, and — crucially — its halt: a rejected credential stops both.
+    /// </para>
+    /// <para>
+    /// <b>It runs whether or not the remote moved, and it has to.</b> Opening a pull request
+    /// does not move the branch head — the ref the forge publishes points at a commit that
+    /// already exists — so a probe conditioned on movement would never notice one being opened.
+    /// The caller decides whether the question is worth asking at all; this only says when.
+    /// </para>
+    /// </remarks>
+    private readonly Func<CancellationToken, Task>? _onProbed;
+
     /// <summary>Exposed so the shell can wake it and a test can read the pace.</summary>
     public RemotePollPolicy Policy => _policy;
+
+    /// <summary>
+    /// Whether a caller gave this loop a second question to ask.
+    /// </summary>
+    /// <remarks>
+    /// <b>Here so that "the shell forgot to wire it" is a failing test rather than a silence.</b>
+    /// A test of this class can prove the callback is invoked, and a test of the shell can prove
+    /// the merge-request rules are right, and both stay green with <c>onProbed: null</c> passed
+    /// at the one construction site — which is the shape of the three unreachable-caller bugs
+    /// this codebase has already had. Internal because nothing in the application asks.
+    /// </remarks>
+    internal bool AsksASecondQuestion => _onProbed is not null;
 
     public bool IsRunning => _loop is { IsCompleted: false };
 
@@ -208,6 +243,15 @@ public sealed class RemotePoller : IDisposable
                 $"probe {target.Remote}/{target.Branch}: no answer in {elapsed:F0} ms");
             ReportHaltIfNeeded();
             return;
+        }
+
+        // The remote answered, so the connection and the credentials are good. Anything else
+        // worth asking it is asked here, before the unchanged path returns — a pull request
+        // being opened does not move the branch head, so a question asked only when something
+        // moved would never be answered.
+        if (_onProbed is not null)
+        {
+            await _onProbed(ct).ConfigureAwait(false);
         }
 
         var localHead = await git.RevParseAsync($"{target.Remote}/{target.Branch}", ct)

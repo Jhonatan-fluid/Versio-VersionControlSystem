@@ -8,7 +8,7 @@ interface does not expose, plus one new dialog.
 
 ## Where this stands
 
-**Nine of twelve phases are done**, on branch `GitPanel`, plus an audit pass over all of them.
+**Eleven of twelve phases are done**, on branch `GitPanel`, plus an audit pass over all of them.
 Each has a commit and an entry in the **phase log** at the end of this document saying what
 landed, what was decided, and what contact with the code changed.
 
@@ -24,13 +24,25 @@ landed, what was decided, and what contact with the code changed.
 | ✅ | **GP-F** — one commit button, three behaviours, gating | `ac954b4` |
 | ✅ | **GP-G** — conflicts UI, diverged exit (§6, §9b) | `81865b7` |
 | ✅ | **GP-H** — branch identity, default branch, delete dialog (§7) | `15e24d3` |
-| — | **GP-I** — merge-request button (§8) | next |
-| — | GP-J — PLC-aware summaries (§9c) | |
-| — | GP-K / GP-L — previews and polish (§9d, §10) | |
+| ✅ | **GP-J** — PLC-aware naming, summary and draft (§9c, and §10.1 with it) | *uncommitted* |
+| ✅ | **GP-I** — merge-request button, five forges (§8) | *uncommitted* |
+| — | GP-K / GP-L — previews and polish (§9d, rest of §10) | next |
 
-**Three things are still owed to a human**, because nothing here can see the screen: the
-credential-helper window's stacking order, a timed `ls-remote` against a real remote, and the
-§13 scripts for anything visual. They are listed in the pre-flight's measurement table.
+**GP-J was taken before GP-I**, out of the order this table used to imply. The table was a
+sequence, not a ranking, and §9c is the item this document itself calls *"the thing no other git
+client can do"* and *"highest value of anything here"* — while §8 opens a pre-filled browser page
+and carries the most external surface in the plan (five forge templates, undetectable self-hosted
+instances, PR-ref probing two of the five forges do not support). GP-J's data dependency was also
+already satisfied and sitting in the same process, and it subsumes §10.1, which would otherwise
+have been rewritten by it.
+
+**Four things are still owed to a human**, because nothing here can see the screen or reach a
+network: the credential-helper window's stacking order, a timed `ls-remote` against a real
+remote, the §13 scripts for anything visual, and — new with GP-I — **the merge-request button
+against a real GitHub or GitLab account**. That last one cannot be automated here at all: a
+reachable remote and a hostname a forge is detectable from are mutually exclusive offline, so the
+suite proves the git half against a bare repository and the URL half against a parser, and the
+join between them is §13's GP-I step 5.
 
 **How to read the rest.** Sections §1–§13 are the plan, written before the work and left as
 written — each now says at the top whether it is built. The **phase log** at the end is the
@@ -861,9 +873,13 @@ Git refuses outright, so Versio handles it explicitly rather than surfacing the 
 
 ---
 
-## 8 · Merge / pull request button
+## 8 · Merge / pull request button — **built, as GP-I**
 
-> **Not built yet.**
+> Built as specified, with three changes on contact with the code, all in the phase log: the
+> button is in the forge's **own vocabulary** rather than "merge request" everywhere; it has a
+> **row of its own** rather than a fourth place on the fetch/pull/push line; and `RemoteUrl`
+> grew a `Port`, without which every self-hosted forge on a non-default port produced a link to
+> the wrong service.
 
 A button in the branch card that changes with state: **Create merge request** → opens the
 forge's own pre-filled "new MR" page in the browser; **Go to merge request** → opens the
@@ -1005,7 +1021,12 @@ Blocked entirely while a direction lock is held or a project is open, via 9a.
 
 **Cost:** medium. **Value:** removes the only dead-end left in the panel.
 
-### 9c · PLC-aware change summaries — *the thing no other git client can do*
+### 9c · PLC-aware change summaries — **built, as GP-J**
+
+> All three uses shipped. See the phase log for what changed on contact with the code — chiefly
+> that the summary describes *what the button will commit* rather than the working tree, and
+> that the row carries a fourth thing this section did not ask for: whether editing the file
+> reaches the project at all.
 
 `ProjectManifest` maps every exported path to an object `Name` and `Type`
 (`ProjectManifest.cs:14-29`), and `CodesysObjectType` knows POU from GVL from DUT. The git
@@ -1103,9 +1124,12 @@ The three that need their own:
 
 ## 10 · Smaller UX fixes
 
-> **Not built yet.**
+> **Item 1 is built, with GP-J. The other five are not.** The path-trimming fix could not
+> sensibly be done twice: GP-J replaces the row's single line of trimmed path with a name and a
+> directory beneath it, which is item 1's second suggestion — *"render the directory in
+> secondary grey with the filename in primary"* — arrived at from the other direction.
 
-1. **Path trimming is backwards.** `ChangeRowTemplate` uses `TextTrimming="CharacterEllipsis"`,
+1. ~~**Path trimming is backwards.**~~ — **done.** `ChangeRowTemplate` used `TextTrimming="CharacterEllipsis"`,
    which trims the **tail** — so an exported PLC tree shows `src/Project/PLC/POU/Applic…` on
    every row and hides the only part that differs. Trim from the head, or render the directory
    in secondary grey with the filename in primary. Cheap, and it fixes the list with the most
@@ -1510,26 +1534,59 @@ proves nothing.
 11. Detach HEAD → the badge says not on a branch; the remote row is dead except Fetch; the
     create-branch action is **in the badge**.
 
-### GP-I · Merge request
+### GP-I · Merge request — **owed to you now**
 
-1. On a pushed, clean, non-default branch → the button reads **Create merge request**; pressing
-   it opens the browser with source and target **already filled in** and nothing submitted.
-2. Make an uncommitted change → the button disables, tooltip says commit first.
-3. Commit without pushing → disabled, tooltip says push first.
-4. On the default branch → disabled with its own wording.
-5. Open a PR in the browser, then re-check → the button becomes **Go to merge request** and
-   opens the right one.
-6. On a repo whose host is unrecognised → **no button at all**, not a broken one.
+Needs a repository with a **real GitHub or GitLab remote you can push to**, which is the one
+thing no test here can supply: a reachable remote and a hostname a forge is detectable from are
+mutually exclusive without a network. Everything below step 5 works against any remote.
 
-### GP-J · PLC-aware summaries
+1. On a pushed, clean, non-default branch → the button reads **Create pull request** (or **merge
+   request** on GitLab — it uses the forge's own word); pressing it opens the browser with source
+   and target **already filled in** and nothing submitted. **Check the URL bar before pressing
+   Create**: the target must be your trunk, not `master` guessed at.
+2. Make an uncommitted change → disabled, tooltip says commit first.
+3. Commit without pushing → disabled, tooltip counts them: *"Push your 1 commit first"*.
+4. On the default branch → disabled, with its own wording.
+5. **Open a PR in the browser, then leave the panel alone for a minute.** The button becomes
+   **Go to pull request** on its own, with no refresh and no click — that is the background probe
+   working, and it is the one part of this phase with no automated coverage end to end. Press it
+   and confirm it lands on *that* request.
+6. On a repository whose host is unrecognised → **no button at all**, not a disabled one.
+7. Add `"forge": "GitLab"` to `.versio/repo.json` on that same repository → the button appears
+   and says *merge request*. Remove it → it goes away again.
+8. On an Azure DevOps or Bitbucket remote → the button reads **Open pull requests** and lands on
+   the repository's list. It must never show a number.
+9. A remote whose only URL is a UNC path or `C:\…` → no button.
 
-1. Change a POU and a GVL → rows read **`FB_Motor` · POU** with the path secondary, not a raw
-   path.
-2. The summary line above the commit box counts them by type.
-3. Press **Draft** → the message box fills with object names; **editing it works normally** and
-   nothing overwrites what you typed.
-4. Change a non-PLC file → it still appears, labelled by path, and is not mislabelled as an
-   object.
+**And one to watch for rather than to do:** the probe must not appear in the log every few
+seconds. It should write a line only when the answer *changes*.
+
+### GP-J · PLC-aware summaries — **owed to you now**
+
+Against `fixtures/projects/RefrigeratorControl`, which has 3 POUs, 2 GVLs, 3 visualisations and
+2 library managers in its manifest. Everything below is machine-checked except items 1, 6 and 8,
+which are geometry and wording and cannot be.
+
+1. **Open the repository and look at the panel before touching anything.** Rows read
+   `Glob_Var` with a `GVL` chip and the path beneath, **on the first paint** — not raw paths that
+   become names when you save something. This is the exact failure the phase log describes; if
+   raw paths appear and then correct themselves, the subscription is broken again.
+2. Change a POU and a GVL → two rows for the GVL (`.gvl.st` and `.gvl.xml`), both reading
+   `Glob_Var`, told apart by the filename on the second line.
+3. The summary line above the commit box says **`1 GVL and 1 POU changed in RefrigeratorControl`**
+   — one GVL, not two, though it is two rows.
+4. **Stage only the POU.** The summary drops to `1 POU changed in …` and the button caption drops
+   to plain `Commit`. The two must agree; that is the point of the line.
+5. Press **Draft** → the box fills with `Modify FB_Motor, Glob_Var`. Type a character: the button
+   goes dead. Clear the box: it comes back. **Nothing you typed is ever overwritten.**
+6. Change 8–10 objects at once → **does the list still read at a glance, and how many rows fit
+   before it scrolls?** Rows are two lines tall now. This is the one judgement no test makes.
+7. Edit `Library Manager.libraries.yaml` in the mirror → the row carries a lock glyph, and its
+   tooltip says the edit does not reach the project.
+8. Change `README.md` → it appears as `README.md` over `` (repository root), with **no chip**,
+   and the summary line ends `, plus 1 other file`. It must never be labelled as an object.
+9. Switch to a repository with no PLC projects → no summary line at all, no chips, and the rows
+   are filenames over directories.
 
 ### GP-K / GP-L · Previews and polish
 
@@ -2225,6 +2282,176 @@ Shipped without it, and the product owner has since decided against it outright.
 
 ---
 
+### GP-J — PLC-aware naming, summary and draft · done 2026-08-14
+
+**Built:** `Core/Projects/ObjectIndex.cs` (repo-relative path → the object the export wrote it
+from), `Core/Projects/ObjectTypeNames.cs` (chip, singular, plural — a table, not an algorithm)
+and `Core/Projects/ChangeSummary.cs` (the sentence, the drafted subject, the verb per object);
+`SyncViewModel.Objects` rebuilt with the tree and announcing itself; `ChangeRow.Describe` with
+`Primary` / `Secondary` / `TypeLabel` / `IsExportOnly`; a two-line `ChangeRowTemplate`; the
+summary line and the **Draft** button in the commit box.
+
+**Tests:** 40 Core, 15 App (6 row + 3 chrome + 6 flow). **1,267 / 345 / 149 green**, integration
+re-run in full against real CODESYS 3.5.22.20 — 0 skipped, 7 m 20 s.
+
+### The wiring was the bug, and only the front-door test found it
+
+Every row test, every index test and every summary test passed against a panel that **named
+nothing at all**. `OpenRepositoryAsync` refreshes git and then calls `Sync.AttachAsync`, and the
+bindings are loaded inside *that* — so the one refresh an open performs runs before any manifest
+has been read, names nothing, and the index turns up afterwards from a path the git panel never
+hears about. It stayed wrong until the working tree next moved, which on a project nobody is
+editing is never: **open a repository, look at the panel, see raw paths.**
+
+That is the fourth time this codebase has produced a method with a green suite and no reachable
+caller — after `GuardIntent.Clone`, `ResetForRepositoryChange` and `TreeRow.Reconcile` — and the
+first time the test that caught it was written *before* the code shipped rather than after.
+`PlcAwareNamingFlowTests` opens a real repository with a real `repo.json` and a real manifest on
+disk and asserts the panel's rows; deleting the one subscription turns exactly that file red and
+nothing else.
+
+**The fix is an event, not a call.** `SyncViewModel.ObjectsChanged` fires when the index is
+rebuilt, and the shell subscribes once. The index is filled by a tree refresh, and a tree refresh
+happens on a status refresh, on attach, after a rescan and after an adoption — four callers, of
+which the panel controls one. A `DescribeRows()` after each would have been three chances to
+forget, and the one that was already forgotten is the one that mattered.
+
+### Decisions that changed on contact with the code
+
+- **The summary describes what the button will commit, not the working tree.** §9c says "a change
+  summary line above the commit box", which reads as the working tree — but the button beneath it
+  commits *staged only* whenever something is staged and nothing is ticked, which is GP-F's whole
+  safeguard. A line counting five objects over a button that would commit two is two controls
+  describing one press. The set comes from `CommitPlan` now, so the caption and the sentence
+  cannot disagree.
+- **Counted by object, not by file, and that is not cosmetic.** A GVL exports to `.gvl.st` *and*
+  `.gvl.xml`, so every count taken over paths reports one edit as two. `ProjectObject`'s own
+  remarks already said the GUID is the identity; this is the first reader outside the tree to
+  need it. The mutation — key by path — breaks two tests.
+- **A fourth thing on the row that §9c did not ask for: `IsExportOnly`.** `STATUS.md` has carried
+  "editing `Library Manager.libraries.yaml` changes nothing in the project" as a known limitation
+  with **"and the panel does not say so yet"** beside it, parked on tree work. The changed-files
+  row is where somebody is about to *stage* that edit, so it is where the sentence belongs. It is
+  a glyph and a tooltip, off `ExportCoverage.ExportOnlyForm`, which already existed.
+- **The type table is a table.** The tempting rule — lowercase, replace underscores, capitalise —
+  yields "Gvl", "Pou", "Textlist" and "Imagepool". Engineers read those daily and a tool that
+  renames them reads as one that does not know the domain. An unknown type is shown exactly as
+  the exporter wrote it: `versio_types.py`'s table grows, and inventing English for a type this
+  build has never seen is the same mistake as guessing an object from an extension.
+- **Truncation drops whole names.** Half of `FB_MotorControl` is `FB_Motor`, which may well be a
+  different function block in the same project. Over 50 characters the tail becomes "and 4 more";
+  a single object whose name alone exceeds the limit is shown whole, because there is no honest
+  shorter form and the counter beside the box already says it is long.
+- **Draft refuses rather than replaces.** The button is dead while the box has anything in it, so
+  no press can lose a half-written message. An "are you sure" over somebody's own sentence is a
+  worse answer than not offering the action.
+- **The tie-break in the sentence is alphabetical.** §9c's example reads "3 POUs, 1 GVL, 1 DUT",
+  which is not any ordering — it is illustrative prose. Equal counts sort by name so the middle
+  of the sentence does not reshuffle between refreshes, which would read as the counts changing.
+
+### Two things worth knowing before the next phase
+
+- **The `ChangeRow` is now two lines**, so the changed-files list is roughly twice as tall per
+  row. `GitPanelGeometryTests` passes and the panes have min-heights, but how many rows fit
+  before scrolling is a judgement nothing here can make — it is on the §13 script.
+- **A NUL byte reached a source file.** Two spaces inside an interpolated string were written as
+  `\x00`, which compiled and passed every test, made `ChangeSummary.cs` register as *binary* to
+  grep and diff, and would have been committed to a repository whose whole premise is reviewable
+  text. Caught by `grep` refusing to search the file. Worth a glance at `file src/**/*.cs` after
+  any bulk edit — the compiler will not tell you.
+
+---
+
+### GP-I — merge-request button · done 2026-08-14
+
+**Built:** `Core/Git/Forge.cs` (detection, five forges' create/existing/list templates, the
+request-ref patterns and their parser) and `Core/Git/MergeRequestPlan.cs` (the five gates, the
+label, the refusals); `RemoteUrl.Port` and `Authority`; `RepoConfig.Forge`;
+`IGitClient.LsRemoteRefsAsync` and its `GitCliClient` half; `RemotePoller`'s `onProbed`; the
+shell's `MergeRequest`, `OpenMergeRequestCommand` and `ProbeMergeRequestAsync`; the button, on
+its own row in the branch card.
+
+**Tests:** 53 Core, 12 App (8 flow + 4 poller), 5 integration against real git.
+**1,320 / 356 / 154 green**, on a clean in-tree build with `Versio.exe` closed: 0 warnings,
+0 errors.
+
+### `RemoteUrl` was dropping the port, and every self-hosted forge needed it
+
+`RemoteUrl` strips the port from `Host` deliberately and says why: git scopes a stored credential
+to protocol and host, so a port in that key is wrong. But it was *discarded*, not set aside — and
+a GitLab on `https://git.acme.internal:8443/…` therefore produced a link to
+`https://git.acme.internal/…`, which is a different service or nothing at all. `Port` and
+`Authority` are additive and `Host` is untouched, so the credential path is unchanged: **two
+readers, two questions, one parse.** This is the case the plan's own test list asked for — "a
+host with a port and a path prefix" — and it could not have been satisfied without this.
+
+### The named mutation passed, and that was the finding
+
+§8 says to check this rule by defaulting an unknown host to GitHub's template. It passed the
+whole suite. The reason is worth more than the rule: `CreateUrl` tested `kind is Unknown` in a
+**guard** *and* returned empty from the switch's **default arm**, so the arm was unreachable and
+the mutation landed in dead code. Defence in depth reads as prudence and is the opposite here —
+**a rule enforced in two places is a rule whose test only reaches one of them.** The guard no
+longer tests for it; the switch is the single decision, and the mutation now breaks exactly
+`An_unidentifiable_host_yields_no_url_at_all`.
+
+### The wiring, again — and this time it was caught before it shipped
+
+GP-J's finding repeated in a new shape. `RemotePollerTests` proves the loop calls whatever it is
+handed; `MergeRequestFlowTests` proves the rules are right against a real repository. **Both stay
+green with `onProbed: null` at the one construction site** — verified by doing it. So
+`RemotePoller.AsksASecondQuestion` and `ShellViewModel.Poller` are internal, and one test asserts
+the link. That is a construction assertion and a weak one in general; it is the right strength
+here, because the specific thing that breaks is a constructor argument.
+
+The related trap was avoided rather than fixed: the forge would naturally be resolved once when
+the repository opens, beside `_remote` — and `repo.json` is loaded by `Sync.AttachAsync`, which
+runs *after* that. A cached forge would have been `Unknown` for exactly the repositories that
+need the setting. It is a computed property instead: an enum switch over two fields, cheaper than
+the notification the alternative would need. **GP-J needed an event for this; GP-I needed
+nothing, by not storing the answer.**
+
+### Decisions that changed on contact with the code
+
+- **The forge's own vocabulary.** The plan says "merge request" throughout, which is GitLab's
+  word and wrong on the other four. `Forge.Noun` returns "pull request" for GitHub, Azure,
+  Bitbucket and Gitea. A button that calls a GitHub pull request a merge request reads as a tool
+  built by somebody who has not used the forge it is opening.
+- **Its own row, full width.** GP-H already measured that a fourth button beside Fetch overflows
+  the 380 px panel. It does not belong there anyway: fetch/pull/push is one rhythm repeated all
+  day, and raising a request is a deliberate act that happens once per branch.
+- **Collapsed, not disabled, when the forge is unknown** — as §8 asked. Worth restating because
+  it is the only control in the panel that hides rather than explaining itself: the others are
+  states the user can leave by doing something, and "your remote is a UNC path" is not.
+- **Gitea publishes no request refs, as far as this code is concerned.** It very likely mirrors
+  GitHub's `refs/pull/*/head`, and "very likely" is not a measurement. The cost of being wrong is
+  a probe that always misses and a button that silently never upgrades from Create to Go to, so
+  it degrades to the list page until somebody has run one `ls-remote` against a real instance.
+- **The probe runs whether or not the remote moved.** Opening a pull request does not move the
+  branch head — the published ref points at a commit that already exists — so a probe conditioned
+  on movement would never notice one. That is why `onProbed` sits where it does in the loop
+  rather than inside `onMoved`.
+- **It costs nothing in the common case.** `ProbeMergeRequestAsync` returns before spawning
+  anything unless the button is actually offering to create a request on a forge with request
+  refs — which excludes the default branch, a dirty tree, unpushed work, every unidentified
+  forge, and Azure and Bitbucket entirely.
+- **The tooltip carries the URL when the button is live.** One binding for both states: a tooltip
+  that emptied itself when the button went live would take the explanation away at the moment
+  somebody is deciding whether to open a browser.
+
+### A test-isolation defect that only appears under load
+
+`The_button_is_in_the_branch_card_and_bound_to_the_plan` passed alone and failed in the full run,
+reporting the button `Visible` where it must be `Collapsed`. Not a product bug: the class builds
+`MainWindow` and lays it out, and it was **not in the `theme` collection** that serialises exactly
+those tests — so it raced a test swapping the palette dictionary and its bindings did not resolve.
+Every other class that builds and measures the window is in that collection; this one is now, and
+three consecutive full runs are green. The two remaining `MainWindow` classes outside the
+collection — `MainWindowClosingTests` and `RepositoryChangeResetTests` — were checked and neither
+lays out, so neither evaluates a binding and neither is exposed.
+
+---
+
 ### Audit · 2026-08-14, phases GP-0 to GP-H
 
 Second read-through of everything these phases added. Smaller than the first, which is the
@@ -2267,7 +2494,8 @@ happy to see remembered**, or clear the list afterwards.
 
 ## Handoff
 
-**Branch:** `GitPanel`. **State:** GP-0 through GP-H shipped, audited twice.
+**Branch:** `GitPanel`. **State:** GP-0 through GP-H shipped and audited twice; **GP-J and GP-I
+built and not yet committed**, with both §13 scripts outstanding.
 
 **Where to start reading.** *Where this stands* at the top of this document lists every phase
 with its commit. Sections §1–§13 are the plan as written before the work, each marked built or
@@ -2279,9 +2507,18 @@ PATH has no SDK. **Close `Versio.exe` first**: a running instance locks `src/Ver
 build fails on the copy step, and it reports phantom warnings that are an artefact of that
 failure rather than real. `-p:OutputPath=<elsewhere>` builds around it when the app must stay up.
 
-**What is left.** GP-I (merge-request button, §8), GP-J (PLC-aware summaries, §9c — the
-highest-value item in this document and the one no generic git client can have), GP-K and GP-L
-(previews and polish). None is blocked.
+**What is left.** GP-K / GP-L only: previews (§9d), and the five remaining items of §10 now that
+path trimming has gone with GP-J. Neither is blocked, and §9d is the smallest thing left in this
+document — `RecentCommitsAsync` already takes a count and a skip, so it needs a revision range
+and a place to put the list.
+
+**Run the two §13 scripts first**, GP-J's and GP-I's. Both have one step that no test reaches:
+
+- **GP-J step 1** — object names on the *first paint*, not after the first save. This was
+  genuinely broken during the work and is the whole reason `Sync.ObjectsChanged` exists.
+- **GP-I step 5** — the button turning into *Go to pull request* on its own, a minute after you
+  open a request in the browser. It needs a real forge and a real push, which is exactly what an
+  offline suite cannot have.
 
 **What is owed to a human**, because nothing here can see the screen: the three measurements in
 the pre-flight table, and §13's verification scripts for anything visual. The geometry suite

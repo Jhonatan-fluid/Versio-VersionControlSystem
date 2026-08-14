@@ -363,10 +363,12 @@ public sealed class GitPanelChromeTests
             // TwoWay, or ticking a box would change nothing the view model can see.
             Assert.Equal(BindingMode.TwoWay, binding!.Mode);
 
-            // And the shared body came with it: the path is on screen, so the nested
-            // StaticResource resolved in the place that matters.
+            // And the shared body came with it, so the nested StaticResource resolved in the
+            // place that matters. The row is two lines now — filename leading, directory
+            // beneath — because the single trimmed path hid the only part that differed.
             var texts = AllOf<TextBlock>(panel).Select(t => t.Text).ToList();
-            Assert.Contains("src/App/POU/FB_Motor.st", texts);
+            Assert.Contains("FB_Motor.st", texts);
+            Assert.Contains("src/App/POU", texts);
         });
     }
 

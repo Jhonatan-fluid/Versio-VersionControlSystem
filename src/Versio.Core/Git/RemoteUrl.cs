@@ -55,6 +55,22 @@ public sealed record RemoteUrl
     /// <summary>Host alone, with no port and no credentials in it.</summary>
     public string Host { get; init; } = string.Empty;
 
+    /// <summary>
+    /// The port, when the URL carried one. Empty otherwise.
+    /// </summary>
+    /// <remarks>
+    /// <b>Deliberately not part of <see cref="Host"/>, and deliberately not thrown away either.</b>
+    /// Git scopes a stored credential to protocol and host, so the port must stay out of the
+    /// key that <c>git credential</c> is handed — but a self-hosted forge on
+    /// <c>https://git.acme.internal:8443/…</c> needs it back to build a link somebody can click,
+    /// and dropping it silently produced a URL that resolves to a different service or to
+    /// nothing. Two readers, two questions, one parse.
+    /// </remarks>
+    public string Port { get; init; } = string.Empty;
+
+    /// <summary>Host and port as a URL authority: <c>git.acme.internal:8443</c>.</summary>
+    public string Authority => Port.Length == 0 ? Host : $"{Host}:{Port}";
+
     /// <summary>Everything between the host and the repository name, slash-separated.</summary>
     /// <remarks>
     /// Kept whole rather than split into "owner", because forges disagree about how deep it
@@ -152,9 +168,11 @@ public sealed record RemoteUrl
         }
 
         // The port is not part of a credential's identity as far as this is used, and it is
-        // never part of a host name shown to a person.
+        // never part of a host name shown to a person. Kept separately rather than discarded:
+        // a link to a self-hosted forge needs it back. See Port.
         var port = authority.IndexOf(':');
         var host = port < 0 ? authority : authority[..port];
+        var portNumber = port < 0 ? string.Empty : authority[(port + 1)..];
 
         var transport = protocol switch
         {
@@ -172,6 +190,7 @@ public sealed record RemoteUrl
             Transport = transport,
             Protocol = transport == RemoteTransport.Local ? string.Empty : protocol,
             Host = host,
+            Port = portNumber,
             Owner = owner,
             Repository = repository,
         };

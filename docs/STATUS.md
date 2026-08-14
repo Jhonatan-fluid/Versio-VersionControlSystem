@@ -1,12 +1,14 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-13 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,227 unit + 330 UI + 149 integration, 0 skipped
+**Date:** 2026-08-14 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,320 unit + 356 UI + 154 integration, 0 skipped
 
-> All three re-derived on 2026-08-13, on branch `GitPanel`, after the git-panel plan's GP-0
-> (git presence probe and commit-identity preflight, notifications, the remote state machine, credentials, background remote polling, per-file staging, and an audit pass over all five). The integration suite was re-run in full
-> against real CODESYS 3.5.22.20 — **149 passed, 0 skipped, 6 m 51 s** — including
+> All three re-derived on 2026-08-14, on branch `GitPanel`, after the git-panel plan's **GP-J**
+> (PLC-aware naming of the changed-files rows, the change summary and the drafted commit
+> subject) and **GP-I** (the merge-request button across five forges). The integration suite was
+> re-run in full against real CODESYS 3.5.22.20 — **154 passed, 0 skipped** — including
 > `RepositoryWatcherTests.A_deleted_file_is_reported`, the one noted below as flaky, which
-> passed in this run.
+> passed in this run. The five new integration tests read a forge's hidden request refs out of a
+> real bare repository and need no network.
 
 > **The commit count is the command now, not a number.** It was wrong by twelve when an audit
 > first checked it, and wrong again twice in one afternoon afterwards — including once by the
@@ -70,9 +72,12 @@ opens. That is `SAFEGUARDS.md` phases 1–8, and phase 9 is features rather than
   nothing in the project. The coverage report says so in its own section, and the importer
   skips the file by suffix rather than feeding YAML to a toolchain that expects XML.
   The edit is not undone either: it sits in the working tree until the next export rewrites
-  the file from the project. Worth knowing before somebody stages one — **and the panel does
-  not say so yet**, because the coverage sentence only appears when there are gaps and this is
-  not one. The row-level lock glyph is the fix, and it is tree work (§4 below).
+  the file from the project. Worth knowing before somebody stages one — **and the panel says so
+  now**, as of GP-J: the changed-files row carries a lock glyph and a tooltip saying the edit
+  does not reach the project. That was parked on tree work here for a while, which was the wrong
+  home for it: the row somebody is about to *stage* is where the warning has to be, and the
+  coverage sentence could never carry it because it only appears when there are gaps and this is
+  not one.
 - **How a library reference *resolves* is deliberately not recorded.** The file carries what
   the project asks for — placeholder, default resolution, redirection, parameters — and not
   what it resolved to on the exporting machine. Two engineers with different libraries
@@ -129,7 +134,7 @@ format; `.gitattributes` covers every registered vendor's extensions.
 | | |
 |---|---|
 | **Project view** | **One panel.** Every project *with something to review* — a change, a mirror behind, a lock held, a failure, or never exported — carrying its full CODESYS-shaped object tree, with every other changed file beside them. A project whose mirror is clean is not listed, and the empty state says so rather than going blank. Search still reaches into a clean project, because the box searches the project and not the diff |
-| **Git panel** | **Per-file staging** — a checkbox on every row, tri-state headers, and labels that say what will happen (`Stage 3`, `Stage all`); both panes scroll and a splitter divides them. **One commit button with three behaviours** — it stages what you ticked, or everything, or nothing at all when you have staged deliberately, and the caption says which before you press. Commit message with a 50/72 guide and Ctrl+Enter. **Where the branch stands, in words** rather than two arrows — eleven states covering unborn, detached, no remote, never published, ahead, behind and diverged, each naming its remedy. **Publish** for a branch with no upstream, which a plain push cannot do. Fetch / pull / push / discard. **Branches show where they live** — local only, remote only, or both — and remote-only ones are listed at all for the first time. A delete dialog removes them from this machine and optionally the remote, naming what is not merged and reporting per branch when one refuses. **Conflicts get their own section** with keep-mine / keep-theirs and an abandon, and a diverged branch is offered a rebase or a merge by name — before this, the badge said "pull first" and a fast-forward-only pull refuses a diverged branch, so the only way out was a terminal. **Notifications** that survive the status refresh, with failures sticky until dismissed and git's own words on them. **Credentials**: detected at open, handed off to the engineer's own helper, never stored — and a *forget credential* for the expired token no git GUI lets you clear. **The remote is watched in the background**, by `ls-remote` rather than by fetching, so a colleague's push shows up without a click. **Git's own health**: a launch probe that names PATH when git is missing, and an identity preflight so a commit is refused before a 17–31 s export rather than after it. One operation at a time across every button — a shared counted flag. **No stash controls**: removed pending a different design; the auto-stash drives the client operations. See [`GIT-PANEL-PLAN.md`](GIT-PANEL-PLAN.md) |
+| **Git panel** | **Per-file staging** — a checkbox on every row, tri-state headers, and labels that say what will happen (`Stage 3`, `Stage all`); both panes scroll and a splitter divides them. **One commit button with three behaviours** — it stages what you ticked, or everything, or nothing at all when you have staged deliberately, and the caption says which before you press. Commit message with a 50/72 guide and Ctrl+Enter. **Where the branch stands, in words** rather than two arrows — eleven states covering unborn, detached, no remote, never published, ahead, behind and diverged, each naming its remedy. **Publish** for a branch with no upstream, which a plain push cannot do. Fetch / pull / push / discard. **Branches show where they live** — local only, remote only, or both — and remote-only ones are listed at all for the first time. A delete dialog removes them from this machine and optionally the remote, naming what is not merged and reporting per branch when one refuses. **Conflicts get their own section** with keep-mine / keep-theirs and an abandon, and a diverged branch is offered a rebase or a merge by name — before this, the badge said "pull first" and a fast-forward-only pull refuses a diverged branch, so the only way out was a terminal. **Notifications** that survive the status refresh, with failures sticky until dismissed and git's own words on them. **Credentials**: detected at open, handed off to the engineer's own helper, never stored — and a *forget credential* for the expired token no git GUI lets you clear. **The remote is watched in the background**, by `ls-remote` rather than by fetching, so a colleague's push shows up without a click. **Git's own health**: a launch probe that names PATH when git is missing, and an identity preflight so a commit is refused before a 17–31 s export rather than after it. One operation at a time across every button — a shared counted flag. **Changed files are named as objects** — `FB_Motor` with a `POU` chip and the path beneath, resolved through the export manifest, with a lock glyph on a file whose edits cannot reach the project; a file the manifest does not describe stays a path and is never guessed at. **A change summary and a drafted commit subject** — *"1 GVL and 1 POU changed in RefrigeratorControl"*, and a **Draft** button that writes `Modify FB_Motor, Glob_Var`, both counting objects rather than files and both describing exactly what the commit button will record. **A merge-request button** for GitHub, GitLab, Azure DevOps, Bitbucket and Gitea: it opens the forge's own page pre-filled and submits nothing, upgrades itself to *Go to* when the forge's hidden refs say one already exists — no API token, nothing stored — and shows **nothing at all** for a host it cannot identify. **No stash controls**: removed pending a different design; the auto-stash drives the client operations. See [`GIT-PANEL-PLAN.md`](GIT-PANEL-PLAN.md) |
 | **History panel** | **Its own rail button**, not a strip inside the git panel. Every commit with its hash, local date and time, author and subject; expand one for the files it touched; click a file for what that commit did to it, in the shared diff pane. Lazy at four levels — the log is not walked until the panel is first shown, then one page of 50 at a time; a commit's files are read when it is expanded and cached for the session, because a commit's contents cannot change; a patch is read only when a file is clicked, and never cached. A merge says so rather than showing an empty list |
 | **PLC state** | **No card, and no buttons.** Toolchain, version and profile were environment rather than repository state and moved to Settings → Help → System information. "Export now" is gone because a stale mirror needs no decision — it is exported when the repository opens. "Acknowledge failure" is gone as a panel-wide control: a failure belongs to one project, so it is reported on that project's row with the reason and a *Try again* beside it. What is left in the panel is transient and hides itself: the coverage warning and the live heartbeat |
 | **Branch and clone** | Create a branch from HEAD and switch to it, with the name checked against git's rules while it is typed; clone a repository after verifying the remote, then open it. Both are modal dialogs built from the one stylesheet, and both are covered by tests that construct them against the real theme |
@@ -138,7 +143,7 @@ format; `.gitattributes` covers every registered vendor's extensions.
 | **Open in the IDE** | Export runs anyway, from a copy; import waits and names who has the project. Neither marks the binding failed, and the breaker is never fed |
 | **Adoption writes `.gitignore`** | Created when absent, appended when present, never overriding an existing decision. Covers `.versio/local/` — locks, backups, scratch copies — and the toolchain's `-AllUsers.opt` and `-<user>-<machine>.opt`, the second of which carries a username and machine name in its filename |
 | **Export coverage** | What the export does *not* carry, said out loud: `_coverage.md` in the tree, every skip in the manifest with a stable reason, and a sentence in the panel naming what cannot be relied on. A gap is distinguished from a deliberate omission, from a file that is exported one way, and an old manifest reports "unknown" rather than "complete" |
-| **Library references** | One `<manager>.libraries.yaml` per library manager, beside the object that owns it — what the project asks for, never how it resolved here. Hand-written YAML on both sides, no dependency added to either. **Export-only**, and stated where a reader will meet it: the file's own header, `_coverage.md`, and the manifest's `form`. **Not yet in the panel** — `CoverageSummary` speaks only when there are gaps, deliberately, and the row-level 🔒 glyph the plan asks for (§9.3) is part of the unbuilt tree work |
+| **Library references** | One `<manager>.libraries.yaml` per library manager, beside the object that owns it — what the project asks for, never how it resolved here. Hand-written YAML on both sides, no dependency added to either. **Export-only**, and stated where a reader will meet it: the file's own header, `_coverage.md`, the manifest's `form`, **and now the panel** — the changed-files row carries a lock glyph and a tooltip saying the edit does not reach the project. It went there rather than on the tree row (§9.3) because the row somebody is about to *stage* is where the warning has to be. `CoverageSummary` still speaks only when there are gaps, deliberately |
 | **Chrome** | One app-wide progress bar with a caption, maximized on open, log console collapsed, heartbeat during long runs. **The title bar follows the theme** — painted with `Color.Surface.Base` through DWM, on every window the app opens and again on every theme switch, so the caption and the top bar are one surface rather than two. Tooltips are themed too, by an implicit style, because there are dozens of them and not one named a style |
 | **Saying it is working** | A toolchain run announces itself the moment it passes the last gate, and three surfaces answer three different questions: the **bar** that the app is busy, the **row** which project it is busy with (`exporting…`, in the accent colour), and the **heartbeat** that it is still alive and how far along. A refused, coalesced or throttled save announces nothing, because it is not working |
 | **Log panel** | Level as four chips (click to drop, click to restore) and category as a multi-select dropdown carrying a live count each, because the counts are what say where the volume is. **Pause freezes the feed** rather than the scroll, says so in the header, and shows what is queued behind it. The controls appear with the list they filter: collapsed, the strip is a chevron, a count and the paused pill |
@@ -162,10 +167,18 @@ format; `.gitattributes` covers every registered vendor's extensions.
 > read-only second instance the code already promises in a sentence. §0 is the handover note.
 >
 > **[`GIT-PANEL-PLAN.md`](GIT-PANEL-PLAN.md)** — the git panel's functionality and UX.
-> **Nothing in it is built.** GP-0 is two `git config` calls and removes the two worst first-run
-> failures; GP-A fixes a live bug in which a successful push produces no visible confirmation at
-> all, because `StatusSummary` is overwritten by the refresh that follows it. Its pre-flight
-> section names one blocker that has since been cleared — §5.A shipped — so GP-G is unblocked.
+> **Eleven of its twelve phases are built**: the git presence probe and identity preflight,
+> notifications, the remote state machine and publish, credentials, background remote polling,
+> per-file staging, the one commit button, conflicts and the way out of a divergence, branches
+> and their deletion, and — both on 2026-08-14 — **PLC-aware naming**, which is the item that
+> document itself ranks highest and the one no generic git client can have, and the
+> **merge-request button** across five forges. **What is left** is GP-K/GP-L: the ahead/behind
+> previews and the rest of the small UX list.
+>
+> *This paragraph said "nothing in it is built" for a day and a half after nine phases had
+> shipped, because it was written once and the header above it was re-derived without it. The
+> same shape as the hand-maintained counts below: a sentence about state, in a document nobody
+> re-reads from the top.*
 >
 > `SAFEGUARDS.md` also carries a correction worth reading before touching the sync engine:
 > **`On git action` is not the default sync mode** and had not been since 2026-08-12. Exports
