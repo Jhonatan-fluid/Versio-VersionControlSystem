@@ -27,7 +27,8 @@
 -->
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime"
+                    xmlns:views="clr-namespace:Versio.App.Views">
 
     <!--
         Declared once, here, because every window needs it and a window cannot see another
@@ -42,6 +43,17 @@
         modal that was added after the write-up.
     -->
     <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+
+    <!--
+        Turns a brush KEY into a brush, so a view model can decide what something means while
+        the theme decides what it looks like. Rows across the application carry a BrushKey
+        rather than a Brush for that reason.
+
+        Declared here rather than in a window, after BranchDeleteWindow became the second window
+        to want it. A private copy is why SystemInfoWindow once threw on open - see the note in
+        MainWindow.xaml. One instance, one place.
+    -->
+    <views:ResourceKeyConverter x:Key="ResourceKey" />
 
     <!-- Segoe Fluent Icons is the Windows 11 system icon font; Segoe MDL2 covers Windows 10.
          Monochrome, so glyphs inherit Foreground and re-theme for free - which colour emoji

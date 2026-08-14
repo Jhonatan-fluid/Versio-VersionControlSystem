@@ -222,6 +222,16 @@ public sealed class SyncViewModel : ObservableObject
     /// finding, so it is either shown or deleted, and these are worth showing: every one of
     /// them is a repository in a state Versio cannot resolve on its own.
     /// </remarks>
+    /// <summary>
+    /// The trunk this repository records, or empty when it records none.
+    /// </summary>
+    /// <remarks>
+    /// From <c>.versio/repo.json</c>, which this panel already loads for its bindings — so the
+    /// shell reads what is in memory rather than the file, and there is one answer rather than
+    /// two that can disagree.
+    /// </remarks>
+    public string ConfiguredDefaultBranch => _config.DefaultBranch;
+
     public ObservableCollection<string> Findings { get; } = [];
 
     /// <summary>The findings as one sentence, or empty when the scan found nothing wrong.</summary>

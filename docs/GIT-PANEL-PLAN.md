@@ -8,7 +8,7 @@ interface does not expose, plus one new dialog.
 
 ## Where this stands
 
-**Eight of twelve phases are done**, on branch `GitPanel`, plus an audit pass over all of them.
+**Nine of twelve phases are done**, on branch `GitPanel`, plus an audit pass over all of them.
 Each has a commit and an entry in the **phase log** at the end of this document saying what
 landed, what was decided, and what contact with the code changed.
 
@@ -23,8 +23,8 @@ landed, what was decided, and what contact with the code changed.
 | ✅ | *Audit* — dead API removed, fixtures consolidated, a flake fixed | `485cddb` |
 | ✅ | **GP-F** — one commit button, three behaviours, gating | `ac954b4` |
 | ✅ | **GP-G** — conflicts UI, diverged exit (§6, §9b) | `81865b7` |
-| — | **GP-H** — branch identity, default branch, delete dialog (§7) | next |
-| — | GP-I — merge-request button (§8) | |
+| ✅ | **GP-H** — branch identity, default branch, delete dialog (§7) | `15e24d3` |
+| — | **GP-I** — merge-request button (§8) | next |
 | — | GP-J — PLC-aware summaries (§9c) | |
 | — | GP-K / GP-L — previews and polish (§9d, §10) | |
 
@@ -746,7 +746,7 @@ conflict case joins it.
 
 ## 7 · Branch identity and deletion
 
-> **Not built yet.**
+> **Built** in GP-H.
 
 ### 7a · Local, remote, or both
 
@@ -1560,7 +1560,7 @@ different things is a coordination bug waiting to happen.
 | GP-E ✅ | Reconcile the staging lists, the two-pane scrollable layout and checkboxes (§4). **§4a's `GitPanelViewModel` extraction was deliberately not done** | The reconcile is the prerequisite everything else rests on — the lists stop being rebuilt every second, so a checkbox survives an editor save. The extraction was dropped once the seam was measured: eight shell collaborators reach into `CommitAsync` alone. Evidence in the phase log; the size concern stands and the seam worth cutting is the *remote* surface. |
 | GP-F ✅ | Button model + gating matrix (§5) | Needs GP-B and GP-E to gate against real state. |
 | GP-G ✅ | Conflicts (§6, UI half) + the diverged-branch exit (§9b) | **No longer blocked** — safeguards phase 6 shipped both defences. One piece of work: both are "the remote and I disagree", and §2 currently advises a button that refuses. |
-| GP-H | Branch identity, default branch, deletion dialog (§7), undo-delete (§9f) | Largest single piece and the only new window; benefits from GP-A and GP-D already being in place. |
+| GP-H ✅ | Branch identity, default branch, deletion dialog (§7). **Undo-delete (§9f) was not done** — see the phase log | Largest single piece and the only new window; benefits from GP-A and GP-D already being in place. |
 | GP-I | Merge-request button (§8) | Needs §7b's default branch for the target, and extracting `RemoteUrl` from the clone dialog. |
 | GP-J | PLC-aware summaries and drafted commit messages (§9c) | Sequenced late because it is additive, not because it is low value — it is the highest-value item here. Nothing blocks it earlier if you want it sooner. |
 | GP-K | Push/pull previews (§9d), large-binary preflight (§9h) | Each independent and small. |
@@ -2146,6 +2146,86 @@ anything.
 **Verified in the running app** against a repository left mid-merge with a real conflict: opened
 clean, reported `1 changed`, no exceptions. **The conflict banner and the diverged card need
 your eyes** — §13's GP-G script.
+
+---
+
+### GP-H — branches · done 2026-08-14
+
+**Built:** `Core/Git/BranchExistence.cs` with `BranchInventory`; `Core/Git/DefaultBranch.cs`;
+`Core/Git/BranchDeletion.cs` — `BranchCandidate`, `DeletePlan`, `DeleteOutcome`;
+`RepoConfig.DefaultBranch`; five methods on `IGitClient`; `BranchDeleteWindow`; the
+delete flow with its guard, confirmation and per-branch reporting.
+
+**Tests:** 38 Core, 16 App (6 window, 10 flow). **1,227 / 329 / 149 green.**
+
+**Remote-only branches were invisible.** `BranchesAsync` read `refs/heads`, so a colleague's
+branch, or one this clone had never checked out, did not exist as far as the application was
+concerned — the dropdown looked like the whole repository and was half of it. Now merged by
+short name, with `origin/HEAD` dropped (a symbolic ref, not a branch) and remote-only branches
+sorted last so a busy remote does not bury the three somebody works on.
+
+**Nothing knew which branch was the trunk.** Four rungs: `RepoConfig.DefaultBranch` (committed,
+so a team whose trunk is `develop` records it once), then the remote's own `HEAD`, then
+`main`/`master`, then **refuse**. The refusal is the important rung — guessing the trunk and
+then checking it out moves somebody's working tree to a branch nobody chose. Verified in the
+running app: `default branch is main (from Remote)`.
+
+### The `-d`-before-`-D` rule turned out to be load-bearing, and a mutation proved it was not tested
+
+The first mutation — swapping `force: false` for `force: true` — **survived**. Every test either
+stopped at `CanProceed` or had already acknowledged the force, so nothing exercised the gap.
+
+Rather than assume the rule was redundant, I checked what git actually does:
+
+```
+warning: not deleting branch 'tidy' that is not yet merged to
+         'refs/remotes/origin/tidy', even though it is merged to HEAD
+error: the branch 'tidy' is not fully merged
+```
+
+**`git branch --merged main` and `git branch -d` do not ask the same question.** `--merged`
+compares against one branch; `-d` also refuses a branch ahead of *its own upstream*. So a branch
+the dialog reports as merged — needing no acknowledgement — can still be carrying work nobody
+else has. Attempting `-d` first is what turns that into a refusal the user sees rather than a
+silent `-D`. `Git_gets_the_last_word_when_our_merged_check_is_wrong` constructs exactly that,
+and the mutation now fails.
+
+### That test then found a defect in every failure message in the application
+
+Its assertion failed on the detail text, which read:
+
+> `hint: Disable this message with "git config advice.forceDeleteBranch false"`
+
+`GitResult.FailureReason` took the **last** non-empty stderr line, and git appends `hint:` lines
+*after* the error. So the notification showed somebody how to turn the message off instead of
+telling them why the branch survived — and this is the string every failure card in the panel
+has been showing since GP-A. It now takes the last line that is not `hint:` or `warning:`,
+falling back to the last line when git said nothing else.
+
+### Other decisions
+
+- **The current branch is left before it is deleted**, through the ordinary `SwitchBranchAsync`
+  — so a dirty tree meets the auto-stash exactly as it does anywhere else. There is no second
+  dirty-tree story for this dialog. If the switch fails, **nothing is deleted**.
+- **The remote copy is only deleted when the local delete worked**, or when there was no local
+  copy. Deleting the shared one while the private one survives is the wrong direction to fail.
+- **`fetch --prune` after any remote delete**, or the branches linger as stale tracking refs and
+  reappear looking alive.
+- **The delete button moved off the remote row**, and the geometry suite is what settled it: a
+  fourth button there overflowed the 380 px panel outright. It sits on the branch line now,
+  which is where it belongs anyway — branch housekeeping is not part of the fetch/pull/push
+  rhythm, and a destructive action where Fetch sits reads with the same weight as a fetch.
+- **`ResourceKeyConverter` moved into the stylesheet.** `BranchDeleteWindow` is the second window
+  to want it, and a converter declared privately in one window is invisible to every other —
+  which is exactly how `SystemInfoWindow` once threw on open.
+
+### Not done: §9f, restoring a deleted branch
+
+The plan pairs this phase with an undo. It is not built, and the reason is that the useful
+version is harder than it looks: `git branch -d` prints the SHA, but the *forced* delete path
+and the remote delete do not give one back the same way, and an undo offered for some deletes
+and not others is worse than none. Worth doing as its own small piece with the reflog behind it
+rather than as a footnote here.
 
 ---
 

@@ -88,6 +88,24 @@ public sealed class RemotePollerTests
         public Task<MergeState> MergeStateAsync(CancellationToken ct) =>
             throw new NotSupportedException();
 
+        public Task<IReadOnlyList<string>> RemoteBranchesAsync(CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<string>>([]);
+
+        public Task<IReadOnlyList<string>> MergedBranchesAsync(string into, CancellationToken ct) =>
+            throw new NotSupportedException();
+
+        public Task<string> RemoteHeadAsync(string remote, CancellationToken ct) =>
+            throw new NotSupportedException();
+
+        public Task<GitResult> DeleteBranchAsync(string name, bool force, CancellationToken ct) =>
+            throw new NotSupportedException();
+
+        public Task<GitResult> DeleteRemoteBranchAsync(string remote, string name, CancellationToken ct) =>
+            throw new NotSupportedException();
+
+        public Task<GitResult> FetchPruneAsync(CancellationToken ct) =>
+            throw new NotSupportedException();
+
         public Task<IReadOnlyList<string>> RemotesAsync(CancellationToken ct) => throw new NotSupportedException();
         public Task<GitResult> PublishBranchAsync(string r, string b, IProgress<GitProgress>? p, CancellationToken ct) => throw new NotSupportedException();
         public Task<string> DiffAsync(string p, bool s, CancellationToken ct, int c = 3) => throw new NotSupportedException();

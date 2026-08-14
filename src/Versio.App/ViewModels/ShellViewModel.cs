@@ -88,6 +88,21 @@ public sealed class BranchEntry(BranchInfo branch)
 
     public string Tracking { get; } = branch.Upstream ?? "no upstream";
 
+    /// <summary>Where this branch actually lives, in a word.</summary>
+    /// <remarks>
+    /// A word rather than a colour: colour alone is not a label, and "local" and "remote" are
+    /// the difference between work nobody else can see and work not checked out here.
+    /// </remarks>
+    public string Where { get; } = branch.Existence switch
+    {
+        BranchExistence.LocalOnly => "local",
+        BranchExistence.RemoteOnly => "remote",
+        _ => string.Empty,
+    };
+
+    /// <summary>True when choosing this creates a local branch.</summary>
+    public bool IsRemoteOnly { get; } = branch.IsRemoteOnly;
+
     public string AheadBehind { get; } =
         branch is { Ahead: 0, Behind: 0 } ? string.Empty : $"↑{branch.Ahead} ↓{branch.Behind}";
 
@@ -1094,6 +1109,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 OnPropertyChanged(nameof(CanSignIn));
                 SignInCommand.RaiseCanExecuteChanged();
                 SignOutCommand.RaiseCanExecuteChanged();
+        DeleteBranchesCommand.RaiseCanExecuteChanged();
         ResolveCommand.RaiseCanExecuteChanged();
         AbortMergeCommand.RaiseCanExecuteChanged();
         ReconcileCommand.RaiseCanExecuteChanged();
@@ -1936,6 +1952,46 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
     }
 
+    // ------------------------------------------------------- branches (plan §7)
+
+    private DefaultBranch _defaultBranch = DefaultBranch.None;
+
+    /// <summary>
+    /// Which branch this repository treats as its trunk.
+    /// </summary>
+    /// <remarks>
+    /// Nothing in the codebase knew until now, and two things need it: deleting the branch you
+    /// are standing on has to check something else out first, and a merge request has to name a
+    /// target. Resolved down a ladder that ends in a refusal rather than a guess.
+    /// </remarks>
+    public DefaultBranch DefaultBranch
+    {
+        get => _defaultBranch;
+        private set
+        {
+            if (SetProperty(ref _defaultBranch, value))
+            {
+                OnPropertyChanged(nameof(DefaultBranchName));
+                RaiseGitCommandStates();
+            }
+        }
+    }
+
+    public string DefaultBranchName => _defaultBranch.Name;
+
+    /// <summary>Open the delete-branches dialog.</summary>
+    public AsyncCommand DeleteBranchesCommand { get; private set; } = null!;
+
+    /// <summary>
+    /// Asks the view to run the delete dialog, returning what the user chose or null.
+    /// </summary>
+    /// <remarks>
+    /// The same shape every other dialog here uses: the view model supplies the candidates and
+    /// performs the deletion, the view supplies the window. Unset means "no", which is the
+    /// right way round for a wiring mistake on a destructive operation.
+    /// </remarks>
+    public Func<IReadOnlyList<BranchCandidate>, DeletePlan?>? PromptForBranchDeletion { get; set; }
+
     /// <summary>Button labels that say what will happen, not what the button is called.</summary>
     public string StageLabel =>
         StagingSelection.Label("Stage", Unstaged.Count, UnstagedSelectedCount);
@@ -2075,6 +2131,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             PublishAsync, () => Ready && Standing.CanPublish, ReportError);
 
         SignInCommand = new AsyncCommand(SignInAsync, () => Ready && CanSignIn, ReportError);
+
+        // Needs somewhere to go if the current branch is deleted, and something to delete.
+        DeleteBranchesCommand = new AsyncCommand(
+            DeleteBranchesAsync,
+            () => Ready && Branches.Count > 1 && DefaultBranch.IsKnown, ReportError);
 
         ResolveCommand = new AsyncCommand<bool>(
             ResolveSelectedAsync,
@@ -2990,6 +3051,229 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
 
         Notifications.Failure($"The {what} did not run.", result.FailureReason ?? string.Empty);
+    }
+
+    /// <summary>
+    /// Gather the branches, ask, and delete what came back.
+    /// </summary>
+    /// <remarks>
+    /// The dialog decides <i>what</i>; every rule about whether it may happen lives here, where
+    /// the repository is.
+    /// </remarks>
+    private async Task DeleteBranchesAsync()
+    {
+        if (_git is null || !DefaultBranch.IsKnown)
+        {
+            return;
+        }
+
+        _logger.Click("Git.DeleteBranches");
+
+        var merged = await _git.MergedBranchesAsync(DefaultBranch.Name, CancellationToken.None)
+            .ConfigureAwait(true);
+
+        var mergedSet = merged.ToHashSet(StringComparer.Ordinal);
+
+        var candidates = Branches
+            .Select(b => new BranchCandidate
+            {
+                Name = b.Name,
+                Existence = b.IsRemoteOnly
+                    ? BranchExistence.RemoteOnly
+                    : b.Where == "local" ? BranchExistence.LocalOnly : BranchExistence.Both,
+                IsMerged = mergedSet.Contains(b.Name),
+                IsCurrent = b.IsCurrent,
+                IsDefault = string.Equals(b.Name, DefaultBranch.Name, StringComparison.Ordinal),
+            })
+            .ToList();
+
+        DeletePlan? plan;
+        using (AskingSomething())
+        {
+            plan = PromptForBranchDeletion?.Invoke(candidates);
+        }
+
+        if (plan is null || !plan.CanProceed)
+        {
+            _logger.Info(LogCategory.Git, "branch deletion cancelled");
+            return;
+        }
+
+        // Outward-facing, and effectively irreversible for anybody who has already fetched.
+        // Confirmed with every branch named, because the consequences land on people who are
+        // not in the room.
+        if (plan.TouchesRemote)
+        {
+            using var asking = AskingSomething();
+            var confirmed = ConfirmDestructive?.Invoke(
+                plan.Count == 1 ? "Delete this branch from the remote?"
+                                : $"Delete {plan.Count} branches from the remote?",
+                plan.RemoteConfirmation("origin")) ?? false;
+
+            if (!confirmed)
+            {
+                _logger.Info(LogCategory.Git, "remote branch deletion cancelled");
+                return;
+            }
+        }
+
+        // Standing on one of them: git refuses outright, so this is handled explicitly rather
+        // than surfacing the refusal. The switch goes through the ordinary branch-switch guard,
+        // which means a dirty tree is offered the auto-stash exactly as it is anywhere else -
+        // there is no second dirty-tree story for this dialog.
+        if (plan.IncludesCurrent && !await LeaveTheBranchBeingDeletedAsync().ConfigureAwait(true))
+        {
+            return;
+        }
+
+        var outcomes = await DeleteEachAsync(plan).ConfigureAwait(true);
+        await ReportDeletionAsync(plan, outcomes).ConfigureAwait(true);
+    }
+
+    /// <summary>Move off the branch about to be deleted, onto the trunk.</summary>
+    /// <remarks>
+    /// Returns false when the switch did not happen, and <b>nothing is deleted in that case</b>.
+    /// A failed checkout followed by a successful delete would leave somebody on a branch that
+    /// no longer exists.
+    /// </remarks>
+    private async Task<bool> LeaveTheBranchBeingDeletedAsync()
+    {
+        _logger.Info(LogCategory.Git,
+            $"switching to {DefaultBranch.Name} before deleting the current branch");
+
+        // Through the ordinary branch-switch path, entry and all, so this inherits every rule
+        // that already applies: the guard, the auto-stash for a dirty tree, the direction-lock
+        // refusal. A second checkout written here would be a second set of those rules.
+        if (Branches.FirstOrDefault(
+                b => string.Equals(b.Name, DefaultBranch.Name, StringComparison.Ordinal))
+            is not { } trunk)
+        {
+            Notifications.Failure(
+                "Nothing was deleted.",
+                $"{DefaultBranch.Name} is not in this repository's branch list.");
+            return false;
+        }
+
+        await SwitchBranchAsync(trunk).ConfigureAwait(true);
+
+        if (string.Equals(BranchName, DefaultBranch.Name, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        Notifications.Failure(
+            "Nothing was deleted.",
+            $"Versio could not switch to {DefaultBranch.Name} first, and git will not delete " +
+            "the branch you are standing on.");
+
+        return false;
+    }
+
+    /// <summary>
+    /// Delete each branch, recording what happened to it.
+    /// </summary>
+    /// <remarks>
+    /// <b><c>-d</c> is attempted first, always.</b> Git refuses an unmerged branch and that
+    /// refusal is information; force is a separate, already-acknowledged decision rather than
+    /// an escalation this code makes on its own.
+    /// </remarks>
+    private async Task<List<DeleteOutcome>> DeleteEachAsync(DeletePlan plan)
+    {
+        var outcomes = new List<DeleteOutcome>();
+
+        using var busy = Busy.Begin(WorkKind.GitWrite, "Deleting branches…");
+
+        foreach (var branch in plan.Selected)
+        {
+            var localOk = true;
+            var failure = string.Empty;
+
+            if (branch.HasLocal)
+            {
+                var gentle = await _git!.DeleteBranchAsync(branch.Name, force: false, busy.Token)
+                    .ConfigureAwait(true);
+
+                if (!gentle.Success && plan.ForceAcknowledged)
+                {
+                    var forced = await _git.DeleteBranchAsync(branch.Name, force: true, busy.Token)
+                        .ConfigureAwait(true);
+
+                    localOk = forced.Success;
+                    failure = forced.Success ? string.Empty : forced.FailureReason ?? string.Empty;
+                }
+                else if (!gentle.Success)
+                {
+                    localOk = false;
+                    failure = gentle.FailureReason ?? string.Empty;
+                }
+            }
+
+            var remoteOk = false;
+
+            // Only when the local half worked, or when there was no local half. Deleting the
+            // remote copy of a branch that is still here would leave the two disagreeing in the
+            // direction that loses the shared one.
+            if (plan.Scope == DeleteScope.LocalAndRemote && branch.HasRemote && localOk)
+            {
+                var pushed = await _git!.DeleteRemoteBranchAsync("origin", branch.Name, busy.Token)
+                    .ConfigureAwait(true);
+
+                remoteOk = pushed.Success;
+
+                if (!pushed.Success && failure.Length == 0)
+                {
+                    failure = pushed.FailureReason ?? string.Empty;
+                }
+            }
+
+            outcomes.Add(new DeleteOutcome
+            {
+                Branch = branch.Name,
+                LocalDeleted = branch.HasLocal && localOk,
+                RemoteDeleted = remoteOk,
+                Failure = failure,
+            });
+        }
+
+        return outcomes;
+    }
+
+    /// <summary>
+    /// Say what happened, per branch.
+    /// </summary>
+    /// <remarks>
+    /// A single "some branches could not be deleted" is useless: it sends somebody to the
+    /// terminal to find out which, which is the trip this panel exists to remove.
+    /// </remarks>
+    private async Task ReportDeletionAsync(DeletePlan plan, List<DeleteOutcome> outcomes)
+    {
+        var gone = outcomes.Where(o => o.Succeeded).ToList();
+        var failed = outcomes.Where(o => !o.Succeeded).ToList();
+
+        // Or the deleted branches linger as stale tracking refs and reappear in the dropdown
+        // looking alive.
+        if (gone.Any(o => o.RemoteDeleted))
+        {
+            await _git!.FetchPruneAsync(CancellationToken.None).ConfigureAwait(true);
+        }
+
+        if (failed.Count > 0)
+        {
+            Notifications.Failure(
+                gone.Count == 0
+                    ? "No branches were deleted."
+                    : $"{gone.Count} deleted, {failed.Count} could not be.",
+                string.Join(Environment.NewLine,
+                            failed.Select(o => $"{o.Branch}: {o.Failure}")));
+        }
+        else
+        {
+            Notifications.Success(
+                gone.Count == 1 ? $"Deleted {gone[0].Branch}." : $"Deleted {gone.Count} branches.",
+                plan.TouchesRemote ? "Removed from origin as well." : string.Empty);
+        }
+
+        await RunRefreshAsync(RefreshTrigger.GitMetadata, null).ConfigureAwait(true);
     }
 
     private async Task FetchAsync()
@@ -4328,19 +4612,62 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
-        var branches = await _git.BranchesAsync(CancellationToken.None).ConfigureAwait(true);
+        var local = await _git.BranchesAsync(CancellationToken.None).ConfigureAwait(true);
+        var remote = await _git.RemoteBranchesAsync(CancellationToken.None).ConfigureAwait(true);
+
+        // Both halves, merged by short name. refs/heads alone is local branches, so before this
+        // a branch existing only on the remote was invisible to the application entirely.
+        var branches = BranchInventory.Combine(local, remote);
+
+        await ResolveDefaultBranchAsync(local).ConfigureAwait(true);
 
         WithoutSideEffects(() =>
         {
+            // Already ordered by BranchInventory: current first, then local, then remote-only.
+            // A busy remote carries hundreds nobody here has checked out and they must not bury
+            // the three somebody works on.
             Branches.Clear();
-            foreach (var branch in branches.OrderByDescending(b => b.IsCurrent)
-                                           .ThenBy(b => b.Name, StringComparer.Ordinal))
+            foreach (var branch in branches)
             {
                 Branches.Add(new BranchEntry(branch));
             }
 
             SelectedBranch = Branches.FirstOrDefault(b => b.IsCurrent);
         });
+    }
+
+    /// <summary>
+    /// Work out which branch is the trunk, down the ladder in <see cref="Git.DefaultBranch"/>.
+    /// </summary>
+    /// <remarks>
+    /// The configured value comes from <c>.versio/repo.json</c>, which the sync panel already
+    /// loads for its bindings — so this reads what is in memory rather than the file, and one
+    /// answer serves both.
+    /// </remarks>
+    private async Task ResolveDefaultBranchAsync(IReadOnlyList<BranchInfo> local)
+    {
+        if (_git is null)
+        {
+            DefaultBranch = DefaultBranch.None;
+            return;
+        }
+
+        var remoteHead = _hasRemote
+            ? await _git.RemoteHeadAsync("origin", CancellationToken.None).ConfigureAwait(true)
+            : string.Empty;
+
+        var resolved = DefaultBranch.Resolve(
+            Sync.ConfiguredDefaultBranch,
+            remoteHead,
+            [.. local.Select(b => b.Name)]);
+
+        if (resolved.IsKnown && resolved.Name != _defaultBranch.Name)
+        {
+            _logger.Info(LogCategory.Git,
+                $"default branch is {resolved.Name} (from {resolved.Source})");
+        }
+
+        DefaultBranch = resolved;
     }
 
     private string _selectedDiffPath = string.Empty;

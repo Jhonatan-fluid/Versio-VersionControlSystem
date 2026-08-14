@@ -105,6 +105,16 @@ public partial class MainWindow : Window
             return Task.FromResult(prompt.ShowDialog() == true ? prompt.ClonedPath : null);
         };
 
+        // Deleting branches needs a list with checkboxes and three answers, which no
+        // MessageBox can do. The dialog collects the choice; every rule about whether it may
+        // happen - the guard, the remote confirmation, the checkout off a branch being
+        // deleted - stays in the view model where the repository is.
+        shell.PromptForBranchDeletion = candidates =>
+        {
+            var window = new BranchDeleteWindow(candidates) { Owner = this };
+            return window.ShowDialog() == true ? window.Result : null;
+        };
+
         // A repository the user was told they could come back to, which is not there any
         // more. Three answers with real labels, so the same window the guard uses - a
         // MessageBox would have to squeeze "clone it again" into Yes.

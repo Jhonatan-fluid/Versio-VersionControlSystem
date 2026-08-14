@@ -213,6 +213,62 @@ public interface IGitClient
     /// <summary>Whether a merge or rebase is part-way through right now.</summary>
     Task<MergeState> MergeStateAsync(CancellationToken ct);
 
+    /// <summary>
+    /// Every remote-tracking ref, as <c>origin/branch</c>.
+    /// </summary>
+    /// <remarks>
+    /// The other half of the branch list. <see cref="BranchesAsync"/> reads <c>refs/heads</c>,
+    /// which is local branches only — so without this a branch that exists solely on the remote
+    /// is invisible to the application, and the dropdown looks like the whole repository while
+    /// being half of it.
+    /// </remarks>
+    Task<IReadOnlyList<string>> RemoteBranchesAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Branches whose every commit is already on <paramref name="into"/>.
+    /// </summary>
+    /// <remarks>
+    /// The single most useful fact in a delete dialog: the difference between deleting a
+    /// tidy-up and deleting somebody's afternoon.
+    /// </remarks>
+    Task<IReadOnlyList<string>> MergedBranchesAsync(string into, CancellationToken ct);
+
+    /// <summary>What the remote says its default branch is, or empty.</summary>
+    /// <remarks>
+    /// <c>origin/HEAD</c>, which most clones have and some do not — it is written at clone time
+    /// and a repository that gained its remote later may never have had one. Empty is an answer.
+    /// </remarks>
+    Task<string> RemoteHeadAsync(string remote, CancellationToken ct);
+
+    /// <summary>
+    /// Delete a local branch.
+    /// </summary>
+    /// <param name="force">
+    /// <c>-D</c> rather than <c>-d</c>. <b>Always try without it first.</b> Git refuses to
+    /// delete an unmerged branch, and that refusal is information the user should see rather
+    /// than something to escalate past.
+    /// </param>
+    Task<GitResult> DeleteBranchAsync(string name, bool force, CancellationToken ct);
+
+    /// <summary>
+    /// Delete a branch from the remote.
+    /// </summary>
+    /// <remarks>
+    /// Outward-facing and effectively irreversible for teammates, so callers confirm with the
+    /// branches and the remote named. There is no gentle form of this: git has no
+    /// <c>--dry-run</c> equivalent that would tell you whether anybody else had it checked out.
+    /// </remarks>
+    Task<GitResult> DeleteRemoteBranchAsync(string remote, string name, CancellationToken ct);
+
+    /// <summary>
+    /// Fetch, dropping remote-tracking refs whose branches are gone.
+    /// </summary>
+    /// <remarks>
+    /// Run after deleting from a remote, or the deleted branches linger as stale tracking refs
+    /// and reappear in the dropdown looking alive.
+    /// </remarks>
+    Task<GitResult> FetchPruneAsync(CancellationToken ct);
+
     /// <summary>Verify a remote is reachable without cloning it.</summary>
     Task<GitResult> VerifyRemoteAsync(string url, CancellationToken ct);
 

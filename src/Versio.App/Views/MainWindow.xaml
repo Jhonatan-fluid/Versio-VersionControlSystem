@@ -17,9 +17,9 @@
          them correctly. One theme, one place, swapped once. -->
     <Window.Resources>
         <ResourceDictionary>
-            <views:ResourceKeyConverter x:Key="ResourceKey" />
 
-            <!-- BoolToVisibility is NOT declared here any more. It moved to the stylesheet
+            <!-- Neither BoolToVisibility nor ResourceKey is declared here any more. Both
+                 moved to the stylesheet
                  so every window gets the one instance: this private copy is why
                  SystemInfoWindow, which uses the same key, threw on open. -->
 
@@ -225,6 +225,23 @@
                                            FontSize="{DynamicResource Font.Size.Caption}"
                                            Foreground="{Binding BrushKey,
                                                Converter={StaticResource ResourceKey}}" />
+
+                                <!-- WHERE THE BRANCH ACTUALLY LIVES.
+
+                                     "local" means nobody else can see the work on it;
+                                     "remote" means it is not checked out here and choosing it
+                                     will create the local branch. Blank for the ordinary case
+                                     of a branch on both sides, because a label on every row is
+                                     a label nobody reads.
+
+                                     Remote-only branches were invisible until now - the list
+                                     read refs/heads - so this column is also the first sign
+                                     that they exist at all. -->
+                                <TextBlock Text="{Binding Where}" Margin="10,0,0,0"
+                                           VerticalAlignment="Center"
+                                           FontFamily="{DynamicResource Font.UI}"
+                                           FontSize="{DynamicResource Font.Size.Caption}"
+                                           Foreground="{DynamicResource Brush.Status.Modified}" />
 
                                 <!-- Which upstream, or "no upstream". BranchEntry has computed
                                      this since it was written and nothing ever bound it, so a
@@ -733,6 +750,27 @@
                                                    FontSize="{DynamicResource Font.Size.Caption}"
                                                    Foreground="{DynamicResource Brush.Accent.Default}" />
                                     </StackPanel>
+
+                                    <!-- BRANCH HOUSEKEEPING, ON THE BRANCH LINE.
+
+                                         Not in the fetch/pull/push row, and the geometry test
+                                         is what settled it: a fourth button there overflowed
+                                         the 380 px panel outright. It does not belong in that
+                                         rhythm anyway - deleting branches is about which
+                                         branches exist, not about the remote's state - and a
+                                         destructive action sitting where Fetch sits gives it
+                                         the same weight as a fetch.
+
+                                         Right-aligned and quiet: reached deliberately, not
+                                         stumbled into. -->
+                                    <Button Content="Delete branches…" Padding="8,2"
+                                            Margin="0,6,0,0"
+                                            HorizontalAlignment="Right"
+                                            Style="{StaticResource GhostButton}"
+                                            Height="{DynamicResource Size.Control.Compact}"
+                                            ToolTipService.ShowOnDisabled="True"
+                                            ToolTip="Remove branches from this machine, and optionally from the remote"
+                                            Command="{Binding DeleteBranchesCommand}" />
 
                                     <!-- WHERE THIS BRANCH STANDS, IN WORDS.
 

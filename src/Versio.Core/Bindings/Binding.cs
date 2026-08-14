@@ -50,6 +50,30 @@ public sealed record RepoConfig
     public IReadOnlyList<string> Ignore { get; init; } = [];
 
     public bool AutoAdoptNewProjects { get; init; }
+
+    /// <summary>
+    /// Which branch this repository treats as its trunk.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Empty by default, and that is not the same as <c>main</c>. An empty value falls through
+    /// to what the remote says and then to convention — see <see cref="Git.DefaultBranch"/> —
+    /// and if none of those answers, the operations that need a trunk are disabled and say why.
+    /// <b>Guessing it would move somebody's working tree to a branch nobody chose.</b>
+    /// </para>
+    /// <para>
+    /// <b>Committed and shared, like the bindings beside it.</b> A team whose trunk is
+    /// <c>develop</c> records it once and every clone agrees; a per-machine setting would have
+    /// each engineer discovering the answer separately.
+    /// </para>
+    /// <para>
+    /// Absent from a config written before this existed, which deserializes to empty and
+    /// therefore to the fallback ladder — the same backward-compatibility shape
+    /// <see cref="ProjectBinding.Vendor"/> uses, and for the same reason: a file written by an
+    /// older Versio must keep meaning what it meant.
+    /// </para>
+    /// </remarks>
+    public string DefaultBranch { get; init; } = string.Empty;
 }
 
 /// <summary>The names and layout a binding assumes when nothing overrides them.</summary>

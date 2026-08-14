@@ -763,6 +763,82 @@ public sealed partial class GitCliClient(
             : MergeState.None;
     }
 
+    // ------------------------------------------------------------------- branches
+
+    /// <summary>Every remote-tracking ref, as <c>origin/branch</c>.</summary>
+    public async Task<IReadOnlyList<string>> RemoteBranchesAsync(CancellationToken ct)
+    {
+        var result = await RunAsync(
+            ["for-each-ref", "--format=%(refname:short)", "refs/remotes"], null, ct)
+            .ConfigureAwait(false);
+
+        return result.Success
+            ? [.. result.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                               .Select(l => l.Trim())
+                               .Where(l => l.Length > 0)]
+            : [];
+    }
+
+    /// <summary>Branches already merged into another.</summary>
+    /// <remarks>
+    /// The leading <c>*</c> git puts on the current branch is stripped: it is decoration in a
+    /// list that is otherwise names, and leaving it would make the current branch fail every
+    /// comparison against itself.
+    /// </remarks>
+    public async Task<IReadOnlyList<string>> MergedBranchesAsync(string into, CancellationToken ct)
+    {
+        var result = await RunAsync(["branch", "--merged", into], null, ct)
+            .ConfigureAwait(false);
+
+        return result.Success
+            ? [.. result.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                               .Select(l => l.TrimStart('*', ' ').Trim())
+                               .Where(l => l.Length > 0)]
+            : [];
+    }
+
+    /// <summary>What the remote says its default branch is.</summary>
+    /// <remarks>
+    /// Not every clone has one: <c>origin/HEAD</c> is written at clone time, and a repository
+    /// that gained its remote afterwards may never have had it. Empty is the answer rather than
+    /// an error, and the caller falls through to convention.
+    /// </remarks>
+    public async Task<string> RemoteHeadAsync(string remote, CancellationToken ct)
+    {
+        var result = await RunAsync(
+            ["symbolic-ref", "--quiet", $"refs/remotes/{remote}/HEAD"], null, ct,
+            TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+
+        return result.Success ? result.StdOut.Trim() : string.Empty;
+    }
+
+    /// <summary>Delete a local branch.</summary>
+    public Task<GitResult> DeleteBranchAsync(string name, bool force, CancellationToken ct)
+    {
+        _log.Info(LogCategory.Git, $"deleting branch {name}{(force ? " (forced)" : "")}");
+        return RunAsync(["branch", force ? "-D" : "-d", "--", name], null, ct,
+                        TimeSpan.FromSeconds(30));
+    }
+
+    /// <summary>Delete a branch from the remote.</summary>
+    /// <remarks>
+    /// <c>push --delete</c> rather than the older colon refspec, which is the same operation
+    /// spelled in a way nobody reads correctly.
+    /// </remarks>
+    public Task<GitResult> DeleteRemoteBranchAsync(
+        string remote, string name, CancellationToken ct)
+    {
+        _log.Info(LogCategory.Git, $"deleting {name} from {remote}");
+        return RunAsync(["push", remote, "--delete", name], null, ct, TimeSpan.FromMinutes(5));
+    }
+
+    /// <summary>Fetch, dropping tracking refs for branches that are gone.</summary>
+    public Task<GitResult> FetchPruneAsync(CancellationToken ct)
+    {
+        _log.Info(LogCategory.Git, "fetching with prune");
+        return RunAsync(["fetch", "--prune", "--progress"], null, ct, TimeSpan.FromMinutes(10));
+    }
+
     /// <summary>Every remote this repository has.</summary>
     /// <remarks>
     /// A repository with none is ordinary, not a failure, so an empty list is the answer rather
