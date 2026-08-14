@@ -46,9 +46,17 @@ scratch/
 *.autosave
 *.bak
 
-# The staging directory an export swaps into place. Present only mid-export or
-# after a crash.
+# The two directories an export swaps through. Present only mid-export or after a crash.
+#
+# Staging is where the new tree is built. Trash is the PREVIOUS mirror, moved aside during
+# the three-rename swap and deleted once the new one is in place - so a surviving one holds
+# a real export and is worth finding rather than committing.
+#
+# Only staging was listed here, which is the more likely of the two to survive and the less
+# alarming to see. Adoption writes both for the repositories it sets up; this repository
+# predates that and was typed by hand, which is how one of the pair went missing.
 *.versio_staging/
+*.versio_trash/
 *.codescribe_staging/
 
 # ---------------------------------------------------------------------------

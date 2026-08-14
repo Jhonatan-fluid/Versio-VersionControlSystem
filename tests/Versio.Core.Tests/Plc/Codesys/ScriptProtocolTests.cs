@@ -177,18 +177,51 @@ public class CodesysJobTests
     }
 
     [Fact]
-    public void A_multi_project_job_batches_them_into_one_session()
+    public void A_probe_job_gets_out_too_because_the_probe_writes_its_report_there()
     {
-        // Cold start is 17-31 s and dominates the work, so batching is the whole point.
-        var json = Job(
-            new ProjectJob { BindingId = "b-1", ProjectPath = @"C:\w\A.project", Path = @"C:\w\A" },
-            new ProjectJob { BindingId = "b-2", ProjectPath = @"C:\w\B.project", Path = @"C:\w\B" })
-            .ToJson();
+        // versio_probe.py reads job["out"] unconditionally and writes report.json to it.
+        // Omitting the key made the probe walk the whole tree, emit every object event and
+        // then die on its last statement - a KeyError, after the cold start was already paid.
+        var json = (Job(new ProjectJob
+        {
+            BindingId = "b-1", ProjectPath = @"C:\w\A.project", Path = @"C:\w\report.json",
+        }) with { Operation = CodesysOperation.Probe }).ToJson();
 
-        Assert.Contains("b-1", json);
-        Assert.Contains("b-2", json);
-        // Ambiguous flat fields are omitted when there is more than one project.
-        Assert.DoesNotContain("\"out\":", json);
+        Assert.Contains("\"out\"", json);
+        Assert.DoesNotContain("\"src\"", json);
+    }
+
+    [Fact]
+    public void A_multi_project_job_is_refused_here_rather_than_by_python()
+    {
+        // THIS TEST USED TO ASSERT THE OPPOSITE, and was called
+        // A_multi_project_job_batches_them_into_one_session. It passed, because the C# really
+        // does serialise a projects[] array and really does omit the ambiguous flat fields.
+        //
+        // What it never checked is whether anything could READ that. No script does:
+        // versio_export.py and versio_import.py read job["project"], job["out"] and
+        // job["src"] unconditionally, so the very omission this test asserted was correct is
+        // what killed the run - a KeyError inside IronPython, after CODESYS had started and
+        // the 17-31 s cold start had been paid, reported as a fatal event naming a python
+        // dictionary key rather than the mistake.
+        //
+        // A green test asserting half of a mechanism is how the batching stayed believed for
+        // as long as it did. Batching is still worth building; until it is, this fails in C#
+        // with a sentence.
+        var job = Job(
+            new ProjectJob { BindingId = "b-1", ProjectPath = @"C:\w\A.project", Path = @"C:\w\A" },
+            new ProjectJob { BindingId = "b-2", ProjectPath = @"C:\w\B.project", Path = @"C:\w\B" });
+
+        var ex = Assert.Throws<InvalidOperationException>(() => job.ToJson());
+        Assert.Contains("exactly one project", ex.Message);
+        Assert.Contains("2", ex.Message);
+    }
+
+    [Fact]
+    public void A_job_with_no_projects_is_refused_for_the_same_reason()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() => Job().ToJson());
+        Assert.Contains("exactly one project", ex.Message);
     }
 
     [Fact]

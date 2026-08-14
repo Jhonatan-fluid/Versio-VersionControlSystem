@@ -1,13 +1,25 @@
 <#
 .SYNOPSIS
   Byte-compares two export trees. This is the Phase 0.2 determinism gate.
+
+.DESCRIPTION
+  A byte comparison is exactly right for determinism - exporting an unchanged project
+  twice must produce identical bytes - and exactly wrong for round-trip fidelity, where
+  import_native legitimately perturbs native XML. Test-RoundTrip.ps1 therefore calls this
+  for the raw per-file result and judges the layers itself.
+
+.PARAMETER Quiet
+  Return the result object without printing the banner. For callers that present their own
+  verdict: a red "DIFFERING : 9" above a considered per-layer answer just reintroduces the
+  alarm that answer exists to remove.
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$A,
     [Parameter(Mandatory)][string]$B,
     [switch]$ShowFirstDiff,
-    [string[]]$Exclude = @()
+    [string[]]$Exclude = @(),
+    [switch]$Quiet
 )
 
 function Get-Tree($root, $exclude) {
@@ -28,6 +40,8 @@ $onlyA = $ta.Keys | Where-Object { -not $tb.ContainsKey($_) }
 $onlyB = $tb.Keys | Where-Object { -not $ta.ContainsKey($_) }
 $both  = $ta.Keys | Where-Object { $tb.ContainsKey($_) }
 $diff  = $both | Where-Object { $ta[$_].Hash -ne $tb[$_].Hash }
+
+if (-not $Quiet) {
 
 Write-Host ""
 Write-Host "  files in A : $($ta.Count)"
@@ -67,6 +81,8 @@ if ($diff.Count -eq 0 -and $onlyA.Count -eq 0 -and $onlyB.Count -eq 0) {
     }
 }
 Write-Host ""
+
+}   # -not $Quiet
 
 [pscustomobject]@{
     Deterministic = ($diff.Count -eq 0 -and $onlyA.Count -eq 0 -and $onlyB.Count -eq 0)

@@ -141,7 +141,20 @@ def safe_file_stem(name):
     def repl(m):
         return u"%%%02X" % ord(m.group(0))
     stem = _INVALID_WIN.sub(repl, raw)
-    stem = stem.rstrip(u" .")                       # Windows strips these silently
+
+    # Windows silently strips a trailing space or dot, so it cannot be left as it is. It is
+    # ENCODED rather than removed.
+    #
+    # This used to be stem.rstrip(u" ."), which mapped "Pump " and "Pump." onto the same
+    # stem - the exact collision the encoding exists to prevent, quietly losing one of two
+    # real objects. The C# PathMapper had it right and this did not; found while making the
+    # two agree, which is what the parity test now enforces.
+    #
+    # Only the LAST character, matching PathMapper.EncodeStem: "a  " becomes "a %20", not
+    # "a%20%20". Rare either way, but the two halves have to make the same rare choice.
+    if stem and stem[-1] in u" .":
+        stem = stem[:-1] + (u"%%%02X" % ord(stem[-1]))
+
     if stem.upper() in _RESERVED_WIN:
         stem = stem + u"%20"
 

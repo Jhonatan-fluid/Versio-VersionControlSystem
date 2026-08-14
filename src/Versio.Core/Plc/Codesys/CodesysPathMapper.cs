@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using Versio.Core.Plc.Codesys;
@@ -8,10 +9,45 @@ namespace Versio.Core.Serialization;
 /// Maps a CODESYS object to its file name and back.
 /// </summary>
 /// <remarks>
+/// <para>
 /// CODESYS object names are far freer than Windows file names: they may contain characters
 /// Windows forbids, may collide with reserved device names, and a visualisation frequently
-/// shares a name with a POU. Encoding is percent-based and therefore reversible, so two
-/// distinct objects can never collapse onto one file.
+/// shares a name with a POU. Encoding is percent-based, so two distinct objects can never
+/// collapse onto one file.
+/// </para>
+/// <para>
+/// <b>Encoding is no longer total-reversible, and that is deliberate.</b> Two shapes of name
+/// are <i>shortened</i> to a readable tail plus a digest rather than encoded:
+/// </para>
+/// <list type="number">
+///   <item>
+///     <b>A name that is really a path.</b> CODESYS gives an external-file reference an
+///     identity like <c>{00000000-…}|C:\Users\m.lamp\Documents\license.txt</c>. Percent-encoding
+///     that produced a 120-character file name carrying somebody's username and directory
+///     layout into a shared repository — the same class of leak as the
+///     <c>-&lt;user&gt;-&lt;machine&gt;.opt</c> files adoption gitignores, arriving by another
+///     door. Found in a real mirror, not in a test.
+///   </item>
+///   <item>
+///     <b>A name past <see cref="MaxStem"/> characters.</b> Windows still enforces 260
+///     characters in most configurations, and a deep CODESYS folder chain plus a
+///     percent-encoded name reaches it. A file nobody can open is worse than an abbreviated
+///     name.
+///   </item>
+/// </list>
+/// <para>
+/// Reversibility is not lost by this, because it was never used: nothing calls
+/// <see cref="DecodeStem"/> outside its own tests, and an import resolves objects through the
+/// project tree and the native XML's own identity rather than by parsing file names back.
+/// The digest is what keeps two external files with the same basename apart, and the full
+/// name still reaches the reader — the manifest records <c>name</c> verbatim.
+/// </para>
+/// <para>
+/// <b>Must stay in step with <c>safe_file_stem</c> in <c>versio_text.py</c></b>, which is the
+/// implementation that actually runs. <c>PythonFileNameParityTests</c> runs both over one
+/// corpus and compares, because this rule living in two languages is exactly how the GVL
+/// suffix bug happened.
+/// </para>
 /// <para>
 /// The file name is a convenience for humans. The manifest's GUID is the source of truth
 /// for identity (plan R12).
@@ -19,6 +55,16 @@ namespace Versio.Core.Serialization;
 /// </remarks>
 public static partial class PathMapper
 {
+    /// <summary>
+    /// Longest stem written before a name is shortened instead.
+    /// </summary>
+    /// <remarks>
+    /// Long enough for any object name a person types, short enough that a deep CODESYS folder
+    /// chain plus this still clears Windows' 260-character path limit. Must equal
+    /// <c>_MAX_STEM</c> in <c>versio_text.py</c>.
+    /// </remarks>
+    private const int MaxStem = 80;
+
     [GeneratedRegex(@"[<>:""/\\|?*\x00-\x1f]")]
     private static partial Regex InvalidWindowsChars();
 
@@ -54,12 +100,26 @@ public static partial class PathMapper
         CodesysObjectType.Transition,
     ];
 
-    /// <summary>Percent-encode anything Windows will not accept in a file name.</summary>
+    /// <summary>
+    /// Turn an object name into a Windows-legal file stem.
+    /// </summary>
+    /// <remarks>
+    /// Percent-encoding for anything Windows forbids; shortening for the two shapes where
+    /// encoding produces a file name that is a liability rather than a mapping — see the
+    /// remarks on <see cref="PathMapper"/>.
+    /// </remarks>
     public static string EncodeStem(string? name)
     {
         if (string.IsNullOrEmpty(name))
         {
             return "_unnamed";
+        }
+
+        // Checked before encoding, because it is the RAW name that reveals a path: once the
+        // separators are percent-encoded there is nothing left to recognise.
+        if (LooksLikeAPath(name))
+        {
+            return Shortened(name);
         }
 
         var encoded = InvalidWindowsChars().Replace(name, m => $"%{(int)m.Value[0]:X2}");
@@ -87,10 +147,65 @@ public static partial class PathMapper
             stem += "%20";
         }
 
+        // Encoding can grow a name several times over — one forbidden character becomes three
+        // — so the length test belongs here, on the result, rather than on the input.
+        if (stem.Length > MaxStem)
+        {
+            return Shortened(name);
+        }
+
         return stem.Length == 0 ? "_unnamed" : stem;
     }
 
-    /// <summary>Inverse of <see cref="EncodeStem"/>.</summary>
+    /// <summary>A name carrying a directory separator or a drive letter is not a name.</summary>
+    private static bool LooksLikeAPath(string name) =>
+        name.Contains('\\') || name.Contains('/') || name.Contains(':');
+
+    /// <summary>
+    /// Last segment of a path-like name, plus a digest of the whole thing.
+    /// </summary>
+    /// <remarks>
+    /// The digest is not decoration: two external files called <c>license.txt</c> in different
+    /// folders must not collide onto one file, because one object per file is what makes the
+    /// manifest's path mapping mean anything. Six hex characters is enough to separate them and
+    /// short enough to read past.
+    /// <para>
+    /// Forbidden characters in the tail are <b>removed</b> rather than encoded. The tail is a
+    /// label for a human at this point — the digest is carrying the identity — and a tail full
+    /// of percent escapes would defeat the reason for shortening in the first place.
+    /// </para>
+    /// </remarks>
+    private static string Shortened(string name)
+    {
+        var tail = name.Split('\\', '/')[^1].Trim();
+        if (tail.Length == 0)
+        {
+            tail = name;
+        }
+
+        tail = InvalidWindowsChars().Replace(tail, string.Empty).TrimEnd(' ', '.');
+
+        var digest = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(name)))
+            .ToLowerInvariant()[..6];
+
+        if (tail.Length == 0 || ReservedWindowsNames.Contains(tail))
+        {
+            tail = "object";
+        }
+
+        return $"{(tail.Length <= MaxStem ? tail : tail[..MaxStem])}~{digest}";
+    }
+
+    /// <summary>
+    /// Inverse of <see cref="EncodeStem"/> <b>for encoded names only</b>.
+    /// </summary>
+    /// <remarks>
+    /// A <i>shortened</i> stem — <c>license.txt~3f9a1c</c> — cannot be decoded, because the
+    /// name it came from was deliberately not carried in it. This returns such a stem
+    /// unchanged rather than pretending, and nothing depends on the difference: no production
+    /// code calls this. Read the real name from the manifest's <c>name</c> field, which records
+    /// it verbatim.
+    /// </remarks>
     public static string DecodeStem(string? stem)
     {
         if (string.IsNullOrEmpty(stem))

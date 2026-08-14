@@ -53,6 +53,33 @@ def safe(fn, default=None):
         return default
 
 
+# The open project, so a failure anywhere can still close it. See the same block in
+# versio_export.py: CODESYS writes <project>.~u while it holds a project, and a script that
+# died between open and close left that marker behind for the next run to reason about.
+#
+# It matters more on this side. An import runs with the project WRITEABLE and has already
+# saved by the time the native phase runs, so a failure here can leave a modified project
+# held open by a process that no longer exists.
+_OPEN = {"project": None}
+
+
+def remember_project(proj):
+    _OPEN["project"] = proj
+    return proj
+
+
+def close_project(proj=None):
+    """Close the open project, at most once, never raising."""
+    handle = proj if proj is not None else _OPEN["project"]
+    _OPEN["project"] = None
+    if handle is None:
+        return
+    try:
+        handle.close()
+    except Exception as e:
+        emit({"t": "warning", "code": "PROJECT_CLOSE_FAILED", "path": None, "detail": str(e)})
+
+
 def read_text(path):
     with io.open(path, "r", encoding="utf-8", newline="") as f:
         return f.read()
@@ -387,7 +414,7 @@ def main():
 
     emit({"t": "start", "project": job["project"], "src": job["src"]})
 
-    proj = scriptengine.projects.open(job["project"])
+    proj = remember_project(scriptengine.projects.open(job["project"]))
     emit({"t": "opened", "path": str(proj.path)})
 
     imp = Importer(proj, job["src"])
@@ -405,7 +432,7 @@ def main():
           "missing": imp.missing, "failed": imp.failed,
           "notImported": imp.one_way, "warnings": len(imp.warnings)})
 
-    proj.close()
+    close_project(proj)
     emit({"t": "done"})
     return 0
 
@@ -415,5 +442,9 @@ try:
 except Exception as e:
     emit({"t": "fatal", "msg": str(e), "trace": traceback.format_exc()})
     rc = 1
+finally:
+    # A no-op after a clean run. On a failure it is what stops a <project>.~u marker - and
+    # a project this script may already have written to - outliving the process holding it.
+    close_project()
 
 emit({"t": "exit", "rc": rc})

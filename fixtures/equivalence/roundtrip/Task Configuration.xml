@@ -96,7 +96,7 @@
         <Single Name="Event" Type="string"></Single>
         <Single Name="ExternalEvent" Type="string"></Single>
         <Single Name="TaskGuid" Type="System.Guid">8759d198-1023-40e3-bbfd-f5b377076a83</Single>
-        <Single Name="EventPOUGuid" Type="System.Guid">176409b7-1950-4244-93de-3a02607bb164</Single>
+        <Single Name="EventPOUGuid" Type="System.Guid">6db667f1-adda-4e8c-a8dc-6b8fed4b5165</Single>
         <List Name="PouList" Type="{33f568bb-4a2c-48cb-a762-34cca3066d03}">
           <Single Type="{f194d1ef-7376-42ce-a729-4a5485a97a46}" Method="IArchivable">
             <Single Name="Name" Type="string">PLC_PRG</Single>
@@ -158,7 +158,7 @@
         <Single Name="Event" Type="string"></Single>
         <Single Name="ExternalEvent" Type="string"></Single>
         <Single Name="TaskGuid" Type="System.Guid">216f44b0-e0ec-4e5e-921c-dd1d923a651b</Single>
-        <Single Name="EventPOUGuid" Type="System.Guid">aa01fa43-0060-467f-8481-22e562f1e32e</Single>
+        <Single Name="EventPOUGuid" Type="System.Guid">f919caa4-dafb-4a0c-8074-1394015b9921</Single>
         <List Name="PouList" Type="{33f568bb-4a2c-48cb-a762-34cca3066d03}">
           <Single Type="{f194d1ef-7376-42ce-a729-4a5485a97a46}" Method="IArchivable">
             <Single Name="Name" Type="string">VisuElems.Visu_Prg</Single>

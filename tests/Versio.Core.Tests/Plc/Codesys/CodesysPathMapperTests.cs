@@ -24,9 +24,6 @@ public class PathMapperTests
     }
 
     [Theory]
-    [InlineData("a/b")]
-    [InlineData("a\\b")]
-    [InlineData("a:b")]
     [InlineData("a*b")]
     [InlineData("a?b")]
     [InlineData("a\"b")]
@@ -34,14 +31,73 @@ public class PathMapperTests
     [InlineData("a|b")]
     public void Characters_Windows_forbids_are_encoded_reversibly(string name)
     {
+        // Everything EXCEPT a separator or a colon. Those three make the name look like a
+        // path, which is handled below and deliberately not reversible.
+        var encoded = PathMapper.EncodeStem(name);
+
+        Assert.DoesNotContain('*', encoded);
+        Assert.DoesNotContain('?', encoded);
+        Assert.DoesNotContain('"', encoded);
+        Assert.DoesNotContain('|', encoded);
+        Assert.Equal(name, PathMapper.DecodeStem(encoded));
+    }
+
+    [Theory]
+    [InlineData("a/b")]
+    [InlineData("a\\b")]
+    [InlineData("a:b")]
+    public void A_name_that_looks_like_a_path_is_shortened_rather_than_encoded(string name)
+    {
+        // These USED to assert reversibility, and the assertion was the divergence: the
+        // exporter that actually runs - safe_file_stem in versio_text.py - has shortened
+        // path-like names since a real mirror was found carrying somebody's username and
+        // home directory in a file name. This file specified the opposite, and nothing
+        // called it, so nobody found out.
         var encoded = PathMapper.EncodeStem(name);
 
         Assert.DoesNotContain('/', encoded);
         Assert.DoesNotContain('\\', encoded);
         Assert.DoesNotContain(':', encoded);
-        Assert.DoesNotContain('*', encoded);
-        Assert.DoesNotContain('?', encoded);
-        Assert.Equal(name, PathMapper.DecodeStem(encoded));
+        Assert.Contains('~', encoded);
+        Assert.NotEqual(name, PathMapper.DecodeStem(encoded));
+    }
+
+    [Fact]
+    public void A_path_like_name_carries_no_username_and_no_directory_layout()
+    {
+        // The measured case, from a real project: CODESYS gives an external-file reference
+        // this shape of identity, and percent-encoding it wrote 120 characters of somebody
+        // else's machine into a repository they share.
+        var encoded = PathMapper.EncodeStem(
+            @"{00000000-0000-0000-0000-000000000000}|C:\Users\m.lamp\Documents\license.txt");
+
+        Assert.StartsWith("license.txt~", encoded, StringComparison.Ordinal);
+        Assert.DoesNotContain("m.lamp", encoded, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Users", encoded, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Two_external_files_with_the_same_basename_do_not_collide()
+    {
+        // Why the shortened form carries a digest at all. One object per file is what makes
+        // the manifest's path mapping mean anything.
+        var first = PathMapper.EncodeStem(@"{0000}|C:\Users\a\Documents\license.txt");
+        var second = PathMapper.EncodeStem(@"{0000}|D:\shared\legal\license.txt");
+
+        Assert.NotEqual(first, second);
+        Assert.StartsWith("license.txt~", first, StringComparison.Ordinal);
+        Assert.StartsWith("license.txt~", second, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_name_nobody_could_open_is_shortened_rather_than_written()
+    {
+        // Windows still enforces 260 characters in most configurations, and a deep CODESYS
+        // folder chain plus a percent-encoded name reaches it.
+        var encoded = PathMapper.EncodeStem(new string('A', 300));
+
+        Assert.True(encoded.Length < 100, $"stem was {encoded.Length} characters");
+        Assert.Contains('~', encoded);
     }
 
     [Theory]

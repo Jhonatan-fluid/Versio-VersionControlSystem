@@ -23,9 +23,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from versio_text import (content_hash, join_st, normalize_decl_only,  # noqa: E402
                          safe_file_stem, scrub_native_xml)
 from versio_types import (FORM_CONTAINER, FORM_GVL_BOTH, FORM_LIBRARIES,  # noqa: E402
-                          FORM_NATIVE, FORM_NATIVE_R, FORM_SKIP, FORM_ST_DECL,
-                          FORM_ST_FULL, FORM_ST_IMPL, SKIP_EXPLANATION,
-                          SKIP_GAP, decide_form, file_name_for, skip_reason,
+                          FORM_NATIVE, FORM_NATIVE_R, FORM_NATIVE_WITH_CHILDREN,
+                          FORM_SKIP, FORM_ST_DECL, FORM_ST_FULL, FORM_ST_IMPL,
+                          SKIP_EXPLANATION, SKIP_GAP, decide_form,
+                          descends_into_children, file_name_for, skip_reason,
                           type_of)
 import versio_libraries  # noqa: E402
 import versio_yaml  # noqa: E402
@@ -53,6 +54,36 @@ def safe(fn, default=None):
         return fn()
     except Exception:
         return default
+
+
+# The open project, so a failure anywhere can still close it.
+#
+# CODESYS writes <project>.~u while it holds a project and removes it on close. A script that
+# died between open and close left that marker behind, and the next run then had to treat it as
+# a crashed IDE and reason about whether the pid was alive - work caused entirely by us, on a
+# project nobody actually had open.
+#
+# A module-level handle rather than a try/finally around the body of main(), because the body
+# is long and re-indenting it to add a guard makes the diff about whitespace.
+_OPEN = {"project": None}
+
+
+def remember_project(proj):
+    _OPEN["project"] = proj
+    return proj
+
+
+def close_project(proj=None):
+    """Close the open project, at most once, never raising."""
+    handle = proj if proj is not None else _OPEN["project"]
+    _OPEN["project"] = None
+    if handle is None:
+        return
+    try:
+        handle.close()
+    except Exception as e:
+        # Worth a line: it means the marker is still there and the next run will find it.
+        emit({"t": "warning", "code": "PROJECT_CLOSE_FAILED", "path": None, "detail": str(e)})
 
 
 def write_text(path, text):
@@ -87,13 +118,19 @@ class Exporter(object):
     native XML - is decided by versio_types.decide_form.
     """
 
-    def __init__(self, out_root):
+    def __init__(self, out_root, expected=0):
         self.out_root = out_root
         self.records = []
         self.warnings = []
         self.skips = []
         self.total = 0
         self.skipped = 0
+
+        # How many objects the pre-count expects to reach. Used only for the progress
+        # denominator, so a wrong answer costs a bar that does not land on 100% - never
+        # a wrong export. Zero means "nobody counted", and progress is emitted without
+        # a total rather than with a made-up one.
+        self.expected = expected
 
     def warn(self, code, path, detail=None):
         """Record a warning and emit it immediately.
@@ -107,6 +144,24 @@ class Exporter(object):
             w["detail"] = detail
         self.warnings.append(w)
         emit({"t": "warning", "code": code, "path": path, "detail": detail})
+
+    def progress(self, name):
+        """Say which object is being exported, and how far through the tree we are.
+
+        Emitted BEFORE the object is written rather than after, because the field the
+        host shows is the name of the thing currently being worked on - and the objects
+        worth naming are exactly the ones slow enough to still be on screen. The
+        fixture's Live_Visu is 2.5 MB on its own.
+
+        `total` is omitted when nobody counted, which the host reads as an
+        indeterminate bar rather than as a total of zero. Before this the host had a
+        handler for these events and no script emitted one, so an export was a
+        featureless 17-31 seconds no matter how much of it was left.
+        """
+        evt = {"t": "progress", "done": self.total, "obj": name}
+        if self.expected > 0:
+            evt["total"] = self.expected
+        emit(evt)
 
     def record(self, obj, obj_type, form, rel_path, text, parent_guid=None):
         """Note one written file in the manifest, keyed by the object's GUID.
@@ -224,8 +279,14 @@ class Exporter(object):
         if obj_type == "UNKNOWN":
             self.warn("UNKNOWN_TYPE_GUID", rel_dir + "/" + name, type_guid)
 
-        form = decide_form(obj_type, has_impl, has_decl)
+        # Read once and reused: an unmapped type's form depends on whether it HAS children,
+        # and asking CODESYS twice for the same list is both wasteful and a chance for the
+        # decision and the walk to see different answers.
+        children = safe(lambda: obj.get_children(), []) or []
+
+        form = decide_form(obj_type, has_impl, has_decl, bool(children))
         self.total += 1
+        self.progress(name)
 
         if form == FORM_SKIP:
             # Recorded, not merely counted. A count says "8 objects were not
@@ -256,7 +317,7 @@ class Exporter(object):
 
         if form == FORM_CONTAINER:
             child_dir = os.path.join(rel_dir, safe_file_stem(name))
-            for child in safe(lambda: obj.get_children(), []) or []:
+            for child in children:
                 self.handle(child, child_dir, None)
             return
 
@@ -296,19 +357,63 @@ class Exporter(object):
                 write_text(abs_path, text)
                 self.record(obj, obj_type, form, rel_path, text, parent_guid)
 
-            elif form in (FORM_NATIVE, FORM_NATIVE_R):
+            elif form in (FORM_NATIVE, FORM_NATIVE_R, FORM_NATIVE_WITH_CHILDREN):
+                # Only NATIVE_R exports its subtree into its own file. NATIVE_WITH_CHILDREN
+                # writes just the node, because its children are walked separately below.
                 text, _ = self.export_native(obj, abs_path, form == FORM_NATIVE_R)
                 self.record(obj, obj_type, form, rel_path, text, parent_guid)
         except Exception as e:
             self.warn("EXPORT_FAILED", rel_dir + "/" + name, str(e))
             return
 
+        if form == FORM_NATIVE_WITH_CHILDREN:
+            # An unmapped type that turned out to be structural. Its children are objects in
+            # their own right, not members of it, so they go into a SUBDIRECTORY named after
+            # it and are not prefixed with its name - exactly what FORM_CONTAINER does. The
+            # difference is only that this node also had a payload worth writing.
+            child_dir = os.path.join(rel_dir, stem_name)
+            for child in children:
+                self.handle(child, child_dir, None)
+            return
+
         # Children of a leaf object (methods, actions, properties on a POU) live
         # alongside it in the same folder, prefixed with the parent name.
         if form != FORM_NATIVE_R:
             own_guid = safe(lambda: str(obj.guid), "")
-            for child in safe(lambda: obj.get_children(), []) or []:
+            for child in children:
                 self.handle(child, rel_dir, name, own_guid)
+
+
+def count_objects(obj, depth=0):
+    """How many objects the export walk will reach, from this node down.
+
+    A denominator for the progress bar, and nothing else. It exists because the host
+    cannot show "9 of 25" without knowing 25, and the walk itself only learns the total
+    by finishing.
+
+    DESCENT MATCHES Exporter.handle EXACTLY, and cheaply: versio_types.descends_into_children
+    answers from the type GUID alone, so this second pass costs one get_children() and one
+    .type per node - and crucially NOT has_textual_declaration / has_textual_implementation,
+    which are the expensive properties and the ones that raise. See that function for why
+    deciding descent without them is sound.
+
+    Wrong here is cheap by construction: the count feeds a progress fraction and nothing
+    reads it afterwards. An exception anywhere returns what was counted so far, because a
+    progress bar is never worth failing an export over.
+    """
+    if depth > 40:                     # same cycle guard the probe uses
+        return 0
+
+    total = 1
+    try:
+        obj_type = type_of(safe(lambda: str(obj.type), ""))
+        if not descends_into_children(obj_type):
+            return total
+        for child in safe(lambda: obj.get_children(), []) or []:
+            total += count_objects(child, depth + 1)
+    except Exception:
+        pass
+    return total
 
 
 def count_files(path):
@@ -450,11 +555,18 @@ def main():
 
     emit({"t": "start", "python": sys.version, "project": job["project"], "out": out_root})
 
-    proj = scriptengine.projects.open(job["project"])
+    proj = remember_project(scriptengine.projects.open(job["project"]))
     emit({"t": "opened", "path": str(proj.path)})
 
-    ex = Exporter(staging)
-    for child in proj.get_children():
+    # Counted before the walk so progress has a denominator. One extra pass over the tree
+    # reading only .type and get_children(), which is noise beside a 17-31 s cold start -
+    # and the alternative is a bar that cannot move for the whole of an export.
+    roots = list(proj.get_children())
+    expected = sum(count_objects(child) for child in roots)
+    emit({"t": "counted", "objects": expected})
+
+    ex = Exporter(staging, expected)
+    for child in roots:
         ex.handle(child, "", None)
 
     manifest = {
@@ -488,10 +600,22 @@ def main():
         "skipped": sorted(ex.skips, key=lambda r: (r["path"], r["type"])),
         "warnings": ex.warnings,
     }
+    # Serialised ONCE. This used to call json.dumps three times in one expression - twice to
+    # decide whether the result was bytes, and again to produce it - on a document that holds
+    # every object in the project.
+    #
+    # sort_keys and the fixed indent are load-bearing, not cosmetic: the export is
+    # byte-identical across runs and this file is part of it, and dict order differs between
+    # interpreters.
+    serialized = json.dumps(manifest, indent=2, sort_keys=True)
+
+    # IronPython 2.7 hands back a byte string here and CPython 3 hands back text. write_text
+    # wants text on both, and the payload is pure ASCII because json escapes everything else.
+    if isinstance(serialized, bytes):
+        serialized = serialized.decode("utf-8")
+
     mpath = os.path.join(staging, "_manifest.json")
-    write_text(mpath, json.dumps(manifest, indent=2, sort_keys=True).decode("utf-8")
-               if isinstance(json.dumps(manifest), bytes) else
-               unicode(json.dumps(manifest, indent=2, sort_keys=True)))  # noqa: F821
+    write_text(mpath, serialized)
 
     write_text(os.path.join(staging, "_coverage.md"),
                coverage_markdown(manifest["project"], ex.records, ex.skips, ex.warnings))
@@ -530,7 +654,7 @@ def main():
     if os.path.isdir(trash):
         shutil.rmtree(trash)
 
-    proj.close()
+    close_project(proj)
     gaps = len([s for s in ex.skips if s["reason"] == SKIP_GAP])
     emit({"t": "summary", "walked": ex.total, "written": len(ex.records),
           "skipped": ex.skipped, "gaps": gaps, "warnings": len(ex.warnings)})
@@ -543,5 +667,9 @@ try:
 except Exception as e:
     emit({"t": "fatal", "msg": str(e), "trace": traceback.format_exc()})
     rc = 1
+finally:
+    # A no-op after a clean run, which already closed it. On a failure it is what stops a
+    # <project>.~u marker outliving the process that wrote it.
+    close_project()
 
 emit({"t": "exit", "rc": rc})

@@ -103,9 +103,9 @@
           </Single>
         </List>
         <List Name="Languages" Type="System.Collections.ArrayList" />
-        <Single Name="GuidInit" Type="System.Guid">a9692ed4-9ef0-4595-aa8d-bc08c6d63ee2</Single>
-        <Single Name="GuidReInit" Type="System.Guid">087b2634-95b6-47ed-ab36-c400f5d43758</Single>
-        <Single Name="GuidExitX" Type="System.Guid">cdde2b0f-1af4-464f-8ed6-7a28acd7ab6c</Single>
+        <Single Name="GuidInit" Type="System.Guid">97d8ee3f-6bea-4b0d-a75c-a57a2731fc1c</Single>
+        <Single Name="GuidReInit" Type="System.Guid">2d6d0ed9-4c82-4e9e-a3a5-26104c61f447</Single>
+        <Single Name="GuidExitX" Type="System.Guid">88ad4bb7-29be-492e-8c4e-594fdb3dd149</Single>
       </Single>
       <Single Name="ParentSVNodeGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
       <Array Name="Path" Type="string" />

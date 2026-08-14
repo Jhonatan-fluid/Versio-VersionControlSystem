@@ -66,6 +66,24 @@ FORM_CONTAINER = "CONTAINER"
 FORM_LIBRARIES = "LIBRARIES"
 FORM_SKIP = "SKIP"
 
+# NATIVE_WITH_CHILDREN - export the node itself natively, non-recursively, AND descend into
+# a subdirectory for its children.
+#
+# Reserved for UNMAPPED types that turn out to be structural, and it is not reachable from
+# TYPE_FORM: decide_form produces it, from a type it does not recognise that has children.
+#
+# The type table is incomplete by nature. Probing a 25-object toy project found two missing
+# GUIDs - "Plc Logic" and "Application" - and a real machine project will find more. Treating
+# an unknown container as a plain leaf flattens its children into the PARENT's folder and
+# quietly destroys the tree shape; treating it as a pure container drops whatever payload the
+# node itself carries. This does neither.
+#
+# ExportFormRules.cs has specified this since the seam was written and nothing called it, so
+# for a long time the exporter that actually runs did the flattening the C# was documented to
+# prevent. Adding the two probed GUIDs to the table hid it rather than fixed it: the next
+# unmapped container would have flattened just the same.
+FORM_NATIVE_WITH_CHILDREN = "NATIVE_WITH_CHILDREN"
+
 TYPE_FORM = {
     "FOLDER": FORM_CONTAINER,
     "DEVICE": FORM_CONTAINER,
@@ -233,6 +251,7 @@ SUFFIX = {
     FORM_GVL_BOTH: ".st",
     FORM_NATIVE: ".xml",
     FORM_NATIVE_R: ".xml",
+    FORM_NATIVE_WITH_CHILDREN: ".xml",
     FORM_LIBRARIES: ".libraries.yaml",
 }
 
@@ -251,15 +270,21 @@ def type_of(type_guid):
     return GUID_TYPE_MAPPING.get(str(type_guid).lower(), "UNKNOWN")
 
 
-def decide_form(obj_type, has_textual_impl, has_textual_decl):
+def decide_form(obj_type, has_textual_impl, has_textual_decl, has_children=False):
     """Pure decision: what on-disk form does this object take?
 
     A POU declared as ST but drawn in CFC/LD/FBD has no textual implementation, and
     must go to native XML or its graphical layout is lost.
+
+    `has_children` matters only for an UNMAPPED type: one with children is most likely
+    structural and must keep its subtree, so it becomes NATIVE_WITH_CHILDREN rather than a
+    plain leaf whose children flatten into the parent's folder. Mirrors the same argument
+    in ExportFormRules.Decide.
     """
     form = TYPE_FORM.get(obj_type)
     if form is None:
-        return FORM_NATIVE          # unmapped type: never silently drop it
+        # Unmapped type: never silently drop it, and never silently flatten it either.
+        return FORM_NATIVE_WITH_CHILDREN if has_children else FORM_NATIVE
     if form == FORM_ST_FULL and not has_textual_impl:
         return FORM_NATIVE
     if form == FORM_ST_DECL and not has_textual_decl:
@@ -269,6 +294,26 @@ def decide_form(obj_type, has_textual_impl, has_textual_decl):
     if form == FORM_GVL_BOTH and not has_textual_decl:
         return FORM_NATIVE
     return form
+
+
+def descends_into_children(obj_type):
+    """True when the exporter walks this type's children as objects of their own.
+
+    Decidable from the TYPE ALONE, which is the whole point: it lets the exporter count
+    the tree before walking it - for a progress total - without probing
+    has_textual_declaration / has_textual_implementation on every object, which are the
+    two expensive properties and the two that raise.
+
+    That is sound because decide_form only ever downgrades ST_FULL / ST_DECL / ST_IMPL /
+    GVL_BOTH to FORM_NATIVE, and FORM_NATIVE descends. It never turns a descending type
+    into a non-descending one, so the count and the walk cannot disagree:
+
+      FORM_SKIP      the exporter returns before recursing
+      FORM_NATIVE_R  the children are already inside its own recursive export
+      anything else  walked, including an unmapped type, which is why the default is True
+    """
+    form = TYPE_FORM.get(obj_type)
+    return form not in (FORM_SKIP, FORM_NATIVE_R)
 
 
 def file_name_for(name, obj_type, form, parent_name=None):

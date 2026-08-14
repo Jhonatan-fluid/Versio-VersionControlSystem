@@ -1702,7 +1702,7 @@ Versio.sln
 │  │   ├─ Git/                       LibGit2Sharp + git.exe implementations
 │  │   └─ Codesys/                   CODESYS.exe invocation, script extraction
 │  │
-│  ├─ Versio.Scripts/                Python, embedded as resources, written to temp at runtime
+│  ├─ Versio.Scripts.Codesys/        Python, embedded as resources, written to temp at runtime
 │  │   ├─ versio_main.py             entry: read job.json, dispatch, emit JSON lines
 │  │   ├─ versio_export.py           tree walk + per-type dispatch table
 │  │   ├─ versio_import.py           per-type import + NativeImportHandler(replace)
@@ -1720,7 +1720,7 @@ Versio.sln
    ├─ Versio.Arch.Tests/             NetArchTest dependency rules
    ├─ Versio.Integration.Tests/      Real CODESYS + real git. Tagged, slow, nightly.
    ├─ Versio.Equivalence.Tests/      The corpus regression suite (§3.9.4)
-   ├─ scripts/                       pytest for Versio.Scripts pure functions
+   ├─ scripts/                       pytest for the Versio.Scripts.<Vendor> pure functions
    └─ fixtures/
       ├─ projects/                   .project corpus (LFS)
       ├─ exports/                    golden export trees
@@ -1803,6 +1803,8 @@ With those five, `SyncOrchestrator`, `SyncStateMachine`, `LockManager`, `Canonic
 ```
 
 > **Batch, because startup dominates.** Cold start is 17–31 s; exporting one small project takes about a second of actual work. A job therefore carries **a list of projects**, and the script opens, exports and closes each in turn inside **one CODESYS session**. Two projects cost ~19 s batched versus ~35 s sequentially, and the saving grows with the number of bindings. This matters most at the commit gate, which now checks every enabled binding (§5.2).
+>
+> **⛔ Not built (2026-08-14).** The job type carries the list and the arithmetic above still holds, but **no script reads it**: `versio_export.py` and `versio_import.py` read the flat `project` / `out` / `src` keys, which `CodesysJob.ToJson()` only wrote for a single-project job. A second project therefore bought a full cold start and then a `KeyError` from inside IronPython. `ToJson()` now **refuses** a job carrying anything but one project, so the gap fails in C# with a sentence instead of failing in python with a dictionary key. Implementing the batch means a loop over `job["projects"]` in both scripts — the saving is real and unclaimed.
 
 ```jsonc
 // stdout — one JSON object per line, never scraped prose
@@ -2180,9 +2182,9 @@ Large-project performance, ST syntax highlighting in the diff, per-hunk staging,
 | R3 | Coverage gaps confuse users into thinking the export is a backup | Data loss perception, or real loss | High | Template + delta model (§3.9.2); explicit `_coverage.md`; the UI states the contract; `.project` and template both in LFS |
 | R3b | Export time and repo size | Slow syncs, bloated repo | **Low** ↓ | Per-type export (Rev 3) replaced the three-tree model; only changed objects are written |
 | R4 | `--noUI` hangs on a hidden modal | Stuck jobs | **Low** ↓ | **`system.prompt_answers` pre-answers dialogs, and `PromptHandling.LogMessageKeys` discovers the keys** (Phase 0.18). Timeout + process-tree kill remains as backstop |
-| R5 | Cold start too slow to feel automatic | Poor UX | **Confirmed** — 31.5 s cold / 17.6 s warm, measured | **`On git action` is now the default** (§7.4.6); jobs batch all bindings into one CODESYS session (§12.4); a resident-session script and the Phase 5 add-in remain the paths to sub-second |
+| R5 | Cold start too slow to feel automatic | Poor UX | **Confirmed** — 31.5 s cold / 17.6 s warm, measured | Exporting on every detected change is the default, with the coalescer and a 10 s minimum interval bounding the cost (§7.4.6). **Batching all bindings into one session is designed and NOT built** (§12.4) — the scripts read one project per job and `CodesysJob.ToJson()` now refuses the rest. A resident-session script and the Phase 5 add-in remain the paths to sub-second |
 | R31 | **Profile cannot be resolved** — none installed, several installed, or a pinned one missing | Versio cannot export or import at all; `--noUI` exits 1 | **Medium** | Blocking startup gate with its own diagnostic screen (§3.7); `ProfileResolver` reads profiles from disk, never synthesises a name, never guesses between several, and fails loudly on a missing pin |
-| R32 | **A newer CODESYS adds object types we do not know** | Objects flattened or exported without structure | **Medium-high** — 2 found in a 25-object project | Native fallback never drops an object; unknown-with-children keeps its subtree (`NativeWithChildren`); unknown GUIDs surfaced in `_coverage.md` and the UI so the table can be extended |
+| R32 | **A newer CODESYS adds object types we do not know** | Objects flattened or exported without structure | **Medium-high** — 2 found in a 25-object project | Native fallback never drops an object; unknown GUIDs surfaced in `_coverage.md` and the UI so the table can be extended; an unknown node **with children** keeps its subtree via `NATIVE_WITH_CHILDREN`. **Built on both sides as of 2026-08-14** — it had existed only in `ExportFormRules.cs`, which nothing calls, while `decide_form` returned plain `FORM_NATIVE` and the exporter flattened the children into the *parent's* folder. Verified against real CODESYS by unmapping `APPLICATION` in a copy of the scripts (docs/CODESYS.md §12 C1) |
 | R6 | CODESYS version/profile drift silently upgrades a project | Corrupted project | Medium | Profile pinned per repo, mismatch refuses to run |
 | R7 | Scripting licence restrictions | Blocks automation | Low-medium | Phase 0.8 |
 | R8 | Merge conflicts inside native XML are unreadable | Team friction | Medium | Textual objects are `.st` and merge like normal code; native XML is per-object so conflicts stay local; `--ff-only` default; Phase 5 merge assist |

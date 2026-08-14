@@ -88,7 +88,7 @@ public class ObjectTypeTests
 /// the exporter and the app disagree about what an object is - and that is a silent,
 /// data-shaped bug. Compared directly rather than trusted.
 /// </summary>
-public class TypeTablePartityTests
+public class TypeTableParityTests
 {
     private static readonly Regex Entry =
         new("""^\s*"(?<guid>[0-9a-fA-F-]{36})"\s*:\s*"(?<name>[A-Z_]+)",""",
@@ -142,7 +142,7 @@ public class TypeTablePartityTests
 
         string[] requiredForms =
             ["FORM_ST_FULL", "FORM_ST_DECL", "FORM_ST_IMPL", "FORM_GVL_BOTH",
-             "FORM_NATIVE", "FORM_NATIVE_R"];
+             "FORM_NATIVE", "FORM_NATIVE_R", "FORM_NATIVE_WITH_CHILDREN"];
 
         var suffixBlock = Between(text, "SUFFIX = {", "}");
 

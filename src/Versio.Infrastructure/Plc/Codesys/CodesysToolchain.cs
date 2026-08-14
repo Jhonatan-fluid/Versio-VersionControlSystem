@@ -42,15 +42,26 @@ public sealed class CodesysToolchain(IVersioLogger? logger = null) : IPlcToolcha
         var installs = new CodesysLocator(logger: _log).FindInstalls();
         var resolution = ProfileResolver.Resolve(installs);
 
+        // The install that OWNS the resolved profile, not simply the first one found.
+        //
+        // ProfileResolver flattens profiles across every install, so on a machine where the
+        // first install has no usable profile and the second does, `installs[0]` reported the
+        // second install's profile beside the FIRST install's executable and version - and
+        // CreateRunner then launched that executable with a profile it may not have. Silent,
+        // and exactly the kind of version mix-up the profile is resolved so carefully to avoid.
+        var owner = installs.FirstOrDefault(
+            i => i.Profiles.Contains(resolution.Profile, StringComparer.OrdinalIgnoreCase))
+            ?? installs[0];
+
         var status = resolution.Outcome switch
         {
             ProfileResolution.Resolved => new PlcToolchainStatus
             {
                 Available = true,
                 Profile = resolution.Profile,
-                Version = installs[0].FileVersion,
-                ExecutablePath = installs[0].ExecutablePath,
-                Explanation = $"{installs[0].InstallFolder} — {resolution.Profile}",
+                Version = owner.FileVersion,
+                ExecutablePath = owner.ExecutablePath,
+                Explanation = $"{owner.InstallFolder} — {resolution.Profile}",
             },
 
             ProfileResolution.AmbiguousNeedsUserChoice => new PlcToolchainStatus
