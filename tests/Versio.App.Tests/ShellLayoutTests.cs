@@ -155,10 +155,13 @@ public sealed class ShellLayoutTests
         });
     }
 
+    // The button captions are bound now, not literals: StagingSelection.Label reads "Stage"
+    // over an empty list, "Stage all" when rows exist and none are ticked, and "Stage 3" when
+    // three are. No repository is open here, so the empty-list forms are what render.
     [Theory]
-    [InlineData("STAGED", "Unstage all")]
+    [InlineData("STAGED", "Unstage")]
     [InlineData("NOT STAGED", "Discard")]
-    [InlineData("NOT STAGED", "Stage all")]
+    [InlineData("NOT STAGED", "Stage")]
     public void A_section_label_never_sits_under_its_own_buttons(string label, string button)
     {
         // Reported: "git panel cluttered ... looks really bad", with NOT STAGED and Discard

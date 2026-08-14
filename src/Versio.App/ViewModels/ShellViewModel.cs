@@ -155,6 +155,37 @@ public sealed class ChangeRow(FileChange change) : ObservableObject
 
     public bool IsStaged => _change.IsStaged;
 
+    private bool _isSelected;
+
+    /// <summary>
+    /// Ticked for the next staging action.
+    /// </summary>
+    /// <remarks>
+    /// <b>Not the list selection.</b> Clicking a row opens its diff; ticking its box says what
+    /// the next Stage, Unstage or Discard applies to. Two jobs, two pieces of state — a user
+    /// who lost their diff every time they changed what they were about to stage would stop
+    /// using one of the two.
+    /// <para>
+    /// Survives a refresh because <c>ReconcileInto</c> updates rows in place rather than
+    /// replacing them. Before that, this would have been cleared every time the working tree
+    /// moved.
+    /// </para>
+    /// </remarks>
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set
+        {
+            if (SetProperty(ref _isSelected, value))
+            {
+                SelectionChanged?.Invoke();
+            }
+        }
+    }
+
+    /// <summary>Raised so the owning list can recount without watching every row.</summary>
+    public event Action? SelectionChanged;
+
     /// <summary>
     /// What git says happened to this file, unglyphed.
     /// </summary>
@@ -1720,6 +1751,96 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// <summary>Files changed in the working tree but not staged.</summary>
     public ObservableCollection<ChangeRow> Unstaged { get; } = [];
 
+    // ------------------------------------------------------- per-file selection (plan §4)
+
+    /// <summary>How many staged rows are ticked.</summary>
+    public int StagedSelectedCount => Staged.Count(r => r.IsSelected);
+
+    public int UnstagedSelectedCount => Unstaged.Count(r => r.IsSelected);
+
+    /// <summary>
+    /// The staged list's master checkbox, three-state.
+    /// </summary>
+    /// <remarks>
+    /// Nullable bool because that is what WPF's <c>IsThreeState</c> reads: null is the
+    /// indeterminate middle. Setting it ticks or clears the whole list; the indeterminate value
+    /// is only ever produced, never accepted, because "set this to partially ticked" has no
+    /// meaning.
+    /// </remarks>
+    public bool? StagedAllSelected
+    {
+        get => ToCheck(StagingSelection.StateFor(Staged.Count, StagedSelectedCount));
+        set => SetAll(Staged, value == true);
+    }
+
+    public bool? UnstagedAllSelected
+    {
+        get => ToCheck(StagingSelection.StateFor(Unstaged.Count, UnstagedSelectedCount));
+        set => SetAll(Unstaged, value == true);
+    }
+
+    /// <summary>"3 of 12 selected", or nothing when nothing is ticked.</summary>
+    public string StagedSelectionCaption =>
+        StagingSelection.Caption(Staged.Count, StagedSelectedCount);
+
+    public string UnstagedSelectionCaption =>
+        StagingSelection.Caption(Unstaged.Count, UnstagedSelectedCount);
+
+    /// <summary>Button labels that say what will happen, not what the button is called.</summary>
+    public string StageLabel =>
+        StagingSelection.Label("Stage", Unstaged.Count, UnstagedSelectedCount);
+
+    public string UnstageLabel =>
+        StagingSelection.Label("Unstage", Staged.Count, StagedSelectedCount);
+
+    public string DiscardLabel =>
+        StagingSelection.Label("Discard", Unstaged.Count, UnstagedSelectedCount);
+
+    private static bool? ToCheck(SelectionState state) => state switch
+    {
+        SelectionState.All => true,
+        SelectionState.Some => null,
+        _ => false,
+    };
+
+    private void SetAll(ObservableCollection<ChangeRow> rows, bool selected)
+    {
+        foreach (var row in rows)
+        {
+            row.IsSelected = selected;
+        }
+
+        RaiseSelectionState();
+    }
+
+    /// <summary>
+    /// The rows an action applies to: the ticked ones, or all of them when none are.
+    /// </summary>
+    /// <remarks>
+    /// What makes "Stage all" and "Stage selected" one button. The label carries the difference
+    /// so nobody presses it expecting the other meaning.
+    /// </remarks>
+    private static IReadOnlyList<ChangeRow> Chosen(ObservableCollection<ChangeRow> rows)
+    {
+        var ticked = rows.Where(r => r.IsSelected).ToList();
+        return ticked.Count > 0 ? ticked : [.. rows];
+    }
+
+    /// <summary>Recount after anything that could have changed a tick.</summary>
+    private void RaiseSelectionState()
+    {
+        OnPropertyChanged(nameof(StagedSelectedCount));
+        OnPropertyChanged(nameof(UnstagedSelectedCount));
+        OnPropertyChanged(nameof(StagedAllSelected));
+        OnPropertyChanged(nameof(UnstagedAllSelected));
+        OnPropertyChanged(nameof(StagedSelectionCaption));
+        OnPropertyChanged(nameof(UnstagedSelectionCaption));
+        OnPropertyChanged(nameof(StageLabel));
+        OnPropertyChanged(nameof(UnstageLabel));
+        OnPropertyChanged(nameof(DiscardLabel));
+        RaiseGitCommandStates();
+    }
+
     public AsyncCommand StageCommand { get; private set; } = null!;
     public AsyncCommand UnstageCommand { get; private set; } = null!;
     public AsyncCommand CommitCommand { get; private set; } = null!;
@@ -1766,12 +1887,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
     private void BuildGitCommands()
     {
+        // Chosen(), not the whole list: the ticked rows when any are, otherwise all of them.
         StageCommand = new AsyncCommand(
-            () => StageAsync(Unstaged, stage: true),
+            () => StageAsync(Chosen(Unstaged), stage: true),
             () => Ready && Unstaged.Count > 0, ReportError);
 
         UnstageCommand = new AsyncCommand(
-            () => StageAsync(Staged, stage: false),
+            () => StageAsync(Chosen(Staged), stage: false),
             () => Ready && Staged.Count > 0, ReportError);
 
         CommitCommand = new AsyncCommand(
@@ -3185,19 +3307,78 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// </remarks>
     private void UpdateStagingLists(GitStatus status)
     {
-        Staged.Clear();
-        foreach (var change in status.Staged.OrderBy(c => c.Path, StringComparer.Ordinal))
-        {
-            Staged.Add(new ChangeRow(change));
-        }
+        ReconcileInto(Staged, [.. status.Staged.OrderBy(c => c.Path, StringComparer.Ordinal)]);
+        ReconcileInto(Unstaged, [.. status.Unstaged.OrderBy(c => c.Path, StringComparer.Ordinal)]);
 
-        Unstaged.Clear();
-        foreach (var change in status.Unstaged.OrderBy(c => c.Path, StringComparer.Ordinal))
-        {
-            Unstaged.Add(new ChangeRow(change));
-        }
 
+        RaiseSelectionState();
         RaiseGitCommandStates();
+    }
+
+    /// <summary>
+    /// Bring one staging list in step with git, in place.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Reconciled rather than rebuilt, and that is a prerequisite rather than a
+    /// refinement.</b> This used to <c>Clear()</c> both collections and refill them on every
+    /// refresh — which is fine for a list whose rows carry nothing, and fatal for one whose
+    /// rows carry a checkbox. A refresh fires whenever the working tree moves, so a user
+    /// ticking three files out of forty would lose the ticks the next time they saved a file
+    /// in their editor.
+    /// </para>
+    /// <para>
+    /// Matched on <see cref="ChangeRow.Path"/>, which is a row's identity: a path can change
+    /// status but a row never changes path, and a renamed file is a different row.
+    /// </para>
+    /// <para>
+    /// It also fixes something nobody had complained about: rebuilding dropped the WPF list
+    /// selection on every refresh, so the diff pane reset roughly once a second while somebody
+    /// typed in their editor.
+    /// </para>
+    /// </remarks>
+    private void ReconcileInto(
+        ObservableCollection<ChangeRow> rows, IReadOnlyList<FileChange> fresh)
+    {
+        var live = fresh.Select(c => c.Path).ToHashSet(StringComparer.Ordinal);
+
+        // Backwards, so removing does not shift the indices still to be examined. Each row is
+        // unsubscribed as it goes: the shell outlives every row, so a subscription left behind
+        // would keep a dead row alive for the rest of the session.
+        for (var i = rows.Count - 1; i >= 0; i--)
+        {
+            if (!live.Contains(rows[i].Path))
+            {
+                rows[i].SelectionChanged -= RaiseSelectionState;
+                rows.RemoveAt(i);
+            }
+        }
+
+        for (var i = 0; i < fresh.Count; i++)
+        {
+            if (i >= rows.Count)
+            {
+                rows.Add(Track(new ChangeRow(fresh[i])));
+                continue;
+            }
+
+            if (string.Equals(rows[i].Path, fresh[i].Path, StringComparison.Ordinal))
+            {
+                // Same row, possibly a different status. Updated in place so whatever the user
+                // has set on it survives.
+                rows[i].Update(fresh[i]);
+                continue;
+            }
+
+            rows.Insert(i, Track(new ChangeRow(fresh[i])));
+        }
+    }
+
+    /// <summary>Watch a row's checkbox, so ticking one recounts the header.</summary>
+    private ChangeRow Track(ChangeRow row)
+    {
+        row.SelectionChanged += RaiseSelectionState;
+        return row;
     }
 
     /// <summary>

@@ -1,7 +1,11 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Data;
+using System.Windows.Media;
 using Versio.App.ViewModels;
 using Versio.App.Views;
+using Versio.Core.Git;
 using Versio.Core.Logging;
 using Versio.Infrastructure.Platform;
 using Xunit;
@@ -211,6 +215,136 @@ public sealed class GitPanelChromeTests
             ShowGitPanel(window);
 
             Assert.NotEqual(shell.ShowPush, shell.ShowPublish);
+        });
+    }
+
+    [Fact]
+    public void Both_staging_lists_scroll_and_neither_can_be_crushed()
+    {
+        // The layout this replaced: the staged list was docked top with a hard
+        // MaxHeight="150" and the unstaged list took everything left. A forty-file stage was
+        // trapped in four rows next to an empty list holding four hundred pixels of nothing.
+        StaHarness.Run(() =>
+        {
+            var (window, _) = Build();
+            var (panel, _) = ShowGitPanel(window);
+
+            var lists = AllOf<ListBox>(panel).ToList();
+
+            // Staged and unstaged. A third would need the same treatment, and this is where
+            // that gets noticed.
+            Assert.Equal(2, lists.Count);
+
+            foreach (var list in lists)
+            {
+                Assert.Equal(ScrollBarVisibility.Auto,
+                             ScrollViewer.GetVerticalScrollBarVisibility(list));
+
+                // Both virtualize now. The staged one could not before, behind its ceiling.
+                Assert.True(VirtualizingPanel.GetIsVirtualizing(list),
+                            "a staging list does not virtualize");
+
+                var row = (FrameworkElement)VisualTreeHelper.GetParent(list)!;
+                var height = Grid.GetRow(list) < 0 ? 0 : 1;
+                Assert.True(height > 0 || row is not null);
+            }
+
+            // Neither pane may be squeezed to nothing by the other.
+            var grid = AllOf<Grid>(panel)
+                .FirstOrDefault(g => g.RowDefinitions.Count == 5);
+
+            Assert.True(grid is not null, "the two-pane staging grid is not there");
+            Assert.All(grid!.RowDefinitions.Where(r => r.Height.IsStar),
+                       r => Assert.True(r.MinHeight > 0, "a staging pane can be crushed to nothing"));
+        });
+    }
+
+    [Fact]
+    public void The_panes_can_be_resized_against_each_other()
+    {
+        StaHarness.Run(() =>
+        {
+            var (window, _) = Build();
+            var (panel, _) = ShowGitPanel(window);
+
+            var splitter = AllOf<GridSplitter>(panel).FirstOrDefault();
+
+            Assert.True(splitter is not null, "there is no splitter between the two panes");
+            Assert.Equal(GridResizeDirection.Rows, splitter!.ResizeDirection);
+            Assert.Equal(GridResizeBehavior.PreviousAndNext, splitter.ResizeBehavior);
+        });
+    }
+
+    [Fact]
+    public void A_realised_staging_row_carries_a_checkbox_bound_to_its_own_tick()
+    {
+        // REALISED, not loaded from the template in isolation.
+        //
+        // DataTemplate.LoadContent() was the first attempt and it threw: the template nests a
+        // StaticResource for the shared row body, and loading it outside the tree loses the
+        // resource context that would resolve it. Which is fine - the template is not used
+        // that way - but it means the only honest check is to put a row in the list and see
+        // what the ListBox builds. That also covers more: a binding to a property that does
+        // not exist renders nothing at all, silently, and only a realised row shows it.
+        StaHarness.Run(() =>
+        {
+            var (window, shell) = Build();
+            var (panel, content) = ShowGitPanel(window);
+
+            shell.Unstaged.Add(new ChangeRow(new FileChange
+            {
+                Path = "src/App/POU/FB_Motor.st",
+                Staged = ChangeKind.Unmodified,
+                Unstaged = ChangeKind.Modified,
+            }));
+
+            content.Measure(new Size(1400, 900));
+            content.Arrange(new Rect(0, 0, 1400, 900));
+            content.UpdateLayout();
+
+            var check = AllOf<CheckBox>(panel)
+                .FirstOrDefault(c => c.DataContext is ChangeRow);
+
+            Assert.True(check is not null, "a realised staging row has no checkbox");
+
+            var binding = BindingOperations.GetBinding(check!, ToggleButton.IsCheckedProperty);
+            Assert.Equal("IsSelected", binding?.Path.Path);
+
+            // TwoWay, or ticking a box would change nothing the view model can see.
+            Assert.Equal(BindingMode.TwoWay, binding!.Mode);
+
+            // And the shared body came with it: the path is on screen, so the nested
+            // StaticResource resolved in the place that matters.
+            var texts = AllOf<TextBlock>(panel).Select(t => t.Text).ToList();
+            Assert.Contains("src/App/POU/FB_Motor.st", texts);
+        });
+    }
+
+    [Fact]
+    public void Ticking_a_realised_row_reaches_the_view_model()
+    {
+        StaHarness.Run(() =>
+        {
+            var (window, shell) = Build();
+            var (panel, content) = ShowGitPanel(window);
+
+            shell.Unstaged.Add(new ChangeRow(new FileChange
+            {
+                Path = "a.st",
+                Staged = ChangeKind.Unmodified,
+                Unstaged = ChangeKind.Modified,
+            }));
+
+            content.Measure(new Size(1400, 900));
+            content.Arrange(new Rect(0, 0, 1400, 900));
+            content.UpdateLayout();
+
+            var check = AllOf<CheckBox>(panel).First(c => c.DataContext is ChangeRow);
+            check.IsChecked = true;
+
+            // The whole chain: control -> row -> shell count. A one-way binding would pass
+            // every other assertion in this file and fail here.
+            Assert.Equal(1, shell.UnstagedSelectedCount);
         });
     }
 

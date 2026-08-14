@@ -48,6 +48,49 @@
                                ToolTip="{Binding Path}" />
                 </Grid>
             </DataTemplate>
+
+            <!--
+                Staging rows: a checkbox, then the shared body.
+
+                DECLARED AFTER ChangeRowTemplate, AND THAT IS NOT COSMETIC. A StaticResource
+                resolves in declaration order, so with this above the template it references,
+                every realised row threw:
+
+                    XamlParseException: Cannot find resource named 'ChangeRowTemplate'
+
+                Nothing catches that until a row exists. The window builds, the panel lays out,
+                the suite passes - and the application dies the moment somebody clicks the Git
+                rail on a repository with a changed file. Moving this below fixes it; the
+                alternative is DynamicResource, which costs a lookup per row for a resource
+                that never changes.
+
+                A separate template from ChangeRowTemplate because that one is also used by the
+                history panel's commit-file list, where a checkbox is meaningless - a commit's
+                files are not something you stage. The glyph and path live in one place still,
+                so the two cannot drift apart on what a modified file looks like.
+
+                The checkbox is NOT the list selection. Clicking the row opens its diff;
+                ticking the box says what the next action applies to. Two jobs, two pieces of
+                state - and a user who lost their diff every time they changed what they were
+                about to stage would stop using one of the two.
+            -->
+            <DataTemplate x:Key="StageRowTemplate">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <CheckBox Grid.Column="0" Margin="0,0,6,0"
+                              VerticalAlignment="Center"
+                              Style="{StaticResource MenuCheck}"
+                              IsChecked="{Binding IsSelected, Mode=TwoWay,
+                                  UpdateSourceTrigger=PropertyChanged}" />
+
+                    <ContentPresenter Grid.Column="1" Content="{Binding}"
+                                      ContentTemplate="{StaticResource ChangeRowTemplate}" />
+                </Grid>
+            </DataTemplate>
         </ResourceDictionary>
     </Window.Resources>
 
@@ -714,63 +757,146 @@
                                  leftwards across the label instead of pushing it, and neither
                                  one knows the other is there. The label takes what is left and
                                  trims; the buttons keep their width. -->
-                            <Grid DockPanel.Dock="Top" Margin="0,0,0,4">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="STAGED"
-                                           VerticalAlignment="Center"
-                                           TextTrimming="CharacterEllipsis"
-                                           Style="{StaticResource SectionLabel}" />
-                                <Button Grid.Column="1" Content="Unstage all" Margin="8,0,0,0"
-                                        Style="{StaticResource GhostButton}" Padding="8,2"
-                                        Height="{DynamicResource Size.Control.Compact}"
-                                        Command="{Binding UnstageCommand}" />
-                            </Grid>
-                            <ListBox DockPanel.Dock="Top" ItemsSource="{Binding Staged}"
-                                     SelectedItem="{Binding SelectedStaged}"
-                                     Background="Transparent" BorderThickness="0"
-                                     ItemContainerStyle="{StaticResource RowItem}"
-                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                     ItemTemplate="{StaticResource ChangeRowTemplate}"
-                                     MaxHeight="150" Margin="0,0,0,10" />
+                            <!--
+                                TWO PANES THAT BOTH SCROLL, AND A SPLITTER BETWEEN THEM.
 
-                            <Grid DockPanel.Dock="Top" Margin="0,0,0,4">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="NOT STAGED"
-                                           VerticalAlignment="Center"
-                                           TextTrimming="CharacterEllipsis"
-                                           Style="{StaticResource SectionLabel}" />
-                                <StackPanel Grid.Column="1" Orientation="Horizontal"
-                                            Margin="8,0,0,0">
-                                    <!-- Discard is per-FILE and needs a selection, while
-                                         "Stage all" takes the list. That asymmetry is the
-                                         point: this is the only button here that destroys
-                                         work nothing else has a copy of, so it acts on one
-                                         named file, after a confirmation that names it. -->
-                                    <Button Content="Discard" Padding="8,2" Height="{DynamicResource Size.Control.Compact}"
-                                            Style="{StaticResource GhostButton}"
-                                            Foreground="{DynamicResource Brush.Status.Deleted}"
-                                            Command="{Binding DiscardCommand}"
+                                The staged list used to be docked top with a hard
+                                MaxHeight="150" while the unstaged list took everything left.
+                                So a forty-file stage was trapped in four rows next to an empty
+                                list holding four hundred pixels of nothing - the layout was
+                                honest about neither.
+
+                                Both rows are star-sized with a MinHeight, so neither can be
+                                crushed to nothing, and the splitter lets somebody who is
+                                mostly reviewing what is staged give it the room.
+                            -->
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" MinHeight="60" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" MinHeight="60" />
+                                </Grid.RowDefinitions>
+
+                                <!-- STAGED header: master checkbox, label, count, action. -->
+                                <Grid Grid.Row="0" Margin="0,0,0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Three-state, and the middle one is only ever produced,
+                                         never accepted: "set this to partially ticked" has no
+                                         meaning. -->
+                                    <CheckBox Grid.Column="0" Margin="0,0,6,0"
+                                              VerticalAlignment="Center" IsThreeState="True"
+                                              Style="{StaticResource MenuCheck}"
+                                              ToolTip="Tick or clear every staged file"
+                                              IsChecked="{Binding StagedAllSelected, Mode=TwoWay}" />
+
+                                    <TextBlock Grid.Column="1" Text="STAGED"
+                                               VerticalAlignment="Center"
+                                               Style="{StaticResource SectionLabel}" />
+
+                                    <TextBlock Grid.Column="2" Margin="8,0,0,0"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"
+                                               FontFamily="{DynamicResource Font.UI}"
+                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                               Foreground="{DynamicResource Brush.Text.Disabled}"
+                                               Text="{Binding StagedSelectionCaption}" />
+
+                                    <Button Grid.Column="3" Content="{Binding UnstageLabel}"
+                                            Margin="8,0,0,0"
+                                            Style="{StaticResource GhostButton}" Padding="8,2"
+                                            Height="{DynamicResource Size.Control.Compact}"
                                             ToolTipService.ShowOnDisabled="True"
-                                            ToolTip="Throw away the changes to the selected file — this cannot be undone" />
-                                    <Button Content="Stage all" Padding="8,2" Margin="6,0,0,0" Height="{DynamicResource Size.Control.Compact}"
-                                            Style="{StaticResource GhostButton}"
-                                            Command="{Binding StageCommand}" />
-                                </StackPanel>
+                                            ToolTip="Take these back out of the next commit"
+                                            Command="{Binding UnstageCommand}" />
+                                </Grid>
+
+                                <ListBox Grid.Row="1" ItemsSource="{Binding Staged}"
+                                         SelectedItem="{Binding SelectedStaged}"
+                                         Background="Transparent" BorderThickness="0"
+                                         ItemContainerStyle="{StaticResource RowItem}"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                         ItemTemplate="{StaticResource StageRowTemplate}"
+                                         VirtualizingStackPanel.IsVirtualizing="True"
+                                         VirtualizingStackPanel.VirtualizationMode="Recycling" />
+
+                                <!-- The staged list can be tall now, so it virtualizes too.
+                                     It could not before, behind its 150 px ceiling. -->
+                                <GridSplitter Grid.Row="2" Height="5"
+                                              HorizontalAlignment="Stretch"
+                                              VerticalAlignment="Center"
+                                              Background="Transparent"
+                                              ResizeBehavior="PreviousAndNext"
+                                              ResizeDirection="Rows" />
+
+                                <Grid Grid.Row="3" Margin="0,4,0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <CheckBox Grid.Column="0" Margin="0,0,6,0"
+                                              VerticalAlignment="Center" IsThreeState="True"
+                                              Style="{StaticResource MenuCheck}"
+                                              ToolTip="Tick or clear every changed file"
+                                              IsChecked="{Binding UnstagedAllSelected, Mode=TwoWay}" />
+
+                                    <TextBlock Grid.Column="1" Text="NOT STAGED"
+                                               VerticalAlignment="Center"
+                                               Style="{StaticResource SectionLabel}" />
+
+                                    <TextBlock Grid.Column="2" Margin="8,0,0,0"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"
+                                               FontFamily="{DynamicResource Font.UI}"
+                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                               Foreground="{DynamicResource Brush.Text.Disabled}"
+                                               Text="{Binding UnstagedSelectionCaption}" />
+
+                                    <StackPanel Grid.Column="3" Orientation="Horizontal"
+                                                Margin="8,0,0,0">
+                                        <!-- Still the only button here that destroys work
+                                             nothing else has a copy of, and it still confirms
+                                             with the files named. What changed is that it can
+                                             now act on a ticked set rather than only on the
+                                             one row somebody happened to click. -->
+                                        <Button Content="{Binding DiscardLabel}" Padding="8,2"
+                                                Height="{DynamicResource Size.Control.Compact}"
+                                                Style="{StaticResource GhostButton}"
+                                                Foreground="{DynamicResource Brush.Status.Deleted}"
+                                                Command="{Binding DiscardCommand}"
+                                                ToolTipService.ShowOnDisabled="True"
+                                                ToolTip="Throw these changes away — this cannot be undone" />
+                                        <Button Content="{Binding StageLabel}" Padding="8,2"
+                                                Margin="6,0,0,0"
+                                                Height="{DynamicResource Size.Control.Compact}"
+                                                Style="{StaticResource GhostButton}"
+                                                ToolTipService.ShowOnDisabled="True"
+                                                ToolTip="Put these into the next commit"
+                                                Command="{Binding StageCommand}" />
+                                    </StackPanel>
+                                </Grid>
+
+                                <ListBox Grid.Row="4" ItemsSource="{Binding Unstaged}"
+                                         SelectedItem="{Binding SelectedUnstaged}"
+                                         Background="Transparent" BorderThickness="0"
+                                         ItemContainerStyle="{StaticResource RowItem}"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                         ItemTemplate="{StaticResource StageRowTemplate}"
+                                         VirtualizingStackPanel.IsVirtualizing="True"
+                                         VirtualizingStackPanel.VirtualizationMode="Recycling" />
                             </Grid>
-                            <ListBox ItemsSource="{Binding Unstaged}"
-                                     SelectedItem="{Binding SelectedUnstaged}"
-                                     Background="Transparent" BorderThickness="0"
-                                     ItemContainerStyle="{StaticResource RowItem}"
-                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                     ItemTemplate="{StaticResource ChangeRowTemplate}"
-                                     VirtualizingStackPanel.IsVirtualizing="True"
-                                     VirtualizingStackPanel.VirtualizationMode="Recycling" />
                         </DockPanel>
                     </Border>
 

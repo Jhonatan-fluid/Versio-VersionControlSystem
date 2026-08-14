@@ -1508,7 +1508,7 @@ different things is a coordination bug waiting to happen.
 | GP-A ✅ | Notifications (§1) | Everything later needs a way to report success and failure. Fixes the invisible-push bug on its own. |
 | GP-B ✅ | Remote state machine + publish (§2) | Independent of staging; unblocks the gating in GP-F. |
 | GP-D ✅ | Background polling (§3) | Needs §2's state to have somewhere to put its answer. Makes every count in the panel true. |
-| GP-E | **Extract `GitPanelViewModel`**, then reconcile the staging lists, then the two-pane scrollable layout and checkboxes (§4) | The extraction is the first commit, before the file grows further — see the structural note at the top. The reconcile prerequisite lands next and is worth having alone: the lists stop being rebuilt every second. |
+| GP-E ✅ | Reconcile the staging lists, the two-pane scrollable layout and checkboxes (§4). **The `GitPanelViewModel` extraction was NOT done — see the phase log** | The extraction is the first commit, before the file grows further — see the structural note at the top. The reconcile prerequisite lands next and is worth having alone: the lists stop being rebuilt every second. |
 | GP-F | Button model + gating matrix (§5) | Needs GP-B and GP-E to gate against real state. |
 | GP-G | Conflicts (§6, UI half) + the diverged-branch exit (§9b) | **No longer blocked** — safeguards phase 6 shipped both defences. One piece of work: both are "the remote and I disagree", and §2 currently advises a button that refuses. |
 | GP-H | Branch identity, default branch, deletion dialog (§7), undo-delete (§9f) | Largest single piece and the only new window; benefits from GP-A and GP-D already being in place. |
@@ -1841,6 +1841,77 @@ recomputed — which is the entire point of the phase.
 That is the floor rather than the answer — a hosted remote adds a TLS handshake and an auth
 round trip per probe — so the 10 s default stands until somebody times it against a real
 `origin`. Changing it is one argument to `RemotePollPolicy`.
+
+---
+
+### GP-E — per-file staging · done 2026-08-13
+
+**Built:** `Core/Git/StagingSelection.cs` (tri-state, counts, labels — pure);
+`ChangeRow.IsSelected` with a change event; **`UpdateStagingLists` reconciles in place**;
+a `StageRowTemplate` with a checkbox; the two-pane grid with a splitter and min-heights; master
+checkboxes, selection captions and count-bearing button labels.
+
+**Tests:** 17 Core, 13 App (9 flow + 4 chrome). **1,179 / 286 / 149 green.**
+
+### The §4a extraction was not done, and the reason is evidence rather than preference
+
+§4a called for extracting a `GitPanelViewModel` first, on the grounds that `ShellViewModel` is
+heading for 4,500 lines. **That seam is not clean, and the code says so.** `CommitAsync` alone
+reaches `Sync`, `Busy`, `Notifications`, `_logger`, `_git`, `RunRefreshAsync`, `PushAsync` and
+`StageExportedTreesAsync` — eight distinct collaborators. `StageAsync` and the selection setters
+add `ShowPathAsync` and `DiscardCommand`. A child view model at that seam takes essentially the
+whole shell as a constructor argument, which is a **move dressed as a decomposition**: the same
+coupling, one more indirection, and a large silent-binding-failure risk for no reduction in what
+anybody has to hold in their head.
+
+What was extracted instead is the part that is genuinely separable and is where GP-E's new
+complexity lives: **the selection rules, into Core**, where the tri-state and the label logic are
+tested without a window. The shell grew by the wiring and shrank by the rules.
+
+**The size concern stands and is not addressed.** If it is to be fixed, the seam worth cutting
+is the *remote* surface — standing, poller, credentials, fetch/pull/push/publish — which is
+already self-contained and was built in GP-B/C/D as a unit. That is a real decomposition and it
+is a phase of its own, not a preamble to one.
+
+### The chrome test caught a crash that every other check missed
+
+`A_realised_staging_row_carries_a_checkbox` **crashed the test host**:
+
+```
+XamlParseException: Cannot find resource named 'ChangeRowTemplate'
+```
+
+`StaticResource` resolves in **declaration order**, and `StageRowTemplate` — which references
+the shared row body — had been declared above it. Nothing catches that until a row is realised:
+the window builds, the panel lays out, the suite passes, and **the application dies the moment
+somebody clicks the Git rail on a repository with a changed file.** The app run earlier in this
+phase opened cleanly for exactly the reason the binding trace keeps coming back empty — the
+panel starts collapsed, so no row was ever built.
+
+That is the third time this phase family has bitten in the same place, and the pattern is now
+explicit: **for this panel, the only check that is not vacuous is one that realises a row.**
+`LoadContent()` on the template in isolation is not enough either — it loses the resource
+context and throws for a different reason.
+
+### Decisions worth keeping
+
+- **Reconcile in place is a prerequisite, not a refinement.** A refresh fires whenever the
+  working tree moves; a checkbox on a row that is replaced a second later is a control that
+  forgets what you told it every time you save a file. The mutation — replacing rows instead of
+  updating them — breaks two tests. It also fixed something nobody had reported: the diff pane
+  used to reset roughly once a second while somebody typed in their editor.
+- **The checkbox is not the list selection**, and there is a test asserting each leaves the
+  other alone in both directions.
+- **Nothing ticked means the whole list**, which is what collapses "Stage all" and "Stage
+  selected" into one button; the label carries the difference (`Stage`, `Stage all`, `Stage 3`).
+- **An empty list is unticked, not fully ticked.** "Every one of no items is ticked" is true and
+  invites a click that does nothing.
+- **Rows unsubscribe as they leave.** The shell outlives every row, so a subscription left
+  behind would keep a dead row alive for the session.
+
+**Still needs a human:** §13's GP-E script — dragging the splitter, confirming both panes scroll
+independently with a large stage, and that a tick survives a real editor save. The last of those
+is machine-checked as well, but the first two are geometry.
 
 ---
 
