@@ -1684,6 +1684,50 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- THE IMPORT NOBODY HAS AGREED TO YET.
+
+                         RequireImportConfirmation has been true since it shipped and the only
+                         caller answered it "confirmed, because there is nobody to ask" - so a
+                         setting that is switched on was consulted on every import and always
+                         answered yes. There is somebody to ask now, and this is where they are
+                         asked.
+
+                         A BANNER, NOT A MODAL, and that is the whole design. The orchestrator's
+                         own refusal reads "review the diff and confirm before importing", and a
+                         dialog thrown up the instant a file settles arrives before the review -
+                         while the user is still typing in the editor that caused it. The tree
+                         beside this shows exactly what changed, by object name; the button is
+                         pressed once they have looked. THEN a confirmation names the project.
+
+                         Amber, not the failure pane's red: nothing has gone wrong. Something is
+                         waiting for a decision, which is a different thing and should not read
+                         like a fault. -->
+                    <Border DockPanel.Dock="Top" Margin="6,0,6,8" Padding="14,12"
+                            Background="{DynamicResource Brush.Surface.Sunken}"
+                            CornerRadius="{DynamicResource Radius.Control}"
+                            Visibility="{Binding Sync.HasPendingImport,
+                                Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel>
+                            <TextBlock Text="{Binding Sync.PendingImportProject.Name}"
+                                       FontFamily="{DynamicResource Font.UI}"
+                                       FontSize="{DynamicResource Font.Size.Body}"
+                                       FontWeight="{DynamicResource Font.Weight.Semibold}"
+                                       Foreground="{DynamicResource Brush.Status.Modified}" />
+
+                            <TextBlock Text="{Binding Sync.PendingImportDetail}" TextWrapping="Wrap"
+                                       Margin="0,6,0,0"
+                                       FontFamily="{DynamicResource Font.UI}"
+                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                       Foreground="{DynamicResource Brush.Text.Secondary}" />
+
+                            <Button Content="Review and import" Margin="0,10,0,0"
+                                    HorizontalAlignment="Left" Padding="16,4"
+                                    Style="{StaticResource AccentButton}"
+                                    Command="{Binding Sync.ConfirmImportCommand}"
+                                    ToolTip="Write the exported text back into the project. You will be asked to confirm, and a copy of the project is kept first." />
+                        </StackPanel>
+                    </Border>
+
                     <views:DiffView DiffText="{Binding SelectedDiff}"
                                     FilePath="{Binding SelectedDiffPath}"
                                     HunkCommand="{Binding HunkCommand}"

@@ -32,6 +32,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | Export a project to per-object `.st` / native `.xml` | ✅ verified on a real project |
 | **Deterministic export** — same project, byte-identical output | ✅ 3 consecutive runs, all 11 files |
 | Import edited `.st` back into a project | ✅ round-trip proven byte-identical |
+| **An import is never applied without being agreed to** | ✅ an edit to the mirror is detected, exported nowhere and written nowhere until a person confirms it. The project panel says which project is waiting and what would be rewritten; a dialog names it again before anything is written; and a copy of the `.project` is kept first. Declining leaves the offer up rather than forgetting it |
 | Import native XML **in place**, GUID preserved | ✅ no delete-and-recreate |
 | Create objects that do not exist yet | ✅ POU / FB / FUNCTION / INTERFACE / DUT / GVL |
 | Drive CODESYS headlessly from C# | ✅ `LocalCodesysRunner` |
@@ -107,7 +108,8 @@ Both directions run automatically and deterministically. A per-project **directi
 **[docs/STATUS.md](docs/STATUS.md)** has the current state and the route to completion.
 **[docs/SAFEGUARDS.md](docs/SAFEGUARDS.md)** is what Versio refuses, asks about or waits for —
 the interruption guard, the auto-stash, and the ways this could lose work. Eight of its nine
-phases are built; the ninth is features rather than guards.
+phases are built, plus the ninth's first item — the import confirmation. What is left of that
+phase is a backup restore path and a read-only second instance.
 **[docs/GIT-PANEL-PLAN.md](docs/GIT-PANEL-PLAN.md)** is the git panel's functionality and UX.
 Eleven of its twelve phases are built; what is left is the ahead/behind previews and a list of
 smaller polish items.

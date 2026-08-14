@@ -29,11 +29,19 @@ the code, two of which (§5.A and §5.D) can lose work with no user error at all
 ## 0. Handover — where this stands
 
 **Branch:** `GitPanel`. **Built:** phases 1–8 — see *Phase 7, as built* at the end of §4 and
-*Phase 8, as built* below it. **Next: phase 9** (§5.C import confirmation, §5.E backup restore,
-§5.G read-only second instance) — features rather than guards, and each its own conversation.
+*Phase 8, as built* below it — **and phase 9's §5.C**, the import confirmation, on 2026-08-14.
+**What remains of phase 9:** §5.E (backup restore) and §5.G (the read-only second instance) —
+features rather than guards, and each its own conversation.
 
-> **Work since, on the git panel, that touches this document.** Six phases of
-> [`GIT-PANEL-PLAN.md`](GIT-PANEL-PLAN.md) have landed and three of them interact with the
+> **Versio no longer answers its own confirmation.** `RequireImportConfirmation` shipped as
+> `true` and was answered `Confirmed = true` by its only caller for the whole life of the
+> setting. An edit to an exported mirror now writes nothing until a person says so: it is
+> surfaced on the project panel and confirmed by a dialog naming the project. §5.C has the
+> reasoning, including why it is a banner rather than the modal this document originally
+> called for.
+
+> **Work since, on the git panel, that touches this document.** Eleven phases of
+> [`GIT-PANEL-PLAN.md`](GIT-PANEL-PLAN.md) have landed and four of them interact with the
 > safeguards here:
 >
 > - **A background remote watch** (GP-D) probes with `ls-remote` and fetches when the remote
@@ -50,6 +58,9 @@ the code, two of which (§5.A and §5.D) can lose work with no user error at all
 >   through `git credential fill` and keeps nothing. Nothing in that path logs what it sends or
 >   receives — `git credential` speaks key=value over stdin and one of those keys is `password`,
 >   which `Redact` would not catch.
+> - **The changed files are named as objects** (GP-J), which is what makes §5.C's banner
+>   workable: "review the diff and confirm" is a reasonable thing to ask when the panel beside
+>   it says *FB_Motor · POU* rather than a column of near-identical paths.
 >
 > §6's phase table is unchanged: none of this is a safeguards phase.
 
@@ -99,15 +110,18 @@ and **Versio could not be closed at all**. Only running the application found it
 - **`GuardIntent.Pull` is implemented and deliberately unwired** — its verdicts all resolve to the
   auto-stash. Phase 7 wires it and deletes `ShellViewModel.AskAboutWork`.
 
-### Starting phase 9
+### Phase 9, in progress
 
-§5.C, §5.E and §5.G are the three that remain, and none of them is a guard: each adds a
-capability the app describes and does not have.
+§5.C, §5.E and §5.G were the three that remained, and none of them is a guard: each adds a
+capability the app describes and does not have. **§5.C is built**; two remain.
 
-- **§5.C** is the smallest and the most dishonest as it stands: `RequireImportConfirmation` is
-  `true` by default and the only caller answers `Confirmed = true` with the comment *"there is
-  nobody to ask"*. There is somebody to ask now — the prompt from phase 2 renders any question
-  with named answers.
+- ~~**§5.C**~~ — **done 2026-08-14.** It was the smallest and the most dishonest as it stood:
+  `RequireImportConfirmation` was `true` by default and the only caller answered
+  `Confirmed = true` with the comment *"there is nobody to ask"*. There is somebody to ask now.
+  See §5.C for what was built and why it is a banner rather than the modal this list expected.
+  **What it cost:** one line at the call site, a pending-import surface on the sync view model,
+  a banner, and seven tests — of which the load-bearing one asserts that the `.project`'s bytes
+  are unchanged after an edit to its mirror settles.
 - **§5.E** is a window over the ten backups per binding that already exist and are reachable by
   nothing.
 - **§5.G** is the sentence `LockRecovery` already produces — *"opening read-only"* — which
@@ -722,7 +736,28 @@ App ever reads it**. Conflict markers in a `.st` file are, to the importer, just
 `SyncVerdict.BlockedByConflict` with its `SyncNarrative` sentence. Cheap, and it is also the backstop
 for a conflicted `stash pop` (§4.6).
 
-### C. Imports run with no human confirmation, contradicting the default
+### C. Imports run with no human confirmation, contradicting the default — **BUILT**
+
+> **Built 2026-08-14, as phase 9's first item.** The one caller passes `Confirmed = false` now,
+> and the `AwaitingConfirmation` verdict the orchestrator has always returned finally has
+> somewhere to go: a banner on the project panel naming the project, what an import would
+> rewrite, and the backup kept first — then a confirmation before anything is written.
+>
+> **A banner, not a modal, and that is the decision worth recording.** This section says
+> "prompting is the better answer" and §2.4 offers the prompt window — but the orchestrator's own
+> refusal reads *"review the diff and confirm before importing"*, and a dialog thrown up the
+> instant a file settles arrives **before** the review, while the user is still typing in the
+> editor that caused it. The tree beside the banner already shows exactly what changed, by object
+> name, since GP-J. So: the banner surfaces it without interrupting, and the prompt confirms it
+> once they have looked. Both, in that order.
+>
+> **Declining leaves the offer up.** "No" means not now: the exported text is still ahead, and a
+> banner that vanished on a refusal would leave the repository in that state with nothing on
+> screen saying so — reachable again only by editing the mirror a second time.
+>
+> **Several projects can be waiting at once**, which a single-valued field like `FailedProject`
+> could not express. A pull lands edits in every mirror it touches; the banner names the first
+> and counts the rest.
 
 `RequireImportConfirmation = true` is the shipped default (`SyncOrchestrator.cs:17`), and the only
 caller sets `Confirmed = true` with the comment *"there is nobody to ask"* (`SyncViewModel.cs:1692`).
@@ -818,9 +853,9 @@ this adequately — worth confirming rather than changing.
 | **4 ✅** | **Context-switch guard** (§3.3) — dropdowns disabled for uninterruptible work, prompt for the rest | Second highest, and reuses phase 3 wholesale. |
 | **5 ✅** | **`ResetForRepositoryChange`** (§3.2) | Self-contained, no new machinery, immediately visible. |
 | **6 ✅** | Git-write suppression window (§5.A) and the conflict gate (§5.B) | Correctness, and both are **prerequisites** for phase 7 — see §4.8 and §4.6. |
-| **7** | **Branch-switch guard with the full auto-stash** (§3.1, §4), plus the branch recorded in `BindingLock` | Needs the prompt from phase 2 and both defences from phase 6. |
+| **7 ✅** | **Branch-switch guard with the full auto-stash** (§3.1, §4), plus the branch recorded in `BindingLock` | Needs the prompt from phase 2 and both defences from phase 6. |
 | **8 ✅** | Swap via trash-rename (§5.D), staging in the ignore plan (§5.F), leftover sweep at open | Small, independent, and §5.D closes a real window. |
-| **9** | Import confirmation made real (§5.C), backup restore UI (§5.E), read-only second instance (§5.G) | Features rather than guards. Each is its own conversation. |
+| **9 ◐** | ~~Import confirmation made real (§5.C)~~ **done**; backup restore UI (§5.E), read-only second instance (§5.G) | Features rather than guards. Each is its own conversation. |
 
 Phases 6 and 7 are ordered deliberately: **the auto-stash cannot ship before the suppression window
 and the conflict gate**, or restoring a stash becomes a way to trigger an unwanted import, and a
@@ -829,6 +864,22 @@ conflicted `pop` becomes a way to import conflict markers into a project.
 Tests follow the existing split: guard and stash policy in `Versio.Core.Tests` (pure, ~0.3 s), the
 prompt window in `Versio.App.Tests` on the STA harness, and the stash round trip, conflict gate and
 suppression window in `Versio.Integration.Tests` against real git.
+
+### Verifying §5.C in the running app — **owed to a human**
+
+Automated tests cover everything below except what it looks like. Seven of them assert that the
+`.project`'s bytes do not move; none can tell you whether the banner reads well.
+
+1. Open a repository with a tracked project. **Edit an exported `.st` in the mirror** and save.
+2. Within a few seconds a banner appears on the project panel naming the project. **No dialog
+   appears, and nothing is written** — check the `.project`'s modified time if you want proof.
+3. The tree beside it shows the changed object by name. **Review it**, which is the whole reason
+   this is a banner and not a modal.
+4. Press **Review and import** → a dialog names the project and says a copy is kept. Press
+   **Cancel** → nothing is written **and the banner is still there**.
+5. Press it again and confirm → the import runs, the banner goes, and the project's bytes change.
+6. Edit mirrors under **two** projects → the banner names one and says the other is waiting.
+7. Switch repository while a banner is up → it goes with the repository, and does not follow you.
 
 ### Phase 1, as built
 

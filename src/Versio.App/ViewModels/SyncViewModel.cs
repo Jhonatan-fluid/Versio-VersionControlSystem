@@ -189,6 +189,8 @@ public sealed class SyncViewModel : ObservableObject
         _heartbeat.Beat += op => Activity = op.Describe(clock);
 
         RetryCommand = new AsyncCommand(RetryAsync, CanRetry, onError: Report);
+        ConfirmImportCommand = new AsyncCommand(
+            ConfirmImportAsync, CanConfirmImport, onError: Report);
     }
 
     /// <summary>
@@ -742,6 +744,14 @@ public sealed class SyncViewModel : ObservableObject
         // a path that happens to match in the new repository be labelled with the old one's
         // object — the same reasoning as the expanded set above.
         Objects = ObjectIndex.Empty;
+
+        // And so does a waiting import. Binding ids are unique per repository, so a leftover
+        // would offer to write into a project that is no longer open — the same defect the
+        // failure banner was fixed for two lines below.
+        _pendingImports.Clear();
+        PendingImportDetail = string.Empty;
+        OnPropertyChanged(nameof(PendingImportProject));
+        OnPropertyChanged(nameof(HasPendingImport));
 
         SelectedProject = null;
         Summary = "No repository open";
@@ -2341,7 +2351,14 @@ public sealed class SyncViewModel : ObservableObject
     /// an export we just wrote.
     /// </para>
     /// </remarks>
-    private async Task SyncSettledChangeAsync(WatchedChange change)
+    /// <remarks>
+    /// Internal rather than private so a test can drive it with a real orchestrator and a real
+    /// repository. The watcher above it is a timer, and a test that waits on one proves less
+    /// while taking longer — but everything <i>below</i> this line is where the decisions are,
+    /// including whether an import is answered on the user's behalf. That question was answered
+    /// "yes" here for the whole life of the setting that asks it, and nothing failed.
+    /// </remarks>
+    internal async Task SyncSettledChangeAsync(WatchedChange change)
     {
         if (_orchestrator is null || _repositoryRoot is null)
         {
@@ -2373,9 +2390,19 @@ public sealed class SyncViewModel : ObservableObject
                 BindingId = binding.Id,
                 Source = source,
 
-                // Confirmed, because there is nobody to ask. The project is copied aside before
-                // an import writes into it, which is what makes that answer defensible.
-                Confirmed = true,
+                // NOT confirmed, and there IS somebody to ask now.
+                //
+                // This said "confirmed, because there is nobody to ask" for as long as the
+                // orchestrator has had the gate — so RequireImportConfirmation shipped as true,
+                // was consulted on every import, and was answered yes by the only caller.
+                // A setting that is switched on and always answered is a fiction, and this is
+                // the direction that writes a binary file nobody can diff afterwards.
+                //
+                // The refusal comes back as AwaitingConfirmation and is surfaced on the
+                // project's own row rather than as a modal: the orchestrator's own wording is
+                // "review the diff and confirm", and a dialog thrown up the instant a file
+                // settles is a dialog that arrives before the review. See ConfirmImportAsync.
+                Confirmed = false,
                 Reason = $"automatic, {source}",
             }, cancel.Token).ConfigureAwait(true);
 
@@ -2402,6 +2429,15 @@ public sealed class SyncViewModel : ObservableObject
                     Projects.FirstOrDefault(p => p.BindingId == binding.Id) is { Busy: false } row)
                 {
                     row.State = "queued…";
+                }
+
+                // The import that is waiting for a person. Raised here rather than polled,
+                // because this is the only place that learns of it — the state machine is
+                // happy, nothing failed, and the row would otherwise say "text ahead" with no
+                // hint that anything is expected of anybody.
+                if (outcome.Verdict is SyncVerdict.AwaitingConfirmation)
+                {
+                    NotePendingImport(binding.Id);
                 }
             }
 
@@ -2513,6 +2549,161 @@ public sealed class SyncViewModel : ObservableObject
     /// <summary>True when the failure pane has something to show.</summary>
     public bool HasFailure => FailedProject is not null;
 
+    // ------------------------------------------------------------------ pending imports
+
+    /// <summary>
+    /// Bindings whose exported text has changed and which are waiting for a human.
+    /// </summary>
+    /// <remarks>
+    /// <b>A set, not a single value like <see cref="FailedProject"/>.</b> A pull can land edits
+    /// in several mirrors at once, and a panel that could only remember the last one would
+    /// silently drop the rest — each of which is a project that will not be updated until
+    /// somebody says so. The banner names the first and counts the others.
+    /// </remarks>
+    private readonly HashSet<string> _pendingImports = new(StringComparer.Ordinal);
+
+    /// <summary>The project whose import is waiting, or null when none is.</summary>
+    public ProjectRow? PendingImportProject =>
+        _pendingImports.Count == 0
+            ? null
+            : Projects.FirstOrDefault(p => p.BindingId is { } id && _pendingImports.Contains(id));
+
+    /// <summary>Something is waiting to be imported.</summary>
+    public bool HasPendingImport => PendingImportProject is not null;
+
+    /// <summary>
+    /// What an import would do, in the words somebody needs before agreeing to it.
+    /// </summary>
+    /// <remarks>
+    /// It names the <c>.project</c> by path rather than the mirror, because the mirror is what
+    /// they edited and the project is what is about to be rewritten — and those are different
+    /// files. The backup is stated in the same breath: it is the reason this is recoverable,
+    /// and somebody weighing the decision should not have to already know it exists.
+    /// </remarks>
+    public string PendingImportDetail
+    {
+        get => _pendingImportDetail;
+        private set => SetProperty(ref _pendingImportDetail, value);
+    }
+
+    private string _pendingImportDetail = string.Empty;
+
+    /// <summary>Import the exported text into the project. Asks first.</summary>
+    public AsyncCommand ConfirmImportCommand { get; private set; } = null!;
+
+    /// <summary>
+    /// Ask before writing into a <c>.project</c>, and never on the app's own initiative.
+    /// </summary>
+    /// <remarks>
+    /// A delegate rather than a window, for the reason <c>ShellViewModel.ConfirmDestructive</c>
+    /// gives: a view model that opens a window cannot be tested on the STA harness without one
+    /// appearing. <b>Unset means no</b> — the wrong way round for a wiring mistake would be a
+    /// silent import.
+    /// </remarks>
+    public Func<string, string, bool>? ConfirmImport { get; set; }
+
+    private void NotePendingImport(string bindingId)
+    {
+        if (!_pendingImports.Add(bindingId))
+        {
+            return;
+        }
+
+        RefreshPendingImport();
+
+        _logger.Info(LogCategory.Sync,
+            $"{bindingId}: exported text has changed and is waiting to be imported; " +
+            "nothing has been written to the project");
+    }
+
+    private void RefreshPendingImport()
+    {
+        // Bindings that have gone away with a repository switch, or been imported since.
+        _pendingImports.RemoveWhere(
+            id => Projects.All(p => !string.Equals(p.BindingId, id, StringComparison.Ordinal)));
+
+        var row = PendingImportProject;
+        var others = _pendingImports.Count - 1;
+
+        PendingImportDetail = row is null
+            ? string.Empty
+            : $"The exported text under this project has changed. Importing rewrites " +
+              $"{row.Path} from it. A copy of the project is kept first, under .versio/local/." +
+              (others > 0
+                  ? $" {others} other project{(others == 1 ? " is" : "s are")} also waiting."
+                  : string.Empty);
+
+        OnPropertyChanged(nameof(PendingImportProject));
+        OnPropertyChanged(nameof(HasPendingImport));
+        ConfirmImportCommand.RaiseCanExecuteChanged();
+    }
+
+    private bool CanConfirmImport() => _orchestrator is not null && HasPendingImport;
+
+    /// <summary>
+    /// Import the exported text, once a person has agreed to it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The same job the watcher raised, run again with <c>Confirmed</c> set — rather than a
+    /// second code path into the orchestrator. Everything the automatic attempt applies still
+    /// applies: the direction lock, the hash gate, the circuit breaker, the open-project check
+    /// and the backup. The only thing that changes is the answer to the one question that was
+    /// outstanding.
+    /// </para>
+    /// <para>
+    /// <b>The confirmation is refused by default.</b> An unset hook, a dismissed dialog and a
+    /// closed window all mean no, and no means nothing is written.
+    /// </para>
+    /// </remarks>
+    private async Task ConfirmImportAsync()
+    {
+        if (_orchestrator is null || PendingImportProject is not { BindingId: { } id } row)
+        {
+            return;
+        }
+
+        _logger.Click("Sync.ConfirmImport");
+
+        if (ConfirmImport?.Invoke($"Import into {row.Name}?", PendingImportDetail) != true)
+        {
+            _logger.Info(LogCategory.Sync,
+                $"{id}: import declined; the project is unchanged");
+            return;
+        }
+
+        using var busy = _busy.Begin(WorkKind.Import, $"Importing into {row.Name}…");
+
+        var outcome = await _orchestrator.HandleChangeAsync(new SyncJob
+        {
+            BindingId = id,
+            Source = ChangeSource.ExportedText,
+            Confirmed = true,
+            Synchronous = true,
+            Reason = "confirmed by the user",
+        }, busy.Token).ConfigureAwait(true);
+
+        Summary = SyncNarrative.Describe(outcome);
+
+        if (outcome.IsFailure)
+        {
+            _logger.Error(LogCategory.Sync, Summary);
+        }
+        else
+        {
+            _logger.Info(LogCategory.Sync, Summary);
+        }
+
+        // Cleared whatever happened, including on failure: a failure is reported by the failure
+        // banner, and leaving this one up as well would offer the same button again for a
+        // project that has just refused it.
+        _pendingImports.Remove(id);
+        RefreshPendingImport();
+
+        await RescanAsync().ConfigureAwait(true);
+        await RefreshStalenessAsync().ConfigureAwait(true);
+    }
+
     private bool CanRetry() => _orchestrator is not null && FailedProject is not null;
 
     /// <summary>
@@ -2550,7 +2741,11 @@ public sealed class SyncViewModel : ObservableObject
         RefreshFailure(row.Path);
     }
 
-    private void RaiseCommandStates() => RetryCommand.RaiseCanExecuteChanged();
+    private void RaiseCommandStates()
+    {
+        RetryCommand.RaiseCanExecuteChanged();
+        ConfirmImportCommand.RaiseCanExecuteChanged();
+    }
 
     private void Report(Exception ex)
     {

@@ -52,6 +52,19 @@ public partial class MainWindow : Window
                             MessageBoxImage.Warning, MessageBoxResult.Cancel)
             == MessageBoxResult.OK;
 
+        // An import writes into a .project - a binary compound document nobody can diff
+        // afterwards - so it is asked about rather than assumed. This is the setting
+        // RequireImportConfirmation has described since it shipped, and this line is what
+        // stops it being a fiction: for as long as it was missing, the only caller answered
+        // "confirmed, because there is nobody to ask".
+        //
+        // Warning rather than Question, and defaulting to Cancel, for the same reason the
+        // discard prompt does: the dangerous answer must never be the one a stray Enter picks.
+        shell.Sync.ConfirmImport = (caption, body) =>
+            MessageBox.Show(this, body, caption, MessageBoxButton.OKCancel,
+                            MessageBoxImage.Warning, MessageBoxResult.Cancel)
+            == MessageBoxResult.OK;
+
         // The guard's questions have three answers, not two, so they need a real dialog for
         // the same reason the branch prompt does. Owned, so it centres on the window and
         // cannot be lost behind it — which for a modal blocking a close would look like a

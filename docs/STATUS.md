@@ -1,10 +1,11 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-14 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,320 unit + 356 UI + 154 integration, 0 skipped
+**Date:** 2026-08-14 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,320 unit + 363 UI + 154 integration, 0 skipped
 
 > All three re-derived on 2026-08-14, on branch `GitPanel`, after the git-panel plan's **GP-J**
 > (PLC-aware naming of the changed-files rows, the change summary and the drafted commit
-> subject) and **GP-I** (the merge-request button across five forges). The integration suite was
+> subject), **GP-I** (the merge-request button across five forges) and **safeguards §5.C** (the
+> import confirmation, which the app had been answering for itself). The integration suite was
 > re-run in full against real CODESYS 3.5.22.20 — **154 passed, 0 skipped** — including
 > `RepositoryWatcherTests.A_deleted_file_is_reported`, the one noted below as flaky, which
 > passed in this run. The five new integration tests read a forge's hidden request refs out of a
@@ -163,8 +164,13 @@ format; `.gitattributes` covers every registered vendor's extensions.
 > **Phases 1–8 are built and verified against real CODESYS**: the guard, the cancellation
 > plumbing, the close and context-switch guards, the conflict gate, the git-write window, the
 > auto-stash in both directions, and a swap that can no longer leave a project with no mirror.
-> **Phase 9 is what remains** — a real import confirmation, a backup restore path, and the
-> read-only second instance the code already promises in a sentence. §0 is the handover note.
+> **Phase 9's first item is built too** — §5.C, the import confirmation: Versio no longer
+> answers its own question. `RequireImportConfirmation` shipped as `true` and was answered
+> `Confirmed = true` by its only caller for the whole life of the setting, so a gate that was
+> switched on was reached and always passed, for the one direction that writes a binary file
+> nobody can diff. An edit to an exported mirror now writes nothing until a person says so.
+> **What remains of phase 9** is a backup restore path and the read-only second instance the
+> code already promises in a sentence. §0 is the handover note.
 >
 > **[`GIT-PANEL-PLAN.md`](GIT-PANEL-PLAN.md)** — the git panel's functionality and UX.
 > **Eleven of its twelve phases are built**: the git presence probe and identity preflight,
