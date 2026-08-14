@@ -28,9 +28,30 @@ the code, two of which (§5.A and §5.D) can lose work with no user error at all
 
 ## 0. Handover — where this stands
 
-**Branch:** `Clean-up-and-continue-dev`. **Built:** phases 1–8 — see *Phase 7, as built* at the end of §4 and
+**Branch:** `GitPanel`. **Built:** phases 1–8 — see *Phase 7, as built* at the end of §4 and
 *Phase 8, as built* below it. **Next: phase 9** (§5.C import confirmation, §5.E backup restore,
 §5.G read-only second instance) — features rather than guards, and each its own conversation.
+
+> **Work since, on the git panel, that touches this document.** Six phases of
+> [`GIT-PANEL-PLAN.md`](GIT-PANEL-PLAN.md) have landed and three of them interact with the
+> safeguards here:
+>
+> - **A background remote watch** (GP-D) probes with `ls-remote` and fetches when the remote
+>   moves. It **never pulls**, and that is a safeguard rather than a preference: a pull rewrites
+>   the project and its mirror under the watcher, which is §5.A — the one scenario here that can
+>   corrupt a project through no user error at all. Automatic pulling would be §5.A on a timer.
+> - **It suspends while anything else runs**, including while a guard prompt is on screen. A
+>   background fetch landing while somebody decides whether to stash their work would change the
+>   thing they are deciding about.
+> - **It stops dead on an authentication refusal** rather than after the usual run of failures.
+>   The circuit-breaker threshold is for things that might recover; a rejected credential is not
+>   one, and retrying it every ten seconds may lock an account.
+> - **Credentials are never stored** (GP-C). Versio hands off to the engineer's own helper
+>   through `git credential fill` and keeps nothing. Nothing in that path logs what it sends or
+>   receives — `git credential` speaks key=value over stdin and one of those keys is `password`,
+>   which `Redact` would not catch.
+>
+> §6's phase table is unchanged: none of this is a safeguards phase.
 
 Everything below §1 is the original plan, kept as written, with each phase's *"as built"* notes
 appended where it was planned. Read §6 for the order and what is done.
@@ -39,8 +60,8 @@ appended where it was planned. Read §6 for the order and what is done.
 
 | | |
 |---|---|
-| 1,037 Core + 214 UI unit tests | `dotnet test tests/Versio.Core.Tests`, `…/Versio.App.Tests` |
-| 130 integration tests | Real git and **real CODESYS 3.5.22.20**; 0 skipped, 8 m 15 s |
+| 1,175 Core + 291 UI unit tests | `dotnet test tests/Versio.Core.Tests`, `…/Versio.App.Tests` |
+| 149 integration tests | Real git and **real CODESYS 3.5.22.20**; 0 skipped, 7 m 43 s |
 | The application itself | Started, driven, closed. Two bugs found this way that no test caught |
 | Every new behaviour | Deliberately broken and the tests re-run, per the README's `-MutateFirst` rule |
 

@@ -6,6 +6,39 @@ interface does not expose, plus one new dialog.
 
 ---
 
+## Where this stands
+
+**Six of twelve phases are done**, on branch `GitPanel`, plus an audit pass over all of them.
+Each has a commit and an entry in the **phase log** at the end of this document saying what
+landed, what was decided, and what contact with the code changed.
+
+| | Phase | Landed |
+|---|---|---|
+| ✅ | **GP-0** — git presence probe, commit-identity preflight | `0a183d0` |
+| ✅ | **GP-A** — notifications | `2ce279a` |
+| ✅ | **GP-B** — remote state machine, publish, detached HEAD | `f71a60b` |
+| ✅ | **GP-C** — credential detection, sign in, forget credential | `938f67e` |
+| ✅ | **GP-D** — background remote polling | `437e0d1` |
+| ✅ | **GP-E** — per-file staging, two scrollable panes | `a7cc553` |
+| ✅ | *Audit* — dead API removed, fixtures consolidated, a flake fixed | `485cddb` |
+| — | **GP-F** — button model and gating matrix (§5) | next |
+| — | GP-G — conflicts UI, diverged exit (§6, §9b) | |
+| — | GP-H — branch identity, default branch, delete dialog (§7) | |
+| — | GP-I — merge-request button (§8) | |
+| — | GP-J — PLC-aware summaries (§9c) | |
+| — | GP-K / GP-L — previews and polish (§9d, §10) | |
+
+**Three things are still owed to a human**, because nothing here can see the screen: the
+credential-helper window's stacking order, a timed `ls-remote` against a real remote, and the
+§13 scripts for anything visual. They are listed in the pre-flight's measurement table.
+
+**How to read the rest.** Sections §1–§13 are the plan, written before the work and left as
+written — each now says at the top whether it is built. The **phase log** at the end is the
+history: what was actually done, and every decision that turned out differently from the plan.
+Where the two disagree, the phase log is right.
+
+---
+
 ## What the code actually does today
 
 **Re-verified 2026-08-13 against `a083356` on `Clean-up-and-continue-dev`**, after the
@@ -198,6 +231,8 @@ A phase is done when **all** of these are true:
 
 ## 1 · Notifications
 
+> **Built** in GP-A. What follows is the design as planned; the phase log at the end records what actually landed and what changed on contact with the code.
+
 ### Design
 
 One transient notification surface, owned by the shell, distinct from the status bar.
@@ -262,6 +297,8 @@ console and the notification never disagree about what happened.
 
 ## 2 · Remote state: needs pushing, needs pulling, not published
 
+> **Built** in GP-B, including detached HEAD, which was planned for GP-H and moved. See the phase log.
+
 These are three cases of one question — *is this branch in step with the remote?* — and all
 three are currently answered by two mono glyphs that look alike. They get one state machine
 and one prominent badge.
@@ -320,6 +357,8 @@ and shows it nowhere.
 ---
 
 ## 3 · Background remote polling
+
+> **Built** in GP-D. The 10 s base interval is still a guess — see the measurement table in the pre-flight.
 
 The point of §2 is that behind-ness is visible. It is only *true*, though, as far as the last
 fetch — so the counts need to keep themselves fresh without the user asking and without
@@ -434,6 +473,8 @@ buffered sink, not a quieter poller.
 ---
 
 ## 4 · Per-item staging
+
+> **Built** in GP-E — *except §4a*, the `GitPanelViewModel` extraction, which was deliberately not done. The phase log gives the evidence.
 
 ### 4a · Extract `GitPanelViewModel` first
 
@@ -581,6 +622,8 @@ test must fail.
 
 ## 5 · Button model and gating
 
+> **Not built yet.**
+
 ### The buttons
 
 Remote row (in the branch card): **Fetch · Pull · Push/Publish**
@@ -653,6 +696,8 @@ the "commits only what is staged" test must fail.
 
 ## 6 · Conflicts — the UI half only
 
+> **Not built yet.**
+
 **The engine half is built.** `IConflictProbe` / `GitConflictProbe` and
 `SyncVerdict.BlockedByConflict` already refuse both sync directions while any path under a
 binding is unmerged, with its sentence in `SyncNarrative.cs:79`. `TreeState()` already feeds
@@ -700,6 +745,8 @@ conflict case joins it.
 ---
 
 ## 7 · Branch identity and deletion
+
+> **Not built yet.**
 
 ### 7a · Local, remote, or both
 
@@ -815,6 +862,8 @@ Git refuses outright, so Versio handles it explicitly rather than surfacing the 
 ---
 
 ## 8 · Merge / pull request button
+
+> **Not built yet.**
 
 A button in the branch card that changes with state: **Create merge request** → opens the
 forge's own pre-filled "new MR" page in the browser; **Go to merge request** → opens the
@@ -1055,6 +1104,8 @@ The three that need their own:
 
 ## 10 · Smaller UX fixes
 
+> **Not built yet.**
+
 1. **Path trimming is backwards.** `ChangeRowTemplate` uses `TextTrimming="CharacterEllipsis"`,
    which trims the **tail** — so an exported PLC tree shows `src/Project/PLC/POU/Applic…` on
    every row and hides the only part that differs. Trim from the head, or render the directory
@@ -1119,6 +1170,8 @@ in `<remarks>`, exactly as `Vendor` does at `Binding.cs:30-39`.
 ---
 
 ## 12 · Git itself: presence, identity, credentials
+
+> **Built**: §12a and §12b in GP-0, §12c in GP-C.
 
 Three different things, currently conflated by having no surface at all. They fail at
 different times, for different reasons, with different remedies, and the panel has to keep
@@ -1504,7 +1557,7 @@ different things is a coordination bug waiting to happen.
 | GP-A ✅ | Notifications (§1) | Everything later needs a way to report success and failure. Fixes the invisible-push bug on its own. |
 | GP-B ✅ | Remote state machine + publish (§2) | Independent of staging; unblocks the gating in GP-F. |
 | GP-D ✅ | Background polling (§3) | Needs §2's state to have somewhere to put its answer. Makes every count in the panel true. |
-| GP-E ✅ | Reconcile the staging lists, the two-pane scrollable layout and checkboxes (§4). **The `GitPanelViewModel` extraction was NOT done — see the phase log** | The extraction is the first commit, before the file grows further — see the structural note at the top. The reconcile prerequisite lands next and is worth having alone: the lists stop being rebuilt every second. |
+| GP-E ✅ | Reconcile the staging lists, the two-pane scrollable layout and checkboxes (§4). **§4a's `GitPanelViewModel` extraction was deliberately not done** | The reconcile is the prerequisite everything else rests on — the lists stop being rebuilt every second, so a checkbox survives an editor save. The extraction was dropped once the seam was measured: eight shell collaborators reach into `CommitAsync` alone. Evidence in the phase log; the size concern stands and the seam worth cutting is the *remote* surface. |
 | GP-F | Button model + gating matrix (§5) | Needs GP-B and GP-E to gate against real state. |
 | GP-G | Conflicts (§6, UI half) + the diverged-branch exit (§9b) | **No longer blocked** — safeguards phase 6 shipped both defences. One piece of work: both are "the remote and I disagree", and §2 currently advises a button that refuses. |
 | GP-H | Branch identity, default branch, deletion dialog (§7), undo-delete (§9f) | Largest single piece and the only new window; benefits from GP-A and GP-D already being in place. |

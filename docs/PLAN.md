@@ -1284,6 +1284,25 @@ Two implementation details that cost real debugging time and are now pinned by t
 | Push | `git push --progress`; on success → **release direction lock** |
 | Discard | LibGit2Sharp `Reset`/`Checkout --force` on selected paths → **release direction lock** |
 
+> **Rev 15 — what the git panel work added to this table.** Six operations, none of which was
+> here, and one correction. See [`GIT-PANEL-PLAN.md`](GIT-PANEL-PLAN.md) for the reasoning behind
+> each.
+>
+> | Operation | How |
+> |---|---|
+> | Publish a branch | `git push --set-upstream <remote> <branch> --progress`. **A separate command, not a flag on Push**: a plain push on a branch with no upstream fails outright, so one button meaning both would have a failure mode that only appears sometimes. Releases the direction lock exactly as a push does — the rule is about work becoming visible, and a publish makes it visible for the first time |
+> | List remotes | `git remote`. Needed to tell *"this repository has no remote"* from *"this branch has no upstream"*, which are indistinguishable from the branch alone and have unrelated remedies |
+> | Probe the remote | `git ls-remote --heads <remote> refs/heads/<branch>` on a timer, compared against `git rev-parse --verify <remote>/<branch>`. One line back, **no object transfer**; a real fetch runs only when the two differ |
+> | Read / write identity | `git config --get user.name` · `user.email` at repository open, and `config --local` to set. Checked **before** the export gate, so a commit git will refuse does not cost a 17–31 s CODESYS export first |
+> | Credentials | `git credential fill` to obtain, `git credential reject` to erase. **Nothing is stored by Versio.** `GIT_TERMINAL_PROMPT` is now per-call: suppressed everywhere, allowed only for the one call a user pressed a button to start |
+> | Probe for git itself | `git --version` at launch, plus `where`/`which` for the resolved path. A machine without git gets a sentence naming PATH rather than a `Win32Exception` from somewhere deep |
+>
+> **Correction to the Pull row above:** *"rebase/merge selectable in settings"* was never built.
+> `--ff-only` is the only mode, and a divergence is surfaced rather than auto-merged — which is
+> deliberate for native CODESYS XML. The exit from a diverged branch is `§9b` of the git-panel
+> plan and is not built either, so **a diverged branch currently has no route forward inside the
+> application**.
+
 ### 8.3 Diff view
 
 - `git diff` via LibGit2Sharp patch → **DiffPlex** for line/word-level diff model
