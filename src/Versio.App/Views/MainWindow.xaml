@@ -169,13 +169,35 @@
                           SelectedItem="{Binding SelectedRepository}"
                           IsEnabled="{Binding CanChangeContext}"
                           ToolTip="{Binding RepositoryPath}">
+                    <!-- THE NAME IS NOT ENOUGH ON ITS OWN.
+
+                         RepoEntry has carried a Location since it was written, with a comment
+                         saying it is "shown beneath the name so two repos with the same folder
+                         name are still distinguishable" - and nothing had ever bound it. The
+                         same defect class as BranchEntry.Tracking: a comment describing a rule
+                         that nothing enforced.
+
+                         It went unnoticed because the list is usually short and the names
+                         usually differ. Opening a handful of repositories that all happened to
+                         live in a folder called "work" produced three identical rows with no
+                         way to tell them apart, which is when it stopped being theoretical. -->
                     <ComboBox.ItemTemplate>
                         <DataTemplate>
-                            <TextBlock Text="{Binding Name}"
-                                       FontFamily="{DynamicResource Font.UI}"
-                                       FontSize="{DynamicResource Font.Size.Body}"
-                                       Foreground="{DynamicResource Brush.Text.Primary}"
-                                       TextTrimming="CharacterEllipsis" />
+                            <StackPanel>
+                                <TextBlock Text="{Binding Name}"
+                                           FontFamily="{DynamicResource Font.UI}"
+                                           FontSize="{DynamicResource Font.Size.Body}"
+                                           Foreground="{DynamicResource Brush.Text.Primary}"
+                                           TextTrimming="CharacterEllipsis" />
+
+                                <!-- Trimmed from the HEAD, not the tail: what distinguishes two
+                                     folders called "work" is the part nearest the end. -->
+                                <TextBlock Text="{Binding Location}"
+                                           FontFamily="{DynamicResource Font.UI}"
+                                           FontSize="{DynamicResource Font.Size.Caption}"
+                                           Foreground="{DynamicResource Brush.Text.Disabled}"
+                                           TextTrimming="WordEllipsis" />
+                            </StackPanel>
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>

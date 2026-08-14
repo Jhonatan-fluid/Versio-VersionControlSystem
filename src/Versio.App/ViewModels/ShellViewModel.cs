@@ -88,10 +88,23 @@ public sealed class BranchEntry(BranchInfo branch)
 
     public string Tracking { get; } = branch.Upstream ?? "no upstream";
 
-    /// <summary>Where this branch actually lives, in a word.</summary>
+    /// <summary>
+    /// Where this branch actually lives.
+    /// </summary>
+    /// <remarks>
+    /// The enum, not just the label. The delete flow reconstructed it by comparing
+    /// <see cref="Where"/> against the string <c>"local"</c> — so a change of wording would
+    /// have silently reclassified every branch, and nothing would have failed until somebody
+    /// deleted the wrong thing from a remote.
+    /// </remarks>
+    public BranchExistence Existence { get; } = branch.Existence;
+
+    /// <summary>Where it lives, in a word, for the dropdown.</summary>
     /// <remarks>
     /// A word rather than a colour: colour alone is not a label, and "local" and "remote" are
-    /// the difference between work nobody else can see and work not checked out here.
+    /// the difference between work nobody else can see and work not checked out here. Blank for
+    /// the ordinary case of a branch on both sides, because a label on every row is a label
+    /// nobody reads.
     /// </remarks>
     public string Where { get; } = branch.Existence switch
     {
@@ -2649,6 +2662,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
 
         _logger.Click("Git.Publish");
+        using var scope = _logger.BeginOperation(LoggerExtensions.NewOperationId());
 
         var remotes = await _git.RemotesAsync(CancellationToken.None).ConfigureAwait(true);
 
@@ -2772,6 +2786,10 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
 
         _logger.Click("Git.SignIn");
+
+        // Two git calls when a stale credential has to be erased first, and the second only
+        // makes sense read beside the first.
+        using var scope = _logger.BeginOperation(LoggerExtensions.NewOperationId());
 
         if (GitAuthClassifier.ShouldEraseFirst(_authState))
         {
@@ -3011,6 +3029,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         var what = rebase ? "rebase" : "merge";
         _logger.Click(rebase ? "Git.Rebase" : "Git.Merge");
+        using var scope = _logger.BeginOperation(LoggerExtensions.NewOperationId());
 
         // The same intent a pull uses: both rewrite the project and its mirror together, which
         // is the scenario SAFEGUARDS §5.A calls able to corrupt a project through no user error.
@@ -3069,6 +3088,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         _logger.Click("Git.DeleteBranches");
 
+        // One id across the whole flow: the merged check, the prompt, the confirmation, the
+        // checkout off a branch being deleted, one delete per branch, the prune and the
+        // refresh. Filtering the log to it is how "why did that branch survive" is answered in
+        // seconds rather than by reading around a dozen interleaved lines.
+        using var scope = _logger.BeginOperation(LoggerExtensions.NewOperationId());
+
         var merged = await _git.MergedBranchesAsync(DefaultBranch.Name, CancellationToken.None)
             .ConfigureAwait(true);
 
@@ -3078,9 +3103,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             .Select(b => new BranchCandidate
             {
                 Name = b.Name,
-                Existence = b.IsRemoteOnly
-                    ? BranchExistence.RemoteOnly
-                    : b.Where == "local" ? BranchExistence.LocalOnly : BranchExistence.Both,
+                Existence = b.Existence,
                 IsMerged = mergedSet.Contains(b.Name),
                 IsCurrent = b.IsCurrent,
                 IsDefault = string.Equals(b.Name, DefaultBranch.Name, StringComparison.Ordinal),

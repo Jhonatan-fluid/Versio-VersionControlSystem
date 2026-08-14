@@ -398,6 +398,41 @@ public sealed class GitPanelChromeTests
         });
     }
 
+    [Fact]
+    public void The_repository_dropdown_shows_where_each_one_lives()
+    {
+        // RepoEntry.Location existed from the start with a comment saying it is "shown beneath
+        // the name so two repos with the same folder name are still distinguishable" - and
+        // nothing bound it. Found by opening the app with ten throwaway repositories in the
+        // list, several called "work": three identical rows and no way to tell them apart.
+        StaHarness.Run(() =>
+        {
+            var (window, _) = Build();
+            var content = Assert.IsAssignableFrom<FrameworkElement>(window.Content);
+
+            content.Measure(new Size(1400, 900));
+            content.Arrange(new Rect(0, 0, 1400, 900));
+            content.UpdateLayout();
+
+            var combo = AllOf<ComboBox>(content)
+                .First(c => c.ItemsSource is not null
+                            && c.Name != "BranchList"
+                            && BindingOperations.GetBinding(c, ItemsControl.ItemsSourceProperty)
+                                                ?.Path.Path == "RecentRepositories");
+
+            var template = Assert.IsType<DataTemplate>(combo.ItemTemplate);
+            var row = Assert.IsAssignableFrom<DependencyObject>(template.LoadContent());
+
+            var bound = AllOf<TextBlock>(row)
+                .Select(t => BindingOperations.GetBinding(t, TextBlock.TextProperty)?.Path.Path)
+                .Where(p => p is not null)
+                .ToList();
+
+            Assert.Contains("Name", bound);
+            Assert.Contains("Location", bound);
+        });
+    }
+
     /// <summary>Find a banner by the section label inside it.</summary>
     private static FrameworkElement Banner(MainWindow window, string label)
     {

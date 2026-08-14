@@ -1059,16 +1059,15 @@ a branch: push, pull and publish would all fail with git's own wording.
 **Cost:** small. **Value:** a state people reach by accident from the history panel and cannot
 currently get out of from inside the app.
 
-### 9f · Undo a branch delete
+### 9f · ~~Undo a branch delete~~ — **dropped**
 
-`git branch -d` prints the deleted SHA. Keeping it and putting **"Restore `feature/x`"** in the
-success toast turns a scary operation into a reversible one for the 4 seconds it takes to
-realise the mistake — which is when nearly all such mistakes are realised.
+Not wanted. Decided by the product owner on 2026-08-14, after GP-H shipped without it.
 
-Local only, deliberately. A deleted remote branch is not restorable in any sense the user would
-trust, and offering a button implying otherwise would be worse than offering nothing.
-
-**Cost:** small. **Value:** disproportionate, given §7c ships three ways to delete a branch.
+Kept as a heading rather than deleted so that somebody reading the numbered ideas does not
+wonder what happened to it, and so the reasoning survives: the useful version is harder than it
+looks — the forced and remote delete paths do not hand a SHA back the way <c>-d</c> does — and
+an undo offered for some deletes and not others is worse than none. **This is a decision, not a
+backlog item.**
 
 ### 9g · Commit identity preflight — **accepted, expanded into §12**
 
@@ -1560,7 +1559,7 @@ different things is a coordination bug waiting to happen.
 | GP-E ✅ | Reconcile the staging lists, the two-pane scrollable layout and checkboxes (§4). **§4a's `GitPanelViewModel` extraction was deliberately not done** | The reconcile is the prerequisite everything else rests on — the lists stop being rebuilt every second, so a checkbox survives an editor save. The extraction was dropped once the seam was measured: eight shell collaborators reach into `CommitAsync` alone. Evidence in the phase log; the size concern stands and the seam worth cutting is the *remote* surface. |
 | GP-F ✅ | Button model + gating matrix (§5) | Needs GP-B and GP-E to gate against real state. |
 | GP-G ✅ | Conflicts (§6, UI half) + the diverged-branch exit (§9b) | **No longer blocked** — safeguards phase 6 shipped both defences. One piece of work: both are "the remote and I disagree", and §2 currently advises a button that refuses. |
-| GP-H ✅ | Branch identity, default branch, deletion dialog (§7). **Undo-delete (§9f) was not done** — see the phase log | Largest single piece and the only new window; benefits from GP-A and GP-D already being in place. |
+| GP-H ✅ | Branch identity, default branch, deletion dialog (§7). **Undo-delete (§9f) dropped by decision** | Largest single piece and the only new window; benefits from GP-A and GP-D already being in place. |
 | GP-I | Merge-request button (§8) | Needs §7b's default branch for the target, and extracting `RemoteUrl` from the clone dialog. |
 | GP-J | PLC-aware summaries and drafted commit messages (§9c) | Sequenced late because it is additive, not because it is low value — it is the highest-value item here. Nothing blocks it earlier if you want it sooner. |
 | GP-K | Push/pull previews (§9d), large-binary preflight (§9h) | Each independent and small. |
@@ -2219,13 +2218,86 @@ falling back to the last line when git said nothing else.
   to want it, and a converter declared privately in one window is invisible to every other —
   which is exactly how `SystemInfoWindow` once threw on open.
 
-### Not done: §9f, restoring a deleted branch
+### §9f, restoring a deleted branch — dropped, not deferred
 
-The plan pairs this phase with an undo. It is not built, and the reason is that the useful
-version is harder than it looks: `git branch -d` prints the SHA, but the *forced* delete path
-and the remote delete do not give one back the same way, and an undo offered for some deletes
-and not others is worse than none. Worth doing as its own small piece with the reflog behind it
-rather than as a footnote here.
+Shipped without it, and the product owner has since decided against it outright. The heading in
+§9 records the decision.
+
+---
+
+### Audit · 2026-08-14, phases GP-0 to GP-H
+
+Second read-through of everything these phases added. Smaller than the first, which is the
+point of doing it twice.
+
+**1. Four multi-step flows had no operation id.** §3 of this document says they should —
+*"multi-step operations open `logger.BeginOperation(...)` so every line from one push shares an
+id"* — and names the delete and sign-in flows specifically. `DeleteBranchesAsync`,
+`ReconcileAsync`, `SignInAsync` and `PublishAsync` all lacked it. A branch deletion writes a
+dozen interleaved lines across a merged check, a prompt, a checkout and N deletes; without an id
+"why did that branch survive" is answered by reading around them. Fixed.
+
+**2. The delete flow reconstructed an enum from a display string.**
+
+```csharp
+Existence = b.IsRemoteOnly ? BranchExistence.RemoteOnly
+          : b.Where == "local" ? BranchExistence.LocalOnly : BranchExistence.Both
+```
+
+`Where` is the *label shown in the dropdown*. Rewording it — "local" to "local only", say —
+would have silently reclassified every branch, and nothing would have failed until somebody
+deleted the wrong thing from a remote. `BranchEntry` carries the enum now.
+
+**3. `RepoEntry.Location` had never been bound**, and its own doc comment says it is *"shown
+beneath the name so two repos with the same folder name are still distinguishable"*. Exactly the
+`BranchEntry.Tracking` defect again: a comment describing a rule nothing enforced.
+
+**Found by using the application, not by reading it.** Manual verification runs left ten
+throwaway repositories in the recent list, several of them called `work` — and the dropdown
+showed three identical rows with no way to tell them apart. The list is normally short and the
+names normally differ, which is why it survived this long.
+
+**Also: those runs polluted the real recent list.** `ShellViewModel` defaults its settings store
+to `NullAppSettingsStore` precisely so tests cannot do this, and that held — the pollution came
+from launching the actual `Versio.exe` against temp repositories during verification. Cleaned.
+Worth knowing before the next round of manual checks: **verify against a repository you would be
+happy to see remembered**, or clear the list afterwards.
+
+---
+
+## Handoff
+
+**Branch:** `GitPanel`. **State:** GP-0 through GP-H shipped, audited twice.
+
+**Where to start reading.** *Where this stands* at the top of this document lists every phase
+with its commit. Sections §1–§13 are the plan as written before the work, each marked built or
+not; the **phase log** at the end is what actually happened and every decision that changed on
+contact with the code. Where the two disagree, the phase log is right.
+
+**How to verify.** Build with `%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe` — the `dotnet` on
+PATH has no SDK. **Close `Versio.exe` first**: a running instance locks `src/Versio.App/bin`, the
+build fails on the copy step, and it reports phantom warnings that are an artefact of that
+failure rather than real. `-p:OutputPath=<elsewhere>` builds around it when the app must stay up.
+
+**What is left.** GP-I (merge-request button, §8), GP-J (PLC-aware summaries, §9c — the
+highest-value item in this document and the one no generic git client can have), GP-K and GP-L
+(previews and polish). None is blocked.
+
+**What is owed to a human**, because nothing here can see the screen: the three measurements in
+the pre-flight table, and §13's verification scripts for anything visual. The geometry suite
+(`GitPanelGeometryTests`) covers what is arithmetic — zero-size controls, horizontal overflow,
+panes crushed to nothing — and has caught two real overflows; it cannot tell you whether the
+panel reads well.
+
+**The three habits worth keeping**, each of which caught something these phases would otherwise
+have shipped:
+
+1. **Mutate before believing a test.** A vacuous commit-gate test, an untested `-d`-before-`-D`
+   rule, and a poller that did not suspend were all found this way.
+2. **Realise a row.** For this panel, a test that does not build a list row proves nothing — a
+   `StaticResource` inside a template resolves on instantiation, and a binding trace over a
+   collapsed panel comes back empty.
+3. **Run the application.** Two of the last three findings came from opening it, not reading it.
 
 ---
 
@@ -2240,5 +2312,7 @@ rather than as a footnote here.
   the case that was losing work. Revisit only if a workflow actually needs it.
 - **A three-way merge view.** Conflict resolution in §6 stops at ours/theirs. Anything richer
   is its own project.
+- **Undo for a deleted branch (§9f).** Decided against on 2026-08-14. The reasoning is under
+  that heading.
 - **Merging STAGED and NOT STAGED into one list.** The separation is being kept deliberately;
   both panes become properly scrollable instead (§4).

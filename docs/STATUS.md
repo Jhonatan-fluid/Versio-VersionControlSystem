@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-13 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,227 unit + 329 UI + 149 integration, 0 skipped
+**Date:** 2026-08-13 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,227 unit + 330 UI + 149 integration, 0 skipped
 
 > All three re-derived on 2026-08-13, on branch `GitPanel`, after the git-panel plan's GP-0
 > (git presence probe and commit-identity preflight, notifications, the remote state machine, credentials, background remote polling, per-file staging, and an audit pass over all five). The integration suite was re-run in full
