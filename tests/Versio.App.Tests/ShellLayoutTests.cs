@@ -220,6 +220,71 @@ public sealed class ShellLayoutTests
     private static Button Button(DependencyObject root, string content) =>
         Descendants(root).OfType<Button>().Single(b => Equals(b.Content, content));
 
+    [Fact]
+    public void The_repository_path_does_not_draw_over_the_status_text()
+    {
+        // The status bar was one Grid cell holding both children: the left stack sized to its
+        // content, and the path right-aligned and sized to ITS content. With a deep path and
+        // an active message the two simply drew on top of each other, at the bottom of the
+        // window, in the same 11 px face.
+        //
+        // It survived because the window opens WindowState="Maximized" - the collision only
+        // appears once somebody restores it, which is a size no test had ever measured at.
+        StaHarness.Run(() =>
+        {
+            var window = Build();
+            var content = Arrange(window);
+
+            var state = Assert.IsType<StackPanel>(window.FindName("StatusState"));
+            var path = Assert.IsType<TextBlock>(window.FindName("StatusPath"));
+
+            // Set directly rather than through the view model: what is being measured is the
+            // layout's response to long content, and RepositoryPath is set by opening a
+            // repository, which this test has no business doing.
+            path.Text = @"C:\Users\engineer\Documents\Automation\Line 4\Conveyor\ControlSystem";
+
+            var summary = Descendants(state).OfType<TextBlock>().Last();
+            summary.Text = "Saved 12 changed file(s). They will be offered back on feature/hmi.";
+
+            content.UpdateLayout();
+
+            var stateBounds = BoundsIn(state, content);
+            var pathBounds = BoundsIn(path, content);
+
+            Assert.True(pathBounds.Width > 0, "the path did not render");
+            Assert.False(stateBounds.IntersectsWith(pathBounds),
+                         $"the status text occupies {stateBounds} and the path {pathBounds}, " +
+                         "which overlap");
+        });
+    }
+
+    [Fact]
+    public void The_status_light_is_bound_rather_than_painted_green()
+    {
+        // The dot was Brush.Status.Added written straight into the XAML - green while git was
+        // missing, while the tree was mid-merge and while a sync had failed. A binding is the
+        // difference between an indicator and a decoration shaped like one, so what is pinned
+        // is that one exists at all.
+        StaHarness.Run(() =>
+        {
+            var window = Build();
+            var content = Arrange(window);
+
+            var state = Assert.IsType<StackPanel>(window.FindName("StatusState"));
+            var dot = Descendants(state).OfType<System.Windows.Shapes.Ellipse>().Single();
+
+            Assert.NotNull(System.Windows.Data.BindingOperations.GetBinding(
+                dot, System.Windows.Shapes.Shape.FillProperty));
+
+            // Nothing is open, so the light is neutral rather than reporting the health of
+            // nothing. This is the launch state and it is the one people see first.
+            var shell = Assert.IsType<ShellViewModel>(window.DataContext);
+
+            Assert.Equal("Brush.Status.Neutral", shell.HealthBrushKey);
+            Assert.Equal("No repository open", shell.HealthSummary);
+        });
+    }
+
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
     {
         var count = VisualTreeHelper.GetChildrenCount(root);

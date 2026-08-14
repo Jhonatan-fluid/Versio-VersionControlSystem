@@ -33,7 +33,7 @@ public sealed class ConflictFlowTests
         {
             // Every destructive prompt is answered yes. What is under test is the operation,
             // not the dialog — the refusal path has its own test below.
-            ConfirmDestructive = (_, _) => true,
+            ConfirmDestructive = _ => true,
         };
     }
 
@@ -246,7 +246,7 @@ public sealed class ConflictFlowTests
         var logger = new VersioLogger(new SystemClock()).AddSink(sink);
         using var shell = new ShellViewModel(logger, new LogViewModel(sink), toolchains: (_, _) => null)
         {
-            ConfirmDestructive = (_, _) => false,
+            ConfirmDestructive = _ => false,
         };
 
         await shell.OpenAsync(repo.Path);

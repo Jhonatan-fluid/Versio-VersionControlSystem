@@ -156,11 +156,26 @@
             <ColumnDefinition Width="*" />     <!-- content -->
         </Grid.ColumnDefinitions>
 
+        <!--
+            THE LOG IS RESIZABLE NOW, AND THAT IS WHY THERE IS A ROW HERE THAT DRAWS NOTHING.
+
+            The log was a hardcoded Height="200" on the list with no splitter anywhere - open
+            or closed and nothing in between. At 20 px a row that is exactly ten lines, for the
+            panel whose whole job is troubleshooting a CODESYS export that emits far more than
+            that across Sync and Plc. The four level chips, the category dropdown with counts
+            and the find box were all built to make that volume navigable, and all of them fed
+            a ten-line window.
+
+            LogRow is Auto while the log is collapsed - the header sizes it - and a pixel
+            height while it is open, because a GridSplitter cannot resize an Auto row.
+            ApplyLogVisibility owns that swap and the splitter's visibility with it.
+        -->
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />   <!-- top bar   -->
-            <RowDefinition Height="*" />      <!-- body      -->
-            <RowDefinition Height="Auto" />   <!-- log       -->
-            <RowDefinition Height="Auto" />   <!-- status    -->
+            <RowDefinition Height="Auto" />                    <!-- top bar  -->
+            <RowDefinition Height="*" MinHeight="160" />       <!-- body     -->
+            <RowDefinition Height="Auto" />                    <!-- splitter -->
+            <RowDefinition x:Name="LogRow" Height="Auto" />    <!-- log      -->
+            <RowDefinition Height="Auto" />                    <!-- status   -->
         </Grid.RowDefinitions>
 
         <!-- ============================== TOP BAR ============================== -->
@@ -207,6 +222,7 @@
                      where it is actually needed - to tell two repos of the same name apart. -->
                 <ComboBox Grid.Column="1" MinWidth="200" MaxWidth="420"
                           HorizontalAlignment="Stretch"
+                          AutomationProperties.Name="Repository"
                           Style="{StaticResource FlatCombo}"
                           ItemContainerStyle="{StaticResource FlatComboItem}"
                           Tag="{DynamicResource Icon.Folder}"
@@ -287,6 +303,7 @@
                      17-31 s, and the guard offers it. -->
                 <ComboBox Grid.Column="3" MinWidth="180" MaxWidth="360" Margin="16,0,0,0"
                           HorizontalAlignment="Stretch"
+                          AutomationProperties.Name="Branch"
                           Style="{StaticResource FlatCombo}"
                           ItemContainerStyle="{StaticResource FlatComboItem}"
                           Tag="{DynamicResource Icon.Link}"
@@ -454,7 +471,7 @@
              In the outer grid, spanning the body and the log, rather than inside the body row.
              It is app-level navigation: it should not stop halfway down the window and leave
              the log console running along underneath it. -->
-        <Border x:Name="Rail" Grid.Row="1" Grid.RowSpan="2" Grid.Column="0"
+        <Border x:Name="Rail" Grid.Row="1" Grid.RowSpan="3" Grid.Column="0"
                 Width="{DynamicResource Size.Rail.Width}"
                 Background="{DynamicResource Brush.Surface.Base}">
             <StackPanel Margin="2,10,2,0">
@@ -485,7 +502,7 @@
         <!-- ================================ BODY ================================ -->
         <Grid Grid.Row="1" Grid.Column="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="380" MinWidth="260" />
+                <ColumnDefinition x:Name="PanelColumn" Width="380" MinWidth="260" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" MinWidth="340" />
             </Grid.ColumnDefinitions>
@@ -1149,6 +1166,7 @@
                                 </Grid>
 
                                 <ListBox Grid.Row="1" x:Name="StagedList"
+                                         AutomationProperties.Name="Staged files"
                                          ItemsSource="{Binding Staged}"
                                          SelectedItem="{Binding SelectedStaged}"
                                          Background="Transparent" BorderThickness="0"
@@ -1161,12 +1179,13 @@
 
                                 <!-- The staged list can be tall now, so it virtualizes too.
                                      It could not before, behind its 150 px ceiling. -->
-                                <GridSplitter Grid.Row="2" Height="5"
+                                <GridSplitter Grid.Row="2" Height="6"
                                               HorizontalAlignment="Stretch"
                                               VerticalAlignment="Center"
-                                              Background="Transparent"
+                                              Style="{StaticResource PaneSplitter}"
                                               ResizeBehavior="PreviousAndNext"
-                                              ResizeDirection="Rows" />
+                                              ResizeDirection="Rows"
+                                              AutomationProperties.Name="Resize the staged list" />
 
                                 <Grid Grid.Row="3" Margin="0,4,0,4">
                                     <Grid.ColumnDefinitions>
@@ -1219,6 +1238,7 @@
                                 </Grid>
 
                                 <ListBox Grid.Row="4" x:Name="UnstagedList"
+                                         AutomationProperties.Name="Files not staged"
                                          ItemsSource="{Binding Unstaged}"
                                          SelectedItem="{Binding SelectedUnstaged}"
                                          Background="Transparent" BorderThickness="0"
@@ -1268,6 +1288,7 @@
                                  VirtualizingStackPanel items panel - see the project tree,
                                  where the defaults cost 10,635 ms against 94.7 ms. -->
                             <TreeView ItemsSource="{Binding History.Commits}"
+                                      AutomationProperties.Name="Commit history"
                                       Background="Transparent" BorderThickness="0"
                                       VirtualizingStackPanel.IsVirtualizing="True"
                                       VirtualizingStackPanel.VirtualizationMode="Recycling"
@@ -1515,6 +1536,7 @@
                                         Converter={StaticResource BoolToVisibility}}" />
 
                             <TextBox DockPanel.Dock="Top" Margin="0,0,0,6"
+                                     AutomationProperties.Name="Find an object or a file"
                                      Style="{StaticResource FlatTextBox}"
                                      Tag="Find an object or a file…"
                                      Text="{Binding Sync.TreeSearch, UpdateSourceTrigger=PropertyChanged, Delay=200}" />
@@ -1537,7 +1559,39 @@
                                  Virtualization is what keeps that affordable on screen, and
                                  TreeRow's lazy Children is what keeps it affordable in
                                  memory. -->
+                            <!--
+                                THE FIRST THING ANYBODY SEES.
+
+                                With no repository open this tree is empty, and so are the
+                                diff pane and the log - three blank cards, which reads as a
+                                window that failed to load rather than as an application
+                                waiting to be pointed at something.
+
+                                Sharing the DockPanel's fill with the tree rather than
+                                docking beside it, and behind it, so the first row covers it.
+                            -->
+                            <Grid>
+                            <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       TextAlignment="Center" TextWrapping="Wrap"
+                                       Margin="12"
+                                       FontFamily="{DynamicResource Font.UI}"
+                                       FontSize="{DynamicResource Font.Size.Body}"
+                                       Foreground="{DynamicResource Brush.Text.Disabled}"
+                                       Text="Open a repository to see what is in it">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Sync.Tree.Count}"
+                                                         Value="0">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
                             <TreeView ItemsSource="{Binding Sync.Tree}"
+                                      AutomationProperties.Name="Project contents"
                                       Background="Transparent" BorderThickness="0"
                                       VirtualizingStackPanel.IsVirtualizing="True"
                                       VirtualizingStackPanel.VirtualizationMode="Recycling"
@@ -1667,6 +1721,7 @@
                                     </HierarchicalDataTemplate>
                                 </TreeView.ItemTemplate>
                             </TreeView>
+                            </Grid>
                         </DockPanel>
                     </Border>
 
@@ -1674,7 +1729,9 @@
             </Border>
 
             <GridSplitter Grid.Column="1" Width="8" HorizontalAlignment="Stretch"
-                          Background="Transparent" />
+                          Margin="0,8" Style="{StaticResource PaneSplitter}"
+                          ResizeDirection="Columns"
+                          AutomationProperties.Name="Resize the panel" />
 
             <!-- Diff -->
             <Border Grid.Column="2" Background="{DynamicResource Brush.Surface.Base}"
@@ -1786,6 +1843,48 @@
                         </StackPanel>
                     </Border>
 
+                    <!--
+                         NOTHING SELECTED IS NOT NOTHING TO SAY.
+
+                         With no file picked the DiffView sets ItemsSource to null and this
+                         pane is a blank rounded rectangle under the word DIFF. On first
+                         launch with no repository open, all three surfaces - tree, diff, log
+                         - are empty at once, and a window that renders three blank cards
+                         reads as one that failed to load.
+
+                         The argument is already in this file: the git panel's placeholder
+                         comment says an empty state that explains what will live here beats a
+                         blank panel. It was written for a panel that had not been built, and
+                         never applied to the ones that shipped.
+
+                         Behind the DiffView in the DockPanel's fill, so it is covered the
+                         moment there are lines to draw - no second visibility to keep in step.
+                    -->
+                    <Grid>
+                        <TextBlock Text="Select a file to see what changed"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   FontFamily="{DynamicResource Font.UI}"
+                                   FontSize="{DynamicResource Font.Size.Body}"
+                                   Foreground="{DynamicResource Brush.Text.Disabled}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <!-- Both, because "no repository yet" arrives as null
+                                             and "nothing picked" arrives as an empty string,
+                                             and a DataTrigger matches one value. -->
+                                        <DataTrigger Binding="{Binding SelectedDiff}" Value="">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding SelectedDiff}"
+                                                     Value="{x:Null}">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+
                     <views:DiffView DiffText="{Binding SelectedDiff}"
                                     FilePath="{Binding SelectedDiffPath}"
                                     HunkCommand="{Binding HunkCommand}"
@@ -1793,22 +1892,55 @@
                                     HunkActionLabel="{Binding HunkAction}"
                                     Margin="6,0,6,8">
                         <ListBox.ItemContainerStyle>
+                            <!--
+                                SELECTION HAD TO BE VISIBLE WITHOUT DESTROYING THE ROW TINT.
+
+                                This template was a bare ContentPresenter, which was half
+                                right: a selected fill of the kind RowItem uses would paint
+                                over Diff.AddedBg and Diff.DeletedBg, and the row tint is the
+                                information. But drawing NOTHING is a different thing from
+                                solving that - the list has been extended-selection since it
+                                was written, so dragging across twelve lines built a real
+                                selection and showed no sign of it at all.
+
+                                A wash on top rather than a background underneath. The accent
+                                at low opacity darkens green and red rows without flattening
+                                them, so a selected added line still reads as added. Not
+                                hit-testable, or it would eat the clicks that select it.
+                            -->
                             <Style TargetType="ListBoxItem">
                                 <Setter Property="Padding" Value="0" />
                                 <Setter Property="Margin" Value="0" />
                                 <Setter Property="Background" Value="Transparent" />
                                 <Setter Property="BorderThickness" Value="0" />
                                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                <Setter Property="FocusVisualStyle" Value="{x:Null}" />
                                 <Setter Property="Template">
                                     <Setter.Value>
                                         <ControlTemplate TargetType="ListBoxItem">
-                                            <ContentPresenter />
+                                            <Grid>
+                                                <ContentPresenter />
+                                                <Border x:Name="Wash" Opacity="0"
+                                                        IsHitTestVisible="False"
+                                                        Background="{DynamicResource Brush.Accent.Default}" />
+                                            </Grid>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsSelected" Value="True">
+                                                    <Setter TargetName="Wash" Property="Opacity"
+                                                            Value="0.20" />
+                                                </Trigger>
+                                                <Trigger Property="IsKeyboardFocused" Value="True">
+                                                    <Setter TargetName="Wash" Property="Opacity"
+                                                            Value="0.10" />
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
                                         </ControlTemplate>
                                     </Setter.Value>
                                 </Setter>
                             </Style>
                         </ListBox.ItemContainerStyle>
                     </views:DiffView>
+                    </Grid>
                 </DockPanel>
             </Border>
 
@@ -1913,7 +2045,16 @@
         </Grid>
 
         <!-- ============================= LOG PANEL ============================= -->
-        <Border x:Name="LogConsole" Grid.Row="2" Grid.Column="1"
+        <!-- Visible only while the log is open: a collapsed log is a one-line strip, and a
+             drag handle above something that cannot grow is a control that lies. -->
+        <GridSplitter x:Name="LogSplitter" Grid.Row="2" Grid.Column="1"
+                      Height="6" Margin="8,0" HorizontalAlignment="Stretch"
+                      VerticalAlignment="Center" Visibility="Collapsed"
+                      Style="{StaticResource PaneSplitter}"
+                      ResizeBehavior="PreviousAndNext" ResizeDirection="Rows"
+                      AutomationProperties.Name="Resize the log" />
+
+        <Border x:Name="LogConsole" Grid.Row="3" Grid.Column="1"
                 Background="{DynamicResource Brush.Surface.Base}"
                 Margin="8,0,8,8" CornerRadius="{DynamicResource Radius.Card}">
             <DockPanel>
@@ -1942,6 +2083,7 @@
                     </Grid.ColumnDefinitions>
 
                     <Button Grid.Column="0" x:Name="LogToggle"
+                            AutomationProperties.Name="Show or hide the log"
                             Style="{StaticResource GhostButton}" Margin="6,0,0,0"
                             Command="{Binding Log.ToggleExpandedCommand}">
                         <StackPanel Orientation="Horizontal">
@@ -2010,6 +2152,7 @@
                          choice because the question is usually about two at once: an export
                          is Sync deciding and Plc doing, and either alone is half the story. -->
                     <ToggleButton Grid.Column="5" x:Name="CategoryButton"
+                                  AutomationProperties.Name="Filter by category"
                                   Style="{StaticResource GhostButton}" Margin="0,0,6,0"
                                   Height="{DynamicResource Size.Control.Compact}" Padding="8,0"
                                   Visibility="{Binding Log.IsExpanded,
@@ -2084,6 +2227,7 @@
                     </Popup>
 
                     <TextBox Grid.Column="6" Width="200" Margin="0,0,6,0"
+                             AutomationProperties.Name="Find in the log"
                              Style="{StaticResource FlatTextBox}"
                              Tag="Find…"
                              Visibility="{Binding Log.IsExpanded,
@@ -2124,7 +2268,41 @@
                             ToolTip="Clear the view — the log file keeps everything" />
                 </Grid>
 
-                <ListBox x:Name="LogList" Height="200"
+                <!--
+                    A DockPanel docks every child but the last, so the placeholder and the
+                    list have to share the fill rather than sit beside it - the first attempt
+                    put the message in a column down the LEFT of the log.
+
+                    Behind the list, which is transparent, so the first entry that arrives
+                    covers it and there is no second visibility to keep in step.
+                -->
+                <Grid>
+                    <TextBlock Text="Nothing logged yet this session"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               FontFamily="{DynamicResource Font.UI}"
+                               FontSize="{DynamicResource Font.Size.Caption}"
+                               Foreground="{DynamicResource Brush.Text.Disabled}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <!-- Only while the log is open. Collapsed, the panel is a
+                                         one-line strip and there is no room to say anything. -->
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding Log.IsExpanded}"
+                                                       Value="True" />
+                                            <Condition Binding="{Binding Log.Rows.Count}"
+                                                       Value="0" />
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </MultiDataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                <ListBox x:Name="LogList" MinHeight="60"
+                         AutomationProperties.Name="Log"
                          ItemsSource="{Binding Log.Rows}"
                          Background="Transparent" BorderThickness="0"
                          ItemContainerStyle="{StaticResource LogRowItem}"
@@ -2161,15 +2339,56 @@
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
+                </Grid>
             </DockPanel>
         </Border>
 
         <!-- ============================= STATUS BAR ============================= -->
-        <Border Grid.Row="3" Grid.ColumnSpan="2" Background="{DynamicResource Brush.Surface.Base}" Padding="16,6">
+        <Border Grid.Row="4" Grid.ColumnSpan="2" Background="{DynamicResource Brush.Surface.Base}" Padding="16,6">
+            <!--
+                TWO COLUMNS, AND THE PATH IS THE ONE THAT GIVES WAY.
+
+                This was one cell holding both children. The left stack sizes to its content
+                and the path is right-aligned and sized to ITS content, so with a deep path and
+                an active busy message the two simply drew on top of each other - the path
+                over the status text, at the bottom of the window, in the same 11 px face.
+
+                Invisible on a maximized 2560 px window, which is exactly why it survived: the
+                window opens WindowState="Maximized" and the collision only appears when
+                somebody restores it. Trimmed rather than wrapped, because a status bar that
+                changes height as the path changes would move every panel above it.
+            -->
             <Grid>
-                <StackPanel Orientation="Horizontal">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />      <!-- state, which keeps its room -->
+                    <ColumnDefinition Width="Auto" />   <!-- path, which yields -->
+                </Grid.ColumnDefinitions>
+
+                <!-- Clipped, because a horizontal StackPanel hands every child the width it
+                     asks for and then overflows its column. Some of these sentences are long
+                     - "Saved 12 changed file(s). They will be offered back on…" - and without
+                     this the columns above would be a boundary the path respected and the
+                     status text walked straight through. -->
+                <StackPanel x:Name="StatusState" Grid.Column="0" Orientation="Horizontal" ClipToBounds="True">
+                    <!--
+                        THE LIGHT, AND WHAT IT IS LOOKING AT.
+
+                        This was Brush.Status.Added written straight into the XAML: a hardcoded
+                        green dot, in the leftmost position of the status bar, shaped exactly
+                        like a health indicator - and green while git was missing, while the
+                        tree was mid-merge, while a sync had failed and while the branch had
+                        diverged. The shell computed all four and this read none of them, so
+                        the one thing on screen that looked like a summary of whether anything
+                        was wrong could only be right by accident.
+
+                        The precedence between the seven conditions is in ShellHealth, in Core,
+                        where it is asserted without a repository. The tooltip is not optional:
+                        a coloured dot with no explanation is a riddle.
+                    -->
                     <Ellipse Width="7" Height="7" VerticalAlignment="Center"
-                             Fill="{DynamicResource Brush.Status.Added}" />
+                             ToolTip="{Binding HealthSummary}"
+                             Fill="{Binding HealthBrushKey,
+                                 Converter={StaticResource ResourceKey}}" />
 
                     <!-- What is running, beside the bar that says something is. A moving bar
                          with no caption tells the user to wait without saying what for, which
@@ -2205,8 +2424,16 @@
                                FontSize="{DynamicResource Font.Size.Caption}"
                                Foreground="{DynamicResource Brush.Text.Disabled}" />
                 </StackPanel>
-                <TextBlock HorizontalAlignment="Right" Style="{StaticResource Mono}"
+                <!-- Bounded and trimmed. The whole path is in the tooltip and in the
+                     repository dropdown; what this line is for is telling you at a glance
+                     which of two similarly named checkouts you are looking at, and the tail
+                     is the part that answers that. -->
+                <TextBlock x:Name="StatusPath" Grid.Column="1" Margin="16,0,0,0"
+                           HorizontalAlignment="Right" VerticalAlignment="Center"
+                           Style="{StaticResource Mono}"
                            Text="{Binding RepositoryPath}"
+                           ToolTip="{Binding RepositoryPath}"
+                           MaxWidth="420" TextTrimming="CharacterEllipsis"
                            Foreground="{DynamicResource Brush.Text.Disabled}" />
             </Grid>
         </Border>
