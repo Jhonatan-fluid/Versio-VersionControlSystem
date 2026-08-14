@@ -187,16 +187,40 @@
                 slack piled up in the middle. The dropdowns take the slack now - bounded, so
                 they grow into a wide window without becoming absurd - and the spacer before
                 Settings is what keeps the right-hand cluster on the right.
+
+                A DROPDOWN AND ITS BUTTONS ARE ONE GROUP, WHICH IS THE SECOND VERSION OF THIS.
+
+                Each dropdown had a * column and its buttons an Auto column beside it, which
+                looks right and is not: a control with HorizontalAlignment="Stretch" that runs
+                into its MaxWidth stops growing and is CENTRED in what is left. So on a wide
+                window each dropdown floated in the middle of a column much wider than itself,
+                with a gap of empty bar between it and the Open button that belongs to it -
+                and the buttons read as though they belonged to nothing.
+
+                One column per group now, with the pairing expressed inside it: * for the
+                dropdown, Auto for its buttons. The buttons cannot drift away from the control
+                they act on at any width, because there is no longer anything between them.
+
+                NO CAP, AND NO SPACER, WHICH IS THE THIRD VERSION.
+
+                The second bounded each group and left-aligned it, which fixed the gap and
+                introduced two more: the dropdowns shrank, and they came out different widths -
+                500 against 440 - so the bar read as weighted to one side with dead space down
+                the middle. A cap on a group is a cap on the dropdown inside it.
+
+                Two equal * columns and nothing between them. The dropdowns are the same width
+                as each other at every window size, and together they span everything between
+                the brand and Settings, which is what a top bar's two primary controls should
+                do. On a very wide monitor that makes each of them wider than its contents
+                need - a repository name is short - and that is the trade being taken
+                deliberately: symmetry across the bar over a snug fit around the text.
             -->
             <Grid>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />   <!-- brand              -->
-                    <ColumnDefinition Width="*" />      <!-- repository         -->
-                    <ColumnDefinition Width="Auto" />   <!-- open, clone        -->
-                    <ColumnDefinition Width="*" />      <!-- branch             -->
-                    <ColumnDefinition Width="Auto" />   <!-- new branch, refresh-->
-                    <ColumnDefinition Width="*" />      <!-- spacer             -->
-                    <ColumnDefinition Width="Auto" />   <!-- settings           -->
+                    <ColumnDefinition Width="Auto" />   <!-- brand                     -->
+                    <ColumnDefinition Width="*" />      <!-- repository + open, clone  -->
+                    <ColumnDefinition Width="*" />      <!-- branch + new, refresh     -->
+                    <ColumnDefinition Width="Auto" />   <!-- settings                  -->
                 </Grid.ColumnDefinitions>
 
                 <!-- The mark and the word together. The mark is the app's own icon geometry
@@ -220,7 +244,16 @@
                      full path in there, which made both dropdowns read as dense strings of
                      grey text. The path belongs in the open list, where there is room and
                      where it is actually needed - to tell two repos of the same name apart. -->
-                <ComboBox Grid.Column="1" MinWidth="200" MaxWidth="420"
+                <!-- The repository group: the dropdown, then the two ways of choosing a
+                     different one. Stretched, so it holds half the bar and matches the branch
+                     group beside it exactly. -->
+                <Grid Grid.Column="1" Margin="0,0,20,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                <ComboBox Grid.Column="0" MinWidth="200"
                           HorizontalAlignment="Stretch"
                           AutomationProperties.Name="Repository"
                           Style="{StaticResource FlatCombo}"
@@ -279,7 +312,7 @@
                     </ComboBox.ItemTemplate>
                 </ComboBox>
 
-                <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="6,0,0,0">
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="4,0,0,0">
                     <Button Style="{StaticResource IconButton}"
                             Content="{DynamicResource Icon.Folder}"
                             Click="OnOpenRepository" ToolTip="Open a repository…" />
@@ -292,6 +325,7 @@
                             Command="{Binding CloneCommand}"
                             ToolTip="Clone a repository…" />
                 </StackPanel>
+                </Grid>
 
                 <!-- Branch dropdown. Closed: name and divergence only. Upstream tracking is
                      only useful while comparing branches, so it lives in the open list.
@@ -301,7 +335,14 @@
                      question is made unreachable rather than asked and refused. An export
                      leaves them live - there is a real choice worth offering during those
                      17-31 s, and the guard offers it. -->
-                <ComboBox Grid.Column="3" MinWidth="180" MaxWidth="360" Margin="16,0,0,0"
+                <!-- The branch group, on the same rule and therefore the same width. -->
+                <Grid Grid.Column="2" Margin="0,0,20,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                <ComboBox Grid.Column="0" MinWidth="180"
                           HorizontalAlignment="Stretch"
                           AutomationProperties.Name="Branch"
                           Style="{StaticResource FlatCombo}"
@@ -362,7 +403,7 @@
                 <!-- Create a branch. A button rather than an item at the bottom of the
                      dropdown: that list's selection means "switch to this", and a row that
                      meant something else would be one arrow-key away from a checkout. -->
-                <StackPanel Grid.Column="4" Orientation="Horizontal" Margin="4,0,0,0">
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="4,0,0,0">
                     <Button Style="{StaticResource IconButton}"
                             Content="{DynamicResource Icon.Add}"
                             Command="{Binding CreateBranchCommand}"
@@ -372,9 +413,10 @@
                             Content="{DynamicResource Icon.Refresh}"
                             Command="{Binding RefreshCommand}" ToolTip="Refresh (F5)" />
                 </StackPanel>
+                </Grid>
 
                 <!-- Settings: theme lives here now, not as a top-level button. -->
-                <Button Grid.Column="6" x:Name="SettingsButton"
+                <Button Grid.Column="3" x:Name="SettingsButton"
                         Style="{StaticResource IconButton}"
                         Content="{DynamicResource Icon.Settings}"
                         Click="OnOpenSettings" ToolTip="Settings" />
@@ -1323,6 +1365,25 @@
                                     <HierarchicalDataTemplate DataType="{x:Type vm:CommitRow}"
                                                               ItemsSource="{Binding Children}">
                                         <StackPanel Margin="0,2">
+                                            <!--
+                                                WHICH OF THESE IS STILL ONLY HERE.
+
+                                                Every commit was drawn identically, so nothing
+                                                on screen separated work that exists in one
+                                                place from work a colleague can already see.
+                                                The branch badge says "2 ahead" - it does not
+                                                say WHICH two, and on a branch with no upstream
+                                                it has nothing to count against at all.
+
+                                                AN ARROW, NOT A LABEL. The first version was a
+                                                filled pill reading "unpushed" and it was too
+                                                loud for a list this dense - a word repeated
+                                                down every row of a run, when the run is the
+                                                thing being read. The arrow is the convention
+                                                every git client uses for this, it is the SAME
+                                                character the branch badge already spends on
+                                                ahead-ness, and it needs no legend.
+                                            -->
                                             <TextBlock Text="{Binding Subject}"
                                                        FontFamily="{DynamicResource Font.UI}"
                                                        FontSize="{DynamicResource Font.Size.Body}"
@@ -1331,6 +1392,21 @@
                                                        ToolTip="{Binding Subject}" />
 
                                             <StackPanel Orientation="Horizontal" Margin="0,1,0,0">
+                                                <!-- Collapsed rather than made transparent, so
+                                                     a pushed commit's metadata line starts
+                                                     where it always did. Mono, because it sits
+                                                     in the same run as the hash and the date
+                                                     and has to share their baseline. -->
+                                                <TextBlock Text="&#x2191;" Margin="0,0,5,0"
+                                                           VerticalAlignment="Center"
+                                                           FontFamily="{DynamicResource Font.Mono}"
+                                                           FontSize="{DynamicResource Font.Size.Caption}"
+                                                           FontWeight="{DynamicResource Font.Weight.Semibold}"
+                                                           Foreground="{DynamicResource Brush.Status.Modified}"
+                                                           ToolTip="Not pushed — no remote has this commit yet"
+                                                           Visibility="{Binding IsUnpushed,
+                                                               Converter={StaticResource BoolToVisibility}}" />
+
                                                 <TextBlock Text="{Binding ShortId}"
                                                            FontFamily="{DynamicResource Font.Mono}"
                                                            FontSize="{DynamicResource Font.Size.Caption}"

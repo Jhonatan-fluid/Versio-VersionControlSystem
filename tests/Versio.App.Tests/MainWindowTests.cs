@@ -227,8 +227,17 @@ public sealed class MainWindowTests
     public void The_repository_dropdown_grows_with_the_window()
     {
         // The dropdowns were pinned at 230 and 200 px, so the whole bar crowded into the left
-        // 700 px of a wide window. They are bounded now, not fixed: wider window, wider box,
-        // up to the cap.
+        // 700 px of a wide window. They grow with it now.
+        //
+        // THE CAP THIS USED TO ASSERT IS GONE, DELIBERATELY. Bounding each dropdown was the
+        // second version of the top bar and it was wrong in a way a cap cannot avoid: the
+        // bound sits on the group, so the two came out at different widths and the bar read as
+        // weighted to one side with dead space down the middle. Two equal * columns replaced
+        // it — see ShellLayoutTests, which pins the properties that actually matter now (the
+        // two match each other, and together they span the bar) rather than a pixel ceiling.
+        //
+        // Left here rather than deleted because the ORIGINAL defect is still worth holding:
+        // a dropdown that does not grow at all is what this was written for.
         StaHarness.Run(() =>
         {
             var window = Build();
@@ -253,8 +262,11 @@ public sealed class MainWindowTests
                         $"the dropdown measured {narrow:F0} px at 1000 and {wide:F0} px at " +
                         "2200, so it is still pinned");
 
-            // Bounded, so a 4K window does not hand it half the screen.
-            Assert.True(wide <= 420, $"the dropdown grew to {wide:F0} px, past its cap");
+            // It shares the bar with the branch dropdown and the two button clusters, so it
+            // cannot take all of a wide window however much it grows.
+            Assert.True(wide < 2200 * 0.6,
+                        $"the dropdown grew to {wide:F0} px of a 2200 px window, which is more " +
+                        "than its half of the bar");
         });
     }
 

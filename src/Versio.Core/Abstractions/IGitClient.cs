@@ -390,6 +390,32 @@ public interface IGitClient
     /// </param>
     Task<IReadOnlyList<CommitEntry>> RecentCommitsAsync(int count, int skip, CancellationToken ct);
 
+    /// <summary>
+    /// The commits on this branch that no remote has, newest first.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Not "ahead of upstream", and the difference matters.</b> Asking
+    /// <c>@{upstream}..HEAD</c> answers nothing at all on a branch with no upstream — which is
+    /// exactly the branch whose work is most invisible to everybody else — and a branch cut
+    /// from a pushed <c>main</c> would then have to be special-cased so that <c>main</c>'s own
+    /// commits were not reported as unpushed. <c>HEAD --not --remotes</c> asks the question the
+    /// reader actually has, "can anybody else see this yet", and answers it correctly in all
+    /// three cases: with an upstream, without one, and with no remote configured at all.
+    /// </para>
+    /// <para>
+    /// Ids only. The history panel already has the commits; what it lacks is which of them are
+    /// still only here.
+    /// </para>
+    /// <para>
+    /// Capped, because a repository with no remote returns its entire history and the cap is
+    /// what keeps that from being unbounded. Beyond the cap a commit is reported as pushed,
+    /// which is the safe direction to be wrong in: it understates how much is local rather
+    /// than marking ancient history as unsent.
+    /// </para>
+    /// </remarks>
+    Task<IReadOnlySet<string>> UnpushedCommitIdsAsync(CancellationToken ct);
+
     /// <summary>The full patch of one commit, for click-to-diff.</summary>
     /// <remarks>
     /// A merge commit yields nothing here, because a diff against several parents is not one
