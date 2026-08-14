@@ -38,6 +38,60 @@ public static class ThemeManager
 
     public static AppTheme Current { get; private set; } = AppTheme.System;
 
+    /// <summary>
+    /// Read a stored theme, treating anything unrecognised as "follow the system".
+    /// </summary>
+    /// <remarks>
+    /// Core stores the choice as a string because it does not know about the WPF layer, so
+    /// the parse lives here. Unrecognised is not an error: a settings file hand-edited to
+    /// nonsense, or written by a later version that grew a fourth option, must cost a
+    /// preference rather than a launch.
+    /// </remarks>
+    public static AppTheme Parse(string? stored) =>
+        Enum.TryParse<AppTheme>(stored, ignoreCase: true, out var theme)
+            ? theme
+            : AppTheme.System;
+
+    /// <summary>
+    /// Repaint when Windows changes its own theme, but only while following it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Follow system was a snapshot, not a subscription.</b> The palette was chosen once at
+    /// startup by reading the registry, and nothing listened afterwards — so flipping Windows
+    /// into dark mode with Versio open left it in the light palette until it was restarted,
+    /// on the setting that is the default and that says by name that it follows.
+    /// </para>
+    /// <para>
+    /// Guarded on <see cref="Current"/> rather than unsubscribed and resubscribed as the
+    /// choice changes: the event is process-wide and idempotent handling is simpler to be
+    /// sure of than a subscription whose lifetime tracks a setting.
+    /// </para>
+    /// </remarks>
+    public static void FollowSystemChanges()
+    {
+        if (_listening)
+        {
+            return;
+        }
+
+        _listening = true;
+
+        Microsoft.Win32.SystemEvents.UserPreferenceChanged += (_, e) =>
+        {
+            // General covers the app-theme flip. Narrower categories miss it on some builds,
+            // and re-applying the palette we are already on costs one dictionary rebuild.
+            if (e.Category is Microsoft.Win32.UserPreferenceCategory.General
+                           or Microsoft.Win32.UserPreferenceCategory.Color
+                && Current == AppTheme.System)
+            {
+                Application.Current?.Dispatcher.Invoke(() => Apply(AppTheme.System));
+            }
+        };
+    }
+
+    private static bool _listening;
+
     public static void Apply(AppTheme theme)
     {
         Current = theme;
