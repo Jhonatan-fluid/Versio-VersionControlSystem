@@ -24,8 +24,8 @@ landed, what was decided, and what contact with the code changed.
 | ✅ | **GP-F** — one commit button, three behaviours, gating | `ac954b4` |
 | ✅ | **GP-G** — conflicts UI, diverged exit (§6, §9b) | `81865b7` |
 | ✅ | **GP-H** — branch identity, default branch, delete dialog (§7) | `15e24d3` |
-| ✅ | **GP-J** — PLC-aware naming, summary and draft (§9c, and §10.1 with it) | *uncommitted* |
-| ✅ | **GP-I** — merge-request button, five forges (§8) | *uncommitted* |
+| ✅ | **GP-J** — PLC-aware naming, summary and draft (§9c, and §10.1 with it) | `1a01953` |
+| ✅ | **GP-I** — merge-request button, five forges (§8) | `1a01953` |
 | — | GP-K / GP-L — previews and polish (§9d, rest of §10) | next |
 
 **GP-J was taken before GP-I**, out of the order this table used to imply. The table was a
@@ -2495,7 +2495,12 @@ happy to see remembered**, or clear the list afterwards.
 ## Handoff
 
 **Branch:** `GitPanel`. **State:** GP-0 through GP-H shipped and audited twice; **GP-J and GP-I
-built and not yet committed**, with both §13 scripts outstanding.
+built, in `1a01953`**, with both §13 scripts outstanding.
+
+**Both phases share one commit**, which is the only entry in that table to do so. Three source
+files and all four documents carry changes from each, so splitting them would have produced a
+first commit that did not build — and rewriting the phase log, the table and the counts twice to
+achieve it.
 
 **Where to start reading.** *Where this stands* at the top of this document lists every phase
 with its commit. Sections §1–§13 are the plan as written before the work, each marked built or
