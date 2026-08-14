@@ -650,6 +650,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         AheadBehind = string.Empty;
         Standing = RemoteStanding.None;
         _hasRemote = false;
+        _remote = RemoteUrl.None;
+        AuthState = GitAuthState.Fine;
 
         // These notifications are about a repository that is no longer open. Keeping them
         // would attach a failed push to whatever is opened next.
@@ -948,6 +950,60 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     public string PushLabel => "Push" + _standing.PushCountSuffix;
 
     public string PullLabel => "Pull" + _standing.PullCountSuffix;
+
+    // ----------------------------------------------------------- credentials (plan §12c)
+
+    private RemoteUrl _remote = RemoteUrl.None;
+    private GitAuthState _authState = GitAuthState.Fine;
+
+    /// <summary>
+    /// What stands between this machine and the remote, as far as identity is concerned.
+    /// </summary>
+    /// <remarks>
+    /// Set from a proactive check when a repository opens, and from the classification of any
+    /// network operation that fails. Cleared the moment one succeeds — a stale "sign in needed"
+    /// banner above a working remote is worse than none.
+    /// </remarks>
+    public GitAuthState AuthState
+    {
+        get => _authState;
+        private set
+        {
+            if (SetProperty(ref _authState, value))
+            {
+                OnPropertyChanged(nameof(AuthExplanation));
+                OnPropertyChanged(nameof(NeedsAttentionForAuth));
+                OnPropertyChanged(nameof(CanSignIn));
+                SignInCommand.RaiseCanExecuteChanged();
+                SignOutCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    /// <summary>The host the credential belongs to, for the sentence and the lookup.</summary>
+    public string RemoteHost => _remote.Host;
+
+    public string AuthExplanation => GitAuthClassifier.Explain(_authState, _remote.Host);
+
+    /// <summary>True whenever there is something to say about credentials.</summary>
+    public bool NeedsAttentionForAuth => _authState is not GitAuthState.Fine;
+
+    /// <summary>
+    /// True only when signing in could plausibly help.
+    /// </summary>
+    /// <remarks>
+    /// <b>False for a 403 and for an SSH key refusal.</b> Both read like authentication
+    /// failures and neither is one: a 403 means the credential worked and the account lacks
+    /// access, and SSH has no credential helper at all. Offering the button on either is
+    /// offering something that cannot work — and in the 403 case it is a loop that cannot
+    /// terminate.
+    /// </remarks>
+    public bool CanSignIn =>
+        _remote.UsesCredentialHelper && GitAuthClassifier.SignInWouldHelp(_authState);
+
+    public AsyncCommand SignInCommand { get; private set; } = null!;
+
+    public AsyncCommand SignOutCommand { get; private set; } = null!;
 
     /// <summary>
     /// What just happened, as against what is currently true.
@@ -1413,6 +1469,14 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // configured" for one frame on every open.
         _hasRemote = (await client.RemotesAsync(busy.Token).ConfigureAwait(true)).Count > 0;
 
+        // The remote's shape decides what a credential failure will mean, so it is parsed once
+        // here rather than re-derived at each failure. remoteUrl was already read above for
+        // the recent-repositories list.
+        _remote = RemoteUrl.Parse(remoteUrl);
+        OnPropertyChanged(nameof(RemoteHost));
+
+        await CheckCredentialAsync(busy.Token).ConfigureAwait(true);
+
         RefreshCommand.RaiseCanExecuteChanged();
 
         // Watch before the first refresh, so a change landing during it is not missed.
@@ -1665,6 +1729,14 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         PublishCommand = new AsyncCommand(
             PublishAsync, () => Ready && Standing.CanPublish, ReportError);
 
+        SignInCommand = new AsyncCommand(SignInAsync, () => Ready && CanSignIn, ReportError);
+
+        // Available whenever a credential could be stored, not only when one has failed:
+        // "sign out of this host" is a thing somebody may want to do deliberately, and a
+        // button that only appears after a failure cannot be found before one.
+        SignOutCommand = new AsyncCommand(
+            SignOutAsync, () => Ready && _remote.UsesCredentialHelper, ReportError);
+
         // Enabled only with a row selected. Discard is per-file on purpose: a "discard all"
         // beside "stage all" would put an irreversible button one pixel away from a routine
         // one, and the two are not comparable operations.
@@ -1829,6 +1901,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         PushCommand.RaiseCanExecuteChanged();
         FetchCommand.RaiseCanExecuteChanged();
         PublishCommand.RaiseCanExecuteChanged();
+        SignInCommand.RaiseCanExecuteChanged();
+        SignOutCommand.RaiseCanExecuteChanged();
         RefreshCommand.RaiseCanExecuteChanged();
         HunkCommand.RaiseCanExecuteChanged();
         DiscardCommand.RaiseCanExecuteChanged();
@@ -2014,10 +2088,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         if (result.Success)
         {
+            NoteAuthSuccess();
             Notifications.Success("Pulled.");
         }
         else
         {
+            NoteAuthFailure(result);
             Notifications.Failure("Pull failed.", result.FailureReason ?? string.Empty);
         }
 
@@ -2052,12 +2128,15 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             // Sticky, and that is the single most important lifetime rule in the panel. A
             // failed push that quietly vanished after four seconds is how somebody goes home
             // believing their work is on the remote.
+            NoteAuthFailure(result);
             Notifications.Failure("Push failed.", result.FailureReason ?? string.Empty);
             return;
         }
 
         var head = await _git.HeadCommitAsync(busy.Token).ConfigureAwait(true);
         await Sync.ReleaseAfterPushAsync(head, busy.Token).ConfigureAwait(true);
+
+        NoteAuthSuccess();
 
         // Posted BEFORE the refresh, and it survives it. That ordering used to be the bug:
         // StatusSummary was set here and RunRefreshAsync then overwrote it with the file
@@ -2114,6 +2193,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         if (!result.Success)
         {
+            NoteAuthFailure(result);
             Notifications.Failure($"Could not publish {BranchName}.",
                                   result.FailureReason ?? string.Empty);
             return;
@@ -2122,10 +2202,156 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         var head = await _git.HeadCommitAsync(busy.Token).ConfigureAwait(true);
         await Sync.ReleaseAfterPushAsync(head, busy.Token).ConfigureAwait(true);
 
+        NoteAuthSuccess();
         Notifications.Success($"{BranchName} is on {remote} now.",
                               "Every direction lock is released.");
 
         await RunRefreshAsync(RefreshTrigger.GitMetadata, null).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Ask, before anything fails, whether this machine can talk to the remote.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// One <c>git credential fill</c> with prompts suppressed. It makes no network call and
+    /// cannot prompt, so it costs a process and tells the panel to say "sign in needed" while
+    /// the user is still looking at the window — rather than after their first push fails.
+    /// </para>
+    /// <para>
+    /// Only for a remote with a credential helper. An SSH remote's readiness is a question
+    /// about keys and an agent, which this cannot answer and must not pretend to.
+    /// </para>
+    /// </remarks>
+    private async Task CheckCredentialAsync(CancellationToken ct)
+    {
+        if (_git is null || !_remote.UsesCredentialHelper)
+        {
+            AuthState = GitAuthState.Fine;
+            return;
+        }
+
+        var stored = await _git.HasStoredCredentialAsync(_remote.Protocol, _remote.Host, ct)
+            .ConfigureAwait(true);
+
+        AuthState = stored ? GitAuthState.Fine : GitAuthState.NoCredential;
+
+        if (!stored)
+        {
+            _logger.Info(LogCategory.Git,
+                $"no credential stored for {_remote.Host} — sign-in will be needed");
+        }
+    }
+
+    /// <summary>
+    /// Read a failed network operation and record what it was actually complaining about.
+    /// </summary>
+    /// <remarks>
+    /// Called from every remote operation's failure path, so the banner and the Sign in button
+    /// follow the most recent real answer rather than the state at open.
+    /// </remarks>
+    private void NoteAuthFailure(GitResult result)
+    {
+        var state = GitAuthClassifier.Classify(result.StdErr, _remote.Transport);
+
+        if (state is not GitAuthState.Fine)
+        {
+            AuthState = state;
+        }
+    }
+
+    /// <summary>Clear the banner: something reached the remote and worked.</summary>
+    private void NoteAuthSuccess()
+    {
+        if (_authState is not GitAuthState.Fine)
+        {
+            _logger.Info(LogCategory.Git, $"the remote accepted us — clearing {_authState}");
+            AuthState = GitAuthState.Fine;
+        }
+    }
+
+    /// <summary>
+    /// Hand off to the credential helper.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Versio never sees the credential.</b> git invokes whatever helper is configured and
+    /// that helper does its own thing — a window, a browser for OAuth, a token prompt. What
+    /// comes back here is whether it worked.
+    /// </para>
+    /// <para>
+    /// A rejected credential is <b>erased first</b>. The maddening case is not a missing
+    /// credential but a stale one: an expired token the helper keeps cheerfully returning, so
+    /// every attempt fails identically. Without the erase, asking again just replays it.
+    /// </para>
+    /// </remarks>
+    private async Task SignInAsync()
+    {
+        if (_git is null || !_remote.UsesCredentialHelper)
+        {
+            return;
+        }
+
+        _logger.Click("Git.SignIn");
+
+        if (GitAuthClassifier.ShouldEraseFirst(_authState))
+        {
+            await _git.SignOutAsync(_remote.Protocol, _remote.Host, CancellationToken.None)
+                .ConfigureAwait(true);
+        }
+
+        // The caption is loud on purpose. The helper's window is a separate process and can
+        // come up BEHIND Versio, at which point the application looks frozen while something
+        // off-screen waits for a password.
+        using var busy = Busy.Begin(
+            WorkKind.GitRead,
+            $"Signing in to {_remote.Host} — finish in the window that opened (check behind Versio)…");
+
+        var result = await _git.SignInAsync(_remote.Protocol, _remote.Host, busy.Token)
+            .ConfigureAwait(true);
+
+        if (!result.Success)
+        {
+            Notifications.Failure($"Not signed in to {_remote.Host}.",
+                                  result.FailureReason ?? string.Empty);
+            return;
+        }
+
+        AuthState = GitAuthState.Fine;
+        Notifications.Success($"Signed in to {_remote.Host}.");
+    }
+
+    /// <summary>
+    /// Erase the stored credential for this host.
+    /// </summary>
+    /// <remarks>
+    /// The button no git GUI offers, and the one that fixes the failure people actually hit.
+    /// Destructive only in the sense that the next network operation will ask again, so it is
+    /// not confirmed — nothing is lost that a sign-in cannot restore.
+    /// </remarks>
+    private async Task SignOutAsync()
+    {
+        if (_git is null || !_remote.UsesCredentialHelper)
+        {
+            return;
+        }
+
+        _logger.Click("Git.SignOut");
+        using var busy = Busy.Begin(WorkKind.GitRead, $"Forgetting the credential for {_remote.Host}…");
+
+        var result = await _git.SignOutAsync(_remote.Protocol, _remote.Host, busy.Token)
+            .ConfigureAwait(true);
+
+        if (!result.Success)
+        {
+            Notifications.Failure("Could not erase the stored credential.",
+                                  result.FailureReason ?? string.Empty);
+            return;
+        }
+
+        AuthState = GitAuthState.NoCredential;
+        Notifications.Success($"Forgot the credential for {_remote.Host}.",
+                              "The next fetch or push will ask for a new one.");
     }
 
     private async Task FetchAsync()
@@ -2142,10 +2368,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         if (result.Success)
         {
+            NoteAuthSuccess();
             Notifications.Success("Fetched.");
         }
         else
         {
+            NoteAuthFailure(result);
             Notifications.Failure("Fetch failed.", result.FailureReason ?? string.Empty);
         }
 

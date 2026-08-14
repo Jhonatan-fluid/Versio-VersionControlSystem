@@ -1522,7 +1522,7 @@ different things is a coordination bug waiting to happen.
 | Phase | Work | Why here |
 |---|---|---|
 | **GP-0 ✅** | **Git presence probe + identity preflight (§12a, §12b)** | **First, and alone. Both are one `git config --get` and a startup `--version`, and together they remove the two worst first-run failures — a `Win32Exception` from nowhere, and a 31-second export followed by a wall of text.** |
-| **GP-C** | **Credential detection, sign-in and sign-out (§12c)** | With GP-B, because both are about what stands between this branch and the remote, and they share the badge slot. Must land *before* GP-D — the poller running with prompts suppressed and no credential-failure classification would hammer an unreachable remote and could lock an account. |
+| **GP-C ✅** | **Credential detection, sign-in and sign-out (§12c)** | With GP-B, because both are about what stands between this branch and the remote, and they share the badge slot. Must land *before* GP-D — the poller running with prompts suppressed and no credential-failure classification would hammer an unreachable remote and could lock an account. |
 | ~~GP-H2~~ ✅ | Detached HEAD (§9e) — **landed early, in GP-B** | It is a `TrackingState` case, and splitting one state machine across two phases to honour a sequencing table would have been worse than moving it. Was: rides with GP-H: the same `TrackingState` work, and §7c's fallback checkout must never leave the user detached. |
 
 ---
@@ -1593,7 +1593,7 @@ Record the answers here when taken, rather than deciding the constants from a gu
 
 | # | Measurement | Why it matters | Result |
 |---|---|---|---|
-| 1 | `git credential fill` with `GIT_TERMINAL_PROMPT` unset: does the helper's own UI appear, and **does its window open behind Versio**? | Decides whether §12c's busy caption has to tell the user to look behind the window. `GIT_TERMINAL_PROMPT=0` is still unconditional at `GitCliClient.cs:720`, so making it per-call is the first thing GP-C does | *not yet taken* |
+| 1 ◑ | `git credential fill` with `GIT_TERMINAL_PROMPT` unset: does the helper's own UI appear, and **does its window open behind Versio**? *Half answered in GP-C: with prompts suppressed the query returns in 0.7 s and does not prompt, verified in the running app. Whether the helper's window opens behind Versio still needs a human, because it only appears when prompting is allowed.* | Decides whether §12c's busy caption has to tell the user to look behind the window. `GIT_TERMINAL_PROMPT=0` is still unconditional at `GitCliClient.cs:720`, so making it per-call is the first thing GP-C does | *not yet taken* |
 | 2 | `git ls-remote --heads origin <branch>`, timed against the real remote, 5 runs | Sets GP-D's base interval. A LAN server and GitHub over HTTPS differ by an order of magnitude, and the plan's 10 s default is a guess until this is run | *not yet taken* |
 | 3 | Does `RollingFileSink`'s `AutoFlush` lock ever make the UI thread wait, at the 5 s floor with Debug on? | Decides whether §3's logging needs a buffered sink. Only worth taking if the interval actually goes that low | *not yet taken* |
 
@@ -1721,6 +1721,68 @@ covers every commanded button in the panel rather than the two it was written fo
 **Verified in the running app** against a repository with a remote and no upstream: opened
 clean, `git remote` ran once at open as designed, and the status refresh computed a standing
 with no errors. **The badge and the Publish button need your eyes** — §13's GP-B script.
+
+---
+
+### GP-C — credentials · done 2026-08-13
+
+**Built:** `Core/Git/RemoteUrl.cs` (transport, host, owner, repository — GP-I reuses it);
+`Core/Git/GitAuthState.cs` with `GitAuthClassifier`; `HasStoredCredentialAsync`, `SignInAsync`,
+`SignOutAsync` on `IGitClient`; **`GIT_TERMINAL_PROMPT` is now per-call**; the credential banner
+with Sign in / Forget credential; classification wired into every remote operation's success
+and failure paths.
+
+**Tests:** 49 Core, 8 App, 5 integration. **1,148 / 262 / 149 green.**
+
+**Versio implements no login, and the code says why.** Driving `git.exe` is what makes GCM, SSH
+agents, 2FA and corporate proxies behave exactly as they do in the engineer's own terminal.
+Storing a token would mean owning a secret store, a rotation story and a breach story; a
+username/password box cannot do 2FA, SSO or device flow. So the job is **detect, explain, hand
+off** — through `git credential fill`, never by launching a named helper, which would break the
+moment somebody uses a different one.
+
+**The signature Versio creates itself is the best detector it has.** `GIT_TERMINAL_PROMPT=0`
+makes git fail rather than ask when no credential is stored, saying `terminal prompts disabled`.
+Inconvenient as an experience, unambiguous as a signal. Confirmed in the running app.
+
+**Two states that look like authentication failures and are not**, each with a test:
+
+- **HTTP 403** means the credential *worked* and the account lacks access. Telling that user to
+  sign in again is a loop that cannot terminate, so `CanSignIn` is false and the sentence says
+  *"signing in again will not change it"*. Checked **before** the 401 tests, because a 403 body
+  can mention authentication.
+- **An SSH key refusal** has no credential helper at all. `CanSignIn` is false there too — the
+  advice names keys and `ssh -T`. Offering Sign in would be the same sin as advising a pull that
+  `--ff-only` will refuse.
+
+`repository not found` is deliberately classified as **unreachable**, not as a credential
+problem: a private repository returns it for an unauthenticated request too, so it is genuinely
+ambiguous, and "check the address and your connection" is safe either way.
+
+**Security rules, enforced and verified:** nothing in the credential region logs what it sends
+or receives — `git credential` speaks key=value over stdin and one of those keys is `password`,
+which `Redact` would not catch. `SignInAsync` returns a result carrying only whether it worked,
+never the helper's stdout. Confirmed in a real run: the log line reads
+`credential for https://versio-demo.invalid: none` and carries no payload.
+
+**One mutation is not caught by an automated test, and that is worth writing down.** Removing
+the `!allowPrompt` guard — letting every git call prompt — leaves the suite green. The timing
+test only bites when the host resolves and the helper actually waits; against an `.invalid`
+host, DNS fails first. Catching it properly would need a remote that resolves and demands
+authentication, which in a test run means either a real credential store or a window appearing
+on somebody's machine. **Neither is acceptable in a suite**, so the guard is covered by the
+integration test's fast-fail timing, by the classifier test for the resulting message, and by
+this note — rather than by a test that pretends.
+
+**Observed in the running app, worth knowing:** the proactive check does reach the network
+through the helper (0.7 s here, against a host that does not resolve). On a slow or blocked
+network that cost lands on repository open. If it ever shows, the fix is to move the check off
+the open path rather than to drop it.
+
+**Still needs a human:** whether the helper's window opens *behind* Versio. It only appears when
+prompting is allowed, which is exactly the path no automated test may take. The busy caption
+already says "check behind Versio" on the assumption that it does; §13's GP-B/GP-C script step 7
+is where that gets confirmed or removed.
 
 ---
 

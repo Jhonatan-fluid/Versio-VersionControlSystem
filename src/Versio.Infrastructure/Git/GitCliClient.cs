@@ -510,6 +510,116 @@ public sealed partial class GitCliClient(
         return RunAsync(["push", "--progress"], progress, ct, TimeSpan.FromMinutes(10));
     }
 
+    // ------------------------------------------------------------------- credentials
+    //
+    // NOTHING IN THIS REGION LOGS WHAT IT SENDS OR RECEIVES.
+    //
+    // `git credential` speaks a key=value protocol over stdin and stdout, and one of those
+    // keys is `password`. Redact() covers URLs and would not help here, because the secret
+    // arrives on its own line with a label. The host, the outcome and the elapsed time are
+    // logged; the payload never is, at any level.
+
+    /// <summary>Whether a credential is already stored for this host, without asking for one.</summary>
+    /// <remarks>
+    /// <para>
+    /// Runs with prompts suppressed, which is what makes it a query rather than a request: with
+    /// no credential stored and no way to ask, the helper returns nothing and git fails. That
+    /// is the answer, not an error.
+    /// </para>
+    /// <para>
+    /// The presence of a <c>password</c> or <c>username</c> line in the reply is what counts.
+    /// A successful exit is not enough on its own — a helper with nothing to say can still exit
+    /// zero after echoing back only the protocol and host it was given.
+    /// </para>
+    /// </remarks>
+    public async Task<bool> HasStoredCredentialAsync(
+        string protocol, string host, CancellationToken ct)
+    {
+        if (protocol.Length == 0 || host.Length == 0)
+        {
+            return false;
+        }
+
+        var result = await RunAsync(
+            ["credential", "fill"], null, ct, TimeSpan.FromSeconds(15),
+            stdin: Query(protocol, host)).ConfigureAwait(false);
+
+        var stored = result.Success && HasSecret(result.StdOut);
+
+        _log.Debug(LogCategory.Git,
+                   $"credential for {protocol}://{host}: {(stored ? "stored" : "none")}");
+
+        return stored;
+    }
+
+    /// <summary>Ask the configured helper for a credential, letting it prompt.</summary>
+    /// <remarks>
+    /// The one call in the application that passes <c>allowPrompt</c>. The helper's own window
+    /// is the entire point of pressing Sign in, and it can take as long as a person takes —
+    /// hence the five-minute ceiling rather than the seconds every other call gets.
+    /// </remarks>
+    public async Task<GitResult> SignInAsync(string protocol, string host, CancellationToken ct)
+    {
+        _log.Info(LogCategory.Git, $"asking the credential helper for {protocol}://{host}");
+
+        var result = await RunAsync(
+            ["credential", "fill"], null, ct, TimeSpan.FromMinutes(5),
+            stdin: Query(protocol, host), allowPrompt: true).ConfigureAwait(false);
+
+        var ok = result.Success && HasSecret(result.StdOut);
+
+        _log.Info(LogCategory.Git,
+                  ok ? $"signed in to {host}" : $"no credential obtained for {host}");
+
+        // The stdout carries the secret. Return a result that says only whether it worked.
+        return ok
+            ? new GitResult { Success = true, ExitCode = 0, Duration = result.Duration }
+            : new GitResult
+            {
+                Success = false,
+                ExitCode = result.ExitCode,
+                StdErr = result.StdErr,
+                Duration = result.Duration,
+            };
+    }
+
+    /// <summary>Erase the stored credential for a host.</summary>
+    /// <remarks>
+    /// <c>reject</c> rather than <c>erase</c>: they are the same operation to every helper, and
+    /// <c>reject</c> is the documented spelling for "this credential did not work".
+    /// </remarks>
+    public async Task<GitResult> SignOutAsync(string protocol, string host, CancellationToken ct)
+    {
+        _log.Info(LogCategory.Git, $"erasing the stored credential for {protocol}://{host}");
+
+        var result = await RunAsync(
+            ["credential", "reject"], null, ct, TimeSpan.FromSeconds(30),
+            stdin: Query(protocol, host)).ConfigureAwait(false);
+
+        return new GitResult
+        {
+            Success = result.Success,
+            ExitCode = result.ExitCode,
+            StdErr = result.StdErr,
+            Duration = result.Duration,
+        };
+    }
+
+    /// <summary>
+    /// The credential protocol's request form: key=value lines, then a blank one.
+    /// </summary>
+    /// <remarks>
+    /// The trailing blank line is required and is not decorative — it is what tells git the
+    /// request is complete. Without it the helper waits for more input and the call times out.
+    /// </remarks>
+    private static string Query(string protocol, string host) =>
+        $"protocol={protocol}\nhost={host}\n\n";
+
+    /// <summary>Whether a helper's reply actually carried a credential.</summary>
+    private static bool HasSecret(string reply) =>
+        reply.Contains("password=", StringComparison.Ordinal)
+        || reply.Contains("username=", StringComparison.Ordinal);
+
     /// <summary>Every remote this repository has.</summary>
     /// <remarks>
     /// A repository with none is ordinary, not a failure, so an empty list is the answer rather
@@ -870,9 +980,23 @@ public sealed partial class GitCliClient(
     /// Written to the child's standard input and then closed, for the commands that read a
     /// patch rather than take one as an argument.
     /// </param>
+    /// <param name="allowPrompt">
+    /// Let git's credential helper put its own window up.
+    /// <para>
+    /// <b>False for everything except an explicit, user-pressed sign-in.</b> Every other call
+    /// here can run without anybody watching - a status refresh, the background poller, a fetch
+    /// - and a credential prompt on one of those either hangs behind a console that does not
+    /// exist or pops a window nobody asked for. So prompts are suppressed by default and git
+    /// fails fast instead, with a message this application recognises.
+    /// </para>
+    /// <para>
+    /// It is exactly one moment that wants the opposite: the user pressed Sign in, and the
+    /// helper's own window - GCM, a browser for OAuth, a token box - is the entire point.
+    /// </para>
+    /// </param>
     private async Task<GitResult> RunAsync(
         string[] args, IProgress<GitProgress>? progress, CancellationToken ct,
-        TimeSpan? timeout = null, string? stdin = null)
+        TimeSpan? timeout = null, string? stdin = null, bool allowPrompt = false)
     {
         var psi = new ProcessStartInfo
         {
@@ -903,9 +1027,17 @@ public sealed partial class GitCliClient(
             psi.ArgumentList.Add(arg);
         }
 
-        // Never let git open an interactive prompt: under a redirected console it would
-        // hang forever with nothing on screen to explain why.
-        psi.Environment["GIT_TERMINAL_PROMPT"] = "0";
+        // Never let git open an interactive prompt - except for the one call that asked for
+        // one. Under a redirected console a prompt hangs forever with nothing on screen to
+        // explain why, which is why this is the default and not the exception.
+        //
+        // The cost of suppressing it is a specific failure message, and that turned out to be
+        // a benefit: "terminal prompts disabled" is unambiguous, because we are the ones who
+        // caused it. GitAuthClassifier reads it as "no credential stored".
+        if (!allowPrompt)
+        {
+            psi.Environment["GIT_TERMINAL_PROMPT"] = "0";
+        }
         psi.Environment["GIT_OPTIONAL_LOCKS"] = "0";
 
         var stdout = new StringBuilder();

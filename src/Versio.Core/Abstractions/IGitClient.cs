@@ -92,6 +92,52 @@ public interface IGitClient
 
     Task<GitResult> CheckoutAsync(string branch, CancellationToken ct);
 
+    /// <summary>
+    /// Whether a credential is already stored for this host, without asking for one.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>git credential fill</c> in a mode that cannot prompt. It consults the configured
+    /// helper and answers from what is already there, so the panel can say "sign in needed"
+    /// when a repository opens rather than waiting for the first push to fail.
+    /// </para>
+    /// <para>
+    /// <b>The value is never returned.</b> Only whether one exists. Versio has no reason to
+    /// hold a secret and every reason not to: the whole point of driving <c>git.exe</c> is
+    /// that the credential lives where the engineer's own terminal keeps it.
+    /// </para>
+    /// </remarks>
+    Task<bool> HasStoredCredentialAsync(string protocol, string host, CancellationToken ct);
+
+    /// <summary>
+    /// Ask the configured credential helper to obtain a credential, prompting if it must.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Through <c>git credential fill</c> rather than by launching a helper directly.</b>
+    /// Git invokes whatever is configured — Git Credential Manager, a corporate helper, a
+    /// bare <c>store</c> — and that helper does its own thing: a window, a browser for OAuth,
+    /// a token prompt. Shelling <c>git-credential-manager</c> by name would be brittle and
+    /// would break the moment somebody uses a different helper.
+    /// </para>
+    /// <para>
+    /// This is the <b>only</b> call in the application permitted to let git prompt, because it
+    /// is the only one a user pressed a button to start.
+    /// </para>
+    /// </remarks>
+    Task<GitResult> SignInAsync(string protocol, string host, CancellationToken ct);
+
+    /// <summary>
+    /// Erase the stored credential for a host.
+    /// </summary>
+    /// <remarks>
+    /// <c>git credential reject</c>. The genuinely maddening failure is not a missing
+    /// credential but a <i>stale</i> one — an expired token the helper keeps cheerfully
+    /// returning, so every push fails identically and nothing the user does from inside the
+    /// application changes it. This is the button that fixes that, and no git GUI offers it.
+    /// </remarks>
+    Task<GitResult> SignOutAsync(string protocol, string host, CancellationToken ct);
+
     /// <summary>Verify a remote is reachable without cloning it.</summary>
     Task<GitResult> VerifyRemoteAsync(string url, CancellationToken ct);
 

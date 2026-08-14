@@ -487,6 +487,60 @@
                                 </StackPanel>
                             </Border>
 
+                            <!-- CREDENTIALS.
+
+                                 Versio implements no login and must not start. Driving git.exe
+                                 is what makes Git Credential Manager, SSH agents, 2FA and
+                                 corporate proxies behave exactly as they do in the engineer's
+                                 own terminal; storing a token here would mean owning a secret
+                                 store, a rotation story and a breach story, and a
+                                 username/password box cannot do 2FA or SSO. So the job is
+                                 detect, explain, hand off - never store.
+
+                                 The Sign in button is bound to CanSignIn rather than to the
+                                 banner's own visibility, and that is the important part. A 403
+                                 means the credential WORKED and the account lacks access, and
+                                 an SSH remote has no credential helper at all. Both read like
+                                 authentication failures; offering to sign in again on either
+                                 is offering a button that cannot work, and on the 403 it is a
+                                 loop that cannot terminate. -->
+                            <Border DockPanel.Dock="Top"
+                                    Background="{DynamicResource Brush.Surface.Sunken}"
+                                    CornerRadius="{DynamicResource Radius.Control}"
+                                    Padding="10,8" Margin="0,0,0,10"
+                                    Visibility="{Binding NeedsAttentionForAuth,
+                                        Converter={StaticResource BoolToVisibility}}">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding AuthExplanation}"
+                                               TextWrapping="Wrap"
+                                               FontFamily="{DynamicResource Font.UI}"
+                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                               Foreground="{DynamicResource Brush.Status.Modified}" />
+
+                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                        <Button Content="Sign in" Style="{StaticResource AccentButton}"
+                                                Height="{DynamicResource Size.Control.Compact}"
+                                                ToolTipService.ShowOnDisabled="True"
+                                                ToolTip="Hand off to your git credential helper. Versio never sees the credential."
+                                                Command="{Binding SignInCommand}"
+                                                Visibility="{Binding CanSignIn,
+                                                    Converter={StaticResource BoolToVisibility}}" />
+
+                                        <!-- The button no git GUI offers, and the one that
+                                             fixes the failure people actually hit: an expired
+                                             token the helper keeps cheerfully returning, so
+                                             every push fails identically and nothing inside the
+                                             app changes it. -->
+                                        <Button Content="Forget credential" Margin="6,0,0,0"
+                                                Style="{StaticResource GhostButton}"
+                                                Height="{DynamicResource Size.Control.Compact}"
+                                                ToolTipService.ShowOnDisabled="True"
+                                                ToolTip="Erase the saved credential for this host, so the next fetch asks for a new one"
+                                                Command="{Binding SignOutCommand}" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
                             <!-- Branch and divergence. The remote state is why somebody opens
                                  this panel, so it leads. -->
                             <Border DockPanel.Dock="Top"
