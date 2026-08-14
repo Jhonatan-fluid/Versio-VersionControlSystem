@@ -72,7 +72,7 @@ appended where it was planned. Read §6 for the order and what is done.
 
 | | |
 |---|---|
-| 1,352 Core + 385 UI unit tests | `dotnet test tests/Versio.Core.Tests`, `…/Versio.App.Tests` |
+| 1,363 Core + 387 UI unit tests | `dotnet test tests/Versio.Core.Tests`, `…/Versio.App.Tests` |
 | 154 integration tests | Real git and **real CODESYS 3.5.22.20**; 0 skipped, ~7 m |
 | The application itself | Started, driven, closed. Two bugs found this way that no test caught |
 | Every new behaviour | Deliberately broken and the tests re-run, per the README's `-MutateFirst` rule |

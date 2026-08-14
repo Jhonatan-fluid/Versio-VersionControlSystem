@@ -24,7 +24,7 @@ landed, what was decided, and what contact with the code changed.
 | ✅ | **GP-F** — one commit button, three behaviours, gating | `ac954b4` |
 | ✅ | **GP-G** — conflicts UI, diverged exit (§6, §9b) | `81865b7` |
 | ✅ | **GP-H** — branch identity, default branch, delete dialog (§7) | `15e24d3` |
-| ✅ | **GP-J** — PLC-aware naming, summary and draft (§9c, and §10.1 with it) | `1a01953` |
+| ✅ | **GP-J** — PLC-aware naming, summary and draft (§9c, and §10.1 with it) | `1a01953`, fixed in `HEAD` |
 | ✅ | **GP-I** — merge-request button, five forges (§8) | `1a01953` |
 | — | GP-K / GP-L — previews and polish (§9d, rest of §10) | next |
 
@@ -2351,6 +2351,28 @@ forget, and the one that was already forgotten is the one that mattered.
 - **The tie-break in the sentence is alphabetical.** §9c's example reads "3 POUs, 1 GVL, 1 DUT",
   which is not any ordering — it is illustrative prose. Equal counts sort by name so the middle
   of the sentence does not reshuffle between refreshes, which would read as the counts changing.
+
+### It blanked the history panel, and every test was green
+
+**Found by the product owner, in the running app, after this shipped.** `ChangeRowTemplate` was
+shared with the history panel's commit-file list — deliberately, so a deletion is the same letter
+and the same colour wherever it is seen. This phase taught that template to show an *object*, and
+a `CommitFileRow` has no `Primary`, no `TypeLabel`, no `IsExportOnly`.
+
+WPF fails a binding to a missing property **silently**. So every row in the history panel drew
+with **no filename at all**, wearing a lock glyph it had no business showing — because the
+`Visibility` binding failed too, and a failed `Visibility` binding leaves the element `Visible`.
+
+The realised-row discipline this phase log makes so much of was followed, and it was followed in
+the wrong place: the tests build rows in the git panel's own lists and never came here. **A
+shared template needs a realised row in every list that uses it.** `HistoryRowChromeTests` is
+that row; reverting the fix fails both of its tests.
+
+The history list has its own template now. The glyph and its colour still come from
+`ChangeGlyph`, which is where that decision actually lives — what is no longer shared is the
+object surface. And a commit's files stay *paths* on purpose: the object index describes the
+**current** export, so naming a historical path from it would put today's name on yesterday's
+file.
 
 ### Two things worth knowing before the next phase
 

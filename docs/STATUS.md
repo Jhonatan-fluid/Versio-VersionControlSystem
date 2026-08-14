@@ -1,13 +1,14 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-14 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,352 unit + 385 UI + 154 integration, 0 skipped
+**Date:** 2026-08-14 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,363 unit + 387 UI + 154 integration, 0 skipped
 
 > All three re-derived on 2026-08-14, on branch `GitPanel`, after the git-panel plan's **GP-J**
 > (PLC-aware naming of the changed-files rows, the change summary and the drafted commit
 > subject), **GP-I** (the merge-request button across five forges), **safeguards §5.C** (the
 > import confirmation, which the app had been answering for itself), **§5.E** (a way to reach the
-> backups that were being written and read by nothing) and **§5.G** (one repository, one Versio).
-> The integration suite was
+> backups that were being written and read by nothing) and **§5.G** (one repository, one
+> Versio) — and after two defects the product owner found by opening the app, both written up
+> under Findings. The integration suite was
 > re-run in full against real CODESYS 3.5.22.20 — **154 passed, 0 skipped** — including
 > `RepositoryWatcherTests.A_deleted_file_is_reported`, the one noted below as flaky, which
 > passed in this run. The five new integration tests read a forge's hidden request refs out of a
@@ -327,6 +328,9 @@ does not record them has to be run again.
   constructs and measures it** — twice a window was added without one and twice it threw in
   front of somebody. The next `Popup` needs the same: its content is not built until it opens,
   so a test that constructs the parent does not reach it.
+- **A shared `DataTemplate` needs a realised row in every list that uses it**, not only the
+  list the feature was written for. GP-J taught the changed-files template about objects and
+  blanked the history panel, with every test green — see Findings.
 - **A test that builds `MainWindow` must join the `theme` collection.** Found by GP-I: a class
   that laid the window out but sat outside that collection passed alone and failed under load,
   because it raced a test swapping the palette dictionary and its bindings did not resolve. The
@@ -338,6 +342,49 @@ does not record them has to be run again.
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### A shared row template learned about objects, and blanked the panel that shared it
+
+GP-J taught `ChangeRowTemplate` to show an object — `Primary`, `TypeLabel`, `IsExportOnly` — and
+the **history panel was drawing its commit files with that same template**, deliberately, so
+that a deletion would be the same letter and the same colour wherever it was seen.
+
+A `CommitFileRow` has none of those properties. **WPF fails a binding to a missing property
+silently**, so every row in the history panel rendered with **no filename at all** — and wearing
+a lock glyph, because the `Visibility` binding failed too and a failed `Visibility` binding
+leaves the element `Visible`. A panel of blank rows, each claiming its file could not be edited.
+
+**Every test was green.** GP-J added realised-row tests precisely because this codebase has been
+bitten three times by templates that only fail when a row is built — and they realise rows in
+the git panel's own lists. Nothing came to the history panel. **A shared template means every
+list that uses it needs a realised row, not only the list the feature was written for**, and
+that is the rule worth taking from this.
+
+Found by the product owner opening the app, which is the third time in this branch that running
+it has produced a defect no suite had. The history list has its own template now — the glyph and
+its colour still come from `ChangeGlyph`, which is where that decision actually lives — and
+`HistoryRowChromeTests` builds a commit file row and reads it. Reverting the template fails both
+of its tests.
+
+**A commit's files stay paths, deliberately.** Naming them from the object index was tempting and
+is wrong: the index describes the *current* export, so a renamed object would put today's name
+on yesterday's file.
+
+### The same repository, twice in the dropdown, because git and Windows spell paths differently
+
+`git rev-parse --show-toplevel` answers with forward slashes; the Windows folder picker hands
+back backslashes. `RecentRepositories.PathComparer` was `OrdinalIgnoreCase` — case-insensitive
+and **separator-sensitive** — so opening one repository both ways produced two entries, with the
+same name and the same location and no way to tell them apart.
+
+The comment above that comparer already had the whole argument in it: *"an ordinal comparison
+would let the same repository appear twice in the list, once per way somebody happened to type
+it."* It was written about case, and separators are another way it gets typed.
+
+`RecentRepositories.Canonical` now settles on backslashes with no trailing separator, applied on
+the way in **and** on the way out — the stored spelling matters because the folder picker is
+handed it as a starting directory and because `settings.json` is a file people open. An existing
+list tidies itself the next time anything is promoted, which is every launch.
 
 ### A rule added after a repository was adopted never reached it
 

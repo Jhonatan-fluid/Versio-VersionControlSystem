@@ -1336,13 +1336,50 @@
                                         </StackPanel>
                                     </HierarchicalDataTemplate>
 
-                                    <!-- The same row the staged and unstaged lists draw. A
-                                         deletion is the same colour and the same letter
-                                         wherever it is seen, which is the entire point of
-                                         there being one template. -->
+                                    <!-- ITS OWN TEMPLATE, AND IT HAS TO BE.
+
+                                         This drew ChangeRowTemplate until GP-J, on the
+                                         argument that a deletion should be the same colour and
+                                         the same letter wherever it is seen. Then GP-J taught
+                                         that template to show an OBJECT - Primary, TypeLabel,
+                                         IsExportOnly - and a CommitFileRow has none of those.
+                                         WPF fails a binding to a missing property silently, so
+                                         every row in this panel rendered with no filename at
+                                         all and a lock glyph it had no business showing: the
+                                         Visibility binding failed too, and a failed Visibility
+                                         binding leaves the element Visible.
+
+                                         Found by opening the app, not by any test - the
+                                         realised-row tests GP-J added cover the git panel's own
+                                         lists and never came here.
+
+                                         The glyph and its colour still come from one place:
+                                         ChangeGlyph, which is where that decision actually
+                                         lives. What is NOT shared is the object surface, and a
+                                         commit's files deliberately stay paths - the object
+                                         index describes the CURRENT export, and naming a
+                                         historical path from it would put today's name on
+                                         yesterday's file. -->
                                     <DataTemplate DataType="{x:Type vm:CommitFileRow}">
-                                        <ContentPresenter Content="{Binding}"
-                                                          ContentTemplate="{StaticResource ChangeRowTemplate}" />
+                                        <Grid ToolTip="{Binding Path}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="18" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{Binding Glyph}"
+                                                       VerticalAlignment="Center"
+                                                       FontFamily="{DynamicResource Font.Mono}"
+                                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                                       FontWeight="{DynamicResource Font.Weight.Semibold}"
+                                                       Foreground="{Binding BrushKey,
+                                                           Converter={StaticResource ResourceKey}}" />
+                                            <TextBlock Grid.Column="1" Text="{Binding Path}"
+                                                       VerticalAlignment="Center"
+                                                       FontFamily="{DynamicResource Font.Mono}"
+                                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                                       Foreground="{DynamicResource Brush.Text.Primary}"
+                                                       TextTrimming="CharacterEllipsis" />
+                                        </Grid>
                                     </DataTemplate>
                                 </TreeView.Resources>
                             </TreeView>
