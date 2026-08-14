@@ -620,6 +620,53 @@ public sealed partial class GitCliClient(
         reply.Contains("password=", StringComparison.Ordinal)
         || reply.Contains("username=", StringComparison.Ordinal);
 
+    /// <summary>Ask the remote what a branch points at, transferring no objects.</summary>
+    /// <remarks>
+    /// <para>
+    /// The full ref name rather than the short one: <c>ls-remote origin main</c> would also
+    /// match a tag called <c>main</c>, and answering with the wrong one would make the poller
+    /// fetch on every probe for as long as the tag existed.
+    /// </para>
+    /// <para>
+    /// A short timeout because this runs on a timer. A probe that sits for minutes behind a
+    /// stalled connection is a probe that has already failed as far as the panel is concerned,
+    /// and the next one will ask again anyway.
+    /// </para>
+    /// </remarks>
+    public async Task<string> LsRemoteAsync(string remote, string branch, CancellationToken ct)
+    {
+        var result = await RunAsync(
+            ["ls-remote", "--heads", remote, $"refs/heads/{branch}"],
+            null, ct, TimeSpan.FromSeconds(30)).ConfigureAwait(false);
+
+        if (!result.Success)
+        {
+            return string.Empty;
+        }
+
+        // "<sha>\trefs/heads/<branch>". No line at all means the branch is not on the remote,
+        // which is an answer rather than a failure.
+        var line = result.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                                .FirstOrDefault();
+
+        return line?.Split('\t', ' ')[0].Trim() ?? string.Empty;
+    }
+
+    /// <summary>Resolve a revision locally.</summary>
+    /// <remarks>
+    /// <c>--verify</c> so an unresolvable revision exits non-zero instead of echoing back what
+    /// it was given — without it, a missing upstream would return the string "origin/main" and
+    /// be compared against a SHA, which never matches and would fetch on every probe.
+    /// </remarks>
+    public async Task<string> RevParseAsync(string revision, CancellationToken ct)
+    {
+        var result = await RunAsync(
+            ["rev-parse", "--verify", "--quiet", revision], null, ct, TimeSpan.FromSeconds(10))
+            .ConfigureAwait(false);
+
+        return result.Success ? result.StdOut.Trim() : string.Empty;
+    }
+
     /// <summary>Every remote this repository has.</summary>
     /// <remarks>
     /// A repository with none is ordinary, not a failure, so an empty list is the answer rather

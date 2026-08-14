@@ -230,6 +230,37 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     private IReadOnlyList<RecentRepository> _recent = [];
 
     private GitCliClient? _git;
+    private readonly RemotePoller _poller;
+
+    /// <summary>True while a question is on screen waiting for an answer.</summary>
+    /// <remarks>
+    /// Suspends the poller. A background fetch landing while somebody is deciding whether to
+    /// stash their work would change the thing they are deciding about.
+    /// </remarks>
+    private bool _modalOpen;
+
+    /// <summary>
+    /// Mark a modal question as being on screen for as long as this is held.
+    /// </summary>
+    /// <remarks>
+    /// A scope rather than a flag set at each call site, because there are six of them and one
+    /// that forgot to clear the flag on an early return would silence the remote watch for the
+    /// rest of the session with nothing to show why.
+    /// </remarks>
+    private ModalScope AskingSomething() => new(this);
+
+    private readonly struct ModalScope : IDisposable
+    {
+        private readonly ShellViewModel _shell;
+
+        public ModalScope(ShellViewModel shell)
+        {
+            _shell = shell;
+            shell._modalOpen = true;
+        }
+
+        public void Dispose() => _shell._modalOpen = false;
+    }
     private RepositoryWatcher? _watcher;
     private string? _repositoryPath;
     private string _branchName = "—";
@@ -267,6 +298,23 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // Events, as against the state StatusSummary holds. The two were one property until
         // now, and the collision was not theoretical - see NotificationCenter's remarks.
         Notifications = new NotificationCenter(_clock, logger);
+
+        // Keeps the ahead/behind counts honest without anybody asking. It probes with
+        // ls-remote and fetches only when the remote has actually moved - and it NEVER pulls,
+        // because a pull rewrites the project and its mirror under the watcher, which is the
+        // one scenario SAFEGUARDS §5.A calls able to corrupt a project through no user error.
+        _poller = new RemotePoller(
+            logger,
+            _clock,
+            client: () => _git,
+
+            // One shared flag, so a probe cannot compete with a push for the network or the
+            // credential helper, and a modal question is never answered by a background fetch.
+            suspended: () => Busy.IsBusy || _modalOpen,
+            target: PollTarget,
+            onMoved: FetchBecauseTheRemoteMovedAsync,
+            onHalted: reason => OnUi(() => Notifications.Warning(
+                "Not watching the remote any more.", reason)));
 
         // The SHELL's tracker, not one of its own.
         //
@@ -491,6 +539,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 ? "no longer on disk" : "no longer a git repository")}");
 
         var record = target.ToRecord(target.LastOpenedUtc ?? _clock.UtcNow);
+        using var asking = AskingSomething();
         var choice = AskAboutMissingRepository?.Invoke(MissingRepository.Prompt(record, why))
                      ?? MissingRepositoryChoice.Cancel;
 
@@ -652,6 +701,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         _hasRemote = false;
         _remote = RemoteUrl.None;
         AuthState = GitAuthState.Fine;
+
+        // The poller is about a repository that is no longer open. Resume clears the halt as
+        // well, so a credential problem on the last one does not silence the next.
+        _poller.Stop();
+        _poller.Resume();
 
         // These notifications are about a repository that is no longer open. Keeping them
         // would attach a failed push to whatever is opened next.
@@ -858,6 +912,16 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>Panel currently selected in the rail.</summary>
+    /// <summary>
+    /// Wake the remote watch: somebody is here.
+    /// </summary>
+    /// <remarks>
+    /// The backoff exists to stop polling for nobody. Any deliberate git action, or opening the
+    /// panel, means there is a somebody — and the counts should be as live as they were at the
+    /// start rather than on a sixty-second cadence inherited from an idle hour.
+    /// </remarks>
+    private void WakeThePoller() => _poller.Wake();
+
     public ShellPanel ActivePanel
     {
         get => _activePanel;
@@ -1482,6 +1546,10 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // Watch before the first refresh, so a change landing during it is not missed.
         StartWatching(path);
 
+        // Only once there is something to watch. Start is idempotent, and PollTarget returns
+        // nothing until a Standing with an upstream has been computed.
+        _poller.Start();
+
         await RefreshCoreAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
 
         // The history is handed the client but reads nothing yet. Whether this repository's
@@ -1763,6 +1831,10 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             {
                 case nameof(BusyTracker.IsBusy):
                     OnUi(RaiseGitCommandStates);
+
+                    // Any deliberate git action means somebody is here, so the remote is worth
+                    // watching closely again. The backoff exists to stop polling for nobody.
+                    WakeThePoller();
                     break;
 
                 case nameof(BusyTracker.HasUninterruptible):
@@ -2354,6 +2426,70 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                               "The next fetch or push will ask for a new one.");
     }
 
+    /// <summary>Which remote and branch the poller should watch, or nothing.</summary>
+    /// <remarks>
+    /// Nothing unless there is an upstream: a branch that has never been published has no
+    /// remote counterpart to compare against, and asking about one would fail on every probe.
+    /// </remarks>
+    private (string Remote, string Branch)? PollTarget()
+    {
+        if (_git is null || !_standing.HasUpstream)
+        {
+            return null;
+        }
+
+        // "origin/main" -> ("origin", "main"). The upstream is stored in exactly that shape by
+        // porcelain v2, and a branch name may itself contain slashes, so only the first is a
+        // separator.
+        var slash = _standing.Upstream.IndexOf('/');
+        return slash <= 0
+            ? null
+            : (_standing.Upstream[..slash], _standing.Upstream[(slash + 1)..]);
+    }
+
+    /// <summary>
+    /// The remote moved, so learn what it moved to.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A fetch, never a pull. This is the only expensive call the poller makes and it runs only
+    /// when a probe has already established there is something new.
+    /// </para>
+    /// <para>
+    /// <b>It does not raise the <see cref="BusyTracker"/>.</b> Every git button consults that
+    /// flag, so raising it here would make the panel flicker dead whenever a colleague pushed —
+    /// the same reasoning that keeps automatic status refreshes off the progress bar.
+    /// </para>
+    /// </remarks>
+    private async Task FetchBecauseTheRemoteMovedAsync(CancellationToken ct)
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        var result = await _git.FetchAsync(null, ct).ConfigureAwait(false);
+
+        if (!result.Success)
+        {
+            var state = GitAuthClassifier.Classify(result.StdErr, _remote.Transport);
+
+            if (GitAuthClassifier.IsTerminal(state))
+            {
+                // Stops on the first refusal rather than after the usual run: retrying a
+                // rejected credential every few seconds cannot succeed and may lock an account.
+                _poller.NoteRefused(GitAuthClassifier.Explain(state, _remote.Host));
+                OnUi(() => AuthState = state);
+            }
+
+            return;
+        }
+
+        // Back onto the UI thread before anything observable moves. Watcher and timer callbacks
+        // arrive on threadpool threads, and touching a bound collection from one throws.
+        OnUi(() => _ = RunRefreshAsync(RefreshTrigger.GitMetadata, null));
+    }
+
     private async Task FetchAsync()
     {
         if (_git is null)
@@ -2525,7 +2661,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return GuardChoice.Cancel;
         }
 
-        var answer = AskGuard?.Invoke(prompt) ?? GuardChoice.Cancel;
+        GuardChoice answer;
+        using (AskingSomething())
+        {
+            answer = AskGuard?.Invoke(prompt) ?? GuardChoice.Cancel;
+        }
 
         // A REFUSAL IS NOT A QUESTION.
         //
@@ -2804,6 +2944,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         {
             var offer = arrival.Restorable[i];
             var remaining = arrival.Restorable.Count - i;
+            using var asking = AskingSomething();
             var choice = AskAboutStashedWork?.Invoke(
                              AutoStashNarrative.Arrival(arrival, offer, remaining, _clock.UtcNow))
                          ?? StashedWorkChoice.Leave;
@@ -3167,6 +3308,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
+        using var asking = AskingSomething();
         var confirmed = ConfirmDestructive?.Invoke(
             "Discard changes to this file?",
             $"{row.Path}\n\n" +
@@ -3235,6 +3377,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         _logger.Click("TopBar.CreateBranch");
 
+        using var asking = AskingSomething();
         if (PromptForBranchName?.Invoke() is not { } name)
         {
             return;
@@ -3825,6 +3968,10 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         StopWatching();
+
+        // A background loop outliving the window would keep spawning git processes against a
+        // repository nobody is looking at.
+        _poller.Dispose();
 
         // The sync panel holds its own watcher over every tracked project and its export
         // tree. Releasing only the shell's would leave those handles open and the repository

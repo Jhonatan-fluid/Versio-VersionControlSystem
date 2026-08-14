@@ -138,6 +138,32 @@ public interface IGitClient
     /// </remarks>
     Task<GitResult> SignOutAsync(string protocol, string host, CancellationToken ct);
 
+    /// <summary>
+    /// Ask the remote what a branch currently points at, transferring no objects.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>git ls-remote</c>. This is the cheap half of keeping the ahead/behind counts honest:
+    /// one line back and no object transfer, against a fetch's connection, negotiation and
+    /// download. A real fetch runs only when this says the remote has actually moved.
+    /// </para>
+    /// <para>
+    /// Empty when the branch is not on the remote, which is an answer rather than a failure —
+    /// a branch that has never been published has nothing there to compare against.
+    /// </para>
+    /// </remarks>
+    Task<string> LsRemoteAsync(string remote, string branch, CancellationToken ct);
+
+    /// <summary>
+    /// Resolve a revision to a commit id, locally.
+    /// </summary>
+    /// <remarks>
+    /// The other half of the probe, and the reason it is cheap: comparing the remote's answer
+    /// against the local remote-tracking ref is a few milliseconds of local reading. Empty when
+    /// the revision does not resolve, which is ordinary for a branch with no upstream yet.
+    /// </remarks>
+    Task<string> RevParseAsync(string revision, CancellationToken ct);
+
     /// <summary>Verify a remote is reachable without cloning it.</summary>
     Task<GitResult> VerifyRemoteAsync(string url, CancellationToken ct);
 

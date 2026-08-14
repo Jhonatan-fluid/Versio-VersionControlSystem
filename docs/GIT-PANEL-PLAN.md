@@ -1507,7 +1507,7 @@ different things is a coordination bug waiting to happen.
 |---|---|---|
 | GP-A ✅ | Notifications (§1) | Everything later needs a way to report success and failure. Fixes the invisible-push bug on its own. |
 | GP-B ✅ | Remote state machine + publish (§2) | Independent of staging; unblocks the gating in GP-F. |
-| GP-D | Background polling (§3) | Needs §2's state to have somewhere to put its answer. Makes every count in the panel true. |
+| GP-D ✅ | Background polling (§3) | Needs §2's state to have somewhere to put its answer. Makes every count in the panel true. |
 | GP-E | **Extract `GitPanelViewModel`**, then reconcile the staging lists, then the two-pane scrollable layout and checkboxes (§4) | The extraction is the first commit, before the file grows further — see the structural note at the top. The reconcile prerequisite lands next and is worth having alone: the lists stop being rebuilt every second. |
 | GP-F | Button model + gating matrix (§5) | Needs GP-B and GP-E to gate against real state. |
 | GP-G | Conflicts (§6, UI half) + the diverged-branch exit (§9b) | **No longer blocked** — safeguards phase 6 shipped both defences. One piece of work: both are "the remote and I disagree", and §2 currently advises a button that refuses. |
@@ -1594,7 +1594,7 @@ Record the answers here when taken, rather than deciding the constants from a gu
 | # | Measurement | Why it matters | Result |
 |---|---|---|---|
 | 1 ◑ | `git credential fill` with `GIT_TERMINAL_PROMPT` unset: does the helper's own UI appear, and **does its window open behind Versio**? *Half answered in GP-C: with prompts suppressed the query returns in 0.7 s and does not prompt, verified in the running app. Whether the helper's window opens behind Versio still needs a human, because it only appears when prompting is allowed.* | Decides whether §12c's busy caption has to tell the user to look behind the window. `GIT_TERMINAL_PROMPT=0` is still unconditional at `GitCliClient.cs:720`, so making it per-call is the first thing GP-C does | *not yet taken* |
-| 2 | `git ls-remote --heads origin <branch>`, timed against the real remote, 5 runs | Sets GP-D's base interval. A LAN server and GitHub over HTTPS differ by an order of magnitude, and the plan's 10 s default is a guess until this is run | *not yet taken* |
+| 2 ◑ | `git ls-remote --heads origin <branch>`, timed against the real remote, 5 runs | Sets GP-D's base interval | **91–95 ms against a local bare remote**, measured in the running app during GP-D. That is the floor, not the answer: a hosted remote over HTTPS adds a TLS handshake and an auth round trip per probe, and **that** number is what should set the interval. Still worth taking against your real `origin`. |
 | 3 | Does `RollingFileSink`'s `AutoFlush` lock ever make the UI thread wait, at the 5 s floor with Debug on? | Decides whether §3's logging needs a buffered sink. Only worth taking if the interval actually goes that low | *not yet taken* |
 
 Neither of the first two blocks writing code; both block *finishing* those phases with the right
@@ -1783,6 +1783,64 @@ the open path rather than to drop it.
 prompting is allowed, which is exactly the path no automated test may take. The busy caption
 already says "check behind Versio" on the assumption that it does; §13's GP-B/GP-C script step 7
 is where that gets confirmed or removed.
+
+---
+
+### GP-D — background polling · done 2026-08-13
+
+**Built:** `Core/Sync/RemotePollPolicy.cs` (pace, backoff, halting — pure and clock-driven);
+`App/ViewModels/RemotePoller.cs`; `IGitClient.LsRemoteAsync` / `RevParseAsync`; a `ModalScope`
+so every prompt suspends the loop; `WakeThePoller` on any git activity.
+
+**Tests:** 14 Core, 11 App. **1,162 / 273 / 149 green.**
+
+**It probes; it does not fetch.** `ls-remote` returns one line and no objects; a real fetch runs
+only when that differs from the local tracking ref. **And it never pulls** — that constraint is
+load-bearing rather than incidental: a pull rewrites the project and its mirror under the
+watcher, which `SAFEGUARDS` §5.A calls the one scenario able to corrupt a project through no
+user error at all. Automatic pulling would be that corruption on a timer.
+
+**Four rules keep it out of the way**, each with a test:
+
+1. **Never raises the `BusyTracker`** — every git button consults that flag, so a probe that
+   raised it would flicker the whole panel dead every ten seconds.
+2. **Skipped while anything else runs**, checked before spawning *and* before applying a result.
+   The second check is what stops a probe that started first landing mid-push; the test models
+   the user pressing Push while the probe is in flight.
+3. **A quiet probe changes nothing** — no property raised, no list rebuilt.
+4. **A refusal halts on the first occurrence**, not after the usual run. Retrying a rejected
+   credential every ten seconds cannot succeed and may lock an account. This is why GP-C had to
+   land first: `GitAuthClassifier.IsTerminal` is what makes the distinction.
+
+**Logging, as §3 specifies:** every probe leaves a Debug line with elapsed ms; movement is Info
+with both commits; a run of quiet probes collapses through `QuietRunTracker` into one periodic
+sentence. The test asserts fewer than 30 Information lines for 30 probes *and* at least 30 Debug
+lines — both halves, because "log every trigger" and "keep the panel readable" are in tension
+and the resolution is the level, not the omission.
+
+**`_modalOpen` needed a scope, not a flag.** The compiler caught it unassigned; six call sites
+each setting and clearing a bool would have one early return that forgot, silencing the remote
+watch for the rest of the session with nothing to show why. `ModalScope` is a `using`.
+
+**Verified in the running app**, end to end:
+
+```
+INF [Git] watching the remote for changes
+DBG [Git] probe origin/main: unchanged in 95 ms
+DBG [Git] probe origin/main: unchanged in 91 ms      <- exactly one interval later
+INF [Git] origin/main moved: d6d9299 -> ed66024      <- after a push from a second clone
+INF [Git] fetching
+DBG [Git] git fetch --progress ok in 0.2s
+DBG [Git] git rev-list --left-right --count origin/main...main ok in 0.0s
+```
+
+A colleague's push was noticed within one interval, with no click, and the ahead/behind counts
+recomputed — which is the entire point of the phase.
+
+**A real measurement came out of it:** `ls-remote` against a local bare remote is **91–95 ms**.
+That is the floor rather than the answer — a hosted remote adds a TLS handshake and an auth
+round trip per probe — so the 10 s default stands until somebody times it against a real
+`origin`. Changing it is one argument to `RemotePollPolicy`.
 
 ---
 
