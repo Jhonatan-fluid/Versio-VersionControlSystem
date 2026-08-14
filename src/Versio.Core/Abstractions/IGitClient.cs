@@ -122,6 +122,36 @@ public interface IGitClient
     Task<GitResult> PushAsync(IProgress<GitProgress>? progress, CancellationToken ct);
 
     /// <summary>
+    /// Every remote this repository has, in git's order.
+    /// </summary>
+    /// <remarks>
+    /// Asked so that "this repository has no remote" and "this branch has no upstream" can be
+    /// told apart. They are indistinguishable from the branch alone and their remedies have
+    /// nothing in common — one is "add a remote", the other is "press Publish" — so answering
+    /// the wrong one sends somebody hunting for a setting that is already correct.
+    /// </remarks>
+    Task<IReadOnlyList<string>> RemotesAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Push a branch that has no upstream, and set one.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A different command, so a different button.</b> A plain <c>git push</c> on a branch
+    /// with no upstream fails outright — git has nowhere to send it — so this is not a push
+    /// with a flag, it is the operation that makes a branch exist on the remote. Folding it
+    /// into <see cref="PushAsync"/> would give one button two meanings and one failure mode
+    /// that only appears sometimes.
+    /// </para>
+    /// <para>
+    /// It releases the direction locks on success exactly as a push does. The lock rule is
+    /// about work becoming visible to other people, not about which flag was passed.
+    /// </para>
+    /// </remarks>
+    Task<GitResult> PublishBranchAsync(
+        string remote, string branch, IProgress<GitProgress>? progress, CancellationToken ct);
+
+    /// <summary>
     /// Unified diff for one path. <paramref name="staged"/> selects the index.
     /// </summary>
     /// <param name="contextLines">

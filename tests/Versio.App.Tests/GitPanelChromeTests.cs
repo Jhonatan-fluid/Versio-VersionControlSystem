@@ -174,6 +174,46 @@ public sealed class GitPanelChromeTests
         });
     }
 
+    [Fact]
+    public void Every_remote_button_explains_itself_while_disabled()
+    {
+        // With no repository open all four are dead. That is the moment the tooltip matters,
+        // and WPF hides tooltips on disabled controls unless ShowOnDisabled is set — so the
+        // property is the entire feature and is silently absent if it is forgotten.
+        StaHarness.Run(() =>
+        {
+            var (window, _) = Build();
+            var (panel, _) = ShowGitPanel(window);
+
+            var buttons = AllOf<Button>(panel)
+                .Where(b => b.Command is not null)
+                .ToList();
+
+            Assert.NotEmpty(buttons);
+
+            foreach (var button in buttons.Where(b => b.ToolTip is not null))
+            {
+                Assert.True(ToolTipService.GetShowOnDisabled(button),
+                            "a git-panel button would hide its explanation while disabled");
+            }
+        });
+    }
+
+    [Fact]
+    public void Push_and_publish_never_both_show()
+    {
+        // They are different operations - a plain push on a branch with no upstream fails
+        // outright - so exactly one is offered at a time. Both visible would mean two buttons
+        // for one slot; neither would mean a state with no way forward.
+        StaHarness.Run(() =>
+        {
+            var (window, shell) = Build();
+            ShowGitPanel(window);
+
+            Assert.NotEqual(shell.ShowPush, shell.ShowPublish);
+        });
+    }
+
     /// <summary>Find a banner by the section label inside it.</summary>
     private static FrameworkElement Banner(MainWindow window, string label)
     {

@@ -510,6 +510,38 @@ public sealed partial class GitCliClient(
         return RunAsync(["push", "--progress"], progress, ct, TimeSpan.FromMinutes(10));
     }
 
+    /// <summary>Every remote this repository has.</summary>
+    /// <remarks>
+    /// A repository with none is ordinary, not a failure, so an empty list is the answer rather
+    /// than an error — the same reasoning <see cref="RemoteUrlAsync"/> applies.
+    /// </remarks>
+    public async Task<IReadOnlyList<string>> RemotesAsync(CancellationToken ct)
+    {
+        var result = await RunAsync(["remote"], null, ct, TimeSpan.FromSeconds(10))
+            .ConfigureAwait(false);
+
+        return result.Success
+            ? [.. result.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                               .Select(l => l.Trim())
+                               .Where(l => l.Length > 0)]
+            : [];
+    }
+
+    /// <summary>Push a branch that has no upstream, and set one.</summary>
+    /// <remarks>
+    /// <c>--set-upstream</c> with the remote and branch named explicitly rather than relying on
+    /// <c>push.default</c> or <c>push.autoSetupRemote</c>: both are configuration this
+    /// application does not own, and a publish that behaved differently on two machines in the
+    /// same team would be a genuinely confusing thing to debug.
+    /// </remarks>
+    public Task<GitResult> PublishBranchAsync(
+        string remote, string branch, IProgress<GitProgress>? progress, CancellationToken ct)
+    {
+        _log.Info(LogCategory.Git, $"publishing {branch} to {remote}");
+        return RunAsync(["push", "--set-upstream", remote, branch, "--progress"],
+                        progress, ct, TimeSpan.FromMinutes(10));
+    }
+
     /// <summary>Unified diff for one path.</summary>
     /// <param name="staged">Compare the index against HEAD rather than the working tree
     /// against the index — a file can differ on both sides at once.</param>

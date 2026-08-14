@@ -1506,7 +1506,7 @@ different things is a coordination bug waiting to happen.
 | Phase | Work | Why here |
 |---|---|---|
 | GP-A ✅ | Notifications (§1) | Everything later needs a way to report success and failure. Fixes the invisible-push bug on its own. |
-| GP-B | Remote state machine + publish (§2) | Independent of staging; unblocks the gating in GP-F. |
+| GP-B ✅ | Remote state machine + publish (§2) | Independent of staging; unblocks the gating in GP-F. |
 | GP-D | Background polling (§3) | Needs §2's state to have somewhere to put its answer. Makes every count in the panel true. |
 | GP-E | **Extract `GitPanelViewModel`**, then reconcile the staging lists, then the two-pane scrollable layout and checkboxes (§4) | The extraction is the first commit, before the file grows further — see the structural note at the top. The reconcile prerequisite lands next and is worth having alone: the lists stop being rebuilt every second. |
 | GP-F | Button model + gating matrix (§5) | Needs GP-B and GP-E to gate against real state. |
@@ -1523,7 +1523,7 @@ different things is a coordination bug waiting to happen.
 |---|---|---|
 | **GP-0 ✅** | **Git presence probe + identity preflight (§12a, §12b)** | **First, and alone. Both are one `git config --get` and a startup `--version`, and together they remove the two worst first-run failures — a `Win32Exception` from nowhere, and a 31-second export followed by a wall of text.** |
 | **GP-C** | **Credential detection, sign-in and sign-out (§12c)** | With GP-B, because both are about what stands between this branch and the remote, and they share the badge slot. Must land *before* GP-D — the poller running with prompts suppressed and no credential-failure classification would hammer an unreachable remote and could lock an account. |
-| GP-H2 | Detached HEAD (§9e) | Rides with GP-H: the same `TrackingState` work, and §7c's fallback checkout must never leave the user detached. |
+| ~~GP-H2~~ ✅ | Detached HEAD (§9e) — **landed early, in GP-B** | It is a `TrackingState` case, and splitting one state machine across two phases to honour a sequencing table would have been worse than moving it. Was: rides with GP-H: the same `TrackingState` work, and §7c's fallback checkout must never leave the user detached. |
 
 ---
 
@@ -1674,6 +1674,53 @@ errors. **The click-driven half is yours** — §13's GP-A script, steps 1–6, 
 Fetch and Push. What is machine-checked is that a posted card renders with its headline and
 git's detail visible on screen (`GitPanelChromeTests`), which is what GP-0 taught: a binding
 trace over a collapsed panel proves nothing.
+
+---
+
+### GP-B — remote state and publish · done 2026-08-13
+
+**Built:** `Core/Git/TrackingState.cs` — `TrackingState`, `RemoteAction`, `RemoteStanding`;
+`IGitClient.RemotesAsync` / `PublishBranchAsync`; `PublishCommand`; the worded badge in the
+branch card; Push and Publish swapping; counts on the Pull/Push labels; `BranchEntry.Tracking`
+finally bound after existing unbound since it was written.
+
+**Tests:** 18 Core, 7 App flow (against a real bare remote), 7 integration, 2 more chrome.
+**1,099 / 254 / 144 green.**
+
+**Detached HEAD (§9e) landed here rather than in GP-H.** It is a `TrackingState` case, and
+splitting one state machine across two phases to honour a sequencing table would have been
+worse than moving it.
+
+**The three states that were previously one:** in sync, no upstream, and no remote all rendered
+as an *empty string* in the old `AheadBehind`. So a branch nobody else could see looked exactly
+like a branch that was fully pushed. That is now three sentences, and `hasRemote` is passed in
+precisely because it cannot be derived from the branch — the mutation that collapses `NoRemote`
+into `NoUpstream` breaks two tests.
+
+**Decisions worth keeping:**
+
+- **Ahead is accent, not amber.** Work not yet pushed is the normal condition of somebody
+  mid-task; colouring it like a problem makes the colour mean nothing by the time it is needed.
+  Amber is reserved for *"somebody else moved"* and *"nobody can see your work"*.
+- **Push stays enabled while diverged.** Git will reject it. Disabling it hides the state the
+  user has to resolve, where git's own rejection — in a notification that does not expire — is
+  the clearest possible explanation.
+- **Pull is enabled whenever an upstream exists**, never gated on `Behind`. Behind-ness is only
+  as fresh as the last fetch. The count goes on the label, where it informs without gating.
+- **Publish picks `origin`, then a sole remote, then refuses.** With several remotes and no
+  `origin` it says so rather than guessing — pushing a branch to the wrong remote is not a coin
+  toss, and a repository with three remotes is one where somebody has already thought about it.
+- **Publish releases the direction locks exactly as push does.** The lock rule is about work
+  becoming visible to other people; a publish makes it visible for the first time.
+
+**A test caught a real gap.** `Every_remote_button_explains_itself_while_disabled` failed on
+first run — the Discard button carried a tooltip with no `ToolTipService.ShowOnDisabled`, so its
+explanation was invisible in exactly the state it was written for. Fixed, and the test now
+covers every commanded button in the panel rather than the two it was written for.
+
+**Verified in the running app** against a repository with a remote and no upstream: opened
+clean, `git remote` ran once at open as designed, and the status refresh computed a standing
+with no errors. **The badge and the Publish button need your eyes** — §13's GP-B script.
 
 ---
 

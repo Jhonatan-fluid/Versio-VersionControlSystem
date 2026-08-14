@@ -182,6 +182,18 @@
                                            FontSize="{DynamicResource Font.Size.Caption}"
                                            Foreground="{Binding BrushKey,
                                                Converter={StaticResource ResourceKey}}" />
+
+                                <!-- Which upstream, or "no upstream". BranchEntry has computed
+                                     this since it was written and nothing ever bound it, so a
+                                     branch that existed only on this machine was
+                                     indistinguishable in the list from one that was fully
+                                     pushed. Same confusion the panel badge fixes, in the one
+                                     place you choose which branch to work on. -->
+                                <TextBlock Text="{Binding Tracking}" Margin="10,0,0,0"
+                                           VerticalAlignment="Center"
+                                           FontFamily="{DynamicResource Font.UI}"
+                                           FontSize="{DynamicResource Font.Size.Caption}"
+                                           Foreground="{DynamicResource Brush.Text.Disabled}" />
                             </StackPanel>
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
@@ -498,24 +510,69 @@
                                                    Foreground="{DynamicResource Brush.Accent.Default}" />
                                     </StackPanel>
 
+                                    <!-- WHERE THIS BRANCH STANDS, IN WORDS.
+
+                                         The arrows above are compact and ask the reader to
+                                         remember which one means somebody else moved. This
+                                         says it. Three states used to be indistinguishable
+                                         here: in sync, no upstream and no remote all rendered
+                                         as an empty string, so a branch nobody else could see
+                                         looked exactly like a branch that was fully pushed.
+
+                                         The colour is chosen by RemoteStanding, not here:
+                                         amber only when doing nothing has a cost. -->
+                                    <TextBlock Text="{Binding Standing.Headline}"
+                                               TextWrapping="Wrap" Margin="0,6,0,0"
+                                               FontFamily="{DynamicResource Font.UI}"
+                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                               Foreground="{Binding Standing.BrushKey,
+                                                   Converter={StaticResource ResourceKey}}" />
+
                                     <!-- Compact: three buttons inside a card that is itself
                                          inside a 380 px panel. At the full 32 px they set the
                                          height of the whole card and pushed the file lists
                                          down for nothing. -->
                                     <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                        <!-- ToolTipService.ShowOnDisabled on every one of
+                                             these. A dead button with no reason is what sends
+                                             somebody to the command line, which is the thing
+                                             this panel exists to avoid, and WPF hides tooltips
+                                             on disabled controls unless told otherwise. The
+                                             explanation would be invisible exactly when it is
+                                             wanted. -->
                                         <Button Content="Fetch" Style="{StaticResource GhostButton}"
                                                 Height="{DynamicResource Size.Control.Compact}"
+                                                ToolTipService.ShowOnDisabled="True"
+                                                ToolTip="Ask the remote what has changed, without touching your files"
                                                 Command="{Binding FetchCommand}" />
-                                        <Button Content="Pull" Margin="6,0,0,0"
+                                        <Button Content="{Binding PullLabel}" Margin="6,0,0,0"
                                                 Style="{StaticResource GhostButton}"
                                                 Height="{DynamicResource Size.Control.Compact}"
-                                                ToolTip="Fast-forward only; a divergence is surfaced, never auto-merged"
+                                                ToolTipService.ShowOnDisabled="True"
+                                                ToolTip="{Binding Standing.Headline}"
                                                 Command="{Binding PullCommand}" />
-                                        <Button Content="Push" Margin="6,0,0,0"
+
+                                        <!-- Push and Publish swap rather than sharing a button.
+                                             A plain push on a branch with no upstream fails
+                                             outright, so they are different operations, and one
+                                             control meaning both would have a failure mode that
+                                             only appears sometimes. -->
+                                        <Button Content="{Binding PushLabel}" Margin="6,0,0,0"
                                                 Style="{StaticResource GhostButton}"
                                                 Height="{DynamicResource Size.Control.Compact}"
-                                                ToolTip="Pushing is what releases the PLC direction locks"
-                                                Command="{Binding PushCommand}" />
+                                                ToolTipService.ShowOnDisabled="True"
+                                                ToolTip="{Binding Standing.Headline}"
+                                                Command="{Binding PushCommand}"
+                                                Visibility="{Binding ShowPush,
+                                                    Converter={StaticResource BoolToVisibility}}" />
+                                        <Button Content="Publish branch" Margin="6,0,0,0"
+                                                Style="{StaticResource AccentButton}"
+                                                Height="{DynamicResource Size.Control.Compact}"
+                                                ToolTipService.ShowOnDisabled="True"
+                                                ToolTip="Push this branch to the remote and start tracking it"
+                                                Command="{Binding PublishCommand}"
+                                                Visibility="{Binding ShowPublish,
+                                                    Converter={StaticResource BoolToVisibility}}" />
                                     </StackPanel>
                                 </StackPanel>
                             </Border>
@@ -645,6 +702,7 @@
                                             Style="{StaticResource GhostButton}"
                                             Foreground="{DynamicResource Brush.Status.Deleted}"
                                             Command="{Binding DiscardCommand}"
+                                            ToolTipService.ShowOnDisabled="True"
                                             ToolTip="Throw away the changes to the selected file — this cannot be undone" />
                                     <Button Content="Stage all" Padding="8,2" Margin="6,0,0,0" Height="{DynamicResource Size.Control.Compact}"
                                             Style="{StaticResource GhostButton}"

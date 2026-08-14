@@ -648,6 +648,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         BranchName = "—";
         AheadBehind = string.Empty;
+        Standing = RemoteStanding.None;
+        _hasRemote = false;
+
+        // These notifications are about a repository that is no longer open. Keeping them
+        // would attach a failed push to whatever is opened next.
+        Notifications.Clear();
         StatusSummary = "Opening…";
         _lastRefreshUtc = null;
         LastRefreshText = string.Empty;
@@ -904,6 +910,44 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         get => _aheadBehind;
         private set => SetProperty(ref _aheadBehind, value);
     }
+
+    private RemoteStanding _standing = RemoteStanding.None;
+    private bool _hasRemote;
+
+    /// <summary>
+    /// Where this branch stands in relation to the remote, in words.
+    /// </summary>
+    /// <remarks>
+    /// Replaces reading the two arrows. <see cref="AheadBehind"/> survives for the branch
+    /// dropdown, where a compact glyph beside a name is the right shape; the panel itself now
+    /// says what the numbers mean, because that is the question people open it to answer.
+    /// </remarks>
+    public RemoteStanding Standing
+    {
+        get => _standing;
+        private set
+        {
+            if (SetProperty(ref _standing, value))
+            {
+                OnPropertyChanged(nameof(PushLabel));
+                OnPropertyChanged(nameof(PullLabel));
+                OnPropertyChanged(nameof(ShowPublish));
+                OnPropertyChanged(nameof(ShowPush));
+                RaiseGitCommandStates();
+            }
+        }
+    }
+
+    /// <summary>Push and Publish swap places: they are different operations, so only one is
+    /// offered at a time rather than one button meaning two things.</summary>
+    public bool ShowPublish => _standing.CanPublish;
+
+    public bool ShowPush => !_standing.CanPublish;
+
+    /// <summary>The count on the label, where it informs without gating.</summary>
+    public string PushLabel => "Push" + _standing.PushCountSuffix;
+
+    public string PullLabel => "Pull" + _standing.PullCountSuffix;
 
     /// <summary>
     /// What just happened, as against what is currently true.
@@ -1363,6 +1407,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // rather than after a 17-31 s export has run for a commit git will refuse.
         await LoadIdentityAsync(busy.Token).ConfigureAwait(true);
 
+        // Whether there is anywhere to push at all. Read here rather than in the refresh for
+        // the reason above, and before the first refresh so the very first Standing computed
+        // is already right - otherwise a repository with a remote would flash "no remote
+        // configured" for one frame on every open.
+        _hasRemote = (await client.RemotesAsync(busy.Token).ConfigureAwait(true)).Count > 0;
+
         RefreshCommand.RaiseCanExecuteChanged();
 
         // Watch before the first refresh, so a change landing during it is not missed.
@@ -1546,6 +1596,14 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     public AsyncCommand PushCommand { get; private set; } = null!;
     public AsyncCommand FetchCommand { get; private set; } = null!;
 
+    /// <summary>Put a branch on the remote for the first time.</summary>
+    /// <remarks>
+    /// Separate from <see cref="PushCommand"/> because it is a separate operation: a plain
+    /// push on a branch with no upstream fails outright, so folding the two together would
+    /// give one button two meanings and a failure that only appears sometimes.
+    /// </remarks>
+    public AsyncCommand PublishCommand { get; private set; } = null!;
+
     private string _commitMessage = string.Empty;
 
     /// <summary>
@@ -1592,10 +1650,20 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         BuildHunkCommand();
 
-        PullCommand = new AsyncCommand(PullAsync, () => Ready, ReportError);
+        // Pull is enabled whenever an upstream exists, NOT only when behind. Behind-ness is
+        // as fresh as the last fetch, and disabling a safe fast-forward on stale knowledge
+        // would leave somebody unable to act on a remote that moved a second ago.
+        PullCommand = new AsyncCommand(
+            PullAsync, () => Ready && Standing.CanPull, ReportError);
+        // Push stays live while diverged, where git will reject it. Disabling it would hide
+        // the state the user has to resolve; git's own rejection, in a notification that does
+        // not expire, is the clearest possible explanation of what is wrong.
         PushCommand = new AsyncCommand(() => PushAsync(afterCommit: false),
-                                       () => Ready, ReportError);
+                                       () => Ready && Standing.CanPush, ReportError);
         FetchCommand = new AsyncCommand(FetchAsync, () => Ready, ReportError);
+
+        PublishCommand = new AsyncCommand(
+            PublishAsync, () => Ready && Standing.CanPublish, ReportError);
 
         // Enabled only with a row selected. Discard is per-file on purpose: a "discard all"
         // beside "stage all" would put an irreversible button one pixel away from a routine
@@ -1760,6 +1828,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         PullCommand.RaiseCanExecuteChanged();
         PushCommand.RaiseCanExecuteChanged();
         FetchCommand.RaiseCanExecuteChanged();
+        PublishCommand.RaiseCanExecuteChanged();
         RefreshCommand.RaiseCanExecuteChanged();
         HunkCommand.RaiseCanExecuteChanged();
         DiscardCommand.RaiseCanExecuteChanged();
@@ -1995,6 +2064,68 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // count, so a successful push said nothing at all.
         Notifications.Success("Pushed.", "Every direction lock is released.");
         await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Put this branch on the remote for the first time.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The remote is chosen, never guessed silently.</b> <c>origin</c> when it exists — which
+    /// it does for anything that was cloned — then the sole remote if there is exactly one.
+    /// With several and no <c>origin</c>, this refuses and says so rather than picking: pushing
+    /// a branch to the wrong remote is not something to do on a coin toss, and a repository
+    /// with three remotes is one where somebody has already thought about which is which.
+    /// </para>
+    /// <para>
+    /// Releases the direction locks on success exactly as <see cref="PushAsync"/> does. The
+    /// lock rule is about work becoming visible to other people, and a publish makes it visible
+    /// for the first time — if anything it is the more complete case.
+    /// </para>
+    /// </remarks>
+    private async Task PublishAsync()
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        _logger.Click("Git.Publish");
+
+        var remotes = await _git.RemotesAsync(CancellationToken.None).ConfigureAwait(true);
+
+        var remote = remotes.FirstOrDefault(r => r == "origin")
+                     ?? (remotes.Count == 1 ? remotes[0] : null);
+
+        if (remote is null)
+        {
+            Notifications.Failure(
+                "Versio does not know which remote to publish to.",
+                remotes.Count == 0
+                    ? "This repository has no remote."
+                    : $"It has {remotes.Count} remotes and none is called origin: " +
+                      string.Join(", ", remotes));
+            return;
+        }
+
+        using var busy = Busy.Begin(WorkKind.GitPush, $"Publishing {BranchName} to {remote}…");
+        var result = await _git.PublishBranchAsync(remote, BranchName, null, busy.Token)
+            .ConfigureAwait(true);
+
+        if (!result.Success)
+        {
+            Notifications.Failure($"Could not publish {BranchName}.",
+                                  result.FailureReason ?? string.Empty);
+            return;
+        }
+
+        var head = await _git.HeadCommitAsync(busy.Token).ConfigureAwait(true);
+        await Sync.ReleaseAfterPushAsync(head, busy.Token).ConfigureAwait(true);
+
+        Notifications.Success($"{BranchName} is on {remote} now.",
+                              "Every direction lock is released.");
+
+        await RunRefreshAsync(RefreshTrigger.GitMetadata, null).ConfigureAwait(true);
     }
 
     private async Task FetchAsync()
@@ -3051,6 +3182,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             AheadBehind = status.Branch is { Ahead: 0, Behind: 0 }
                 ? string.Empty
                 : $"↑{status.Branch.Ahead} ↓{status.Branch.Behind}";
+
+            // The remote list is read once per repository rather than per refresh: remotes are
+            // configuration, they change when somebody edits them, and a process spawn on
+            // every working-tree save to re-learn that origin still exists is waste.
+            Standing = RemoteStanding.For(status.Branch, _hasRemote);
 
             var changed = Reconcile(status.Changes);
 

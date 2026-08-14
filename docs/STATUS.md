@@ -1,10 +1,10 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-13 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,081 unit + 245 UI + 137 integration, 0 skipped
+**Date:** 2026-08-13 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,099 unit + 254 UI + 144 integration, 0 skipped
 
 > All three re-derived on 2026-08-13, on branch `GitPanel`, after the git-panel plan's GP-0
-> (git presence probe and commit-identity preflight, then notifications). The integration suite was re-run in full
-> against real CODESYS 3.5.22.20 — **137 passed, 0 skipped, 6 m 33 s** — including
+> (git presence probe and commit-identity preflight, notifications, and the remote state machine). The integration suite was re-run in full
+> against real CODESYS 3.5.22.20 — **144 passed, 0 skipped, 6 m 51 s** — including
 > `RepositoryWatcherTests.A_deleted_file_is_reported`, the one noted below as flaky, which
 > passed in this run.
 
