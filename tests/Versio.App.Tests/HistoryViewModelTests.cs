@@ -28,6 +28,26 @@ internal sealed class CountingGitClient : IGitClient
     /// <summary>How many commits the fake history holds.</summary>
     public int Available { get; set; } = 120;
 
+    /// <summary>Which commit ids this client will report as unpushed.</summary>
+    /// <remarks>
+    /// Settable, because the interesting cases are "none" - a fully pushed branch - and "the
+    /// first two", which is what a branch with local work looks like.
+    /// </remarks>
+    public HashSet<string> Unpushed { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>How many times the unpushed set was asked for.</summary>
+    /// <remarks>
+    /// Counted for the same reason the log calls are: it must be read once per refresh and not
+    /// once per page, or two pages of one list could disagree about the same commit.
+    /// </remarks>
+    public int UnpushedCalls { get; private set; }
+
+    public Task<IReadOnlySet<string>> UnpushedCommitIdsAsync(CancellationToken ct)
+    {
+        UnpushedCalls++;
+        return Task.FromResult<IReadOnlySet<string>>(Unpushed);
+    }
+
     public Task<IReadOnlyList<CommitEntry>> RecentCommitsAsync(
         int count, int skip, CancellationToken ct)
     {
@@ -455,5 +475,76 @@ public class HistoryViewModelTests
         // no history.
         Assert.Equal(3, history.Commits.Count);
         Assert.Single(second.LogCalls);
+    }
+
+    /// <summary>
+    /// The history says which commits nobody else has.
+    /// </summary>
+    /// <remarks>
+    /// Reported from the app: every commit was drawn identically, so nothing on screen
+    /// separated work that exists on one machine from work a colleague can already see. The
+    /// branch badge says "2 ahead" and does not say <i>which</i> two — and on a branch with no
+    /// upstream it has nothing to count against at all, which is exactly the branch whose work
+    /// is most invisible.
+    /// </remarks>
+    [Fact]
+    public void A_commit_no_remote_has_is_marked()
+    {
+        var git = new CountingGitClient { Available = 3 };
+        git.Unpushed.Add($"{0:x40}");
+        git.Unpushed.Add($"{1:x40}");
+
+        var history = Attached(git);
+        history.IsVisible = true;
+
+        Assert.Equal(3, history.Commits.Count);
+        Assert.True(history.Commits[0].IsUnpushed);
+        Assert.True(history.Commits[1].IsUnpushed);
+        Assert.False(history.Commits[2].IsUnpushed);
+    }
+
+    [Fact]
+    public void A_fully_pushed_branch_marks_nothing()
+    {
+        // The ordinary state, and the one where a badge on every row would be noise.
+        var git = new CountingGitClient { Available = 3 };
+
+        var history = Attached(git);
+        history.IsVisible = true;
+
+        Assert.All(history.Commits, c => Assert.False(c.IsUnpushed));
+        Assert.DoesNotContain("not pushed", history.Summary);
+    }
+
+    [Fact]
+    public void The_summary_leads_with_what_is_unpushed()
+    {
+        // "23 commits loaded" is context; "3 not pushed" is a thing to do something about.
+        var git = new CountingGitClient { Available = 3 };
+        git.Unpushed.Add($"{0:x40}");
+
+        var history = Attached(git);
+        history.IsVisible = true;
+
+        Assert.StartsWith("1 commit not pushed", history.Summary);
+    }
+
+    [Fact]
+    public void The_unpushed_set_is_read_once_per_refresh_and_not_once_per_page()
+    {
+        // A later page is older history and cannot hold a commit the first read missed. Asking
+        // again would be a second walk for an unchanged answer - and if a push landed between
+        // the two, page one and page two would disagree about the same branch.
+        var git = new CountingGitClient { Available = HistoryViewModel.PageSize * 2 };
+
+        var history = Attached(git);
+        history.IsVisible = true;
+
+        Assert.Equal(1, git.UnpushedCalls);
+
+        history.LoadMoreCommand.Execute(null);
+
+        Assert.Equal(HistoryViewModel.PageSize * 2, history.Commits.Count);
+        Assert.Equal(1, git.UnpushedCalls);
     }
 }

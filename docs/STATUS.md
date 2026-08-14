@@ -38,6 +38,13 @@ repository is tracked without ceremony, exported to a reviewable mirror when it 
 edits to that mirror flow back into the project — driven by the direction lock, proven end to
 end against the real fixture with real CODESYS.
 
+**And the shell has been audited as a UI, not only as a set of features.** Fourteen findings
+across the stylesheet, the shell and the dialogs; twelve applied, each with a test that fails
+against the old behaviour — keyboard focus made visible everywhere, horizontal scrolling fixed,
+screen-reader names on every icon control, the last four `MessageBox` prompts brought into the
+theme, and theme and panel sizes finally persisted. The two left open are in the loose ends
+below, and both are deliberate. See Findings.
+
 **And it now defends the half a mouse can reach.** Closing, switching branch, switching
 repository and pulling all go through one guard; uncommitted work is stashed and offered back
 with the sync state it had; an export can be killed at any instant without leaving a project
@@ -46,10 +53,10 @@ opens. That is `SAFEGUARDS.md` phases 1–8, and phase 9 is features rather than
 
 ```
   CODESYS pipeline    ████████████████████  proven on a real project
-  Domain core         ████████████████████  1,227 tests, 278 ms
+  Domain core         ████████████████████  1,379 tests, 426 ms
   Vendor seam         ████████████████████  enforced from assembly metadata
   Infrastructure      ████████████████████  drives real CODESYS + real git
-  Desktop shell       ███████████████████░  one project view, full git surface, diff
+  Desktop shell       ███████████████████░  full git surface, diff, and a UI audit applied
   Packaging           ██░░░░░░░░░░░░░░░░░░  icon and publish profile only
 ```
 
@@ -288,6 +295,49 @@ More fixture projects. Every field bug becomes a fixture before it is fixed.
 
 ---
 
+## Handoff — the UI pass
+
+**Branch:** `UICleanUp`, cut from `GitPanel`. **State:** a full audit of the shell as a *user
+interface* rather than as a set of features. Fourteen findings, **twelve applied**, each with a
+test that fails against the old behaviour.
+
+**Where to start reading.** The Findings section below, newest first — every one of the twelve
+is written up with the evidence and the reasoning, and several of them are more useful as
+patterns than as fixes. The two that were reported from the running app during the pass (the top
+bar's dropdowns, the unpushed markers in the history) are at the very top.
+
+**What landed, by area.**
+
+| Area | What changed |
+|---|---|
+| Focus | A shared accent ring across every control, plus per-template outlines for list and tree rows. Keyboard focus was invisible application-wide. |
+| Scrollbars | Split into a template per axis. Horizontal bars were arranged 10 px wide and their troughs paged the wrong way. |
+| Status bar | Two columns so the path stops overdrawing the state; the health dot bound to `ShellHealth` instead of hardcoded green. |
+| Accessibility | `AutomationProperties.Name` on every icon-only control, bound to the tooltip already written for it. |
+| Preferences | Theme, log height and panel width persisted — and the write path fixed, which silently reset every field but the one being written. |
+| Dialogs | The last four `MessageBox` prompts moved to `GuardPromptWindow`, with real button labels instead of OK. |
+| Diff | Selection made visible without losing the row tint; `Ctrl+C` added, in document order. |
+| Motion | Four storyboards at `Motion.Fast`, on opacity triggers that already existed. |
+| Top bar | The two dropdowns paired with their buttons, made equal, and spanning the bar. |
+| History | An `↑` on every commit no remote has, and a count in the summary line. |
+
+**What is owed to a human**, because nothing in the tooling can see the screen: all of the above
+in both palettes. The suite measures geometry, opacity, automation names and command state; it
+cannot tell you whether the result reads well. Launch with `Start-Process` and check the process
+has a window before believing a clean binding trace — see *Verifying the UI* below.
+
+**Two things worth knowing before the next pass.**
+
+1. **A geometry defect is invisible to every other kind of test.** Three separate ways a WPF
+   layout can be correct and wrong turned up here — a `DockPanel` whose children all default to
+   `Dock=Left`, a `Grid` cell holding two children that overdraw, and `Stretch` silently becoming
+   `Center` at a `MaxWidth`. None produces a warning. Only a transformed `Rect`, measured at a
+   width where the defect actually occurs, can state it.
+2. **Run the application.** Both of the last two findings came from the product owner opening it,
+   which is now the fifth time in two branches that has produced a defect no suite had.
+
+---
+
 ## Known loose ends, from an audit of the repository
 
 Small, specific, and none of them blocking. Written down because an audit that finds things and
@@ -312,6 +362,24 @@ does not record them has to be run again.
   The inference in this bullet was wrong: git reports such a clone as *clean*. What breaks is
   Versio's own hash gate, which reads the bytes on disk. Adoption writes `<mirror>/** text
   eol=lf` now; see the finding for the measurement both ways.
+- **The spacing scale is declared and unused** — `Space.1`–`Space.7`, `Pad.Row`, `Pad.Panel` and
+  `Pad.Control` have zero references against **239 hardcoded margin and padding literals**, three
+  of the six most frequent being off the stated scale. Left as one deliberate sweep rather than
+  done incrementally, because half-applied is the one state worse than either — and it should end
+  with a test that rejects an off-scale literal, so the rule `Spacing.xaml` states is finally one
+  that something enforces. Starting with the six repeat offenders covers 79 of the 239.
+- **Word-level diff highlighting is not implemented, and its colours are.**
+  `Brush.Diff.AddedWord` and `Brush.Diff.DeletedWord` exist in both palettes and are
+  contrast-checked by `ThemeTokenTests`; `DiffView` tints whole rows and never asks which
+  characters inside a changed line differ. A feature rather than a fix, which is why it sat out
+  the UI pass — and the highest-value thing the diff pane has left, because the diffs being read
+  are generated XML and ST where a long line often differs by one identifier.
+- **The full solution suite flakes under its own load.** Three different tests failed across
+  three consecutive whole-solution runs — `GitHealthTests`, `AdoptAndExportTests`,
+  `AutoStashFlowTests` — each passing in isolation immediately afterwards, and the run after
+  them was clean. All three drive real git or real CODESYS with timeouts while three test
+  projects run concurrently. Not diagnosed further; recorded so the next person does not read a
+  single red run as a regression. Run a project at a time to tell the two apart.
 - **Hand-maintained counts in these documents drift.** The commit count was wrong by twelve,
   the project tree's test count by six, and the scenario suite's by twenty-two — all of them
   written once and never re-checked. Re-derive rather than trust: `git rev-list --count HEAD`,
@@ -342,6 +410,315 @@ does not record them has to be run again.
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### A dropdown centred in its own column, half a bar away from its buttons
+
+Reported from the app: *"the 2 drop downs are so separated from their buttons, making it look
+weird"*.
+
+The top bar gave each dropdown a `*` column and its buttons an `Auto` column beside it, which
+looks right and is not. **A control with `HorizontalAlignment="Stretch"` that runs into its
+`MaxWidth` stops growing and is then CENTRED in what is left.** On a 2400 px window each `*`
+column is far wider than the 420 px and 360 px caps, so each dropdown floated in the middle of
+its column with a strip of empty bar between it and the Open button that acts on it — and the
+buttons read as belonging to nothing.
+
+**The pairing is now expressed in the layout instead of implied by adjacency.** One column per
+group, with `*` for the dropdown and `Auto` for its buttons inside it. The buttons cannot drift
+at any width because there is nothing between them any more.
+
+**The first attempt at that over-corrected, and the correction is the more useful half.** It
+bounded each group and left-aligned it, which removed the gap and introduced two more: the
+dropdowns shrank, and the two caps differed — 500 against 440 — so the bar came out visibly
+weighted to one side with dead space down the middle. Reported immediately, and rightly: *"the
+drop downs need to cover most of the top bar, and not be 1 side weighted"*. **A cap on a group
+is a cap on the dropdown inside it**, which is not what the cap was for.
+
+Two equal `*` columns and no spacer now. The dropdowns match each other at every window size and
+together span everything between the brand and Settings. On a very wide monitor that makes each
+wider than its contents need — a repository name is short — and that is the trade taken
+deliberately: symmetry across the bar over a snug fit around the text. `ShellLayoutTests` pins
+the two properties that were wrong rather than the pixel widths: **the dropdowns match each
+other**, and **together they span more than 70% of the bar**.
+
+Worth recording for the same reason the earlier bar fix was: this is a **third** distinct way for
+a WPF layout to be correct and wrong. A `DockPanel` whose children all default to `Dock=Left`; a
+`Grid` cell holding two children that overdraw; and now `Stretch` silently becoming `Center` at a
+`MaxWidth`. None of the three is a bug in WPF and none produces a warning — each is a layout that
+did exactly what it was told.
+
+All of it is measured at **2400 px**, because that is the only width at which any of it happens:
+at the 1000 px the other layout tests use, the columns are narrow enough that nothing binds and
+every version of this looks identical.
+
+### The history did not say which commits were still only on this machine
+
+Reported from the app. Every commit in the panel was drawn identically, so nothing on screen
+separated work that exists in one place from work a colleague can already see.
+
+The branch badge says *"2 ahead"* — which does not say **which** two, and stops being an answer
+at all on a branch with no upstream, which is exactly the branch whose work is most invisible.
+
+**The query is `HEAD --not --remotes`, and the alternative is the interesting part.** The obvious
+`@{upstream}..HEAD` answers *nothing* on a branch with no upstream, and would then need a special
+case so that a branch cut from a pushed `main` did not report `main`'s own commits as unpushed.
+`--not --remotes` asks the question the reader actually has — *can anybody else see this yet* —
+and is correct in all three cases: with an upstream, without one, and with no remote configured
+at all.
+
+Read **once per refresh, not once per page**: a later page is older history and cannot contain a
+commit the first read would have missed, and re-asking would let two pages disagree about the
+same branch if a push landed between them. Capped at 2000, because a repository with no remote
+answers with its entire history; beyond the cap a commit reads as pushed, which is the safe
+direction — it understates how much is local rather than marking ancient history as unsent.
+
+**An arrow, not a label**, and the first version got that wrong. It was a filled pill reading
+"unpushed", which is too loud for a list this dense — a word repeated down every row of a run,
+when the run is the thing being read. The arrow is the convention every git client uses, it is
+the *same* character the branch badge already spends on ahead-ness, and it needs no legend. The
+argument for the pill had been "a coloured dot would need a legend", which is true of a dot and
+not of `↑`.
+
+`IsUnpushed` is the one mutable thing on `CommitRow`, and deliberately so. The rest of a commit
+is immutable — its hash *is* its content, which is what makes the file cache safe — but whether
+a remote has it changes on every push and every fetch.
+
+### A UI audit, and what it says about the ones that got through
+
+Fourteen findings across the shell, the stylesheet and the two dialogs. Twelve are fixed; the
+two left open are a mechanical sweep and a feature, and both are in the loose ends above.
+
+**What is worth recording is not the list but its shape.** Almost nothing found was a taste
+problem — the token layer, the theme-swap contract and the retemplated controls are better than
+most WPF applications ever get. What the audit actually found was **the design system's rules
+going unenforced**, in exactly the pattern this document has already named twice:
+
+> a comment describing a rule that nothing enforced
+
+`RepoEntry.Location` was the first instance and `BranchEntry.Tracking` the second. The audit
+found the third and by far the largest: `Spacing.xaml` opens with *"Scale: 2 4 8 12 16 24 32.
+Nothing off-scale."* and `Space.1`–`Space.7`, `Pad.Row`, `Pad.Panel` and `Pad.Control` have
+**zero uses** against **239 hardcoded margin and padding literals** — three of the six most
+frequent being 6, 10 and 14, sitting beside 8 and 12 in the same rows. That is why the panels
+read as slightly restless while every individual screen looks considered.
+
+The same shape, smaller, four more times: `Motion.Fast` and `Motion.Base` declared with an
+argument attached and no `Storyboard` anywhere in the codebase; `Brush.Diff.AddedWord` and
+`Brush.Diff.DeletedWord` contrast-tested in both palettes and rendered nowhere; `Radius.Dialog`
+and `Font.Size.Title` referenced by nothing.
+
+**A token nobody consumes is a claim about the design that no screen has to honour.** The rule
+worth taking: a token file needs the same treatment as a style — declared, used, and something
+that fails when it stops being either.
+
+### Keyboard focus was invisible in every control in the application
+
+A grep for `FocusVisualStyle`, `KeyboardNavigation` and `IsKeyboardFocused` across
+`Versio.App` returned **one hit** — a background change on `FlatTextBox`. Every other
+retemplated control had no focused state at all, so WPF fell back to its own adorner: a 1 px
+dotted **black** rectangle. On `Surface.Base` at `#1D2026` that is invisible, and on light it is
+the exact piece of 2009 chrome the stylesheet's header spends four paragraphs removing.
+
+Practically: tabbing through the git panel gave no way to tell whether Enter would fetch, pull,
+push or discard. **Discard is in that row.**
+
+This is the stylesheet's own stated failure mode, one level up. Its header says *"nothing fails
+when a control is simply never styled"* about four controls that kept their Aero chrome; the
+same sentence is true of a **property** never set on any of them. A control with no focus visual
+builds, lays out and renders perfectly.
+
+Fixed with one shared `FocusRing` applied through the styles, an inset variant for the rail —
+where a 40 px button in a 44 px column has no room to ring outward — and per-template outlines
+for list and tree rows, because an adorner that expands outward is clipped by the viewport and
+the first and last visible row would lose the edge being arrowed towards. `FocusVisualTests`,
+13 tests, with the rows focused inside a real shown window: **keyboard focus belongs to a
+`PresentationSource`, not to the visual tree**, and an element merely measured and arranged in
+isolation refuses `Focus()` and reports `IsKeyboardFocused` false forever — which is how the
+first version of those two tests failed while the feature under them worked.
+
+### A horizontal scrollbar was arranged ten pixels wide, and three other things on the same axis
+
+The `ScrollBar` style set `Width="10"` as a plain setter and tried to correct for orientation
+inside `ControlTemplate.Triggers`, which only ever set `Height`. Nothing released the width.
+Measured, through the app's own theme dictionary by pack URI, in a real 400 × 300 `ScrollViewer`:
+
+```
+appStyleFound = True
+HORIZ:  ActualW = 10      ActualH = 17.33   usesAppStyle = True
+VERT :  ActualW = 17.33   ActualH = 282.67  usesAppStyle = True
+```
+
+**A 10 px stub in the corner of a 400 px viewport.** Horizontal bars appear in exactly two
+places and both matter — the diff view and the log console — so long ST lines and long log
+messages could not be scrolled sideways at all.
+
+Three more defects rode along in the same template, and they share one cause: **an axis assumed
+rather than stated.** The thumb hardcoded `Width="6"`, which is thickness on one axis and length
+on the other. `Track.IsDirectionReversed="True"` is right for vertical and inverts a horizontal
+drag. And the trough's page buttons issued `PageUp`/`PageDown` — they are `Opacity="0"` and
+therefore **still hit-testable**, so clicking the trough of a horizontal bar scrolled vertically.
+That fourth one the audit did not find; it turned up while splitting the template.
+
+It survived because the scrollbar *was* styled. `StockControlStyleTests` exists to catch
+controls that kept stock chrome, so a control with a custom template was never on the list — and
+nothing in the suite had ever arranged a horizontal one. Now split into a template per axis, the
+way WPF's own theme does it, which is what makes each of the four impossible to write again.
+`ScrollBarChromeTests`, 7 tests, including a drag through `Track.ValueFromDistance`.
+
+**What this cannot do, stated rather than quietly not happening:** the 10 px is the bar's own
+preferred thickness and applies where a `ScrollBar` stands alone. Inside a `ScrollViewer` it does
+not win — that template assigns its bars a dimension from `SystemParameters` as a **local
+value**, which outranks any style setter — so the gutter stays the system's 17 px with a 6 px
+thumb centred in it. Reaching the last 7 px means retemplating `ScrollViewer`.
+
+### Every settings write reset every other setting
+
+`AppSettings`' own remarks nominated the theme as *"the next preference to need persisting"*, and
+persisting it turned up something larger. Both write paths built:
+
+```csharp
+await _settings.WriteAsync(new AppSettings { Recent = _recent }, CancellationToken.None);
+```
+
+Correct **exactly while the record had one field**. The moment it had two, opening any repository
+— which promotes a path and rewrites the whole file — would silently reset the other one.
+
+**The failure would have been invisible until the launch after next.** Pick Dark, open a
+repository, close, reopen: still Dark, because the write happened after the read. It is the
+launch after that which comes back on Follow system, with nothing in the log and nothing on
+screen connecting the two. Found only because the field was added and a test asked whether the
+recent list survived writing a theme, and vice versa.
+
+The shell holds the whole record now and replaces by field. `PreferencePersistenceTests`, 12
+tests, both clobbering directions among them.
+
+Two smaller things travelled with it. **"Follow system" was a snapshot, not a subscription** —
+the registry was read once at startup and nothing listened afterwards, so flipping Windows into
+dark mode with Versio open left it in the light palette until restart, on the setting that is
+the default and that says by name that it follows. And a restored pane size is now **clamped
+against the window it is being restored onto**: somebody who dragged the log to 900 px on a 4K
+monitor and then opened Versio on a laptop would get a log taller than the window, the panels
+squeezed to nothing, and no splitter left on screen to drag it back with.
+
+### A StaticResource that compiled clean and threw on the first render
+
+The motion work needs `StaticResource` and cannot use `DynamicResource`: a `Storyboard` is a
+`Freezable`, and a `DynamicResource` inside one resolves once and is never re-resolved — the
+trap `ThemeManager.cs` documents at length.
+
+`Theme.xaml` merges `Spacing.xaml` before `Controls.xaml`, which is enough for the BAML compiler
+and **not enough at load**. A merged dictionary resolves static references against itself and
+its own merges, not against whatever the parent merged alongside it. Zero warnings, then:
+
+```
+XamlParseException: Cannot find resource named 'Motion.Fast'
+```
+
+the moment anything rendered a rail button.
+
+**This is the stylesheet's own header happening to the stylesheet** — *"a key can hold a template
+that resolves fine and throws the first time something renders it"* — and it is the fourth time
+in this repository that a XAML reference has compiled and failed at first paint. It cost nothing
+this time because `FocusVisualTests` and `StockControlStyleTests` apply and measure rather than
+look up, and they went red immediately. Without them it would have shipped and been found by
+somebody clicking the rail.
+
+`Controls.xaml` merges `Spacing.xaml` itself now — fifteen immutable primitives, no colours,
+nothing theme-dependent, so the duplicate cannot disagree with the original about anything.
+
+### A status light that could only be right by accident
+
+The leftmost pixel in the status bar, shaped exactly like a health indicator:
+
+```xml
+<Ellipse Width="7" Height="7" Fill="{DynamicResource Brush.Status.Added}" />
+```
+
+Hardcoded green. Green while git was missing, while the tree was mid-merge, while a sync had
+failed and while the branch had diverged — and the shell computes every one of those states,
+`GitIsMissing`, `IsMidMerge`, `Sync.HasFailure` and `Standing`, and the status bar read none of
+them.
+
+**An indicator that cannot be wrong is not an indicator.** The precedence between the seven
+conditions lives in `ShellHealth` in Core now, where it is asserted without a repository, a
+process or a clock — because the interesting question is never "does it turn amber" but *which
+of the three amber reasons does it name*, and several of them are routinely true at once. No
+repository open is neutral rather than green: a green light on an empty shell reports the health
+of nothing.
+
+The same block held a second defect of the same kind. The status bar's `Grid` had **no
+`ColumnDefinitions`**, so the left stack and the right-aligned repository path occupied one cell
+and simply drew on top of each other. Invisible on a maximized 2560 px window, which is exactly
+why it survived — `MainWindow` opens `WindowState="Maximized"` and the collision only appears
+once somebody restores it, a size no test had ever measured at. `ShellLayoutTests` measures at
+1000 px now, with a long path and a long message.
+
+### The four dialogs that were still the operating system's
+
+Every window, tooltip and popup follows the palette. `WindowCaption` goes as far as P/Invoking
+`DwmSetWindowAttribute` so the title bar is the *exact* `Surface.Base` rather than merely dark,
+on the argument that a seam one shade off reads worse than an honest contrast.
+
+And then four flows called `MessageBox.Show`, which is drawn by the operating system, follows
+nothing, and lands as a bright system dialog over a dark application. The four were not
+marginal: a rejected folder, a repository open elsewhere, **confirming a discard**, and
+**confirming an import into a `.project`** — the two most consequential prompts in the product.
+
+`GuardPromptWindow` already did themed prompts with an arbitrary list of options and a
+designated cancel. Routing them through it exposed the smaller half of the problem:
+`ConfirmDestructive` was `Func<string, string, bool>`, so there was **nowhere to put the button's
+words** — every one of these ended in OK and Cancel while the captions were all phrased as
+questions. *"Discard changes to this file?"* — OK is not an answer to that. That is the exact
+argument `GuardPromptWindow`'s own remarks make about three-way prompts, and it applies no less
+to a two-way one.
+
+The delegates take a `DestructivePrompt` carrying its own affirmative label now, so the prompts
+say Discard, Abandon, Delete and Import. **Cancel leads**, which is not a style choice: the
+window gives the first option the accent and `IsDefault`, so putting Cancel first is what
+preserves the property the `MessageBox` got from its `defaultResult` argument — a stray Enter
+must not destroy anything.
+
+### Selecting diff lines did nothing, and copying them did nothing
+
+`DiffView` has set `SelectionMode.Extended` since it was written, so click, shift-click and
+Ctrl-click all built a real selection. The container style supplied in the shell reduced the row
+to a bare `<ContentPresenter />` with no `IsSelected` trigger, so nothing was drawn — and no
+`Copy` binding existed anywhere in the application, so Ctrl+C did nothing either. A user dragged
+across twelve lines, saw no response at all, pressed Ctrl+C, and got nothing.
+
+**The bare template was half right, and that is the part worth recording.** A selected fill of
+the kind `RowItem` uses would paint over `Diff.AddedBg` and `Diff.DeletedBg`, and the row tint
+*is* the information. But "must not overwrite the tint" was solved by drawing nothing, which is a
+different thing from solving it. Selection is a wash **on top** now — the accent at low opacity
+darkens a green or red row without flattening it, so a selected added line still reads as added.
+
+The copy orders by document position, not by `SelectedItems`, which is in the order things were
+picked: a Ctrl-click walk upwards through a hunk would otherwise paste the change running
+backwards. The marker travels with the line, because what is pasted is an excerpt of a *diff* —
+stripping the `+` and `-` turns "here is what changed" into "here is some code", which is the
+half worth sending.
+
+### Icon-only controls announced Private Use Area codepoints
+
+`AutomationProperties` appeared **zero times** in the application. `IconButton` puts the glyph in
+`Content`, and WPF derives a control's automation name from its content — so Open, Clone, New
+branch, Refresh, Settings, the log's Pause and its Clear all announced `U+E8B7`, `U+E896`,
+`U+E710` and friends. That is the whole top bar and the whole of primary navigation. Every one of
+them had a `ToolTip` written for a sighted user hovering, and **WPF does not use `ToolTip` as an
+automation name**.
+
+An icon-only button with no name is unusable by a screen reader and unreachable by voice control:
+there is nothing to say to press it.
+
+`IconButton` binds its name to its own `ToolTip` now, so the names already written reach a reader
+with nothing new to author and nothing to keep in step — and it follows a tooltip that changes,
+which the log's Pause does: it says Resume while paused. The rail takes its short name from `Tag`
+and keeps the sentence in `HelpText`, because a name is what a reader says every time focus
+lands and *"Project — the repository as CODESYS structures it, with every change marked"* is not
+that. `AutomationNameTests` walks the real shell asserting no control's name contains a PUA
+codepoint — **through the automation peer, not through the property**, because the peer is what
+applies the fallback to content and the fallback was the entire defect. Reading
+`AutomationProperties.Name` directly would have returned empty and looked fine.
 
 ### A shared row template learned about objects, and blanked the panel that shared it
 
@@ -2090,8 +2467,34 @@ Two instruments, covering different halves of the problem.
 **`Versio.App.Tests` constructs the real windows against the real stylesheet.** A WPF test
 project on an STA thread with `Theme.xaml` loaded by pack URI from the app assembly, so a style
 renamed in the stylesheet and not in a dialog fails the build rather than the first click. It
-covers what the tracer cannot: a modal nobody has opened has never been parsed. 24 tests over
-the two dialogs, and a deliberately broken style reference fails every one of them.
+covers what the tracer cannot: a modal nobody has opened has never been parsed. 441 tests across
+48 classes; a deliberately broken style reference fails the dialog tests outright.
+
+**Applied and MEASURED, not looked up — that distinction has now earned itself twice.** A style
+key can hold a template that resolves fine and throws the first time something renders it, which
+is what happened to `Motion.Fast` (see Findings), and a control can carry a perfectly valid
+property that produces the wrong geometry, which is what happened to the horizontal scrollbar.
+Neither is reachable by a test that asks whether a resource exists. The UI classes worth knowing
+about, all of which apply a style and then read the result:
+
+| Class | What it holds still |
+|---|---|
+| `ShellLayoutTests` | Rendered geometry at 1000 px and 2400 px: nothing overlaps, every panel fills its card, and a dropdown keeps its buttons beside it |
+| `StockControlStyleTests` | No control falls back to WPF's own Aero chrome or the system highlight |
+| `FocusVisualTests` | Keyboard focus is visible, in the app's accent, on every control and both row kinds |
+| `ScrollBarChromeTests` | The scrollbar works on both axes — geometry, thumb, direction and page commands |
+| `MotionTests` | The storyboards resolve, render, and settle at full opacity in both directions |
+| `AutomationNameTests` | No control in the shell announces a Private Use Area codepoint |
+| `DiffSelectionTests` | Diff selection and copy: document order, markers kept, command state |
+| `PreferencePersistenceTests` | A setting survives the launch after the one that set it, and no write resets another |
+| `HistoryRowChromeTests` | A realised commit-file row, after a shared template blanked the panel |
+
+> **Two of these exist because a geometry defect is invisible to every other kind of test.** An
+> overlap, a control centred in its own column and a scrollbar arranged 10 px wide all measure,
+> arrange and render without a warning — they are layouts that did what they were told. The only
+> form in which "these two things sit on top of each other" can be written down is a transformed
+> `Rect`, at a width where it actually happens. `ShellLayoutTests` measures at 1000 px for the
+> overlaps and at 2400 px for the top bar, because each is invisible at the other's width.
 
 **`Versio.exe --trace-bindings <file>`** writes every WPF data-binding failure to a file. A
 broken binding in WPF is otherwise **silent** — a mistyped path or a missing converter produces an

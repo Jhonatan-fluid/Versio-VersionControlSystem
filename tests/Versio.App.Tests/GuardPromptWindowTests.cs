@@ -19,6 +19,63 @@ namespace Versio.App.Tests;
 /// </remarks>
 public sealed class GuardPromptWindowTests
 {
+    [Fact]
+    public void A_destructive_question_defaults_to_the_safe_answer()
+    {
+        // The four prompts that used to be MessageBox.Show - discarding a file, abandoning a
+        // merge, deleting remote branches, importing into a .project - are asked through this
+        // window now, in the app's own palette rather than a bright system dialog over a dark
+        // application.
+        //
+        // What has to survive the move is the property the MessageBox got from its
+        // defaultResult argument: a stray Enter must not destroy anything. This window gives
+        // the FIRST option the accent and IsDefault, so the safe answer leads.
+        StaHarness.Run(() =>
+        {
+            var window = new GuardPromptWindow(
+                "Discard changes to this file?",
+                "The changes are thrown away and cannot be recovered.",
+                [new PromptOption("Cancel", false), new PromptOption("Discard", true)],
+                cancels: false);
+
+            var buttons = Buttons(window);
+
+            Assert.Equal(2, buttons.Count);
+
+            var cancel = Assert.Single(buttons, b => Equals(b.Content, "Cancel"));
+            var discard = Assert.Single(buttons, b => Equals(b.Content, "Discard"));
+
+            Assert.True(cancel.IsDefault, "Enter would destroy the file's changes");
+            Assert.True(cancel.IsCancel, "Escape does not back out");
+            Assert.False(discard.IsDefault);
+
+            // And it says what it does. OK was never an answer to a question ending in a
+            // question mark, which is what all four of these captions are.
+            Assert.DoesNotContain(buttons, b => Equals(b.Content, "OK"));
+        });
+    }
+
+    [Fact]
+    public void A_statement_offers_one_button_and_records_no_choice()
+    {
+        // "Already open in another Versio window" is not a question. It used to be a
+        // MessageBoxImage.Information dialog; it is this now.
+        StaHarness.Run(() =>
+        {
+            var window = new GuardPromptWindow(
+                "Already open",
+                "Another Versio window has this repository open.",
+                []);
+
+            var only = Assert.Single(Buttons(window));
+
+            Assert.Equal("OK", only.Content);
+            Assert.True(only.IsDefault);
+            Assert.True(only.IsCancel);
+            Assert.Null(window.Result);
+        });
+    }
+
     private static StackPanel ButtonRow(GuardPromptWindow window)
     {
         var field = typeof(GuardPromptWindow).GetField(

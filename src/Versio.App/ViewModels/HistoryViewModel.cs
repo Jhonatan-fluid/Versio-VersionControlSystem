@@ -128,6 +128,30 @@ public sealed class CommitRow : ObservableObject
 
     public string Age => Entry.Age;
 
+    private bool _isUnpushed;
+
+    /// <summary>
+    /// True while no remote has this commit.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The history panel listed every commit identically, so there was nothing on screen
+    /// separating work that exists in one place from work that is backed up and visible to
+    /// everybody else. The branch badge says "2 ahead"; it does not say <i>which two</i>, and
+    /// on a branch with no upstream it has nothing to count against at all.
+    /// </para>
+    /// <para>
+    /// Settable, because it is the one thing about a commit that <b>does</b> change under it.
+    /// The rest of a commit is immutable — its hash is its content, which is what makes the
+    /// file cache safe — but whether a remote has it changes on every push and every fetch.
+    /// </para>
+    /// </remarks>
+    public bool IsUnpushed
+    {
+        get => _isUnpushed;
+        set => SetProperty(ref _isUnpushed, value);
+    }
+
     /// <summary>The files this commit touched, once somebody has asked for them.</summary>
     public ObservableCollection<CommitFileRow> Children { get; } = [];
 
@@ -210,6 +234,16 @@ public sealed class HistoryViewModel : ObservableObject
     private readonly VersioLogger _logger;
 
     private IGitClient? _git;
+
+    /// <summary>
+    /// Which commits no remote has, as of the last read.
+    /// </summary>
+    /// <remarks>
+    /// Read once per refresh rather than per page: it is one <c>rev-list</c>, and asking again
+    /// for page four would let two pages of the same list disagree about the same commit.
+    /// </remarks>
+    private IReadOnlySet<string> _unpushed = new HashSet<string>(StringComparer.Ordinal);
+
     private bool _isVisible;
     private bool _stale = true;
     private bool _hasMore;
@@ -355,12 +389,25 @@ public sealed class HistoryViewModel : ObservableObject
         IsLoading = true;
         try
         {
+            // Before the page, and only for the first one. A later page is older history and
+            // cannot contain a commit the first read would have missed, so re-asking would be
+            // a second walk for an answer that has not changed - and would let two pages
+            // disagree if a push landed between them.
+            if (skip == 0)
+            {
+                _unpushed = await _git.UnpushedCommitIdsAsync(CancellationToken.None)
+                    .ConfigureAwait(true);
+            }
+
             var page = await _git.RecentCommitsAsync(PageSize, skip, CancellationToken.None)
                 .ConfigureAwait(true);
 
             foreach (var commit in page)
             {
-                Commits.Add(new CommitRow(commit, LoadFilesAsync));
+                Commits.Add(new CommitRow(commit, LoadFilesAsync)
+                {
+                    IsUnpushed = _unpushed.Contains(commit.Id),
+                });
             }
 
             // A full page means there is probably another; a short one means the branch ran
@@ -369,7 +416,9 @@ public sealed class HistoryViewModel : ObservableObject
             HasMore = page.Count == PageSize;
             UpdateSummary();
 
-            _logger.Debug(LogCategory.Git, $"history: read {page.Count} commits from {skip}");
+            _logger.Debug(LogCategory.Git,
+                $"history: read {page.Count} commits from {skip}, " +
+                $"{_unpushed.Count} unpushed on this branch");
         }
         finally
         {
@@ -424,10 +473,32 @@ public sealed class HistoryViewModel : ObservableObject
         UpdateSummary();
     }
 
-    private void UpdateSummary() => Summary = Commits.Count switch
+    /// <summary>
+    /// How much of the history is loaded, and how much of it nobody else can see.
+    /// </summary>
+    /// <remarks>
+    /// The unpushed count leads when there is one, because it is the actionable half — "23
+    /// commits loaded" is context, "3 not pushed" is a thing to do something about. Counted
+    /// across the whole set rather than the loaded page: a commit that has scrolled off the
+    /// end of what is loaded is no more pushed for being out of sight.
+    /// </remarks>
+    private void UpdateSummary()
     {
-        0 => string.Empty,
-        1 => "1 commit loaded",
-        var n => $"{n} commits loaded" + (HasMore ? ", more further back" : string.Empty),
-    };
+        var loaded = Commits.Count switch
+        {
+            0 => string.Empty,
+            1 => "1 commit loaded",
+            var n => $"{n} commits loaded" + (HasMore ? ", more further back" : string.Empty),
+        };
+
+        if (loaded.Length == 0 || _unpushed.Count == 0)
+        {
+            Summary = loaded;
+            return;
+        }
+
+        Summary = _unpushed.Count == 1
+            ? $"1 commit not pushed · {loaded}"
+            : $"{_unpushed.Count} commits not pushed · {loaded}";
+    }
 }

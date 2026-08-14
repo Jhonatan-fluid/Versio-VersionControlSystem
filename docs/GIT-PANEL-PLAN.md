@@ -2525,6 +2525,11 @@ happy to see remembered**, or clear the list afterwards.
 **Branch:** `GitPanel`. **State:** GP-0 through GP-H shipped and audited twice; **GP-J and GP-I
 built, in `1a01953`**, with both §13 scripts outstanding.
 
+> **Work has since moved to `UICleanUp`**, which was cut from this branch and carries a full UI
+> audit of the shell — fourteen findings, twelve applied. It touches `MainWindow.xaml`, the
+> stylesheet and `HistoryViewModel`, so read *Handoff — the UI pass* in `STATUS.md` before
+> continuing anything in this document. Nothing here was reverted by it.
+
 **Both phases share one commit**, which is the only entry in that table to do so. Three source
 files and all four documents carry changes from each, so splitting them would have produced a
 first commit that did not build — and rewriting the phase log, the table and the counts twice to

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Documents;
 using System.Windows.Media;
@@ -95,6 +96,71 @@ public sealed class DiffView : ListBox
         VirtualizingStackPanel.SetVirtualizationMode(this, VirtualizationMode.Recycling);
         ScrollViewer.SetHorizontalScrollBarVisibility(this, ScrollBarVisibility.Auto);
         SelectionMode = SelectionMode.Extended;
+
+        // SELECTING LINES DID NOTHING AND COPIED NOTHING.
+        //
+        // Extended selection has been on since this class was written, so click, shift-click
+        // and Ctrl-click all built a real selection - and the container template is a bare
+        // ContentPresenter with no IsSelected trigger, so nothing was drawn, and no Copy
+        // binding existed anywhere in the application, so Ctrl+C did nothing either. A user
+        // dragged across twelve lines, saw no response at all, pressed Ctrl+C, and got
+        // nothing. Copying a few lines of a changed function into a message asking a
+        // colleague for help is one of the most common things anybody does with a diff.
+        //
+        // A CommandBinding rather than a KeyDown handler: Ctrl+C is already routed to
+        // ApplicationCommands.Copy by the input system, and a binding means the same command
+        // works from a context menu or a shortcut somebody remaps later.
+        CommandBindings.Add(new CommandBinding(ApplicationCommands.Copy, OnCopy, OnCanCopy));
+    }
+
+    private void OnCanCopy(object sender, CanExecuteRoutedEventArgs e) =>
+        e.CanExecute = SelectedItems.Count > 0;
+
+    /// <summary>
+    /// Put the selected lines on the clipboard, in the order they appear in the file.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Document order, not selection order.</b> <see cref="Selector.SelectedItems"/> is in
+    /// the order things were picked, so Ctrl-clicking upwards through a hunk would paste the
+    /// lines reversed — a diff that reads as though the change ran backwards.
+    /// </para>
+    /// <para>
+    /// The marker travels with the line. What gets pasted is an excerpt of a <i>diff</i>, and
+    /// stripping the <c>+</c> and <c>-</c> would turn "here is what changed" into "here is
+    /// some code" — which is the half that was worth sending.
+    /// </para>
+    /// <para>
+    /// The clipboard genuinely fails: another process can hold it open and
+    /// <see cref="Clipboard.SetText(string)"/> then throws. Letting that reach the dispatcher
+    /// would take the window down while somebody was trying to copy an error, which is a
+    /// memorable way to lose a bug report — the same trap the shell's own copy handler
+    /// documents.
+    /// </para>
+    /// </remarks>
+    private void OnCopy(object sender, ExecutedRoutedEventArgs e)
+    {
+        if (ItemsSource is not IReadOnlyList<DiffLine> lines || SelectedItems.Count == 0)
+        {
+            return;
+        }
+
+        var picked = SelectedItems.OfType<DiffLine>().ToHashSet();
+        var text = string.Join(
+            Environment.NewLine,
+            lines.Where(picked.Contains).Select(line => line.Marker + line.Text));
+
+        try
+        {
+            Clipboard.SetText(text);
+        }
+        catch (System.Runtime.InteropServices.ExternalException)
+        {
+            // Another process has the clipboard. Nothing useful to do, and nothing worth
+            // interrupting the user over - the lines are still on screen.
+        }
+
+        e.Handled = true;
     }
 
     private static void OnInputChanged(DependencyObject d, DependencyPropertyChangedEventArgs e) =>

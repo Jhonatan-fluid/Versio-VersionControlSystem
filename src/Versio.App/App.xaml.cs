@@ -26,9 +26,16 @@ public partial class App : Application
         // open - the dialogs, System information, the spike - including ones not written yet.
         WindowCaption.FollowTheme();
 
-        // Follow the Windows app theme by default. Dark is the expected setting for this
-        // audience, so it is verified on every screen rather than assumed to work.
+        // Follow the Windows app theme until the settings file says otherwise - which it is
+        // read for below, once there is a store to read it from. Applied here as well as
+        // there so the spike and any early failure are painted rather than raw.
+        //
+        // AND KEEP FOLLOWING IT. "Follow system" was a snapshot: the registry was read once
+        // and nothing listened afterwards, so flipping Windows into dark mode with Versio open
+        // left it light until restart - on the setting that is the default and that says by
+        // name that it follows.
         ThemeManager.Apply(AppTheme.System);
+        ThemeManager.FollowSystemChanges();
 
         // --spike runs the R25 tree measurement instead of the shell. Kept in the shipped
         // app rather than deleted, so the virtualization settings have a regression check
@@ -68,11 +75,26 @@ public partial class App : Application
         // The file sink needs a repository, so it is attached when one is opened. Until
         // then the ring buffer holds everything and the console shows it.
         var log = new LogViewModel(sink);
+
         // The real settings store is wired HERE and nowhere else. The view model defaults to
         // one that remembers nothing, so that constructing a shell - in a test, in a harness -
         // cannot rewrite the recent list belonging to whoever is running it.
-        var shell = new ShellViewModel(
-            logger, log, settings: new JsonAppSettingsStore(logger: logger))
+        var settings = new JsonAppSettingsStore(logger: logger);
+
+        // READ BEFORE THE FIRST WINDOW EXISTS, and blocking.
+        //
+        // The theme and the panel sizes both have to be in hand before anything is shown, or
+        // the window paints a frame in the wrong palette at the wrong size and then jumps.
+        // The shell reads the same file again for the recent list, which is a few milliseconds
+        // of a small local file and keeps the shell's own contract untouched.
+        //
+        // Blocking is safe specifically because the store awaits with ConfigureAwait(false)
+        // throughout: there is no dispatcher pumping inside OnStartup, and a continuation
+        // posted back to it would deadlock.
+        var stored = settings.ReadAsync(CancellationToken.None).GetAwaiter().GetResult();
+        ThemeManager.Apply(ThemeManager.Parse(stored.Theme));
+
+        var shell = new ShellViewModel(logger, log, settings: settings)
         {
             // So "Open logs folder" opens where the logs actually are, not where they would
             // have gone had the sink attached successfully.
@@ -99,7 +121,7 @@ public partial class App : Application
             shell.AbandonForShutdown();
         };
 
-        new MainWindow(shell).Show();
+        new MainWindow(shell, stored.Layout).Show();
 
         // Is git there at all? Asked once, here, rather than at first use.
         //

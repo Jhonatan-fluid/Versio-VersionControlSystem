@@ -1047,6 +1047,36 @@ public sealed partial class GitCliClient(
         return result.Success ? GitLogParser.ParseCommits(result.StdOut) : [];
     }
 
+    /// <summary>How many unpushed commits are looked for before giving up counting.</summary>
+    /// <remarks>
+    /// A repository with no remote answers this query with its whole history, so there has to
+    /// be a bound. Two thousand is far past the point where "how much have I not pushed" is a
+    /// question anybody is asking precisely, and it is four hundred pages of the history panel.
+    /// </remarks>
+    private const int UnpushedCap = 2000;
+
+    public async Task<IReadOnlySet<string>> UnpushedCommitIdsAsync(CancellationToken ct)
+    {
+        // HEAD --not --remotes: everything reachable from here that no remote-tracking branch
+        // can reach. See IGitClient for why this rather than @{upstream}..HEAD.
+        var result = await RunAsync(
+            ["rev-list", $"--max-count={UnpushedCap}", "HEAD", "--not", "--remotes"], null, ct)
+            .ConfigureAwait(false);
+
+        if (!result.Success)
+        {
+            // An unborn branch, or a repository mid-clone. Nothing to report, and nothing
+            // wrong: the panel simply marks nothing rather than showing an error over a
+            // question nobody asked.
+            return new HashSet<string>(StringComparer.Ordinal);
+        }
+
+        return new HashSet<string>(
+            result.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries
+                                     | StringSplitOptions.TrimEntries),
+            StringComparer.Ordinal);
+    }
+
     /// <summary>The patch of one commit, with no commit header of its own.</summary>
     /// <remarks>
     /// <c>--format=</c> empties the header so the output is a plain unified diff the existing

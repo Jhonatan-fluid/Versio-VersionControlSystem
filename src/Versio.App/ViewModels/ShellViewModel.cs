@@ -385,6 +385,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// </remarks>
     private IReadOnlyList<RecentRepository> _recent = [];
 
+    /// <summary>
+    /// Everything else in settings.json, carried so a write does not throw it away.
+    /// </summary>
+    /// <remarks>
+    /// Both writes below constructed <c>new AppSettings { Recent = _recent }</c>, which was
+    /// correct exactly while the record had one field. The moment a second one existed - the
+    /// theme, then the panel sizes - opening any repository would have silently reset it,
+    /// because promoting a path rewrites the whole file. Held whole, replaced by field.
+    /// </remarks>
+    private AppSettings _stored = AppSettings.Empty;
+
     private GitCliClient? _git;
     private readonly RemotePoller _poller;
 
@@ -504,6 +515,18 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // toolchain work at all, including the catch-up and commit-gate exports that both
         // carefully open a scope for it. Two objects, both correct, wired to nothing.
         Sync = new SyncViewModel(logger, _clock, Busy, toolchains);
+
+        // A failed project is the one condition the status light reads that does not live on
+        // this view model, so it is the one that has to be listened for rather than raised.
+        Sync.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(SyncViewModel.HasFailure)
+                              or nameof(SyncViewModel.FailedProject))
+            {
+                RaiseHealth();
+            }
+        };
+
         History = new HistoryViewModel(logger);
         _gitFactory = gitFactory ?? (path => new GitCliClient(path, logger: logger));
         _locator = new RepositoryLocator(probe ?? new FileSystemRepositoryProbe());
@@ -981,7 +1004,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// </remarks>
     public async Task LoadRecentAsync(CancellationToken ct = default)
     {
-        _recent = (await _settings.ReadAsync(ct).ConfigureAwait(true)).Recent;
+        _stored = await _settings.ReadAsync(ct).ConfigureAwait(true);
+        _recent = _stored.Recent;
 
         WithoutSideEffects(() =>
         {
@@ -1037,8 +1061,54 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             });
 
         SyncRecentToDropdown(path);
-        await _settings.WriteAsync(new AppSettings { Recent = _recent }, CancellationToken.None)
-            .ConfigureAwait(true);
+        await SaveSettingsAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Which palette the user chose, and how big they made the panels.
+    /// </summary>
+    /// <remarks>
+    /// Read at startup before the first window is shown, and written back whenever one of
+    /// them changes. The shell owns them because the shell owns the settings store — the
+    /// alternative was a second store for two doubles and a string.
+    /// </remarks>
+    public string StoredTheme => _stored.Theme;
+
+    public LayoutSettings StoredLayout => _stored.Layout;
+
+    /// <summary>Remember the theme the user picked.</summary>
+    /// <remarks>
+    /// Fire-and-forget from a radio button's Checked handler, which cannot await. A failed
+    /// write costs the preference and nothing else — the store never throws.
+    /// </remarks>
+    public async Task RememberThemeAsync(string theme)
+    {
+        if (string.Equals(_stored.Theme, theme, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _stored = _stored with { Theme = theme };
+        await SaveSettingsAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>Remember a pane the user dragged.</summary>
+    /// <remarks>
+    /// Called when the window closes rather than on every drag: a GridSplitter raises its
+    /// change continuously, and writing settings.json on each frame of a drag would be a file
+    /// write per pixel.
+    /// </remarks>
+    public async Task RememberLayoutAsync(LayoutSettings layout)
+    {
+        _stored = _stored with { Layout = layout };
+        await SaveSettingsAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>Write the whole record, with the recent list as it currently stands.</summary>
+    private Task SaveSettingsAsync()
+    {
+        _stored = _stored with { Recent = _recent };
+        return _settings.WriteAsync(_stored, CancellationToken.None);
     }
 
     /// <summary>Take a repository out of the list, and write the list down.</summary>
@@ -1047,8 +1117,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         _recent = Core.Settings.RecentRepositories.Remove(_recent, path);
 
         SyncRecentToDropdown(_repositoryPath);
-        await _settings.WriteAsync(new AppSettings { Recent = _recent }, CancellationToken.None)
-            .ConfigureAwait(true);
+        await SaveSettingsAsync().ConfigureAwait(true);
 
         _logger.Info(LogCategory.App, $"removed {path} from the recent repositories");
     }
@@ -1204,6 +1273,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 OnPropertyChanged(nameof(PullLabel));
                 OnPropertyChanged(nameof(ShowPublish));
                 OnPropertyChanged(nameof(ShowPush));
+                RaiseHealth();
                 RaiseGitCommandStates();
             }
         }
@@ -1243,6 +1313,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 OnPropertyChanged(nameof(AuthExplanation));
                 OnPropertyChanged(nameof(NeedsAttentionForAuth));
                 OnPropertyChanged(nameof(CanSignIn));
+                RaiseHealth();
                 SignInCommand.RaiseCanExecuteChanged();
                 SignOutCommand.RaiseCanExecuteChanged();
         DeleteBranchesCommand.RaiseCanExecuteChanged();
@@ -1294,6 +1365,54 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref _statusSummary, value);
     }
 
+    /// <summary>
+    /// The status light, and the sentence behind it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The dot in the corner of the status bar was <c>Brush.Status.Added</c> written straight
+    /// into the XAML: hardcoded green, in the leftmost position of the status bar, shaped
+    /// exactly like a health indicator, and green while git was missing, while the tree was
+    /// mid-merge, while a sync had failed and while the branch had diverged. This shell
+    /// computed all four and the status bar read none of them.
+    /// </para>
+    /// <para>
+    /// Computed rather than stored, and the precedence lives in <see cref="ShellHealth"/>
+    /// where it can be asserted without a repository. <see cref="RaiseHealth"/> is what makes
+    /// it move — every condition it reads is on a property with its own setter, and each of
+    /// those calls it.
+    /// </para>
+    /// </remarks>
+    public ShellHealth Health => ShellHealth.Evaluate(new ShellConditions
+    {
+        RepositoryOpen = _git is not null,
+        GitMissing = GitIsMissing,
+        FailedProject = Sync.FailedProject?.Name ?? string.Empty,
+        MidMerge = IsMidMerge,
+        IdentityMissing = IdentityIsMissing,
+        AuthNeedsAttention = NeedsAttentionForAuth,
+        Diverged = _standing.IsDiverged,
+    });
+
+    /// <summary>Bound through <c>ResourceKeyConverter</c>, so the theme picks the paint.</summary>
+    public string HealthBrushKey => Health.BrushKey;
+
+    /// <summary>The tooltip. A coloured dot with no explanation is a riddle, not a status.</summary>
+    public string HealthSummary => Health.Summary;
+
+    /// <summary>Tell the status light one of its seven conditions moved.</summary>
+    /// <remarks>
+    /// Called from every setter that feeds <see cref="Health"/>, and from the sync panel's
+    /// own notifications — a failed project is the one condition that does not live on this
+    /// view model.
+    /// </remarks>
+    private void RaiseHealth()
+    {
+        OnPropertyChanged(nameof(Health));
+        OnPropertyChanged(nameof(HealthBrushKey));
+        OnPropertyChanged(nameof(HealthSummary));
+    }
+
     // ------------------------------------------------------- git's own health (plan §12a/§12b)
 
     private GitPresence _gitPresence = GitPresence.Unknown;
@@ -1317,6 +1436,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             {
                 OnPropertyChanged(nameof(GitIsMissing));
                 OnPropertyChanged(nameof(GitPresenceExplanation));
+                RaiseHealth();
             }
         }
     }
@@ -1343,6 +1463,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             {
                 OnPropertyChanged(nameof(IdentityIsMissing));
                 OnPropertyChanged(nameof(IdentityExplanation));
+                RaiseHealth();
                 IdentityName = value.Name;
                 IdentityEmail = value.Email;
                 RaiseGitCommandStates();
@@ -1804,6 +1925,10 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         RepositoryPath = path;
         _autoStash = new JsonAutoStashStore(path, _logger);
 
+        // The status light's "no repository open" is this field, and nothing else on the way
+        // through here touches a property with a setter that would raise it.
+        RaiseHealth();
+
         // Before anything is written into .versio/local/, and per clone rather than per
         // project: an auto-stash record that git can see is a record the NEXT auto-stash
         // swallows, leaving real work in the stash with nothing pointing at it.
@@ -2110,6 +2235,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             {
                 OnPropertyChanged(nameof(IsMidMerge));
                 OnPropertyChanged(nameof(ConflictHeadline));
+                RaiseHealth();
                 RaiseGitCommandStates();
             }
         }
@@ -3486,10 +3612,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         using (AskingSomething())
         {
-            var confirmed = ConfirmDestructive?.Invoke(
+            var confirmed = ConfirmDestructive?.Invoke(new DestructivePrompt(
                 $"Abandon this {what}?",
                 $"The branch goes back to where it was before the {what} started.\n\n" +
-                "Any conflicts you have already resolved are thrown away.") ?? false;
+                "Any conflicts you have already resolved are thrown away.",
+                Confirm: "Abandon")) ?? false;
 
             if (!confirmed)
             {
@@ -3646,10 +3773,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         if (plan.TouchesRemote)
         {
             using var asking = AskingSomething();
-            var confirmed = ConfirmDestructive?.Invoke(
+            var confirmed = ConfirmDestructive?.Invoke(new DestructivePrompt(
                 plan.Count == 1 ? "Delete this branch from the remote?"
                                 : $"Delete {plan.Count} branches from the remote?",
-                plan.RemoteConfirmation("origin")) ?? false;
+                plan.RemoteConfirmation("origin"),
+                Confirm: plan.Count == 1 ? "Delete it" : $"Delete {plan.Count}")) ?? false;
 
             if (!confirmed)
             {
@@ -3903,8 +4031,14 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// <see cref="RepositoryRejected"/> is an event: a modal in the view model makes this
     /// untestable and blocks whichever thread happened to call it. Unset means "no", so a
     /// host that forgets to wire it destroys nothing.
+    /// <para>
+    /// <b>A prompt rather than two strings, because the button's words are part of the
+    /// question.</b> These were answered by a MessageBox, so every one of them ended in OK and
+    /// Cancel while the captions were all phrased as questions - "Discard changes to this
+    /// file?", "Abandon this merge?". OK is not an answer to either.
+    /// </para>
     /// </remarks>
-    public Func<string, string, bool>? ConfirmDestructive { get; set; }
+    public Func<DestructivePrompt, bool>? ConfirmDestructive { get; set; }
 
     /// <summary>
     /// Puts a guard's question to the user and returns what they chose.
@@ -4289,7 +4423,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             if (choice == StashedWorkChoice.Discard)
             {
                 var warning = AutoStashNarrative.DiscardWarning(offer);
-                if (ConfirmDestructive?.Invoke(warning.Title, warning.Body) != true)
+                if (ConfirmDestructive?.Invoke(
+                        new DestructivePrompt(warning.Title, warning.Body, "Discard")) != true)
                 {
                     return;
                 }
@@ -4745,12 +4880,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
 
         using var asking = AskingSomething();
-        var confirmed = ConfirmDestructive?.Invoke(
+        var confirmed = ConfirmDestructive?.Invoke(new DestructivePrompt(
             "Discard changes to this file?",
             $"{row.Path}\n\n" +
             "The changes are thrown away and cannot be recovered — they are not in a commit " +
             "or in the index.\n\n" +
-            "Commit them on a scratch branch if you might want them back.") ?? false;
+            "Commit them on a scratch branch if you might want them back.",
+            Confirm: "Discard")) ?? false;
 
         if (!confirmed)
         {

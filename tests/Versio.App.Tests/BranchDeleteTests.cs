@@ -164,7 +164,7 @@ public sealed class BranchDeleteTests
         return new ShellViewModel(logger, new LogViewModel(sink), toolchains: (_, _) => null)
         {
             PromptForBranchDeletion = answer,
-            ConfirmDestructive = (_, _) => true,
+            ConfirmDestructive = _ => true,
         };
     }
 

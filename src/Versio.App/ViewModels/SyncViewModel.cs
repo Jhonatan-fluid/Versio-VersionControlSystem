@@ -2606,8 +2606,12 @@ public sealed class SyncViewModel : ObservableObject
     /// gives: a view model that opens a window cannot be tested on the STA harness without one
     /// appearing. <b>Unset means no</b> — the wrong way round for a wiring mistake would be a
     /// silent import.
+    /// <para>
+    /// A prompt rather than two strings, for the reason <c>ShellViewModel.ConfirmDestructive</c>
+    /// gives: this one asked "Import into Conveyor.project?" and offered OK.
+    /// </para>
     /// </remarks>
-    public Func<string, string, bool>? ConfirmImport { get; set; }
+    public Func<DestructivePrompt, bool>? ConfirmImport { get; set; }
 
     private void NotePendingImport(string bindingId)
     {
@@ -2679,7 +2683,8 @@ public sealed class SyncViewModel : ObservableObject
 
         _logger.Click("Sync.ConfirmImport");
 
-        if (ConfirmImport?.Invoke($"Import into {row.Name}?", PendingImportDetail) != true)
+        if (ConfirmImport?.Invoke(new DestructivePrompt(
+                $"Import into {row.Name}?", PendingImportDetail, Confirm: "Import")) != true)
         {
             _logger.Info(LogCategory.Sync,
                 $"{id}: import declined; the project is unchanged");

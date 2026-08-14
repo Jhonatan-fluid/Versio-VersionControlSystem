@@ -31,6 +31,31 @@
                     xmlns:views="clr-namespace:Versio.App.Views">
 
     <!--
+        SPACING IS MERGED HERE AS WELL AS IN Theme.xaml, AND IT HAS TO BE.
+
+        Everything in this file that reaches another token file uses DynamicResource, which
+        resolves at render time against the whole application dictionary and therefore finds
+        Spacing.xaml wherever it sits. A Storyboard cannot do that: it is a Freezable, and a
+        DynamicResource inside one resolves once and is never re-resolved - the exact trap
+        ThemeManager.cs documents at length. So the motion durations have to be StaticResource.
+
+        And a StaticResource CANNOT see a sibling. Theme.xaml merges Spacing before Controls,
+        which is enough for the BAML compiler and not enough at load: a merged dictionary
+        resolves static references against itself and its own merges, not against whatever the
+        parent merged alongside it. The first version of this compiled with zero warnings and
+        threw the moment anything rendered a rail button:
+
+            XamlParseException: Cannot find resource named 'Motion.Fast'
+
+        Which is this file's own header, happening to this file. Merging Spacing here costs one
+        extra dictionary of fifteen immutable primitives - no colours, nothing theme-dependent,
+        so the duplicate cannot disagree with the original about anything.
+    -->
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="../tokens/Spacing.xaml" />
+    </ResourceDictionary.MergedDictionaries>
+
+    <!--
         Declared once, here, because every window needs it and a window cannot see another
         window's resources.
 
@@ -88,11 +113,120 @@
 
     <!-- ==================================================================== ICON -->
     <Style x:Key="IconText" TargetType="TextBlock">
+        <!--
+            An EMPTY name, so a screen reader skips the glyph.
+
+            These are Private Use Area codepoints from Segoe Fluent Icons - E8B7, E72C, E713.
+            They carry no text at all, and left as they were a reader announced whatever it
+            made of an unmapped character, right beside the name the button now has.
+
+            An empty string rather than AccessibilityView="Raw", which is a UWP property and
+            does not exist in WPF - it compiles nowhere and fails at build, which is at least
+            the good kind of wrong. An empty automation name is the WPF idiom for decoration.
+        -->
+        <Setter Property="AutomationProperties.Name" Value="" />
         <Setter Property="FontFamily" Value="{DynamicResource Font.Icon}" />
         <Setter Property="FontSize" Value="14" />
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="HorizontalAlignment" Value="Center" />
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType" />
+    </Style>
+
+    <!-- =================================================================== MOTION -->
+    <!--
+        NOTHING IN THE APPLICATION ANIMATED, AND THE DURATIONS HAD ALREADY BEEN CHOSEN.
+
+        Motion.Fast and Motion.Base have been in Spacing.xaml since it was written, with a good
+        argument attached - "animation in a tool is feedback, not decoration" - and there was
+        not one Storyboard, DoubleAnimation or VisualStateManager anywhere in the codebase.
+        Every state change snapped: hover fills appeared instantly, the rail's accent indicator
+        popped from Opacity 0 to 1, selection bars flicked on. Snapping is what people describe
+        as "feels like an old app" without being able to point at anything.
+
+        ONLY THE MARKS THAT ALREADY EXIST AS OPACITY TRIGGERS. Nothing here animates list
+        content, a layout property or a colour: the diff and the project tree are virtualized
+        and have to stay instant, and an animation that runs during a scroll is a dropped frame
+        per row.
+
+        StaticResource, not Dynamic: a Storyboard is a Freezable and a DynamicResource inside
+        one resolves once and then never again - the trap ThemeManager.cs documents at length.
+        The durations are theme-independent, so a static reference is not just tolerable here,
+        it is correct.
+    -->
+    <Storyboard x:Key="Motion.MarkIn">
+        <DoubleAnimation Storyboard.TargetName="Bar" Storyboard.TargetProperty="Opacity"
+                         To="1" Duration="{StaticResource Motion.Fast}" />
+    </Storyboard>
+
+    <Storyboard x:Key="Motion.MarkOut">
+        <DoubleAnimation Storyboard.TargetName="Bar" Storyboard.TargetProperty="Opacity"
+                         To="0" Duration="{StaticResource Motion.Fast}" />
+    </Storyboard>
+
+    <Storyboard x:Key="Motion.IndicatorIn">
+        <DoubleAnimation Storyboard.TargetName="Indicator" Storyboard.TargetProperty="Opacity"
+                         To="1" Duration="{StaticResource Motion.Fast}" />
+    </Storyboard>
+
+    <Storyboard x:Key="Motion.IndicatorOut">
+        <DoubleAnimation Storyboard.TargetName="Indicator" Storyboard.TargetProperty="Opacity"
+                         To="0" Duration="{StaticResource Motion.Fast}" />
+    </Storyboard>
+
+    <!-- =================================================================== FOCUS -->
+    <!--
+        Where the keyboard is.
+
+        EVERY control in this file was retemplated and not one of them said anything about
+        focus, so the whole app fell through to WPF's own focus adorner: a 1 px dotted BLACK
+        rectangle. On Surface.Base at #1D2026 that is invisible, and on light it is the exact
+        piece of 2009 chrome this file's header spends four paragraphs removing. Tabbing
+        through the git panel gave no way to tell whether Enter would fetch, pull, push or
+        discard - and Discard is in that row.
+
+        A FocusVisualStyle rather than an IsFocused trigger per template, and that is the
+        important half: WPF only draws it when focus arrived FROM THE KEYBOARD, which is the
+        behaviour wanted. A trigger on IsFocused would ring every button the moment it was
+        clicked, and a mouse user does not need to be told where they just clicked.
+
+        No TargetType, and the setters are qualified with Control. - a focus visual is a style
+        for the adorner, not for the control it decorates, so an unqualified Template would
+        not bind to anything.
+    -->
+    <Style x:Key="FocusRing">
+        <Setter Property="Control.Template">
+            <Setter.Value>
+                <ControlTemplate>
+                    <!-- Outside the control's own bounds, so it never covers a glyph or a
+                         label. Fine for anything that sits in a bar or a panel. -->
+                    <Border Margin="-2"
+                            BorderThickness="2"
+                            BorderBrush="{DynamicResource Brush.Accent.Default}"
+                            CornerRadius="{DynamicResource Radius.Control}"
+                            SnapsToDevicePixels="True" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!--
+        The same ring, drawn INSIDE the control's own bounds.
+
+        For anything whose neighbours are already touching it - the rail, where a 40 px button
+        sits in a 44 px column, and a ring expanding outward would run into the window edge.
+    -->
+    <Style x:Key="FocusRingInset">
+        <Setter Property="Control.Template">
+            <Setter.Value>
+                <ControlTemplate>
+                    <Border Margin="2"
+                            BorderThickness="1"
+                            BorderBrush="{DynamicResource Brush.Accent.Default}"
+                            CornerRadius="{DynamicResource Radius.Card}"
+                            SnapsToDevicePixels="True" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <!-- ================================================================== BUTTON -->
@@ -110,6 +244,7 @@
         is a ButtonBase.
     -->
     <Style x:Key="GhostButton" TargetType="ButtonBase">
+        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
         <Setter Property="BorderThickness" Value="0" />
@@ -152,6 +287,23 @@
          against a 28 px Size.Control.Height, which is why the top bar's buttons stood taller
          than the dropdowns beside them. -->
     <Style x:Key="IconButton" TargetType="Button" BasedOn="{StaticResource GhostButton}">
+        <!--
+            WHAT THIS BUTTON IS CALLED.
+
+            Content is the glyph, and WPF derives a control's automation name from its content
+            - so Open, Clone, New branch, Refresh, Settings, the log's Pause and its Clear all
+            announced a Private Use Area codepoint. That is the whole top bar and it is not a
+            small thing: an icon-only button with no name is unusable by a screen reader and
+            unreachable by voice control.
+
+            Bound to the button's own ToolTip rather than set per call site. Every one of these
+            already has one written for a sighted user hovering, so there is nothing new to
+            author and nothing to keep in step - and a new icon button inherits a name from the
+            tooltip its author was going to write anyway. It follows a ToolTip that changes
+            too, which the log's Pause does: it says Resume while paused.
+        -->
+        <Setter Property="AutomationProperties.Name"
+                Value="{Binding ToolTip, RelativeSource={RelativeSource Self}}" />
         <Setter Property="Width" Value="{DynamicResource Size.Control.Height}" />
         <Setter Property="Height" Value="{DynamicResource Size.Control.Height}" />
         <Setter Property="Padding" Value="0" />
@@ -170,6 +322,18 @@
     <!-- ==================================================================== RAIL -->
     <!-- Selected state is an accent bar plus a tinted fill, never a border. -->
     <Style x:Key="RailButton" TargetType="RadioButton">
+        <!--
+            Name from Tag, not from ToolTip, and that is deliberate: these three tooltips are
+            whole sentences - "Project - the repository as CODESYS structures it, with every
+            change marked" - and a name is what a reader says every time focus lands. The Tag
+            already holds the short one the panel is called by, so Project, Git and History.
+            The sentence stays in HelpText, where a reader offers it on request.
+        -->
+        <Setter Property="AutomationProperties.Name"
+                Value="{Binding Tag, RelativeSource={RelativeSource Self}}" />
+        <Setter Property="AutomationProperties.HelpText"
+                Value="{Binding ToolTip, RelativeSource={RelativeSource Self}}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRingInset}" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Secondary}" />
         <Setter Property="Margin" Value="0,0,0,4" />
@@ -194,7 +358,18 @@
                                     Value="{DynamicResource Brush.Surface.Hover}" />
                         </Trigger>
                         <Trigger Property="IsChecked" Value="True">
-                            <Setter TargetName="Indicator" Property="Opacity" Value="1" />
+                            <!-- The bar slides in rather than appearing. The fill and the
+                                 glyph colour still switch outright: a colour crossfade on a
+                                 40 px tile is a smear, not a transition. -->
+                            <Trigger.EnterActions>
+                                <BeginStoryboard
+                                    Storyboard="{StaticResource Motion.IndicatorIn}" />
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard
+                                    Storyboard="{StaticResource Motion.IndicatorOut}" />
+                            </Trigger.ExitActions>
+
                             <Setter TargetName="Fill" Property="Background"
                                     Value="{DynamicResource Brush.Accent.Muted}" />
                             <Setter TargetName="Glyph" Property="Foreground"
@@ -219,6 +394,7 @@
     </ControlTemplate>
 
     <Style x:Key="FlatCombo" TargetType="ComboBox">
+        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
         <Setter Property="Height" Value="{DynamicResource Size.Control.Height}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
         <Setter Property="FontFamily" Value="{DynamicResource Font.UI}" />
@@ -282,6 +458,7 @@
     </Style>
 
     <Style x:Key="FlatComboItem" TargetType="ComboBoxItem">
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
         <Setter Property="Padding" Value="10,6" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
         <Setter Property="FontFamily" Value="{DynamicResource Font.UI}" />
@@ -310,6 +487,7 @@
 
     <!-- ================================================================= TEXTBOX -->
     <Style x:Key="FlatTextBox" TargetType="TextBox">
+        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
         <Setter Property="Background" Value="{DynamicResource Brush.Surface.Sunken}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
         <Setter Property="CaretBrush" Value="{DynamicResource Brush.Text.Primary}" />
@@ -351,6 +529,11 @@
     <!-- The system highlight brush is the loudest "old app" tell. Selection here is an
          accent bar plus a tinted fill, and the row keeps its own foreground colours. -->
     <Style x:Key="RowItem" TargetType="ListBoxItem">
+        <!-- Null, not FocusRing: the template below draws its own, because a row in a
+             scrolling viewport clips an adorner that expands outward - so the ring on the
+             first and last visible row would lose the edge nearest the clip, which is the
+             edge somebody is looking at while they arrow towards it. -->
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
         <Setter Property="Padding" Value="0" />
         <Setter Property="Height" Value="{DynamicResource Size.Row.Tree}" />
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -372,9 +555,26 @@
                                     Value="{DynamicResource Brush.Surface.Hover}" />
                         </Trigger>
                         <Trigger Property="IsSelected" Value="True">
+                            <Trigger.EnterActions>
+                                <BeginStoryboard Storyboard="{StaticResource Motion.MarkIn}" />
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard Storyboard="{StaticResource Motion.MarkOut}" />
+                            </Trigger.ExitActions>
+
                             <Setter TargetName="Fill" Property="Background"
                                     Value="{DynamicResource Brush.Surface.Selected}" />
-                            <Setter TargetName="Bar" Property="Opacity" Value="1" />
+                        </Trigger>
+
+                        <!-- Focus is NOT selection here, and in the staged and not-staged
+                             lists they genuinely come apart: those are extended-selection
+                             lists, so Ctrl+Arrow walks the focus without moving what is
+                             picked. An outline rather than the selected fill, so the two
+                             states stay tellable apart when a row is both. -->
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Fill" Property="BorderThickness" Value="1" />
+                            <Setter TargetName="Fill" Property="BorderBrush"
+                                    Value="{DynamicResource Brush.Accent.Default}" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -387,44 +587,186 @@
     </Style>
 
     <!-- =============================================================== SCROLLBAR -->
-    <!-- Thin and quiet. The classic WPF scrollbar with its arrow buttons is instantly
-         dated; this is a slim thumb that thickens on hover. -->
+    <!--
+        Thin and quiet. The classic WPF scrollbar with its arrow buttons is instantly dated;
+        this is a slim thumb that thickens on hover.
+
+        TWO TEMPLATES, ONE PER AXIS, AND THAT IS THE FIX RATHER THAN THE STYLE.
+
+        There was one template and a single trigger meant to adapt it, and every axis-dependent
+        decision inside it was written for vertical:
+
+        - Width="10" was a plain setter with nothing to release it, so a HORIZONTAL bar was
+          arranged 10 px WIDE. Measured: 10 px across a 400 px viewport. It appears in exactly
+          two places and both of them matter - the diff view and the log console - so long ST
+          lines and long log messages could not be scrolled sideways at all.
+        - The thumb hardcoded Width="6", which is the thumb's THICKNESS on a vertical bar and
+          its LENGTH on a horizontal one.
+        - IsDirectionReversed="True" is right for vertical and inverts the drag on horizontal.
+        - The trough's page buttons issued PageUp and PageDown. They are Opacity="0" and
+          therefore still hit-testable, so clicking the trough of a horizontal bar scrolled
+          vertically.
+
+        Four defects, one cause: an axis assumed rather than stated. Splitting the template is
+        what makes each one impossible to write again, and it is what WPF's own theme does.
+
+        WHAT THIS CANNOT DO. The 10 px is the bar's own preferred thickness and applies where
+        a ScrollBar stands alone. Inside a ScrollViewer it does not win: that template assigns
+        its bars a Width/Height from SystemParameters as a LOCAL value, which outranks any
+        style setter, so the gutter stays the system's 17 px with a 6 px thumb centred in it.
+        Reaching that last 7 px means retemplating ScrollViewer, which is a larger change than
+        it looks and buys one shade of density. Stated here rather than quietly not happening.
+    -->
+    <ControlTemplate x:Key="VerticalScrollBar" TargetType="ScrollBar">
+        <Grid Background="Transparent">
+            <!-- Reversed: on a vertical track the maximum is at the BOTTOM, and the Track
+                 lays its children out from the low end by default. -->
+            <Track x:Name="PART_Track" IsDirectionReversed="True">
+                <Track.Thumb>
+                    <Thumb>
+                        <Thumb.Template>
+                            <ControlTemplate TargetType="Thumb">
+                                <!-- Width is the thickness here. The length is the Track's
+                                     to decide - it is proportional to the viewport. -->
+                                <Border x:Name="T" CornerRadius="3" Width="6"
+                                        Background="{DynamicResource Brush.Border.Strong}"
+                                        Opacity="0.55" />
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="T" Property="Opacity" Value="0.9" />
+                                        <Setter TargetName="T" Property="Width" Value="8" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Thumb.Template>
+                    </Thumb>
+                </Track.Thumb>
+                <Track.IncreaseRepeatButton>
+                    <RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0"
+                                  Focusable="False" />
+                </Track.IncreaseRepeatButton>
+                <Track.DecreaseRepeatButton>
+                    <RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0"
+                                  Focusable="False" />
+                </Track.DecreaseRepeatButton>
+            </Track>
+        </Grid>
+    </ControlTemplate>
+
+    <ControlTemplate x:Key="HorizontalScrollBar" TargetType="ScrollBar">
+        <Grid Background="Transparent">
+            <!-- NOT reversed: on a horizontal track the maximum is already at the far end
+                 the Track lays out towards. -->
+            <Track x:Name="PART_Track" IsDirectionReversed="False">
+                <Track.Thumb>
+                    <Thumb>
+                        <Thumb.Template>
+                            <ControlTemplate TargetType="Thumb">
+                                <!-- Height is the thickness on this axis. -->
+                                <Border x:Name="T" CornerRadius="3" Height="6"
+                                        Background="{DynamicResource Brush.Border.Strong}"
+                                        Opacity="0.55" />
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="T" Property="Opacity" Value="0.9" />
+                                        <Setter TargetName="T" Property="Height" Value="8" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Thumb.Template>
+                    </Thumb>
+                </Track.Thumb>
+                <!-- Left and Right, not Up and Down. These are invisible and still
+                     hit-testable, so they are what a click in the trough runs. -->
+                <Track.IncreaseRepeatButton>
+                    <RepeatButton Command="ScrollBar.PageRightCommand" Opacity="0"
+                                  Focusable="False" />
+                </Track.IncreaseRepeatButton>
+                <Track.DecreaseRepeatButton>
+                    <RepeatButton Command="ScrollBar.PageLeftCommand" Opacity="0"
+                                  Focusable="False" />
+                </Track.DecreaseRepeatButton>
+            </Track>
+        </Grid>
+    </ControlTemplate>
+
     <Style TargetType="ScrollBar">
         <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Focusable" Value="False" />
+
+        <!-- Vertical is the default because it is what the app has most of, and because a
+             bar with no orientation set is vertical anyway. -->
         <Setter Property="Width" Value="10" />
+        <Setter Property="Height" Value="Auto" />
+        <Setter Property="Template" Value="{StaticResource VerticalScrollBar}" />
+
+        <Style.Triggers>
+            <!-- A Style trigger, not a ControlTemplate one. Both of these release the
+                 dimension that belongs to the other axis, and only a style trigger can
+                 override a setter in the same style. -->
+            <Trigger Property="Orientation" Value="Horizontal">
+                <Setter Property="Width" Value="Auto" />
+                <Setter Property="Height" Value="10" />
+                <Setter Property="Template" Value="{StaticResource HorizontalScrollBar}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- ================================================================ SPLITTER -->
+    <!--
+        A splitter you can find.
+
+        Both of the app's splitters were Background="Transparent" with no template and no
+        trigger, so the only feedback that either existed was the cursor changing if you
+        happened to land on one. The 5 px one between the staged and not-staged lists sits
+        inside a 380 px panel between two visually similar rows, and there was nothing at all
+        to suggest it was there - the comment above it explains a resize behaviour most people
+        would never discover.
+
+        Invisible until hovered is a legitimate modern pattern. Invisible INCLUDING on hover is
+        not, which is what this was.
+
+        A line rather than a raised bar: the app separates surfaces by tone everywhere else,
+        and a bevelled grip would be the one piece of Win32 furniture left. It appears only on
+        hover and drag, so the resting layout is unchanged.
+    -->
+    <Style x:Key="PaneSplitter" TargetType="GridSplitter">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
         <Setter Property="Template">
             <Setter.Value>
-                <ControlTemplate TargetType="ScrollBar">
-                    <Grid Background="Transparent">
-                        <Track x:Name="PART_Track" IsDirectionReversed="True">
-                            <Track.Thumb>
-                                <Thumb>
-                                    <Thumb.Template>
-                                        <ControlTemplate TargetType="Thumb">
-                                            <Border x:Name="T" CornerRadius="3" Width="6"
-                                                    Background="{DynamicResource Brush.Border.Strong}"
-                                                    Opacity="0.55" />
-                                            <ControlTemplate.Triggers>
-                                                <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter TargetName="T" Property="Opacity" Value="0.9" />
-                                                    <Setter TargetName="T" Property="Width" Value="8" />
-                                                </Trigger>
-                                            </ControlTemplate.Triggers>
-                                        </ControlTemplate>
-                                    </Thumb.Template>
-                                </Thumb>
-                            </Track.Thumb>
-                            <Track.IncreaseRepeatButton>
-                                <RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0" />
-                            </Track.IncreaseRepeatButton>
-                            <Track.DecreaseRepeatButton>
-                                <RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0" />
-                            </Track.DecreaseRepeatButton>
-                        </Track>
-                    </Grid>
+                <ControlTemplate TargetType="GridSplitter">
+                    <!-- The hit area is the whole control; the line is a hairline inside it,
+                         so the target stays generous while the mark stays quiet. -->
+                    <Border Background="{TemplateBinding Background}">
+                        <Border x:Name="Line" Opacity="0"
+                                Background="{DynamicResource Brush.Border.Strong}"
+                                CornerRadius="1" />
+                    </Border>
                     <ControlTemplate.Triggers>
-                        <Trigger Property="Orientation" Value="Horizontal">
-                            <Setter Property="Height" Value="10" />
+                        <Trigger Property="ResizeDirection" Value="Rows">
+                            <Setter TargetName="Line" Property="Height" Value="2" />
+                            <Setter TargetName="Line" Property="VerticalAlignment" Value="Center" />
+                        </Trigger>
+                        <Trigger Property="ResizeDirection" Value="Columns">
+                            <Setter TargetName="Line" Property="Width" Value="2" />
+                            <Setter TargetName="Line" Property="HorizontalAlignment" Value="Center" />
+                        </Trigger>
+
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Line" Property="Opacity" Value="1" />
+                        </Trigger>
+
+                        <!-- Held down, including once the pointer has left the control -
+                         which it does immediately, because dragging a splitter moves the
+                         layout out from under the cursor. -->
+                        <Trigger Property="IsDragging" Value="True">
+                            <Setter TargetName="Line" Property="Opacity" Value="1" />
+                            <Setter TargetName="Line" Property="Background"
+                                    Value="{DynamicResource Brush.Accent.Default}" />
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Line" Property="Opacity" Value="1" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -512,6 +854,7 @@
         four unlabelled buttons and no way to guess which one to press.
     -->
     <Style x:Key="FilterChip" TargetType="ToggleButton">
+        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Height" Value="20" />
         <Setter Property="Margin" Value="0,0,4,0" />
@@ -606,6 +949,7 @@
         one source of glyphs, it inherits Foreground, and it re-themes for free.
     -->
     <Style TargetType="CheckBox">
+        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="FontFamily" Value="{DynamicResource Font.UI}" />
@@ -679,6 +1023,7 @@
         until it isn't.
     -->
     <Style TargetType="RadioButton">
+        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="FontFamily" Value="{DynamicResource Font.UI}" />
@@ -744,6 +1089,9 @@
         round-trip still works.
     -->
     <Style x:Key="TreeRowItem" TargetType="TreeViewItem">
+        <!-- Its own, for the reason RowItem gives: an outward adorner is clipped by the
+             viewport the row scrolls in. -->
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="Padding" Value="0" />
@@ -852,9 +1200,24 @@
                              greys the selection out at that point, which is how a selected
                              file ends up looking unselected while its diff is on screen. -->
                         <Trigger Property="IsSelected" Value="True">
+                            <Trigger.EnterActions>
+                                <BeginStoryboard Storyboard="{StaticResource Motion.MarkIn}" />
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard Storyboard="{StaticResource Motion.MarkOut}" />
+                            </Trigger.ExitActions>
+
                             <Setter TargetName="Fill" Property="Background"
                                     Value="{DynamicResource Brush.Surface.Selected}" />
-                            <Setter TargetName="Bar" Property="Opacity" Value="1" />
+                        </Trigger>
+
+                        <!-- IsKeyboardFocused, NOT IsKeyboardFocusWithin. Focus within is
+                             true for every ancestor of the focused row, so a tree eight
+                             levels deep would outline all eight. -->
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Fill" Property="BorderThickness" Value="1" />
+                            <Setter TargetName="Fill" Property="BorderBrush"
+                                    Value="{DynamicResource Brush.Accent.Default}" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

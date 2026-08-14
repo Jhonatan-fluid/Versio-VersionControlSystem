@@ -1,0 +1,1043 @@
+# Versio — how CODESYS is driven
+
+**Date:** 2026-08-14 · Written against the tree at commit `0286d1f`
+
+| | |
+|---|---|
+| Document | **The CODESYS integration, end to end.** Which CODESYS interface Versio uses, how the process is launched, what crosses the boundary in each direction, what every script does, and where the seams and the gaps are |
+| Audience | An engineer who has to change the export, the import, the runner or the scripts — or add a second vendor beside them |
+| Related | [`PLAN.md`](PLAN.md) — the architecture · [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) — what was measured against real CODESYS · [`STATUS.md`](STATUS.md) — where the project is · [`SAFEGUARDS.md`](SAFEGUARDS.md) — what Versio refuses or waits for |
+| Audit | §12 lists what is broken, stale or divergent today, with file and line. The rest of the document describes the system as it actually behaves, not as it is meant to |
+
+---
+
+## 0. In one paragraph
+
+Versio never parses a `.project` file. A CODESYS `.project` is a binary compound document with
+no published format, so Versio asks **CODESYS itself** to read and write it, by launching
+`CODESYS.exe` headless with a Python script. That script walks the project's object tree and
+writes one text file per object (`.st` for Structured Text, native CODESYS `.xml` for anything
+graphical), or reads such a tree back and applies it to the project. The script talks back to
+the C# host over stdout using a line protocol with a `@@VERSIO@@` marker, because CODESYS shares
+that stdout and cannot be silenced. Everything else in Versio — git, the diff, the direction
+lock, the change gate — is vendor-neutral and sits above a seam that CODESYS knowledge is not
+allowed to cross.
+
+---
+
+## 1. Which CODESYS interface is used
+
+### 1.1 The ScriptEngine, not a file format and not an API DLL
+
+CODESYS 3.5 ships a scripting plug-in — **CODESYS ScriptEngine** — that hosts **IronPython 2.7**
+inside the IDE process and exposes the project object model as a module named `scriptengine`.
+That module is the entire integration surface. Versio does not reference any CODESYS assembly,
+does not use the Automation Platform SDK, and does not read the project file itself.
+
+Consequences that shape everything else in this document:
+
+| Constraint | Consequence |
+|---|---|
+| The interpreter is **IronPython 2.7** | The scripts are Python 2 source. `unicode`, `unichr`, `io.open` and `u""` literals are load-bearing, not legacy. Plain `open()` in Python 2 encodes unicode as ASCII and dies on the accented characters that appear in real PLC comments |
+| `pip` is not available | **No third-party Python dependencies at all.** The YAML emitter and the JSON-lines protocol are hand-written (`versio_yaml.py`), and the C# side that reads them is hand-written too |
+| The interpreter runs **inside CODESYS** | Running a script means paying CODESYS's cold start — measured **17–31 s** ([PHASE0-FINDINGS §4](PHASE0-FINDINGS.md)) — on every invocation |
+| CODESYS is a desktop IDE, not a server | Two concurrent headless instances on one profile are not safe. The runner serialises them behind a machine-wide mutex |
+
+### 1.2 The command-line surface
+
+```
+CODESYS.exe --profile="<profile name>" --noUI --runscript="<script.py>" --scriptargs:"<job.json>"
+```
+
+Four facts about this line, each of them measured rather than assumed:
+
+1. **`--profile` is mandatory in `--noUI` mode.** Without it CODESYS exits 1 with
+   `When running in --noUI mode, you must specify a profile using --profile=`. The runner
+   recognises that exact string and turns it into an actionable message rather than a bare
+   non-zero exit — `ProfileResolver.MissingProfileMessage`.
+2. **The profile name cannot be derived from the install folder.** The folder is
+   `CODESYS 3.5.22.20`; the profile is `CODESYS V3.5 SP22 Patch 2`. "22.20" is SP22 Patch 2,
+   not Patch 20. It must be read from `…\CODESYS\Profiles\*.profile.xml`.
+3. **The quotes wrap the value, not the `--name=value` pair.** `ProcessStartInfo.ArgumentList`
+   produces `"--profile=CODESYS V3.5 SP22 Patch 2"`, which CODESYS rejects by exiting 1 in under
+   a second with no output at all. `LocalCodesysRunner.BuildArguments` builds the string by
+   hand for exactly this reason, and `ArgumentBuildingTests` pins it.
+4. **The CLI is not internally consistent:** `--runscript=` takes an equals sign,
+   `--scriptargs:` takes a colon. Both are pinned by tests.
+
+### 1.3 The `scriptengine` members Versio actually uses
+
+Every one of these was confirmed against CODESYS 3.5.22.20 (SP22 Patch 2); gate 0.10 in
+PHASE0-FINDINGS records that the SP22 behaviour matches the SP11 documentation.
+
+| Member | Used by | Notes |
+|---|---|---|
+| `scriptengine.projects.open(path)` | every script | Returns the project root object |
+| `proj.save()`, `proj.close()`, `proj.path`, `proj.dirty` | export, import, probe | |
+| `obj.get_children()` | every script | Positional iteration |
+| `obj.get_name()`, `obj.guid`, `obj.type`, `obj.is_folder` | every script | `obj.type` is a **type GUID**, see §4 |
+| `obj.has_textual_declaration` / `has_textual_implementation` | export, import | **Raise** for object kinds they do not apply to — probing them is normal control flow, hence the `safe()` wrapper everywhere |
+| `obj.textual_declaration.text` / `.replace(text)` | export, import | The in-place update path |
+| `obj.textual_implementation.text` / `.replace(text)` | export, import | |
+| `obj.export_native(path, recursive)` | export | Writes CODESYS's own XML to a file |
+| `obj.import_native([path], filter, handler)` | import | **The argument must be a list.** A bare string can bind to the `IEnumerable<string>` overload and be iterated into characters — the reported `Could not cast: System.String in System.Char` failure |
+| `scriptengine.NativeImportHandler` (subclassed) | import | `conflict` / `progress` / `skipped` callbacks |
+| `scriptengine.NativeImportResolve.replace` | import | See §6.4 — this is what makes the import replace in place instead of pasting a duplicate |
+| `obj.create_pou/create_dut/create_gvl/create_interface` | import | Object creation |
+| `scriptengine.PouType`, `ImplementationLanguages`, `DutType` | import | Enum arguments to the factories |
+| `libman.references` (a `ScriptLibraryReference` collection) | libraries | **Indexed by id, not by position** — `refs[0]` raises on any project whose first reference has a non-zero id. It is iterated instead |
+| `obj.remove()` | delete-objects fixture helper | Test scaffolding only |
+
+> `libman.get_libraries()` is deliberately **not** used: it returns a list of bare strings
+> (`"#Standard"`) with no version, company or flags. `libman.references` is the one that carries
+> the project's actual declaration.
+
+### 1.4 Attribution
+
+The object-type GUID table is adopted from **[greenforge-labs/codescribe](https://github.com/greenforge-labs/codescribe)**
+(Apache-2.0), `src/object_type.py`. CODESYS publishes no list of these GUIDs and deriving them
+independently costs days. Entries marked `[VERSIO]` in `versio_types.py` and
+`CodesysObjectType.cs` were discovered by probing a real SP22 project and are not in
+codescribe's table. Several of codescribe's findings are also load-bearing here and are cited
+where they are used (the visualisation-manager skip, the "do not rewrite GUIDs" warning).
+
+---
+
+## 2. Component map
+
+```mermaid
+flowchart TB
+    subgraph app["Versio.App (WPF)"]
+        SVM[SyncViewModel / ShellViewModel]
+    end
+
+    subgraph core["Versio.Core — pure, no IO, vendor-neutral above the seam"]
+        ORCH[Sync/SyncOrchestrator]
+        SEAM["Plc/IPlcRunner · IPlcToolchain · IPlcProjectFormat<br/>PlcJob · PlcResult · PlcProgress"]
+        subgraph cscodesys["Plc/Codesys — vendor knowledge, still pure"]
+            CJOB[CodesysJob / CodesysResult]
+            PROTO[ScriptProtocol]
+            PROF[ProfileResolver]
+            FMT[CodesysProjectFormat]
+            TYPES[CodesysObjectTypes]
+            MIRROR["ExportFormRules · PathMapper<br/>NativeXmlScrubber · NativeXmlNormalizer<br/>StTextCodec · StDeclarationParser<br/>(mirrors of the python — see §9)"]
+        end
+        PROJ["Projects/ — ProjectManifest, ExportCoverage,<br/>LibraryCatalog, ProjectTreeBuilder"]
+    end
+
+    subgraph infra["Versio.Infrastructure — the only project that touches the OS"]
+        TOOL[CodesysToolchain]
+        LOC[CodesysLocator]
+        EXTR[ScriptExtractor]
+        RUN[LocalCodesysRunner]
+    end
+
+    subgraph py["Versio.Scripts.Codesys — IronPython 2.7, embedded as resources"]
+        EXP[versio_export.py]
+        IMP[versio_import.py]
+        PRB[versio_probe.py]
+        PURE["pure modules: versio_text · versio_types<br/>versio_decl · versio_yaml · versio_libraries"]
+    end
+
+    CS[["CODESYS.exe --noUI<br/>+ ScriptEngine (IronPython 2.7)"]]
+    DISK[("the .project file<br/>and the export mirror")]
+
+    SVM --> ORCH
+    ORCH --> SEAM
+    SEAM -.implemented by.-> RUN
+    SEAM -.implemented by.-> TOOL
+    TOOL --> LOC
+    TOOL --> PROF
+    TOOL --> RUN
+    RUN --> CJOB
+    RUN --> PROTO
+    RUN --> EXTR
+    EXTR -->|writes .py to %TEMP%| py
+    RUN -->|spawns| CS
+    CS -->|runs| py
+    EXP --> PURE
+    IMP --> PURE
+    CS <--> DISK
+    DISK --> PROJ
+    PROJ --> SVM
+    CS -.->|"@@VERSIO@@ JSON lines on stdout"| RUN
+```
+
+**The seam is `IPlcRunner` / `IPlcToolchain` / `IPlcProjectFormat`.** Above it nothing knows
+what a profile is, what a `.~u` file is, or what a `@@VERSIO@@` line looks like.
+`LocalCodesysRunner.RunAsync(PlcJob, …)` is the exact translation point: it converts a `PlcJob`
+into a `CodesysJob`, runs it, and converts the JSON-lines events back into plain paths and
+sentences. 22 architecture tests (`VendorSeamTests`) read assembly metadata to assert the leak
+does not reopen.
+
+---
+
+## 3. The two boundaries
+
+There are exactly two data formats crossing between C# and Python, and both were shaped by a
+measured failure.
+
+### 3.1 Inbound — the job file
+
+Windows `--scriptargs` quoting is bad enough that **only one path is allowed to cross on the
+command line**; everything else travels as JSON inside the file it names.
+
+`CodesysJob.ToJson()` (`src/Versio.Core/Plc/Codesys/CodesysJob.cs`) writes:
+
+```json
+{
+  "op": "export",
+  "schema": 1,
+  "operationId": "a1b2c3d4",
+  "profile": "CODESYS V3.5 SP22 Patch 2",
+  "scrubTimestamps": true,
+  "emitPlcopen": false,
+  "save": true,
+  "project": "C:\\repo\\plc\\Machine.project",
+  "out": "C:\\repo\\plc\\Machine",
+  "bindingId": "6d3f8855e205",
+  "projects": [ { "bindingId": "…", "project": "…", "path": "…" } ]
+}
+```
+
+| Key | Written when | Read by |
+|---|---|---|
+| `project` | one project in the job | export, import, probe, both probe helpers, delete-objects |
+| `out` | **export** with one project | export (mirror root), probe (**report path — see finding A3**) |
+| `src` | **import** with one project | import (mirror root) |
+| `save` | always | import only |
+| `bindingId` | one project in the job | export — stamped into `_manifest.json` |
+| `op`, `schema`, `operationId`, `profile` | always | **nothing** — see finding B3 |
+| `scrubTimestamps`, `emitPlcopen` | always | **nothing** — the scrub is unconditional in `versio_text.scrub_native_xml`; PLCopen is not implemented |
+| `projects[]` | always | **nothing** — see finding A2 |
+
+The file is written to `%TEMP%\Versio\jobs\job-<opId>-<guid>.json` and deleted in a `finally`.
+It **must be UTF-8 without a BOM**: IronPython 2.7's `json.load` fails on a BOM with
+`No JSON object could be decoded`. PowerShell 5.1's `-Encoding utf8` writes one, which is why
+both `LocalCodesysRunner.WriteJobFile` and `tools/Run-Codesys.ps1` use
+`UTF8Encoding($false)` explicitly.
+
+### 3.2 Outbound — the `@@VERSIO@@` JSON-lines protocol
+
+CODESYS writes its own localised chatter to the same stdout and cannot be silenced. Scraping
+prose was never an option — the messages are localised and change between service packs — so
+every structured line is prefixed:
+
+```
+@@VERSIO@@{"t": "object", "path": "Device/Plc Logic/Application/Simulation.st", "type": "POU", "form": "ST_FULL", "hash": "sha256:…"}
+```
+
+`ScriptProtocol.Parse` (`src/Versio.Core/Plc/Codesys/ScriptProtocol.cs`) splits a run's stdout
+into three buckets and is **deliberately total** — a malformed line is collected, never thrown
+on, because a script that dies mid-write is exactly when the diagnostics matter:
+
+- `Events` — parsed protocol objects, each with a `t` discriminator
+- `Chatter` — everything else, including any prose CODESYS wrote *before* the marker on the
+  same line
+- `Malformed` — carried the marker but would not parse as JSON
+
+#### Event catalogue
+
+| `t` | Emitted by | What the C# host does with it |
+|---|---|---|
+| `start` | export, import, probe | Debug line |
+| `opened` | export, import, probe, native-import probe | Progress report, phase `opened` |
+| `phase` | import (`textual`, `native`) | Progress report with a file count |
+| `phase_saved` | import | Debug line |
+| `object` | export | **`PlcResult.ChangedPaths`**, plus one Debug line each |
+| `skip` | export | Info: `not exported (<reason>): <path> [<type>]` |
+| `libraries` | export | Info: reference count and how many are system libraries |
+| `warning` | export, import | **`PlcResult.Warnings`** as `"<code>: <path>"` |
+| `staging-cleared` | export | **Warn** — a previous export was killed |
+| `trash-cleared` | export | **Warn** — a previous export died inside the swap; says where the old mirror went |
+| `swap` / `swapped` | export | Info — the file counts before and after the directory replacement |
+| `updated`, `created`, `native_imported` | import | `created` is Info; the others Debug |
+| `not_imported` | import | Info — an export-only file the import left alone. **Not** a warning, on purpose: one that fires on every import is how a real one gets read past |
+| `nothing_to_save`, `saved` | import | Debug |
+| `summary` | export, import, probe | Info — the roll-up line |
+| `fatal` | all | **Error**, and becomes `CodesysResult.FailureReason` |
+| `exit` | all | `ScriptOutput.ScriptExitCode` |
+| `done` | all | `ScriptOutput.Completed` |
+| `before`, `call_ok`, `call_failed`, `conflict_callback`, `progress_callback`, `skipped_callback` | `versio_probe_native_import.py` only | Debug (`· <type>`) |
+| `removed` | `versio_delete_objects.py` only | Debug |
+
+**Success is three conditions, not one.** `CodesysResult.Succeeded` requires the process to
+exit 0, the script's own `rc` to be 0, **and** a `done` event to have been seen. A script that
+dies silently must not count as a success just because the process exited 0.
+
+---
+
+## 4. Object identity and the type table
+
+Every CODESYS object carries a **type GUID** in `obj.type`. That GUID, not the object's name and
+not its position, is what tells the exporter what it is looking at.
+
+The table exists twice, on purpose:
+
+- `src/Versio.Scripts.Codesys/versio_types.py` — `GUID_TYPE_MAPPING`, used by the exporter
+- `src/Versio.Core/Plc/Codesys/CodesysObjectType.cs` — `CodesysObjectTypes.ByGuid`, used by the app
+
+They are two copies of the same knowledge, so `TypeTablePartityTests`
+(`tests/Versio.Core.Tests/Plc/Codesys/CodesysObjectTypeTests.cs`) reads the Python source and
+asserts the GUID sets, the `SUFFIX` table and the `INFIX` table have not drifted. That test
+exists because they *did* drift once, and it cost a file (§5.3).
+
+**An unmapped GUID is never a crash and never a silent drop.** It resolves to `UNKNOWN`, is
+warned about with code `UNKNOWN_TYPE_GUID`, and falls back to native export — because a newer
+CODESYS adding a type must not quietly lose objects.
+
+Two `[VERSIO]` entries were found by probing that were not in codescribe's table:
+
+| GUID | Object | Why it matters |
+|---|---|---|
+| `40b404f9-e5dc-42c6-907f-c89f4a517386` | **Plc Logic** | Structural node under a Device |
+| `639b491f-5557-464c-af91-1471bac9f549` | **Application** | codescribe finds this **by name**, which breaks the moment a project renames it |
+
+**Object GUIDs are identity and are never rewritten.** codescribe tried canonicalising GUIDs and
+Ids in exported XML and it broke visualisations. Versio scrubs only `Timestamp` (§7).
+
+---
+
+## 5. Export
+
+`versio_export.py` — 547 lines, the largest script. Job: `{ project, out, bindingId }`.
+
+### 5.1 The run
+
+```mermaid
+sequenceDiagram
+    participant O as SyncOrchestrator
+    participant R as LocalCodesysRunner
+    participant M as the machine-wide mutex
+    participant C as CODESYS.exe --noUI
+    participant S as versio_export.py
+    participant D as disk
+
+    O->>R: PlcJob{Export, profile, project, mirror}
+    R->>R: ScriptExtractor.PathFor("versio_export.py")
+    R->>D: write the job file in %TEMP%, UTF-8 with no BOM
+    R->>M: WaitOne(15 min) on a dedicated long-running thread
+    Note over R,M: Mutex has thread affinity — acquire and release<br/>must happen on the same thread, so the whole<br/>guarded section is synchronous on that thread
+    M-->>R: acquired (or AbandonedMutexException → recovered)
+    R->>C: start, CreateNoWindow + WindowStyle.Hidden
+    R->>R: BeginOutputReadLine / BeginErrorReadLine
+    Note over R: async drain — reading to completion before<br/>WaitForExit deadlocks past the pipe buffer,<br/>and a 2.5 MB visu export passes it comfortably
+    C->>S: --runscript, --scriptargs
+    S->>D: clear leftover .versio_staging / .versio_trash
+    S->>C: projects.open(project)
+    S-->>R: @@VERSIO@@ {"t":"opened"}
+    loop every child of the project root
+        S->>S: handle(obj) — type → form → write
+        S->>D: write into <mirror>.versio_staging
+        S-->>R: {"t":"object"} / {"t":"skip"} / {"t":"warning"}
+    end
+    S->>D: _manifest.json + _coverage.md
+    S-->>R: {"t":"swap"}
+    S->>D: rename mirror → .versio_trash
+    S->>D: rename .versio_staging → mirror
+    S->>D: rmtree .versio_trash
+    S-->>R: {"t":"swapped"} {"t":"summary"} {"t":"done"} {"t":"exit","rc":0}
+    S->>C: proj.close()
+    C-->>R: exit 0
+    R->>M: ReleaseMutex
+    R-->>O: PlcResult{Succeeded, ChangedPaths, Warnings}
+```
+
+### 5.2 The per-object form decision
+
+`versio_types.decide_form(obj_type, has_textual_impl, has_textual_decl)` is a pure table lookup
+with four fallbacks. It is pure — no `scriptengine` import — precisely so it can be exercised on
+CPython.
+
+| Form | On disk | Types |
+|---|---|---|
+| `CONTAINER` | becomes a **directory**, children walked into it | `FOLDER`, `DEVICE`, `PLC_LOGIC`, `APPLICATION` |
+| `ST_FULL` | declaration + delimiter + implementation, one `.st` | `POU`, `INTERFACE`, `METHOD`, `METHOD_NORET` |
+| `ST_DECL` | declaration only, one `.st` | `DUT` |
+| `ST_IMPL` | implementation only (no declaration exists) | `ACTION`, `TRANSITION` |
+| `GVL_BOTH` | **two files** — `.gvl.xml` for structure, `.gvl.st` for a readable diff | `GVL`, `GVL_PERSISTENT` |
+| `NATIVE` | `obj.export_native(path, False)` | `EVC`, `VISUALISATION`, `TEXTLIST`, `GLOBAL_TEXTLIST`, `IMAGEPOOL`, `PROJECT_INFORMATION` |
+| `NATIVE_R` | `obj.export_native(path, True)` — owns children not walked separately | `PROPERTY`, `TASK_CONFIGURATION` |
+| `LIBRARIES` | `<manager>.libraries.yaml`, **export-only** | `LIBRARY_MANAGER` |
+| `SKIP` | nothing, but the reason is recorded | see below |
+
+**The fallbacks are the interesting part.** A POU declared in ST but *drawn* in CFC / LD / FBD
+has no textual implementation, so `ST_FULL` degrades to `NATIVE` rather than writing a `.st`
+that silently discards the graphical layout. The same guard applies to `ST_DECL`, `ST_IMPL` and
+`GVL_BOTH`. On the fixture this is not theoretical: **2 of 3 POUs are graphical** and correctly
+fall back.
+
+**A skip records a reason, not just a count**, and the reasons split into two very different
+things:
+
+| Reason | Meaning | Types |
+|---|---|---|
+| `SERVICE_OBJECT` | Deliberate. Exporting it makes every later import raise an interactive overwrite dialog (codescribe's finding); the project template carries it | `VISUALISATION_MANAGER`, `TARGET_VISUALISATION`, `WEB_VISUALISATION`, `VISUALISATION_STYLE` |
+| `TEMPLATE_ONLY` | Deliberate. Diffable in principle, changed in the IDE | `PROJECT_SETTINGS` |
+| `COVERED_ELSEWHERE` | Deliberate. Already inside another object's recursive export | `TASK`, `CALL_TO_POU` |
+| **`NOT_IMPLEMENTED`** | **A real gap.** The object holds state no exported file records, so a change to it moves nothing through the hash gate and reaches no diff | the default for any `SKIP` with no reason recorded |
+
+`skip_reason()` defaults to `NOT_IMPLEMENTED` on purpose: a type marked `SKIP` without a reason
+beside it is far more likely to be an oversight than a considered omission, and the cost of
+saying so wrongly is one line in a report.
+
+### 5.3 File naming
+
+`versio_text.safe_file_stem(name)` turns a CODESYS object name into a Windows-legal file stem.
+CODESYS names are much freer than file names, so:
+
+- characters Windows forbids are **percent-encoded** (`weird<name>` → `weird%3Cname%3E`),
+  which keeps the mapping reversible so two objects cannot collapse onto one file;
+- trailing spaces and dots are encoded, because Windows strips them silently;
+- reserved device names get a `%20` suffix (`CON` → `CON%20`);
+- **a name that is really a path** is shortened to its last segment plus a 6-hex digest.
+  CODESYS gives an external-file reference an identity like
+  `{00000000-…}|C:\Users\m.lamp\Documents\license.txt`; percent-encoding that produced a
+  120-character filename carrying somebody's username and directory layout into a shared
+  repository. It now becomes `license.txt~3f9a1c`. Found in a real mirror, not in a test;
+  now covered by `PythonFileNameTests`;
+- anything over 80 characters is shortened the same way, because Windows still enforces a
+  260-character path in most configurations and a deep CODESYS folder chain reaches it.
+
+Then a **type infix** keeps same-named objects of different kinds apart — a `Main`
+visualisation and a `Main` POU are a common real collision:
+
+```
+<stem>[.vis|.gvl|.action|.transition][.st|.xml|.libraries.yaml]
+```
+
+and a **sub-POU member is prefixed with its owner** (`clsLight.Light.xml`), because methods,
+actions, transitions and properties live in the same folder as the POU that owns them.
+
+> **The bug this table caused once.** `FORM_GVL_BOTH` was missing from the Python `SUFFIX`
+> table, so `file_name_for()` fell through to the `.xml` default. A GVL writes two files; both
+> resolved to the same path, and the ST write **destroyed the native export**, leaving a file
+> called `Glob_Var.gvl.xml` that contained 238 bytes of Structured Text. The C# `PathMapper`
+> had it right all along and the parity test compared GUID tables only, so it sailed past. The
+> parity test now covers `SUFFIX` and `INFIX` as well.
+
+### 5.4 The output tree
+
+```
+plc/Machine.project              ← binary, git-lfs, -diff -merge
+plc/Machine/                     ← the mirror
+├─ Device/
+│  └─ Plc Logic/
+│     └─ Application/
+│        ├─ Simulation.st                    ST_FULL   (textual POU)
+│        ├─ PLC_PRG.xml                      NATIVE    (graphical POU)
+│        ├─ Glob_Var.gvl.st                  ST_DECL   ┐ one object,
+│        ├─ Glob_Var.gvl.xml                 NATIVE    ┘ two files, one GUID
+│        ├─ Live_Visu.vis.xml                NATIVE    (2.5 MB on the fixture)
+│        ├─ Task Configuration.xml           NATIVE_R
+│        └─ Library Manager.libraries.yaml   LIBRARIES (export-only)
+├─ GlobalTextList.xml
+├─ Library Manager.libraries.yaml
+├─ _manifest.json                ← what the application reads
+└─ _coverage.md                  ← what a person reads in a pull request
+```
+
+**`_manifest.json` is at schema 4.** The schema number is not decoration — each bump exists
+because an older manifest's *silence* would otherwise be misread:
+
+| Schema | Adds | The ambiguity it resolves |
+|---|---|---|
+| 2 | `skipped[]` | A schema-1 manifest lists nothing skipped because nobody was counting, not because coverage was complete |
+| 3 | `LIBRARIES` records | On schema 2, "no LIBRARIES records" means nobody was writing them; on schema 3 it means the project has no library manager |
+| 4 | `parent` on members | A schema-3 manifest carries no parents at all, so the tree reads as flat rather than as broken, and starts nesting on the next export |
+
+Two invariants worth knowing before touching the manifest:
+
+- **The GUID is the identity, the path is not.** A GVL produces two records sharing one GUID.
+  Treating the path as identity shows one object as two and turns a rename into a delete plus an
+  add.
+- **A skipped object records no GUID.** CODESYS re-mints the project-level
+  `__VisualizationStyle`'s GUID on *every open*, so recording it made `_manifest.json` differ on
+  every export — a spurious diff in every commit, which is exactly what the `Timestamp` scrub
+  exists to prevent.
+
+`_coverage.md` is rendered from the same lists as the manifest, in the same run, so the two
+cannot disagree. It is **deterministic on purpose**: sorted throughout, with no timestamp
+anywhere.
+
+### 5.5 The three-rename swap
+
+The most destructive thing an export does is replace the mirror directory. It used to be
+`rmtree(out_root)` followed by `rename(staging, out_root)`, and a kill, a crash or a power cut
+between those two statements left the project with **no export at all** — not stale, not
+partial, none. `rmtree` over a 2.5 MB visualisation tree is not instantaneous, so the window was
+real.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Building: os.makedirs(mirror.versio_staging)
+    Building --> Ready: manifest + coverage written
+    Ready --> Swap1: rename(mirror → mirror.versio_trash)
+    Swap1 --> Swap2: rename(mirror.versio_staging → mirror)
+    Swap2 --> Done: rmtree(mirror.versio_trash)
+    Done --> [*]
+
+    Building --> Crashed: killed
+    Ready --> Crashed: killed
+    Swap1 --> Crashed: killed
+    Swap2 --> Crashed: killed
+
+    Crashed --> Recovered: next export clears the leftovers and says so
+    note right of Swap1
+      Rename is atomic on NTFS.
+      At every instant the mirror is
+      either the old tree or the new one.
+    end note
+    note right of Crashed
+      A surviving .versio_trash is where
+      the previous mirror went. Recoverable
+      by hand; announced at Warn by the
+      next run rather than deleted silently.
+    end note
+```
+
+The two directory names are one convention in two languages —
+`BindingConventions.StagingSuffix` / `TrashSuffix` in C#, string literals in the exporter — so
+`SwapDirectoryTests` reads the exporter's own source and asserts they agree, that the staging
+rename still precedes the trash delete, and that `rmtree(out_root)` has not come back. That is
+an unusual test and a deliberate one: the alternative is an integration test that kills CODESYS
+mid-swap, and the thing worth pinning is that two files agree about a string.
+
+### 5.6 Library references
+
+`LIBRARY_MANAGER` used to be `SKIP` while a comment beside it claimed its content was captured
+in a `config/libraries.yaml` that **nothing had ever written**. Adding a library or bumping a
+version changed nothing in the mirror, moved nothing through the hash gate, and appeared in no
+diff. That gap is what `_coverage.md` was built to make impossible, and it is now closed.
+
+`versio_libraries.py` reads `libman.references` and emits a vendor-neutral document via
+`versio_yaml.py`. Three things are **deliberately not recorded**, each because recording them
+would put a diff in every commit or make the mirror machine-specific:
+
+| Not recorded | Why |
+|---|---|
+| `ref.id` | Re-minted on every open. Two consecutive runs over an untouched project differed in 68 lines and **every one was an id** |
+| Effective resolution / resolution info / resolver | Describes which libraries are installed *here*, not what the project asks for. Two engineers sharing a repository would produce different bytes and neither would be wrong |
+| `hide_when_referenced_as_dependency` | Raises on all 34 references on this CODESYS version. Probed, not assumed |
+
+A `redirection` **is** recorded: a placeholder pinned to a fixed version is a choice stored in
+the project, so it belongs in the mirror.
+
+The file is **export-only** (§6.5). `versio_yaml.py` is a hand-written emitter covering exactly
+one document shape — mappings of scalars, and a list of mappings — with key order supplied by
+the caller rather than taken from dict order, because IronPython 2.7 and CPython 3 do not agree
+about dict order and the export must be byte-identical across runs.
+
+---
+
+## 6. Import
+
+`versio_import.py` — 419 lines. Job: `{ project, src, save }`. This is the direction that writes
+into a binary file the user cannot diff afterwards, so the orchestrator logs it at **Warn**, and
+copies the `.project` aside first — a failed backup fails the import.
+
+### 6.1 Two phases, with a save between them
+
+```mermaid
+flowchart TD
+    A[walk the mirror] --> B{file name}
+    B -->|"_manifest.json / _coverage.md"| SKIP1["ignored — bookkeeping"]
+    B -->|"*.libraries.yaml"| SKIP2["emit not_imported — export-only"]
+    B -->|"*.st"| T[textual list]
+    B -->|"anything else"| N[native list]
+
+    T --> P1["PHASE 1 — textual"]
+    P1 --> P1a{object found by path?}
+    P1a -->|yes| P1b["textual_declaration.replace()<br/>textual_implementation.replace()"]
+    P1a -->|no| P1c["parse the ST header →<br/>create_pou / create_dut /<br/>create_gvl / create_interface"]
+    P1b --> SAVE
+    P1c --> SAVE
+
+    SAVE["proj.save() — MANDATORY between the phases"]
+    SAVE --> P2["PHASE 2 — native"]
+    N --> P2
+    P2 --> P2a["owner.import_native([path], None, ReplaceHandler)"]
+    P2a --> FIN["proj.save() if anything changed"]
+
+    style SAVE fill:#5a3,color:#fff
+```
+
+**The save between the phases is not tidiness.** Creating an object mutates CODESYS's internal
+name dictionary. Running a native import in the same session immediately afterwards makes its
+conflict resolution enumerate that dictionary while it is still being modified:
+
+```
+System.InvalidOperationException: Collection was modified; enumeration operation may not execute.
+  at _3S.CoDeSys.ObjectManager.Project.GetUniqueName(...)
+```
+
+Worse, the exception is **swallowed by `import_native`'s progress callback**, so the import
+silently does nothing and the result *looks* correct. Separating the phases and saving in
+between lets the object manager settle.
+
+### 6.2 Textual objects — updated in place
+
+ST objects are located in the tree by name and updated via `textual_declaration.replace()` /
+`textual_implementation.replace()`. **No removal, no re-creation, no conflict resolution.** The
+object keeps its GUID and everything CODESYS hangs off it. This is both safer and simpler than
+codescribe's remove-and-recreate cycle, and it is why gate 0.5 (round-trip losslessness for the
+textual path) passed with a real mutation surviving verbatim.
+
+The `.st` payload is split back apart by `versio_text.split_st`, the exact inverse of the
+`join_st` the exporter used:
+
+```
+<declaration>
+
+// --- BEGIN IMPLEMENTATION ---
+
+<implementation>
+```
+
+The delimiter is a legal ST comment so the file stays readable in any editor. Content that
+*itself* contains the delimiter is escaped with `//!VERSIO-ESC!` before joining — found by a
+randomised round-trip test that generated a declaration containing the literal delimiter, which
+made the split cut in the wrong place and **silently move code from the declaration into the
+implementation**. Normal files contain neither marker, so both replacements are no-ops.
+`StTextCodec.cs` must stay byte-identical in behaviour; `StTextCodecTests` asserts
+`Split(Join(d,i)) == (d,i)` over adversarial input.
+
+### 6.3 Creating objects that do not exist
+
+`versio_decl.parse_declaration` reads the ST header and works out which factory to call —
+everything `create_pou` / `create_dut` / `create_interface` need is stated in the declaration
+itself, so it is parsed rather than guessed.
+
+| Header | Created as |
+|---|---|
+| `PROGRAM X` | `create_pou(X, PouType.Program, st)` |
+| `FUNCTION_BLOCK X EXTENDS A IMPLEMENTS B, C` | `create_pou(X, FunctionBlock, st, None, A, [B,C])` |
+| `FUNCTION X : INT` | `create_pou(X, Function, st, "INT")` |
+| `INTERFACE X` | `create_interface(X)` |
+| `TYPE X : STRUCT` / `(…)` / `: BASE` / `UNION` | `create_dut(X, Structure / Enumeration / Alias / Union, base)` |
+| a `.gvl.st` file | `create_gvl(name)` — a GVL body has no POU keyword, so the *filename* is what identifies it |
+| anything else | `CANNOT_IDENTIFY_DECLARATION` warning, **nothing created** |
+
+Comments, attributes and modifiers are stripped before tokenising. Anything not confidently
+recognised comes back `UNKNOWN` and is reported, because **creating the wrong kind of object is
+worse than creating none**.
+
+### 6.4 Native objects — replaced in place, GUID preserved
+
+codescribe reports that `import_native` pastes rather than replaces, and works around it by
+removing the existing object first — the single most dangerous step in any import. **That is
+only true with the default handler.** Measured on 3.5.22.20 with a custom
+`NativeImportHandler` returning `NativeImportResolve.replace`
+(`versio_probe_native_import.py`):
+
+```
+verdict             REPLACED_IN_PLACE
+childCountBefore    11        childCountAfter  11
+added               []        removed          []
+guidPreserved       true      conflictCallbacks 1
+```
+
+No removal, no duplicate, GUID preserved — and the same call *creates* an object that does not
+exist yet, so it solves creation for native types at the same time. `ReplaceHandler` hard-codes
+`replace`: `rename` would silently produce `Signals_1`, and `skip` would silently drop the
+incoming change. It is hard-coded on purpose and must not become a user preference.
+
+### 6.5 Files the import deliberately does not apply
+
+The export tree holds **three** kinds of file, not two:
+
+| Kind | Examples | Import behaviour |
+|---|---|---|
+| Objects | `.st`, `.xml` | Applied |
+| Versio bookkeeping | `_manifest.json`, `_coverage.md` (`VERSIO_FILES`) | Ignored |
+| **Export-only project state** | `*.libraries.yaml` (`EXPORT_ONLY_SUFFIXES`) | Emitted as `not_imported`, never handed to the toolchain |
+
+The third category exists because of a real defect: when `_coverage.md` was added, the importer
+knew about `_manifest.json` **by name, in two places**, and the new file was added to neither —
+so CODESYS was handed Markdown as native XML. Both the file list and `handle_file` now guard,
+and the set lives in `versio_types.py` beside the exporter's own table so the two halves cannot
+drift.
+
+Library YAML is diff-only rather than merely unimplemented: adding a library through the
+scripting API is a *different operation* from importing an object, and doing it wrongly rewires
+what the machine compiles against. Both `_coverage.md` and `ExportFormRules.IsExportOnly` say so
+out loud, because a file that looks editable and is silently ignored is its own kind of gap.
+
+---
+
+## 7. Determinism
+
+Two exports of an unchanged project must be **byte-identical**, or every commit carries a
+spurious diff and the mirror stops being reviewable. Three rules produce that:
+
+1. **`Timestamp` is scrubbed, and only `Timestamp`.** CODESYS re-mints
+   `<Single Name="Timestamp" Type="long">` on every native export.
+   `versio_text.scrub_native_xml` zeroes it; `NativeXmlScrubber.cs` is the C# mirror, with an
+   idempotence property test. **GUIDs and Ids are deliberately untouched** — codescribe's source
+   carries the warning that overwriting Ids broke visualisations.
+2. **Every file is written UTF-8 without a BOM, LF, with one trailing newline.**
+   `io.open(..., newline="")` stops Python translating `\n` into `\r\n`; a CRLF here would change
+   every file's hash on Windows and make the whole tree look modified. `.gitattributes` pins
+   `eol=lf` on the mirror for the same reason from git's side.
+3. **Nothing depends on a clock or on dict order.** `_coverage.md` has no timestamp; the manifest
+   is `sort_keys=True` with sorted object and skip lists; the YAML emitter takes its key order
+   from the caller.
+
+Verified: three consecutive exports byte-identical across all files (2.9 MB), 9 `Timestamp`
+fields zeroed.
+
+### The one direction that is *not* byte-stable
+
+`export → import → export` is **semantically lossless but not byte-stable for native objects**.
+Re-exporting after a native import produced 5 of 10 files differing at *identical byte lengths*,
+in three non-semantic classes:
+
+| Class | Example | Scale |
+|---|---|---|
+| Counters | `UniqueIdGenerator` 26 → 29 | 1 per visualisation |
+| Unordered collections reordered | `UseInitValue` / `DescriptionTextId` swapped | ~58 of 107 lines in one visu |
+| Internal reference GUIDs re-minted | `EventPOUGuid`, `GuidInit`/`GuidReInit`/`GuidExitX` | 49 of 107 lines in one visu |
+
+`NativeXmlNormalizer` masks all three **in memory, for a comparison only — never on disk**, and
+resolves 4 of the 5 files. Note the distinction from codescribe: they broke visualisations by
+*rewriting* GUIDs in the file.
+
+> **⚠️ One deviation that is not volatile.** `Task Configuration.xml` still differs after
+> normalisation on exactly one line: `Core2: -1 → -2`, directly beside an unchanged `Core: -1`.
+> That is a task's **CPU core affinity**, and `import_native` changed it without being asked. It
+> is deliberately **not** masked, and is pinned by a test asserting the deviation is exactly this
+> one field, so the suite fails the moment it grows. **Task Configuration is diff-only (Tier 3)
+> until this is understood on more projects.**
+
+---
+
+## 8. Discovery, profiles and occupancy
+
+### 8.1 Finding the installation
+
+`CodesysLocator` walks `%ProgramFiles%` and `%ProgramFiles(x86)%` for `CODESYS*` directories
+containing `CODESYS\Common\CODESYS.exe`, and reads `CODESYS\Profiles\*.profile.xml` —
+`TopDirectoryOnly` on purpose, because the `Informational\` subfolder holds historical
+`*.profile` files going back to V3.3 which are **not** usable.
+
+`ProfileResolver.Resolve` then decides:
+
+| Outcome | When | What happens |
+|---|---|---|
+| `Resolved` | exactly one profile, or a pinned one that exists | used |
+| `AmbiguousNeedsUserChoice` | several profiles | **the user picks.** Guessing risks silently upgrading a project to a newer service pack, which is not recoverable |
+| `NoProfileFound` | an install with no profile, **or a pinned profile that is no longer installed** | refused loudly, with the installed list |
+| `NoInstallFound` | nothing | export and import unavailable; the app still runs and says why |
+
+`CodesysToolchain.CreateRunner` never returns null — an unavailable toolchain gets an
+`UnavailableToolchainRunner` that fails every job with the reason, so the locks, their
+persistence and their recovery all keep working on a machine that cannot export.
+
+### 8.2 Is the project open in the IDE?
+
+CODESYS writes a sidecar while it holds a project. The extension is **replaced, not appended**:
+`Machine.project` is locked by `Machine.~u`. Contents, measured:
+
+```
+elli_          ← user
+ROG-JVM        ← machine
+45812          ← pid
+639221606143479369
+```
+
+Parsed defensively — a file that exists at all means somebody has it, and every field beyond
+that is used only for wording. A future CODESYS writing a fourth field, or none, must not turn
+"somebody has this open" into "nobody does", which is the one way this could lose work.
+
+`ProjectOccupancyProbe.Resolve` then decides whether to believe it:
+
+- **another machine → always believed.** The pid means nothing here, and a project on a share
+  really can be open on somebody else's desk;
+- **this machine, pid not alive → `Stale`, treated as free.** The alternative is a crashed IDE
+  blocking every sync until somebody finds and deletes a file they have never heard of;
+- **unreadable (being written as we read it) → `Held`.** That is an IDE doing something with the
+  project right now.
+
+The marker is rewritten every few seconds while the IDE holds the project, and each rewrite goes
+via `Machine.~u~` — **trailing tilde** — which then disappears. Measured: 20 seconds of an idle
+open project produced 7 events for `.~u~` and 4 for `.~u`. So `TransientPatternsFor` returns
+`<stem>.~u*`, not `<stem>.~u`. The narrower rule left a file git had never been told to ignore
+appearing and vanishing in the working tree, and cost a `git status` on each one.
+
+The other sidecars — `Machine-AllUsers.opt` and `Machine-<user>-<machine>.opt` — **persist**;
+they are per-user settings, not locks. The per-user one carries the username and machine name
+**in its filename**, so committing it writes both into history permanently and guarantees a
+different file for every engineer. Adoption writes project-scoped ignore rules for both, never
+repository-wide `*.opt`.
+
+**Export while the IDE holds the project works** — the lock is a sidecar on the path, so Versio
+copies the `.project` aside and exports the copy. **Import while it is held cannot be made to
+work**: the IDE would revert it on the next save. Neither direction marks the binding failed.
+
+---
+
+## 9. The C# mirror modules — what they are for
+
+Six C# types restate logic that also exists in Python:
+
+| C# | Python counterpart | Referenced today by |
+|---|---|---|
+| `CodesysObjectTypes` | `GUID_TYPE_MAPPING` | the app (tree, manifest reading) **and** the parity test |
+| `ExportFormRules` | `TYPE_FORM` / `decide_form` | **tests only** |
+| `PathMapper` | `safe_file_stem` / `file_name_for` | **tests only** |
+| `NativeXmlScrubber` | `scrub_native_xml` | **tests only** |
+| `StTextCodec` | `join_st` / `split_st` | **tests only** |
+| `StDeclarationParser` | `parse_declaration` | **tests only** |
+| `NativeXmlNormalizer` | *(no counterpart — comparison only)* | `RealRoundTripEquivalenceTests` |
+
+This is worth being explicit about, because it is easy to read the C# as the implementation.
+**It is not.** At run time the Python is the only code that decides an object's form, builds a
+filename, scrubs a timestamp or splits a `.st` file. The C# copies exist as (a) an executable
+specification the parity tests compare against, and (b) the shape a future in-process or
+non-CODESYS implementation would use.
+
+That arrangement is defensible, but it has a cost that has already been paid twice: a fix landing
+on one side only. The GVL suffix bug landed on the Python side; two divergences described in §12
+are live today in the other direction.
+
+---
+
+## 10. Script inventory
+
+All ten `.py` files are embedded into `Versio.Infrastructure` by a glob
+(`<EmbeddedResource Include="..\Versio.Scripts.Codesys\*.py" />`) and extracted at run time by
+`ScriptExtractor` into `%TEMP%\Versio\scripts\<content-stamp>\`. The directory is **versioned by
+content hash**, so an upgrade cannot pick up old scripts and a downgrade cannot pick up new ones
+— a stale copy on disk would produce failures that look like CODESYS bugs.
+
+| Script | Lines | `scriptengine`? | Role |
+|---|---|---|---|
+| `versio_export.py` | 547 | yes | The exporter. Invoked by `CodesysOperation.Export` |
+| `versio_import.py` | 419 | yes | The importer. Invoked by `CodesysOperation.Import` |
+| `versio_probe.py` | 149 | yes | Phase 0 tree probe; writes a `report.json`. Invoked by `CodesysOperation.Probe` (see finding A3) |
+| `versio_probe_native_import.py` | 194 | yes | One-off probe that answered "does `import_native` replace in place?". Never invoked by the app |
+| `versio_delete_objects.py` | 68 | yes | Test fixture helper — deletes named objects so the importer must recreate them. **Never part of the product**, but is embedded in it (finding B4) |
+| `versio_types.py` | 280 | **no** | The GUID table, the form decision, the suffix/infix tables, the skip reasons, the export-only rules |
+| `versio_text.py` | 183 | **no** | `join_st` / `split_st`, the timestamp scrub, `content_hash`, `safe_file_stem` |
+| `versio_decl.py` | 186 | **no** | ST declaration-header parser for object creation |
+| `versio_libraries.py` | 213 | **no** | Shapes `ScriptLibraryReference` objects into neutral records |
+| `versio_yaml.py` | 184 | **no** | Hand-written YAML emitter for one fixed document shape |
+
+The five pure modules import no `scriptengine` and run on **CPython 3 as well as IronPython 2.7**
+— deliberately, so the functions most likely to harbour a silent data-loss bug can be exercised
+without a 17–31 s CODESYS launch. `PythonFileNameTests` does exactly that, shelling out to
+`python` and skipping cleanly when it is absent.
+
+### The PowerShell harnesses
+
+`tools/` holds the harnesses written before the C# runner existed. They remain the fastest way to
+poke at CODESYS directly.
+
+| Tool | Does |
+|---|---|
+| `Run-Codesys.ps1` | Launches one script with a hashtable job. Does exactly what the runner must: BOM-free job file, async drain, timeout + `taskkill /T /F`, protocol split |
+| `Compare-Exports.ps1` | Byte-compares two export trees — the determinism gate |
+| `Test-RoundTrip.ps1` | export → copy → import → export → compare. **Use `-MutateFirst`** — without a deliberate change the comparison can pass while the import did nothing, and a green result that cannot fail is worse than a red one. **Currently broken — finding A1** |
+
+---
+
+## 11. Cost, concurrency and cancellation
+
+| Property | Value | Why it is designed around |
+|---|---|---|
+| Cold start | **31.5 s first run, 17.6 s subsequent** | Every export pays it. Managed by the coalescer (one pending job per project) and a 10 s minimum interval, not avoided |
+| Concurrency | One CODESYS at a time, **machine-wide** | `Global\Versio.Codesys.SingleInstance`. Not per-process: two Versio windows, or two user sessions, must not launch competing instances |
+| Mutex wait | 15 minutes, then `TimeoutException` | A wait over 1 s is logged, because it is the explanation for an export that appeared to hang before it started |
+| Crash recovery | `AbandonedMutexException` → **recover and continue** | A named `Semaphore` would dodge the thread-affinity problem and be the wrong fix: a process dying while holding it leaves the count permanently decremented and every future export on the machine blocks forever |
+| Job timeout | 10 minutes, then **process-tree kill** | A `--noUI` CODESYS sitting on a hidden modal never exits, and it spawns children that outlive a plain `Process.Kill()` |
+| Window | `CreateNoWindow` **and** `WindowStyle.Hidden` | Different subsystems. `CREATE_NO_WINDOW` suppresses a *console* child's console; CODESYS.exe is a GUI app and under `--noUI` still creates a top-level window, so `SW_HIDE` is needed as well |
+| Cancellation | An export may be cancelled; an **import may not** | The export stages and swaps; the import writes into the binary project. Enforced by `InterruptionGuard`, not by convention |
+
+The mutex is acquired and released on **one dedicated long-running thread**
+(`TaskCreationOptions.LongRunning`), because a named `Mutex` has thread affinity: acquiring
+inside `Task.Run` and releasing in a `finally` after an `await` lands on a different pool thread
+and throws `ApplicationException: Object synchronization method was called from an
+unsynchronized block of code`.
+
+---
+
+## 12. Audit — what is broken, stale or divergent
+
+State of the suite at the time of writing: **`Versio.Core.Tests` 1363 passed**, and
+**`Versio.Integration.Tests` 154 passed, 0 skipped, 10 m 37 s** against real CODESYS 3.5.22.20.
+Nothing on a tested path is failing. Everything below is either off the tested paths or is a
+documentation-level defect.
+
+### A. Broken — will fail if used
+
+**A1 · `tools/Test-RoundTrip.ps1` points at a folder that does not exist.** *(High — a documented
+command fails on the first line that uses it.)*
+
+```
+tools/Test-RoundTrip.ps1:29   $scripts = Join-Path $repoRoot "src\Versio.Scripts"
+```
+
+The folder was renamed to `src\Versio.Scripts.Codesys`. All three invocations
+(lines 39, 64, 75) therefore pass a non-existent script path to `Run-Codesys.ps1`, and CODESYS
+exits without running anything. `README.md:256` documents this exact command as the way to prove
+the round trip. One-line fix.
+
+**A2 · A multi-project job cannot work, and the type says it is the point.**
+*(Medium — latent; nothing constructs one today.)*
+
+`CodesysJob`'s doc comment states that carrying a list of projects is the design ("Two projects
+cost ~19 s batched versus ~35 s sequentially"), and `PlcJob` repeats it. But `ToJson()` only
+writes the flat `project` / `out` / `src` keys **when `Projects.Count == 1`**
+(`CodesysJob.cs:64-67`), and **no script reads `job["projects"]`** — `versio_export.py:451` and
+`versio_import.py:388` read `job["project"]` unconditionally. A job with two projects omits that
+key (`JsonIgnoreCondition.WhenWritingNull`) and the script dies with a `KeyError` reported as a
+`fatal` event. `SyncOrchestrator` always builds single-project jobs, so this is unreachable
+today — but the batching the docs and the README present as a design property does not exist.
+
+**A3 · `CodesysOperation.Probe` through the runner cannot succeed.** *(Low — latent.)*
+
+`versio_probe.py:132` writes its report to `job["out"]`, but `ToJson()` sets `out` only for
+`Export` (`CodesysJob.cs:65`). A probe job therefore walks the whole tree, emits every `object`
+event, and then dies with a `KeyError` on the last statement. Nothing reaches this today —
+`IPlcToolchain.ProbeAsync` uses `CodesysLocator`, not the runner — but `LocalCodesysRunner`
+maps every unrecognised `PlcOperation` to `CodesysOperation.Probe`, so the path is one caller
+away.
+
+### B. Stale or incorrect references
+
+**B1 · Three documents and one XML doc comment still name the old script folder.**
+
+| Location | Says | Should say |
+|---|---|---|
+| `src/Versio.Core/Plc/Codesys/CodesysObjectType.cs:11` | `src/Versio.Scripts/versio_types.py` | `src/Versio.Scripts.Codesys/…` |
+| `docs/PHASE0-FINDINGS.md:253` | `src\Versio.Scripts\` in the tree diagram | |
+| `docs/PLAN.md:1705, 1723` | `Versio.Scripts/` | |
+
+**B2 · The parity test class is misspelled, and the doc comment points at the spelling that does
+not exist.** `CodesysObjectType.cs:12` says "The `TypeTableParityTests` assert…"; the class is
+`TypeTablePartityTests` (`CodesysObjectTypeTests.cs`). Grepping for the documented name finds
+nothing.
+
+**B3 · `LocalCodesysRunner:118` claims the scripts stamp the operation id on their output.**
+They do not — no script reads `job["operationId"]` or emits it. Correlation works anyway,
+because the log scope wraps the whole run in C#, but the stated mechanism is not the real one.
+
+**B4 · `versio_delete_objects.py:3` cites `Test-ObjectCreation.ps1`, which is not in `tools/`.**
+The file is also described as "never part of the product" while being embedded into the shipping
+assembly by the `*.py` glob — harmless, since nothing invokes it, but it is a script that
+removes objects from a project sitting inside the product.
+
+**B5 · Dead protocol branch.** `LocalCodesysRunner.cs:393` handles `case "progress":` with
+`done` / `total` / `obj` fields. **No script emits a `progress` event.** In practice an export
+reports progress exactly once (`opened`) and an import three times (`opened` + two `phase`
+events), which is why the progress bar is indeterminate for the whole 17–31 s. Either the branch
+is dead code or the exporter is missing the per-object progress the C# side is waiting for; the
+comment does not say which was intended.
+
+### C. Divergences between the two implementations
+
+**C1 · The unknown-container guard exists only in C#.** *(Medium.)*
+
+`ExportFormRules.Decide` returns `NativeWithChildren` for an unmapped type that has children
+(`CodesysExportForm.cs:134`), with a comment explaining that treating an unknown container as a
+plain leaf "flattens its children into the parent's folder and quietly destroys the tree shape".
+`versio_types.decide_form` has no such form and returns plain `FORM_NATIVE`
+(`versio_types.py:262`) — and `versio_export.handle` then walks that node's children into the
+**parent's** directory. So the exporter that actually runs has the defect the C# guard was
+written to prevent. It is not hypothetical: probing a 25-object toy project found two unmapped
+structural nodes (`Plc Logic`, `Application`), and the fix was to add their GUIDs to the table
+rather than to handle the general case.
+
+**C2 · The username-leak fix exists only in Python.** *(Low — `PathMapper` has no production
+caller, so nothing is wrong today.)*
+
+`safe_file_stem` shortens path-like and over-long names to `tail~digest`. `PathMapper.EncodeStem`
+percent-encodes and stops there, so it would still produce the 120-character filename carrying a
+username that prompted the Python fix. If `PathMapper` ever becomes the live implementation, the
+leak comes back.
+
+### D. Real limitations of the import path
+
+None of these are bugs — they are properties of the design that a reader must know. They are
+listed here because only one of them is currently written down anywhere.
+
+| # | Limitation | Consequence |
+|---|---|---|
+| D1 | **Deletions do not propagate.** The importer only updates and creates | Removing a `.st` from the mirror does **not** remove the POU from the project |
+| D2 | **Filenames are never decoded.** `unsafe_file_stem` exists and nothing calls it (`versio_text.py:178`); `find_by_path` compares raw CODESYS names against *encoded* path segments | An object or folder whose name needed encoding (`weird<name>` → `weird%3Cname%3E`) cannot be found on import, and a *created* one would be named with the percent escapes literally |
+| D3 | **A dot in an object name breaks the owner split.** `object_name_from_file` treats the last dot before the suffix as the owner/member separator | A POU named `My.Thing` imports as member `Thing` of a non-existent parent `My` → `PARENT_NOT_FOUND`. `versio_export.record`'s own comment names this hazard as the reason the manifest records parents by GUID; the importer still parses filenames |
+| D4 | **Any stray non-`.st` file in the mirror is handed to `import_native`.** Only `_manifest.json`, `_coverage.md` and `*.libraries.yaml` are excluded | A `README.md` or a `.bak` dropped into an export directory is offered to CODESYS as native XML. The code comments show this class is known — it is how `_coverage.md` caused a failure — but the guard is a fixed allow-list, not a shape check |
+| D5 | **`*.libraries.yaml` is export-only** | Editing it changes nothing. Stated in the file's own header, in `_coverage.md`, in the manifest and by a lock glyph in the UI |
+| D6 | **Task Configuration is diff-only** | `import_native` mutates `Core2` (§7) |
+
+### E. Smaller observations
+
+- **`CodesysToolchain` reports `installs[0]` regardless of which install the profile came from**
+  (`CodesysToolchain.cs:51-53`). `ProfileResolver.Resolve` flattens profiles across *all*
+  installs, so on a machine where the first install found has no profiles and the second does,
+  the status reports the second install's profile beside the **first** install's executable path
+  and version — and `CreateRunner` then launches that executable. `CodesysRunnerTests` already
+  works around this by selecting `FirstOrDefault(i => i.Profiles.Count > 0)`.
+- **`versio_export.main` calls `json.dumps(manifest)` three times** in one expression to decide
+  whether the result is bytes. Harmless on a 12-object project; wasteful on a large one.
+- **`proj.close()` is skipped on the exception path** in both the exporter and the importer. The
+  process exits immediately afterwards, so this costs nothing today.
+- **The manifest's exact bytes are IronPython-specific.** Python 2's `json.dumps(indent=…)`
+  writes a trailing space after each separator — visible in the committed fixture. Regenerating
+  the file with CPython 3 would produce a whole-file diff with no semantic change.
+- **`.gitignore` covers `*.versio_staging/` but not `*.versio_trash/`** at the repository level;
+  only the project-scoped block Versio wrote for the fixture names the trash directory. A
+  crash inside the swap window in a repository set up before that rule existed leaves an
+  untracked directory that *Stage all* would cheerfully commit.
+
+---
+
+## 13. Adding a second vendor
+
+The seam is `IPlcToolchain` + `IPlcProjectFormat` + `IPlcRunner`. A new vendor implements those
+three and registers its format with `PlcFormats.Register`. **Nothing in `Sync/`, `Git/`,
+`Locking/`, `Watching/` or `Diff/` should need to change** — if it does, vendor knowledge has
+leaked past the seam and the leak is the bug. 22 architecture tests read assembly metadata to
+assert that.
+
+What the CODESYS implementation shows a second vendor it will have to answer:
+
+- how to find the tool and what "version" means for it (`ProbeAsync` → `PlcToolchainStatus.Profile`,
+  opaque above the seam);
+- how the tool records that it has a project open, if it does (`OccupancyMarkerFor`,
+  `ParseOccupancy`) — returning `null` is a valid answer and yields `Free`;
+- what it leaves beside a project that git should not keep (`TransientPatternsFor`), scoped to
+  the project rather than blanket extensions;
+- what it can actually do (`PlcCapabilities`), including `TypicalStartupCost`, which drives sync
+  behaviour;
+- a runner that turns a `PlcJob` into whatever its tool wants and a `PlcResult` back out.
+
+Two pieces are already vendor-neutral and should be reused rather than reinvented:
+`versio_yaml.py` (nothing in it knows what a PLC is) and the `LibraryReference` /
+`LibraryCatalog` pair in `Versio.Core/Projects/` — every toolchain has some notion of a
+dependency on a versioned library, and all of them answer the same three questions a reviewer
+asks: what is it, which version, and did anybody pin it.
+
+---
+
+## 14. References
+
+| | |
+|---|---|
+| **CODESYS ScriptEngine** | The scripting plug-in shipped with CODESYS 3.5. Its API reference is installed with the product and published in the CODESYS Online Help under *Scripting*. Everything Versio uses is listed in §1.3, and every member was confirmed against 3.5.22.20 |
+| **greenforge-labs/codescribe** (Apache-2.0) | `https://github.com/greenforge-labs/codescribe` — source of the object-type GUID table (`src/object_type.py`), the visualisation-manager skip, and the "do not rewrite Ids" warning. Where Versio departs from it, §5–§6 say so and why |
+| [`docs/PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) | The measurements: determinism, cold start, the native-import probe, the `Core2` deviation, the two bugs that only appear against a real process |
+| [`docs/PLAN.md`](PLAN.md) | The architecture, the tier model (§3.10), the vendor seam |
+| [`docs/SAFEGUARDS.md`](SAFEGUARDS.md) | The interruption guard, the staging swap, and what Versio refuses |
+| `fixtures/projects/RefrigeratorControl.project` | 383 KB, 25 objects. The project the whole suite runs against, with its committed mirror beside it |
+
+### Where to start reading the code
+
+| To understand | Read |
+|---|---|
+| The process, the arguments, the mutex, the timeouts | `src/Versio.Infrastructure/Plc/Codesys/LocalCodesysRunner.cs` |
+| What crosses the boundary | `src/Versio.Core/Plc/Codesys/CodesysJob.cs` and `ScriptProtocol.cs` |
+| The export decisions | `src/Versio.Scripts.Codesys/versio_types.py`, then `versio_export.py` |
+| The import, and why it is two phases | `src/Versio.Scripts.Codesys/versio_import.py` |
+| The `.st` file format | `src/Versio.Scripts.Codesys/versio_text.py` and `src/Versio.Core/Iec/StTextCodec.cs` |
+| The seam | `src/Versio.Core/Plc/IPlcToolchain.cs` and `PlcJob.cs` |

@@ -16,11 +16,19 @@ public partial class MainWindow : Window
 {
     private readonly ShellViewModel _shell;
 
-    public MainWindow(ShellViewModel shell)
+    /// <summary>
+    /// The shell, and the panel sizes the user last dragged.
+    /// </summary>
+    /// <param name="layout">
+    /// Read from settings before the window exists, because applying it afterwards would show
+    /// a frame at the default size and then jump. Null for a test, which gets the defaults.
+    /// </param>
+    public MainWindow(ShellViewModel shell, LayoutSettings? layout = null)
     {
         InitializeComponent();
         _shell = shell;
         DataContext = shell;
+        _layout = layout ?? new LayoutSettings();
 
         // Auto-scroll on append, unless paused. Done here rather than in the view model
         // because a ScrollViewer is a view concern.
@@ -47,16 +55,15 @@ public partial class MainWindow : Window
         // A repository another Versio already has open. Not a rejection of the folder - it is
         // perfectly good and will open the moment the other window lets go - so it says that
         // rather than anything about the path being wrong.
-        shell.RepositoryBusyElsewhere += why => MessageBox.Show(
-            this, why, "Already open", MessageBoxButton.OK, MessageBoxImage.Information);
+        //
+        // No choices, which GuardPromptWindow renders as a single OK: this is a statement, and
+        // a Cancel beside it would imply an alternative that does not exist.
+        shell.RepositoryBusyElsewhere += why => Tell("Already open", why);
 
         // Discarding a file destroys work git cannot give back, so it is asked about here
         // rather than assumed. Unset would mean "no", which is the right way round for a
         // wiring mistake to fail.
-        shell.ConfirmDestructive = (caption, body) =>
-            MessageBox.Show(this, body, caption, MessageBoxButton.OKCancel,
-                            MessageBoxImage.Warning, MessageBoxResult.Cancel)
-            == MessageBoxResult.OK;
+        shell.ConfirmDestructive = Ask;
 
         // An import writes into a .project - a binary compound document nobody can diff
         // afterwards - so it is asked about rather than assumed. This is the setting
@@ -64,12 +71,9 @@ public partial class MainWindow : Window
         // stops it being a fiction: for as long as it was missing, the only caller answered
         // "confirmed, because there is nobody to ask".
         //
-        // Warning rather than Question, and defaulting to Cancel, for the same reason the
-        // discard prompt does: the dangerous answer must never be the one a stray Enter picks.
-        shell.Sync.ConfirmImport = (caption, body) =>
-            MessageBox.Show(this, body, caption, MessageBoxButton.OKCancel,
-                            MessageBoxImage.Warning, MessageBoxResult.Cancel)
-            == MessageBoxResult.OK;
+        // The dangerous answer must never be the one a stray Enter picks - see Ask, which is
+        // where that rule now lives for both of these.
+        shell.Sync.ConfirmImport = Ask;
 
         // The copies taken before every import, which until now nothing could reach. Owned, so
         // it centres on the window and cannot be lost behind it. Null means cancel, and the
@@ -165,6 +169,11 @@ public partial class MainWindow : Window
             return window.Result as MissingRepositoryChoice?;
         };
 
+        // After the window has a size, so LogHeight can clamp against it. In the
+        // constructor ActualHeight is still zero and a stored 900 px log would be restored
+        // whole onto a laptop screen.
+        Loaded += (_, _) => ApplyStoredLayout();
+
         ApplyLogVisibility();
         SyncThemeRadios();
 
@@ -235,9 +244,57 @@ public partial class MainWindow : Window
 
         _closeApproved = true;
 
+        // Written on the way out rather than on every drag. A GridSplitter raises its change
+        // continuously, so persisting there would be a file write per pixel of a drag.
+        //
+        // After the shell has agreed the window may go, so a close somebody cancelled does
+        // not record a layout they were only passing through.
+        await _shell.RememberLayoutAsync(CurrentLayout());
+
         // Queued behind the event we are still inside. See the remarks.
         await Dispatcher.InvokeAsync(Close, System.Windows.Threading.DispatcherPriority.Normal);
     }
+
+    /// <summary>
+    /// Put a destructive question, with the safe answer as the default.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This was MessageBox.Show, and it was the loudest unthemed surface left in the
+    /// application.</b> Every window, tooltip and popup follows the palette - WindowCaption
+    /// goes as far as handing DWM the exact Surface.Base so the title bar and the top bar are
+    /// one surface - and then the two most consequential prompts in the product, discarding a
+    /// file and writing into a .project, opened a bright system dialog over a dark app.
+    /// </para>
+    /// <para>
+    /// <b>Cancel leads, and that is not a style choice.</b> GuardPromptWindow gives the first
+    /// option the accent and IsDefault, so putting Cancel first is what keeps a stray Enter on
+    /// the safe answer - the property the MessageBox got from its defaultResult argument. The
+    /// destructive button is present, quiet, and says what it does rather than "OK".
+    /// </para>
+    /// </remarks>
+    private bool Ask(DestructivePrompt prompt)
+    {
+        var window = new GuardPromptWindow(
+            prompt.Title,
+            prompt.Body,
+            [new PromptOption("Cancel", false), new PromptOption(prompt.Confirm, true)],
+            cancels: false)
+        {
+            Owner = this,
+        };
+
+        window.ShowDialog();
+        return window.Result is true;
+    }
+
+    /// <summary>State something that has no question in it.</summary>
+    /// <remarks>
+    /// No options, which GuardPromptWindow renders as a lone OK. Its own remarks make the
+    /// argument: a Cancel beside an acknowledgement implies an alternative there isn't one of.
+    /// </remarks>
+    private void Tell(string title, string body) =>
+        new GuardPromptWindow(title, body, []) { Owner = this }.ShowDialog();
 
     /// <summary>
     /// Explain why a folder cannot be opened, and offer to choose another.
@@ -256,13 +313,23 @@ public partial class MainWindow : Window
             _ => "Not a Git repository",
         };
 
-        var body = $"{location.RequestedPath}\n\n{location.Explanation}\n\n" +
-                   "Choose a different folder?";
+        var body = $"{location.RequestedPath}\n\n{location.Explanation}";
 
-        var answer = MessageBox.Show(this, body, caption,
-            MessageBoxButton.OKCancel, MessageBoxImage.Warning, MessageBoxResult.OK);
+        // Recommended first, and here the recommendation IS to choose another folder: nothing
+        // has been destroyed and the user is mid-way through opening something. That is the
+        // one place in this file where the affirmative leads.
+        var window = new GuardPromptWindow(
+            caption,
+            body,
+            [new PromptOption("Choose another folder…", true), new PromptOption("Cancel", false)],
+            cancels: false)
+        {
+            Owner = this,
+        };
 
-        if (answer == MessageBoxResult.OK)
+        window.ShowDialog();
+
+        if (window.Result is true)
         {
             await PickRepositoryAsync();
         }
@@ -277,9 +344,67 @@ public partial class MainWindow : Window
     /// </remarks>
     private void ApplyLogVisibility()
     {
-        LogList.Visibility = _shell.Log.IsExpanded ? Visibility.Visible : Visibility.Collapsed;
+        var expanded = _shell.Log.IsExpanded;
+
+        LogList.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
         LogChevron.Text = (string)FindResource(
-            _shell.Log.IsExpanded ? "Icon.ChevronDown" : "Icon.ChevronUp");
+            expanded ? "Icon.ChevronDown" : "Icon.ChevronUp");
+
+        // A GridSplitter cannot resize an Auto row, so the row carries a pixel height while
+        // the log is open and goes back to Auto - header only - when it closes. The splitter
+        // follows, because a drag handle above something that cannot grow is a control that
+        // lies about what it does.
+        LogSplitter.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
+        LogRow.Height = expanded
+            ? new GridLength(LogHeight(), GridUnitType.Pixel)
+            : GridLength.Auto;
+    }
+
+    /// <summary>The log height to open at: what was stored, or the default.</summary>
+    /// <remarks>
+    /// Clamped against the window's own height rather than trusted. Somebody who dragged the
+    /// log to 900 px on a 4K monitor and then opened Versio on a laptop would otherwise get a
+    /// log console taller than the window, the panels squeezed to nothing, and no splitter
+    /// left on screen to drag it back with.
+    /// </remarks>
+    private double LogHeight()
+    {
+        const double Default = 200;
+
+        var available = ActualHeight > 0 ? ActualHeight * 0.6 : 0;
+        var restored = LayoutSettings.Restore(_layout.LogHeight, minimum: 80, available);
+
+        return restored > 0 ? restored : Default;
+    }
+
+    /// <summary>What the user has dragged this session, ready to be written down.</summary>
+    private LayoutSettings CurrentLayout() => new()
+    {
+        // Only while it is open. A collapsed log's row is Auto and reads back as the header's
+        // height, which would quietly shrink the log a little on every launch that ended with
+        // it closed.
+        LogHeight = _shell.Log.IsExpanded ? LogRow.ActualHeight : _layout.LogHeight,
+        PanelWidth = PanelColumn.ActualWidth,
+    };
+
+    private LayoutSettings _layout;
+
+    /// <summary>Put the panels back where the user left them.</summary>
+    /// <remarks>
+    /// The width is clamped the same way the log height is, and for the same reason: a stored
+    /// size is only as trustworthy as the display it was stored on.
+    /// </remarks>
+    private void ApplyStoredLayout()
+    {
+        var width = LayoutSettings.Restore(
+            _layout.PanelWidth, minimum: PanelColumn.MinWidth, available: ActualWidth * 0.6);
+
+        if (width > 0)
+        {
+            PanelColumn.Width = new GridLength(width, GridUnitType.Pixel);
+        }
+
+        ApplyLogVisibility();
     }
 
     private async void OnOpenRepository(object sender, RoutedEventArgs e) =>
@@ -444,12 +569,24 @@ public partial class MainWindow : Window
         SettingsPopup.IsOpen = !SettingsPopup.IsOpen;
     }
 
+    /// <summary>Apply the theme, and remember it.</summary>
+    /// <remarks>
+    /// Remembering is the half that was missing. <c>ThemeManager.Apply</c> has always worked;
+    /// nothing wrote the choice down, so picking Dark on a light-mode Windows held for the
+    /// session and was gone on the next launch - with this popup showing "Follow system"
+    /// checked, as though the user had chosen it.
+    /// <para>
+    /// The write is not awaited, because a Checked handler cannot. It costs the preference and
+    /// nothing else if it fails: the store never throws, and the theme is already applied.
+    /// </para>
+    /// </remarks>
     private void OnThemeChanged(object sender, RoutedEventArgs e)
     {
         if (sender is RadioButton { Tag: string tag } &&
             Enum.TryParse<AppTheme>(tag, out var theme))
         {
             ThemeManager.Apply(theme);
+            _ = _shell.RememberThemeAsync(tag);
         }
     }
 

@@ -35,9 +35,8 @@ public sealed record RecentRepository
 /// repository that has no use for it.
 /// </para>
 /// <para>
-/// One record with a schema field rather than a file per setting, so the next preference to
-/// need persisting — the theme is the obvious one, and is currently reapplied as
-/// <c>System</c> on every start — joins this instead of inventing a second store.
+/// One record with a schema field rather than a file per setting, which is what let the theme
+/// and the panel sizes join it rather than invent a second store.
 /// </para>
 /// </remarks>
 public sealed record AppSettings
@@ -48,7 +47,70 @@ public sealed record AppSettings
     /// <summary>Repositories opened before, newest first.</summary>
     [JsonPropertyName("recent")] public IReadOnlyList<RecentRepository> Recent { get; init; } = [];
 
+    /// <summary>
+    /// Which palette to paint with: <c>System</c>, <c>Light</c> or <c>Dark</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This record's own remarks nominated it, and for a while that was all that happened.</b>
+    /// The startup path called <c>ThemeManager.Apply(AppTheme.System)</c> unconditionally and
+    /// nothing here held a theme, so picking Dark on a light-mode Windows held for the session
+    /// and was gone on the next launch — with the settings popup showing "Follow system"
+    /// checked, as though the user had chosen it.
+    /// </para>
+    /// <para>
+    /// A string rather than the app's <c>AppTheme</c> enum, because Core does not know about
+    /// the WPF layer and an unrecognised value has to mean "follow the system" rather than
+    /// throw. A settings file hand-edited to nonsense must cost a preference, never a launch.
+    /// </para>
+    /// </remarks>
+    [JsonPropertyName("theme")] public string Theme { get; init; } = "System";
+
+    /// <summary>Panel sizes the user has dragged.</summary>
+    [JsonPropertyName("layout")] public LayoutSettings Layout { get; init; } = new();
+
     public static readonly AppSettings Empty = new();
+}
+
+/// <summary>
+/// What the user dragged, so they do not drag it again tomorrow.
+/// </summary>
+/// <remarks>
+/// <para>
+/// All three of these reset on every launch. The log was worse than reset — it was a hardcoded
+/// <c>Height="200"</c> with no splitter at all, which at 20 px a row is exactly ten lines, for
+/// a panel whose whole purpose is troubleshooting a CODESYS export that emits far more than
+/// that across two categories.
+/// </para>
+/// <para>
+/// <b>Zero means "not set", and that is why they are doubles rather than nullables.</b> The
+/// values come from a WPF <c>GridLength</c> and go back into one; a null round-tripping
+/// through JSON as an absent property and back would need three states where the view only
+/// has two. A pane nobody has resized has no stored size, and zero is not a size.
+/// </para>
+/// </remarks>
+public sealed record LayoutSettings
+{
+    /// <summary>Height of the log console in pixels, or zero for the default.</summary>
+    [JsonPropertyName("logHeight")] public double LogHeight { get; init; }
+
+    /// <summary>Width of the left panel in pixels, or zero for the default.</summary>
+    [JsonPropertyName("panelWidth")] public double PanelWidth { get; init; }
+
+    /// <summary>
+    /// A size that is safe to restore, or zero.
+    /// </summary>
+    /// <remarks>
+    /// A stored size is only as trustworthy as the display it was stored on. Somebody who
+    /// dragged the log to 900 px on a 4K monitor and then opened Versio on a laptop would get
+    /// a log console taller than the window, with the panels squeezed to nothing and no
+    /// splitter left on screen to drag back. Clamped on the way out rather than on the way in,
+    /// because the display can change between the two.
+    /// </remarks>
+    public static double Restore(double stored, double minimum, double available) =>
+        stored <= 0 || available <= 0
+            ? 0
+            : Math.Clamp(stored, minimum, Math.Max(minimum, available));
 }
 
 /// <summary>

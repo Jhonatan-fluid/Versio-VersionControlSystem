@@ -155,7 +155,7 @@ public sealed class ImportConfirmationTests
         await EditTheMirrorAndSettle(repo, shell);
 
         var asked = 0;
-        shell.Sync.ConfirmImport = (_, _) =>
+        shell.Sync.ConfirmImport = _ =>
         {
             asked++;
             return false;
