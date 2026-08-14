@@ -191,6 +191,8 @@ public sealed class SyncViewModel : ObservableObject
         RetryCommand = new AsyncCommand(RetryAsync, CanRetry, onError: Report);
         ConfirmImportCommand = new AsyncCommand(
             ConfirmImportAsync, CanConfirmImport, onError: Report);
+        RestoreBackupCommand = new AsyncCommand(
+            RestoreBackupAsync, CanRestoreBackup, onError: Report);
     }
 
     /// <summary>
@@ -441,6 +443,11 @@ public sealed class SyncViewModel : ObservableObject
             LockState = value is { Tracked: true } && _orchestrator is not null
                 ? SyncNarrative.Describe(_orchestrator.StateOf(value.BindingId!))
                 : string.Empty;
+
+            // Read here rather than in CanExecute: the answer needs the disk, and CanExecute
+            // is called on every command-state refresh in the panel. The selection moving is
+            // the only thing that changes it.
+            RefreshBackupAvailability();
 
             RaiseCommandStates();
         }
@@ -2711,6 +2718,115 @@ public sealed class SyncViewModel : ObservableObject
         await RefreshStalenessAsync().ConfigureAwait(true);
     }
 
+    // ------------------------------------------------------------------ restoring a backup
+
+    /// <summary>Offer the copies of the selected project and put one back.</summary>
+    public AsyncCommand RestoreBackupCommand { get; private set; } = null!;
+
+    /// <summary>
+    /// Show the copies and return the one chosen, or null.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A delegate rather than a window, for the reason <c>ConfirmDestructive</c> gives: a view
+    /// model that opens a window cannot be tested without one appearing. <b>Null means
+    /// cancel</b>, which is the right way round for a wiring mistake to fail.
+    /// </para>
+    /// <para>
+    /// <b>Choosing is the confirmation.</b> There is no second "are you sure" on top: the
+    /// window states what restoring does and what it keeps, and picking a named version from a
+    /// list is already a deliberate act. A dialog on top of a dialog is how people learn to
+    /// dismiss both without reading either.
+    /// </para>
+    /// </remarks>
+    public Func<string, IReadOnlyList<ProjectBackup>, ProjectBackup?>? AskWhichBackup { get; set; }
+
+    private bool _selectedHasBackups;
+
+    /// <summary>The selected project has copies to go back to.</summary>
+    /// <remarks>
+    /// Cached when the selection moves rather than read in <c>CanExecute</c>, which WPF calls
+    /// far more often than anybody expects — a directory enumeration per raise would put the
+    /// disk in the path of every command-state refresh in the panel.
+    /// </remarks>
+    public bool SelectedHasBackups
+    {
+        get => _selectedHasBackups;
+        private set
+        {
+            if (SetProperty(ref _selectedHasBackups, value))
+            {
+                RestoreBackupCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    private void RefreshBackupAvailability() =>
+        SelectedHasBackups =
+            _orchestrator is not null &&
+            SelectedProject is { Tracked: true, BindingId: { } id } &&
+            _orchestrator.BackupsFor(id).Count > 0;
+
+    private bool CanRestoreBackup() => _orchestrator is not null && SelectedHasBackups;
+
+    /// <summary>
+    /// Put a previous copy of the selected project back.
+    /// </summary>
+    /// <remarks>
+    /// The orchestrator does the dangerous part and its own guarding: it refuses while the IDE
+    /// holds the project, and it copies the current state aside before overwriting it. What is
+    /// here is the choosing and the reporting.
+    /// </remarks>
+    private async Task RestoreBackupAsync()
+    {
+        if (_orchestrator is null ||
+            SelectedProject is not { Tracked: true, BindingId: { } id } row)
+        {
+            return;
+        }
+
+        using var scope = _logger.BeginOperation(LoggerExtensions.NewOperationId());
+        _logger.Click("Sync.RestoreBackup");
+
+        var available = _orchestrator.BackupsFor(id);
+        if (available.Count == 0)
+        {
+            // The folder emptied between the button lighting up and the press — a prune, or
+            // somebody clearing .versio/local by hand. Said rather than opening an empty list.
+            Summary = $"{row.Name} has no saved copies to restore.";
+            RefreshBackupAvailability();
+            return;
+        }
+
+        var chosen = AskWhichBackup?.Invoke(row.Name, available);
+        if (chosen is null)
+        {
+            _logger.Info(LogCategory.Sync, $"{id}: restore cancelled; the project is unchanged");
+            return;
+        }
+
+        using var busy = _busy.Begin(WorkKind.Import, $"Restoring {row.Name}…");
+
+        var outcome = await _orchestrator
+            .RestoreBackupAsync(id, chosen.Path, busy.Token)
+            .ConfigureAwait(true);
+
+        Summary = SyncNarrative.Describe(outcome);
+
+        if (outcome.IsFailure || outcome.Verdict is SyncVerdict.BlockedByOpenProject)
+        {
+            _logger.Warn(LogCategory.Sync, Summary);
+        }
+        else
+        {
+            _logger.Info(LogCategory.Sync, Summary);
+        }
+
+        RefreshBackupAvailability();
+        await RescanAsync().ConfigureAwait(true);
+        await RefreshStalenessAsync().ConfigureAwait(true);
+    }
+
     private bool CanRetry() => _orchestrator is not null && FailedProject is not null;
 
     /// <summary>
@@ -2752,6 +2868,7 @@ public sealed class SyncViewModel : ObservableObject
     {
         RetryCommand.RaiseCanExecuteChanged();
         ConfirmImportCommand.RaiseCanExecuteChanged();
+        RestoreBackupCommand.RaiseCanExecuteChanged();
     }
 
     private void Report(Exception ex)

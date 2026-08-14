@@ -65,6 +65,20 @@ public partial class MainWindow : Window
                             MessageBoxImage.Warning, MessageBoxResult.Cancel)
             == MessageBoxResult.OK;
 
+        // The copies taken before every import, which until now nothing could reach. Owned, so
+        // it centres on the window and cannot be lost behind it. Null means cancel, and the
+        // window's own text is the confirmation — there is no second dialog on top.
+        shell.Sync.AskWhichBackup = (project, backups) =>
+        {
+            var window = new BackupRestoreWindow(project, backups, DateTimeOffset.UtcNow)
+            {
+                Owner = this,
+            };
+
+            window.ShowDialog();
+            return window.Chosen;
+        };
+
         // The guard's questions have three answers, not two, so they need a real dialog for
         // the same reason the branch prompt does. Owned, so it centres on the window and
         // cannot be lost behind it — which for a modal blocking a close would look like a

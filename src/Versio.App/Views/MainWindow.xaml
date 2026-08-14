@@ -1456,6 +1456,27 @@
                                 </TextBlock.Style>
                             </TextBlock>
 
+                            <!-- THE COPIES THAT EXISTED AND NOTHING COULD REACH.
+
+                                 Ten per project are written before every import, and until now
+                                 the only route to one was knowing the layout of .versio/local/
+                                 by heart - at the precise moment somebody is having a bad
+                                 afternoon because an import damaged their project.
+
+                                 Hidden rather than disabled when there are none, because that
+                                 is the ordinary state: most projects have never had an import
+                                 run, and a permanently dead button labelled "Restore" on every
+                                 one of them would be furniture. It appears when the selected
+                                 project has something to go back to. -->
+                            <Button DockPanel.Dock="Top" Content="Restore a saved copy…"
+                                    Margin="0,0,0,6" HorizontalAlignment="Left" Padding="10,2"
+                                    Height="{DynamicResource Size.Control.Compact}"
+                                    Style="{StaticResource GhostButton}"
+                                    Command="{Binding Sync.RestoreBackupCommand}"
+                                    ToolTip="Put a previous version of this project back. The version it replaces is saved first."
+                                    Visibility="{Binding Sync.SelectedHasBackups,
+                                        Converter={StaticResource BoolToVisibility}}" />
+
                             <TextBox DockPanel.Dock="Top" Margin="0,0,0,6"
                                      Style="{StaticResource FlatTextBox}"
                                      Tag="Find an object or a file…"

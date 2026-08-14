@@ -29,9 +29,9 @@ the code, two of which (§5.A and §5.D) can lose work with no user error at all
 ## 0. Handover — where this stands
 
 **Branch:** `GitPanel`. **Built:** phases 1–8 — see *Phase 7, as built* at the end of §4 and
-*Phase 8, as built* below it — **and phase 9's §5.C**, the import confirmation, on 2026-08-14.
-**What remains of phase 9:** §5.E (backup restore) and §5.G (the read-only second instance) —
-features rather than guards, and each its own conversation.
+*Phase 8, as built* below it — **and phase 9's §5.C and §5.E**, the import confirmation and the
+backup restore path, both on 2026-08-14. **What remains of phase 9:** §5.G, the read-only second
+instance — a feature rather than a guard, and its own conversation.
 
 > **Versio no longer answers its own confirmation.** `RequireImportConfirmation` shipped as
 > `true` and was answered `Confirmed = true` by its only caller for the whole life of the
@@ -71,7 +71,7 @@ appended where it was planned. Read §6 for the order and what is done.
 
 | | |
 |---|---|
-| 1,320 Core + 363 UI unit tests | `dotnet test tests/Versio.Core.Tests`, `…/Versio.App.Tests` |
+| 1,343 Core + 377 UI unit tests | `dotnet test tests/Versio.Core.Tests`, `…/Versio.App.Tests` |
 | 154 integration tests | Real git and **real CODESYS 3.5.22.20**; 0 skipped, ~7 m |
 | The application itself | Started, driven, closed. Two bugs found this way that no test caught |
 | Every new behaviour | Deliberately broken and the tests re-run, per the README's `-MutateFirst` rule |
@@ -117,7 +117,7 @@ and **Versio could not be closed at all**. Only running the application found it
 ### Phase 9, in progress
 
 §5.C, §5.E and §5.G were the three that remained, and none of them is a guard: each adds a
-capability the app describes and does not have. **§5.C is built**; two remain.
+capability the app describes and does not have. **§5.C and §5.E are built**; §5.G remains.
 
 - ~~**§5.C**~~ — **done 2026-08-14.** It was the smallest and the most dishonest as it stood:
   `RequireImportConfirmation` was `true` by default and the only caller answered
@@ -126,8 +126,11 @@ capability the app describes and does not have. **§5.C is built**; two remain.
   **What it cost:** one line at the call site, a pending-import surface on the sync view model,
   a banner, and seven tests — of which the load-bearing one asserts that the `.project`'s bytes
   are unchanged after an edit to its mirror settles.
-- **§5.E** is a window over the ten backups per binding that already exist and are reachable by
-  nothing.
+- ~~**§5.E**~~ — **done 2026-08-14.** It was a window over the ten backups per binding that
+  already existed and were reachable by nothing. See §5.E. **What it cost:** `BackupCatalog` in
+  Core, two methods on the orchestrator, a window, a button that hides itself, and 26 tests.
+  The rule that took the most thought is that **restoring keeps a copy of what it replaced** —
+  without it, going back one copy too far is the last mistake somebody makes that afternoon.
 - **§5.G** is the sentence `LockRecovery` already produces — *"opening read-only"* — which
   nothing implements.
 
@@ -781,7 +784,36 @@ or power loss between those two statements leaves **no mirror at all** — and o
 Three renames and no window in which nothing exists. Clear a leftover `.versio_trash` on the next
 run, exactly as staging is already cleared and announced.
 
-### E. There is no backup restore path
+### E. There is no backup restore path — **BUILT**
+
+> **Built 2026-08-14.** `BackupCatalog` reads the folder the writer has always written to,
+> `SyncOrchestrator.BackupsFor` and `RestoreBackupAsync` list and apply, and a
+> `BackupRestoreWindow` offers them by time. The button appears on the project panel only when
+> the selected project has copies — which is not most of them, and a permanently dead *Restore*
+> on every project would be furniture.
+>
+> **Restoring keeps a copy of what it replaced, and that is the load-bearing rule.** A restore
+> overwrites the project, so without it a restore is a one-way trip: somebody walking back one
+> import too far would destroy the state they were trying to reach, using the feature that
+> exists to prevent exactly that. The mutation that removes it breaks two tests.
+>
+> **It refuses while the IDE holds the project**, for the same reason an import does — CODESYS
+> keeps its own copy in memory and the next save would silently revert whatever was written
+> underneath it.
+>
+> **It does not export afterwards.** The project and its mirror now disagree and the project is
+> right, which is an ordinary project-side change; the ordinary machinery exports it, with its
+> coalescer, breaker and cancellation. Doing it inline would mean a 17–31 s toolchain run inside
+> a call somebody made from a dialog, with no way to cancel it.
+>
+> **A copy whose name cannot be parsed is still listed**, named by its filename with "Versio did
+> not write this copy" beside it. One dropped in by hand is very possibly the one being looked
+> for, and hiding it would be indistinguishable from Versio having lost it.
+>
+> **Found while building it:** `ProjectBackup.Path` documented itself as repo-relative while
+> `BackupsFor` returned whatever `EnumerateFiles` gave, which is absolute — a record whose
+> comment disagreed with its contents, and it would have put the engineer's home directory on
+> screen. The orchestrator grew a `Relative` to match its long-standing `Absolute`.
 
 Ten backups are kept per binding under `.versio/local/` (`BackupsKept`, `SyncOrchestrator.cs:78`) and
 nothing in the UI can list or restore one. After a corrupting import — the scenario the backups exist
@@ -859,7 +891,7 @@ this adequately — worth confirming rather than changing.
 | **6 ✅** | Git-write suppression window (§5.A) and the conflict gate (§5.B) | Correctness, and both are **prerequisites** for phase 7 — see §4.8 and §4.6. |
 | **7 ✅** | **Branch-switch guard with the full auto-stash** (§3.1, §4), plus the branch recorded in `BindingLock` | Needs the prompt from phase 2 and both defences from phase 6. |
 | **8 ✅** | Swap via trash-rename (§5.D), staging in the ignore plan (§5.F), leftover sweep at open | Small, independent, and §5.D closes a real window. |
-| **9 ◐** | ~~Import confirmation made real (§5.C)~~ **done**; backup restore UI (§5.E), read-only second instance (§5.G) | Features rather than guards. Each is its own conversation. |
+| **9 ◐** | ~~Import confirmation made real (§5.C)~~, ~~backup restore UI (§5.E)~~ **both done**; read-only second instance (§5.G) | Features rather than guards. Each is its own conversation. |
 
 Phases 6 and 7 are ordered deliberately: **the auto-stash cannot ship before the suppression window
 and the conflict gate**, or restoring a stash becomes a way to trigger an unwanted import, and a
@@ -884,6 +916,27 @@ Automated tests cover everything below except what it looks like. Seven of them 
 5. Press it again and confirm → the import runs, the banner goes, and the project's bytes change.
 6. Edit mirrors under **two** projects → the banner names one and says the other is waiting.
 7. Switch repository while a banner is up → it goes with the repository, and does not follow you.
+
+### Verifying §5.E in the running app — **owed to a human**
+
+Needs a project that has been imported at least once, so there is something to restore. Steps 1
+and 2 are the ones no test can make a judgement about.
+
+1. Select a project that has never been imported → **no Restore button at all**, not a dead one.
+2. Select one that has → *Restore a saved copy…* appears above the search box. **Is that where
+   you would look for it?** It is the one placement decision here with no right answer.
+3. Press it → the copies are listed newest first, in **your** local time, each saying how long
+   ago. Restore is dead until you pick one.
+4. Pick one → the line beneath says which copy and when, in the same words the row used.
+5. **Cancel** → nothing is written. Check the `.project`'s modified time.
+6. Press it again, choose the newest, **Restore** → the project's bytes change, and the panel
+   then reports the project as needing an export, because its mirror is now behind.
+7. **Press it again.** The copy taken *at step 6* is now at the top of the list — that is the
+   state you just replaced, and being able to go back to it is what makes step 6 safe to try.
+8. Open the project in CODESYS, then try to restore → refused, naming who holds it.
+9. Drop a file called something arbitrary into `.versio/local/backups/<id>/` → it is listed,
+   named by its filename, saying Versio did not write it. It must not be hidden and it must not
+   be given an invented time.
 
 ### Phase 1, as built
 

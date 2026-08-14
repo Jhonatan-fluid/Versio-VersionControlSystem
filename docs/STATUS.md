@@ -1,11 +1,12 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-14 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,320 unit + 363 UI + 154 integration, 0 skipped
+**Date:** 2026-08-14 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,343 unit + 377 UI + 154 integration, 0 skipped
 
 > All three re-derived on 2026-08-14, on branch `GitPanel`, after the git-panel plan's **GP-J**
 > (PLC-aware naming of the changed-files rows, the change summary and the drafted commit
-> subject), **GP-I** (the merge-request button across five forges) and **safeguards §5.C** (the
-> import confirmation, which the app had been answering for itself). The integration suite was
+> subject), **GP-I** (the merge-request button across five forges), **safeguards §5.C** (the
+> import confirmation, which the app had been answering for itself) and **§5.E** (a way to reach
+> the backups that were being written and read by nothing). The integration suite was
 > re-run in full against real CODESYS 3.5.22.20 — **154 passed, 0 skipped** — including
 > `RepositoryWatcherTests.A_deleted_file_is_reported`, the one noted below as flaky, which
 > passed in this run. The five new integration tests read a forge's hidden request refs out of a
@@ -169,8 +170,12 @@ format; `.gitattributes` covers every registered vendor's extensions.
 > `Confirmed = true` by its only caller for the whole life of the setting, so a gate that was
 > switched on was reached and always passed, for the one direction that writes a binary file
 > nobody can diff. An edit to an exported mirror now writes nothing until a person says so.
-> **What remains of phase 9** is a backup restore path and the read-only second instance the
-> code already promises in a sentence. §0 is the handover note.
+> **§5.E is built too** — ten copies per project were written before every import and reachable
+> by nothing, so after the one operation they exist to undo, the engineer had an unusable
+> project and no route to the file that would fix it. Restoring keeps a copy of what it
+> replaced, so going back one copy too far is recoverable rather than final. **What remains of
+> phase 9** is the read-only second instance the code already promises in a sentence. §0 is the
+> handover note.
 >
 > **[`GIT-PANEL-PLAN.md`](GIT-PANEL-PLAN.md)** — the git panel's functionality and UX.
 > **Eleven of its twelve phases are built**: the git presence probe and identity preflight,
@@ -312,10 +317,10 @@ does not record them has to be run again.
 - **`RefrigeratorControl.~u` is in pushed history.** Untracked and ignored now, but the commit
   that carried a username, machine name and pid to `origin/main` is still there. Removing it
   means rewriting a pushed commit — the owner's call, not a maintenance task.
-- ~~**Only four windows are constructed by a test**~~ — **all six are, and the rule has held.**
-  `BranchDeleteWindow` and `ClonePromptWindow` joined `BranchPromptWindow`, `GuardPromptWindow`,
-  `MainWindow` and `SystemInfoWindow`, each with a test that builds it against the real
-  stylesheet. The rule is what matters and it stands: **a new window ships with a test that
+- ~~**Only four windows are constructed by a test**~~ — **all seven are, and the rule has held.**
+  `BranchDeleteWindow`, `ClonePromptWindow` and `BackupRestoreWindow` joined
+  `BranchPromptWindow`, `GuardPromptWindow`, `MainWindow` and `SystemInfoWindow`, each with a
+  test that builds it against the real stylesheet. The rule is what matters and it stands: **a new window ships with a test that
   constructs and measures it** — twice a window was added without one and twice it threw in
   front of somebody. The next `Popup` needs the same: its content is not built until it opens,
   so a test that constructs the parent does not reach it.
