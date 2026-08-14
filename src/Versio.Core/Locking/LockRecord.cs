@@ -104,8 +104,17 @@ public enum LockRecovery
     /// <summary>No previous state, or nothing was held.</summary>
     NothingToRecover,
 
-    /// <summary>Owned by a live process on this machine — another Versio instance.
-    /// Open read-only; never steal.</summary>
+    /// <summary>
+    /// Owned by a live process on this machine — another Versio instance. Never steal it.
+    /// </summary>
+    /// <remarks>
+    /// <b>This said "open read-only" for as long as it existed, and there was no read-only
+    /// mode.</b> Safeguards §5.G called that out: a sentence describing behaviour nothing
+    /// implements is worse than no sentence. What implements it now is
+    /// <see cref="RepositoryPresence"/>, which stops a second instance opening the repository
+    /// at all — so this decision is reached only for a lock inside a repository this process
+    /// legitimately owns, where the right answer is simply not to touch it.
+    /// </remarks>
     HeldByLiveSession,
 
     /// <summary>The machine rebooted or the process died, and the work is still unsynced.

@@ -7,6 +7,7 @@ using Versio.Core.Abstractions;
 using Versio.Core.Diff;
 using Versio.Core.Git;
 using Versio.Core.Guarding;
+using Versio.Core.Locking;
 using Versio.Core.Logging;
 using Versio.Core.Plc;
 using Versio.Core.Projects;
@@ -435,8 +436,15 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                           IRepositoryProbe? probe = null,
                           IClock? clock = null,
                           Func<PlcVendor, IVersioLogger, IPlcToolchain?>? toolchains = null,
-                          IAppSettingsStore? settings = null)
+                          IAppSettingsStore? settings = null,
+                          IProcessProbe? processes = null)
     {
+        // Injected for the same reason IClock and IRepositoryProbe are. The real probe
+        // requires the process NAME to start with "Versio", so no pid a test can reach ever
+        // looks like a live instance — which would leave §5.G's refusal path the one branch
+        // with no coverage, and it is the branch the whole guard exists for.
+        _processes = processes ?? new ProcessProbe();
+
         _logger = logger;
         Log = log;
         _clock = clock ?? new SystemClock();
@@ -1560,6 +1568,79 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     public event Action<RepositoryLocation>? RepositoryRejected;
 
     /// <summary>
+    /// A repository another Versio already has open, with the sentence to show.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="RepositoryRejected"/> because it is not a rejection of the
+    /// folder: the repository is perfectly good and will open the moment the other window lets
+    /// go. Reusing that event would have meant inventing a <c>RepositoryKind</c> for a state
+    /// that is about this machine rather than about the folder.
+    /// </remarks>
+    public event Action<string>? RepositoryBusyElsewhere;
+
+    /// <summary>The marker store for the repository this window has open, if any.</summary>
+    private JsonSessionMarkerStore? _session;
+
+    /// <summary>This machine and this process, for the §5.G presence marker.</summary>
+    private readonly MachineIdentity _machine = new();
+
+    /// <summary>How this window decides whether another Versio is really running.</summary>
+    private readonly IProcessProbe _processes;
+
+    /// <summary>
+    /// Take the repository for this window, or refuse because another Versio has it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Every failure mode here resolves to "open it".</b> An unreadable marker, an
+    /// unwritable one, a crashed session, a marker from before the last restart — all of them
+    /// mean nobody is really there. The guard exists to stop two live orchestrators, not to
+    /// make a repository unusable because a file could not be written.
+    /// </para>
+    /// <para>
+    /// The previous repository is released first. Switching from A to B and back must not find
+    /// A still claimed by this same window.
+    /// </para>
+    /// </remarks>
+    private bool ClaimRepository(string path)
+    {
+        var store = new JsonSessionMarkerStore(path, _logger);
+        var verdict = RepositoryPresence.Evaluate(store.Read(), _machine, _processes);
+
+        if (!verdict.CanOpen)
+        {
+            _logger.Warn(LogCategory.App, $"{path}: {verdict.Explanation}");
+            StatusSummary = "Already open in another Versio window";
+            RepositoryBusyElsewhere?.Invoke(verdict.Explanation);
+            return false;
+        }
+
+        if (verdict.Availability is RepositoryAvailability.Free &&
+            verdict.Explanation.Length > 0)
+        {
+            // "the session that left it is gone", "from before the last restart". Worth a line:
+            // it is the difference between a clean open and one that stepped over somebody
+            // else's leftovers, and it is the only place that is ever said.
+            _logger.Info(LogCategory.App, $"{path}: {verdict.Explanation}");
+        }
+
+        ReleaseRepository();
+
+        _session = store;
+        store.Write(RepositoryPresence.MarkerFor(
+            _machine, RepositoryPresence.SessionIdOf(_machine), _clock.UtcNow));
+
+        return true;
+    }
+
+    /// <summary>Give up the claim on whatever this window had open.</summary>
+    private void ReleaseRepository()
+    {
+        _session?.Release(RepositoryPresence.SessionIdOf(_machine));
+        _session = null;
+    }
+
+    /// <summary>
     /// Open a repository by path.
     /// </summary>
     /// <remarks>
@@ -1697,6 +1778,21 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             _logger.Warn(LogCategory.Git, $"git refused to open {path}");
             StatusSummary = rejected.Explanation;
             RepositoryRejected?.Invoke(rejected);
+            return false;
+        }
+
+        // ONE REPOSITORY, ONE VERSIO — safeguards §5.G.
+        //
+        // Two instances on one repository means two orchestrators writing repo.json and
+        // state.json over each other, and until now nothing stopped it: the only signal was
+        // LockRecovery.HeldByLiveSession, which promised "opening read-only" that nothing
+        // implemented AND only fired for a binding that happened to hold a lock.
+        //
+        // Checked here, after git has agreed it will work in this folder and before anything
+        // attaches: refusing later would mean tearing down a watcher and an orchestrator that
+        // had already started writing.
+        if (!ClaimRepository(path))
+        {
             return false;
         }
 
@@ -5383,5 +5479,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // folder locked against rename or delete after the window closes.
         Sync.Detach();
         History.Detach();
+
+        // Let go of the repository, so the next Versio - or the next launch of this one - does
+        // not have to work out that this process is gone before it can open it.
+        ReleaseRepository();
     }
 }

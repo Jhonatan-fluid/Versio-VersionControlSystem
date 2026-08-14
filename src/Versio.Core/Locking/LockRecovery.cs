@@ -74,7 +74,7 @@ public sealed class LockRecoveryPolicy(IMachineIdentity machine, IProcessProbe p
             if (ownerAlive)
             {
                 results.Add(new RecoveryDecision(LockRecovery.HeldByLiveSession, bindingId,
-                    $"held by a running Versio session (pid {owner.ProcessId}); opening read-only"));
+                    $"held by a running Versio session (pid {owner.ProcessId}); leaving it alone"));
                 continue;
             }
 

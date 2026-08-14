@@ -44,6 +44,12 @@ public partial class MainWindow : Window
         // event rather than showing one itself, so opening a repository stays testable.
         shell.RepositoryRejected += ShowRepositoryRejected;
 
+        // A repository another Versio already has open. Not a rejection of the folder - it is
+        // perfectly good and will open the moment the other window lets go - so it says that
+        // rather than anything about the path being wrong.
+        shell.RepositoryBusyElsewhere += why => MessageBox.Show(
+            this, why, "Already open", MessageBoxButton.OK, MessageBoxImage.Information);
+
         // Discarding a file destroys work git cannot give back, so it is asked about here
         // rather than assumed. Unset would mean "no", which is the right way round for a
         // wiring mistake to fail.

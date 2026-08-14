@@ -28,10 +28,11 @@ the code, two of which (§5.A and §5.D) can lose work with no user error at all
 
 ## 0. Handover — where this stands
 
-**Branch:** `GitPanel`. **Built:** phases 1–8 — see *Phase 7, as built* at the end of §4 and
-*Phase 8, as built* below it — **and phase 9's §5.C and §5.E**, the import confirmation and the
-backup restore path, both on 2026-08-14. **What remains of phase 9:** §5.G, the read-only second
-instance — a feature rather than a guard, and its own conversation.
+**Branch:** `GitPanel`. **Built: all nine phases.** Phases 1–8 — see *Phase 7, as built* at the
+end of §4 and *Phase 8, as built* below it — and phase 9 in full on 2026-08-14: §5.C the import
+confirmation, §5.E the backup restore path, and §5.G a one-repository-one-Versio guard in place
+of the read-only mode the enum had been promising. **What remains in §5** is §5.H, the repository
+disappearing while it is open, which nobody has costed.
 
 > **Versio no longer answers its own confirmation.** `RequireImportConfirmation` shipped as
 > `true` and was answered `Confirmed = true` by its only caller for the whole life of the
@@ -71,7 +72,7 @@ appended where it was planned. Read §6 for the order and what is done.
 
 | | |
 |---|---|
-| 1,343 Core + 377 UI unit tests | `dotnet test tests/Versio.Core.Tests`, `…/Versio.App.Tests` |
+| 1,352 Core + 385 UI unit tests | `dotnet test tests/Versio.Core.Tests`, `…/Versio.App.Tests` |
 | 154 integration tests | Real git and **real CODESYS 3.5.22.20**; 0 skipped, ~7 m |
 | The application itself | Started, driven, closed. Two bugs found this way that no test caught |
 | Every new behaviour | Deliberately broken and the tests re-run, per the README's `-MutateFirst` rule |
@@ -116,8 +117,8 @@ and **Versio could not be closed at all**. Only running the application found it
 
 ### Phase 9, in progress
 
-§5.C, §5.E and §5.G were the three that remained, and none of them is a guard: each adds a
-capability the app describes and does not have. **§5.C and §5.E are built**; §5.G remains.
+§5.C, §5.E and §5.G were the three that remained, and none of them is a guard in the phase 1–8
+sense: each added a capability the app described and did not have. **All three are built.**
 
 - ~~**§5.C**~~ — **done 2026-08-14.** It was the smallest and the most dishonest as it stood:
   `RequireImportConfirmation` was `true` by default and the only caller answered
@@ -131,8 +132,10 @@ capability the app describes and does not have. **§5.C and §5.E are built**; �
   Core, two methods on the orchestrator, a window, a button that hides itself, and 26 tests.
   The rule that took the most thought is that **restoring keeps a copy of what it replaced** —
   without it, going back one copy too far is the last mistake somebody makes that afternoon.
-- **§5.G** is the sentence `LockRecovery` already produces — *"opening read-only"* — which
-  nothing implements.
+- ~~**§5.G**~~ — **done 2026-08-14.** It was the sentence `LockRecovery` already produced —
+  *"opening read-only"* — which nothing implemented. It is a single-instance guard now rather
+  than a read-only mode, and §5.G says why that trade is the safer one. **What it cost:**
+  `RepositoryPresence` in Core, a JSON marker store, a claim in the open path, and 17 tests.
 
 Nothing in phase 9 is blocked. §5.H (the repository disappearing while it is open) is still
 unwritten and is the one remaining item in §5 that nobody has costed.
@@ -837,7 +840,39 @@ all" will happily commit. Same class of problem as the three comments that descr
 
 → Add the pattern to the ignore plan, and sweep leftover staging and trash directories at open.
 
-### G. Two Versio instances on one repository
+### G. Two Versio instances on one repository — **BUILT**
+
+> **Built 2026-08-14, as a guard rather than a read-only mode**, and that choice is the point of
+> this entry. This section offered either. The guard was taken because **it can be complete and a
+> read-only mode cannot**: read-only means finding every write in the application — git commands,
+> exports, imports, adoption, config, the lock store, the auto-stash — and gating each one, and
+> missing a single path is not a cosmetic bug there. It is exactly the concurrent write the
+> feature exists to prevent, arriving silently, in the one mode nobody exercises carefully. A
+> guard is one decision, made once, in a place a test can reach.
+>
+> **The per-binding lock could never have answered this.** `LockRecoveryPolicy` only reaches
+> `HeldByLiveSession` for a binding that *holds a lock*, so a second instance opened on a
+> repository where nothing happened to be locked saw `NothingToRecover` and carried on. The
+> hazard is two orchestrators, not two locks — so the marker is repository-level and written
+> whenever a repository opens.
+>
+> **`RepositoryPresence` decides; `.versio/local/session.json` records.** Gitignored, beside
+> `state.json`, for the same reason: who has a repository open on one machine is not something to
+> commit and hand to everyone who clones it.
+>
+> **Every doubt resolves towards "somebody is there".** A marker from another machine is believed,
+> because its processes cannot be probed from here and the repository is very possibly on a share
+> — the same rule the vendor's own open-project marker follows. Being wrong that way costs a
+> person a message; being wrong the other way costs two writers on one repository. The message
+> names the file so a machine that is never coming back can be cleared by hand.
+>
+> **And every failure resolves towards "open it".** A corrupt marker, an unwritable one, a dead
+> session, one from before the last restart — all of them mean nobody is really there. A guard
+> that turned one bad file into a repository nobody can open would be causing the outage it
+> exists to prevent.
+>
+> **The sentence that started this is gone.** `LockRecovery.HeldByLiveSession` said *"opening
+> read-only"* and now says *"leaving it alone"*, which is what it always did.
 
 `LockRecovery.HeldByLiveSession` produces the sentence *"held by a running Versio session (pid N);
 opening read-only"* — and **there is no read-only mode**. The second instance opens fully writable.
@@ -891,7 +926,7 @@ this adequately — worth confirming rather than changing.
 | **6 ✅** | Git-write suppression window (§5.A) and the conflict gate (§5.B) | Correctness, and both are **prerequisites** for phase 7 — see §4.8 and §4.6. |
 | **7 ✅** | **Branch-switch guard with the full auto-stash** (§3.1, §4), plus the branch recorded in `BindingLock` | Needs the prompt from phase 2 and both defences from phase 6. |
 | **8 ✅** | Swap via trash-rename (§5.D), staging in the ignore plan (§5.F), leftover sweep at open | Small, independent, and §5.D closes a real window. |
-| **9 ◐** | ~~Import confirmation made real (§5.C)~~, ~~backup restore UI (§5.E)~~ **both done**; read-only second instance (§5.G) | Features rather than guards. Each is its own conversation. |
+| **9 ✅** | ~~Import confirmation made real (§5.C)~~, ~~backup restore UI (§5.E)~~, ~~read-only second instance (§5.G)~~ — **all three done**, the last as a single-instance guard rather than a read-only mode; see §5.G | Features rather than guards. Each was its own conversation. |
 
 Phases 6 and 7 are ordered deliberately: **the auto-stash cannot ship before the suppression window
 and the conflict gate**, or restoring a stash becomes a way to trigger an unwanted import, and a
@@ -937,6 +972,23 @@ and 2 are the ones no test can make a judgement about.
 9. Drop a file called something arbitrary into `.versio/local/backups/<id>/` → it is listed,
    named by its filename, saying Versio did not write it. It must not be hidden and it must not
    be given an invented time.
+
+### Verifying §5.G in the running app — **owed to a human**
+
+Needs two Versio windows, which is the whole point and is also the one thing no test can have.
+
+1. Open a repository in Versio. Check `.versio/local/session.json` exists and names your pid.
+2. **Start a second Versio and open the same repository** → it says the repository is already
+   open in another window and names the pid. Nothing else in that window changes.
+3. Open a *different* repository in the second window → it opens normally. The guard is
+   per repository, not per application.
+4. Close the first window → `session.json` is gone, and the second window can now open it.
+5. **Kill the first window with Task Manager** rather than closing it, then open that repository
+   in the second → it opens, and the log says the session that left the marker is gone. A crash
+   must never lock somebody out of their own repository.
+6. Reboot with a marker left behind, then open → same, saying the marker predates the restart.
+7. Corrupt `session.json` by hand → the repository still opens. The guard is a courtesy; being
+   unable to open a repository is not.
 
 ### Phase 1, as built
 
