@@ -71,8 +71,8 @@ appended where it was planned. Read §6 for the order and what is done.
 
 | | |
 |---|---|
-| 1,175 Core + 291 UI unit tests | `dotnet test tests/Versio.Core.Tests`, `…/Versio.App.Tests` |
-| 149 integration tests | Real git and **real CODESYS 3.5.22.20**; 0 skipped, 7 m 43 s |
+| 1,320 Core + 363 UI unit tests | `dotnet test tests/Versio.Core.Tests`, `…/Versio.App.Tests` |
+| 154 integration tests | Real git and **real CODESYS 3.5.22.20**; 0 skipped, ~7 m |
 | The application itself | Started, driven, closed. Two bugs found this way that no test caught |
 | Every new behaviour | Deliberately broken and the tests re-run, per the README's `-MutateFirst` rule |
 
@@ -107,8 +107,12 @@ and **Versio could not be closed at all**. Only running the application found it
   scheduled deterministically from a test (phase 3).
 - **No mouse has driven the guards.** Every path below the click is exercised with real git and
   real bindings; the `ComboBox` interaction itself is not.
-- **`GuardIntent.Pull` is implemented and deliberately unwired** — its verdicts all resolve to the
-  auto-stash. Phase 7 wires it and deletes `ShellViewModel.AskAboutWork`.
+- ~~**`GuardIntent.Pull` is implemented and deliberately unwired**~~ — **wired, in phase 7 as
+  planned.** `PullAsync` and the divergence exit both go through
+  `ClearForContextChangeAsync(GuardIntent.Pull, …)`, and `ShellViewModel.AskAboutWork` is gone.
+  Kept as a struck-through line rather than deleted because this bullet outlived the work it
+  describes by long enough to be quoted elsewhere; the git panel plan's §9a has the fuller
+  account, including the two drafts of it that were wrong in opposite directions.
 
 ### Phase 9, in progress
 

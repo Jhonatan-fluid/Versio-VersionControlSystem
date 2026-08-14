@@ -313,8 +313,9 @@ public sealed class ChangeRow(FileChange change) : ObservableObject
     /// <remarks>
     /// Library references are exported for review and never applied back, so an edit to one
     /// sits in the working tree until the next export overwrites it from the project. The row
-    /// says so because this is where somebody is about to stage it — <c>STATUS.md</c> has
-    /// carried this as a known limitation with "the panel does not say so yet" beside it.
+    /// says so because this is where somebody is about to stage it, which is why it went here
+    /// rather than onto the tree row the plan originally suggested (§9.3): the tree says what
+    /// an object <i>is</i>, and this list is where a decision is about to be made about it.
     /// </remarks>
     public bool IsExportOnly => _object?.IsExportOnly ?? false;
 
@@ -2480,7 +2481,14 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
-        var tip = await _git.RevParseAsync(_branch.Name, ct).ConfigureAwait(false);
+        // Captured before the two round trips, and checked again after them. A probe takes as
+        // long as the network does, and switching branch in the middle of one is an ordinary
+        // thing to do — without this, the answer for the branch we were on would be stamped
+        // onto the branch we are now on, and the button would offer to open somebody else's
+        // pull request.
+        var asked = _branch.Name;
+
+        var tip = await _git.RevParseAsync(asked, ct).ConfigureAwait(false);
         if (tip.Length == 0)
         {
             return;
@@ -2498,10 +2506,19 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // is bound.
         OnUi(() =>
         {
+            if (!string.Equals(_branch?.Name, asked, StringComparison.Ordinal))
+            {
+                return;
+            }
+
             _requestNumber = found;
+
+            // Only when the answer MOVED — the early return above is what keeps this off the
+            // poller's cadence. A line per probe would be 360 an hour saying the same thing,
+            // which is how the log panel got drowned before.
             _logger.Info(LogCategory.Git, found is { } n
-                ? $"{Core.Git.Forge.Noun(Forge)} #{n} already covers {_branch.Name}"
-                : $"no {Core.Git.Forge.Noun(Forge)} found for {_branch.Name}");
+                ? $"{Core.Git.Forge.Noun(Forge)} #{n} already covers {asked}"
+                : $"no {Core.Git.Forge.Noun(Forge)} found for {asked}");
 
             OnPropertyChanged(nameof(MergeRequest));
             OnPropertyChanged(nameof(MergeRequestTooltip));

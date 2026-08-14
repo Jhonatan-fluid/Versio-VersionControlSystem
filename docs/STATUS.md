@@ -312,11 +312,18 @@ does not record them has to be run again.
 - **`RefrigeratorControl.~u` is in pushed history.** Untracked and ignored now, but the commit
   that carried a username, machine name and pid to `origin/main` is still there. Removing it
   means rewriting a pushed commit — the owner's call, not a maintenance task.
-- **Only four windows are constructed by a test**: the two prompt dialogs, `MainWindow` and
-  `SystemInfoWindow`. That is currently all of them, and the rule worth keeping is that **a new
-  window ships with a test that constructs and measures it** — twice now a window has been added
-  without one and twice it threw in front of somebody. The next `Popup` needs the same: its
-  content is not built until it opens, so a test that constructs the parent does not reach it.
+- ~~**Only four windows are constructed by a test**~~ — **all six are, and the rule has held.**
+  `BranchDeleteWindow` and `ClonePromptWindow` joined `BranchPromptWindow`, `GuardPromptWindow`,
+  `MainWindow` and `SystemInfoWindow`, each with a test that builds it against the real
+  stylesheet. The rule is what matters and it stands: **a new window ships with a test that
+  constructs and measures it** — twice a window was added without one and twice it threw in
+  front of somebody. The next `Popup` needs the same: its content is not built until it opens,
+  so a test that constructs the parent does not reach it.
+- **A test that builds `MainWindow` must join the `theme` collection.** Found by GP-I: a class
+  that laid the window out but sat outside that collection passed alone and failed under load,
+  because it raced a test swapping the palette dictionary and its bindings did not resolve. The
+  two classes still outside it construct the window without laying it out, so they evaluate no
+  bindings and are not exposed — but a third one that measures would be.
 
 ---
 

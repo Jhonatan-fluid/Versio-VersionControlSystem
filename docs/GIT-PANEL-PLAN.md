@@ -1583,8 +1583,11 @@ which are geometry and wording and cannot be.
    before it scrolls?** Rows are two lines tall now. This is the one judgement no test makes.
 7. Edit `Library Manager.libraries.yaml` in the mirror → the row carries a lock glyph, and its
    tooltip says the edit does not reach the project.
-8. Change `README.md` → it appears as `README.md` over `` (repository root), with **no chip**,
-   and the summary line ends `, plus 1 other file`. It must never be labelled as an object.
+8. Change `README.md` → it appears as `README.md` with **no chip** and, being at the repository
+   root, **no second line** — the summary line ends `, plus 1 other file`. It must never be
+   labelled as an object. **Your call to make:** a root-level file's blank second line still
+   occupies its height, so those rows are as tall as nested ones with less in them. Say if that
+   reads badly and it becomes a collapse on the empty case.
 9. Switch to a repository with no PLC projects → no summary line at all, no chips, and the rows
    are filenames over directories.
 
@@ -2291,7 +2294,7 @@ and `Core/Projects/ChangeSummary.cs` (the sentence, the drafted subject, the ver
 `Primary` / `Secondary` / `TypeLabel` / `IsExportOnly`; a two-line `ChangeRowTemplate`; the
 summary line and the **Draft** button in the commit box.
 
-**Tests:** 40 Core, 15 App (6 row + 3 chrome + 6 flow). **1,267 / 345 / 149 green**, integration
+**Tests:** 40 Core, 15 App (7 row + 2 realised + 6 flow). **1,267 / 345 / 149 green**, integration
 re-run in full against real CODESYS 3.5.22.20 — 0 skipped, 7 m 20 s.
 
 ### The wiring was the bug, and only the front-door test found it
@@ -2371,9 +2374,12 @@ label, the refusals); `RemoteUrl.Port` and `Authority`; `RepoConfig.Forge`;
 shell's `MergeRequest`, `OpenMergeRequestCommand` and `ProbeMergeRequestAsync`; the button, on
 its own row in the branch card.
 
-**Tests:** 53 Core, 12 App (8 flow + 4 poller), 5 integration against real git.
-**1,320 / 356 / 154 green**, on a clean in-tree build with `Versio.exe` closed: 0 warnings,
-0 errors.
+**Tests:** 53 Core, 11 App (8 flow + 3 poller), 5 integration against real git.
+**1,320 / 356 / 154 green** at the time this landed, on a clean in-tree build with `Versio.exe`
+closed: 0 warnings, 0 errors. *(The App total moved to 363 with safeguards §5.C, which followed
+this. The per-phase figures here are re-derived with
+`dotnet test --filter FullyQualifiedName~<TestClass>` rather than remembered — the first draft
+of this line said 4 poller tests and there are 3.)*
 
 ### `RemoteUrl` was dropping the port, and every self-hosted forge needed it
 

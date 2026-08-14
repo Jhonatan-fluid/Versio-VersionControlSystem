@@ -2663,6 +2663,13 @@ public sealed class SyncViewModel : ObservableObject
             return;
         }
 
+        // One id across the whole flow, per §3 of the git-panel plan: the question, the
+        // orchestrator's own dozen lines, the rescan and the staleness refresh. Without it,
+        // "why did that import do what it did" is answered by reading around the lines of
+        // whatever else was happening — which is the finding that came out of auditing the
+        // branch-delete and sign-in flows, and this is the same shape.
+        using var scope = _logger.BeginOperation(LoggerExtensions.NewOperationId());
+
         _logger.Click("Sync.ConfirmImport");
 
         if (ConfirmImport?.Invoke($"Import into {row.Name}?", PendingImportDetail) != true)

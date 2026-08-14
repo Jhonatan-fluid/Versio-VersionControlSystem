@@ -32,8 +32,10 @@ public sealed record NamedObject
     /// Library references are the only one today, and the panel is where it matters: the file
     /// is in the changed list, it looks exactly like an editable one, and staging an edit to it
     /// commits a change that will never reach the project — the next export rewrites the file
-    /// from the project and the edit is gone. <c>STATUS.md</c> has carried that as a known
-    /// limitation with "the panel does not say so yet" beside it; this is the flag that says it.
+    /// from the project and the edit is gone. <c>STATUS.md</c> carried that as a known
+    /// limitation for a long time with "the panel does not say so yet" beside it; this is the
+    /// flag that closed it, and the source of truth is
+    /// <see cref="ExportCoverage.ExportOnlyForm"/> rather than a list of filenames.
     /// </remarks>
     public bool IsExportOnly { get; init; }
 
