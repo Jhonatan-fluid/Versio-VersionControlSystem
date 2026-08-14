@@ -40,28 +40,6 @@ public sealed class StagingSelectionTests
         Assert.Equal(SelectionState.All, StagingSelection.StateFor(3, 5));
     }
 
-    [Fact]
-    public void Nothing_ticked_means_the_whole_list()
-    {
-        // What makes "Stage all" and "Stage selected" collapse into one button. A 380 px panel
-        // cannot afford two of everything.
-        Assert.Equal(12, StagingSelection.Affected(total: 12, selected: 0));
-    }
-
-    [Fact]
-    public void Something_ticked_means_only_that()
-    {
-        Assert.Equal(3, StagingSelection.Affected(total: 12, selected: 3));
-    }
-
-    [Fact]
-    public void An_empty_list_has_nothing_to_act_on()
-    {
-        Assert.False(StagingSelection.CanAct(0, 0));
-        Assert.True(StagingSelection.CanAct(1, 0));
-        Assert.True(StagingSelection.CanAct(12, 3));
-    }
-
     [Theory]
     [InlineData(0, 0, "Stage")]
     [InlineData(12, 0, "Stage all")]

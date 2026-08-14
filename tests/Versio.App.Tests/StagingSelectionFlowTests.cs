@@ -33,74 +33,13 @@ public sealed class StagingSelectionFlowTests
         return new ShellViewModel(logger, new LogViewModel(sink), toolchains: (_, _) => null);
     }
 
-    private sealed class Repo : IDisposable
-    {
-        public string Path { get; } = System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(), "versio-stage-" + Guid.NewGuid().ToString("N")[..8]);
-
-        public Repo(int unstagedFiles)
-        {
-            Directory.CreateDirectory(Path);
-            Git("init -q -b main .");
-            Git("config --local user.name TestUser");
-            Git("config --local user.email test@versio.local");
-
-            File.WriteAllText(System.IO.Path.Combine(Path, "seed.txt"), "seed\n");
-            Git("add .");
-            Git("commit -qm first");
-
-            for (var i = 0; i < unstagedFiles; i++)
-            {
-                File.WriteAllText(System.IO.Path.Combine(Path, $"file{i}.st"), $"PROGRAM P{i}\n");
-            }
-        }
-
-        public void Touch(string name) =>
-            File.WriteAllText(System.IO.Path.Combine(Path, name),
-                              $"changed {Guid.NewGuid():N}\n");
-
-        public void Git(string arguments)
-        {
-            using var git = System.Diagnostics.Process.Start(
-                new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = "git",
-                    Arguments = arguments,
-                    WorkingDirectory = Path,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                });
-
-            git!.WaitForExit();
-        }
-
-        public void Dispose()
-        {
-            try
-            {
-                foreach (var f in Directory.EnumerateFiles(Path, "*", SearchOption.AllDirectories))
-                {
-                    File.SetAttributes(f, FileAttributes.Normal);
-                }
-
-                Directory.Delete(Path, recursive: true);
-            }
-            catch (Exception ex) when (ex is IOException or DirectoryNotFoundException)
-            {
-                // A leftover temp directory is not worth failing a test over.
-            }
-        }
-    }
-
     [Fact]
     public async Task A_tick_survives_a_refresh()
     {
         // THE PREREQUISITE. A refresh fires whenever the working tree moves, so a checkbox that
         // did not survive one would be cleared every time the user saved a file in their
         // editor — which is to say, constantly, and for no reason they could see.
-        using var repo = new Repo(unstagedFiles: 4);
+        using var repo = new TempRepo(unstagedFiles: 4);
         using var shell = Shell();
 
         await shell.OpenAsync(repo.Path);
@@ -121,7 +60,7 @@ public sealed class StagingSelectionFlowTests
     [Fact]
     public async Task A_row_that_goes_away_takes_its_tick_with_it()
     {
-        using var repo = new Repo(unstagedFiles: 3);
+        using var repo = new TempRepo(unstagedFiles: 3);
         using var shell = Shell();
 
         await shell.OpenAsync(repo.Path);
@@ -132,7 +71,7 @@ public sealed class StagingSelectionFlowTests
 
         Assert.Equal(3, shell.UnstagedSelectedCount);
 
-        File.Delete(System.IO.Path.Combine(repo.Path, "file0.st"));
+        repo.Delete("file0.st");
         await shell.RefreshAsync();
 
         Assert.Equal(2, shell.Unstaged.Count);
@@ -142,7 +81,7 @@ public sealed class StagingSelectionFlowTests
     [Fact]
     public async Task Staging_sends_only_the_ticked_rows()
     {
-        using var repo = new Repo(unstagedFiles: 4);
+        using var repo = new TempRepo(unstagedFiles: 4);
         using var shell = Shell();
 
         await shell.OpenAsync(repo.Path);
@@ -151,7 +90,7 @@ public sealed class StagingSelectionFlowTests
         shell.Unstaged[2].IsSelected = true;
 
         shell.StageCommand.Execute(null);
-        await WaitUntil(() => shell.Staged.Count == 2);
+        await Eventually.Until(() => shell.Staged.Count == 2, "two files were staged");
 
         // Two staged, two left alone. Asked of git rather than of the view model, because what
         // matters is the index rather than the list.
@@ -164,14 +103,14 @@ public sealed class StagingSelectionFlowTests
     {
         // What makes "Stage all" and "Stage selected" one button. A 380 px panel cannot afford
         // two of everything.
-        using var repo = new Repo(unstagedFiles: 3);
+        using var repo = new TempRepo(unstagedFiles: 3);
         using var shell = Shell();
 
         await shell.OpenAsync(repo.Path);
         Assert.Equal(0, shell.UnstagedSelectedCount);
 
         shell.StageCommand.Execute(null);
-        await WaitUntil(() => shell.Unstaged.Count == 0);
+        await Eventually.Until(() => shell.Unstaged.Count == 0, "the list was staged");
 
         Assert.Equal(3, shell.Staged.Count);
     }
@@ -179,7 +118,7 @@ public sealed class StagingSelectionFlowTests
     [Fact]
     public async Task The_master_checkbox_ticks_and_clears_the_list()
     {
-        using var repo = new Repo(unstagedFiles: 4);
+        using var repo = new TempRepo(unstagedFiles: 4);
         using var shell = Shell();
 
         await shell.OpenAsync(repo.Path);
@@ -197,7 +136,7 @@ public sealed class StagingSelectionFlowTests
     [Fact]
     public async Task The_master_checkbox_goes_indeterminate_for_a_partial_selection()
     {
-        using var repo = new Repo(unstagedFiles: 4);
+        using var repo = new TempRepo(unstagedFiles: 4);
         using var shell = Shell();
 
         await shell.OpenAsync(repo.Path);
@@ -211,7 +150,7 @@ public sealed class StagingSelectionFlowTests
     [Fact]
     public async Task The_labels_say_what_will_happen()
     {
-        using var repo = new Repo(unstagedFiles: 4);
+        using var repo = new TempRepo(unstagedFiles: 4);
         using var shell = Shell();
 
         await shell.OpenAsync(repo.Path);
@@ -229,7 +168,7 @@ public sealed class StagingSelectionFlowTests
     [Fact]
     public async Task Ticking_one_row_updates_the_header_without_anything_else_happening()
     {
-        using var repo = new Repo(unstagedFiles: 3);
+        using var repo = new TempRepo(unstagedFiles: 3);
         using var shell = Shell();
 
         await shell.OpenAsync(repo.Path);
@@ -248,7 +187,7 @@ public sealed class StagingSelectionFlowTests
     [Fact]
     public async Task The_list_selection_and_the_checkbox_are_different_things()
     {
-        using var repo = new Repo(unstagedFiles: 3);
+        using var repo = new TempRepo(unstagedFiles: 3);
         using var shell = Shell();
 
         await shell.OpenAsync(repo.Path);
@@ -265,19 +204,4 @@ public sealed class StagingSelectionFlowTests
         Assert.Same(shell.Unstaged[1], shell.SelectedUnstaged);
     }
 
-    private static async Task WaitUntil(Func<bool> condition)
-    {
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(20);
-        while (DateTime.UtcNow < deadline)
-        {
-            if (condition())
-            {
-                return;
-            }
-
-            await Task.Delay(25);
-        }
-
-        Assert.Fail("the condition was still false after 20 seconds");
-    }
 }

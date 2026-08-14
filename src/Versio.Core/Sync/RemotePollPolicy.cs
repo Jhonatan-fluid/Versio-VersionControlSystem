@@ -98,7 +98,14 @@ public sealed class RemotePollPolicy(
     /// <summary>Why it halted, in git's words, for the one notification that says so.</summary>
     public string HaltReason { get; private set; } = string.Empty;
 
-    /// <summary>How many probes in a row have found nothing.</summary>
+    /// <summary>
+    /// How many probes in a row have found nothing.
+    /// </summary>
+    /// <remarks>
+    /// Read by tests and available for diagnostics; nothing in the application branches on it.
+    /// Kept because the backoff is otherwise only observable by waiting for it, and a rule that
+    /// can only be checked by elapsing real time is a rule nobody checks.
+    /// </remarks>
     public int QuietRun => _quietRun;
 
     /// <summary>

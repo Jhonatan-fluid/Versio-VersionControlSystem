@@ -32,7 +32,6 @@ public sealed class RemoteUrlTests
         Assert.Equal("jhonatanevm", url.Owner);
         Assert.Equal("Versio", url.Repository);
         Assert.True(url.UsesCredentialHelper);
-        Assert.False(url.UsesSshKeys);
     }
 
     [Fact]
@@ -51,9 +50,8 @@ public sealed class RemoteUrlTests
         Assert.Equal("github.com", url.Host);
         Assert.Equal("jhonatanevm", url.Owner);
         Assert.Equal("Versio", url.Repository);
-        Assert.True(url.UsesSshKeys);
-
-        // No credential helper on this path at all.
+        // No credential helper on this path at all, which is the only question anything
+        // asks: SSH advice comes from what git says, not from the URL shape.
         Assert.False(url.UsesCredentialHelper);
     }
 
@@ -124,7 +122,6 @@ public sealed class RemoteUrlTests
         // without a network.
         Assert.Equal(RemoteTransport.Local, url.Transport);
         Assert.False(url.UsesCredentialHelper);
-        Assert.False(url.UsesSshKeys);
     }
 
     [Fact]

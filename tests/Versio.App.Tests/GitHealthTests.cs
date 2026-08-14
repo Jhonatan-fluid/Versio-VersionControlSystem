@@ -34,102 +34,6 @@ public sealed class GitHealthTests
         return new ShellViewModel(logger, new LogViewModel(sink), toolchains: (_, _) => null);
     }
 
-    /// <summary>
-    /// A throwaway repository with one uncommitted file, and an identity only if asked for.
-    /// </summary>
-    /// <remarks>
-    /// <paramref name="identity"/> false writes <b>empty</b> local values rather than leaving
-    /// them unset. A bare <c>git init</c> on a developer machine inherits a perfectly good
-    /// global identity, so without this the interesting test would be vacuous on every machine
-    /// that has ever configured git — which is all of them.
-    /// </remarks>
-    private sealed class TempRepository : IDisposable
-    {
-        public string Path { get; } = System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(), "versio-ident-" + Guid.NewGuid().ToString("N")[..8]);
-
-        public TempRepository(bool identity)
-        {
-            Directory.CreateDirectory(Path);
-            Git("init -q -b main .");
-
-            // Never --global. A test that rewrites the developer's own user.email would only
-            // be noticed by whoever later wondered why their commits said "Versio Test".
-            Git(identity
-                ? "config --local user.name TestUser"
-                : "config --local user.name \"\"");
-            Git(identity
-                ? "config --local user.email test@versio.local"
-                : "config --local user.email \"\"");
-
-            File.WriteAllText(System.IO.Path.Combine(Path, "machine.st"),
-                              "PROGRAM Main\nEND_PROGRAM\n");
-
-            // Staged here with raw git rather than through StageCommand. AsyncCommand.Execute
-            // is `async void`, so a test cannot await it, and polling a command to discover
-            // whether staging finished would be testing the harness rather than the gate.
-            // What CanCommit needs is Staged.Count > 0, and git arranges that directly.
-            Git("add .");
-        }
-
-        private void Git(string arguments)
-        {
-            using var git = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = "git",
-                Arguments = arguments,
-                WorkingDirectory = Path,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            });
-
-            git!.WaitForExit();
-        }
-
-        public void Dispose()
-        {
-            try
-            {
-                foreach (var file in Directory.EnumerateFiles(Path, "*", SearchOption.AllDirectories))
-                {
-                    File.SetAttributes(file, FileAttributes.Normal);
-                }
-
-                Directory.Delete(Path, recursive: true);
-            }
-            catch (Exception ex) when (ex is IOException or DirectoryNotFoundException)
-            {
-                // A leftover temp directory is not worth failing a test over.
-            }
-        }
-    }
-
-    /// <summary>
-    /// Wait for a condition, bounded.
-    /// </summary>
-    /// <remarks>
-    /// <see cref="Versio.App.Mvvm.AsyncCommand.Execute"/> is <c>async void</c>, so a command
-    /// cannot be awaited from a test. A bounded poll fails with a message where an unbounded
-    /// one would take the whole run down with it — the same rule <c>CloseGuardTests</c> states.
-    /// </remarks>
-    private static async Task WaitUntil(Func<bool> condition)
-    {
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
-        while (DateTime.UtcNow < deadline)
-        {
-            if (condition())
-            {
-                return;
-            }
-
-            await Task.Delay(25);
-        }
-
-        Assert.Fail("the condition was still false after 10 seconds");
-    }
-
     [Fact]
     public void Git_is_not_reported_missing_before_the_probe_has_answered()
     {
@@ -188,7 +92,7 @@ public sealed class GitHealthTests
         //
         // To reach the identity term, every other term of CanCommit has to be satisfied: a
         // repository, a staged file, and a message.
-        using var repo = new TempRepository(identity: false);
+        using var repo = new TempRepo(identity: false, unstagedFiles: 1, stagedFiles: 1);
         using var shell = Shell();
 
         await shell.OpenAsync(repo.Path);
@@ -207,7 +111,7 @@ public sealed class GitHealthTests
         // The other half, and what makes the test above mean something: with the identity
         // written and nothing else changed, the same command becomes live. Without this, a
         // CanCommit hard-wired to false would satisfy the refusal test.
-        using var repo = new TempRepository(identity: true);
+        using var repo = new TempRepo(identity: true, unstagedFiles: 1, stagedFiles: 1);
         using var shell = Shell();
 
         await shell.OpenAsync(repo.Path);
@@ -222,7 +126,7 @@ public sealed class GitHealthTests
     [Fact]
     public async Task Setting_an_identity_from_the_panel_unblocks_the_commit()
     {
-        using var repo = new TempRepository(identity: false);
+        using var repo = new TempRepo(identity: false, unstagedFiles: 1, stagedFiles: 1);
         using var shell = Shell();
 
         await shell.OpenAsync(repo.Path);
@@ -234,7 +138,7 @@ public sealed class GitHealthTests
         Assert.True(shell.SaveIdentityCommand.CanExecute(null));
 
         shell.SaveIdentityCommand.Execute(null);
-        await WaitUntil(() => shell.Identity.IsComplete);
+        await Eventually.Until(() => shell.Identity.IsComplete, "the identity was written");
 
         // Re-read from git rather than assumed from what was typed — writing --local into a
         // repository whose global config holds something else is a case where the two are not

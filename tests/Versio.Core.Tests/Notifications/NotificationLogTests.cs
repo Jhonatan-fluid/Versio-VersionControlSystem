@@ -152,24 +152,6 @@ public sealed class NotificationLogTests
     }
 
     [Fact]
-    public void Dismiss_all_leaves_the_failures_behind()
-    {
-        var (log, _) = Build();
-        log.Post(NotificationSeverity.Success, "Fetched.");
-        log.Post(NotificationSeverity.Warning, "Nothing to merge.");
-        log.Post(NotificationSeverity.Failure, "Push failed.");
-
-        var removed = log.DismissTransient();
-
-        // "Dismiss all" is a request to clear clutter, not to discard the card saying a push
-        // failed — and somebody handed a screenful is exactly the person most likely to sweep
-        // it away unread.
-        Assert.Equal(2, removed);
-        Assert.Single(log.Live);
-        Assert.Equal(NotificationSeverity.Failure, log.Live[0].Severity);
-    }
-
-    [Fact]
     public void Clearing_for_a_repository_change_takes_the_failures_too()
     {
         var (log, _) = Build();

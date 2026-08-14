@@ -33,69 +33,12 @@ public sealed class CredentialFlowTests
         return new ShellViewModel(logger, new LogViewModel(sink), toolchains: (_, _) => null);
     }
 
-    /// <summary>A throwaway repository whose origin is whatever URL the test needs.</summary>
-    private sealed class Repo : IDisposable
-    {
-        public string Path { get; } = System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(), "versio-cred-" + Guid.NewGuid().ToString("N")[..8]);
-
-        public Repo(string? originUrl)
-        {
-            Directory.CreateDirectory(Path);
-            Git("init -q -b main .");
-            Git("config --local user.name TestUser");
-            Git("config --local user.email test@versio.local");
-            File.WriteAllText(System.IO.Path.Combine(Path, "a.txt"), "hello\n");
-            Git("add .");
-            Git("commit -qm first");
-
-            if (originUrl is not null)
-            {
-                Git($"remote add origin \"{originUrl}\"");
-            }
-        }
-
-        private void Git(string arguments)
-        {
-            using var git = System.Diagnostics.Process.Start(
-                new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = "git",
-                    Arguments = arguments,
-                    WorkingDirectory = Path,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                });
-
-            git!.WaitForExit();
-        }
-
-        public void Dispose()
-        {
-            try
-            {
-                foreach (var f in Directory.EnumerateFiles(Path, "*", SearchOption.AllDirectories))
-                {
-                    File.SetAttributes(f, FileAttributes.Normal);
-                }
-
-                Directory.Delete(Path, recursive: true);
-            }
-            catch (Exception ex) when (ex is IOException or DirectoryNotFoundException)
-            {
-                // A leftover temp directory is not worth failing a test over.
-            }
-        }
-    }
-
     [Fact]
     public async Task A_local_remote_asks_for_no_credentials_at_all()
     {
         // A folder is a perfectly good remote and authenticates nothing. A sign-in banner over
         // one would be pure noise.
-        using var repo = new Repo(@"C:\some\bare\repo.git");
+        using var repo = new TempRepo(originUrl: @"C:\some\bare\repo.git");
         using var shell = Shell();
 
         await shell.OpenAsync(repo.Path);
@@ -109,7 +52,7 @@ public sealed class CredentialFlowTests
     [Fact]
     public async Task A_repository_with_no_remote_says_nothing_about_credentials()
     {
-        using var repo = new Repo(originUrl: null);
+        using var repo = new TempRepo();
         using var shell = Shell();
 
         await shell.OpenAsync(repo.Path);
@@ -124,7 +67,7 @@ public sealed class CredentialFlowTests
         // There is no credential helper on that path — it is keys and ssh-agent. The button
         // would be one that cannot work, the same sin as advising a pull that --ff-only will
         // refuse.
-        using var repo = new Repo("git@github.com:someone/something.git");
+        using var repo = new TempRepo(originUrl: "git@github.com:someone/something.git");
         using var shell = Shell();
 
         await shell.OpenAsync(repo.Path);
@@ -137,7 +80,7 @@ public sealed class CredentialFlowTests
     [Fact]
     public async Task The_host_is_taken_from_the_remote_so_the_sentence_is_about_somewhere()
     {
-        using var repo = new Repo("https://git.acme.internal/team/plc.git");
+        using var repo = new TempRepo(originUrl: "https://git.acme.internal/team/plc.git");
         using var shell = Shell();
 
         await shell.OpenAsync(repo.Path);
@@ -150,7 +93,7 @@ public sealed class CredentialFlowTests
     {
         // Available whenever a credential could be stored, not only after a failure: a button
         // that only appears once something has broken cannot be found before it does.
-        using var repo = new Repo("https://git.acme.internal/team/plc.git");
+        using var repo = new TempRepo(originUrl: "https://git.acme.internal/team/plc.git");
         using var shell = Shell();
 
         await shell.OpenAsync(repo.Path);
@@ -164,7 +107,7 @@ public sealed class CredentialFlowTests
         // The proactive half: the panel should be able to say "sign in needed" while the user
         // is still looking at the window, rather than after their first push fails. This host
         // does not exist, so nothing is stored for it.
-        using var repo = new Repo("https://versio-test.invalid/team/plc.git");
+        using var repo = new TempRepo(originUrl: "https://versio-test.invalid/team/plc.git");
         using var shell = Shell();
 
         await shell.OpenAsync(repo.Path);
@@ -179,8 +122,8 @@ public sealed class CredentialFlowTests
     [Fact]
     public async Task Opening_a_different_repository_clears_the_credential_state()
     {
-        using var https = new Repo("https://versio-test.invalid/team/plc.git");
-        using var local = new Repo(@"C:\some\bare\repo.git");
+        using var https = new TempRepo(originUrl: "https://versio-test.invalid/team/plc.git");
+        using var local = new TempRepo(originUrl: @"C:\some\bare\repo.git");
         using var shell = Shell();
 
         await shell.OpenAsync(https.Path);

@@ -111,26 +111,16 @@ public sealed class NotificationLog(IClock clock, int capacity = 24)
     /// <summary>Take one away because the user said so.</summary>
     public bool Dismiss(Notification entry) => _live.Remove(entry);
 
-    /// <summary>
-    /// Take away everything that would have gone on its own.
-    /// </summary>
-    /// <remarks>
-    /// <b>Sticky entries survive this.</b> "Dismiss all" is a request to clear the clutter, not
-    /// to discard the one card that says a push failed — and a user who has just been handed a
-    /// screen of notifications is exactly the user most likely to sweep them away without
-    /// reading. Failures are dismissed one at a time, deliberately.
-    /// </remarks>
-    public int DismissTransient()
-    {
-        var removed = _live.RemoveAll(n => !n.IsSticky);
-        return removed;
-    }
-
     /// <summary>Everything goes, including failures. For closing a repository.</summary>
     /// <remarks>
-    /// Distinct from <see cref="DismissTransient"/> because the reason is different: these
-    /// notifications are <i>about</i> a repository that is no longer open, so keeping the
+    /// These notifications are <i>about</i> a repository that is no longer open, so keeping the
     /// failures would attach them to whatever is opened next.
+    /// <para>
+    /// A <c>DismissTransient</c> sat beside this, sparing the sticky cards so a "dismiss all"
+    /// could not sweep away a failed push unread. It was a good rule for a button nobody
+    /// built: the panel dismisses one card at a time. Removed rather than kept warm - if a
+    /// dismiss-all ever appears, that reasoning is in this comment and in the history.
+    /// </para>
     /// </remarks>
     public void Clear() => _live.Clear();
 }

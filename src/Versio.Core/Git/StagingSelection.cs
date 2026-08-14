@@ -56,17 +56,10 @@ public static class StagingSelection
         return selected >= total ? SelectionState.All : SelectionState.Some;
     }
 
-    /// <summary>
-    /// How many rows an action will actually touch.
-    /// </summary>
-    /// <remarks>
-    /// The rule the buttons and their labels both read, so they cannot disagree about what is
-    /// about to happen.
-    /// </remarks>
-    public static int Affected(int total, int selected) => selected > 0 ? selected : total;
-
-    /// <summary>Whether an action has anything at all to do.</summary>
-    public static bool CanAct(int total, int selected) => Affected(total, selected) > 0;
+    // Affected() and CanAct() were here, computing "the ticked ones, or all of them" as a
+    // count and "is there anything to do" from it. Neither was ever read: the shell needs the
+    // ROWS rather than a count, and CanAct reduced to `total > 0` once the substitution is
+    // done. Two members that looked like the rule and were not it.
 
     /// <summary>
     /// The label for an action button, saying what it will do rather than what it is called.

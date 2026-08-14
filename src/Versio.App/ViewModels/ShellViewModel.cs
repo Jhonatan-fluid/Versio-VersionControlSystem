@@ -970,6 +970,15 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             // that happens. Everything else here is already loaded by the time the rail
             // can switch to it.
             History.IsVisible = value == ShellPanel.History;
+
+            // Somebody has come to look at the remote, so watch it closely again. The backoff
+            // exists to stop polling for nobody; opening this panel is the clearest possible
+            // evidence that there is a somebody, and stale counts are exactly what they came
+            // to read.
+            if (value == ShellPanel.Git)
+            {
+                WakeThePoller();
+            }
         }
     }
 

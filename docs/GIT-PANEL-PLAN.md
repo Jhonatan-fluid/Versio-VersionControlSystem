@@ -270,7 +270,7 @@ and one prominent badge.
 
 `TrackingState`, computed on the shell from `GitStatus.Branch` plus the remote list:
 
-| State | Condition | Badge | Primary action |
+| State | Condition | Badge | What is offered |
 |---|---|---|---|
 | `NoRepository` | no repo open | — | — |
 | `Unborn` | `Branch.IsUnborn` | "No commits yet" | Stage & commit |
@@ -1399,17 +1399,13 @@ git clone /c/temp/versio-remote.git /c/temp/versio-scratch
    the log stops repeating. Reconnect and resume → polling restarts.
 7. Break authentication → the breaker trips on the **first** failure, not the fifth.
 
-### GP-E · The extraction (run this before anything else in GP-E)
+### ~~GP-E · The extraction~~ — not applicable
 
-1. Launch with `--trace-bindings` and a real repository; open the git panel; click a staged file,
-   an unstaged file, type in the commit box, hover every button.
-2. **Confirm the panel showed live data** — branch name, file counts, a diff. A blank panel makes
-   the trace worthless.
-3. Extract, then repeat steps 1–2 into a second file.
-4. Diff the two traces → **no new `BindingExpression path error` lines.**
-5. In the app after the move: the branch name, both file lists, the commit box, the subject
-   counter and every button caption **all still show their values**. An empty control here is the
-   silent failure; there is no other symptom.
+The `GitPanelViewModel` extraction was not done; §4a's protocol does not apply. See the GP-E
+phase log for why, and the audit note for what was extracted instead. If the *remote* surface is
+ever cut out — the seam that is actually clean — run §4a's trace protocol then, with the
+amendment GP-0 forced: **the trace run must show the git panel**, or it comes back empty and
+proves nothing.
 
 ### GP-E / GP-F · Staging and buttons
 
@@ -1679,7 +1675,7 @@ trace over a collapsed panel proves nothing.
 
 ### GP-B — remote state and publish · done 2026-08-13
 
-**Built:** `Core/Git/TrackingState.cs` — `TrackingState`, `RemoteAction`, `RemoteStanding`;
+**Built:** `Core/Git/TrackingState.cs` — `TrackingState` and `RemoteStanding` (*and a `RemoteAction`, deleted in the GP-E audit — nothing ever read it*);
 `IGitClient.RemotesAsync` / `PublishBranchAsync`; `PublishCommand`; the worded badge in the
 branch card; Push and Publish swapping; counts on the Pull/Push labels; `BranchEntry.Tracking`
 finally bound after existing unbound since it was written.
@@ -1912,6 +1908,74 @@ context and throws for a different reason.
 **Still needs a human:** §13's GP-E script — dragging the splitter, confirming both panes scroll
 independently with a large stage, and that a tick survives a real editor save. The last of those
 is machine-checked as well, but the first two are geometry.
+
+---
+
+### Audit · 2026-08-14, before GP-F
+
+A read-through of everything GP-0 to GP-E added, looking for what the phases were too close to
+see. Six findings, all fixed.
+
+**1. Three pieces of API with no caller — the rule this repository already learned.** Commit
+`6417f2a` deleted `GuardIntent.Clone` and `Discard` for exactly this, and left the rule in the
+enum's doc comment: *every member has a caller, or says why it does not.* I broke it three times
+in five phases:
+
+| Added | Tested | Called by |
+|---|---|---|
+| `RemoteAction` + `RemoteStanding.Primary` | yes | nothing — the XAML swaps on `CanPush`/`CanPublish` |
+| `StagingSelection.Affected` + `CanAct` | yes | nothing — the shell needs rows, not a count |
+| `NotificationLog.DismissTransient` | yes | nothing — there is no "dismiss all" button |
+
+All three are deleted. Each looked reasonable in isolation and each was a *plausible* API rather
+than a used one — which is precisely why tests over them proved nothing about whether anything
+asks. `RemoteUrl.UsesSshKeys` went the same way: the negation of a property that *is* used, read
+only by its own tests.
+
+**2. The same throwaway-repository fixture, four times.** `GitHealthTests`,
+`RemoteStandingFlowTests`, `CredentialFlowTests` and `StagingSelectionFlowTests` had each grown
+their own — and they had already drifted: one wrote empty identity values, one real ones, one
+added a bare remote, one staged its files. Four copies is four places to fix a Windows
+file-attribute problem and three that get missed. Now one `TempRepo`, ~220 lines of duplication
+gone.
+
+**3. A flaky test, found by the audit rather than by a red build.**
+`Setting_an_identity_from_the_panel_unblocks_the_commit` passed alone and failed in the full run.
+Not a defect: setting an identity spawns **four** git subprocesses, and the local `WaitUntil` gave
+it ten seconds while three hundred other tests competed for the machine. That is the worst kind
+of flake — it reads as a real failure and is a scheduling artefact. The three copies of
+`WaitUntil` are now one `Eventually.Until(condition, what)` with a thirty-second backstop and a
+message naming what never happened.
+
+**4. `WakeThePoller` was wired to half of what the plan specified.** §3 says the backoff snaps
+back when the user *touches the git panel*; it only fired on `Busy.IsBusy`. So somebody who
+opened the panel after an idle hour would read counts on a sixty-second cadence — stale numbers
+being exactly what they came to look at. Now woken on panel activation too.
+
+**5. `RemotePollPolicy.QuietRun` is read only by tests**, which by the rule above wants
+justifying rather than deleting: the backoff is otherwise observable only by elapsing real time,
+and a rule that can only be checked by waiting is a rule nobody checks. Documented as
+observability rather than quietly kept.
+
+**6. Doc drift, three places.** §2's table had a "Primary action" column naming the deleted
+enum; GP-B's log listed `RemoteAction` as built; and §13 still carried an extraction script for
+work that was deliberately not done.
+
+**Tests after: 1,175 Core** (four fewer — the deleted API's) **, 291 App, 149 integration.**
+
+**One unreproduced failure, recorded rather than dismissed.** The app suite failed once, on one
+test, on the run immediately after a real `Versio.exe` had been killed 25 seconds earlier — and
+passed on **four consecutive runs afterwards**. The failing test's name was not in the captured
+output, so there is nothing to point at. The likeliest explanation is a machine still tearing
+that process down, but **that is a guess, and it is written down so a second occurrence is a
+second data point rather than a first.** If it recurs, capture the run with
+`--logger "console;verbosity=detailed"` before doing anything else.
+
+**What this says about the phases.** Every one of these was introduced while the phase was
+green, tested and documented. The pattern is consistent: designing an API and testing it feels
+like finishing it, and *nothing in a green suite distinguishes a member with a caller from one
+without*. Worth a scheduled read-through per few phases rather than trusting the per-phase
+discipline to catch it — it demonstrably does not.
 
 ---
 

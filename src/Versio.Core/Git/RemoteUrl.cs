@@ -66,11 +66,16 @@ public sealed record RemoteUrl
     /// <summary>Repository name, with any <c>.git</c> suffix removed.</summary>
     public string Repository { get; init; } = string.Empty;
 
-    /// <summary>True when a credential helper could possibly help.</summary>
+    /// <summary>
+    /// True when a credential helper could possibly help.
+    /// </summary>
+    /// <remarks>
+    /// The one question callers actually ask. A matching <c>UsesSshKeys</c> read better and
+    /// was never called: SSH advice comes from <see cref="GitAuthClassifier"/>, which reads
+    /// git's own words rather than the URL shape, so the negation had no consumer.
+    /// <see cref="Transport"/> is public for anything that needs the distinction.
+    /// </remarks>
     public bool UsesCredentialHelper => Transport is RemoteTransport.Http;
-
-    /// <summary>True when authentication is keys rather than credentials.</summary>
-    public bool UsesSshKeys => Transport is RemoteTransport.Ssh;
 
     /// <summary>Nothing configured.</summary>
     public static readonly RemoteUrl None = new()

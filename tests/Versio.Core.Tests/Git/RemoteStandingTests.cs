@@ -40,7 +40,6 @@ public sealed class RemoteStandingTests
     {
         Assert.Equal(TrackingState.NoRepository, RemoteStanding.None.State);
         Assert.Equal(string.Empty, RemoteStanding.None.Headline);
-        Assert.Equal(RemoteAction.None, RemoteStanding.None.Primary);
     }
 
     [Fact]
@@ -49,7 +48,6 @@ public sealed class RemoteStandingTests
         var standing = RemoteStanding.For(Branch(upstream: null, unborn: true), hasRemote: true);
 
         Assert.Equal(TrackingState.Unborn, standing.State);
-        Assert.Equal(RemoteAction.Commit, standing.Primary);
         Assert.Contains("No commits yet", standing.Headline);
     }
 
@@ -59,7 +57,6 @@ public sealed class RemoteStandingTests
         var standing = RemoteStanding.For(Branch(upstream: null, detached: true), hasRemote: true);
 
         Assert.Equal(TrackingState.Detached, standing.State);
-        Assert.Equal(RemoteAction.CreateBranch, standing.Primary);
 
         // The trap: a commit made here is real and reachable only from the reflog. Somebody
         // who reached this by clicking a commit in the history has no idea of that.
@@ -99,7 +96,6 @@ public sealed class RemoteStandingTests
         var standing = RemoteStanding.For(Branch(upstream: null), hasRemote: false);
 
         // A local-only repository is an ordinary thing to have, not a fault.
-        Assert.Equal(RemoteAction.None, standing.Primary);
         Assert.Equal("Brush.Text.Secondary", standing.BrushKey);
         Assert.False(standing.CanPublish);
     }
@@ -113,7 +109,6 @@ public sealed class RemoteStandingTests
         // nobody else can see it. This is the case the old rendering showed as 0/0, which
         // looked exactly like being perfectly in sync.
         Assert.Equal("Brush.Status.Modified", standing.BrushKey);
-        Assert.Equal(RemoteAction.Publish, standing.Primary);
         Assert.True(standing.CanPublish);
         Assert.False(standing.CanPush);
         Assert.False(standing.CanPull);
@@ -126,7 +121,6 @@ public sealed class RemoteStandingTests
         var standing = RemoteStanding.For(Branch(), hasRemote: true);
 
         Assert.Equal(TrackingState.InSync, standing.State);
-        Assert.Equal(RemoteAction.None, standing.Primary);
         Assert.Equal("Brush.Text.Secondary", standing.BrushKey);
         Assert.Contains("origin/main", standing.Headline);
         Assert.False(standing.CanPush);
@@ -139,7 +133,6 @@ public sealed class RemoteStandingTests
         var standing = RemoteStanding.For(Branch(ahead: 3), hasRemote: true);
 
         Assert.Equal(TrackingState.Ahead, standing.State);
-        Assert.Equal(RemoteAction.Push, standing.Primary);
 
         // Work not yet pushed is the normal condition of somebody mid-task. Colouring it like
         // a problem would make the colour mean nothing by the time it is needed.
@@ -154,7 +147,6 @@ public sealed class RemoteStandingTests
         var standing = RemoteStanding.For(Branch(behind: 2), hasRemote: true);
 
         Assert.Equal(TrackingState.Behind, standing.State);
-        Assert.Equal(RemoteAction.Pull, standing.Primary);
         Assert.Equal("Brush.Status.Modified", standing.BrushKey);
 
         // The whole point of the type: "the remote has changes you do not have" is actionable
@@ -183,7 +175,6 @@ public sealed class RemoteStandingTests
         var standing = RemoteStanding.For(Branch(ahead: 2, behind: 3), hasRemote: true);
 
         Assert.Equal(TrackingState.Diverged, standing.State);
-        Assert.Equal(RemoteAction.Pull, standing.Primary);
 
         // --ff-only will refuse this, and the user needs to know why before pressing anything.
         Assert.Contains("Pull first", standing.Headline);

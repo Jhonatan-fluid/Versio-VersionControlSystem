@@ -31,31 +31,6 @@ public enum TrackingState
     Diverged,
 }
 
-/// <summary>Which action the state is asking for.</summary>
-/// <remarks>
-/// Named rather than inferred from the state, because two states can want the same thing:
-/// <see cref="TrackingState.Behind"/> and <see cref="TrackingState.Diverged"/> both lead to a
-/// pull, and a caller that switched on the state would have to know that.
-/// </remarks>
-public enum RemoteAction
-{
-    /// <summary>Nothing is asked for.</summary>
-    None,
-
-    /// <summary>Put this branch on the remote for the first time.</summary>
-    Publish,
-
-    Push,
-
-    Pull,
-
-    /// <summary>Make a branch, because there is nowhere to put work.</summary>
-    CreateBranch,
-
-    /// <summary>Make the first commit.</summary>
-    Commit,
-}
-
 /// <summary>
 /// The one question somebody opens this panel to answer: is my work safe on the remote?
 /// </summary>
@@ -109,9 +84,6 @@ public sealed record RemoteStanding
     /// </remarks>
     public required string BrushKey { get; init; }
 
-    /// <summary>What the primary button should offer.</summary>
-    public required RemoteAction Primary { get; init; }
-
     /// <summary>True when there is an upstream to pull from or push to.</summary>
     public bool HasUpstream => Upstream.Length > 0;
 
@@ -123,6 +95,15 @@ public sealed record RemoteStanding
     /// — is the clearest possible explanation of what is wrong.
     /// </remarks>
     public bool CanPush => State is TrackingState.Ahead or TrackingState.Diverged;
+
+    // There is no `Primary` here, and there was.
+    //
+    // A RemoteAction enum named which button each state was asking for - and nothing ever
+    // read it. The panel swaps on CanPush / CanPublish / CanPull, which is what a XAML
+    // Visibility binding can use directly, and the extra layer only meant two places could
+    // disagree about which button belonged to a state. Removed rather than wired, for the
+    // reason GuardIntent's own doc comment now carries: every member has a caller, or says
+    // why it does not.
 
     /// <summary>True when this branch is not on the remote and could be put there.</summary>
     public bool CanPublish => State == TrackingState.NoUpstream;
@@ -150,7 +131,6 @@ public sealed record RemoteStanding
         State = TrackingState.NoRepository,
         Headline = string.Empty,
         BrushKey = TextSecondary,
-        Primary = RemoteAction.None,
     };
 
     private const string TextSecondary = "Brush.Text.Secondary";
@@ -177,7 +157,6 @@ public sealed record RemoteStanding
                 State = TrackingState.Unborn,
                 Headline = "No commits yet. Make the first one and this branch begins.",
                 BrushKey = TextSecondary,
-                Primary = RemoteAction.Commit,
             };
         }
 
@@ -192,7 +171,6 @@ public sealed record RemoteStanding
                 Headline = "Not on a branch — you are looking at a commit. " +
                            "New work here will be lost unless you put it on a branch.",
                 BrushKey = Amber,
-                Primary = RemoteAction.CreateBranch,
             };
         }
 
@@ -203,7 +181,6 @@ public sealed record RemoteStanding
                 State = TrackingState.NoRemote,
                 Headline = "This repository has no remote, so there is nowhere to push.",
                 BrushKey = TextSecondary,
-                Primary = RemoteAction.None,
             };
         }
 
@@ -214,7 +191,6 @@ public sealed record RemoteStanding
                 State = TrackingState.NoUpstream,
                 Headline = $"Not on the remote yet. Nobody else can see {branch.Name}.",
                 BrushKey = Amber,
-                Primary = RemoteAction.Publish,
             };
         }
 
@@ -230,7 +206,6 @@ public sealed record RemoteStanding
                 Upstream = upstream,
                 Headline = $"Up to date with {upstream}.",
                 BrushKey = TextSecondary,
-                Primary = RemoteAction.None,
             },
 
             ( > 0, 0) => new RemoteStanding
@@ -246,7 +221,6 @@ public sealed record RemoteStanding
                 // somebody mid-task, and colouring it like a problem would make the colour
                 // mean nothing by the time it is needed.
                 BrushKey = Accent,
-                Primary = RemoteAction.Push,
             },
 
             (0, > 0) => new RemoteStanding
@@ -258,7 +232,6 @@ public sealed record RemoteStanding
                     ? "1 commit to pull — the remote has a change you do not have."
                     : $"{behind} commits to pull — the remote has changes you do not have.",
                 BrushKey = Amber,
-                Primary = RemoteAction.Pull,
             },
 
             _ => new RemoteStanding
@@ -272,7 +245,6 @@ public sealed record RemoteStanding
                 // know why before they press anything.
                 Headline = $"Diverged — {ahead} to push, {behind} to pull. Pull first.",
                 BrushKey = Amber,
-                Primary = RemoteAction.Pull,
             },
         };
     }
