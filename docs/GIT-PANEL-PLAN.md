@@ -8,7 +8,7 @@ interface does not expose, plus one new dialog.
 
 ## Where this stands
 
-**Six of twelve phases are done**, on branch `GitPanel`, plus an audit pass over all of them.
+**Seven of twelve phases are done**, on branch `GitPanel`, plus an audit pass over all of them.
 Each has a commit and an entry in the **phase log** at the end of this document saying what
 landed, what was decided, and what contact with the code changed.
 
@@ -21,8 +21,8 @@ landed, what was decided, and what contact with the code changed.
 | ✅ | **GP-D** — background remote polling | `437e0d1` |
 | ✅ | **GP-E** — per-file staging, two scrollable panes | `a7cc553` |
 | ✅ | *Audit* — dead API removed, fixtures consolidated, a flake fixed | `485cddb` |
-| — | **GP-F** — button model and gating matrix (§5) | next |
-| — | GP-G — conflicts UI, diverged exit (§6, §9b) | |
+| ✅ | **GP-F** — one commit button, three behaviours, gating | `ac954b4` |
+| — | **GP-G** — conflicts UI, diverged exit (§6, §9b) | next |
 | — | GP-H — branch identity, default branch, delete dialog (§7) | |
 | — | GP-I — merge-request button (§8) | |
 | — | GP-J — PLC-aware summaries (§9c) | |
@@ -622,7 +622,7 @@ test must fail.
 
 ## 5 · Button model and gating
 
-> **Not built yet.**
+> **Built** in GP-F. The gating matrix below is what shipped, with one row moved: the conflict gate landed here rather than waiting for §6, because git refuses the commit anyway and a button that says why beats one that fails.
 
 ### The buttons
 
@@ -1558,7 +1558,7 @@ different things is a coordination bug waiting to happen.
 | GP-B ✅ | Remote state machine + publish (§2) | Independent of staging; unblocks the gating in GP-F. |
 | GP-D ✅ | Background polling (§3) | Needs §2's state to have somewhere to put its answer. Makes every count in the panel true. |
 | GP-E ✅ | Reconcile the staging lists, the two-pane scrollable layout and checkboxes (§4). **§4a's `GitPanelViewModel` extraction was deliberately not done** | The reconcile is the prerequisite everything else rests on — the lists stop being rebuilt every second, so a checkbox survives an editor save. The extraction was dropped once the seam was measured: eight shell collaborators reach into `CommitAsync` alone. Evidence in the phase log; the size concern stands and the seam worth cutting is the *remote* surface. |
-| GP-F | Button model + gating matrix (§5) | Needs GP-B and GP-E to gate against real state. |
+| GP-F ✅ | Button model + gating matrix (§5) | Needs GP-B and GP-E to gate against real state. |
 | GP-G | Conflicts (§6, UI half) + the diverged-branch exit (§9b) | **No longer blocked** — safeguards phase 6 shipped both defences. One piece of work: both are "the remote and I disagree", and §2 currently advises a button that refuses. |
 | GP-H | Branch identity, default branch, deletion dialog (§7), undo-delete (§9f) | Largest single piece and the only new window; benefits from GP-A and GP-D already being in place. |
 | GP-I | Merge-request button (§8) | Needs §7b's default branch for the target, and extracting `RemoteUrl` from the clone dialog. |
@@ -2029,6 +2029,58 @@ green, tested and documented. The pattern is consistent: designing an API and te
 like finishing it, and *nothing in a green suite distinguishes a member with a caller from one
 without*. Worth a scheduled read-through per few phases rather than trusting the per-phase
 discipline to catch it — it demonstrably does not.
+
+---
+
+### GP-F — one commit button · done 2026-08-14
+
+**Built:** `Core/Git/CommitPlan.cs` — `CommitIntent`, the label, the blocked reason and the
+explanation; `CommitCommand` acting on the plan; `CommitAndPushCommand` **deleted**; the caption
+and tooltip bound; the conflict gate.
+
+**Tests:** 14 Core, 8 flow, 3 chrome. **1,189 / 301 / 149 green.**
+
+**One button, three behaviours, and the caption is the safeguard.**
+
+| Situation | Caption | Does |
+|---|---|---|
+| Rows ticked | `Stage & commit (3)` | Stages exactly those, then commits |
+| Nothing ticked, nothing staged | `Stage all & commit` | Stages everything, then commits |
+| Nothing ticked, something staged | **`Commit`** | **Commits only what is staged** |
+
+The third row is why this is a type rather than an `if`. Somebody who staged two files on
+purpose and left two out must not get the others swept in — they would find out by reading the
+commit, by which time it is history. The plain caption is what makes the difference visible
+*before* the press. The mutation that removes it breaks
+`A_deliberate_partial_stage_is_not_swept_up`, which asserts against **git's own** view of what
+landed rather than the view model's.
+
+**`Commit & Push` is gone.** It bundled two operations with different failure modes, and its
+failure story was the worst in the panel: the commit succeeds, the push fails, and one message
+has to describe both. Push is a deliberate act of its own in the remote row, where the
+ahead-count already lives — and `Committing_does_not_push` pins that.
+
+**The staging happens before the export gate, deliberately.** So the gate's own staging lands on
+top of the user's choice rather than racing it, and the `CommitStaged` case stages *nothing* —
+which is the whole safeguard. A staging refusal aborts the commit rather than producing one
+missing exactly the files that were ticked, which would look like it worked.
+
+**Two design flaws the tests found, both the same shape.** The commit caption is computed from
+the staging lists, and it went stale twice: once because nothing raised it when a collection
+changed, and once because a row added outside `ReconcileInto` never got its tick subscription.
+Both were arranged by *the one method that happened to build rows*. Now the collections
+themselves are watched — a row is tracked for **being in the list**, not for having been added
+by the right caller — and `Track()` is gone. Production never hit either, because production
+only ever adds rows one way; that is exactly what made them worth fixing rather than working
+around in the test.
+
+**The conflict gate arrived early.** §6 is GP-G, but `CanCommit` needed a `hasConflicts` term
+now: git refuses a commit over an unmerged path regardless, and a button that explains beats one
+that fails. The *surface* — banner, third section, ours/theirs — is still GP-G.
+
+**Geometry unchanged** at 372×729 with both lists at 207 px: one button where two were is
+strictly less to fit. **Verified in the running app** against a repository with 2 staged and 2
+unstaged — opened clean, no exceptions.
 
 ---
 

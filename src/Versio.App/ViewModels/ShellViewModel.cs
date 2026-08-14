@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.Diagnostics;
 using System.IO;
 using Versio.App.Mvvm;
@@ -325,6 +326,19 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // records when it started, so a dialog can say how long the user has been waiting
         // rather than only that something is happening.
         Busy = new BusyTracker(_clock, logger);
+
+        // WATCHING THE LISTS THEMSELVES, RATHER THAN EVERY PLACE THAT WRITES TO THEM.
+        //
+        // Two things depend on a staging list changing: the commit button's caption and
+        // enabled state, which are computed from the counts, and the per-row tick subscription
+        // that keeps the header in step. Both used to be arranged by the one method that
+        // happened to build rows - so a row added from anywhere else got neither, and the
+        // caption went stale with nothing to show why.
+        //
+        // Subscribing to the collections instead means a row is tracked because it is IN the
+        // list, not because whoever put it there remembered to say so.
+        Staged.CollectionChanged += OnStagingListChanged;
+        Unstaged.CollectionChanged += OnStagingListChanged;
 
         // Events, as against the state StatusSummary holds. The two were one property until
         // now, and the collision was not theoretical - see NotificationCenter's remarks.
@@ -1795,6 +1809,44 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     public string UnstagedSelectionCaption =>
         StagingSelection.Caption(Unstaged.Count, UnstagedSelectedCount);
 
+    /// <summary>
+    /// What the commit button will do right now.
+    /// </summary>
+    /// <remarks>
+    /// Recomputed whenever the lists or the ticks move. The three behaviours it covers are why
+    /// the panel no longer carries a <c>Commit</c> and a <c>Commit &amp; Push</c>: push is its
+    /// own act in the remote row, and what is left is a commit that also does the step people
+    /// forget.
+    /// </remarks>
+    public CommitPlan Commit =>
+        CommitPlan.For(Staged.Count, Unstaged.Count, UnstagedSelectedCount);
+
+    /// <summary>Why the commit button is dead, or empty when it is live.</summary>
+    /// <remarks>
+    /// Bound to the button's tooltip with <c>ToolTipService.ShowOnDisabled</c>, because WPF
+    /// hides a tooltip on a disabled control by default — so without it the one moment the
+    /// explanation is wanted is the one moment it cannot be seen.
+    /// </remarks>
+    public string CommitBlockedReason =>
+        Commit.BlockedReason(
+            hasMessage: !string.IsNullOrWhiteSpace(CommitMessage),
+            hasIdentity: _identity.IsComplete,
+            hasConflicts: HasConflicts);
+
+    /// <summary>What the commit button will do, live or not.</summary>
+    public string CommitExplanation =>
+        CommitBlockedReason.Length > 0 ? CommitBlockedReason : Commit.Explanation;
+
+    /// <summary>
+    /// True while git reports an unmerged path.
+    /// </summary>
+    /// <remarks>
+    /// Read from the last status. The panel's conflict <i>surface</i> is GP-G and is not built;
+    /// what is here is the gate, because committing over a conflict is refused by git anyway
+    /// and a button that says why beats one that fails.
+    /// </remarks>
+    public bool HasConflicts => Changes.Any(c => c.Kind == ChangeKind.Conflicted);
+
     /// <summary>Button labels that say what will happen, not what the button is called.</summary>
     public string StageLabel =>
         StagingSelection.Label("Stage", Unstaged.Count, UnstagedSelectedCount);
@@ -1847,13 +1899,22 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(StageLabel));
         OnPropertyChanged(nameof(UnstageLabel));
         OnPropertyChanged(nameof(DiscardLabel));
+        RaiseCommitState();
         RaiseGitCommandStates();
     }
 
     public AsyncCommand StageCommand { get; private set; } = null!;
     public AsyncCommand UnstageCommand { get; private set; } = null!;
+    /// <summary>
+    /// Stage what the panel says it will, then commit.
+    /// </summary>
+    /// <remarks>
+    /// <b><c>CommitAndPushCommand</c> is gone.</b> It bundled two operations with different
+    /// failure modes into one button, and its failure story was the worst in the panel: the
+    /// commit succeeds, the push fails, and one message has to describe both. Push is a
+    /// deliberate act of its own now, in the remote row where the ahead-count already lives.
+    /// </remarks>
     public AsyncCommand CommitCommand { get; private set; } = null!;
-    public AsyncCommand CommitAndPushCommand { get; private set; } = null!;
     public AsyncCommand PullCommand { get; private set; } = null!;
     public AsyncCommand PushCommand { get; private set; } = null!;
     public AsyncCommand FetchCommand { get; private set; } = null!;
@@ -1884,8 +1945,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             if (SetProperty(ref _commitMessage, value))
             {
                 OnPropertyChanged(nameof(CommitSubjectLength));
+                RaiseCommitState();
                 CommitCommand.RaiseCanExecuteChanged();
-                CommitAndPushCommand.RaiseCanExecuteChanged();
             }
         }
     }
@@ -1905,11 +1966,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             () => StageAsync(Chosen(Staged), stage: false),
             () => Ready && Staged.Count > 0, ReportError);
 
-        CommitCommand = new AsyncCommand(
-            () => CommitAsync(push: false), CanCommit, ReportError);
-
-        CommitAndPushCommand = new AsyncCommand(
-            () => CommitAsync(push: true), CanCommit, ReportError);
+        CommitCommand = new AsyncCommand(CommitAsync, CanCommit, ReportError);
 
         BuildHunkCommand();
 
@@ -2008,9 +2065,21 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// failure expensive, and it is entirely avoidable from two <c>git config --get</c> calls
     /// made when the repository opened.
     /// </remarks>
+    /// <summary>Everything the commit button's caption, tooltip and enabled state read.</summary>
+    private void RaiseCommitState()
+    {
+        OnPropertyChanged(nameof(Commit));
+        OnPropertyChanged(nameof(CommitBlockedReason));
+        OnPropertyChanged(nameof(CommitExplanation));
+        OnPropertyChanged(nameof(HasConflicts));
+    }
+
     private bool CanCommit() =>
-        Ready && Staged.Count > 0 && !string.IsNullOrWhiteSpace(CommitMessage)
-        && _identity.IsComplete;
+        Ready
+        && Commit.CanCommit
+        && !string.IsNullOrWhiteSpace(CommitMessage)
+        && _identity.IsComplete
+        && !HasConflicts;
 
     /// <summary>
     /// Ask whether git can be run at all. Once, at launch.
@@ -2099,7 +2168,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         StageCommand.RaiseCanExecuteChanged();
         UnstageCommand.RaiseCanExecuteChanged();
         CommitCommand.RaiseCanExecuteChanged();
-        CommitAndPushCommand.RaiseCanExecuteChanged();
         PullCommand.RaiseCanExecuteChanged();
         PushCommand.RaiseCanExecuteChanged();
         FetchCommand.RaiseCanExecuteChanged();
@@ -2165,15 +2233,39 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// staged beforehand would produce it silently.
     /// </para>
     /// </remarks>
-    private async Task CommitAsync(bool push)
+    private async Task CommitAsync()
     {
         if (_git is null)
         {
             return;
         }
 
-        _logger.Click(push ? "Git.CommitAndPush" : "Git.Commit");
+        // Captured before anything runs. The gate below stages export trees and the refresh
+        // rebuilds the lists, so a plan read afterwards would describe a different panel than
+        // the one whose button was pressed.
+        var plan = Commit;
+
+        _logger.Click("Git.Commit");
         using var scope = _logger.BeginOperation(Guid.NewGuid().ToString("N")[..8]);
+
+        // WHAT THE USER ASKED FOR, BEFORE WHAT THE GATE INSISTS ON.
+        //
+        // Staging first means the export gate's own staging lands on top of a tree that
+        // already holds the user's choice, rather than racing it. And the CommitStaged case
+        // stages nothing at all - which is the whole safeguard: somebody who staged three
+        // files deliberately does not get the fourth swept in because they pressed a button
+        // whose caption said "Commit".
+        if (plan.Intent is CommitIntent.StageTickedThenCommit or CommitIntent.StageAllThenCommit)
+        {
+            var rows = Chosen(Unstaged);
+            _logger.Info(LogCategory.Git,
+                $"{plan.Label}: staging {rows.Count} file(s) before the commit");
+
+            if (!await StageForCommitAsync(rows).ConfigureAwait(true))
+            {
+                return;
+            }
+        }
 
         var gate = await Sync.EvaluateGateAsync(CancellationToken.None).ConfigureAwait(true);
         if (gate.Decision == GateDecision.Blocked)
@@ -2217,19 +2309,39 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         CommitMessage = string.Empty;
         await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
 
-        if (push)
-        {
-            await PushAsync(afterCommit: true).ConfigureAwait(true);
-            return;
-        }
-
-        // Said plainly, because it is the most surprising rule in the tool: a commit does not
-        // release the direction lock. Until the work is pushed nobody else can see it.
-        // The most surprising rule in the tool, said where the decision was just made: a
-        // commit does not release the direction lock. Until the work is pushed nobody else can
-        // see it, so the direction is still meaningfully owned.
+        // The most surprising rule in the tool, said where the decision was just made: a commit
+        // does not release the direction lock. Until the work is pushed nobody else can see it,
+        // so the direction is still meaningfully owned. Push is its own button now, which makes
+        // that easier to act on than it was when the two were bundled.
         Notifications.Success("Committed.",
                               "Not pushed, so the direction lock is still held.");
+    }
+
+    /// <summary>Stage the rows the commit plan chose, reporting a refusal rather than
+    /// committing without them.</summary>
+    /// <remarks>
+    /// Returns false when git refused. Carrying on would produce a commit missing exactly the
+    /// files the user ticked, which is worse than no commit: it looks like it worked.
+    /// </remarks>
+    private async Task<bool> StageForCommitAsync(IReadOnlyList<ChangeRow> rows)
+    {
+        if (_git is null || rows.Count == 0)
+        {
+            return true;
+        }
+
+        var result = await _git
+            .StageAsync([.. rows.Select(r => r.Path)], CancellationToken.None)
+            .ConfigureAwait(true);
+
+        if (result.Success)
+        {
+            return true;
+        }
+
+        Notifications.Failure("Nothing was committed — the files could not be staged.",
+                              result.FailureReason ?? string.Empty);
+        return false;
     }
 
     /// <summary>Stage every tracked project's export directory.</summary>
@@ -3346,19 +3458,18 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// typed in their editor.
     /// </para>
     /// </remarks>
-    private void ReconcileInto(
+    private static void ReconcileInto(
         ObservableCollection<ChangeRow> rows, IReadOnlyList<FileChange> fresh)
     {
         var live = fresh.Select(c => c.Path).ToHashSet(StringComparer.Ordinal);
 
-        // Backwards, so removing does not shift the indices still to be examined. Each row is
-        // unsubscribed as it goes: the shell outlives every row, so a subscription left behind
-        // would keep a dead row alive for the rest of the session.
+        // Backwards, so removing does not shift the indices still to be examined. Nothing
+        // subscribes or unsubscribes here - OnStagingListChanged does it, because a row is
+        // tracked for being in the list rather than for having been added by this method.
         for (var i = rows.Count - 1; i >= 0; i--)
         {
             if (!live.Contains(rows[i].Path))
             {
-                rows[i].SelectionChanged -= RaiseSelectionState;
                 rows.RemoveAt(i);
             }
         }
@@ -3367,7 +3478,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         {
             if (i >= rows.Count)
             {
-                rows.Add(Track(new ChangeRow(fresh[i])));
+                rows.Add(new ChangeRow(fresh[i]));
                 continue;
             }
 
@@ -3379,15 +3490,30 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 continue;
             }
 
-            rows.Insert(i, Track(new ChangeRow(fresh[i])));
+            rows.Insert(i, new ChangeRow(fresh[i]));
         }
     }
 
-    /// <summary>Watch a row's checkbox, so ticking one recounts the header.</summary>
-    private ChangeRow Track(ChangeRow row)
+    /// <summary>
+    /// Keep the tick subscriptions and the commit state in step with a list that just moved.
+    /// </summary>
+    /// <remarks>
+    /// Rows are unsubscribed as they leave: the shell outlives every row, so a subscription
+    /// left behind would keep a dead row alive for the rest of the session.
+    /// </remarks>
+    private void OnStagingListChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        row.SelectionChanged += RaiseSelectionState;
-        return row;
+        foreach (var row in e.OldItems?.OfType<ChangeRow>() ?? [])
+        {
+            row.SelectionChanged -= RaiseSelectionState;
+        }
+
+        foreach (var row in e.NewItems?.OfType<ChangeRow>() ?? [])
+        {
+            row.SelectionChanged += RaiseSelectionState;
+        }
+
+        RaiseCommitState();
     }
 
     /// <summary>

@@ -107,7 +107,27 @@ public sealed class GitPanelChromeTests
     }
 
     [Fact]
-    public void The_commit_buttons_show_their_reason_while_disabled()
+    public void There_is_exactly_one_commit_button()
+    {
+        // "Commit & Push" is gone: it bundled two operations with different failure modes, and
+        // its failure story was the worst in the panel - the commit succeeds, the push fails,
+        // and one message has to describe both. If a second one ever reappears beside it, this
+        // is where that gets noticed.
+        StaHarness.Run(() =>
+        {
+            var (window, shell) = Build();
+            var (panel, _) = ShowGitPanel(window);
+
+            var commit = AllOf<Button>(panel)
+                .Where(b => ReferenceEquals(b.Command, shell.CommitCommand))
+                .ToList();
+
+            Assert.Single(commit);
+        });
+    }
+
+    [Fact]
+    public void The_commit_button_shows_its_reason_while_disabled()
     {
         // ToolTipService.ShowOnDisabled is the entire feature: WPF hides a tooltip on a
         // disabled control by default, so without it the one moment the explanation is wanted
@@ -115,21 +135,50 @@ public sealed class GitPanelChromeTests
         // absent, which is exactly the kind of thing nothing else would ever catch.
         StaHarness.Run(() =>
         {
-            var (window, _) = Build();
+            var (window, shell) = Build();
             var (panel, _) = ShowGitPanel(window);
 
             var commit = AllOf<Button>(panel)
-                .Where(b => b.Content as string is "Commit" or "Commit & Push")
-                .ToList();
+                .Single(b => ReferenceEquals(b.Command, shell.CommitCommand));
 
-            Assert.Equal(2, commit.Count);
+            Assert.True(ToolTipService.GetShowOnDisabled(commit),
+                        "the commit button would hide its explanation while disabled");
 
-            foreach (var button in commit)
+            // Dead with no repository open, and saying why.
+            Assert.False(commit.IsEnabled);
+            Assert.Equal("Nothing to commit.", commit.ToolTip);
+        });
+    }
+
+    [Fact]
+    public void The_commit_caption_follows_what_the_button_will_do()
+    {
+        // The caption is the safeguard. "Commit" over a staged set means the unstaged files are
+        // being left behind, and somebody who staged three on purpose has to be able to see
+        // that before pressing rather than by reading the commit afterwards.
+        StaHarness.Run(() =>
+        {
+            var (window, shell) = Build();
+            var (panel, content) = ShowGitPanel(window);
+
+            var commit = AllOf<Button>(panel)
+                .Single(b => ReferenceEquals(b.Command, shell.CommitCommand));
+
+            Assert.Equal("Commit", commit.Content);
+
+            shell.Unstaged.Add(new ChangeRow(new FileChange
             {
-                Assert.True(ToolTipService.GetShowOnDisabled(button),
-                            $"'{button.Content}' would hide its explanation while disabled");
-                Assert.NotNull(button.ToolTip);
-            }
+                Path = "a.st",
+                Staged = ChangeKind.Unmodified,
+                Unstaged = ChangeKind.Modified,
+            }));
+
+            content.UpdateLayout();
+            Assert.Equal("Stage all & commit", commit.Content);
+
+            shell.Unstaged[0].IsSelected = true;
+            content.UpdateLayout();
+            Assert.Equal("Stage & commit (1)", commit.Content);
         });
     }
 

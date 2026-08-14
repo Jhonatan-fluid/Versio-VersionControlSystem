@@ -703,22 +703,35 @@
                                          KeyDown="OnCommitMessageKeyDown"
                                          Text="{Binding CommitMessage, UpdateSourceTrigger=PropertyChanged}" />
 
-                                <!-- ToolTipService.ShowOnDisabled is the whole point of these
-                                     two tooltips: WPF hides a tooltip on a disabled control by
-                                     default, so without it the one moment the explanation is
-                                     wanted is the one moment it cannot be seen. A dead button
-                                     with no reason is what sends somebody to the command line,
-                                     which is the thing this panel exists to avoid. -->
+                                <!-- ONE BUTTON, THREE BEHAVIOURS, AND A CAPTION THAT SAYS
+                                     WHICH.
+
+                                     "Commit & Push" is gone. It bundled two operations with
+                                     different failure modes, and its failure story was the
+                                     worst in the panel: the commit succeeds, the push fails,
+                                     and one message has to describe both. Push is a deliberate
+                                     act of its own now, up in the remote row where the
+                                     ahead-count already lives.
+
+                                     The caption is bound because it MEANS different things:
+                                     "Stage & commit (3)" stages what is ticked, "Stage all &
+                                     commit" takes the lot, and a plain "Commit" leaves the
+                                     unstaged files exactly where they are. That last one is
+                                     the safeguard - somebody who staged three files on purpose
+                                     must not get a fourth swept in - and it is only visible
+                                     before the press if the caption carries it.
+
+                                     ToolTipService.ShowOnDisabled because WPF hides a tooltip
+                                     on a disabled control by default, so the one moment the
+                                     explanation is wanted is the one moment it would be
+                                     missing. The tooltip says what the button will do while it
+                                     is live, and why it cannot while it is not. -->
                                 <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                                    <Button Content="Commit" Style="{StaticResource AccentButton}"
+                                    <Button Content="{Binding Commit.Label}"
+                                            Style="{StaticResource AccentButton}"
                                             Command="{Binding CommitCommand}"
                                             ToolTipService.ShowOnDisabled="True"
-                                            ToolTip="{Binding Identity.CommitBlockedReason}" />
-                                    <Button Content="Commit &amp; Push" Margin="6,0,0,0"
-                                            Style="{StaticResource GhostButton}"
-                                            Command="{Binding CommitAndPushCommand}"
-                                            ToolTipService.ShowOnDisabled="True"
-                                            ToolTip="{Binding Identity.CommitBlockedReason}" />
+                                            ToolTip="{Binding CommitExplanation}" />
                                 </StackPanel>
 
                                 <!-- The most surprising rule in the tool, stated where the
