@@ -1,0 +1,180 @@
+<!--
+    Section labels, the monospace run, tooltips and chips.
+
+    MERGES Primitives.xaml, AND THAT LINE IS LOAD-BEARING.
+
+    This file reaches into Primitives for FocusRing.
+    A StaticResource resolves against its own dictionary and that dictionary's own
+    merges - never against a sibling the parent merged alongside it - so merging
+    Primitives in Controls.xaml does not put what this file needs within reach here. Drop the
+    merge below and this file still compiles clean, then throws
+    "Cannot find resource named 'FocusRing'" the first time something renders.
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="Primitives.xaml" />
+    </ResourceDictionary.MergedDictionaries>
+
+    <!-- ================================================================== LABELS -->
+    <Style x:Key="SectionLabel" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource Font.UI}" />
+        <Setter Property="FontSize" Value="{DynamicResource Font.Size.Caption}" />
+        <Setter Property="FontWeight" Value="{DynamicResource Font.Weight.Semibold}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Secondary}" />
+    </Style>
+
+    <Style x:Key="Mono" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource Font.Mono}" />
+        <Setter Property="FontSize" Value="{DynamicResource Font.Size.Caption}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!-- ================================================================= TOOLTIP -->
+    <!--
+        Implicit, and that is the point: there are dozens of ToolTips across the shell and the
+        dialogs, every one of them written as a plain string on the element it explains. Not
+        one of them named a style, so every one of them was the stock WPF tooltip - a
+        near-white slab with a hard border and a square drop shadow - opening on top of a dark
+        application. Retemplating them one by one would have meant touching dozens of call
+        sites and missing the next one; an implicit style dresses the ones that exist and the
+        ones nobody has written yet.
+
+        A ToolTip is a Popup with its own HWND, so it is the other reason this file has to be
+        honest about surfaces: nothing in the window's visual tree reaches it.
+    -->
+    <Style TargetType="ToolTip">
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+        <Setter Property="FontFamily" Value="{DynamicResource Font.UI}" />
+        <Setter Property="FontSize" Value="{DynamicResource Font.Size.Caption}" />
+        <Setter Property="MaxWidth" Value="340" />
+        <Setter Property="HasDropShadow" Value="False" />
+        <Setter Property="Placement" Value="Bottom" />
+        <Setter Property="HorizontalOffset" Value="0" />
+        <Setter Property="VerticalOffset" Value="4" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToolTip">
+                    <Border Background="{DynamicResource Brush.Surface.Raised}"
+                            BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                            BorderThickness="1"
+                            CornerRadius="{DynamicResource Radius.Control}"
+                            Padding="10,6">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="12" ShadowDepth="2" Opacity="0.28"
+                                              Direction="270" />
+                        </Border.Effect>
+
+                        <!-- Wrapping, because several of these are whole sentences: the
+                             direction-lock rule, what Discard cannot undo, why a stash keeps
+                             untracked files. A tooltip that ran off the screen edge would
+                             lose the half that matters. -->
+                        <ContentPresenter>
+                            <ContentPresenter.Resources>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="TextWrapping" Value="Wrap" />
+                                </Style>
+                            </ContentPresenter.Resources>
+                        </ContentPresenter>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- =================================================================== CHIPS -->
+    <!--
+        A filter toggle that reads as on or off at a glance and in peripheral vision.
+
+        ON is a filled pill; OFF is the same pill emptied out and dimmed. Deliberately NOT
+        a border-only difference: the log header carries four of these side by side, and a
+        one-pixel outline is not a state anybody reads while scanning for a warning.
+
+        The unchecked state keeps the text visible rather than hiding it, because the label
+        IS the affordance - a chip that dropped its own name when switched off would leave
+        four unlabelled buttons and no way to guess which one to press.
+    -->
+    <Style x:Key="FilterChip" TargetType="ToggleButton">
+        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Height" Value="20" />
+        <Setter Property="Margin" Value="0,0,4,0" />
+        <Setter Property="FontFamily" Value="{DynamicResource Font.Mono}" />
+        <Setter Property="FontSize" Value="{DynamicResource Font.Size.Caption}" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToggleButton">
+                    <Border x:Name="Root" CornerRadius="10" Padding="8,0"
+                            Background="{DynamicResource Brush.Surface.Sunken}">
+                        <ContentPresenter x:Name="Label"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="False">
+                            <Setter TargetName="Root" Property="Background" Value="Transparent" />
+                            <Setter TargetName="Label" Property="Opacity" Value="0.35" />
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Root" Property="Background"
+                                    Value="{DynamicResource Brush.Surface.Hover}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!--
+        A small stated fact: a count, a state, a mode. Not clickable, and shaped so it does
+        not read as a button somebody is failing to press.
+    -->
+    <Style x:Key="Pill" TargetType="Border">
+        <Setter Property="CornerRadius" Value="9" />
+        <Setter Property="Padding" Value="8,1" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Background" Value="{DynamicResource Brush.Surface.Sunken}" />
+    </Style>
+
+    <!--
+        Toast card.
+
+        Raised rather than sunken, and bordered: this sits ON TOP of whatever panel is open, so
+        it has to read as a separate surface rather than as another section of the page. The
+        severity colour arrives on a child rather than on this style, because a card whose whole
+        background is red would be shouting where the point is to be noticed and then leave.
+
+        Deliberately not shaped like a button. Only the failure cards carry controls, and only
+        two: dismiss, and copy git's own words - which is the line that gets pasted into a
+        message asking a colleague for help.
+    -->
+    <Style x:Key="Toast" TargetType="Border">
+        <Setter Property="CornerRadius" Value="{DynamicResource Radius.Control}" />
+        <Setter Property="Padding" Value="10,8" />
+        <Setter Property="Margin" Value="0,6,0,0" />
+        <Setter Property="MaxWidth" Value="420" />
+        <Setter Property="HorizontalAlignment" Value="Right" />
+        <Setter Property="Background" Value="{DynamicResource Brush.Surface.Raised}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Subtle}" />
+    </Style>
+
+    <Style x:Key="PillText" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource Font.Mono}" />
+        <Setter Property="FontSize" Value="{DynamicResource Font.Size.Caption}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Secondary}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!-- A checkable row inside a dropdown: the category list, and anything like it. -->
+    <Style x:Key="MenuCheck" TargetType="CheckBox"
+           BasedOn="{StaticResource {x:Type CheckBox}}">
+        <Setter Property="Padding" Value="6,0,0,0" />
+        <Setter Property="Margin" Value="0,2" />
+        <Setter Property="FontSize" Value="{DynamicResource Font.Size.Caption}" />
+    </Style>
+
+</ResourceDictionary>

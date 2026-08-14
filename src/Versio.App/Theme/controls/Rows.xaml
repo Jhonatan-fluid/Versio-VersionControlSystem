@@ -1,0 +1,241 @@
+<!--
+    Rows in a list, and rows in a tree.
+
+    MERGES Primitives.xaml, AND THAT LINE IS LOAD-BEARING.
+
+    This file reaches into Primitives for IconText and the Motion.Mark storyboards.
+    A StaticResource resolves against its own dictionary and that dictionary's own
+    merges - never against a sibling the parent merged alongside it - so merging
+    Primitives in Controls.xaml does not put what this file needs within reach here. Drop the
+    merge below and this file still compiles clean, then throws
+    "Cannot find resource named 'Motion.MarkIn'" the first time something renders.
+
+    DynamicResource is not the way out of it either: the storyboards are
+    Freezables, and a DynamicResource inside one resolves once and is never
+    re-resolved - the trap ThemeManager.cs documents at length.
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="Primitives.xaml" />
+    </ResourceDictionary.MergedDictionaries>
+
+    <!-- ================================================================ LIST ROW -->
+    <!-- The system highlight brush is the loudest "old app" tell. Selection here is an
+         accent bar plus a tinted fill, and the row keeps its own foreground colours. -->
+    <Style x:Key="RowItem" TargetType="ListBoxItem">
+        <!-- Null, not FocusRing: the template below draws its own, because a row in a
+             scrolling viewport clips an adorner that expands outward - so the ring on the
+             first and last visible row would lose the edge nearest the clip, which is the
+             edge somebody is looking at while they arrow towards it. -->
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Height" Value="{DynamicResource Size.Row.Tree}" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Grid>
+                        <Border x:Name="Fill" Background="Transparent"
+                                CornerRadius="{DynamicResource Radius.Control}" Margin="4,0" />
+                        <Border x:Name="Bar" Width="3" HorizontalAlignment="Left"
+                                Margin="4,4,0,4" CornerRadius="2"
+                                Background="{DynamicResource Brush.Accent.Default}" Opacity="0" />
+                        <ContentPresenter VerticalAlignment="Center" Margin="12,0,8,0" />
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Fill" Property="Background"
+                                    Value="{DynamicResource Brush.Surface.Hover}" />
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Trigger.EnterActions>
+                                <BeginStoryboard Storyboard="{StaticResource Motion.MarkIn}" />
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard Storyboard="{StaticResource Motion.MarkOut}" />
+                            </Trigger.ExitActions>
+
+                            <Setter TargetName="Fill" Property="Background"
+                                    Value="{DynamicResource Brush.Surface.Selected}" />
+                        </Trigger>
+
+                        <!-- Focus is NOT selection here, and in the staged and not-staged
+                             lists they genuinely come apart: those are extended-selection
+                             lists, so Ctrl+Arrow walks the focus without moving what is
+                             picked. An outline rather than the selected fill, so the two
+                             states stay tellable apart when a row is both. -->
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Fill" Property="BorderThickness" Value="1" />
+                            <Setter TargetName="Fill" Property="BorderBrush"
+                                    Value="{DynamicResource Brush.Accent.Default}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="LogRowItem" TargetType="ListBoxItem" BasedOn="{StaticResource RowItem}">
+        <Setter Property="Height" Value="{DynamicResource Size.Row.Log}" />
+    </Style>
+
+    <!-- ================================================================ TREE ROW -->
+    <!--
+        What RowItem does for lists, for the two TreeViews.
+
+        This file's own header says the system highlight brush is the loudest "old app" tell,
+        and that is why ListBoxItem was retemplated in the first pass. The TreeViews were not,
+        so the project tree - the app's primary surface, and the one somebody looks at all day -
+        painted its selected row in Windows' own highlight blue and drew the Aero expander
+        triangle beside it. The second TreeView, the history, inherited the same thing the day
+        it was added.
+
+        The expander is a chevron from the icon font, rotated rather than swapped, so the two
+        states cannot drift apart the way two glyph keys can.
+
+        IsExpanded is NOT set here. Both TreeViews bind it two-way to the row - which is what
+        drives the project tree's lazy children and the history's demand-driven file lists - and
+        a Setter here would fight that binding. The test that matters for this style asserts the
+        round-trip still works.
+    -->
+    <Style x:Key="TreeRowItem" TargetType="TreeViewItem">
+        <!-- Its own, for the reason RowItem gives: an outward adorner is clipped by the
+             viewport the row scrolls in. -->
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TreeViewItem">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <!-- The row: fill, selection bar, expander, content. Indentation comes
+                             from the ItemsPresenter's margin below rather than from a
+                             per-level template, so a row's fill spans the full width and a
+                             selected child is not a stripe floating in the middle. -->
+                        <Grid Grid.Row="0">
+                            <Border x:Name="Fill" Background="Transparent"
+                                    CornerRadius="{DynamicResource Radius.Control}"
+                                    Margin="2,0" />
+                            <Border x:Name="Bar" Width="3" HorizontalAlignment="Left"
+                                    Margin="2,3,0,3" CornerRadius="2"
+                                    Background="{DynamicResource Brush.Accent.Default}"
+                                    Opacity="0" />
+
+                            <Grid Margin="8,0,4,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="16" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <ToggleButton x:Name="Expander" Grid.Column="0"
+                                              Focusable="False" ClickMode="Press"
+                                              IsChecked="{Binding IsExpanded,
+                                                  RelativeSource={RelativeSource TemplatedParent},
+                                                  Mode=TwoWay}">
+                                    <ToggleButton.Template>
+                                        <ControlTemplate TargetType="ToggleButton">
+                                            <Border Background="Transparent" Width="16" Height="16">
+                                                <!-- One glyph, rotated, rather than two glyph
+                                                     keys that can drift apart. The transform
+                                                     is replaced wholesale in the trigger: a
+                                                     RotateTransform is a Freezable and cannot
+                                                     be reached by TargetName from inside a
+                                                     template. -->
+                                                <TextBlock x:Name="Chevron"
+                                                           Style="{StaticResource IconText}"
+                                                           FontSize="8"
+                                                           Text="{DynamicResource Icon.ChevronDown}"
+                                                           Foreground="{DynamicResource Brush.Text.Secondary}"
+                                                           RenderTransformOrigin="0.5,0.5">
+                                                    <TextBlock.RenderTransform>
+                                                        <RotateTransform Angle="-90" />
+                                                    </TextBlock.RenderTransform>
+                                                </TextBlock>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsChecked" Value="True">
+                                                    <Setter TargetName="Chevron"
+                                                            Property="RenderTransform">
+                                                        <Setter.Value>
+                                                            <RotateTransform Angle="0" />
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                </Trigger>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="Chevron" Property="Foreground"
+                                                            Value="{DynamicResource Brush.Text.Primary}" />
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </ToggleButton.Template>
+                                </ToggleButton>
+
+                                <ContentPresenter Grid.Column="1" ContentSource="Header"
+                                                  VerticalAlignment="Center" />
+                            </Grid>
+                        </Grid>
+
+                        <!-- 16 px, matching the expander column, so a child's glyph lands
+                             under its parent's rather than at an arbitrary offset. -->
+                        <ItemsPresenter x:Name="Children" Grid.Row="1" Margin="16,0,0,0" />
+                    </Grid>
+
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsExpanded" Value="False">
+                            <Setter TargetName="Children" Property="Visibility"
+                                    Value="Collapsed" />
+                        </Trigger>
+
+                        <!-- A leaf has no expander. Hidden rather than collapsed, so its
+                             16 px column still lines the row up with its siblings. -->
+                        <Trigger Property="HasItems" Value="False">
+                            <Setter TargetName="Expander" Property="Visibility"
+                                    Value="Hidden" />
+                        </Trigger>
+
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Fill" Property="Background"
+                                    Value="{DynamicResource Brush.Surface.Hover}" />
+                        </Trigger>
+
+                        <!-- IsSelected, not IsSelectionActive: the row stays visibly selected
+                             when focus moves to the diff pane, which is exactly what happens
+                             the moment somebody clicks a file to read it. The stock template
+                             greys the selection out at that point, which is how a selected
+                             file ends up looking unselected while its diff is on screen. -->
+                        <Trigger Property="IsSelected" Value="True">
+                            <Trigger.EnterActions>
+                                <BeginStoryboard Storyboard="{StaticResource Motion.MarkIn}" />
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard Storyboard="{StaticResource Motion.MarkOut}" />
+                            </Trigger.ExitActions>
+
+                            <Setter TargetName="Fill" Property="Background"
+                                    Value="{DynamicResource Brush.Surface.Selected}" />
+                        </Trigger>
+
+                        <!-- IsKeyboardFocused, NOT IsKeyboardFocusWithin. Focus within is
+                             true for every ancestor of the focused row, so a tree eight
+                             levels deep would outline all eight. -->
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Fill" Property="BorderThickness" Value="1" />
+                            <Setter TargetName="Fill" Property="BorderBrush"
+                                    Value="{DynamicResource Brush.Accent.Default}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+</ResourceDictionary>
