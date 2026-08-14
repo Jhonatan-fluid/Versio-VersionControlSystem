@@ -263,7 +263,19 @@ pwsh tools/Test-RoundTrip.ps1 -Project fixtures/projects/RefrigeratorControl.pro
 
 `-MutateFirst` edits an exported `.st` before importing it. **Use it.** Without a deliberate change, a round-trip comparison can pass while the import silently did nothing — a green result that cannot fail is worse than a red one.
 
-> **Expect `Lossless: False`, and read the line above it.** The harness byte-compares the whole tree, and `import_native` legitimately perturbs native XML — re-minted counters, reordered unordered collections, regenerated internal GUIDs. The verdict that means something is `PROBE SURVIVED the round trip`, which is the textual path. See [docs/CODESYS.md](docs/CODESYS.md) §7 for the three volatility classes and §12 A4 for why the harness's own verdict is being fixed.
+**The verdict is per layer, because the layers have different fidelity rules.** Textual `.st` and export-only `.yaml` must be byte-identical and are fatal if they are not; native `.xml` is *expected* to differ, because `import_native` legitimately advances counters, reorders unordered collections and re-mints internal GUIDs. A single byte verdict over both printed `Lossless: False` on a perfectly healthy project, which is worse than useless — see [docs/CODESYS.md](docs/CODESYS.md) §6.6.
+
+```
+  textual (.st)        LOSSLESS - byte-identical
+  export-only (.yaml)  LOSSLESS - byte-identical
+  native (.xml)        5 file(s) differ - EXPECTED, not verified here
+  structure            intact - nothing added or removed
+  probe                SURVIVED - the harness is not vacuous
+
+  VERDICT: PASS
+```
+
+Native fidelity is *semantic*, and that check lives once, in C#: `dotnet test tests\Versio.Core.Tests --filter RealRoundTripEquivalence`. Refresh its committed inputs from a real run with `-UpdateEquivalenceFixtures`.
 
 > These harnesses start CODESYS directly and **do not take the machine-wide lock** the app uses, so running one while Versio is open on the same repository can put two headless CODESYS instances on one profile. Close the app first.
 

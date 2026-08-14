@@ -668,6 +668,45 @@ scripting API is a *different operation* from importing an object, and doing it 
 what the machine compiles against. Both `_coverage.md` and `ExportFormRules.IsExportOnly` say so
 out loud, because a file that looks editable and is silently ignored is its own kind of gap.
 
+### 6.6 How the round trip is judged
+
+`export → import → export` does not have one fidelity rule, so `tools/Test-RoundTrip.ps1` does
+not give it one verdict. The layers are judged separately, and only some of them can fail:
+
+| Layer | Rule | Fatal? |
+|---|---|---|
+| **textual** (`.st`) | must be **byte-identical** — this is the layer an engineer edits, and the one the round trip actually proves | **yes** |
+| **export-only** (`.libraries.yaml`) | must be **byte-identical**. The import never applies it, so a re-export has nothing to perturb: a difference here means the *export* is non-deterministic | **yes** |
+| **native** (`.xml`) | **expected to differ.** Byte comparison is the wrong instrument (§7) | no — reported, and explicitly not verified here |
+| **bookkeeping** (`_manifest.json`, `_coverage.md`) | derived; the manifest records native hashes, so it differs whenever the native layer does | no |
+| **structure** (added / removed) | a file that appeared or vanished is a structural failure at any layer | **yes** |
+| **probe** (`-MutateFirst`) | the injected edit must come back out of CODESYS | **yes** |
+
+On the fixture that reads:
+
+```
+  LAYER VERDICTS
+    textual (.st)        LOSSLESS - byte-identical
+    export-only (.yaml)  LOSSLESS - byte-identical
+    native (.xml)        5 file(s) differ - EXPECTED, not verified here
+    bookkeeping          1 file(s) differ - derived from the above
+    structure            intact - nothing added or removed
+    probe                SURVIVED - the harness is not vacuous
+
+  VERDICT: PASS
+```
+
+**The native layer's semantic check is not duplicated in PowerShell.** It lives once, in C#, in
+`RealRoundTripEquivalenceTests` over `NativeXmlNormalizer` — and the harness prints the command
+to run it rather than reimplementing the masking rules. That restraint is the direct lesson of
+§9: this repository has already been bitten twice by one rule living in two languages and
+drifting. `-UpdateEquivalenceFixtures` regenerates that test's committed inputs from a real run,
+which is what the test's own remarks have always claimed was possible.
+
+> Calling the C# normaliser from the harness was considered and is not available: `Versio.Core`
+> targets net9.0, and Windows PowerShell 5.1 runs on .NET Framework, which cannot load it. It
+> would need `pwsh` on a matching runtime, or a CLI project that does not exist yet.
+
 ---
 
 ## 7. Determinism
@@ -841,8 +880,8 @@ poke at CODESYS directly.
 | Tool | Does |
 |---|---|
 | `Run-Codesys.ps1` | Launches one script with a hashtable job. Does exactly what the runner must: BOM-free job file, async drain, timeout + `taskkill /T /F`, protocol split |
-| `Compare-Exports.ps1` | Byte-compares two export trees — the determinism gate |
-| `Test-RoundTrip.ps1` | export → copy → import → export → compare. **Use `-MutateFirst`** — without a deliberate change the comparison can pass while the import did nothing, and a green result that cannot fail is worse than a red one. **Expect `Lossless: False` even when nothing is wrong** — it byte-compares native XML that `import_native` legitimately perturbs, see §12 A4 |
+| `Compare-Exports.ps1` | Byte-compares two export trees — the determinism gate, where a byte comparison is exactly right. `-Quiet` returns the result without the banner, for a caller presenting its own verdict |
+| `Test-RoundTrip.ps1` | export → copy → import → export → compare, **judged one layer at a time** (§6.6). **Use `-MutateFirst`** — without a deliberate change the comparison can pass while the import did nothing, and a green result that cannot fail is worse than a red one. `-UpdateEquivalenceFixtures` refreshes the inputs `RealRoundTripEquivalenceTests` reads |
 
 > **⚠️ These harnesses do not take the machine-wide mutex.** `LocalCodesysRunner` serialises
 > every CODESYS launch behind `Global\Versio.Codesys.SingleInstance`; `Run-Codesys.ps1` starts
@@ -882,12 +921,16 @@ State of the suite when this audit was taken: **`Versio.Core.Tests` 1363 passed*
 Nothing on a tested path was failing. Everything below was either off the tested paths or a
 documentation-level defect.
 
-> **Status, 2026-08-14.** **A1–A3** and all of **B** are **fixed**, and each entry records what
-> changed and why. **A4 is new and open** — it was found by fixing A1, which is the usual way.
-> **C1** is annotated in `PLAN.md` — whose risk register claimed the mitigation was in place —
-> but the exporter is unchanged. **C2** and **E** stand as written. **D** is by design throughout
-> and was never a defect list; it is here because only one of its six entries was written down
-> anywhere before this document.
+> **Status, 2026-08-14.** All of **A** — including **A4**, which was found by fixing A1 — and
+> all of **B** are **fixed**, and each entry records what changed and why. **C1** is annotated in
+> `PLAN.md`, whose risk register claimed the mitigation was in place, but the exporter is
+> unchanged. **C2** and **E** stand as written. **D** is by design throughout and was never a
+> defect list; it is here because only one of its six entries was written down anywhere before
+> this document.
+>
+> Three of the seven fixed findings were **claims that documentation made and code did not
+> honour** — batching, the operation id, and the equivalence fixtures being regenerable. That is
+> the pattern worth carrying forward from this audit, more than any individual defect.
 >
 > Fixed findings are kept rather than deleted. The reason a defect existed outlives the defect,
 > and A2 in particular is a worked example of a green test holding up a false belief.
@@ -940,8 +983,8 @@ uses `CodesysLocator`, not the runner — but `LocalCodesysRunner` maps every un
 `PlcOperation` to `CodesysOperation.Probe`, so the path was one caller away. `out` is now
 written for `Probe` as well as `Export`, with a test.
 
-**A4 · ⛔ OPEN · `Test-RoundTrip.ps1` reports `Lossless: False` on a healthy project, and the
-README presents it as the way to prove the round trip.** *(Medium — found by fixing A1.)*
+**A4 · ✅ FIXED · `Test-RoundTrip.ps1` reported `Lossless: False` on a healthy project, and the
+README presented it as the way to prove the round trip.** *(Medium — found by fixing A1.)*
 
 Un-breaking A1 made the harness runnable, and the first thing it does is contradict itself.
 Measured on the fixture just now:
@@ -966,10 +1009,33 @@ objects — it must be semantic"*. `Test-RoundTrip.ps1` calls it anyway and prin
 warning.
 
 That is worse than the broken path it replaced: a script that does not run gets investigated,
-and a green-then-red script gets believed. Closing it means reporting the two paths separately —
-byte-identical for textual and `NativeXmlNormalizer`-equivalent for native — which is the
-comparison `RealRoundTripEquivalenceTests` already performs in C#. **Not attempted here:** it is
-a rewrite of the harness's verdict rather than a correction, and it deserves its own change.
+and a green-then-red script gets believed.
+
+**Fixed by judging the layers separately** — the rules and the output are in §6.6. Textual and
+export-only must be byte-identical and are fatal; native differences are reported and are not;
+bookkeeping is derived; anything added or removed fails at any layer. The same run that used to
+print `Lossless: False` now prints `VERDICT: PASS` with the native differences listed and
+labelled expected.
+
+Three things were deliberately *not* done:
+
+- **The masking rules were not reimplemented in PowerShell.** They live once, in C#. The harness
+  prints the `dotnet test --filter RealRoundTripEquivalence` command instead. Calling the C#
+  directly is not available here — `Versio.Core` targets net9.0 and Windows PowerShell 5.1 runs
+  on .NET Framework, which cannot load it.
+- **`Compare-Exports.ps1` keeps its byte verdict.** It is the determinism gate, where byte
+  equality is exactly the right question. It gained only `-Quiet`, so a caller with its own
+  verdict is not preceded by a red `DIFFERING : 9`.
+- **The `_manifest.json` exclusion was removed rather than extended.** It was excluded only under
+  `-MutateFirst`, which explained one of the two reasons it differs and hid the other — it also
+  differs on every ordinary run, because it records the hashes of native files the import
+  perturbed. It is classified as derived bookkeeping now, and reported.
+
+**A second false claim closed on the way past.** `RealRoundTripEquivalenceTests` has always said
+its fixtures "can be regenerated with `tools/Test-RoundTrip.ps1`", and nothing in that script did
+it — the committed fixtures were whatever somebody copied by hand. `-UpdateEquivalenceFixtures`
+now refreshes them by name from a real run, and refuses to run alongside `-MutateFirst`, which
+would bake the probe comment into the fixture that asserts byte-identical textual round-tripping.
 
 ### B. Stale or incorrect references
 
