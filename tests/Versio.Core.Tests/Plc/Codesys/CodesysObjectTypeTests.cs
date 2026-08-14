@@ -142,7 +142,7 @@ public class TypeTableParityTests
 
         string[] requiredForms =
             ["FORM_ST_FULL", "FORM_ST_DECL", "FORM_ST_IMPL", "FORM_GVL_BOTH",
-             "FORM_NATIVE", "FORM_NATIVE_R"];
+             "FORM_NATIVE", "FORM_NATIVE_R", "FORM_NATIVE_WITH_CHILDREN"];
 
         var suffixBlock = Between(text, "SUFFIX = {", "}");
 
