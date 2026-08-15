@@ -379,7 +379,31 @@ cause it and a project without one imports cleanly; the `.opt` files, which are 
 editor state, make no difference either way; and the mirror's bytes are irrelevant, since a fully
 round-tripped `Task Configuration.xml` imports cleanly into a project that has no cache.
 
-### Deleting the cache before the import fixes it, and costs nothing measurable
+### ✅ Closed on 2026-08-15 by Phase 4, without deleting anything
+
+Task configuration is now exported as `TASK_BOTH` — the native `.xml` for fidelity, a
+`.tasks.yaml` that is the importable half — and applied through typed property assignment.
+`import_native` never sees the file, so the stale compile cache is never reached.
+
+Measured over three import→export cycles with the cache present:
+
+| | Before | After |
+|---|---|---|
+| warnings, cycles 1/2/3 | 0 / **2** / **2** | **0 / 0 / 0** |
+| native files imported | 8 | 7 — the task XML skipped as `TYPED_SIBLING` |
+| `Core2` across four snapshots | moved on cycle 1 | `-2,-1` throughout |
+| `Task Configuration.xml` in the churn set | cycle 1 | never |
+
+**And non-vacuously**, which matters because every cycle reports `updated: 0` when nothing was
+edited — gate 0.5 records exactly that trap. Editing the YAML to `priority: "5"` and
+`coreBinding: 0` and importing gives `updated: 1` with two `task_set` events, and reading the
+project back through the typed API returns priority 5 and core binding 0, with the other task
+untouched.
+
+**So the mitigation below was never adopted.** It is kept because it is the fallback if the typed
+path is ever unavailable, and because the measurement cost real time to get.
+
+### The mitigation that turned out not to be needed
 
 The cells above all reached "no cache" by copying a project that never had one, which is not the
 same experiment as removing one — CODESYS could rebuild it while opening the project and the

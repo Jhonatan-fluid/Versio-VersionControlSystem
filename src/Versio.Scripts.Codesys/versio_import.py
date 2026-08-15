@@ -39,7 +39,9 @@ from versio_decl import (DUT_ALIAS, DUT_ENUM, DUT_STRUCT, DUT_UNION,  # noqa: E4
                          KIND_DUT, KIND_FUNCTION, KIND_FUNCTION_BLOCK,
                          KIND_INTERFACE, KIND_PROGRAM, parse_declaration)
 from versio_text import normalize_decl_only, split_st  # noqa: E402
-from versio_types import is_export_only, is_versio_file, type_of  # noqa: E402
+from versio_types import (is_export_only, is_typed_form,  # noqa: E402
+                          is_versio_file, type_of, typed_sibling_candidates)
+import versio_yaml  # noqa: E402
 
 
 def emit(obj):
@@ -100,6 +102,35 @@ def object_name_from_file(file_name):
                 return parent, child, suffix
             return None, stem, suffix
     return None, file_name, ""
+
+
+def typed_sibling_for(abs_path):
+    """The typed file sitting beside this native one, by name, or None.
+
+    The RULE lives in versio_types (which suffixes pair with a .xml); the LOOKING lives
+    here, because this is the half that is allowed to touch a filesystem. Returns the name
+    rather than True so the event can say which file won: "skipped because X is
+    authoritative" is a sentence somebody can act on.
+    """
+    for candidate in typed_sibling_candidates(abs_path):
+        if os.path.isfile(candidate):
+            return os.path.basename(candidate)
+    return None
+
+
+def _same(current, wanted):
+    """Compare a live property against a wanted value without pretending about types.
+
+    CODESYS returns priority as the string "1" and core binding as the int -2, so a
+    comparison that coerced everything one way would report a spurious change on one of
+    them and then write a value identical to what was already there.
+    """
+    if isinstance(wanted, int) and not isinstance(wanted, bool):
+        try:
+            return int(current) == wanted
+        except (TypeError, ValueError):
+            return False
+    return (u"%s" % (current,)) == (u"%s" % (wanted,))
 
 
 def find_child(parent, name):
@@ -293,6 +324,124 @@ class Importer(object):
               "into": "/".join(owner_parts) or "<project>"})
         return obj
 
+    # Fields that have been WRITTEN to a real task and seen to persist across a reopen
+    # (probe P6), with the type each one demands. The types are not uniform and that is not
+    # a style choice in this table: priority takes a string and raises TypeError on an int,
+    # core_binding takes an int. Anything not listed here is attempted anyway and reported
+    # if it refuses - see apply_tasks - because a file that looks editable while one of its
+    # fields is silently ignored is the exact gap _coverage.md exists to close.
+    # (document key, ScriptEngine property, wanted type).
+    #
+    # A LIST, not a dict, and that is not a style choice: dict iteration order differs
+    # between IronPython 2.7 and CPython 3, so a dict here would apply the fields in an
+    # arbitrary order and emit its task_set lines in an arbitrary order with them. The
+    # order below is deliberate - the unit before the interval it qualifies, so a task
+    # moving from milliseconds to microseconds is never momentarily set to the new number
+    # under the old unit.
+    #
+    # versio_yaml.py's own header records this hazard for the emitter; it applies just as
+    # much to the half that writes back.
+    TASK_FIELDS = [
+        ("priority", "priority", "str"),
+        ("coreBinding", "core_binding", "int"),
+        ("intervalUnit", "interval_unit", "str"),
+        ("interval", "interval", "str"),
+    ]
+
+    def apply_tasks(self, abs_path, rel_path):
+        """Apply a `.tasks.yaml` through the typed API.
+
+        THIS IS THE POINT OF PHASE 4. Task configuration used to be handed to
+        import_native, and that rewrote Core2 - a task's CPU core affinity - on every
+        import without being asked, and threw on the task objects on every import after the
+        first while the run reported failed: 0. Setting the fields through properties
+        instead means CODESYS is told exactly what changed and nothing else moves.
+        """
+        top, list_key, tasks = versio_yaml.parse_document(read_text(abs_path))
+        if list_key != "tasks":
+            self.warn("TASKS_DOCUMENT_UNRECOGNISED", rel_path, str(list_key))
+            return
+
+        # The configuration object sits where the file does: the mirror's directory path is
+        # the project's object path, which is the whole reason the export writes it there.
+        parts = [p for p in os.path.dirname(rel_path).replace("\\", "/").split("/") if p]
+        config_name = top.get("configuration")
+        if not config_name:
+            self.warn("TASKS_CONFIG_NAME_MISSING", rel_path)
+            return
+
+        config = find_by_path(self.proj, parts + [config_name])
+        if config is None:
+            self.missing += 1
+            self.warn("PARENT_NOT_FOUND", rel_path, "/".join(parts + [config_name]))
+            return
+
+        by_name = {}
+        for child in safe(lambda: config.get_children(), []) or []:
+            child_name = safe(lambda c=child: c.get_name(), None)
+            if child_name is not None:
+                by_name[child_name] = child
+
+        changed = 0
+        for task in tasks:
+            name = task.get("name")
+            if not name:
+                continue
+            obj = by_name.get(name)
+            if obj is None:
+                # NOT created. Adding a task changes what the machine runs, and this phase
+                # is about stopping unasked-for changes rather than adding a new kind.
+                self.warn("TASK_NOT_FOUND", rel_path, name)
+                continue
+            changed += self.apply_task_fields(obj, task, rel_path, name)
+
+        # A task the PROJECT has and the document does not is left alone, silently. That is
+        # deliberate and it is a limitation rather than an oversight: removing a task is a
+        # deletion, deletions are Phase 2, and they need the manifest, the confirmation
+        # dialog and the content check before anything is allowed to remove one. Deleting a
+        # task from this file today therefore does nothing - stated here because a file that
+        # looks editable while one of its edits is ignored is the exact shape of gap this
+        # phase was written to close.
+        if changed:
+            self.updated += 1
+            emit({"t": "updated", "path": rel_path, "part": "tasks", "fields": changed})
+        else:
+            self.unchanged += 1
+
+    def apply_task_fields(self, obj, task, rel_path, name):
+        """Set one task's fields, reporting any that refuse. Returns how many changed."""
+        changed = 0
+        for key, prop, kind in self.TASK_FIELDS:
+            if key not in task:
+                continue
+
+            wanted = task[key]
+            if kind == "int":
+                try:
+                    wanted = int(wanted)
+                except (TypeError, ValueError):
+                    self.warn("TASK_FIELD_NOT_A_NUMBER", rel_path,
+                              "%s.%s=%s" % (name, key, task[key]))
+                    continue
+
+            current = safe(lambda p=prop: getattr(obj, p), None)
+            if current is not None and _same(current, wanted):
+                continue
+
+            try:
+                setattr(obj, prop, wanted)
+            except Exception as e:
+                # Reported, never swallowed. An editable-looking field that quietly does
+                # nothing is worse than one that says it cannot be applied.
+                self.warn("TASK_FIELD_REFUSED", rel_path,
+                          "%s.%s: %s" % (name, key, str(e)))
+                continue
+
+            changed += 1
+            emit({"t": "task_set", "path": rel_path, "task": name,
+                  "field": key, "value": u"%s" % (wanted,)})
+        return changed
+
     def handle_file(self, abs_path, rel_path):
         file_name = os.path.basename(rel_path)
         if is_versio_file(file_name):
@@ -315,6 +464,20 @@ class Importer(object):
             parts = parts + [obj_name]
 
         if not suffix.endswith(".st"):
+            # A native file that has a TYPED SIBLING is export-only: the sibling is the
+            # importable form and this one is written for fidelity and for the diff.
+            #
+            # Sibling adjacency rather than a suffix of its own, because renaming
+            # `Task Configuration.xml` would rewrite a committed file for a reason that has
+            # nothing to do with the project. Once Phase 1 lands, the plan says which files
+            # are importable and this rule can go.
+            sibling = typed_sibling_for(abs_path)
+            if sibling is not None:
+                emit({"t": "not_imported", "path": rel_path,
+                      "reason": "TYPED_SIBLING", "sibling": sibling})
+                self.one_way += 1
+                return
+
             # Native XML: import into the OWNING node. This both replaces an existing
             # object in place and creates one that is not there yet, so it needs no
             # existence check of its own.
@@ -368,6 +531,7 @@ class Importer(object):
         and saving in between lets the object manager settle first.
         """
         textual = []
+        typed = []
         native = []
         for dir_path, _dir_names, file_names in os.walk(self.src_root):
             for file_name in sorted(file_names):
@@ -389,11 +553,25 @@ class Importer(object):
 
                 abs_path = os.path.join(dir_path, file_name)
                 rel_path = os.path.relpath(abs_path, self.src_root).replace("\\", "/")
-                (textual if file_name.endswith(".st") else native).append((abs_path, rel_path))
 
-        emit({"t": "phase", "name": "textual", "files": len(textual)})
+                # Typed files go with the textual phase, not the native one: they are
+                # applied through properties and never reach import_native, so they must
+                # not be in the list whose name means "hand this to CODESYS as XML".
+                if is_typed_form(file_name):
+                    typed.append((abs_path, rel_path))
+                else:
+                    (textual if file_name.endswith(".st") else native).append(
+                        (abs_path, rel_path))
+
+        emit({"t": "phase", "name": "textual", "files": len(textual) + len(typed)})
         for abs_path, rel_path in textual:
             self.handle_file(abs_path, rel_path)
+        for abs_path, rel_path in typed:
+            try:
+                self.apply_tasks(abs_path, rel_path)
+            except Exception as e:
+                self.failed += 1
+                self.warn("TASKS_APPLY_FAILED", rel_path, str(e))
 
         if self.created > 0 or self.updated > 0:
             self.proj.save()

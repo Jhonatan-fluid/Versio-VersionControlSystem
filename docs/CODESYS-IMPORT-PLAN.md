@@ -40,11 +40,11 @@ amount of reading, because it does not exist on the first cycle.
 | G4 | **Encoded names unresolvable** — looks up the *encoded* stem against raw names, giving a duplicate named `weird%3Cname%3E` | **Unreachable by creation** (P5). Still reachable for names a project already has — see the caveat under P5 |
 | G5 | **A dot in a name breaks the owner split** — `My.Thing.st` looks for member `Thing` of parent `My` | **Unreachable** (P5): CODESYS refuses to create `My.Thing` |
 | G6 | **Stray files go to `import_native`** — a `README.md` in the mirror is handed to CODESYS as native XML | Open. Fixed by Phase 1's shape check |
-| G7 | **Task Configuration mutated on every import** — `Core2` `-1`→`-2`; documented as "diff-only", which it never was | Open. **Phase 4 fixes it, and P6 proves the typed path works** |
+| G7 | **Task Configuration mutated on every import** — `Core2` `-1`→`-2`; documented as "diff-only", which it never was | ✅ **CLOSED by Phase 4, 2026-08-15.** `Core2` reads `-2,-1` across four consecutive snapshots where it used to move on the first cycle, and `Task Configuration.xml` has dropped out of the churn set entirely |
 | G8 | **Managed library references unproven** — every fixture reference is a placeholder, so the `managed_library` branch has never executed | **Half closed**: P9 produces a real managed reference in one call, so no hand-built fixture is needed. (This row used to say 34 references; the Library Manager reports **21**) |
 | G9 | **Total path length unguarded** — stems capped at 80, the full path is not, and `.versio_staging` makes it 16 longer | Open, and **entirely ours**: P8 shows CODESYS imposes no limit of its own |
 | **G10** | **Import → export is not byte-stable.** `UniqueIdGenerator` **44 → 47 → 50 → 53**, +3 per cycle, never settling | Open, **measured**. Of the eight native files touched: three visualisations climb on the counter, `GlobalTextList.xml` churns with **no counter at all**, `Task Configuration.xml` moves once then settles, three are byte-stable. **Four of eight forever, from two causes** — not "every file", and not just the counter |
-| **G11** | **Every import after the first fails on task configuration and reports success.** `import_native` throws `Collection was modified` at `Project.GetUniqueName` on `MainTask` and `VISU_TASK`; the summary still reads `failed: 0` | Open, **root-caused and solved on paper**. Trigger is a stale `<project>_project.precompilecache`. **Phase 4 removes it** — measured: with the cache present, excluding `Task Configuration.xml` from the import gives 7 native files and zero errors, and the fault does **not** relocate |
+| **G11** | **Every import after the first fails on task configuration and reports success.** `import_native` throws `Collection was modified` at `Project.GetUniqueName` on `MainTask` and `VISU_TASK`; the summary still reads `failed: 0` | ✅ **CLOSED by Phase 4, 2026-08-15.** Three import→export cycles with the compile cache present: **zero warnings on every one**, where cycles 2 and 3 used to throw twice each. `native: 8 → 7`, the task XML skipped as `TYPED_SIBLING`. **Versio never deletes CODESYS's compile cache** — the trigger is simply never reached |
 
 **Intended outcome:** the mirror becomes authoritative for object *existence* and *identity*, not
 just content; task scheduling stops being changed by a tool nobody asked to change it; and an
@@ -190,8 +190,8 @@ already exists.**
 
 | # | What | Why here |
 |---|---|---|
-| **1st** | **Phase 4 — typed task configuration** · *export half landed 2026-08-15; the import half is what actually closes G7 and G11* | The only phase that fixes **two live, user-facing defects**: G7 changes CPU core affinity nobody asked to change, and G11 makes every import after the first silently fail. P6 proved the typed path works; a direct experiment proved removing the file from `import_native` fixes G11 without relocating the fault. Independent of everything else here |
-| **2nd** | **The three honesty fixes** | Small, unrelated to each other, and each makes the *next* failure visible instead of silent. None depends on any phase |
+| ~~1st~~ | ✅ **Phase 4 — typed task configuration.** Landed 2026-08-15, both halves. **G7 and G11 measured closed** | The only phase that fixes **two live, user-facing defects**: G7 changes CPU core affinity nobody asked to change, and G11 makes every import after the first silently fail. P6 proved the typed path works; a direct experiment proved removing the file from `import_native` fixes G11 without relocating the fault. Independent of everything else here |
+| **NEXT** | **The three honesty fixes** | Small, unrelated to each other, and each makes the *next* failure visible instead of silent. None depends on any phase |
 | **3rd** | **Phase 1 — manifest-driven importer** | The foundation. Nothing else can be planned C#-side until the plan exists |
 | **4th** | **`versio_native_equiv.py`** | A shared prerequisite, not a phase. Phase 2's native content check needs it and so does Phase 5 — it was written down as a Phase 5 artifact and is needed earlier |
 | **5th** | **Phases 2 and 3 — deletes, renames, moves** | Together, as originally planned. Phase 3's detection reuses Phase 2's delete candidates |
@@ -247,18 +247,34 @@ Mirrors the library-reference design exactly, which is the precedent to copy:
 - ✅ **New form `TASK_BOTH`**, following `GVL_BOTH`: native `.xml` for fidelity *and*
   `<name>.tasks.yaml`. The `.xml` keeps the name it has always had, so the change is
   **additive** and no committed file is renamed.
-- ⬜ **The native XML becomes export-only and the YAML becomes the importable form.** Not yet
-  done, and **this is the half that closes G7 and G11** — until it lands, the export writes a
-  `.tasks.yaml` that nothing reads while `Task Configuration.xml` still goes to
-  `import_native`. Needs a python YAML *reader* for the subset (the emitter is write-only
-  today), and the rule that a native file with a typed sibling is not imported.
-- ⬜ **Import through property assignment**, not the setter methods this plan used to name.
+- ✅ **The native XML is export-only and the YAML is the importable form.** A native file is
+  skipped when a typed file sits **beside** it — adjacency rather than a suffix of its own,
+  so no committed file had to be renamed. The event names the winner
+  (`TYPED_SIBLING`, `sibling: Task Configuration.tasks.yaml`) rather than going quiet.
+- ✅ **`versio_yaml` gained a reader.** Nothing python-side had ever read a document it
+  wrote — `.libraries.yaml` is export-only and the C# `LibraryCatalog.Parse` was the only
+  parser in existence. Emitting and re-reading in one process is now a test, and it covers
+  the quoting rules, the scalar list, values that would parse as a bool or a number, and
+  the escapes. **Values come back as text, always** — no type inference, because CODESYS
+  wants a string for `priority` and an int for `core_binding` and a parser that guessed
+  would be wrong for one of them.
+- ✅ **Import through property assignment**, not the setter methods this plan used to name.
   **The types differ per field**: `priority` takes a `str`, `core_binding` takes an `int`.
-  Both were written and both survived a reopen (P6).
+  A field that refuses is **reported, never swallowed** (`TASK_FIELD_REFUSED`), because a
+  file that looks editable while one of its fields is quietly ignored is the exact gap
+  `_coverage.md` exists to close.
+- ✅ **A task is never created.** An entry naming a task the project does not have warns
+  (`TASK_NOT_FOUND`) and moves on. Adding a task changes what the machine runs, and this
+  phase is about stopping unasked-for changes rather than introducing a new kind.
 - ⬜ **New `src/Versio.Core/Projects/TaskCatalog.cs`** — a C# reader mirroring `LibraryCatalog`,
-  so the panel can show tasks.
+  so the panel can show tasks. **It needs the scalar list**, which `LibraryCatalog.Parse`
+  does not handle: no library field is a list, so the construct never reached it.
 - ⬜ **Regenerate the committed fixture mirror** to carry the new file. This moves committed
   bytes and is the part this plan flags as wanting its own review.
+- ⬜ **An integration test that changes a task priority and asserts the project afterwards.**
+  Listed under Phase 6, and worth pulling forward: the typed path is proven by a hand-run
+  mutation today and by nothing automated, which is the same shape as the coverage gap that
+  let G11 live.
 
 **Why this is first.** It is the only phase that fixes something a user is living with today, and
 it fixes two:
@@ -447,11 +463,13 @@ the **existing bytes**.
 2. `dotnet test tests\Versio.Integration.Tests --filter PythonFileName` — parity, ~9 s.
 3. `tools\Test-RoundTrip.ps1 … -MutateFirst` — the per-layer verdict stays **PASS**, and
    `Task Configuration.xml` drops out of the native-differs list once Phase 4 lands.
-4. **The G10 acceptance test:** `tools\Measure-ImportStability.ps1` must print **`P7: SETTLES`**.
-   Today it prints `P7: CHURNS` with four files differing per cycle, so the baseline is recorded
-   and the criterion is not vacuous. **It must also come back with zero warnings** — a settled
-   mirror with `NATIVE_IMPORT_ERROR x2` underneath it is G11 hiding under a clean byte comparison,
-   which is exactly how it went unnoticed in the first place.
+4. **The G10 acceptance test:** `tools\Measure-ImportStability.ps1` must print **`P7: SETTLES`**
+   **and report zero warnings.** Two halves, and only one is done. **The zero-warnings half passes
+   as of Phase 4** — all three cycles clean, where cycles 2 and 3 used to throw twice each. It
+   still prints `P7: CHURNS`, and correctly: the four files left are the three visualisations and
+   `GlobalTextList.xml`, which is G10 and Phase 5's job. A settled mirror with
+   `NATIVE_IMPORT_ERROR x2` underneath it would be G11 hiding under a clean byte comparison, which
+   is exactly how it went unnoticed in the first place.
 5. **Regression gate:** a normal export stays byte-identical to the committed mirror for every file
    Phase 4 does not deliberately change.
 6. Full integration suite against real CODESYS (~7 min).

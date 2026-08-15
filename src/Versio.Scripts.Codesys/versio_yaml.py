@@ -200,3 +200,159 @@ def document(header, top, top_keys, list_key, items, item_keys):
             lines.append(u"  " + extra)
 
     return u"\n".join(lines) + u"\n"
+
+
+# ---------------------------------------------------------------------------------------
+# READING BACK.
+#
+# The emitter above had no counterpart for most of this file's life, because nothing
+# python-side ever read a document it wrote: `.libraries.yaml` is export-only and the C#
+# reader (LibraryCatalog.Parse) is the only parser that existed.
+#
+# `.tasks.yaml` is different - it is the IMPORTABLE half of a task configuration, so the
+# import script has to read one. This parses exactly the subset emitted above and nothing
+# else: same shape, same file, so the two can be checked against each other by emitting a
+# document and reading it back, which is a stronger test than either half has alone.
+#
+# Values come back as TEXT, always. No type inference: "1" stays "1" rather than becoming
+# an int, because CODESYS wants a string for priority and an int for core binding, and a
+# parser that guessed would be wrong for one of them. The caller knows which is which.
+# ---------------------------------------------------------------------------------------
+
+
+def unquote(text):
+    """Reverse `quote`. Bare scalars are returned unchanged."""
+    if len(text) < 2 or not text.startswith(u'"') or not text.endswith(u'"'):
+        return text
+    body = text[1:-1]
+    out = []
+    i = 0
+    while i < len(body):
+        ch = body[i]
+        if ch != u"\\" or i + 1 >= len(body):
+            out.append(ch)
+            i += 1
+            continue
+        nxt = body[i + 1]
+        if nxt == u"n":
+            out.append(u"\n")
+        elif nxt == u"r":
+            out.append(u"\r")
+        elif nxt == u"t":
+            out.append(u"\t")
+        elif nxt == u"x" and i + 3 < len(body):
+            try:
+                out.append(unichr(int(body[i + 2:i + 4], 16)))  # noqa: F821
+            except Exception:
+                out.append(body[i + 2:i + 4])
+            i += 4
+            continue
+        else:
+            out.append(nxt)
+        i += 2
+    return u"".join(out)
+
+
+def _split(text):
+    """`key: value` -> (key, value), or None when the line is not a mapping entry."""
+    colon = text.find(u":")
+    if colon < 0:
+        return None
+    return unquote(text[:colon].strip()), text[colon + 1:].strip()
+
+
+def parse_document(text):
+    """Read a document this module emitted.
+
+    Returns (top, list_key, items): the header mapping, the name of the one list, and the
+    list of item mappings. A scalar list inside an item comes back as a python list; a
+    nested mapping comes back as a dict.
+
+    INDENT IS THE ONLY THING THAT DECIDES WHERE A KEY BELONGS, which is the same rule
+    LibraryCatalog.Parse follows and it is deliberate: a second mechanism that agreed with
+    indent would be code no test could fail on.
+    """
+    top = {}
+    items = []
+    list_key = None
+
+    item = None
+    item_indent = 0
+    open_key = None          # the key whose nested mapping or scalar list we are filling
+    open_is_list = False
+
+    for raw in (text or u"").replace(u"\r\n", u"\n").split(u"\n"):
+        line = raw.rstrip()
+        stripped = line.lstrip(u" ")
+        if not stripped or stripped.startswith(u"#"):
+            continue
+
+        indent = len(line) - len(stripped)
+        body = stripped
+
+        if body.startswith(u"- "):
+            inner = body[2:].strip()
+            # A dash DEEPER than this item's own keys is an element of the scalar list that
+            # the last empty-valued key opened; a dash at item level starts a new item.
+            # Indent decides, and nothing else does.
+            if item is not None and open_key is not None and indent > item_indent:
+                if not open_is_list:
+                    # The empty-valued key opened a dict because a nested mapping and a
+                    # scalar list look identical until this line arrives. This is that
+                    # line, so convert it - which is the step the comment below promised
+                    # and the first draft did not actually perform.
+                    item[open_key] = []
+                    open_is_list = True
+                item[open_key].append(unquote(inner))
+                continue
+            if item is not None:
+                items.append(item)
+            item = {}
+            open_key = None
+            open_is_list = False
+            item_indent = indent + 2
+            body = inner
+            indent = item_indent
+
+        pair = _split(body)
+        if pair is None:
+            continue
+        key, value = pair
+
+        if indent == 0:
+            if item is not None:
+                items.append(item)
+                item = None
+            open_key = None
+            open_is_list = False
+            if not value:
+                # The one list this shape allows. A top-level key with no value opens it.
+                list_key = key
+            else:
+                top[key] = unquote(value)
+            continue
+
+        if item is None:
+            continue
+
+        if open_key is not None and not open_is_list and indent > item_indent:
+            item[open_key][key] = unquote(value)
+            continue
+
+        if not value:
+            # Ambiguous until the next line: a nested mapping, a scalar list, or a field
+            # whose value is simply absent. Opened as BOTH - a dict that a dash converts to
+            # a list - so the decision is made by what follows rather than guessed here.
+            item[key] = {}
+            open_key = key
+            open_is_list = False
+            continue
+
+        item[key] = unquote(value)
+        open_key = None
+        open_is_list = False
+
+    if item is not None:
+        items.append(item)
+
+    return top, list_key, items

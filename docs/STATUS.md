@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,386 unit + 478 UI + 192 integration, 0 skipped
+**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,386 unit + 478 UI + 193 integration, 0 skipped
 
 > **Also 2026-08-15, on branch `GitImportPlan`: Phase 0 of the import plan started, and its
 > first probe found a defect that reaches users.** P7 measured what an import → export cycle does
@@ -12,6 +12,15 @@
 > afterwards — **1,385 + 478 + 192, 0 skipped**, integration 6m57s against real CODESYS. See the
 > findings, and [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md) for what P7 changed in the
 > plan itself.
+>
+> **Phase 4 of the import plan landed the same day, and it is the first product change this
+> work has produced beyond a `.gitignore` line.** Task configuration is exported as `TASK_BOTH` —
+> the native `.xml` for fidelity, a `.tasks.yaml` that is the importable half — and applied back
+> through typed property assignment instead of `import_native`. **G7 and G11 are both measured
+> closed:** `Core2` stopped moving, and three import cycles came back with zero warnings where
+> cycles 2 and 3 used to throw twice each. Versio deletes nothing of CODESYS's; the trigger is
+> simply never reached. Proven non-vacuously — editing the YAML and importing changes the project
+> and reads back changed.
 >
 > **Phase 0 is now complete — all nine probes measured.** `rename` and `move` preserve identity
 > across a save and reopen, so Phase 3 is safe to build; the typed task API is sufficient, so
@@ -489,13 +498,12 @@ does not record them has to be run again.
   nothing. There is no toolchain backstop. So the manifest-only rule, the content check and the
   named confirmation are the entire safety story for deletion, and each one is worth more than it
   looked when they were written as belt-and-braces.
-- **G11 has a measured mitigation and no decision.** Deleting
-  `<project>_project.precompilecache` immediately before an import fixes it, and the import
-  regenerates the cache itself, so nothing is lost. What is undecided is whether Versio should
-  delete another tool's files on six green runs against one fixture, and where that would live —
-  the runner, the orchestrator, or the script. **Until it is decided, every import after the
-  first silently fails to apply task configuration** on any machine where the project has been
-  opened in the IDE. See the finding.
+- ~~**G11 has a measured mitigation and no decision.**~~ — **closed by Phase 4, and the
+  decision never had to be made.** Task configuration is exported as `TASK_BOTH` and imported
+  through typed property assignment, so `import_native` never touches it and the stale compile
+  cache is never reached. Versio deletes nothing of CODESYS's. Measured over three cycles:
+  zero warnings, where cycles 2 and 3 used to throw twice each. **`Core2` stopped moving in
+  the same change**, which closes G7 with it.
 - **An import's summary is logged with the exporter's field names.**
   `LocalCodesysRunner.cs:514` builds one message from `walked` / `written` / `skipped` / `gaps`;
   an import reports `updated` / `unchanged` / `native` / `created` / `missing` / `failed` /
@@ -685,9 +693,13 @@ only if you read the file.
 
 ### Every import after the first fails on task configuration, and reports success
 
-> **In one line:** a stale `<project>_project.precompilecache` beside the project makes
-> `import_native` throw on `MainTask` and `VISU_TASK`; the run then reports `failed: 0`. Deleting
-> the cache first fixes it. The ignore-rule half is fixed; the import half is not.
+> **In one line:** a stale `<project>_project.precompilecache` beside the project made
+> `import_native` throw on `MainTask` and `VISU_TASK` while the run reported `failed: 0`.
+> **✅ CLOSED 2026-08-15 by Phase 4**, which stops handing task configuration to `import_native`
+> at all — three cycles, zero warnings, where cycles 2 and 3 used to throw twice each. **Versio
+> never deletes the cache**: the trigger is simply never reached, so the measured cache-deletion
+> mitigation was not needed and was not adopted. `Core2` stopped moving in the same change, which
+> closes G7 with it.
 
 Probe P7 of [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md) ran the round trip three times
 instead of once, on a scratch copy, with the mirror held still between cycles. Cycle 1 is clean:

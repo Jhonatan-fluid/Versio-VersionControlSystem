@@ -399,6 +399,76 @@ public sealed class PythonFileNameParityTests(ITestOutputHelper output)
             """);
     }
 
+    [SkippableFact]
+    public void The_yaml_emitter_and_its_reader_agree_about_every_shape_they_support()
+    {
+        // versio_yaml gained a reader for the import half of Phase 4, and until now nothing
+        // python-side had ever read a document it wrote: .libraries.yaml is export-only and
+        // LibraryCatalog.Parse (C#) was the only parser in existence. A .tasks.yaml is the
+        // IMPORTABLE half of a task configuration, so a python reader exists now, and an
+        // emitter and a parser that disagree would corrupt a task on the way back in.
+        //
+        // Emitting and re-reading in one process is a stronger check than either half has
+        // alone: it covers the quoting rules, the scalar list added for a task's POUs, the
+        // nested mapping, and the values chosen specifically to be misread — a name that
+        // would parse as a bool, one that would parse as a number, and one carrying the
+        // quotes and backslashes the escaper handles.
+        var values = new[]
+        {
+            "MainTask", "No", "3.14", "t#20ms", "-2", "", "has \"quotes\" and \\slash",
+        };
+
+        var lines = RunPython(JsonSerializer.Serialize(values), """
+            import versio_yaml as y
+
+            items = [
+                {"name": payload[0], "note": payload[1], "num": payload[2],
+                 "pous": [payload[0], payload[3]], "odd": payload[6]},
+                {"name": payload[3], "num": payload[4], "pous": []},
+            ]
+            top = {"schema": 1, "vendor": "codesys", "note": payload[1]}
+            keys = ["name", "note", "num", "odd", "pous"]
+
+            text = y.document("h", top, ["schema", "vendor", "note"], "tasks", items, keys)
+            back_top, back_key, back_items = y.parse_document(text)
+
+            out = [
+                "key=%s" % back_key,
+                "top.schema=%s" % back_top.get("schema"),
+                "top.note=%s" % back_top.get("note"),
+                "0.name=%s" % back_items[0].get("name"),
+                "0.note=%s" % back_items[0].get("note"),
+                "0.num=%s" % back_items[0].get("num"),
+                "0.odd=%s" % back_items[0].get("odd"),
+                "0.pous=%s" % ",".join(back_items[0].get("pous") or []),
+                "1.name=%s" % back_items[1].get("name"),
+                "1.num=%s" % back_items[1].get("num"),
+                "count=%d" % len(back_items),
+            ]
+            """);
+
+        Assert.Equal(
+            [
+                "key=tasks",
+                "top.schema=1",
+                "top.note=No",
+                "0.name=MainTask",
+                // "No" survives as the string it was rather than coming back a bool, and
+                // "3.14" as text rather than a float. The emitter quotes both; the reader
+                // must not helpfully undo that by inferring a type.
+                "0.note=No",
+                "0.num=3.14",
+                "0.odd=has \"quotes\" and \\slash",
+                "0.pous=MainTask,t#20ms",
+                "1.name=t#20ms",
+                "1.num=-2",
+                // An EMPTY scalar list is omitted by the emitter, so it must not come back
+                // as an empty item or shift the ones after it.
+                "count=2",
+            ],
+            lines);
+    }
+
     /// <summary>
     /// Run <c>safe_file_stem</c> over every name in one python process.
     /// </summary>

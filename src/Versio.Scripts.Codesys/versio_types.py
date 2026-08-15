@@ -171,12 +171,44 @@ def is_versio_file(file_name):
 # scripting API is a different operation from importing an object, and doing it
 # wrongly rewires what the machine compiles against, so it is not attempted here:
 # the file is diff-only, and both the coverage report and the manifest say so.
-# INTERIM: .tasks.yaml is listed here while only the export half of Phase 4 exists.
-# It is the file the import half will READ, so this entry comes back out in the same
-# phase. It is here rather than absent because the importer hands anything that is
-# not .st to import_native, and offering CODESYS a YAML document as native XML is
-# exactly the failure _coverage.md caused once already.
-EXPORT_ONLY_SUFFIXES = (".libraries.yaml", ".tasks.yaml")
+EXPORT_ONLY_SUFFIXES = (".libraries.yaml",)
+
+# Files the import applies through the toolchain's TYPED api rather than by handing them
+# over as native XML. The distinction matters to the importer twice over: these must not
+# reach import_native, and the native file BESIDE one of them must not either - that is
+# what stops CODESYS rewriting a task's core binding on every import (G7) and throwing on
+# the task objects on every import after the first (G11).
+TYPED_SUFFIXES = (".tasks.yaml",)
+
+
+def is_typed_form(file_name):
+    """True for a file the import applies through the typed api."""
+    lowered = file_name.lower()
+    for suffix in TYPED_SUFFIXES:
+        if lowered.endswith(suffix):
+            return True
+    return False
+
+
+def typed_sibling_candidates(path):
+    """The typed file names that would supersede this native one, if any existed.
+
+    PURE, and deliberately so: it answers "what would the pair be called", not "is it
+    there". THIS MODULE TOUCHES NO FILESYSTEM - it is the table-and-decision half that
+    PythonFileNameTests runs against the C# tables, and the first draft of this function
+    called os.path.isfile, which made it the only IO in the file and would have made it
+    untestable in the same breath as everything around it. The caller does the looking.
+
+    ADJACENCY, not a suffix of its own. `Task Configuration.xml` could have been renamed to
+    something self-describing, and that would rewrite a committed file for a reason with
+    nothing to do with the project - so the pair is recognised by sitting beside each other
+    instead. Once the importer is plan-driven, the plan says which files are importable and
+    this rule goes.
+    """
+    if not path.lower().endswith(".xml"):
+        return []
+    stem = path[:-len(".xml")]
+    return [stem + suffix for suffix in TYPED_SUFFIXES]
 
 
 def is_export_only(file_name):
