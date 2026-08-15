@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-14 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,363 unit + 387 UI + 154 integration, 0 skipped
+**Date:** 2026-08-14 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,384 unit + 454 UI + 192 integration, 0 skipped
 
 > All three re-derived on 2026-08-14, on branch `GitPanel`, after the git-panel plan's **GP-J**
 > (PLC-aware naming of the changed-files rows, the change summary and the drafted commit
@@ -374,12 +374,25 @@ does not record them has to be run again.
   characters inside a changed line differ. A feature rather than a fix, which is why it sat out
   the UI pass — and the highest-value thing the diff pane has left, because the diffs being read
   are generated XML and ST where a long line often differs by one identifier.
-- **The full solution suite flakes under its own load.** Three different tests failed across
-  three consecutive whole-solution runs — `GitHealthTests`, `AdoptAndExportTests`,
-  `AutoStashFlowTests` — each passing in isolation immediately afterwards, and the run after
-  them was clean. All three drive real git or real CODESYS with timeouts while three test
-  projects run concurrently. Not diagnosed further; recorded so the next person does not read a
-  single red run as a regression. Run a project at a time to tell the two apart.
+- ~~**The full solution suite flakes under its own load.**~~ — **diagnosed, and the UI half
+  fixed.** The cause was not timeouts: **fifty-six tests opened a repository through a
+  `ShellViewModel` and never disposed it.** A shell that has opened one owns a
+  `FileSystemWatcher` over the working tree, a `RemotePoller` spawning git subprocesses on a
+  loop, the sync panel's watchers over every tracked project, and the repository lock — none of
+  which stops when the test method returns. With xunit running twenty-eight collections in
+  parallel the suite accumulated dozens of live watchers and polling loops, firing against temp
+  directories their own test had already deleted and competing for the same git binary as
+  whatever was actually running. That is why the failure moved, why it never reproduced alone,
+  and why it reproduced on `main`. Measured: four failures in fourteen observed full runs
+  before, ten consecutive clean runs after. See the finding.
+- **The integration suite is not covered by that fix**, and one of the three classes originally
+  named — `AdoptAndExportTests` — lives there. `Versio.Integration.Tests` constructs no
+  `ShellViewModel` at all, so it leaked none; it drives real CODESYS with real timeouts, and
+  `RepositoryWatcherTests.A_deleted_file_is_reported` is separately known to be flaky under load
+  (see its finding). A red integration run is still worth re-running a project at a time before
+  reading it as a regression.
+- **`Versio.App.Tests` shells must be disposed** — `using var shell = ...`. This is the rule the
+  bullet above exists to keep; `TestShell` states it where the next test author will read it.
 - **Hand-maintained counts in these documents drift.** The commit count was wrong by twelve,
   the project tree's test count by six, and the scenario suite's by twenty-two — all of them
   written once and never re-checked. Re-derive rather than trust: `git rev-list --count HEAD`,
@@ -404,6 +417,44 @@ does not record them has to be run again.
   because it raced a test swapping the palette dictionary and its bindings did not resolve. The
   two classes still outside it construct the window without laying it out, so they evaluate no
   bindings and are not exposed — but a third one that measures would be.
+
+---
+
+## The shape of the code, after an audit
+
+An audit read the repository for dead code, duplication and things too large to review. It found
+**no dead code and almost no duplication** — no `TODO`, no suppressed warning, no unreferenced
+private member, and seven duplicated blocks at eight lines across all of `src`. What it found
+instead was concentration: a few files carrying most of the weight, so a change to any one thing
+inside them produced a diff touching everything else.
+
+What moved, and why each one is worth knowing before editing it:
+
+| Was | Now | The reason it is split the way it is |
+|---|---|---|
+| `Controls.xaml`, 1,228 lines | 70 lines + six dictionaries | Each leaf merges `Primitives.xaml` **itself**. A `StaticResource` resolves against its own dictionary and its own merges, never against a sibling the parent merged — this file's own header records the `XamlParseException` that cost. `StyleSheetResolutionTests` renders every keyed style, so a missing merge fails the suite instead of the first render |
+| Nine settable `Func<>` dialog hooks across two view models, wired from 115 lines inside `MainWindow`'s constructor | `IUserPrompts`, answered by `WindowPrompts` | The set of questions the app can ask now has a name and one place to read it. `NullPrompts` answers "no" to all of them, which is what a view model with no view attached gets — the same answer a user who cancels everything gives, so the call sites needed no new defaulting |
+| `SyncOrchestrator.AttemptAsync`, 275 lines | 112 lines + eleven named gates | The gates above `CoalescerRefuses` only *judge* — they take nothing and release nothing. The coalescer and the breaker **consume** something, which is why they are not in that list and why they report what they took. An `Attempt` record carries the state so every gate judges the same one |
+| `MainWindow.xaml`, 2,517 lines | 1,218 lines + three panels | `Views/Panels/`. A `UserControl` owns its own name scope, so `window.FindName` cannot see inside a panel; and a collapsed one has not applied its template, so its contents are not in the visual tree until shown once. `RowTemplates.xaml` exists because a `UserControl` cannot see the resources of the `Window` hosting it |
+| `GitCliClient`, 1,544 lines | 799 lines + three parts | Split on its own existing section markers, and it was already `partial` for `[GeneratedRegex]`. The primary constructor's parameters are in scope across every part, which is what made it free |
+| `OnUi` and its `SynchronizationContext`, twice | `ObservableObject` | One rule about the one thread allowed to touch a bound collection |
+| The atomic write, four times | `JsonFile` | The temp-then-replace and the BOM-less UTF-8 really were the same rule four times. **The serializer options were not** and were left alone: the settings store has no enum converter because the theme is deliberately a string, and the lock and session stores have no `PropertyNameCaseInsensitive`. Unifying them would have changed what each accepts off disk, on files shipped versions have already written |
+| Thirteen hand-built test shells | `TestShell.Build` | And the argument most easily forgotten — `toolchains: (_, _) => null`, without which a test goes looking for CODESYS on the machine running it |
+
+**What is still concentrated, and deliberately left.** `ShellViewModel` is 5,531 lines with 68
+private fields, 47 public properties and 23 commands — roughly fifteen responsibilities, and the
+largest single thing in the repository. Its clusters are **not contiguous**: auth appears in two
+places, staging in two more, so it cannot be split by marking it `partial` and cutting on line
+ranges. It needs regrouping into collaborators, starting with auth and identity, which has the
+fewest ties into those 68 fields. `SyncViewModel` at 2,847 lines is the same shape one size down,
+and the log console is still inside `MainWindow.xaml` because it is the one panel with real
+code-behind coupling.
+
+**Two things the refactor itself taught.** A pure move can still lose coverage: three panel
+handlers changed from reading a `_shell` field to asking their own `DataContext`, and disabling
+all three left the whole suite green — nothing crossed that seam. And a test can quietly stop
+meaning anything: `MainWindowTests` counted two `TreeView`s in one walk of the window, which
+would have gone on passing while checking one fewer every time a panel moved out.
 
 ---
 
@@ -2401,6 +2452,62 @@ context is part of the environment, alongside the per-user .NET install already 
 differs from the number of distinct objects exactly when an object exports to more than one
 layer — which the fixture does, via its GVL. Found by an assertion that trusted the field's
 name. Nothing depends on it today; the integration test asserts against distinct GUIDs.
+
+### Fifty-six shells nobody disposed, and a suite that failed at random
+
+The UI suite failed roughly one full run in three, on a **different test each time**, and every
+one of them passed when its class was run alone. It had been recorded here as flakiness under
+load — three named classes, timeouts, real git and real CODESYS running concurrently — and left
+undiagnosed on the grounds that a red run should not be read as a regression.
+
+That was the wrong conclusion, and the reason it survived is worth more than the fix: **a
+symptom that moves looks environmental.** Three classes failing on three different runs reads
+as load; one class failing every time reads as a bug. It was a bug.
+
+**Fifty-six tests opened a repository through a `ShellViewModel` and never disposed it.** A
+shell that has opened one owns:
+
+- a `FileSystemWatcher` over the working tree,
+- a `RemotePoller` that spawns `git` subprocesses on a loop,
+- the sync panel's own watchers over every tracked project and its export tree,
+- and the repository lock.
+
+None of that stops when the test method returns, and `Dispose` is the only thing that ends it.
+With xunit running twenty-eight collections in parallel — every class outside the `theme`
+collection is its own — the suite accumulated dozens of live watchers and polling loops. They
+fired against temp directories their own test had already deleted, and competed for the same
+`git` binary as whatever test was actually running.
+
+Every symptom follows from that. **The failure moves** because it lands on whichever test is
+unlucky enough to be waiting on git when the noise peaks. **It never reproduces alone** because
+alone there is nothing else running. **It reproduces on `main`** because the leak predates every
+branch that inherited it.
+
+**Measured rather than argued.** Before: four failures across fourteen observed full runs, on
+`main` as well as the working branch. After `using var shell = ...` at all fifty-six sites: ten
+consecutive clean runs. At the old rate that is about three times in a hundred — strong, and not
+the same thing as proof.
+
+Two things this leaves behind.
+
+**`LogViewModel` is still leaked**, thirty times over, by tests that construct one inline as a
+constructor argument. It is `IDisposable`, starts a `DispatcherTimer` and subscribes to its
+sink. The timer cannot tick on a thread with nothing pumping a dispatcher, so the practical cost
+is the subscription rather than the work — and fixing it properly means changing who owns the
+log rather than restructuring thirty call sites.
+
+**`CA2000` was tried as a guard and rejected.** It fires fifty-four times on the suite *after*
+the fix, almost all of them on that `new LogViewModel(sink)` argument, and it cannot see
+ownership through a factory like `TestShell.Build` — so it would have missed the actual defect
+while demanding fifty-four suppressions. The rule is stated in `TestShell`'s own remarks
+instead, where somebody about to write the fifty-seventh test will read it.
+
+**The general lesson, which this codebase already half-knew.** `Eventually.Press` exists because
+of the same class of problem — a press landing while something else is running does nothing, and
+the wait after it times out looking like a real defect. Its remarks say it "passed in isolation
+and failed under full-suite load, twice, before the cause was clear". That is the second sighting
+of the same tell. **A test that passes alone and fails in company is not being slow; something
+alongside it is still running.**
 
 ### A flaky watcher test, and two fixes that made it worse
 
