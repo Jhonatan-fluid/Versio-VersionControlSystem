@@ -334,10 +334,11 @@ Close Versio.exe first; it locks its own DLLs.
   rewriting once the remaining probes have run, deliberately not now, because P1–P6 may move it
   again.
 - **G11 needs an owner and is not in any phase here.** The trigger is known
-  (`_project.precompilecache`) and the fix is not: deleting a compile cache before every import
-  is a candidate and is not obviously safe, since it is CODESYS's, not Versio's, and the next
-  IDE open pays to rebuild it. It also wants a `TransientPatternsFor` entry regardless of what
-  the import does, so an adopted repository stops leaving it untracked.
+  (`_project.precompilecache`) and **deleting it immediately before an import is measured to fix
+  it** — the import then regenerates the cache itself, so nothing is lost, and an export
+  afterwards is identical bar the GUIDs a *successful* native import re-mints. What is not
+  decided is whether Versio should be deleting another tool's files on that evidence. The
+  `.gitignore` half is done: `TransientPatternsFor` now names the cache.
 
 ## Not doing
 

@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,384 unit + 478 UI + 192 integration, 0 skipped
+**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,385 unit + 478 UI + 192 integration, 0 skipped
 
 > **All three re-derived on 2026-08-15**, on branch `CodeAuditCleanup`, after the shell
 > decomposition: `GitAuthViewModel`, `GitRemoteViewModel` and `LogPanelView` out of
@@ -66,7 +66,7 @@ opens. That is `SAFEGUARDS.md` phases 1–8, and phase 9 is features rather than
 
 ```
   CODESYS pipeline    ████████████████████  proven on a real project
-  Domain core         ████████████████████  1,384 tests, under 400 ms
+  Domain core         ████████████████████  1,385 tests, under 400 ms
   Vendor seam         ████████████████████  enforced from assembly metadata
   Infrastructure      ████████████████████  drives real CODESYS + real git
   Desktop shell       ███████████████████░  full git surface, diff, and a UI audit applied
@@ -446,14 +446,17 @@ does not record them has to be run again.
   three setters in `Buttons.xaml`. **13 → 0**, and the accessibility tests still pass, which is
   what proves the names resolve to the tooltips rather than to the empty string the fix
   introduced.
-- **`TransientPatternsFor` does not name `_project.precompilecache`.** It returns
-  `[stem + ".~u*", stem + "-*.opt"]`, and its remarks say only observed files are listed — this
-  one was not observed. So an adopted repository has no rule for a 277 KB binary compile cache
-  CODESYS writes beside every project it opens, and *Stage all* would commit it. This repository
-  is not exposed only because `*.precompilecache` was typed into `.gitignore` by hand, which is
-  the same way the staging rule was missing everywhere but here. **One line, and it is separate
-  from the import defect the cache also causes** — the ignore rule is worth adding whatever is
-  decided about G11.
+- ~~**`TransientPatternsFor` does not name `_project.precompilecache`.**~~ — **fixed.** It
+  returned `[stem + ".~u*", stem + "-*.opt"]`, and its remarks say only observed files are
+  listed; this one was not observed, so an adopted repository had no rule for a 277 KB binary
+  compile cache CODESYS writes beside every project it opens, and *Stage all* would have
+  committed it. This repository was never exposed, because `*.precompilecache` had been typed
+  into `.gitignore` by hand — the same way the staging rule was present here and missing
+  everywhere else, which is why nobody noticed. The dot of `.project` becomes an underscore
+  (`Machine.project` → `Machine_project.precompilecache`), confirmed across six projects, and a
+  test asserts that shape specifically: a pattern matching nothing looks exactly like a pattern
+  matching a file that is not there. **Deleting the fix leaves three tests red**, two of them
+  pre-existing.
 - **`ToolchainState` is a public observable property with no view.** It survives because the
   runner uses its text as the "why this is unavailable" explanation. It should be a plain
   string, not a bindable one.
@@ -638,12 +641,17 @@ the IDE has a cache beside it. `Versio.Integration.Tests` copies the `.project` 
 else, so no test has ever run an import with one present — and both of its real-CODESYS import
 tests import exactly **once**, so they would stop one step short even if it did.
 
-**Related, and true regardless of the import:** `CodesysProjectFormat.TransientPatternsFor`
-returns `[stem + ".~u*", stem + "-*.opt"]` and does not name the cache. This repository ignores
-it only because `*.precompilecache` was typed into `.gitignore` by hand — the same shape as the
-staging rule `RepoSetup`'s comment records as having been missing from every adopted repository.
-An adopted repository leaves a 277 KB binary cache untracked beside the project, and *Stage all*
-would commit it.
+**Deleting the cache immediately before an import fixes it, and the import regenerates it.**
+Control with the cache present fails; the same directory with the cache removed passes with zero
+warnings. Exporting both afterwards gives `walked 18 / written 12 / skipped 4` either way with
+nothing added or removed — the only difference being the two `EventPOUGuid`s, which a *successful*
+native import re-mints and the failing one never reached. So it is a working mitigation. Whether
+Versio should delete another tool's files on that evidence is a separate question and is not
+decided here.
+
+**Related, and fixed on the way past:** `CodesysProjectFormat.TransientPatternsFor` did not name
+the cache, so an adopted repository left a 277 KB binary untracked beside the project where
+*Stage all* would commit it — see the loose end above.
 
 **The first explanation of this was wrong, and the way it was wrong is worth more than the
 finding.** It said this was "the `Core2` mutation seen from the other end" — cycle 1 mutates the
