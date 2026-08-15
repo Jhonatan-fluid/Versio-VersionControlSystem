@@ -36,10 +36,10 @@ public sealed class CloseGuardTests
         {
             var sink = new InMemoryLogSink();
             var logger = new VersioLogger(new SystemClock()).AddSink(sink);
-            var shell = new ShellViewModel(logger, new LogViewModel(sink));
+            using var shell = new ShellViewModel(logger, new LogViewModel(sink));
             var fixture = new Fixture { Shell = shell };
 
-            shell.AskGuard = prompt =>
+            shell.Asked().Guard = prompt =>
             {
                 fixture.Asked.Add(prompt);
                 return answer;

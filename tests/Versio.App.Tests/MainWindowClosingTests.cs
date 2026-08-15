@@ -36,7 +36,7 @@ public sealed class MainWindowClosingTests
     {
         var sink = new InMemoryLogSink();
         var logger = new VersioLogger(new SystemClock()).AddSink(sink);
-        var shell = new ShellViewModel(logger, new LogViewModel(sink));
+        using var shell = new ShellViewModel(logger, new LogViewModel(sink));
 
         var window = new MainWindow(shell)
         {
@@ -89,7 +89,7 @@ public sealed class MainWindowClosingTests
 
             // The dialog is never shown: a refusal discards the answer, so the hook only has
             // to exist. Returning the most permissive answer it could give proves that.
-            shell.AskGuard = _ => GuardChoice.Proceed;
+            shell.Asked().Guard = _ => GuardChoice.Proceed;
 
             window.Close();
             window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background);
@@ -98,7 +98,7 @@ public sealed class MainWindowClosingTests
 
             // Leave nothing behind for the next test on this shared STA thread.
             importing.Dispose();
-            shell.AskGuard = null;
+            shell.Asked().Guard = null;
             window.Close();
             window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background);
         });

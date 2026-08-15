@@ -26,7 +26,7 @@ landed, what was decided, and what contact with the code changed.
 | ✅ | **GP-H** — branch identity, default branch, delete dialog (§7) | `15e24d3` |
 | ✅ | **GP-J** — PLC-aware naming, summary and draft (§9c, and §10.1 with it) | `1a01953`, fixed in `HEAD` |
 | ✅ | **GP-I** — merge-request button, five forges (§8) | `1a01953` |
-| — | GP-K / GP-L — previews and polish (§9d, rest of §10) | next |
+| — | GP-K / GP-L — previews and polish (§9d, rest of §10) | **deferred 2026-08-15, not critical path** |
 
 **GP-J was taken before GP-I**, out of the order this table used to imply. The table was a
 sequence, not a ranking, and §9c is the item this document itself calls *"the thing no other git
@@ -1591,7 +1591,14 @@ which are geometry and wording and cannot be.
 9. Switch to a repository with no PLC projects → no summary line at all, no chips, and the rows
    are filenames over directories.
 
-### GP-K / GP-L · Previews and polish
+### GP-K / GP-L · Previews and polish — **deferred 2026-08-15**
+
+> Off the critical path, not abandoned. Eleven of twelve phases are built and the panel does its
+> job; these are the refinements on top. §9d is the smallest thing left in this document —
+> `RecentCommitsAsync` already takes a count and a skip, so it needs a revision range and a place
+> to put the list. See *Deferred, and not on the critical path* in `docs/STATUS.md` for the
+> decision and what would bring it back.
+
 
 1. Click the ahead badge → the commits about to be pushed are listed.
 2. Click the behind badge → the commits about to arrive are listed, by object name where they
@@ -2545,7 +2552,8 @@ PATH has no SDK. **Close `Versio.exe` first**: a running instance locks `src/Ver
 build fails on the copy step, and it reports phantom warnings that are an artefact of that
 failure rather than real. `-p:OutputPath=<elsewhere>` builds around it when the app must stay up.
 
-**What is left.** GP-K / GP-L only: previews (§9d), and the five remaining items of §10 now that
+**What is left, and it is deferred.** GP-K / GP-L only: previews (§9d), and the five remaining
+items of §10 now that
 path trimming has gone with GP-J. Neither is blocked, and §9d is the smallest thing left in this
 document — `RecentCommitsAsync` already takes a count and a skip, so it needs a revision range
 and a place to put the list.

@@ -34,20 +34,20 @@ public sealed class PlcAwareRowTests
 {
     private static (MainWindow Window, ShellViewModel Shell) Build()
     {
-        var sink = new InMemoryLogSink();
-        var logger = new VersioLogger(new SystemClock()).AddSink(sink);
-        var shell = new ShellViewModel(logger, new LogViewModel(sink), toolchains: (_, _) => null);
+        using var shell = TestShell.Build();
         return (new MainWindow(shell), shell);
     }
 
-    private static (Border Panel, FrameworkElement Content) ShowGitPanel(MainWindow window)
+    private static (FrameworkElement Panel, FrameworkElement Content) ShowGitPanel(
+        MainWindow window)
     {
         var content = Assert.IsAssignableFrom<FrameworkElement>(window.Content);
 
         var rail = Assert.IsType<RadioButton>(window.FindName("RailGit"));
         rail.IsChecked = true;
 
-        var panel = Assert.IsType<Border>(window.FindName("GitPanel"));
+        var panel = Assert.IsAssignableFrom<FrameworkElement>(
+            window.FindName("GitPanel"));
 
         content.Measure(new Size(1400, 900));
         content.Arrange(new Rect(0, 0, 1400, 900));

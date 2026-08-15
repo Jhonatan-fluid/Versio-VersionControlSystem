@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using Versio.App.Mvvm;
 using Versio.App.ViewModels;
 using Versio.App.Views;
 using Versio.Core.Git;
@@ -22,7 +23,7 @@ namespace Versio.App.Tests;
 /// </para>
 /// <para>
 /// The flow tests never open a window: the shell asks through
-/// <see cref="ShellViewModel.PromptForBranchDeletion"/>, so a test answers it directly. Every
+/// <see cref="IUserPrompts.PromptForBranchDeletion"/>, so a test answers it directly. Every
 /// rule worth pinning — <c>-d</c> before <c>-D</c>, per-branch reporting, moving off the branch
 /// being deleted — lives on the shell side of that seam.
 /// </para>
@@ -158,14 +159,13 @@ public sealed class BranchDeleteTests
 
     private static ShellViewModel Shell(Func<IReadOnlyList<BranchCandidate>, DeletePlan?> answer)
     {
-        var sink = new InMemoryLogSink();
-        var logger = new VersioLogger(new SystemClock()).AddSink(sink);
+        using var shell = TestShell.Build();
 
-        return new ShellViewModel(logger, new LogViewModel(sink), toolchains: (_, _) => null)
-        {
-            PromptForBranchDeletion = answer,
-            ConfirmDestructive = _ => true,
-        };
+        var prompts = shell.Asked();
+        prompts.BranchDeletion = answer;
+        prompts.Destructive = _ => true;
+
+        return shell;
     }
 
     private static DeletePlan Plan(

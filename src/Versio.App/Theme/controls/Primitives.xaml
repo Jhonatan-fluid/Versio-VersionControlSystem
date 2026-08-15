@@ -1,0 +1,216 @@
+<!--
+    The resources every other control dictionary reaches for.
+
+    Split out of Controls.xaml, and it has to be a separate file rather than a section:
+    each leaf dictionary merges THIS one so its StaticResource references resolve. See
+    the header of any of them for what happens without it.
+
+    Spacing is merged here for the reason it was merged into Controls.xaml before: the
+    Motion storyboards below are Freezables and must use StaticResource, and a
+    StaticResource cannot see a dictionary the PARENT merged alongside this one.
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime"
+                    xmlns:views="clr-namespace:Versio.App.Views">
+
+    <!--
+        SPACING IS MERGED HERE AS WELL AS IN Theme.xaml, AND IT HAS TO BE.
+
+        Everything in this file that reaches another token file uses DynamicResource, which
+        resolves at render time against the whole application dictionary and therefore finds
+        Spacing.xaml wherever it sits. A Storyboard cannot do that: it is a Freezable, and a
+        DynamicResource inside one resolves once and is never re-resolved - the exact trap
+        ThemeManager.cs documents at length. So the motion durations have to be StaticResource.
+
+        And a StaticResource CANNOT see a sibling. Theme.xaml merges Spacing before Controls,
+        which is enough for the BAML compiler and not enough at load: a merged dictionary
+        resolves static references against itself and its own merges, not against whatever the
+        parent merged alongside it. The first version of this compiled with zero warnings and
+        threw the moment anything rendered a rail button:
+
+            XamlParseException: Cannot find resource named 'Motion.Fast'
+
+        Which is this file's own header, happening to this file. Merging Spacing here costs one
+        extra dictionary of fifteen immutable primitives - no colours, nothing theme-dependent,
+        so the duplicate cannot disagree with the original about anything.
+    -->
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="../tokens/Spacing.xaml" />
+    </ResourceDictionary.MergedDictionaries>
+
+    <!--
+        Declared once, here, because every window needs it and a window cannot see another
+        window's resources.
+
+        It lived in MainWindow.Resources, and SystemInfoWindow used the same key without
+        declaring it - so opening Settings → System information threw
+        "Cannot find resource named 'BoolToVisibility'" from inside the row DataTemplate,
+        during Measure. Nothing caught it: the reference compiles, the window is the one
+        dialog with no test constructing it, and the throw only happens when somebody opens
+        it. The same blind spot already written up for modal dialogs, found again in the
+        modal that was added after the write-up.
+    -->
+    <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+
+    <!--
+        Turns a brush KEY into a brush, so a view model can decide what something means while
+        the theme decides what it looks like. Rows across the application carry a BrushKey
+        rather than a Brush for that reason.
+
+        Declared here rather than in a window, after BranchDeleteWindow became the second window
+        to want it. A private copy is why SystemInfoWindow once threw on open - see the note in
+        MainWindow.xaml. One instance, one place.
+    -->
+    <views:ResourceKeyConverter x:Key="ResourceKey" />
+
+    <!-- Segoe Fluent Icons is the Windows 11 system icon font; Segoe MDL2 covers Windows 10.
+         Monochrome, so glyphs inherit Foreground and re-theme for free - which colour emoji
+         never do. -->
+    <FontFamily x:Key="Font.Icon">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
+
+    <sys:String x:Key="Icon.Folder">&#xE8B7;</sys:String>
+    <sys:String x:Key="Icon.Document">&#xE8A5;</sys:String>
+    <sys:String x:Key="Icon.Refresh">&#xE72C;</sys:String>
+    <sys:String x:Key="Icon.Settings">&#xE713;</sys:String>
+    <sys:String x:Key="Icon.Sync">&#xE895;</sys:String>
+    <sys:String x:Key="Icon.Link">&#xE71B;</sys:String>
+    <sys:String x:Key="Icon.ChevronDown">&#xE70D;</sys:String>
+    <sys:String x:Key="Icon.ChevronUp">&#xE70E;</sys:String>
+    <sys:String x:Key="Icon.Delete">&#xE74D;</sys:String>
+    <sys:String x:Key="Icon.Add">&#xE710;</sys:String>
+    <sys:String x:Key="Icon.Undo">&#xE7A7;</sys:String>
+    <sys:String x:Key="Icon.Download">&#xE896;</sys:String>
+    <sys:String x:Key="Icon.Pause">&#xE769;</sys:String>
+    <sys:String x:Key="Icon.Play">&#xE768;</sys:String>
+    <sys:String x:Key="Icon.Filter">&#xE71C;</sys:String>
+    <sys:String x:Key="Icon.Check">&#xE73E;</sys:String>
+    <sys:String x:Key="Icon.History">&#xE81C;</sys:String>
+
+    <!-- Notification glyphs. Error is the filled circle rather than the outlined one: a failed
+         push is the card that must not be mistaken for a caution, and at caption size the
+         outlined variants of these two are hard to tell apart. -->
+    <sys:String x:Key="Icon.Warning">&#xE7BA;</sys:String>
+    <sys:String x:Key="Icon.Error">&#xEA39;</sys:String>
+    <sys:String x:Key="Icon.Close">&#xE711;</sys:String>
+    <sys:String x:Key="Icon.Copy">&#xE8C8;</sys:String>
+
+    <!-- ==================================================================== ICON -->
+    <Style x:Key="IconText" TargetType="TextBlock">
+        <!--
+            An EMPTY name, so a screen reader skips the glyph.
+
+            These are Private Use Area codepoints from Segoe Fluent Icons - E8B7, E72C, E713.
+            They carry no text at all, and left as they were a reader announced whatever it
+            made of an unmapped character, right beside the name the button now has.
+
+            An empty string rather than AccessibilityView="Raw", which is a UWP property and
+            does not exist in WPF - it compiles nowhere and fails at build, which is at least
+            the good kind of wrong. An empty automation name is the WPF idiom for decoration.
+        -->
+        <Setter Property="AutomationProperties.Name" Value="" />
+        <Setter Property="FontFamily" Value="{DynamicResource Font.Icon}" />
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="TextOptions.TextRenderingMode" Value="ClearType" />
+    </Style>
+
+    <!-- =================================================================== MOTION -->
+    <!--
+        NOTHING IN THE APPLICATION ANIMATED, AND THE DURATIONS HAD ALREADY BEEN CHOSEN.
+
+        Motion.Fast and Motion.Base have been in Spacing.xaml since it was written, with a good
+        argument attached - "animation in a tool is feedback, not decoration" - and there was
+        not one Storyboard, DoubleAnimation or VisualStateManager anywhere in the codebase.
+        Every state change snapped: hover fills appeared instantly, the rail's accent indicator
+        popped from Opacity 0 to 1, selection bars flicked on. Snapping is what people describe
+        as "feels like an old app" without being able to point at anything.
+
+        ONLY THE MARKS THAT ALREADY EXIST AS OPACITY TRIGGERS. Nothing here animates list
+        content, a layout property or a colour: the diff and the project tree are virtualized
+        and have to stay instant, and an animation that runs during a scroll is a dropped frame
+        per row.
+
+        StaticResource, not Dynamic: a Storyboard is a Freezable and a DynamicResource inside
+        one resolves once and then never again - the trap ThemeManager.cs documents at length.
+        The durations are theme-independent, so a static reference is not just tolerable here,
+        it is correct.
+    -->
+    <Storyboard x:Key="Motion.MarkIn">
+        <DoubleAnimation Storyboard.TargetName="Bar" Storyboard.TargetProperty="Opacity"
+                         To="1" Duration="{StaticResource Motion.Fast}" />
+    </Storyboard>
+
+    <Storyboard x:Key="Motion.MarkOut">
+        <DoubleAnimation Storyboard.TargetName="Bar" Storyboard.TargetProperty="Opacity"
+                         To="0" Duration="{StaticResource Motion.Fast}" />
+    </Storyboard>
+
+    <Storyboard x:Key="Motion.IndicatorIn">
+        <DoubleAnimation Storyboard.TargetName="Indicator" Storyboard.TargetProperty="Opacity"
+                         To="1" Duration="{StaticResource Motion.Fast}" />
+    </Storyboard>
+
+    <Storyboard x:Key="Motion.IndicatorOut">
+        <DoubleAnimation Storyboard.TargetName="Indicator" Storyboard.TargetProperty="Opacity"
+                         To="0" Duration="{StaticResource Motion.Fast}" />
+    </Storyboard>
+
+    <!-- =================================================================== FOCUS -->
+    <!--
+        Where the keyboard is.
+
+        EVERY control in this file was retemplated and not one of them said anything about
+        focus, so the whole app fell through to WPF's own focus adorner: a 1 px dotted BLACK
+        rectangle. On Surface.Base at #1D2026 that is invisible, and on light it is the exact
+        piece of 2009 chrome this file's header spends four paragraphs removing. Tabbing
+        through the git panel gave no way to tell whether Enter would fetch, pull, push or
+        discard - and Discard is in that row.
+
+        A FocusVisualStyle rather than an IsFocused trigger per template, and that is the
+        important half: WPF only draws it when focus arrived FROM THE KEYBOARD, which is the
+        behaviour wanted. A trigger on IsFocused would ring every button the moment it was
+        clicked, and a mouse user does not need to be told where they just clicked.
+
+        No TargetType, and the setters are qualified with Control. - a focus visual is a style
+        for the adorner, not for the control it decorates, so an unqualified Template would
+        not bind to anything.
+    -->
+    <Style x:Key="FocusRing">
+        <Setter Property="Control.Template">
+            <Setter.Value>
+                <ControlTemplate>
+                    <!-- Outside the control's own bounds, so it never covers a glyph or a
+                         label. Fine for anything that sits in a bar or a panel. -->
+                    <Border Margin="-2"
+                            BorderThickness="2"
+                            BorderBrush="{DynamicResource Brush.Accent.Default}"
+                            CornerRadius="{DynamicResource Radius.Control}"
+                            SnapsToDevicePixels="True" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!--
+        The same ring, drawn INSIDE the control's own bounds.
+
+        For anything whose neighbours are already touching it - the rail, where a 40 px button
+        sits in a 44 px column, and a ring expanding outward would run into the window edge.
+    -->
+    <Style x:Key="FocusRingInset">
+        <Setter Property="Control.Template">
+            <Setter.Value>
+                <ControlTemplate>
+                    <Border Margin="2"
+                            BorderThickness="1"
+                            BorderBrush="{DynamicResource Brush.Accent.Default}"
+                            CornerRadius="{DynamicResource Radius.Card}"
+                            SnapsToDevicePixels="True" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+</ResourceDictionary>

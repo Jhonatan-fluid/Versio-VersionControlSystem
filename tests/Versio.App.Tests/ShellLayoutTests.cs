@@ -26,19 +26,53 @@ namespace Versio.App.Tests;
 /// </para>
 /// </remarks>
 [Collection("theme")]
-public sealed class ShellLayoutTests
+public sealed class ShellLayoutTests : IDisposable
 {
     /// <summary>A window wide enough to be real and narrow enough to be honest.</summary>
     private const double Narrow = 1000;
 
-    private static MainWindow Build()
+    private readonly List<ShellViewModel> _shells = [];
+
+    private MainWindow Build()
     {
         var logger = new VersioLogger(new SystemClock());
         var sink = new InMemoryLogSink();
         logger.AddSink(sink);
 
-        return new MainWindow(new ShellViewModel(logger, new LogViewModel(sink)));
+        // Kept, and not constructed inline as an argument, so that something can dispose it.
+        // See Dispose below for what it costs when nothing can.
+        var shell = new ShellViewModel(logger, new LogViewModel(sink));
+        _shells.Add(shell);
+
+        return new MainWindow(shell);
     }
+
+    /// <summary>Release the shells this class built.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>On the STA thread, not this one.</b> Tearing a shell down clears collections that a
+    /// bound <c>CollectionView</c> is watching, and WPF refuses that from any thread but the
+    /// dispatcher's: disposing from the xunit thread throws <c>NotSupportedException</c> —
+    /// <i>"does not support changes to its SourceCollection from a thread different from the
+    /// Dispatcher thread"</i> — and fails every test in this class. Measured, by doing it.
+    /// That is also the proof this teardown is not decorative, which nothing else here asserts.
+    /// </para>
+    /// <para>
+    /// Worth having at all because that harness runs <b>one</b> STA thread with a live
+    /// <c>Dispatcher.Run()</c> for the whole suite. A leaked log pump is not inert here the way
+    /// it would be on a thread nobody pumps: it goes on firing every 100 ms, draining its queue
+    /// into an <c>ObservableCollection</c> on the same thread every later WPF test is using.
+    /// One was leaked for every test in this class, because the shell was constructed inline
+    /// as an argument to the window and there was nothing to put <c>using</c> on.
+    /// </para>
+    /// </remarks>
+    public void Dispose() => StaHarness.Run(() =>
+    {
+        foreach (var shell in _shells)
+        {
+            shell.Dispose();
+        }
+    });
 
     private static FrameworkElement Arrange(MainWindow window, double width = Narrow)
     {
@@ -67,7 +101,11 @@ public sealed class ShellLayoutTests
             var content = Arrange(window);
 
             var rail = Assert.IsType<Border>(window.FindName("Rail"));
-            var log = Assert.IsType<Border>(window.FindName("LogConsole"));
+            // A UserControl since the log console moved into its own file, the way the history
+            // panel already had. What this test wants is something to measure, not a
+            // particular container.
+            var log = Assert.IsAssignableFrom<FrameworkElement>(
+                window.FindName("LogConsole"));
 
             var railBounds = BoundsIn(rail, content);
             var logBounds = BoundsIn(log, content);
@@ -98,7 +136,11 @@ public sealed class ShellLayoutTests
             var content = Arrange(window);
 
             var rail = Assert.IsType<Border>(window.FindName("Rail"));
-            var log = Assert.IsType<Border>(window.FindName("LogConsole"));
+            // A UserControl since the log console moved into its own file, the way the history
+            // panel already had. What this test wants is something to measure, not a
+            // particular container.
+            var log = Assert.IsAssignableFrom<FrameworkElement>(
+                window.FindName("LogConsole"));
 
             var railBounds = BoundsIn(rail, content);
             var logBounds = BoundsIn(log, content);
@@ -136,7 +178,10 @@ public sealed class ShellLayoutTests
             button.IsChecked = true;
 
             var content = Arrange(window, width: 1400);
-            var border = Assert.IsType<Border>(window.FindName(panel));
+            // Border for two of the three and a UserControl for the history panel,
+            // which lives in its own file. What matters here is the geometry.
+            var border = Assert.IsAssignableFrom<FrameworkElement>(
+                window.FindName(panel));
 
             Assert.Equal(Visibility.Visible, border.Visibility);
 
@@ -179,7 +224,8 @@ public sealed class ShellLayoutTests
             rail.IsChecked = true;
 
             var content = Arrange(window);
-            var panel = Assert.IsType<Border>(window.FindName("GitPanel"));
+            var panel = Assert.IsAssignableFrom<FrameworkElement>(
+                window.FindName("GitPanel"));
 
             Assert.Equal(Visibility.Visible, panel.Visibility);
             Assert.True(panel.RenderSize.Width > 0, "the git panel did not render");

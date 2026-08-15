@@ -69,7 +69,7 @@ public sealed class RepositoryChangeResetTests
     [Fact]
     public void Everything_the_old_repository_filled_is_cleared()
     {
-        var shell = Build();
+        using var shell = Build();
         Populate(shell);
 
         shell.ResetForRepositoryChange(RepoA, RepoB);
@@ -82,7 +82,7 @@ public sealed class RepositoryChangeResetTests
         Assert.Null(shell.SelectedStaged);
         Assert.Null(shell.SelectedUnstaged);
         Assert.Equal("—", shell.BranchName);
-        Assert.Equal(string.Empty, shell.AheadBehind);
+        Assert.Equal(string.Empty, shell.Remote.AheadBehind);
         Assert.Equal(string.Empty, shell.SelectedDiff);
         Assert.Equal(string.Empty, shell.SelectedDiffPath);
         Assert.False(shell.ShowFullFile);
@@ -93,7 +93,7 @@ public sealed class RepositoryChangeResetTests
     public void The_project_panel_forgets_its_repository_too()
     {
         // The half that already had a method for it and never had a caller.
-        var shell = Build();
+        using var shell = Build();
         Populate(shell);
 
         shell.ResetForRepositoryChange(RepoA, RepoB);
@@ -114,7 +114,7 @@ public sealed class RepositoryChangeResetTests
     [Fact]
     public void A_message_typed_for_one_repository_does_not_appear_in_another()
     {
-        var shell = Build();
+        using var shell = Build();
         shell.CommitMessage = "Half a thought about the pump interlock";
 
         shell.ResetForRepositoryChange(RepoA, RepoB);
@@ -127,7 +127,7 @@ public sealed class RepositoryChangeResetTests
     {
         // Silently binning somebody's typing is the thing they actually notice. Kept in memory
         // rather than in repo.json, which is committed and shared - a draft must not be pushed.
-        var shell = Build();
+        using var shell = Build();
         shell.CommitMessage = "Half a thought about the pump interlock";
 
         shell.ResetForRepositoryChange(RepoA, RepoB);
@@ -140,7 +140,7 @@ public sealed class RepositoryChangeResetTests
     [Fact]
     public void Each_repository_keeps_its_own_message()
     {
-        var shell = Build();
+        using var shell = Build();
 
         shell.CommitMessage = "alpha's message";
         shell.ResetForRepositoryChange(RepoA, RepoB);
@@ -159,7 +159,7 @@ public sealed class RepositoryChangeResetTests
     public void An_emptied_message_is_not_remembered()
     {
         // Clearing the box is a decision. Handing it back would be undoing it.
-        var shell = Build();
+        using var shell = Build();
 
         shell.CommitMessage = "typed, then thought better of";
         shell.ResetForRepositoryChange(RepoA, RepoB);
@@ -181,7 +181,7 @@ public sealed class RepositoryChangeResetTests
     {
         // The reset runs only once the switch is certain. Picking the wrong directory must not
         // punish a misclick by throwing away the diff and the message being typed.
-        var shell = Build();
+        using var shell = Build();
         var rejected = 0;
 
         shell.RepositoryRejected += _ => rejected++;
@@ -203,7 +203,7 @@ public sealed class RepositoryChangeResetTests
     {
         // It shares a slot with the coverage warning and hides itself the same way. A panel
         // that announced "0 problems" on every repository would be read past within a day.
-        var shell = Build();
+        using var shell = Build();
 
         Assert.Equal(string.Empty, shell.Sync.FindingsSummary);
     }
@@ -213,7 +213,7 @@ public sealed class RepositoryChangeResetTests
     {
         // These are rare and each needs a person, so the single case says the whole sentence
         // rather than a count somebody has to go and look up.
-        var shell = Build();
+        using var shell = Build();
         shell.Sync.Findings.Add("Orphan: plc/Gone - the project this export tree describes is missing");
 
         Assert.Equal(
@@ -226,7 +226,7 @@ public sealed class RepositoryChangeResetTests
     {
         // The panel's subject is the project tree; these are a banner above it. The detail is
         // in the log, which is where a list belongs.
-        var shell = Build();
+        using var shell = Build();
         shell.Sync.Findings.Add("first");
         shell.Sync.Findings.Add("second");
         shell.Sync.Findings.Add("third");
@@ -328,7 +328,7 @@ public sealed class RepositoryChangeResetTests
         using var alpha = new TempRepo("alpha.txt");
         using var beta = new TempRepo("beta.txt");
 
-        var shell = Build();
+        using var shell = Build();
 
         await shell.OpenAsync(alpha.Path);
 
@@ -362,7 +362,7 @@ public sealed class RepositoryChangeResetTests
         // than against the view model alone.
         StaHarness.Run(() =>
         {
-            var shell = Build();
+            using var shell = Build();
             var window = new MainWindow(shell);
 
             Populate(shell);
@@ -396,7 +396,7 @@ public sealed class RepositoryChangeResetTests
 
         using var repo = new TempRepo("readme.txt");
 
-        var shell = Build();
+        using var shell = Build();
 
         await shell.OpenAsync(repo.Path);
 
@@ -428,7 +428,7 @@ public sealed class RepositoryChangeResetTests
 
         using var repo = new TempRepo("readme.txt");
 
-        var shell = Build();
+        using var shell = Build();
 
         await shell.OpenAsync(repo.Path);
 
@@ -471,7 +471,7 @@ public sealed class RepositoryChangeResetTests
 
         StaHarness.Run(async () =>
         {
-            var shell = Build();
+            using var shell = Build();
             var window = new MainWindow(shell);
 
             window.Show();

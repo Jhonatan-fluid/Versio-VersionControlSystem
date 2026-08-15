@@ -33,18 +33,46 @@ namespace Versio.App.Tests;
 /// </para>
 /// </remarks>
 [Collection("theme")]
-public sealed class GitPanelChromeTests
+public sealed class GitPanelChromeTests : IDisposable
 {
-    private static (MainWindow Window, ShellViewModel Shell) Build()
+    private readonly List<ShellViewModel> _shells = [];
+
+    /// <summary>A window over a live shell.</summary>
+    /// <remarks>
+    /// <b>The shell is NOT disposed here, and it used to be.</b> This read
+    /// <c>using var shell = TestShell.Build();</c> followed by a <c>return</c> that handed the
+    /// same instance out — so it was disposed at the closing brace, before any test touched it,
+    /// and every test in this class ran against a torn-down shell. It passed throughout because
+    /// none of them opens a repository, so disposal had almost nothing to release.
+    ///
+    /// <para>
+    /// It stopped being harmless when the shell began disposing its log console: the window is
+    /// bound to that log. Kept in a list and released in <see cref="Dispose"/> instead, on the
+    /// STA thread that built it.
+    /// </para>
+    /// </remarks>
+    private (MainWindow Window, ShellViewModel Shell) Build()
     {
-        var sink = new InMemoryLogSink();
-        var logger = new VersioLogger(new SystemClock()).AddSink(sink);
-        var shell = new ShellViewModel(logger, new LogViewModel(sink), toolchains: (_, _) => null);
+        var shell = TestShell.Build();
+        _shells.Add(shell);
         return (new MainWindow(shell), shell);
     }
 
+    /// <summary>Release the shells this class built, on the thread that built them.</summary>
+    /// <remarks>
+    /// Tearing a shell down clears collections a bound <c>CollectionView</c> is watching, and
+    /// WPF refuses that from any thread but the dispatcher's.
+    /// </remarks>
+    public void Dispose() => StaHarness.Run(() =>
+    {
+        foreach (var shell in _shells)
+        {
+            shell.Dispose();
+        }
+    });
+
     /// <summary>Show the git panel the way a user does, and lay it out.</summary>
-    private static (Border Panel, FrameworkElement Content) ShowGitPanel(MainWindow window)
+    private static (FrameworkElement Panel, FrameworkElement Content) ShowGitPanel(MainWindow window)
     {
         var content = Assert.IsAssignableFrom<FrameworkElement>(window.Content);
 
@@ -53,7 +81,10 @@ public sealed class GitPanelChromeTests
         var rail = Assert.IsType<RadioButton>(window.FindName("RailGit"));
         rail.IsChecked = true;
 
-        var panel = Assert.IsType<Border>(window.FindName("GitPanel"));
+        // A UserControl since the panel moved into its own file. What every caller
+        // here wants is something to walk and measure, not a particular container.
+        var panel = Assert.IsAssignableFrom<FrameworkElement>(
+            window.FindName("GitPanel"));
         Assert.Equal(Visibility.Visible, panel.Visibility);
 
         content.Measure(new Size(1400, 900));
@@ -102,7 +133,7 @@ public sealed class GitPanelChromeTests
             ShowGitPanel(window);
 
             // Nothing to be missing an identity for. A prompt on an empty shell is noise.
-            Assert.False(shell.IdentityIsMissing);
+            Assert.False(shell.Auth.IdentityIsMissing);
         });
     }
 
@@ -263,7 +294,7 @@ public sealed class GitPanelChromeTests
             var (window, shell) = Build();
             ShowGitPanel(window);
 
-            Assert.NotEqual(shell.ShowPush, shell.ShowPublish);
+            Assert.NotEqual(shell.Remote.ShowPush, shell.Remote.ShowPublish);
         });
     }
 
@@ -281,8 +312,11 @@ public sealed class GitPanelChromeTests
             // BY NAME, not by position. A third ListBox arrived with the conflict section, and
             // an index-based lookup silently started measuring the wrong control - which is
             // exactly the kind of test that keeps passing while it stops meaning anything.
+            //
+            // Through the panel rather than the window: the git panel is a UserControl now
+            // and owns its own name scope, so the window cannot see the lists inside it.
             var lists = new[] { "StagedList", "UnstagedList" }
-                .Select(n => Assert.IsType<ListBox>(window.FindName(n)))
+                .Select(n => Assert.IsType<ListBox>(panel.FindName(n)))
                 .ToList();
 
             foreach (var list in lists)
@@ -436,6 +470,90 @@ public sealed class GitPanelChromeTests
     }
 
     /// <summary>Find a banner by the section label inside it.</summary>
+    /// <summary>
+    /// Every binding in the realised git panel resolves to something that exists.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Written for the auth extraction, and kept for the next one.</b> Moving credentials and
+    /// identity onto a collaborator re-pointed twelve bindings in this panel from <c>X</c> to
+    /// <c>Auth.X</c>. Every one of those is a string in XAML: a rename that misses one, or
+    /// mistypes it, compiles clean, throws nothing, and renders an empty control. The suite went
+    /// green through the entire extraction and would have gone green with a typo in it.
+    /// </para>
+    /// <para>
+    /// <c>--trace-bindings</c> cannot answer this. It reports what was evaluated, and the two
+    /// banners here are <c>Collapsed</c> on any machine whose git is configured and whose
+    /// credential is stored — which is every machine a developer runs it on. A clean trace over
+    /// a banner nobody showed is indistinguishable from success, which is the trap
+    /// <c>App.xaml.cs</c> already documents.
+    /// </para>
+    /// <para>
+    /// <b>PathError, specifically.</b> A binding to a property that does not exist reports
+    /// <c>BindingStatus.PathError</c>. It is not the same as a binding that produced a value the
+    /// target could not take — those exist in this window today, on
+    /// <c>AutomationProperties.Name</c> bound to a null <c>ToolTip</c>, and are a separate
+    /// question from whether the path resolves.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void Every_binding_in_the_git_panel_resolves()
+    {
+        StaHarness.Run(() =>
+        {
+            var (window, shell) = Build();
+
+            // Both banners shown, because a collapsed one still resolves its bindings but a
+            // shown one is what the reader actually gets - and this is the only place in the
+            // suite where the credential banner is realised at all.
+            shell.Auth.NoteAuthFailure(new GitResult
+            {
+                Success = false,
+                ExitCode = 128,
+                StdErr = "fatal: Authentication failed for 'https://github.com/acme/widgets.git/'",
+            });
+
+            var (panel, _) = ShowGitPanel(window);
+
+            var offenders = new List<string>();
+
+            foreach (var element in AllOf<DependencyObject>(panel))
+            {
+                var values = element.GetLocalValueEnumerator();
+                while (values.MoveNext())
+                {
+                    if (values.Current.Value is BindingExpression { Status: BindingStatus.PathError } bad)
+                    {
+                        offenders.Add(
+                            $"{element.GetType().Name}.{values.Current.Property.Name} " +
+                            $"binds to '{bad.ParentBinding.Path?.Path}', which does not resolve");
+                    }
+                }
+            }
+
+            Assert.True(offenders.Count == 0, string.Join(Environment.NewLine, offenders));
+
+            // A binding walk over a panel with no bindings in it would pass and mean nothing.
+            var bound = AllOf<DependencyObject>(panel)
+                .SelectMany(e =>
+                {
+                    var found = new List<object?>();
+                    var values = e.GetLocalValueEnumerator();
+                    while (values.MoveNext())
+                    {
+                        found.Add(values.Current.Value);
+                    }
+
+                    return found;
+                })
+                .Count(v => v is BindingExpression);
+
+            Assert.True(bound > 20,
+                        $"only {bound} bindings were reached, so this walk is no longer " +
+                        "looking at the panel it was written for");
+        });
+    }
+
     private static FrameworkElement Banner(MainWindow window, string label)
     {
         var content = Assert.IsAssignableFrom<FrameworkElement>(window.Content);

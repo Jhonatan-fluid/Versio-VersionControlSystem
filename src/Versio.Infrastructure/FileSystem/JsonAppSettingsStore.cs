@@ -47,8 +47,6 @@ public sealed class JsonAppSettingsStore : IAppSettingsStore
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
-    private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
-
     public async Task<AppSettings> ReadAsync(CancellationToken ct)
     {
         if (!File.Exists(Path))
@@ -59,7 +57,7 @@ public sealed class JsonAppSettingsStore : IAppSettingsStore
 
         try
         {
-            var json = await File.ReadAllTextAsync(Path, Utf8NoBom, ct).ConfigureAwait(false);
+            var json = await File.ReadAllTextAsync(Path, JsonFile.Utf8NoBom, ct).ConfigureAwait(false);
             var settings = JsonSerializer.Deserialize<AppSettings>(json, Options)
                            ?? AppSettings.Empty;
 
@@ -85,15 +83,7 @@ public sealed class JsonAppSettingsStore : IAppSettingsStore
     {
         try
         {
-            Directory.CreateDirectory(System.IO.Path.GetDirectoryName(Path)!);
-
-            var temp = Path + ".tmp";
-            await File.WriteAllTextAsync(
-                temp, JsonSerializer.Serialize(settings, Options), Utf8NoBom, ct)
-                .ConfigureAwait(false);
-
-            // Atomic swap. File.Move with overwrite is atomic on NTFS.
-            File.Move(temp, Path, overwrite: true);
+            await JsonFile.WriteAsync(Path, settings, Options, ct).ConfigureAwait(false);
 
             _log.Debug(LogCategory.App,
                 $"persisted {settings.Recent.Count} recent repositor(ies) to {Path}");

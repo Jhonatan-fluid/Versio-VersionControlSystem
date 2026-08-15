@@ -27,13 +27,8 @@ namespace Versio.App.Tests;
 /// </remarks>
 public sealed class SecondInstanceTests
 {
-    private static ShellViewModel Shell(IProcessProbe? processes = null)
-    {
-        var sink = new InMemoryLogSink();
-        var logger = new VersioLogger(new SystemClock()).AddSink(sink);
-        return new ShellViewModel(
-            logger, new LogViewModel(sink), toolchains: (_, _) => null, processes: processes);
-    }
+    private static ShellViewModel Shell(IProcessProbe? processes = null) =>
+        TestShell.Build(processes);
 
     /// <summary>
     /// A probe that says the other session is alive.
@@ -99,7 +94,7 @@ public sealed class SecondInstanceTests
         // pid that Windows will hand to something else.
         using var repo = new TempRepo();
 
-        var shell = Shell();
+        using var shell = Shell();
         await shell.OpenAsync(repo.Path);
         Assert.True(File.Exists(MarkerPath(repo)));
 

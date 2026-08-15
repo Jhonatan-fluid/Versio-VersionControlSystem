@@ -30,12 +30,7 @@ namespace Versio.App.Tests;
 [Collection("theme")]
 public sealed class MergeRequestFlowTests
 {
-    private static ShellViewModel Shell()
-    {
-        var sink = new InMemoryLogSink();
-        var logger = new VersioLogger(new SystemClock()).AddSink(sink);
-        return new ShellViewModel(logger, new LogViewModel(sink), toolchains: (_, _) => null);
-    }
+    private static ShellViewModel Shell() => TestShell.Build();
 
     [Fact]
     public async Task A_repository_with_no_forge_shows_no_button()
@@ -178,7 +173,7 @@ public sealed class MergeRequestFlowTests
         // end-to-end is on the §13 script.
         using var shell = Shell();
 
-        Assert.True(shell.Poller.AsksASecondQuestion);
+        Assert.True(shell.Remote.Poller.AsksASecondQuestion);
     }
 
     [Fact]
@@ -190,7 +185,7 @@ public sealed class MergeRequestFlowTests
         {
             var sink = new InMemoryLogSink();
             var logger = new VersioLogger(new SystemClock()).AddSink(sink);
-            var shell = new ShellViewModel(
+            using var shell = new ShellViewModel(
                 logger, new LogViewModel(sink), toolchains: (_, _) => null);
             var window = new MainWindow(shell);
 
@@ -202,7 +197,8 @@ public sealed class MergeRequestFlowTests
             content.Arrange(new Rect(0, 0, 1400, 900));
             content.UpdateLayout();
 
-            var panel = Assert.IsType<Border>(window.FindName("GitPanel"));
+            var panel = Assert.IsAssignableFrom<FrameworkElement>(
+                window.FindName("GitPanel"));
 
             var button = AllOf<Button>(panel).Single(b =>
                 BindingOperations.GetBinding(b, ButtonBase.CommandProperty)?.Path.Path

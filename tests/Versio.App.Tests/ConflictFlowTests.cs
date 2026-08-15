@@ -27,14 +27,13 @@ public sealed class ConflictFlowTests
 {
     private static ShellViewModel Shell()
     {
-        var sink = new InMemoryLogSink();
-        var logger = new VersioLogger(new SystemClock()).AddSink(sink);
-        return new ShellViewModel(logger, new LogViewModel(sink), toolchains: (_, _) => null)
-        {
-            // Every destructive prompt is answered yes. What is under test is the operation,
-            // not the dialog — the refusal path has its own test below.
-            ConfirmDestructive = _ => true,
-        };
+        using var shell = TestShell.Build();
+
+        // Every destructive prompt is answered yes. What is under test is the operation,
+        // not the dialog — the refusal path has its own test below.
+        shell.Asked().Destructive = _ => true;
+
+        return shell;
     }
 
     /// <summary>A repository whose branch conflicts with its upstream on one line.</summary>
@@ -71,8 +70,8 @@ public sealed class ConflictFlowTests
 
         await shell.OpenAsync(repo.Path);
 
-        Assert.Equal(TrackingState.Diverged, shell.Standing.State);
-        Assert.True(shell.Standing.IsDiverged);
+        Assert.Equal(TrackingState.Diverged, shell.Remote.Standing.State);
+        Assert.True(shell.Remote.Standing.IsDiverged);
 
         // The dead end this closes: the badge says pull first, and --ff-only refuses.
         Assert.True(shell.ReconcileCommand.CanExecute(true));
@@ -89,7 +88,7 @@ public sealed class ConflictFlowTests
 
         // Everywhere else the choice is noise, and --ff-only is the right default precisely
         // because auto-merging native CODESYS XML produces a file nobody reviewed.
-        Assert.False(shell.Standing.IsDiverged);
+        Assert.False(shell.Remote.Standing.IsDiverged);
         Assert.False(shell.ReconcileCommand.CanExecute(true));
     }
 
@@ -232,7 +231,7 @@ public sealed class ConflictFlowTests
         // Offering an operation that can stop half-done without offering the way back is how
         // somebody ends up in a state they cannot describe.
         Assert.Empty(shell.Conflicted);
-        Assert.Equal(TrackingState.Diverged, shell.Standing.State);
+        Assert.Equal(TrackingState.Diverged, shell.Remote.Standing.State);
         Assert.Equal("mine\n",
                      File.ReadAllText(Path.Combine(repo.Path, "seed.txt")).Replace("\r\n", "\n"));
     }
@@ -244,10 +243,9 @@ public sealed class ConflictFlowTests
 
         var sink = new InMemoryLogSink();
         var logger = new VersioLogger(new SystemClock()).AddSink(sink);
-        using var shell = new ShellViewModel(logger, new LogViewModel(sink), toolchains: (_, _) => null)
-        {
-            ConfirmDestructive = _ => false,
-        };
+        using var shell = new ShellViewModel(
+            logger, new LogViewModel(sink), toolchains: (_, _) => null);
+        shell.Asked().Destructive = _ => false;
 
         await shell.OpenAsync(repo.Path);
         await Eventually.Press(shell.ReconcileCommand, false, "merge");

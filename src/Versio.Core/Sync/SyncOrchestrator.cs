@@ -748,173 +748,66 @@ public sealed class SyncOrchestrator
                 "no enabled binding with that id"), slotHeld);
         }
 
-        var state = StateOf(job.BindingId);
+        var attempt = new Attempt(job, binding, StateOf(job.BindingId));
 
-        // 1. Circuit breaker. First, because a tripped breaker means our own reasoning is
-        //    no longer trusted and nothing below it should run.
-        if (_breaker.IsTripped(job.BindingId))
+        // THE GATES THAT CAN ONLY REFUSE, IN THE ORDER THEIR OWN REMARKS ARGUE FOR.
+        //
+        // Each returns an outcome to mean "stop here" and null to mean "keep going", takes
+        // nothing and releases nothing — so this sequence can be read, and reordered, by
+        // reading the arguments on the methods themselves. What comes after it is different
+        // in kind: the coalescer and the breaker both CONSUME something, which is why they
+        // are not in this list and why they report what they took.
+        if (BreakerAlreadyTripped(attempt) is { } tripped)
         {
-            return (Refuse(LogLevel.Warning, SyncVerdict.BlockedByCircuitBreaker, job.BindingId,
-                "sync halted for this project after repeated cycles; acknowledge to resume",
-                state), slotHeld);
+            return (tripped, slotHeld);
         }
 
-        // 1b. GIT IS REWRITING THE TREE.
-        //
-        //     Before the hash gate, unlike almost everything else here. A checkout really did
-        //     change the content, so the hashes agree that something happened — what makes it
-        //     uninteresting is who did it. Asking "did it change" first would answer yes and
-        //     send a pull's new mirror down the import path.
-        //
-        //     After the breaker only, because a tripped breaker outranks everything.
-        if (IsExternalWriteInProgress)
+        if (GitIsRewritingTheTree(attempt) is { } rewriting)
         {
-            return (Refuse(LogLevel.Debug, SyncVerdict.GitWriteSuppressed, job.BindingId,
-                "git is rewriting the working tree; this was not an edit", state), slotHeld);
+            return (rewriting, slotHeld);
         }
 
-        // 1c. WE ARE WRITING THAT SIDE RIGHT NOW.
-        //
-        //     The same argument as 1b, about our own writes rather than git's, and in the
-        //     same place for the same reason: the content really did change, so the hash gate
-        //     would say yes. An export swaps a directory into place and the watcher reports
-        //     every file in it; the suppressor below can only answer for one path with one
-        //     hash, registered after the run, so in practice it answered for none of them.
-        //
-        //     Before the conflict probe and the hash gate deliberately - those are what the
-        //     echoes were costing, a git status process and a full-tree hash apiece.
-        if (IsWriting(job.BindingId, job.Source))
+        if (WeAreWritingThatSide(attempt) is { } echoing)
         {
-            // Counted, not logged one by one. An export produces one echo per file it wrote -
-            // 56 on the project that surfaced this - and a line each would swap a burst of
-            // work for a burst of log. The window says how many it swallowed when it closes,
-            // which is the same trade the quiet-status summary already makes.
-            _ownWrites.AddOrUpdate(
-                (job.BindingId, job.Source, Echoes: true), 1, (_, seen) => seen + 1);
-
-            return (SyncOutcome.Refused(
-                SyncVerdict.SelfWriteSuppressed, job.BindingId,
-                $"Versio is writing the {job.Source} side of this project right now; " +
-                "this was not an edit", state), slotHeld);
+            return (echoing, slotHeld);
         }
 
-        // 2. Hash gate. Before the lock on purpose: an event carrying no actual change is
-        //    noise, and reporting it as a lock violation would show the user a scary
-        //    refusal for a no-op save.
-        var (changed, currentHash) = await HasRealChangeAsync(binding, job.Source, ct)
+        var (unchanged, currentHash) = await NothingActuallyChangedAsync(attempt, ct)
             .ConfigureAwait(false);
-        if (!changed)
+        if (unchanged is { } same)
         {
-            // Debug, not Warning: this is the single most common outcome — every save that
-            // did not actually alter the file lands here — and at Info it would drown the
-            // log. The hash is included because "the gate says nothing changed but I know
-            // I changed something" is otherwise unanswerable.
-            return (Refuse(LogLevel.Debug, SyncVerdict.NoChange, job.BindingId,
-                $"content is identical to the last synced state (hash {Short(currentHash)})",
-                state), slotHeld);
+            return (same, slotHeld);
         }
 
-        // 3. Self-write suppression, for text only: an export writes into the tree the text
-        //    watcher is watching. The project file is never written by us.
-        if (job.Source == ChangeSource.ExportedText &&
-            _suppressor.ShouldSuppress(binding.ExportPath, currentHash))
+        if (EchoOfOurOwnExport(attempt, currentHash) is { } ours)
         {
-            return (Refuse(LogLevel.Debug, SyncVerdict.SelfWriteSuppressed, job.BindingId,
-                "this was the echo of our own export", state), slotHeld);
+            return (ours, slotHeld);
         }
 
-        // 3b. UNMERGED PATHS.
-        //
-        //     After the hash gate and the suppressor, so a save that changed nothing and an
-        //     echo of our own export are still dropped as what they are rather than reported
-        //     as a conflict — and so the cost, one `git status`, is paid only for changes that
-        //     are actually going somewhere.
-        //
-        //     Before the direction lock, deliberately. A conflicted tree is the more
-        //     fundamental problem and has the clearer remedy; reporting it as a lock violation
-        //     would send the user to push or discard when what they have to do is finish the
-        //     merge. The guard above the UI orders these two the same way, for the same reason.
-        if (await ConflictedPathsFor(binding, ct).ConfigureAwait(false) is { Count: > 0 } clashes)
+        if (await UnresolvedConflictsAsync(attempt, ct).ConfigureAwait(false) is { } clash)
         {
-            return (Refuse(LogLevel.Information, SyncVerdict.BlockedByConflict, job.BindingId,
-                $"{ProjectName(binding)} has {Files(clashes.Count)} with unresolved merge " +
-                $"conflicts ({string.Join(", ", clashes.Take(3))}" +
-                (clashes.Count > 3 ? ", …" : string.Empty) +
-                "). Finish the merge and this will run on the next change.",
-                state), slotHeld);
+            return (clash, slotHeld);
         }
 
-        // 4. Direction lock.
         var trigger = job.Source == ChangeSource.Project
             ? SyncTrigger.ProjectChanged
             : SyncTrigger.TextChanged;
-        var transition = SyncStateMachine.Next(state, trigger);
-        if (!transition.Allowed)
+        var transition = SyncStateMachine.Next(attempt.State, trigger);
+
+        if (DirectionLockForbids(attempt, transition) is { } locked)
         {
-            // The one refusal the user is most likely to be confused by, so it carries the
-            // state that did the refusing as well as the sentence explaining it.
-            return (Refuse(LogLevel.Warning, SyncVerdict.BlockedByLock, job.BindingId,
-                $"{transition.Reason} (lock is {state})", transition.State), slotHeld);
+            return (locked, slotHeld);
         }
 
-        // 5. Import is detected automatically but applied only on confirmation.
-        if (job.Source == ChangeSource.ExportedText &&
-            _options.RequireImportConfirmation && !job.Confirmed)
+        if (ImportNeedsConfirming(attempt) is { } unconfirmed)
         {
-            return (Refuse(LogLevel.Information, SyncVerdict.AwaitingConfirmation, job.BindingId,
-                "exported text changed; review the diff and confirm before importing", state), slotHeld);
+            return (unconfirmed, slotHeld);
         }
 
-        // 5b. IS THE PROJECT OPEN IN ITS IDE?
-        //
-        // Before the coalescer and the breaker, deliberately. A wait must consume neither:
-        // a breaker fed by these would trip after a few saves and halt the project for the
-        // rest of the session, turning the wait into exactly the sticky failure this exists to
-        // avoid. It is also before the lock, because refusing after taking it would leave the
-        // direction claimed for work that never ran.
-        //
-        // After the hash gate and the direction lock, though: "nothing changed" and "the lock
-        // forbids this direction" are more specific answers, and reporting the IDE instead
-        // would be noise on every settle while somebody has CODESYS open.
-        //
-        // It costs one file read, against finding out 17-31 s later from the toolchain itself
-        // — and finding out then as a failure, which marks the binding failed and stops
-        // everything until somebody clears it by hand.
-        //
-        // Somebody saving and leaving CODESYS open is the most common working state there is.
-        // It is a wait, not a fault.
-        var occupancy = _occupancy is null
-            ? ProjectOccupancy.Free
-            : await _occupancy.CheckAsync(binding, Absolute(binding.ProjectPath), ct)
-                .ConfigureAwait(false);
-
-        string? scratchProject = null;
-
-        if (occupancy.IsHeld)
+        var (busy, scratchProject) = await OpenInTheIdeAsync(attempt, ct).ConfigureAwait(false);
+        if (busy is { } held)
         {
-            // Import writes into the .project itself. Even if the toolchain allowed it, the
-            // IDE holds its own copy in memory and the next save would silently revert what
-            // was imported - so this direction genuinely has to wait.
-            if (job.Source == ChangeSource.ExportedText)
-            {
-                return (Refuse(LogLevel.Information, SyncVerdict.BlockedByOpenProject,
-                    job.BindingId,
-                    $"{ProjectName(binding)} is open in the IDE ({occupancy.Owner}), so the " +
-                    "edited text cannot be imported yet. Close it and the import will run.",
-                    state), slotHeld);
-            }
-
-            // Export only reads, and the lock is a sidecar on the path - so a copy at another
-            // path is unencumbered and exports byte-identically. Measured; see STATUS.
-            scratchProject = await CopyOpenProjectAsync(binding, ct).ConfigureAwait(false);
-
-            if (scratchProject is null)
-            {
-                return (Refuse(LogLevel.Warning, SyncVerdict.BlockedByOpenProject, job.BindingId,
-                    $"{ProjectName(binding)} is open in the IDE ({occupancy.Owner}) and could " +
-                    "not be copied aside, so the export was not attempted.",
-                    state), slotHeld);
-            }
+            return (held, slotHeld);
         }
 
         // 6. Coalescing. Skipped for a synchronous job, because the commit gate must run now
@@ -924,53 +817,65 @@ public sealed class SyncOrchestrator
 
         if (!job.Synchronous && !slotHeld)
         {
-            var action = _coalescers[job.BindingId].OnChangeSettled();
-            switch (action)
+            if (CoalescerRefuses(attempt) is { } queued)
             {
-                case CoalesceAction.Coalesced:
-                    return (Refuse(LogLevel.Debug, SyncVerdict.Coalesced, job.BindingId,
-                        "a sync is already running and a follow-up is queued", state), false);
-
-                case CoalesceAction.Throttled:
-                    // Remembered, not just refused. The pending flag inside the coalescer
-                    // guarantees a final export "once things go quiet", and nothing was
-                    // asking it — see RunDeferredAsync.
-                    _deferred[job.BindingId] = job;
-                    return (Refuse(LogLevel.Debug, SyncVerdict.Throttled, job.BindingId,
-                        "throttled; a final sync will run once changes settle", state), false);
-
-                case CoalesceAction.Queue:
-                    return (Refuse(LogLevel.Debug, SyncVerdict.Coalesced, job.BindingId,
-                        "queued behind the running sync", state), false);
+                // False, not `granted`: every one of these paths declined to take the slot,
+                // so there is nothing for the caller to complete.
+                return (queued, false);
             }
 
             granted = true;
         }
 
-        if (!_breaker.TryRecord(job.BindingId))
+        if (BreakerJustTripped(attempt) is { } halted)
         {
-            // This is the breaker tripping, not a breaker that was already tripped: the
-            // threshold was just crossed. Worth an explicit line — it is the loop defence
-            // of last resort, and its firing means the other two failed.
-            _log.Warn(LogCategory.Sync,
-                $"{job.BindingId}: circuit breaker tripped after " +
-                $"{_breaker.CountInWindow(job.BindingId)} syncs within " +
-                $"{_options.CircuitBreakerWindow.TotalSeconds:F0}s — halting sync for this project");
-
-            return (Refuse(LogLevel.Warning, SyncVerdict.BlockedByCircuitBreaker, job.BindingId,
-                "sync halted for this project after repeated cycles; acknowledge to resume",
-                state), granted);
+            return (halted, granted);
         }
 
-        // 7. TAKE THE LOCK BEFORE DOING THE WORK, and persist it.
+        // Nothing above refused, so the work happens.
         //
-        // Not an ordering preference - a correctness requirement. If the lock were only
-        // recorded on success, a crash or a kill during a 30 s export would leave unsynced
-        // work with nothing guarding it: the next session would find a clean state, and the
-        // opposite direction would be free to overwrite it.
-        //
-        // It also makes the state machine coherent. ExportSucceeded is only defined as a
-        // transition FROM ProjectAuthoritative, so the direction has to be claimed first.
+        // The slot is completed by the caller, which is the only place that can act on
+        // "a follow-up must start now" — it has to await one.
+        var outcome = await ClaimTheDirectionAndRunAsync(
+            attempt, trigger, transition, scratchProject, operationId, ct).ConfigureAwait(false);
+
+        return (outcome, !job.Synchronous);
+    }
+
+    /// <summary>
+    /// Take the lock, announce the run, and do the work.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The lock is taken BEFORE the work, and persisted.</b> Not an ordering preference - a
+    /// correctness requirement. If the lock were only recorded on success, a crash or a kill
+    /// during a 30 s export would leave unsynced work with nothing guarding it: the next
+    /// session would find a clean state, and the opposite direction would be free to overwrite
+    /// it.
+    /// </para>
+    /// <para>
+    /// It also makes the state machine coherent. <c>ExportSucceeded</c> is only defined as a
+    /// transition FROM <c>ProjectAuthoritative</c>, so the direction has to be claimed first.
+    /// </para>
+    /// <para>
+    /// <b>Separate from the gates, which is also why the run notice is raised here rather
+    /// than by the caller wrapping the call.</b> It is said out loud the moment the work
+    /// actually begins and not one gate earlier: every refusal returns before this method is
+    /// reached, and a save that changed nothing, was coalesced, was throttled or was refused
+    /// by the lock is the common case. Lighting a progress bar for the 200 ms it takes to
+    /// decide that would flicker on every keystroke-triggered settle.
+    /// </para>
+    /// </remarks>
+    private async Task<SyncOutcome> ClaimTheDirectionAndRunAsync(
+        Attempt attempt,
+        SyncTrigger trigger,
+        TransitionResult transition,
+        string? scratchProject,
+        string operationId,
+        CancellationToken ct)
+    {
+        var job = attempt.Job;
+
         await ApplyAsync(job.BindingId, trigger,
             _locks[job.BindingId].LastSynced.ProjectHash, ct).ConfigureAwait(false);
 
@@ -978,31 +883,335 @@ public sealed class SyncOrchestrator
             ? PlcOperation.Export
             : PlcOperation.Import;
 
-        // Said out loud the moment the work actually begins, and not one gate earlier.
-        //
-        // Every refusal above returns before this point, which is the whole reason it is a
-        // notification rather than something the caller wraps around the call: a save that
-        // changed nothing, was coalesced, was throttled or was refused by the lock is the
-        // common case, and lighting a progress bar for the 200 ms it takes to decide that
-        // would flicker on every keystroke-triggered settle.
         var notice = new SyncRunNotice(job.BindingId, operation, operationId);
         RunStarted?.Invoke(notice);
 
         try
         {
-            var outcome = operation == PlcOperation.Export
-                ? await ExportAsync(binding, transition, scratchProject, operationId, ct)
+            return operation == PlcOperation.Export
+                ? await ExportAsync(attempt.Binding, transition, scratchProject, operationId, ct)
                     .ConfigureAwait(false)
-                : await ImportAsync(binding, transition, operationId, ct).ConfigureAwait(false);
-
-            // The slot is completed by the caller, which is the only place that can act on
-            // "a follow-up must start now" — it has to await one.
-            return (outcome, !job.Synchronous);
+                : await ImportAsync(attempt.Binding, transition, operationId, ct)
+                    .ConfigureAwait(false);
         }
         finally
         {
             RunFinished?.Invoke(notice);
         }
+    }
+
+    /// <summary>
+    /// What every gate needs to know, so none of them has to be handed it a piece at a time.
+    /// </summary>
+    /// <remarks>
+    /// The state is read once, at the top of the attempt, and carried — rather than each gate
+    /// calling <see cref="StateOf"/> for itself. They must all judge the same state: two gates
+    /// reading it either side of a concurrent transition could refuse for reasons that were
+    /// never true at the same moment, and the sentence shown to the user names the state that
+    /// did the refusing.
+    /// </remarks>
+    private readonly record struct Attempt(
+        SyncJob Job, ProjectBinding Binding, SyncDirection State);
+
+    /// <summary>
+    /// 1. Circuit breaker.
+    /// </summary>
+    /// <remarks>
+    /// First, because a tripped breaker means our own reasoning is no longer trusted and
+    /// nothing below it should run.
+    /// </remarks>
+    private SyncOutcome? BreakerAlreadyTripped(in Attempt attempt) =>
+        _breaker.IsTripped(attempt.Job.BindingId)
+            ? Refuse(LogLevel.Warning, SyncVerdict.BlockedByCircuitBreaker, attempt.Job.BindingId,
+                "sync halted for this project after repeated cycles; acknowledge to resume",
+                attempt.State)
+            : null;
+
+    /// <summary>
+    /// 1b. Git is rewriting the tree.
+    /// </summary>
+    /// <remarks>
+    /// Before the hash gate, unlike almost everything else here. A checkout really did change
+    /// the content, so the hashes agree that something happened — what makes it uninteresting
+    /// is who did it. Asking "did it change" first would answer yes and send a pull's new
+    /// mirror down the import path.
+    /// <para>
+    /// After the breaker only, because a tripped breaker outranks everything.
+    /// </para>
+    /// </remarks>
+    private SyncOutcome? GitIsRewritingTheTree(in Attempt attempt) =>
+        IsExternalWriteInProgress
+            ? Refuse(LogLevel.Debug, SyncVerdict.GitWriteSuppressed, attempt.Job.BindingId,
+                "git is rewriting the working tree; this was not an edit", attempt.State)
+            : null;
+
+    /// <summary>
+    /// 1c. We are writing that side right now.
+    /// </summary>
+    /// <remarks>
+    /// The same argument as <see cref="GitIsRewritingTheTree"/>, about our own writes rather
+    /// than git's, and in the same place for the same reason: the content really did change,
+    /// so the hash gate would say yes. An export swaps a directory into place and the watcher
+    /// reports every file in it; the suppressor below can only answer for one path with one
+    /// hash, registered after the run, so in practice it answered for none of them.
+    /// <para>
+    /// Before the conflict probe and the hash gate deliberately - those are what the echoes
+    /// were costing, a git status process and a full-tree hash apiece.
+    /// </para>
+    /// </remarks>
+    private SyncOutcome? WeAreWritingThatSide(in Attempt attempt)
+    {
+        var job = attempt.Job;
+        if (!IsWriting(job.BindingId, job.Source))
+        {
+            return null;
+        }
+
+        // Counted, not logged one by one. An export produces one echo per file it wrote -
+        // 56 on the project that surfaced this - and a line each would swap a burst of
+        // work for a burst of log. The window says how many it swallowed when it closes,
+        // which is the same trade the quiet-status summary already makes.
+        _ownWrites.AddOrUpdate(
+            (job.BindingId, job.Source, Echoes: true), 1, (_, seen) => seen + 1);
+
+        return SyncOutcome.Refused(
+            SyncVerdict.SelfWriteSuppressed, job.BindingId,
+            $"Versio is writing the {job.Source} side of this project right now; " +
+            "this was not an edit", attempt.State);
+    }
+
+    /// <summary>
+    /// 2. Hash gate, and the hash it computed either way.
+    /// </summary>
+    /// <remarks>
+    /// Before the lock on purpose: an event carrying no actual change is noise, and reporting
+    /// it as a lock violation would show the user a scary refusal for a no-op save.
+    /// <para>
+    /// The hash is returned even when this refuses, because the gate below it
+    /// (<see cref="EchoOfOurOwnExport"/>) needs the same one rather than a second reading of
+    /// a tree that may have moved underneath.
+    /// </para>
+    /// </remarks>
+    private async Task<(SyncOutcome? Refusal, string CurrentHash)> NothingActuallyChangedAsync(
+        Attempt attempt, CancellationToken ct)
+    {
+        var (changed, currentHash) =
+            await HasRealChangeAsync(attempt.Binding, attempt.Job.Source, ct)
+                .ConfigureAwait(false);
+
+        if (changed)
+        {
+            return (null, currentHash);
+        }
+
+        // Debug, not Warning: this is the single most common outcome — every save that
+        // did not actually alter the file lands here — and at Info it would drown the
+        // log. The hash is included because "the gate says nothing changed but I know
+        // I changed something" is otherwise unanswerable.
+        return (Refuse(LogLevel.Debug, SyncVerdict.NoChange, attempt.Job.BindingId,
+            $"content is identical to the last synced state (hash {Short(currentHash)})",
+            attempt.State), currentHash);
+    }
+
+    /// <summary>
+    /// 3. Self-write suppression, for text only.
+    /// </summary>
+    /// <remarks>
+    /// An export writes into the tree the text watcher is watching. The project file is never
+    /// written by us.
+    /// </remarks>
+    private SyncOutcome? EchoOfOurOwnExport(in Attempt attempt, string currentHash) =>
+        attempt.Job.Source == ChangeSource.ExportedText
+        && _suppressor.ShouldSuppress(attempt.Binding.ExportPath, currentHash)
+            ? Refuse(LogLevel.Debug, SyncVerdict.SelfWriteSuppressed, attempt.Job.BindingId,
+                "this was the echo of our own export", attempt.State)
+            : null;
+
+    /// <summary>
+    /// 3b. Unmerged paths.
+    /// </summary>
+    /// <remarks>
+    /// After the hash gate and the suppressor, so a save that changed nothing and an echo of
+    /// our own export are still dropped as what they are rather than reported as a conflict —
+    /// and so the cost, one <c>git status</c>, is paid only for changes that are actually
+    /// going somewhere.
+    /// <para>
+    /// Before the direction lock, deliberately. A conflicted tree is the more fundamental
+    /// problem and has the clearer remedy; reporting it as a lock violation would send the
+    /// user to push or discard when what they have to do is finish the merge. The guard above
+    /// the UI orders these two the same way, for the same reason.
+    /// </para>
+    /// </remarks>
+    private async Task<SyncOutcome?> UnresolvedConflictsAsync(Attempt attempt, CancellationToken ct)
+    {
+        if (await ConflictedPathsFor(attempt.Binding, ct).ConfigureAwait(false)
+            is not { Count: > 0 } clashes)
+        {
+            return null;
+        }
+
+        return Refuse(LogLevel.Information, SyncVerdict.BlockedByConflict, attempt.Job.BindingId,
+            $"{ProjectName(attempt.Binding)} has {Files(clashes.Count)} with unresolved merge " +
+            $"conflicts ({string.Join(", ", clashes.Take(3))}" +
+            (clashes.Count > 3 ? ", …" : string.Empty) +
+            "). Finish the merge and this will run on the next change.",
+            attempt.State);
+    }
+
+    /// <summary>
+    /// 4. Direction lock.
+    /// </summary>
+    private SyncOutcome? DirectionLockForbids(in Attempt attempt, TransitionResult transition) =>
+        transition.Allowed
+            ? null
+            // The one refusal the user is most likely to be confused by, so it carries the
+            // state that did the refusing as well as the sentence explaining it.
+            : Refuse(LogLevel.Warning, SyncVerdict.BlockedByLock, attempt.Job.BindingId,
+                $"{transition.Reason} (lock is {attempt.State})", transition.State);
+
+    /// <summary>
+    /// 5. Import is detected automatically but applied only on confirmation.
+    /// </summary>
+    private SyncOutcome? ImportNeedsConfirming(in Attempt attempt) =>
+        attempt.Job.Source == ChangeSource.ExportedText
+        && _options.RequireImportConfirmation && !attempt.Job.Confirmed
+            ? Refuse(LogLevel.Information, SyncVerdict.AwaitingConfirmation, attempt.Job.BindingId,
+                "exported text changed; review the diff and confirm before importing",
+                attempt.State)
+            : null;
+
+    /// <summary>
+    /// 5b. Is the project open in its IDE? Returns the copy an export should read instead.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Before the coalescer and the breaker, deliberately. A wait must consume neither: a
+    /// breaker fed by these would trip after a few saves and halt the project for the rest of
+    /// the session, turning the wait into exactly the sticky failure this exists to avoid. It
+    /// is also before the lock is taken, because refusing after taking it would leave the
+    /// direction claimed for work that never ran.
+    /// </para>
+    /// <para>
+    /// After the hash gate and the direction lock, though: "nothing changed" and "the lock
+    /// forbids this direction" are more specific answers, and reporting the IDE instead would
+    /// be noise on every settle while somebody has CODESYS open.
+    /// </para>
+    /// <para>
+    /// It costs one file read, against finding out 17-31 s later from the toolchain itself —
+    /// and finding out then as a failure, which marks the binding failed and stops everything
+    /// until somebody clears it by hand.
+    /// </para>
+    /// <para>
+    /// Somebody saving and leaving CODESYS open is the most common working state there is.
+    /// It is a wait, not a fault.
+    /// </para>
+    /// </remarks>
+    private async Task<(SyncOutcome? Refusal, string? ScratchProject)> OpenInTheIdeAsync(
+        Attempt attempt, CancellationToken ct)
+    {
+        var binding = attempt.Binding;
+
+        var occupancy = _occupancy is null
+            ? ProjectOccupancy.Free
+            : await _occupancy.CheckAsync(binding, Absolute(binding.ProjectPath), ct)
+                .ConfigureAwait(false);
+
+        if (!occupancy.IsHeld)
+        {
+            return (null, null);
+        }
+
+        // Import writes into the .project itself. Even if the toolchain allowed it, the
+        // IDE holds its own copy in memory and the next save would silently revert what
+        // was imported - so this direction genuinely has to wait.
+        if (attempt.Job.Source == ChangeSource.ExportedText)
+        {
+            return (Refuse(LogLevel.Information, SyncVerdict.BlockedByOpenProject,
+                attempt.Job.BindingId,
+                $"{ProjectName(binding)} is open in the IDE ({occupancy.Owner}), so the " +
+                "edited text cannot be imported yet. Close it and the import will run.",
+                attempt.State), null);
+        }
+
+        // Export only reads, and the lock is a sidecar on the path - so a copy at another
+        // path is unencumbered and exports byte-identically. Measured; see STATUS.
+        var scratchProject = await CopyOpenProjectAsync(binding, ct).ConfigureAwait(false);
+
+        if (scratchProject is null)
+        {
+            return (Refuse(LogLevel.Warning, SyncVerdict.BlockedByOpenProject,
+                attempt.Job.BindingId,
+                $"{ProjectName(binding)} is open in the IDE ({occupancy.Owner}) and could " +
+                "not be copied aside, so the export was not attempted.",
+                attempt.State), null);
+        }
+
+        return (null, scratchProject);
+    }
+
+    /// <summary>
+    /// 6. Coalescing: does this job get the slot, or is somebody already running?
+    /// </summary>
+    /// <remarks>
+    /// The first gate that TAKES something rather than merely judging. Asked once per job —
+    /// a caller that already holds the slot has had this answered — and every refusal here
+    /// leaves the slot with whoever holds it, which is why the caller reports no slot to
+    /// complete on any of these paths.
+    /// </remarks>
+    private SyncOutcome? CoalescerRefuses(in Attempt attempt)
+    {
+        var job = attempt.Job;
+
+        switch (_coalescers[job.BindingId].OnChangeSettled())
+        {
+            case CoalesceAction.Coalesced:
+                return Refuse(LogLevel.Debug, SyncVerdict.Coalesced, job.BindingId,
+                    "a sync is already running and a follow-up is queued", attempt.State);
+
+            case CoalesceAction.Throttled:
+                // Remembered, not just refused. The pending flag inside the coalescer
+                // guarantees a final export "once things go quiet", and nothing was
+                // asking it — see RunDeferredAsync.
+                _deferred[job.BindingId] = job;
+                return Refuse(LogLevel.Debug, SyncVerdict.Throttled, job.BindingId,
+                    "throttled; a final sync will run once changes settle", attempt.State);
+
+            case CoalesceAction.Queue:
+                return Refuse(LogLevel.Debug, SyncVerdict.Coalesced, job.BindingId,
+                    "queued behind the running sync", attempt.State);
+
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>
+    /// The circuit breaker recording this run, and tripping if it is one too many.
+    /// </summary>
+    /// <remarks>
+    /// Distinct from <see cref="BreakerAlreadyTripped"/>: this is the breaker tripping, not a
+    /// breaker that was already tripped, and it happens here rather than at the top because
+    /// recording is only honest once the job has cleared everything that would have refused
+    /// it. A gate above that fed the breaker would halt a project for saves that never ran.
+    /// </remarks>
+    private SyncOutcome? BreakerJustTripped(in Attempt attempt)
+    {
+        if (_breaker.TryRecord(attempt.Job.BindingId))
+        {
+            return null;
+        }
+
+        // The threshold was just crossed. Worth an explicit line — this is the loop defence
+        // of last resort, and its firing means the other two failed.
+        _log.Warn(LogCategory.Sync,
+            $"{attempt.Job.BindingId}: circuit breaker tripped after " +
+            $"{_breaker.CountInWindow(attempt.Job.BindingId)} syncs within " +
+            $"{_options.CircuitBreakerWindow.TotalSeconds:F0}s — halting sync for this project");
+
+        return Refuse(LogLevel.Warning, SyncVerdict.BlockedByCircuitBreaker,
+            attempt.Job.BindingId,
+            "sync halted for this project after repeated cycles; acknowledge to resume",
+            attempt.State);
     }
 
     /// <summary>

@@ -57,7 +57,7 @@ public sealed class PreferencePersistenceTests
     public async Task A_chosen_theme_is_written_down()
     {
         var store = new MemoryStore();
-        var shell = Build(store);
+        using var shell = Build(store);
 
         await shell.LoadRecentAsync();
         await shell.RememberThemeAsync("Dark");
@@ -86,7 +86,7 @@ public sealed class PreferencePersistenceTests
     {
         // The clobbering defect, from the layout side.
         var store = new MemoryStore();
-        var shell = Build(store);
+        using var shell = Build(store);
 
         await shell.LoadRecentAsync();
         await shell.RememberThemeAsync("Light");
@@ -104,7 +104,7 @@ public sealed class PreferencePersistenceTests
             Recent = [new RecentRepository { Path = @"C:\Git\Conveyor" }],
         });
 
-        var shell = Build(store);
+        using var shell = Build(store);
         await shell.LoadRecentAsync();
         await shell.RememberThemeAsync("Dark");
 
@@ -118,7 +118,7 @@ public sealed class PreferencePersistenceTests
         // A settings file hand-edited to nonsense, or written by a later version that grew a
         // fourth option. It must cost a preference, never a launch.
         var store = new MemoryStore(new AppSettings { Theme = "Solarized" });
-        var shell = Build(store);
+        using var shell = Build(store);
 
         await shell.LoadRecentAsync();
 
@@ -147,7 +147,7 @@ public sealed class PreferencePersistenceTests
         // on a change.
         var writes = 0;
         var store = new CountingStore(() => writes++);
-        var shell = Build(store);
+        using var shell = Build(store);
 
         await shell.LoadRecentAsync();
         await shell.RememberThemeAsync("Dark");

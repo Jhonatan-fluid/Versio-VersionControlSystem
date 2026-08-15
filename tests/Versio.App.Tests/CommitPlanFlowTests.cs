@@ -24,12 +24,7 @@ namespace Versio.App.Tests;
 /// </remarks>
 public sealed class CommitPlanFlowTests
 {
-    private static ShellViewModel Shell()
-    {
-        var sink = new InMemoryLogSink();
-        var logger = new VersioLogger(new SystemClock()).AddSink(sink);
-        return new ShellViewModel(logger, new LogViewModel(sink), toolchains: (_, _) => null);
-    }
+    private static ShellViewModel Shell() => TestShell.Build();
 
     /// <summary>The paths in the newest commit, as git reports them.</summary>
     private static string[] FilesInHead(TempRepo repo)
@@ -221,15 +216,15 @@ public sealed class CommitPlanFlowTests
         shell.CommitMessage = "local only";
         shell.CommitCommand.Execute(null);
 
-        await Eventually.Until(() => shell.Standing.State == TrackingState.Ahead,
+        await Eventually.Until(() => shell.Remote.Standing.State == TrackingState.Ahead,
                                "the branch went ahead");
 
-        Assert.Equal(1, shell.Standing.Ahead);
+        Assert.Equal(1, shell.Remote.Standing.Ahead);
 
         // Asserted on the gating RULE rather than on the command's momentary enabled state:
         // CanExecute also carries `Ready`, which is false for as long as the refresh that
         // follows a commit is still running. That is a different concern with its own tests,
         // and folding it in here would make this assert timing rather than behaviour.
-        Assert.True(shell.Standing.CanPush);
+        Assert.True(shell.Remote.Standing.CanPush);
     }
 }

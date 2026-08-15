@@ -1,0 +1,208 @@
+<!--
+    Scrollbars on both axes, and the splitter between panes.
+
+    MERGES Primitives.xaml, AND THAT LINE IS LOAD-BEARING.
+
+    This file reaches into Primitives for FocusRing.
+    A StaticResource resolves against its own dictionary and that dictionary's own
+    merges - never against a sibling the parent merged alongside it - so merging
+    Primitives in Controls.xaml does not put what this file needs within reach here. Drop the
+    merge below and this file still compiles clean, then throws
+    "Cannot find resource named 'FocusRing'" the first time something renders.
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="Primitives.xaml" />
+    </ResourceDictionary.MergedDictionaries>
+
+    <!-- =============================================================== SCROLLBAR -->
+    <!--
+        Thin and quiet. The classic WPF scrollbar with its arrow buttons is instantly dated;
+        this is a slim thumb that thickens on hover.
+
+        TWO TEMPLATES, ONE PER AXIS, AND THAT IS THE FIX RATHER THAN THE STYLE.
+
+        There was one template and a single trigger meant to adapt it, and every axis-dependent
+        decision inside it was written for vertical:
+
+        - Width="10" was a plain setter with nothing to release it, so a HORIZONTAL bar was
+          arranged 10 px WIDE. Measured: 10 px across a 400 px viewport. It appears in exactly
+          two places and both of them matter - the diff view and the log console - so long ST
+          lines and long log messages could not be scrolled sideways at all.
+        - The thumb hardcoded Width="6", which is the thumb's THICKNESS on a vertical bar and
+          its LENGTH on a horizontal one.
+        - IsDirectionReversed="True" is right for vertical and inverts the drag on horizontal.
+        - The trough's page buttons issued PageUp and PageDown. They are Opacity="0" and
+          therefore still hit-testable, so clicking the trough of a horizontal bar scrolled
+          vertically.
+
+        Four defects, one cause: an axis assumed rather than stated. Splitting the template is
+        what makes each one impossible to write again, and it is what WPF's own theme does.
+
+        WHAT THIS CANNOT DO. The 10 px is the bar's own preferred thickness and applies where
+        a ScrollBar stands alone. Inside a ScrollViewer it does not win: that template assigns
+        its bars a Width/Height from SystemParameters as a LOCAL value, which outranks any
+        style setter, so the gutter stays the system's 17 px with a 6 px thumb centred in it.
+        Reaching that last 7 px means retemplating ScrollViewer, which is a larger change than
+        it looks and buys one shade of density. Stated here rather than quietly not happening.
+    -->
+    <ControlTemplate x:Key="VerticalScrollBar" TargetType="ScrollBar">
+        <Grid Background="Transparent">
+            <!-- Reversed: on a vertical track the maximum is at the BOTTOM, and the Track
+                 lays its children out from the low end by default. -->
+            <Track x:Name="PART_Track" IsDirectionReversed="True">
+                <Track.Thumb>
+                    <Thumb>
+                        <Thumb.Template>
+                            <ControlTemplate TargetType="Thumb">
+                                <!-- Width is the thickness here. The length is the Track's
+                                     to decide - it is proportional to the viewport. -->
+                                <Border x:Name="T" CornerRadius="3" Width="6"
+                                        Background="{DynamicResource Brush.Border.Strong}"
+                                        Opacity="0.55" />
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="T" Property="Opacity" Value="0.9" />
+                                        <Setter TargetName="T" Property="Width" Value="8" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Thumb.Template>
+                    </Thumb>
+                </Track.Thumb>
+                <Track.IncreaseRepeatButton>
+                    <RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0"
+                                  Focusable="False" />
+                </Track.IncreaseRepeatButton>
+                <Track.DecreaseRepeatButton>
+                    <RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0"
+                                  Focusable="False" />
+                </Track.DecreaseRepeatButton>
+            </Track>
+        </Grid>
+    </ControlTemplate>
+
+    <ControlTemplate x:Key="HorizontalScrollBar" TargetType="ScrollBar">
+        <Grid Background="Transparent">
+            <!-- NOT reversed: on a horizontal track the maximum is already at the far end
+                 the Track lays out towards. -->
+            <Track x:Name="PART_Track" IsDirectionReversed="False">
+                <Track.Thumb>
+                    <Thumb>
+                        <Thumb.Template>
+                            <ControlTemplate TargetType="Thumb">
+                                <!-- Height is the thickness on this axis. -->
+                                <Border x:Name="T" CornerRadius="3" Height="6"
+                                        Background="{DynamicResource Brush.Border.Strong}"
+                                        Opacity="0.55" />
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="T" Property="Opacity" Value="0.9" />
+                                        <Setter TargetName="T" Property="Height" Value="8" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Thumb.Template>
+                    </Thumb>
+                </Track.Thumb>
+                <!-- Left and Right, not Up and Down. These are invisible and still
+                     hit-testable, so they are what a click in the trough runs. -->
+                <Track.IncreaseRepeatButton>
+                    <RepeatButton Command="ScrollBar.PageRightCommand" Opacity="0"
+                                  Focusable="False" />
+                </Track.IncreaseRepeatButton>
+                <Track.DecreaseRepeatButton>
+                    <RepeatButton Command="ScrollBar.PageLeftCommand" Opacity="0"
+                                  Focusable="False" />
+                </Track.DecreaseRepeatButton>
+            </Track>
+        </Grid>
+    </ControlTemplate>
+
+    <Style TargetType="ScrollBar">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Focusable" Value="False" />
+
+        <!-- Vertical is the default because it is what the app has most of, and because a
+             bar with no orientation set is vertical anyway. -->
+        <Setter Property="Width" Value="10" />
+        <Setter Property="Height" Value="Auto" />
+        <Setter Property="Template" Value="{StaticResource VerticalScrollBar}" />
+
+        <Style.Triggers>
+            <!-- A Style trigger, not a ControlTemplate one. Both of these release the
+                 dimension that belongs to the other axis, and only a style trigger can
+                 override a setter in the same style. -->
+            <Trigger Property="Orientation" Value="Horizontal">
+                <Setter Property="Width" Value="Auto" />
+                <Setter Property="Height" Value="10" />
+                <Setter Property="Template" Value="{StaticResource HorizontalScrollBar}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- ================================================================ SPLITTER -->
+    <!--
+        A splitter you can find.
+
+        Both of the app's splitters were Background="Transparent" with no template and no
+        trigger, so the only feedback that either existed was the cursor changing if you
+        happened to land on one. The 5 px one between the staged and not-staged lists sits
+        inside a 380 px panel between two visually similar rows, and there was nothing at all
+        to suggest it was there - the comment above it explains a resize behaviour most people
+        would never discover.
+
+        Invisible until hovered is a legitimate modern pattern. Invisible INCLUDING on hover is
+        not, which is what this was.
+
+        A line rather than a raised bar: the app separates surfaces by tone everywhere else,
+        and a bevelled grip would be the one piece of Win32 furniture left. It appears only on
+        hover and drag, so the resting layout is unchanged.
+    -->
+    <Style x:Key="PaneSplitter" TargetType="GridSplitter">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="GridSplitter">
+                    <!-- The hit area is the whole control; the line is a hairline inside it,
+                         so the target stays generous while the mark stays quiet. -->
+                    <Border Background="{TemplateBinding Background}">
+                        <Border x:Name="Line" Opacity="0"
+                                Background="{DynamicResource Brush.Border.Strong}"
+                                CornerRadius="1" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="ResizeDirection" Value="Rows">
+                            <Setter TargetName="Line" Property="Height" Value="2" />
+                            <Setter TargetName="Line" Property="VerticalAlignment" Value="Center" />
+                        </Trigger>
+                        <Trigger Property="ResizeDirection" Value="Columns">
+                            <Setter TargetName="Line" Property="Width" Value="2" />
+                            <Setter TargetName="Line" Property="HorizontalAlignment" Value="Center" />
+                        </Trigger>
+
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Line" Property="Opacity" Value="1" />
+                        </Trigger>
+
+                        <!-- Held down, including once the pointer has left the control -
+                         which it does immediately, because dragging a splitter moves the
+                         layout out from under the cursor. -->
+                        <Trigger Property="IsDragging" Value="True">
+                            <Setter TargetName="Line" Property="Opacity" Value="1" />
+                            <Setter TargetName="Line" Property="Background"
+                                    Value="{DynamicResource Brush.Accent.Default}" />
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Line" Property="Opacity" Value="1" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+</ResourceDictionary>

@@ -97,7 +97,7 @@ public sealed class AutoStashFlowTests : IDisposable
 
     private async Task<ShellViewModel> OpenWithDirtyTreeAsync()
     {
-        var shell = Build();
+        using var shell = Build();
         await shell.OpenAsync(_path);
 
         File.WriteAllText(
@@ -120,8 +120,8 @@ public sealed class AutoStashFlowTests : IDisposable
     {
         Skip.IfNot(GitIsAvailable(), "git is not on PATH");
 
-        var shell = await OpenWithDirtyTreeAsync();
-        shell.AskGuard = _ => GuardChoice.StashAndProceed;
+        using var shell = await OpenWithDirtyTreeAsync();
+        shell.Asked().Guard = _ => GuardChoice.StashAndProceed;
 
         await shell.SwitchBranchAsync(Other());
 
@@ -142,12 +142,12 @@ public sealed class AutoStashFlowTests : IDisposable
     {
         Skip.IfNot(GitIsAvailable(), "git is not on PATH");
 
-        var shell = await OpenWithDirtyTreeAsync();
-        shell.AskGuard = _ => GuardChoice.StashAndProceed;
+        using var shell = await OpenWithDirtyTreeAsync();
+        shell.Asked().Guard = _ => GuardChoice.StashAndProceed;
         await shell.SwitchBranchAsync(Other());
 
         ChoicePrompt? offered = null;
-        shell.AskAboutStashedWork = prompt =>
+        shell.Asked().StashedWork = prompt =>
         {
             offered = prompt;
             return StashedWorkChoice.Restore;
@@ -173,12 +173,12 @@ public sealed class AutoStashFlowTests : IDisposable
     {
         Skip.IfNot(GitIsAvailable(), "git is not on PATH");
 
-        var shell = await OpenWithDirtyTreeAsync();
-        shell.AskGuard = _ => GuardChoice.StashAndProceed;
+        using var shell = await OpenWithDirtyTreeAsync();
+        shell.Asked().Guard = _ => GuardChoice.StashAndProceed;
         await shell.SwitchBranchAsync(Other());
 
         var asked = 0;
-        shell.AskAboutStashedWork = _ =>
+        shell.Asked().StashedWork = _ =>
         {
             asked++;
             return StashedWorkChoice.Leave;
@@ -204,8 +204,8 @@ public sealed class AutoStashFlowTests : IDisposable
         // not be able to rewrite somebody's working tree or throw their work away.
         Skip.IfNot(GitIsAvailable(), "git is not on PATH");
 
-        var shell = await OpenWithDirtyTreeAsync();
-        shell.AskGuard = _ => GuardChoice.StashAndProceed;
+        using var shell = await OpenWithDirtyTreeAsync();
+        shell.Asked().Guard = _ => GuardChoice.StashAndProceed;
         await shell.SwitchBranchAsync(Other());
 
         await shell.SwitchBranchAsync(
@@ -221,14 +221,14 @@ public sealed class AutoStashFlowTests : IDisposable
         // An ordinary thing for a git user to do, and it must not read as an error.
         Skip.IfNot(GitIsAvailable(), "git is not on PATH");
 
-        var shell = await OpenWithDirtyTreeAsync();
-        shell.AskGuard = _ => GuardChoice.StashAndProceed;
+        using var shell = await OpenWithDirtyTreeAsync();
+        shell.Asked().Guard = _ => GuardChoice.StashAndProceed;
         await shell.SwitchBranchAsync(Other());
 
         Git("stash drop");
 
         var asked = 0;
-        shell.AskAboutStashedWork = _ => { asked++; return StashedWorkChoice.Leave; };
+        shell.Asked().StashedWork = _ => { asked++; return StashedWorkChoice.Leave; };
 
         await shell.SwitchBranchAsync(
             new BranchEntry(new Versio.Core.Git.BranchInfo { Name = "main", IsCurrent = false }));
@@ -245,7 +245,7 @@ public sealed class AutoStashFlowTests : IDisposable
         // clean, that is somebody's work gone.
         Skip.IfNot(GitIsAvailable(), "git is not on PATH");
 
-        var shell = Build();
+        using var shell = Build();
         await shell.OpenAsync(_path);
         await shell.RefreshAsync();
 
@@ -269,10 +269,10 @@ public sealed class AutoStashFlowTests : IDisposable
         // its mirror together.
         Skip.IfNot(GitIsAvailable(), "git is not on PATH");
 
-        var shell = await OpenWithDirtyTreeAsync();
+        using var shell = await OpenWithDirtyTreeAsync();
         var asked = 0;
 
-        shell.AskGuard = _ =>
+        shell.Asked().Guard = _ =>
         {
             asked++;
             return GuardChoice.Cancel;
@@ -298,8 +298,8 @@ public sealed class AutoStashFlowTests : IDisposable
         // by switching away and back again, once per stash, with nothing on screen saying so.
         Skip.IfNot(GitIsAvailable(), "git is not on PATH");
 
-        var shell = await OpenWithDirtyTreeAsync();
-        shell.AskGuard = _ => GuardChoice.StashAndProceed;
+        using var shell = await OpenWithDirtyTreeAsync();
+        shell.Asked().Guard = _ => GuardChoice.StashAndProceed;
 
         // Two rounds of "edit on main, switch away".
         await shell.SwitchBranchAsync(Other());
@@ -315,7 +315,7 @@ public sealed class AutoStashFlowTests : IDisposable
         Assert.Equal(2, Record().Entries.Count);
 
         var prompts = new List<string>();
-        shell.AskAboutStashedWork = prompt =>
+        shell.Asked().StashedWork = prompt =>
         {
             prompts.Add(prompt.Body);
             return StashedWorkChoice.Leave;
@@ -340,8 +340,8 @@ public sealed class AutoStashFlowTests : IDisposable
         // name the wrong entries once a pop has renumbered them.
         Skip.IfNot(GitIsAvailable(), "git is not on PATH");
 
-        var shell = await OpenWithDirtyTreeAsync();
-        shell.AskGuard = _ => GuardChoice.StashAndProceed;
+        using var shell = await OpenWithDirtyTreeAsync();
+        shell.Asked().Guard = _ => GuardChoice.StashAndProceed;
 
         await shell.SwitchBranchAsync(Other());
         await shell.SwitchBranchAsync(MainBranch());
@@ -354,7 +354,7 @@ public sealed class AutoStashFlowTests : IDisposable
         await shell.SwitchBranchAsync(Other());
 
         var asked = 0;
-        shell.AskAboutStashedWork = _ =>
+        shell.Asked().StashedWork = _ =>
         {
             asked++;
             return StashedWorkChoice.Restore;

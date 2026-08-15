@@ -30,21 +30,13 @@ public partial class MainWindow : Window
         DataContext = shell;
         _layout = layout ?? new LayoutSettings();
 
-        // Auto-scroll on append, unless paused. Done here rather than in the view model
-        // because a ScrollViewer is a view concern.
-        shell.Log.RowsAppended += () =>
-        {
-            if (!shell.Log.IsPaused && shell.Log.Rows.Count > 0)
-            {
-                LogList.ScrollIntoView(shell.Log.Rows[^1]);
-            }
-        };
-
+        // The log console's own auto-scroll and chevron went with it into LogPanelView.
+        // What is left here is the part a panel cannot own: the row it sits in.
         shell.Log.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(LogViewModel.IsExpanded))
             {
-                ApplyLogVisibility();
+                ApplyLogRowHeight();
             }
         };
 
@@ -60,121 +52,20 @@ public partial class MainWindow : Window
         // a Cancel beside it would imply an alternative that does not exist.
         shell.RepositoryBusyElsewhere += why => Tell("Already open", why);
 
-        // Discarding a file destroys work git cannot give back, so it is asked about here
-        // rather than assumed. Unset would mean "no", which is the right way round for a
-        // wiring mistake to fail.
-        shell.ConfirmDestructive = Ask;
-
-        // An import writes into a .project - a binary compound document nobody can diff
-        // afterwards - so it is asked about rather than assumed. This is the setting
-        // RequireImportConfirmation has described since it shipped, and this line is what
-        // stops it being a fiction: for as long as it was missing, the only caller answered
-        // "confirmed, because there is nobody to ask".
+        // Every dialog the application can open, in one class rather than as a run of
+        // closures here. Handed to the shell, which passes them down to Sync - so the two
+        // view models share one set of questions and this is the only line that wires them.
         //
-        // The dangerous answer must never be the one a stray Enter picks - see Ask, which is
-        // where that rule now lives for both of these.
-        shell.Sync.ConfirmImport = Ask;
-
-        // The copies taken before every import, which until now nothing could reach. Owned, so
-        // it centres on the window and cannot be lost behind it. Null means cancel, and the
-        // window's own text is the confirmation — there is no second dialog on top.
-        shell.Sync.AskWhichBackup = (project, backups) =>
-        {
-            var window = new BackupRestoreWindow(project, backups, DateTimeOffset.UtcNow)
-            {
-                Owner = this,
-            };
-
-            window.ShowDialog();
-            return window.Chosen;
-        };
-
-        // The guard's questions have three answers, not two, so they need a real dialog for
-        // the same reason the branch prompt does. Owned, so it centres on the window and
-        // cannot be lost behind it — which for a modal blocking a close would look like a
-        // hang rather than a question.
-        shell.AskGuard = prompt =>
-        {
-            var window = new GuardPromptWindow(prompt) { Owner = this };
-            window.ShowDialog();
-            return window.ChoiceResult;
-        };
-
-        // Three named courses of action, so the same window the guard uses rather than a
-        // MessageBox: "Yes" is not an answer to "restore, leave or discard".
-        shell.AskAboutStashedWork = prompt =>
-        {
-            var window = new GuardPromptWindow(
-                prompt.Title,
-                prompt.Body,
-                [.. prompt.Choices.Select(c => new PromptOption(AutoStashNarrative.Label(c), c))],
-                cancels: StashedWorkChoice.Leave)
-            {
-                Owner = this,
-            };
-
-            window.ShowDialog();
-            return window.Result as StashedWorkChoice?;
-        };
-
-        // A branch name needs a text box and live validation, which a MessageBox cannot do.
-        // The dialog is owned so it centres on the window and cannot be lost behind it.
-        shell.PromptForBranchName = () =>
-        {
-            var prompt = new BranchPromptWindow { Owner = this };
-            return prompt.ShowDialog() == true ? prompt.BranchNameResult : null;
-        };
-
-        // The clone dialog runs the conversation — verify, then clone — using git handed to
-        // it by the shell. The view supplies the window; the view model supplies the
-        // operations, so no dialog here ever constructs a git client of its own.
-        shell.PromptForClone = initialUrl =>
-        {
-            var prompt = new ClonePromptWindow(
-                shell.VerifyRemoteAsync,
-                shell.CloneAsync,
-                initialFolder: Path.GetDirectoryName(shell.RepositoryPath),
-                initialUrl: initialUrl)
-            {
-                Owner = this,
-            };
-
-            return Task.FromResult(prompt.ShowDialog() == true ? prompt.ClonedPath : null);
-        };
-
-        // Deleting branches needs a list with checkboxes and three answers, which no
-        // MessageBox can do. The dialog collects the choice; every rule about whether it may
-        // happen - the guard, the remote confirmation, the checkout off a branch being
-        // deleted - stays in the view model where the repository is.
-        shell.PromptForBranchDeletion = candidates =>
-        {
-            var window = new BranchDeleteWindow(candidates) { Owner = this };
-            return window.ShowDialog() == true ? window.Result : null;
-        };
-
-        // A repository the user was told they could come back to, which is not there any
-        // more. Three answers with real labels, so the same window the guard uses - a
-        // MessageBox would have to squeeze "clone it again" into Yes.
-        shell.AskAboutMissingRepository = prompt =>
-        {
-            var window = new GuardPromptWindow(
-                prompt.Title,
-                prompt.Body,
-                [.. prompt.Choices.Select(c => new PromptOption(MissingRepository.Label(c), c))])
-            {
-                Owner = this,
-            };
-
-            window.ShowDialog();
-            return window.Result as MissingRepositoryChoice?;
-        };
+        // Unset would leave NullPrompts in place, which answers "no" to everything: a
+        // wiring mistake destroys nothing rather than silently confirming.
+        shell.Prompts = new WindowPrompts(this, shell);
 
         // After the window has a size, so LogHeight can clamp against it. In the
         // constructor ActualHeight is still zero and a stored 900 px log would be restored
         // whole onto a laptop screen.
         Loaded += (_, _) => ApplyStoredLayout();
 
-        ApplyLogVisibility();
+        ApplyLogRowHeight();
         SyncThemeRadios();
 
         InputBindings.Add(new KeyBinding(shell.RefreshCommand, Key.F5, ModifierKeys.None));
@@ -255,39 +146,6 @@ public partial class MainWindow : Window
         await Dispatcher.InvokeAsync(Close, System.Windows.Threading.DispatcherPriority.Normal);
     }
 
-    /// <summary>
-    /// Put a destructive question, with the safe answer as the default.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>This was MessageBox.Show, and it was the loudest unthemed surface left in the
-    /// application.</b> Every window, tooltip and popup follows the palette - WindowCaption
-    /// goes as far as handing DWM the exact Surface.Base so the title bar and the top bar are
-    /// one surface - and then the two most consequential prompts in the product, discarding a
-    /// file and writing into a .project, opened a bright system dialog over a dark app.
-    /// </para>
-    /// <para>
-    /// <b>Cancel leads, and that is not a style choice.</b> GuardPromptWindow gives the first
-    /// option the accent and IsDefault, so putting Cancel first is what keeps a stray Enter on
-    /// the safe answer - the property the MessageBox got from its defaultResult argument. The
-    /// destructive button is present, quiet, and says what it does rather than "OK".
-    /// </para>
-    /// </remarks>
-    private bool Ask(DestructivePrompt prompt)
-    {
-        var window = new GuardPromptWindow(
-            prompt.Title,
-            prompt.Body,
-            [new PromptOption("Cancel", false), new PromptOption(prompt.Confirm, true)],
-            cancels: false)
-        {
-            Owner = this,
-        };
-
-        window.ShowDialog();
-        return window.Result is true;
-    }
-
     /// <summary>State something that has no question in it.</summary>
     /// <remarks>
     /// No options, which GuardPromptWindow renders as a lone OK. Its own remarks make the
@@ -336,24 +194,24 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Collapse the log list, leaving its header in place.
+    /// Give the log's row a height, and a splitter to drag it with.
     /// </summary>
     /// <remarks>
-    /// The header stays visible so the panel can be reopened and the entry count is still
-    /// readable — collapsing the whole thing to nothing leaves no obvious way back.
+    /// <b>The half of "the log is open" that a panel cannot do for itself.</b> Showing the list
+    /// and turning the chevron belong to <c>LogPanelView</c>; the row and the splitter are this
+    /// window's grid. Both listen to <c>IsExpanded</c> independently rather than one calling
+    /// the other, so neither has to know the other exists.
+    /// <para>
+    /// A GridSplitter cannot resize an Auto row, so the row carries a pixel height while the
+    /// log is open and goes back to Auto - header only - when it closes. The splitter follows,
+    /// because a drag handle above something that cannot grow is a control that lies about what
+    /// it does.
+    /// </para>
     /// </remarks>
-    private void ApplyLogVisibility()
+    private void ApplyLogRowHeight()
     {
         var expanded = _shell.Log.IsExpanded;
 
-        LogList.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
-        LogChevron.Text = (string)FindResource(
-            expanded ? "Icon.ChevronDown" : "Icon.ChevronUp");
-
-        // A GridSplitter cannot resize an Auto row, so the row carries a pixel height while
-        // the log is open and goes back to Auto - header only - when it closes. The splitter
-        // follows, because a drag handle above something that cannot grow is a control that
-        // lies about what it does.
         LogSplitter.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
         LogRow.Height = expanded
             ? new GridLength(LogHeight(), GridUnitType.Pixel)
@@ -404,7 +262,7 @@ public partial class MainWindow : Window
             PanelColumn.Width = new GridLength(width, GridUnitType.Pixel);
         }
 
-        ApplyLogVisibility();
+        ApplyLogRowHeight();
     }
 
     private async void OnOpenRepository(object sender, RoutedEventArgs e) =>
@@ -464,49 +322,6 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>
-    /// Ctrl+Enter commits from the message box.
-    /// </summary>
-    /// <remarks>
-    /// The box accepts newlines, so plain Enter has to keep inserting one - a commit body is
-    /// the whole reason the box is multi-line. Ctrl+Enter is the convention every git client
-    /// uses for this, and reaching for the mouse after typing a message is the interaction
-    /// here that happens dozens of times a day.
-    /// </remarks>
-    private void OnCommitMessageKeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key != Key.Enter ||
-            (Keyboard.Modifiers & ModifierKeys.Control) != ModifierKeys.Control)
-        {
-            return;
-        }
-
-        // Handled either way: a Ctrl+Enter that cannot commit must not fall through and
-        // insert a newline the user did not ask for.
-        e.Handled = true;
-
-        if (_shell.CommitCommand.CanExecute(null))
-        {
-            _shell.CommitCommand.Execute(null);
-        }
-    }
-
-    /// <summary>
-    /// Selecting a row in the tree shows whatever it has to show.
-    /// </summary>
-    /// <remarks>
-    /// A code-behind handler because <c>TreeView.SelectedItem</c> is read-only and cannot be
-    /// bound - the standard WPF workaround, and cheaper than the attached-behaviour it would
-    /// otherwise take.
-    /// </remarks>
-    private void OnTreeNodeSelected(object sender, RoutedPropertyChangedEventArgs<object> e)
-    {
-        if (e.NewValue is TreeRow row)
-        {
-            _shell.Sync.SelectedNode = row;
-        }
-    }
-
     /// <summary>Switch the left panel from the rail.</summary>
     /// <remarks>
     /// Visibility rather than a TabControl: the panels share the card and its header, and a
@@ -535,17 +350,6 @@ public partial class MainWindow : Window
         static Visibility Show(bool visible) =>
             visible ? Visibility.Visible : Visibility.Collapsed;
     }
-
-    /// <summary>
-    /// Selecting a row in the history shows it.
-    /// </summary>
-    /// <remarks>
-    /// Code-behind for the same reason the project tree needs it: <c>TreeView.SelectedItem</c>
-    /// is read-only and cannot be bound. What was picked - a commit or one file inside it - is
-    /// the view model's decision, not this handler's.
-    /// </remarks>
-    private void OnHistoryRowSelected(object sender, RoutedPropertyChangedEventArgs<object> e) =>
-        _shell.History.Select(e.NewValue);
 
     /// <summary>
     /// Show what this machine has: toolchains, versions, paths.

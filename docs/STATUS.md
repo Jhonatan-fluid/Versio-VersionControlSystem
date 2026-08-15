@@ -1,18 +1,25 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-14 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,363 unit + 387 UI + 154 integration, 0 skipped
+**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,384 unit + 478 UI + 192 integration, 0 skipped
 
-> All three re-derived on 2026-08-14, on branch `GitPanel`, after the git-panel plan's **GP-J**
-> (PLC-aware naming of the changed-files rows, the change summary and the drafted commit
-> subject), **GP-I** (the merge-request button across five forges), **safeguards §5.C** (the
-> import confirmation, which the app had been answering for itself), **§5.E** (a way to reach the
-> backups that were being written and read by nothing) and **§5.G** (one repository, one
-> Versio) — and after two defects the product owner found by opening the app, both written up
-> under Findings. The integration suite was
-> re-run in full against real CODESYS 3.5.22.20 — **154 passed, 0 skipped** — including
-> `RepositoryWatcherTests.A_deleted_file_is_reported`, the one noted below as flaky, which
-> passed in this run. The five new integration tests read a forge's hidden request refs out of a
-> real bare repository and need no network.
+> **All three re-derived on 2026-08-15**, on branch `CodeAuditCleanup`, after the shell
+> decomposition: `GitAuthViewModel`, `GitRemoteViewModel` and `LogPanelView` out of
+> `ShellViewModel` and `MainWindow.xaml`, which go **5,573 → 4,958** and **1,218 → 936**. The
+> **integration suite was re-run in full against real CODESYS — 192 passed, 0 skipped, 7m02s**,
+> including `RepositoryWatcherTests.A_deleted_file_is_reported`, the one noted below as flaky,
+> which passed. Before that, in the same session: the log console disposal leak, the shells two
+> window helpers could not reach, the silent repository-lock release, and the thirteen binding
+> errors that had been filling the tracer.
+>
+> **The code-shape queue is closed** — see *Deferred, and not on the critical path*, and the
+> queue itself, for what was declined and why. Four product items are deferred there with the
+> reason each one waits and what would bring it back.
+>
+> Earlier, on 2026-08-14, on branch `GitPanel`: the git-panel plan's **GP-J** (PLC-aware naming
+> of the changed-files rows, the change summary and the drafted commit subject), **GP-I** (the
+> merge-request button across five forges), **safeguards §5.C** (the import confirmation, which
+> the app had been answering for itself), **§5.E** (a way to reach the backups that were being
+> written and read by nothing) and **§5.G** (one repository, one Versio).
 
 > **The commit count is the command now, not a number.** It was wrong by twelve when an audit
 > first checked it, and wrong again twice in one afternoon afterwards — including once by the
@@ -20,6 +27,12 @@
 > every commit cannot be written down in a file that every commit touches. The test counts stay
 > as numbers because they only move when the tests do, and `dotnet test` prints a total per
 > suite when they have.
+>
+> **And that argument has now failed once, which is worth keeping rather than quietly
+> correcting.** The UI count sat at 455 while the suite ran 463: the commit that added
+> `CommandNotificationTests` added eight cases and did not re-derive the header. "They only move
+> when the tests do" is true and is not the same as "somebody notices when they move" — the
+> defence is re-deriving before believing, not the number being slow.
 
 > One integration test, `RepositoryWatcherTests.A_deleted_file_is_reported`, is **flaky under
 > full-suite load** — see Findings. It passes in isolation and failed once during a complete
@@ -53,7 +66,7 @@ opens. That is `SAFEGUARDS.md` phases 1–8, and phase 9 is features rather than
 
 ```
   CODESYS pipeline    ████████████████████  proven on a real project
-  Domain core         ████████████████████  1,379 tests, 426 ms
+  Domain core         ████████████████████  1,384 tests, under 400 ms
   Vendor seam         ████████████████████  enforced from assembly metadata
   Infrastructure      ████████████████████  drives real CODESYS + real git
   Desktop shell       ███████████████████░  full git surface, diff, and a UI audit applied
@@ -162,11 +175,75 @@ format; `.gitattributes` covers every registered vendor's extensions.
 
 ---
 
+## Deferred, and not on the critical path
+
+Decided on 2026-08-15, in one place so that a future session finds the decision rather than
+re-deriving it. **None of these is blocked, none is hard, and none of them is wrong to pick up** —
+they are off the critical path because nothing is broken while they wait, which is a different
+statement from "not worth doing".
+
+| | Why it waits | What would bring it back |
+|---|---|---|
+| **Word-level diff** (§5) | The colours exist and are contrast-checked; `DiffView` tints whole rows. A readability gain on something already correct. | Somebody reading generated XML or ST diffs daily and saying so. It is the strongest candidate of the four. |
+| **Ahead/behind previews** (GP-K, §9d) | The badge already says *how many*; this says *which*. `RecentCommitsAsync` already takes a count and a skip, so it is the smallest thing left in the git plan. | An hour, whenever the git panel is next open on the bench. |
+| **Retry when the IDE closes** (§3) | Every path already recovers — the next save, and reopening the repository. This closes the gap in between. Convenience, not correctness. | A user noticing the wait, or the vendor lock file turning out to be cheap to watch. |
+| **Code signing** (open decision #2) | Nothing external is distributed yet. | **Start this before it is needed, not when.** It is procurement lead time rather than engineering time, and it is the only item on this page that gets worse purely by waiting. |
+
+**Also decided, and more firmly: the code-shape queue is closed.** Staging, the repository
+session and `SyncViewModel` were each measured and declined rather than deferred — see the queue
+below and the finding. The difference matters: the four above are *later*, those three are *no*
+unless something changes.
+
+---
+
 ## What remains, in dependency order
 
 > **Picking this up?** Items 1 and 2 are done and kept for their reasoning. Items 3–8 are
 > untouched: **item 3 is the smallest**, item 4 is the largest piece of user-visible value, and
 > nothing below depends on anything above it except where it says so.
+
+> **The second queue — the code-shape work — is CLOSED, and three of its items were closed by
+> deciding not to do them.** It never had any bearing on what the product does. What was worth
+> taking is taken:
+>
+> 1. ~~**Extract auth and identity out of `ShellViewModel`**~~ — **done.** `GitAuthViewModel`,
+>    545 lines; the shell goes 5,573 → 5,251.
+> 2. ~~**The remote surface**~~ — **done**, and it went ahead of staging on evidence rather than
+>    on the order written here. `GitRemoteViewModel`, 540 lines; 5,251 → **4,958**.
+> 3. ~~**The log console, still inside `MainWindow.xaml`**~~ — **done.** `LogPanelView`;
+>    `MainWindow.xaml` 1,218 → **936**, and all four panels are out.
+>
+> **Not doing, and this is a decision rather than a backlog:**
+>
+> - **Staging.** `GIT-PANEL-PLAN.md`'s GP-E log measured this seam and rejected it — *"a move
+>   dressed as a decomposition"* — and re-measuring agreed: it makes **four** calls into the PLC
+>   engine including `EvaluateGateAsync`/`SatisfyGateAsync`, so the seam runs straight through
+>   the junction where git meets the toolchain. That is the most safety-critical path in the
+>   application and the one place where a refactor that is merely *neutral* is still a bad
+>   trade. Revisit only if staging grows a genuinely separable rule set the way GP-E's selection
+>   logic did — that part already went to Core, which is why the shell grew wiring and shrank
+>   rules.
+> - **The repository session.** Measured **22 borrows**, worst of the three by a distance, and
+>   for a structural reason that will not improve: opening and closing a repository resets
+>   everything, so a collaborator would take most of the shell as arguments. That is the exact
+>   anti-pattern GP-E named.
+> - **`SyncViewModel`, 2,847 lines.** The same shape one size down, and the same answer. It is
+>   the PLC engine's view model — the part of the app that can lose somebody's work — and
+>   nothing about its size is currently costing a reader more than a re-shaping would risk.
+>
+> **What the effort actually produced, and it is not the line count.** Two instruments that did
+> not exist before: `CollaboratorSeamTests`, because deleting a subscription left the suite green
+> **three separate times**; and the git panel's binding-path test, because a renamed binding
+> compiles clean, throws nothing and renders an empty control. Both outlast the refactor and both
+> catch the failure mode that made it risky. **619 lines came out of the shell; the instruments
+> are worth more.**
+>
+> **Do the smaller thing first if you are new to this code**: ~~`LogViewModel` is leaked by
+> thirty tests that construct one inline as a constructor argument~~ — **done**, the shell
+> disposes it now and two window helpers that could not reach their shell at all were fixed with
+> it; see the finding. What is left of that list is `OrphanScanner.cs:194`, which states *"never
+> deleted automatically because it is committed history"* unconditionally — wrong for an export
+> tree sitting under an ignored path.
 
 > **Two other plans are tracked separately, and both are ahead of this list.**
 >
@@ -246,7 +323,7 @@ fixture: two library managers, **both exported now**, and `_coverage.md` reports
   is held (plan §9.2 asks for that, with a tooltip saying why). Git refuses a dirty-tree
   checkout on its own, which covers the dangerous case but not the explanation
 
-### 3. Retry automatically when the IDE closes  ← **start here**
+### 3. Retry automatically when the IDE closes — **deferred, not critical path**
 
 Export and import both handle an open project now. The one piece left is the trigger: the
 vendor's lock file disappearing is a filesystem event the watcher could see, which would make
@@ -256,6 +333,10 @@ Today the next save retries, and reopening the repository retries — the catch-
 open. What is missing is the case in between: the IDE is closed while Versio stays open, and
 nothing notices until the next save. The panel says so rather than going quiet, which is what
 `StalenessSummary` is for.
+
+**Deferred deliberately on 2026-08-15.** It is the smallest item here and it remains the obvious
+next one, but nothing is broken while it waits: every path already recovers, just later than it
+could. It buys convenience, not correctness.
 
 ### 4. Finish the project tree
 
@@ -271,9 +352,15 @@ nothing notices until the next save. The panel says so rather than going quiet, 
 - Context menu, and expansion state persisted per repository. It already survives a refresh;
   it does not yet survive the window closing
 
-### 5. Diff view
+### 5. Diff view — **deferred, not critical path**
 
 Side-by-side mode, and word-level intra-line diff.
+
+**Deferred on 2026-08-15**, and it is the one on this list with the strongest case for being
+picked up first when the deferrals are revisited: the colours already exist and are
+contrast-checked, and the diffs being read are generated XML and ST where a long line often
+differs by one identifier. It is a readability improvement to something that already works
+correctly, which is what puts it off the critical path rather than low value.
 
 ### 6. A second vendor
 
@@ -352,6 +439,13 @@ does not record them has to be run again.
   hidden when there is nothing to say. One sentence for one finding; a count and the first one
   for more, with the detail still in the log. They were surfaced rather than deleted because
   every one of them is a repository in a state Versio cannot resolve on its own.
+- ~~**Thirteen binding errors at every launch, none of them path errors.**~~ — **fixed, and the
+  tracer is clean.** `AutomationProperties.Name` is typed `string` while `ToolTip` and `Tag` are
+  `object`, and a style setter is applied *before* the call site sets either — so for that moment
+  the binding handed null to a string property, once per control. `TargetNullValue=''` on the
+  three setters in `Buttons.xaml`. **13 → 0**, and the accessibility tests still pass, which is
+  what proves the names resolve to the tooltips rather than to the empty string the fix
+  introduced.
 - **`ToolchainState` is a public observable property with no view.** It survives because the
   runner uses its text as the "why this is unavailable" explanation. It should be a plain
   string, not a bindable one.
@@ -363,8 +457,10 @@ does not record them has to be run again.
   Versio's own hash gate, which reads the bytes on disk. Adoption writes `<mirror>/** text
   eol=lf` now; see the finding for the measurement both ways.
 - **The spacing scale is declared and unused** — `Space.1`–`Space.7`, `Pad.Row`, `Pad.Panel` and
-  `Pad.Control` have zero references against **239 hardcoded margin and padding literals**, three
-  of the six most frequent being off the stated scale. Left as one deliberate sweep rather than
+  `Pad.Control` have zero references against **246 hardcoded margin and padding literals** (239
+  when this was written; re-derived 2026-08-14, and the drift is the point — the gap widens on
+  its own every time anything is laid out), three of the six most frequent being off the stated
+  scale. Left as one deliberate sweep rather than
   done incrementally, because half-applied is the one state worse than either — and it should end
   with a test that rejects an off-scale literal, so the rule `Spacing.xaml` states is finally one
   that something enforces. Starting with the six repeat offenders covers 79 of the 239.
@@ -374,18 +470,44 @@ does not record them has to be run again.
   characters inside a changed line differ. A feature rather than a fix, which is why it sat out
   the UI pass — and the highest-value thing the diff pane has left, because the diffs being read
   are generated XML and ST where a long line often differs by one identifier.
-- **The full solution suite flakes under its own load.** Three different tests failed across
-  three consecutive whole-solution runs — `GitHealthTests`, `AdoptAndExportTests`,
-  `AutoStashFlowTests` — each passing in isolation immediately afterwards, and the run after
-  them was clean. All three drive real git or real CODESYS with timeouts while three test
-  projects run concurrently. Not diagnosed further; recorded so the next person does not read a
-  single red run as a regression. Run a project at a time to tell the two apart.
+- ~~**The full solution suite flakes under its own load.**~~ — **diagnosed, and the UI half
+  fixed.** The cause was not timeouts: **fifty-six tests opened a repository through a
+  `ShellViewModel` and never disposed it.** A shell that has opened one owns a
+  `FileSystemWatcher` over the working tree, a `RemotePoller` spawning git subprocesses on a
+  loop, the sync panel's watchers over every tracked project, and the repository lock — none of
+  which stops when the test method returns. With xunit running twenty-eight collections in
+  parallel the suite accumulated dozens of live watchers and polling loops, firing against temp
+  directories their own test had already deleted and competing for the same git binary as
+  whatever was actually running. That is why the failure moved, why it never reproduced alone,
+  and why it reproduced on `main`. Measured: four failures in fourteen observed full runs
+  before, one in the next fourteen after — roughly 29% down to 7%. **Reduced, not cured** — and
+  ~~the remaining suspect is the `LogViewModel` leak in the bullet below~~ **that suspect is now
+  closed without the flake closing with it**: the shell disposes its log, and the shells two
+  window helpers built inline as arguments — where no `using` could reach them — are disposed
+  too. Ten runs after that: eight green, two red, under load this session inflicted on itself,
+  so no rate can be read off it. The three tests that failed all drive **real git subprocesses**
+  and all dispose correctly, which points the remainder at process and filesystem contention
+  rather than at anything leaked. See the finding.
+- **The integration suite is not covered by that fix**, and one of the three classes originally
+  named — `AdoptAndExportTests` — lives there. `Versio.Integration.Tests` constructs no
+  `ShellViewModel` at all, so it leaked none; it drives real CODESYS with real timeouts, and
+  `RepositoryWatcherTests.A_deleted_file_is_reported` is separately known to be flaky under load
+  (see its finding). A red integration run is still worth re-running a project at a time before
+  reading it as a regression.
+- **`Versio.App.Tests` shells must be disposed** — `using var shell = ...`. This is the rule the
+  bullet above exists to keep; `TestShell` states it where the next test author will read it.
 - **Hand-maintained counts in these documents drift.** The commit count was wrong by twelve,
   the project tree's test count by six, and the scenario suite's by twenty-two — all of them
   written once and never re-checked. Re-derive rather than trust: `git rev-list --count HEAD`,
   and `dotnet test --filter FullyQualifiedName~<TestClass>` for a per-area figure.
 - **One integration test is flaky under full-suite load** — see the finding below. Diagnosed,
   two fixes attempted and reverted, left alone deliberately.
+- **The orphan scanner's sentence is unconditional and sometimes wrong.**
+  `OrphanScanner.cs:194` reports an export directory with no bound project as "never deleted
+  automatically because it is committed history". That is the usual case and the right default,
+  but it is stated as fact: the scanner never asks git. An export tree under an ignored path -
+  `phase0/roundtrip/baseline`, written by `tools/Test-RoundTrip.ps1` - was reported with the
+  same words while being neither committed nor history.
 - **`RefrigeratorControl.~u` is in pushed history.** Untracked and ignored now, but the commit
   that carried a username, machine name and pid to `origin/main` is still there. Removing it
   means rewriting a pushed commit — the owner's call, not a maintenance task.
@@ -407,9 +529,343 @@ does not record them has to be run again.
 
 ---
 
+## The shape of the code, after an audit
+
+An audit read the repository for dead code, duplication and things too large to review. It found
+**no dead code and almost no duplication** — no `TODO`, no suppressed warning, no unreferenced
+private member, and seven duplicated blocks at eight lines across all of `src`. What it found
+instead was concentration: a few files carrying most of the weight, so a change to any one thing
+inside them produced a diff touching everything else.
+
+What moved, and why each one is worth knowing before editing it:
+
+| Was | Now | The reason it is split the way it is |
+|---|---|---|
+| `Controls.xaml`, 1,228 lines | 70 lines + six dictionaries | Each leaf merges `Primitives.xaml` **itself**. A `StaticResource` resolves against its own dictionary and its own merges, never against a sibling the parent merged — this file's own header records the `XamlParseException` that cost. `StyleSheetResolutionTests` renders every keyed style, so a missing merge fails the suite instead of the first render |
+| Nine settable `Func<>` dialog hooks across two view models, wired from 115 lines inside `MainWindow`'s constructor | `IUserPrompts`, answered by `WindowPrompts` | The set of questions the app can ask now has a name and one place to read it. `NullPrompts` answers "no" to all of them, which is what a view model with no view attached gets — the same answer a user who cancels everything gives, so the call sites needed no new defaulting |
+| `SyncOrchestrator.AttemptAsync`, 275 lines | 112 lines + eleven named gates | The gates above `CoalescerRefuses` only *judge* — they take nothing and release nothing. The coalescer and the breaker **consume** something, which is why they are not in that list and why they report what they took. An `Attempt` record carries the state so every gate judges the same one |
+| `MainWindow.xaml`, 2,517 lines | **936 lines + four panels** | `Views/Panels/`. A `UserControl` owns its own name scope, so `window.FindName` cannot see inside a panel; and a collapsed one has not applied its template, so its contents are not in the visual tree until shown once. `RowTemplates.xaml` exists because a `UserControl` cannot see the resources of the `Window` hosting it. The log console was the fourth and last, held back twice because it is the only one with code-behind — and **the margin has to sit on the hosted control, not inside it**, or the named element and the painted one stop being the same rectangle |
+| `GitCliClient`, 1,544 lines | 799 lines + three parts | Split on its own existing section markers, and it was already `partial` for `[GeneratedRegex]`. The primary constructor's parameters are in scope across every part, which is what made it free |
+| `OnUi` and its `SynchronizationContext`, twice | `ObservableObject` | One rule about the one thread allowed to touch a bound collection |
+| The atomic write, four times | `JsonFile` | The temp-then-replace and the BOM-less UTF-8 really were the same rule four times. **The serializer options were not** and were left alone: the settings store has no enum converter because the theme is deliberately a string, and the lock and session stores have no `PropertyNameCaseInsensitive`. Unifying them would have changed what each accepts off disk, on files shipped versions have already written |
+| Thirteen hand-built test shells | `TestShell.Build` | And the argument most easily forgotten — `toolchains: (_, _) => null`, without which a test goes looking for CODESYS on the machine running it |
+
+**What is still concentrated, and it is now a decision rather than a backlog.**
+`ShellViewModel` is **4,958** lines — down from 5,573, with auth, identity and the remote
+surface gone — and still the largest single thing in the repository, at roughly twelve
+responsibilities. Its clusters are **not contiguous**: staging
+appears in two places, so it cannot be split by marking it `partial` and cutting on line ranges.
+**Nothing further is planned, and the two remaining clusters were measured before being
+declined.** Staging borrows 8 but makes **four** calls into the PLC engine including the export
+gate; the repository session borrows **22**, because opening and closing a repository resets
+everything. Both would take most of the shell as constructor arguments, which is the
+"move dressed as a decomposition" GP-E named. `SyncViewModel` at 2,847 lines gets the same
+answer for the same reason.
+
+**If a future session does take one of them, the pattern the three extractions set is:** map the
+cluster before cutting — every hazard named in advance was real and none surprised the work —
+**pass collaborators in rather than reaching for them**, **replace calls back into the shell with
+one event**, and **add a row to `CollaboratorSeamTests` before believing the move**, because the
+suite failed to notice a deleted subscription three separate times.
+
+**Two things the refactor itself taught.** A pure move can still lose coverage: three panel
+handlers changed from reading a `_shell` field to asking their own `DataContext`, and disabling
+all three left the whole suite green — nothing crossed that seam. And a test can quietly stop
+meaning anything: `MainWindowTests` counted two `TreeView`s in one walk of the window, which
+would have gone on passing while checking one fewer every time a panel moved out.
+
+---
+
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### Three moves, three deleted subscriptions, three green suites
+
+The log console was the last of the four panels inside `MainWindow.xaml`, and the one held back
+through three earlier passes because it is the only one with real code-behind. `LogPanelView` now
+holds it: **`MainWindow.xaml` 1,218 → 936**, its code-behind 412.
+
+**The code-behind turned out to be the interesting part rather than the obstacle.** Two of the
+three handlers are the console's own — the list follows its tail on append, the chevron swaps
+glyph on expand — and both are view concerns that moved with it. The third could not move at all:
+the `GridSplitter` above the console and the `RowDefinition` it resizes belong to the window's
+grid, and **a panel cannot own the row it is placed in.** So "the log is open" now moves two
+things in two places, and they listen to `IsExpanded` independently rather than one calling the
+other, so neither has to know the other exists.
+
+**The geometry test caught something no other check could have.** Moving the card's `Margin`
+inside the `UserControl` left the control filling the whole grid cell — flush against the rail —
+while the `Border` painted 8 px in. *Nothing looked different*, because the Border still painted
+exactly where it always had. But `FindName("LogConsole")` now returns the **container**, so the
+named element and the painted element had quietly stopped being the same rectangle, and the
+overlap assertion said so. The margin belongs on the host. This is the fourth distinct way a WPF
+layout has been correct and wrong in this repository, and the first where the defect was in what
+the *test* could see rather than in what the user could.
+
+**And then the number that matters.** Deleting the panel's single wiring line — the
+`DataContextChanged` subscription that is the whole reason this panel has code-behind — left
+**all 477 tests green**. The chevron would have pointed the wrong way and the log would have
+stopped following its own tail, in front of a user, with the suite entirely happy.
+
+That is the **third** time in one session:
+
+| Move | Deleted | Suite |
+|---|---|---|
+| Auth and identity | `Auth.Changed` subscription | 467 green |
+| The remote surface | `Remote.Changed` subscription | 475 green |
+| The log console | the panel's `DataContextChanged` wiring | 477 green |
+
+Three for three. **A pure move is the single most likely kind of change to lose its coverage
+silently**, because nothing about it looks like new behaviour — there is no new branch to test, no
+new failure mode to imagine, and the tests that existed go on passing by construction. The rule
+this earns is narrow and worth stating: **after moving a subscription, delete it and run the
+suite.** If nothing goes red, the move is not yet finished.
+
+The test that closes this one expands the log **through the window** rather than by constructing
+the panel and handing it a context, because `DataContextChanged` is precisely what would not fire
+in the second case — a test that built the control directly would have passed against the broken
+version.
+
+**Three tests asserted `IsType<Border>` on the console and now get a `UserControl`**, relaxed to
+`FrameworkElement` exactly as the history panel's move already required, with the same note:
+what those tests want is something to measure, not a particular container.
+
+### The queue said staging; the evidence said the remote surface
+
+`GitRemoteViewModel` — the standing, the background watch and fetch/pull/push/publish, 540
+lines. `ShellViewModel` goes **5,251 → 4,958**, under five thousand for the first time.
+
+**It is not what the queue said to do next, and the disagreement was already written down.**
+`GIT-PANEL-PLAN.md`'s GP-E log records that a `GitPanelViewModel` extraction — the staging seam —
+was measured and deliberately dropped: *"a move dressed as a decomposition"*, because
+`CommitAsync` alone reaches eight collaborators. It named the remote surface as the seam worth
+cutting instead. That document also states that where the plan and the phase log disagree, **the
+phase log is right**.
+
+Re-measured rather than taken on faith, because a note from an earlier phase can go stale:
+
+| Cluster | Borrows | Calls into the PLC engine |
+|---|---|---|
+| Staging | 8 | **4** — including `EvaluateGateAsync` and `SatisfyGateAsync`, the export gate |
+| Remote | 9 | **2** — `ReleaseAfterPushAsync`, `WhileGitRewritesTheTreeAsync` |
+| Repository session | **22** | 4 |
+
+Same order of borrow count for the first two; completely different depth. Staging's seam runs
+through the junction where git meets the toolchain — committing *runs a CODESYS export* — which
+is the most safety-critical path in the application. The remote surface's two calls are both
+narrow, and extracting auth had already made it cleaner, because `Auth` is now a collaborator it
+can simply hold rather than a tangle it shares.
+
+**The measuring instrument was wrong twice before it was right, and that is worth recording.** A
+first pass scored the clusters against a hand-written list of collaborators, so it could only
+find what was already on the list — it missed `BranchName` and `ClearForContextChangeAsync`
+entirely and reported 8 where the answer was 9. A second pass brace-counted method bodies from
+their signature, which runs away on an expression-bodied member: `WakeThePoller() =>
+_poller.Wake();` has no opening brace, so the parser swallowed the rest of the file and invented
+four borrows the cluster never had. **A measurement that over-reports argues for the wrong seam**,
+which is worse than not measuring.
+
+**`ReconcileAsync` stayed behind.** Including it took the borrow count from nine to eleven for
+one method: exiting a divergence reads `Conflicted` and `IsMidMerge` and belongs with GP-G's
+conflict surface.
+
+**Nine borrows against auth's four, and the poller is all of the difference.** A background watch
+*is* its callbacks — what counts as busy, what to do when the remote moves, what to ask on each
+probe — and every one of those is the shell's. They were already delegates before this moved,
+which is what makes nine honest rather than alarming. Handing over the object that owns them
+instead of the delegates would be passing the shell itself, which is precisely the anti-pattern
+GP-E named.
+
+**Deleting the `Changed` subscription left all 475 tests green. That is the second time in one
+session** — auth was the first, at 467. Two occurrences stop being bad luck and start being a
+property of the work: a pure move looks like nothing to a test suite, so nothing gets written to
+watch it. The seam test is therefore a **theory over collaborators** now rather than a class per
+extraction, and staging and the repository session should each arrive as one more row — which is
+far likelier than each remembering to write its own class. Both existing rows fail with their
+subscription removed, verified one at a time.
+
+`CommandNotificationTests` needed the same treatment for the same reason. It named
+`ShellViewModel` members, so four commands moving to `Remote` would have silently dropped out of
+the theory that exists to catch a command missing from the sweep — the failure it guards against,
+one level up. It carries an owner beside each command now.
+
+**The blanket XAML rename introduced a bug, and auditing every site rather than trusting the
+regex is what caught it.** The branch dropdown's `AheadBehind` lives inside an `ItemTemplate`, so
+its DataContext is a `BranchEntry`, which has its own per-branch `AheadBehind`. It never bound to
+the shell's and must not bind to the collaborator's. The other fifteen were then each checked for
+the same thing rather than assumed — none is inside a template. Worth knowing for the next
+rename: **the binding-path test covers the git panel, and this binding was in `MainWindow`**, in
+a template that is only realised once the dropdown has branches.
+
+### The first collaborator out of the shell, and the seam nothing was watching
+
+`GitAuthViewModel` — the credential and the git identity, 545 lines. `ShellViewModel` goes
+**5,573 → 5,251**. First out because it had the fewest ties into that class's 68 private fields,
+not because it is the biggest cluster; auth and identity travel together because they are one
+question asked twice — *can this machine speak to the remote, and does git know who is asking.*
+
+**The four hazards were mapped before a line moved, and all four were real.** `_remote` was read
+by three unrelated things; the identity feeds the commit gate; the setters called back into the
+shell; the commands gate on the shell's busy flag. None of them turned up mid-flight, which is
+the whole argument for mapping a 5,500-line file before cutting it rather than discovering its
+shape from compiler errors.
+
+`_remote` went **to** the collaborator rather than staying behind and being passed in, and the
+reason is worth keeping: it is the credential's subject. What a failure *means* is decided by the
+transport, and who a credential belongs to is decided by the host. Forge detection and the
+merge-request button read it too, so it could have gone either way — but splitting a value from
+the thing that re-reads it on every open is how the two drift apart.
+
+**Then the part that matters. Deleting the `Changed` subscription left all 467 tests green.**
+
+The extraction replaced two direct calls — `RaiseHealth` and `RaiseGitCommandStates` — with one
+event and one subscription. That subscription is now the only thing making the status light move
+and the commit button re-ask when a credential fails or an identity arrives. Removing it entirely
+broke nothing any test could see. This is the **third** sighting of the same shape in this
+repository: three moved panel handlers that no test touched, four commands raised from the wrong
+setter, and now a brand-new seam. **A pure move is exactly when coverage goes missing, because
+nothing about it looks like new behaviour.**
+
+`AuthSeamTests` is written against the *consequences the shell owns* rather than against the
+event — an assertion that `Changed` fired would pass while the shell ignored it. Two of its three
+cases fail with the subscription removed; the third, which pins that the shell reads the
+collaborator's remote rather than a copy, correctly does not.
+
+**Twelve XAML bindings became `Auth.X`, and nothing in the toolchain can check a binding path.**
+Each one is a string that compiles clean, throws nothing, and renders an empty control when it is
+wrong. `--trace-bindings` cannot answer it either, and the reason is specific: both banners in
+that panel are `Collapsed` on any machine whose git is configured and whose credential is
+stored — which is every machine this is developed on. A clean trace over a banner nobody showed
+is indistinguishable from success, which is the trap `App.xaml.cs` already documents.
+
+So the git panel now has a test that realises it and asserts **no `BindingExpression` is in
+`PathError`**, plus a count assertion so a walk that stops reaching bindings cannot pass in
+silence. Mutation-checked by restoring one pre-extraction path: it fails naming the control, the
+path and the fact that it does not resolve. It covers every binding in that panel, not only the
+twelve this change touched.
+
+**Writing that test found a defect in its own file.** `GitPanelChromeTests.Build` read
+`using var shell = TestShell.Build();` and then returned that same instance — disposed at the
+closing brace, before any test touched it, so all sixteen tests in the class ran against a
+torn-down shell. It had been harmless because none of them opens a repository and disposal had
+almost nothing to release. It stopped being harmless in the commit immediately before, when the
+shell began disposing the log console the window is bound to.
+
+**Verified in the app, not only in the suite**: identity and credential both resolve through the
+collaborator on open (`identity: …`, `credential for https://github.com: stored`), zero `ERR`, and
+the binding trace is byte-identical to the run before the extraction.
+
+### The log said the lock was taken and never that it was given back
+
+Found by running the app, which is the fifth or sixth time that has produced something no suite
+had. The launch window was clean — zero `ERR`, window constructed, repository opened — and the
+log ended, on a deliberate close, at *"change detection stopped (2 watcher(s) disposed)"*. That
+is the **first** line of the shell's teardown. Everything after it was silent.
+
+Most of that is explained by the code rather than by a defect. But one piece is not:
+`JsonSessionMarkerStore.Release` logs when it **refuses** to release a marker belonging to
+another session, and logs when the delete **fails** — and says nothing on the path that runs on
+every ordinary exit. `Write` announces the claim. So the log of any given run records the
+repository being taken and never handed back, and **a clean shutdown leaves the same trace as a
+crash.**
+
+The evidence that separates them does exist, in the wrong place: the *next* launch reports
+*"the session that left the marker (pid 34692) is gone"*. That is a different run's log, and no
+use at all to somebody reading the log of the session that misbehaved — which is the log they
+will have.
+
+This is the house rule about silent success rather than silent failure, and it is the same shape
+as the rolling file sink that was written, reviewed and never instantiated: the code was correct
+throughout. Nothing was broken. It simply did not say so.
+
+**The second test is the one worth keeping.** Asserting the release line appears is nearly free
+and would pass against a version that logged it unconditionally — including on the branch where
+the release is *refused*, which would have the log stating that a lock this process never held
+had been handed back. That is worse than the silence it replaced. So the pair is pinned: the
+refusal says "not releasing" and must not say "released", and the marker is still on disk
+afterwards, so the log and the disk agree. Mutation-checked by moving the new line above the
+refusal branch — the second test fails, the first still passes.
+
+### The disposal rule could not reach the one thing it most needed to
+
+`ShellViewModel.Dispose` stopped the watcher, the remote poller, the sync and history panels and
+the repository lock. It did nothing about `LogViewModel` — which is `IDisposable` precisely
+because it owns a running `DispatcherTimer` and a subscription to the log sink.
+
+So a test that obeyed `using var shell = ...` **to the letter still leaked a timer and a live
+handler, every time.** That is the sharp part: the rule written up after fifty-six undisposed
+shells was being followed, and could not have helped, because `TestShell` builds the log, hands
+it to the shell and returns only the shell. Nothing the test can reach owns it. Thirty-six call
+sites, all leaking, all of them looking correct.
+
+**The cost is not what the previous write-up assumed.** It said the timer "cannot tick on a
+thread with nothing pumping a dispatcher, so the practical cost is the subscription rather than
+the work". `StaHarness` disproves it in its own remarks: there is **one** long-lived STA thread
+running `Dispatcher.Run()` for the entire suite, and it has to be one, because the theme's
+`Freezable`s belong to the thread that created them. Every log built inside a windowed test puts
+its 100 ms pump on the one dispatcher that actually pumps. A leaked one keeps firing for the rest
+of the run — draining its queue, calling `Filters.UpdateCounts(_sink.Snapshot())` and mutating an
+`ObservableCollection` on the same thread every later WPF test is using. That is a mechanism for
+a failure that is load-dependent, moves between tests, and never reproduces alone.
+
+**The shell disposes the log now, and it is handed one rather than building it** — so this is a
+class taking ownership of an object it did not create. Deliberate, and stated on the property.
+Nothing else keeps a reference: `App` hands one over and forgets it, `TestShell` returns only the
+shell, so there is no second owner to disagree. The alternative — handing the log back so the
+caller disposes it too — makes the rule two things to remember at thirty-six sites, and a rule
+with an exception is the rule that gets forgotten. Disposed last, because everything above it in
+`Dispose` logs on the way out and those lines should still reach the panel.
+
+**More shells were leaking where no rule could have reached them — one per test, across two
+classes, seventeen tests between them.**
+`AutomationNameTests` and `ShellLayoutTests` each built their shell *inline as an argument* to
+`MainWindow`, so it was never in a variable and there was nothing to put `using` on. The helpers
+are instance methods recording what they build now, and the classes dispose them; dropping
+`static` was the whole edit, so every call site is unchanged.
+
+**Two things the tests themselves taught, both by failing for the wrong reason first.**
+
+The first version asserted `HeldCount == 0` after disposal. It failed against the broken code —
+by two and by three — and it would have failed against the fixed code just as surely, because
+`Dispose` stops the pump and releases the subscription without emptying the queue: the entries
+the shell logged while it was alive are still sitting in it, and nothing drains them without a
+dispatcher. **A baseline that survives the fix is not evidence**, and a test that goes red at the
+moment you want it to is not thereby going red for your reason. It asserts on a specific entry now, emitted after disposal, not
+arriving. Worth knowing for anything similar: the filter path is unusable here, because `Rebuild`
+repopulates from `_sink.Snapshot()` directly and would show that entry whether the subscription
+was released or not — a test written through it passes against both versions of the code.
+
+**Measured afterwards, and it does not say what it would be convenient for it to say.** Ten
+consecutive full runs of `Versio.App.Tests`: **eight green, two red** — a 2-failure run and a
+1-failure run. That is not an improvement on the 1-in-14 the previous fix left behind, and it is
+not evidence of a regression either; 1/14 against 2/10 is nothing at this sample size.
+
+**The measurement is contaminated, by me.** A second test host was running filtered classes
+concurrently while runs 3 to 5 were in flight, and those runs took 1m38s, 1m57s and 2m01s
+against 40-50s for the five that followed. Both red runs are inside that window. Since the whole
+phenomenon is load-dependent, a measurement taken under self-inflicted extra load establishes
+nothing about the rate. **Run the measurement on an otherwise idle machine, and do not touch it
+while it runs** — the same discipline the fifty-six-shell measurement needed.
+
+**What the failures do point at.** Every one of them —
+`GitHealthTests.Setting_an_identity_from_the_panel_unblocks_the_commit`, and two in
+`AutoStashFlowTests` — is a test that drives **real git subprocesses against a real temp
+repository**, and all three dispose their shells correctly. So what survives here looks like
+contention for the git binary and the filesystem, not a leaked object. That is a different
+problem from the one this finding closes, and it wants a different fix.
+
+**So: the leak is closed, and the flake is not.** Those are separate claims and only the first
+one is proven — by a test that fails against the old code and passes against the new, which is
+the only instrument here that answers a question rather than a mood.
+
+And the disposal in those two window helpers **is watched by nothing**, by construction:
+cross-test resource hygiene is invisible to every test in a suite. So it was broken deliberately,
+by disposing on the xunit thread instead of the STA one. That throws
+`NotSupportedException` — *"does not support changes to its SourceCollection from a thread
+different from the Dispatcher thread"* — from `CollectionView`, and fails all thirteen tests in
+the class. It also corrected the comment: the reason given for marshalling to the STA thread had
+been the timer's thread affinity, which was a guess about which thing objects first, and wrong.
 
 ### A dropdown centred in its own column, half a bar away from its buttons
 
@@ -2401,6 +2857,109 @@ context is part of the environment, alongside the per-user .NET install already 
 differs from the number of distinct objects exactly when an object exports to more than one
 layer — which the fixture does, via its GVL. Found by an assertion that trusted the field's
 name. Nothing depends on it today; the integration test asserts against distinct GUIDs.
+
+### The repository dropdown was blank over a list of one
+
+The control rendered empty while the list behind it held exactly the right entry, selected
+nothing, and reported no error anywhere.
+
+`RecentRepositories.Canonical` exists precisely for this — its own remarks record the sibling
+defect, *"git answers `rev-parse --show-toplevel` with forward slashes and the Windows folder
+picker hands back backslashes, so opening one repository both ways put two entries in the list
+for it"*. That fix was applied **on the way in**: `Promote` canonicalises, so the list correctly
+refuses to hold one repository twice.
+
+The dropdown then looked the selection up **on the way out** with an ordinal `==`:
+
+```csharp
+SelectedRepository = RecentRepositories.FirstOrDefault(r => r.Path == select);
+```
+
+The stored spelling is canonical. The opened spelling is whatever opened it. `C:\GIT\Versio`
+and `C:/GIT/Versio` are not the same string, `FirstOrDefault` returned null, and a
+`ComboBox` with a null `SelectedItem` draws nothing. Half an argument, applied to half a
+problem, leaves a list of one with nothing selected.
+
+**Nothing was watching it, in three separate ways.** No binding failed — the binding tracer over
+the running app reported thirteen errors and not one of them on this control, because a
+successful binding to null is not an error. No test covered it: the recent-list tests assert on
+what is *stored*, which was always right. And the app itself logged `1 recent repositor(ies)
+restored`, which was also true.
+
+Found by launching the app and looking at it. It needed nobody to type anything unusual — a
+forward-slash path is what git itself answers — and it had been reachable since the canonical
+fix went in.
+
+All three lookups go through one `RowFor` now, and the test opens a repository by the other
+spelling and asserts the row is selected. It fails with the canonicalisation removed.
+
+**The tell worth keeping.** A control that is blank rather than wrong is the shape of a
+successful binding to a null, and no instrument in this codebase reports one — not the binding
+tracer, not the log, not a test that asserts on the view model's inputs. The only thing that
+catches it is opening the app.
+
+### Fifty-six shells nobody disposed, and a suite that failed at random
+
+The UI suite failed roughly one full run in three, on a **different test each time**, and every
+one of them passed when its class was run alone. It had been recorded here as flakiness under
+load — three named classes, timeouts, real git and real CODESYS running concurrently — and left
+undiagnosed on the grounds that a red run should not be read as a regression.
+
+That was the wrong conclusion, and the reason it survived is worth more than the fix: **a
+symptom that moves looks environmental.** Three classes failing on three different runs reads
+as load; one class failing every time reads as a bug. It was a bug.
+
+**Fifty-six tests opened a repository through a `ShellViewModel` and never disposed it.** A
+shell that has opened one owns:
+
+- a `FileSystemWatcher` over the working tree,
+- a `RemotePoller` that spawns `git` subprocesses on a loop,
+- the sync panel's own watchers over every tracked project and its export tree,
+- and the repository lock.
+
+None of that stops when the test method returns, and `Dispose` is the only thing that ends it.
+With xunit running twenty-eight collections in parallel — every class outside the `theme`
+collection is its own — the suite accumulated dozens of live watchers and polling loops. They
+fired against temp directories their own test had already deleted, and competed for the same
+`git` binary as whatever test was actually running.
+
+Every symptom follows from that. **The failure moves** because it lands on whichever test is
+unlucky enough to be waiting on git when the noise peaks. **It never reproduces alone** because
+alone there is nothing else running. **It reproduces on `main`** because the leak predates every
+branch that inherited it.
+
+**Measured rather than argued, and it is a reduction rather than a cure.** Before: four failures
+across fourteen observed full runs, on `main` as well as the working branch — roughly one run in
+three. After `using var shell = ...` at all fifty-six sites: one failure across the next
+fourteen, the first ten of them consecutive. So about 29% down to about 7%.
+
+**Something is still leaking, and the candidate is named below.** Do not read a single red run as
+a regression yet; do read a second one as this, still.
+
+Two things this leaves behind.
+
+~~**`LogViewModel` is still leaked**, thirty times over, by tests that construct one inline as a
+constructor argument.~~ — **fixed, and the sentence that followed it here was wrong.** It read:
+*"the timer cannot tick on a thread with nothing pumping a dispatcher, so the practical cost is
+the subscription rather than the work"*. `StaHarness` runs **one** long-lived STA thread with a
+live `Dispatcher.Run()` for the whole suite — it has to, because the theme's `Freezable`s belong
+to the thread that created them — so every log built inside a windowed test puts its 100 ms pump
+on the one dispatcher that does pump, and a leaked one goes on doing the work for the rest of the
+run. The instinct about ownership was right, though: the fix was changing who owns the log, not
+restructuring thirty call sites. See the finding above.
+
+**`CA2000` was tried as a guard and rejected.** It fires fifty-four times on the suite *after*
+the fix, almost all of them on that `new LogViewModel(sink)` argument, and it cannot see
+ownership through a factory like `TestShell.Build` — so it would have missed the actual defect
+while demanding fifty-four suppressions. The rule is stated in `TestShell`'s own remarks
+instead, where somebody about to write the fifty-seventh test will read it.
+
+**The general lesson, which this codebase already half-knew.** `Eventually.Press` exists because
+of the same class of problem — a press landing while something else is running does nothing, and
+the wait after it times out looking like a real defect. Its remarks say it "passed in isolation
+and failed under full-suite load, twice, before the cause was clear". That is the second sighting
+of the same tell. **A test that passes alone and fails in company is not being slow; something
+alongside it is still running.**
 
 ### A flaky watcher test, and two fixes that made it worse
 

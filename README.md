@@ -159,10 +159,10 @@ Versio.sln
 │                               (text, types, yaml, libraries) import no scriptengine
 │                               and run on CPython too.
 ├─ tests/
-│  ├─ Versio.Core.Tests/        800 unit tests — pure, no IO, ~290 ms
-│  ├─ Versio.App.Tests/         45 tests that build the real dialogs against the real
-│  │                            stylesheet on an STA thread — no window is ever shown
-│  └─ Versio.Integration.Tests/ 102 tests against real CODESYS and real git, ~7 min
+│  ├─ Versio.Core.Tests/        1,384 unit tests — pure, no IO, under a second
+│  ├─ Versio.App.Tests/         478 tests that build the real windows and panels against
+│  │                            the real stylesheet on an STA thread — none is ever shown
+│  └─ Versio.Integration.Tests/ 192 tests against real CODESYS and real git, ~7 min
 ├─ tools/                       PowerShell harnesses used during Phase 0, plus
 │                               New-VersioIcon.ps1 which generates the app icon
 ├─ assets/                      versio.svg (reference drawing) and versio.ico
@@ -180,6 +180,34 @@ Versio.sln
 `Versio.App` holds the WPF shell: `Theme/tokens/` for the design tokens, `Theme/controls/` for
 control styles, `ViewModels/`, `Views/`, and `Spikes/` for the tree performance harness
 (`Versio.exe --spike --measure`).
+
+Two things inside it are split across files for a reason worth knowing before editing either.
+
+**`Theme/controls/Controls.xaml` is a running order, not a stylesheet.** The styles live in
+`Primitives.xaml` (converters, icon glyphs, `IconText`, the motion storyboards, the focus rings)
+and five leaves beside it — `Buttons`, `Inputs`, `Rows`, `ScrollBars`, `Chrome`. **Each leaf
+merges `Primitives.xaml` itself**, and that line is load-bearing: a `StaticResource` resolves
+against its own dictionary and its own merges, never against a sibling the parent merged
+alongside it. Drop the merge and the file still compiles, then throws at the first render.
+`StyleSheetResolutionTests` renders every keyed style in the merged result, which is what turns
+that back into a build-time answer.
+
+**`Views/Panels/` holds all four panels** — the three the rail switches between (git, history,
+project) and the log console — as `UserControl`s. `MainWindow.xaml` is 936 lines and keeps each
+one's row, name and visibility, because the rail decides which is showing.
+
+Three consequences, each of which has cost something at least once: a `UserControl` owns its own
+XAML name scope, so `window.FindName` cannot see inside a panel; a collapsed one has not applied
+its template, so its contents are not in the visual tree until it has been shown once; and **a
+card's outer margin belongs on the hosted control rather than inside it**, or the element
+`FindName` returns and the element that paints stop being the same rectangle — which is invisible
+on screen and immediately visible to a geometry test. `Views/RowTemplates.xaml` exists because a
+`UserControl` cannot see the resources of the `Window` hosting it.
+
+The log console was the last one out and the only one with real code-behind: it auto-scrolls on
+append and swaps its chevron on expand. What stayed behind is the half a panel cannot own — the
+`GridSplitter` above it and the `RowDefinition` it resizes are the window's grid, so both sides
+listen to `IsExpanded` independently rather than one calling the other.
 
 ### Vendor boundaries
 

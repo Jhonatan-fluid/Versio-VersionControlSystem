@@ -34,9 +34,7 @@ public sealed class HistoryRowChromeTests
 {
     private static (MainWindow Window, ShellViewModel Shell) Build()
     {
-        var sink = new InMemoryLogSink();
-        var logger = new VersioLogger(new SystemClock()).AddSink(sink);
-        var shell = new ShellViewModel(logger, new LogViewModel(sink), toolchains: (_, _) => null);
+        using var shell = TestShell.Build();
         return (new MainWindow(shell), shell);
     }
 
@@ -80,7 +78,10 @@ public sealed class HistoryRowChromeTests
             content.Arrange(new Rect(0, 0, 1400, 900));
             content.UpdateLayout();
 
-            var panel = Assert.IsType<Border>(window.FindName("HistoryPanel"));
+            // A UserControl since the panel moved into its own file, so what this
+            // asks for is an element to walk rather than a particular container.
+            var panel = Assert.IsAssignableFrom<FrameworkElement>(
+                window.FindName("HistoryPanel"));
             var texts = AllOf<TextBlock>(panel)
                 .Where(t => t.DataContext is CommitFileRow)
                 .Select(t => t.Text)
@@ -122,7 +123,10 @@ public sealed class HistoryRowChromeTests
             content.Arrange(new Rect(0, 0, 1400, 900));
             content.UpdateLayout();
 
-            var panel = Assert.IsType<Border>(window.FindName("HistoryPanel"));
+            // A UserControl since the panel moved into its own file, so what this
+            // asks for is an element to walk rather than a particular container.
+            var panel = Assert.IsAssignableFrom<FrameworkElement>(
+                window.FindName("HistoryPanel"));
 
             var texts = AllOf<TextBlock>(panel)
                 .Where(t => t.DataContext is CommitFileRow)

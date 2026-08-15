@@ -1,4 +1,5 @@
 using System.IO;
+using Versio.App.Mvvm;
 using Versio.App.ViewModels;
 using Versio.Core.Logging;
 using Versio.Infrastructure.Platform;
@@ -28,19 +29,9 @@ namespace Versio.App.Tests;
 /// </remarks>
 public sealed class ImportConfirmationTests
 {
-    private static ShellViewModel Shell()
-    {
-        var sink = new InMemoryLogSink();
-        var logger = new VersioLogger(new SystemClock()).AddSink(sink);
-        return new ShellViewModel(logger, new LogViewModel(sink), toolchains: (_, _) => null);
-    }
+    private static ShellViewModel Shell() => TestShell.Build();
 
-    private static ShellViewModel Shell(out InMemoryLogSink sink)
-    {
-        sink = new InMemoryLogSink();
-        var logger = new VersioLogger(new SystemClock()).AddSink(sink);
-        return new ShellViewModel(logger, new LogViewModel(sink), toolchains: (_, _) => null);
-    }
+    private static ShellViewModel Shell(out InMemoryLogSink sink) => TestShell.Build(out sink);
 
     /// <summary>A repository with one tracked project whose mirror is already exported.</summary>
     private static void GivenATrackedProject(TempRepo repo)
@@ -155,7 +146,7 @@ public sealed class ImportConfirmationTests
         await EditTheMirrorAndSettle(repo, shell);
 
         var asked = 0;
-        shell.Sync.ConfirmImport = _ =>
+        shell.Asked().Import = _ =>
         {
             asked++;
             return false;
@@ -188,7 +179,8 @@ public sealed class ImportConfirmationTests
         var before = await File.ReadAllBytesAsync(ProjectPath(repo));
         await EditTheMirrorAndSettle(repo, shell);
 
-        Assert.Null(shell.Sync.ConfirmImport);
+        // Nothing attached, so the questions are NullPrompts' — which answer no.
+        Assert.Same(NullPrompts.Instance, shell.Sync.Prompts);
 
         await Eventually.Press(shell.Sync.ConfirmImportCommand, "the import button");
 
