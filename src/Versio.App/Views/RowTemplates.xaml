@@ -1,0 +1,140 @@
+<!--
+    The row templates every list of changed files shares.
+
+    A dictionary of its own because the git panel moved into its own file, and a UserControl
+    cannot see the resources of the Window that hosts it: a StaticResource resolves against
+    its own dictionary and its own merges, never against a parent it happens to be sitting
+    in. Left in Window.Resources these resolved fine while the markup was inline and threw
+    "Cannot find resource named 'ChangeRowTemplate'" the moment it was not - at load, from a
+    file that compiled clean. The stylesheet's own header records the same trap.
+
+    Merged by MainWindow and by GitPanelView, each for itself, for that reason.
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+
+    <!-- Neither BoolToVisibility nor ResourceKey is declared in this file, or in the
+         Window.Resources these templates came out of. Both moved to the stylesheet so every
+         window gets the one instance: a private copy here is why SystemInfoWindow, which
+         uses the same key, once threw on open. -->
+
+    <!-- The templates below bind to ChangeRow and read Glyph, BrushKey and Path off it.
+         They stay together because the git panel wants both and MainWindow wants the first,
+         and three copies would be three chances for a glyph and its colour to disagree. -->
+
+
+
+    <!-- One row template for every list of changed files. Three copies of it would
+         be three chances for the glyph and its colour to disagree.
+
+         TWO LINES, AND THE NAME LEADS. This drew {Binding Path} on one line with
+         TextTrimming="CharacterEllipsis", which trims the TAIL - so in a 380 px panel
+         an exported PLC tree showed "Device/Plc Logic/Applic..." on every row and hid
+         the only part that differed. The filename was never on screen.
+
+         Now the first line is what distinguishes one row from the next - the OBJECT's
+         name where Versio knows it (FB_Motor, not FB_Motor.st) with its type beside
+         it - and the directory drops to a secondary line where eliding it costs
+         nothing. The tooltip still carries the whole path, because that is what git
+         will commit and somebody will want to copy it. -->
+    <DataTemplate x:Key="ChangeRowTemplate">
+        <Grid ToolTip="{Binding Path}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="18" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="{Binding Glyph}"
+                       VerticalAlignment="Top" Margin="0,1,0,0"
+                       FontFamily="{DynamicResource Font.Mono}"
+                       FontSize="{DynamicResource Font.Size.Caption}"
+                       FontWeight="{DynamicResource Font.Weight.Semibold}"
+                       Foreground="{Binding BrushKey,
+                           Converter={StaticResource ResourceKey}}" />
+
+            <StackPanel Grid.Column="1">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{Binding Primary}"
+                               FontFamily="{DynamicResource Font.Mono}"
+                               FontSize="{DynamicResource Font.Size.Caption}"
+                               Foreground="{DynamicResource Brush.Text.Primary}"
+                               TextTrimming="CharacterEllipsis" />
+
+                    <!-- The type, and the fact that an edit here goes nowhere. Both
+                         collapse for an ordinary file rather than rendering empty:
+                         a blank chip is a control that looks broken. -->
+                    <Border Margin="6,0,0,0" Padding="4,0" CornerRadius="2"
+                            VerticalAlignment="Center"
+                            Background="{DynamicResource Brush.Surface.Raised}"
+                            BorderThickness="1"
+                            BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                            Visibility="{Binding IsObject,
+                                Converter={StaticResource BoolToVisibility}}">
+                        <TextBlock Text="{Binding TypeLabel}"
+                                   FontFamily="{DynamicResource Font.UI}"
+                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                   Foreground="{DynamicResource Brush.Text.Secondary}" />
+                    </Border>
+
+                    <TextBlock Text="&#xE72E;" Margin="6,0,0,0"
+                               VerticalAlignment="Center"
+                               FontFamily="{DynamicResource Font.Icon}"
+                               FontSize="{DynamicResource Font.Size.Caption}"
+                               Foreground="{DynamicResource Brush.Text.Secondary}"
+                               ToolTip="Exported for review only. Editing this file does not change the project - the next export rewrites it."
+                               Visibility="{Binding IsExportOnly,
+                                   Converter={StaticResource BoolToVisibility}}" />
+                </StackPanel>
+
+                <TextBlock Text="{Binding Secondary}"
+                           FontFamily="{DynamicResource Font.Mono}"
+                           FontSize="{DynamicResource Font.Size.Caption}"
+                           Foreground="{DynamicResource Brush.Text.Secondary}"
+                           TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+        </Grid>
+    </DataTemplate>
+
+    <!--
+        Staging rows: a checkbox, then the shared body.
+
+        DECLARED AFTER ChangeRowTemplate, AND THAT IS NOT COSMETIC. A StaticResource
+        resolves in declaration order, so with this above the template it references,
+        every realised row threw:
+
+            XamlParseException: Cannot find resource named 'ChangeRowTemplate'
+
+        Nothing catches that until a row exists. The window builds, the panel lays out,
+        the suite passes - and the application dies the moment somebody clicks the Git
+        rail on a repository with a changed file. Moving this below fixes it; the
+        alternative is DynamicResource, which costs a lookup per row for a resource
+        that never changes.
+
+        A separate template from ChangeRowTemplate because that one is also used by the
+        history panel's commit-file list, where a checkbox is meaningless - a commit's
+        files are not something you stage. The glyph and path live in one place still,
+        so the two cannot drift apart on what a modified file looks like.
+
+        The checkbox is NOT the list selection. Clicking the row opens its diff;
+        ticking the box says what the next action applies to. Two jobs, two pieces of
+        state - and a user who lost their diff every time they changed what they were
+        about to stage would stop using one of the two.
+    -->
+    <DataTemplate x:Key="StageRowTemplate">
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <CheckBox Grid.Column="0" Margin="0,0,6,0"
+                      VerticalAlignment="Center"
+                      Style="{StaticResource MenuCheck}"
+                      IsChecked="{Binding IsSelected, Mode=TwoWay,
+                          UpdateSourceTrigger=PropertyChanged}" />
+
+            <ContentPresenter Grid.Column="1" Content="{Binding}"
+                              ContentTemplate="{StaticResource ChangeRowTemplate}" />
+        </Grid>
+    </DataTemplate>
+</ResourceDictionary>

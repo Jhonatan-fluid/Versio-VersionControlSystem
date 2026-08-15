@@ -41,7 +41,8 @@ public sealed class GitPanelGeometryTests(ITestOutputHelper output)
         new(new FileChange { Path = path, Staged = staged, Unstaged = unstaged });
 
     /// <summary>A panel carrying about as much as it ever will.</summary>
-    private static (MainWindow Window, ShellViewModel Shell, Border Panel, FrameworkElement Content) Loaded()
+    private static (MainWindow Window, ShellViewModel Shell, FrameworkElement Panel,
+                    FrameworkElement Content) Loaded()
     {
         var sink = new InMemoryLogSink();
         var logger = new VersioLogger(new SystemClock()).AddSink(sink);
@@ -71,7 +72,7 @@ public sealed class GitPanelGeometryTests(ITestOutputHelper output)
         content.Arrange(new Rect(0, 0, 1400, 900));
         content.UpdateLayout();
 
-        return (window, shell, (Border)window.FindName("GitPanel")!, content);
+        return (window, shell, (FrameworkElement)window.FindName("GitPanel")!, content);
     }
 
     [Fact]
@@ -107,8 +108,8 @@ public sealed class GitPanelGeometryTests(ITestOutputHelper output)
 
             // By name: the conflict section added a third ListBox to this panel, and indexing
             // by position would quietly start measuring that one instead.
-            var staged = Assert.IsType<ListBox>(window.FindName("StagedList"));
-            var unstaged = Assert.IsType<ListBox>(window.FindName("UnstagedList"));
+            var staged = Inside<ListBox>(window, "StagedList");
+            var unstaged = Inside<ListBox>(window, "UnstagedList");
 
             output.WriteLine($"staged list:   {staged.ActualHeight:F0} px for 4 rows");
             output.WriteLine($"unstaged list: {unstaged.ActualHeight:F0} px for 12 rows");
@@ -170,7 +171,7 @@ public sealed class GitPanelGeometryTests(ITestOutputHelper output)
         {
             var (window, _, _, _) = Loaded();
 
-            var unstaged = Assert.IsType<ListBox>(window.FindName("UnstagedList"));
+            var unstaged = Inside<ListBox>(window, "UnstagedList");
             var item = AllOf<ListBoxItem>(unstaged).FirstOrDefault();
 
             Assert.True(item is not null, "no unstaged row was realised");
@@ -213,6 +214,21 @@ public sealed class GitPanelGeometryTests(ITestOutputHelper output)
             CheckBox c => $"CheckBox '{c.Content}'",
             _ => e.GetType().Name,
         };
+
+    /// <summary>A named control inside the git panel.</summary>
+    /// <remarks>
+    /// The panel lives in its own file, and a UserControl owns its own XAML name scope — so
+    /// <c>window.FindName("StagedList")</c> returns null however visible the list is. The
+    /// panel is reached from the window, which does still name it, and the list from the
+    /// panel. Naming is still worth the indirection: the conflict section added a third
+    /// ListBox here, and indexing by position would quietly measure that one instead.
+    /// </remarks>
+    private static T Inside<T>(MainWindow window, string name) where T : FrameworkElement
+    {
+        var panel = Assert.IsAssignableFrom<FrameworkElement>(window.FindName("GitPanel"));
+
+        return Assert.IsType<T>(panel.FindName(name));
+    }
 
     private static IEnumerable<T> AllOf<T>(DependencyObject root)
         where T : DependencyObject

@@ -40,14 +40,16 @@ public sealed class PlcAwareRowTests
         return (new MainWindow(shell), shell);
     }
 
-    private static (Border Panel, FrameworkElement Content) ShowGitPanel(MainWindow window)
+    private static (FrameworkElement Panel, FrameworkElement Content) ShowGitPanel(
+        MainWindow window)
     {
         var content = Assert.IsAssignableFrom<FrameworkElement>(window.Content);
 
         var rail = Assert.IsType<RadioButton>(window.FindName("RailGit"));
         rail.IsChecked = true;
 
-        var panel = Assert.IsType<Border>(window.FindName("GitPanel"));
+        var panel = Assert.IsAssignableFrom<FrameworkElement>(
+            window.FindName("GitPanel"));
 
         content.Measure(new Size(1400, 900));
         content.Arrange(new Rect(0, 0, 1400, 900));

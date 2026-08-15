@@ -202,7 +202,8 @@ public sealed class MergeRequestFlowTests
             content.Arrange(new Rect(0, 0, 1400, 900));
             content.UpdateLayout();
 
-            var panel = Assert.IsType<Border>(window.FindName("GitPanel"));
+            var panel = Assert.IsAssignableFrom<FrameworkElement>(
+                window.FindName("GitPanel"));
 
             var button = AllOf<Button>(panel).Single(b =>
                 BindingOperations.GetBinding(b, ButtonBase.CommandProperty)?.Path.Path

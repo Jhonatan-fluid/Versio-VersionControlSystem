@@ -182,7 +182,8 @@ public sealed class ShellLayoutTests
             rail.IsChecked = true;
 
             var content = Arrange(window);
-            var panel = Assert.IsType<Border>(window.FindName("GitPanel"));
+            var panel = Assert.IsAssignableFrom<FrameworkElement>(
+                window.FindName("GitPanel"));
 
             Assert.Equal(Visibility.Visible, panel.Visibility);
             Assert.True(panel.RenderSize.Width > 0, "the git panel did not render");

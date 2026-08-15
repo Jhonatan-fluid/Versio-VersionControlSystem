@@ -44,7 +44,7 @@ public sealed class GitPanelChromeTests
     }
 
     /// <summary>Show the git panel the way a user does, and lay it out.</summary>
-    private static (Border Panel, FrameworkElement Content) ShowGitPanel(MainWindow window)
+    private static (FrameworkElement Panel, FrameworkElement Content) ShowGitPanel(MainWindow window)
     {
         var content = Assert.IsAssignableFrom<FrameworkElement>(window.Content);
 
@@ -53,7 +53,10 @@ public sealed class GitPanelChromeTests
         var rail = Assert.IsType<RadioButton>(window.FindName("RailGit"));
         rail.IsChecked = true;
 
-        var panel = Assert.IsType<Border>(window.FindName("GitPanel"));
+        // A UserControl since the panel moved into its own file. What every caller
+        // here wants is something to walk and measure, not a particular container.
+        var panel = Assert.IsAssignableFrom<FrameworkElement>(
+            window.FindName("GitPanel"));
         Assert.Equal(Visibility.Visible, panel.Visibility);
 
         content.Measure(new Size(1400, 900));
@@ -281,8 +284,11 @@ public sealed class GitPanelChromeTests
             // BY NAME, not by position. A third ListBox arrived with the conflict section, and
             // an index-based lookup silently started measuring the wrong control - which is
             // exactly the kind of test that keeps passing while it stops meaning anything.
+            //
+            // Through the panel rather than the window: the git panel is a UserControl now
+            // and owns its own name scope, so the window cannot see the lists inside it.
             var lists = new[] { "StagedList", "UnstagedList" }
-                .Select(n => Assert.IsType<ListBox>(window.FindName(n)))
+                .Select(n => Assert.IsType<ListBox>(panel.FindName(n)))
                 .ToList();
 
             foreach (var list in lists)

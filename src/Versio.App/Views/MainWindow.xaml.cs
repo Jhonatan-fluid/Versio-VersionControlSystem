@@ -331,33 +331,6 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Ctrl+Enter commits from the message box.
-    /// </summary>
-    /// <remarks>
-    /// The box accepts newlines, so plain Enter has to keep inserting one - a commit body is
-    /// the whole reason the box is multi-line. Ctrl+Enter is the convention every git client
-    /// uses for this, and reaching for the mouse after typing a message is the interaction
-    /// here that happens dozens of times a day.
-    /// </remarks>
-    private void OnCommitMessageKeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key != Key.Enter ||
-            (Keyboard.Modifiers & ModifierKeys.Control) != ModifierKeys.Control)
-        {
-            return;
-        }
-
-        // Handled either way: a Ctrl+Enter that cannot commit must not fall through and
-        // insert a newline the user did not ask for.
-        e.Handled = true;
-
-        if (_shell.CommitCommand.CanExecute(null))
-        {
-            _shell.CommitCommand.Execute(null);
-        }
-    }
-
-    /// <summary>
     /// Selecting a row in the tree shows whatever it has to show.
     /// </summary>
     /// <remarks>
