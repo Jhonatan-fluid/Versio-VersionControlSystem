@@ -17,6 +17,39 @@ public abstract class ObservableObject : INotifyPropertyChanged
 {
     public event PropertyChangedEventHandler? PropertyChanged;
 
+    /// <summary>
+    /// The UI thread, captured when the view model is constructed.
+    /// </summary>
+    /// <remarks>
+    /// Watcher callbacks arrive on threadpool threads, and touching an
+    /// <see cref="System.Collections.ObjectModel.ObservableCollection{T}"/> bound to a WPF
+    /// list from one of those throws. Captured rather than taking a Dispatcher dependency so
+    /// a view model still runs in a plain test host, where the context is null and everything
+    /// runs inline.
+    /// </remarks>
+    private readonly SynchronizationContext? _ui = SynchronizationContext.Current;
+
+    /// <summary>Run <paramref name="action"/> on the UI thread, from whichever thread we are on.</summary>
+    /// <remarks>
+    /// Here rather than on each view model that wants it. The shell and the sync panel each
+    /// carried a byte-identical copy of this and of the field above it, which is two places
+    /// for one rule about the one thread that may touch a bound collection.
+    /// <para>
+    /// Inline when the context is null (a test host) or when we are already on it, so a
+    /// caller that is already on the UI thread is not made to wait for a message pump.
+    /// </para>
+    /// </remarks>
+    protected void OnUi(Action action)
+    {
+        if (_ui is null || SynchronizationContext.Current == _ui)
+        {
+            action();
+            return;
+        }
+
+        _ui.Post(_ => action(), null);
+    }
+
     protected void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 

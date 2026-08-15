@@ -31,8 +31,6 @@ public sealed class JsonLockStore(string repositoryRoot, IVersioLogger? logger =
         Converters = { new JsonStringEnumConverter() },
     };
 
-    private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
-
     public string Path => System.IO.Path.Combine(repositoryRoot, ".versio", "local", "state.json");
 
     public async Task<LockState?> ReadAsync(CancellationToken ct)
@@ -45,7 +43,7 @@ public sealed class JsonLockStore(string repositoryRoot, IVersioLogger? logger =
 
         try
         {
-            var json = await File.ReadAllTextAsync(Path, Utf8NoBom, ct).ConfigureAwait(false);
+            var json = await File.ReadAllTextAsync(Path, JsonFile.Utf8NoBom, ct).ConfigureAwait(false);
             var state = JsonSerializer.Deserialize<LockState>(json, Options);
 
             _log.Debug(LogCategory.Lock,
@@ -77,15 +75,7 @@ public sealed class JsonLockStore(string repositoryRoot, IVersioLogger? logger =
 
     public async Task WriteAsync(LockState state, CancellationToken ct)
     {
-        var dir = System.IO.Path.GetDirectoryName(Path)!;
-        Directory.CreateDirectory(dir);
-
-        var temp = Path + ".tmp";
-        await File.WriteAllTextAsync(temp, JsonSerializer.Serialize(state, Options), Utf8NoBom, ct)
-            .ConfigureAwait(false);
-
-        // Atomic swap. File.Move with overwrite is atomic on NTFS.
-        File.Move(temp, Path, overwrite: true);
+        await JsonFile.WriteAsync(Path, state, Options, ct).ConfigureAwait(false);
 
         _log.Debug(LogCategory.Lock,
             $"persisted {state.Bindings.Count} lock(s) to {Path}");

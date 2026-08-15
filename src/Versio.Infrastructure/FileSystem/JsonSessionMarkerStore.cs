@@ -35,8 +35,6 @@ public sealed class JsonSessionMarkerStore(string repositoryRoot, IVersioLogger?
         Converters = { new JsonStringEnumConverter() },
     };
 
-    private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
-
     public string Path => System.IO.Path.Combine(
         repositoryRoot,
         RepositoryPresence.MarkerPath.Replace('/', System.IO.Path.DirectorySeparatorChar));
@@ -52,7 +50,7 @@ public sealed class JsonSessionMarkerStore(string repositoryRoot, IVersioLogger?
         try
         {
             return JsonSerializer.Deserialize<SessionMarker>(
-                File.ReadAllText(Path, Utf8NoBom), Options);
+                File.ReadAllText(Path, JsonFile.Utf8NoBom), Options);
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
@@ -68,17 +66,9 @@ public sealed class JsonSessionMarkerStore(string repositoryRoot, IVersioLogger?
     {
         try
         {
-            var folder = System.IO.Path.GetDirectoryName(Path);
-            if (!string.IsNullOrEmpty(folder))
-            {
-                Directory.CreateDirectory(folder);
-            }
-
             // Temp-then-replace, like state.json beside it: a torn marker would be read back
             // as null, which silently disables the guard rather than announcing itself.
-            var temp = Path + ".tmp";
-            File.WriteAllText(temp, JsonSerializer.Serialize(marker, Options), Utf8NoBom);
-            File.Move(temp, Path, overwrite: true);
+            JsonFile.Write(Path, marker, Options);
 
             _log.Debug(LogCategory.Lock,
                 $"claimed this repository for pid {marker.ProcessId} in {Path}");

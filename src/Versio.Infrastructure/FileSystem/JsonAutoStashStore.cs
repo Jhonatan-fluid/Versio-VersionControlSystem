@@ -36,8 +36,6 @@ public sealed class JsonAutoStashStore(string repositoryRoot, IVersioLogger? log
         Converters = { new JsonStringEnumConverter() },
     };
 
-    private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
-
     /// <summary>The file itself, so a log line can name it.</summary>
     public string Path =>
         System.IO.Path.Combine(repositoryRoot, ".versio", "local", "autostash.json");
@@ -51,7 +49,7 @@ public sealed class JsonAutoStashStore(string repositoryRoot, IVersioLogger? log
 
         try
         {
-            var json = await File.ReadAllTextAsync(Path, Utf8NoBom, ct).ConfigureAwait(false);
+            var json = await File.ReadAllTextAsync(Path, JsonFile.Utf8NoBom, ct).ConfigureAwait(false);
             var state = JsonSerializer.Deserialize<AutoStashState>(json, Options)
                         ?? AutoStashState.Empty;
 
@@ -81,15 +79,7 @@ public sealed class JsonAutoStashStore(string repositoryRoot, IVersioLogger? log
 
     public async Task WriteAsync(AutoStashState state, CancellationToken ct)
     {
-        var dir = System.IO.Path.GetDirectoryName(Path)!;
-        Directory.CreateDirectory(dir);
-
-        var temp = Path + ".tmp";
-        await File.WriteAllTextAsync(temp, JsonSerializer.Serialize(state, Options), Utf8NoBom, ct)
-            .ConfigureAwait(false);
-
-        // Atomic swap. File.Move with overwrite is atomic on NTFS.
-        File.Move(temp, Path, overwrite: true);
+        await JsonFile.WriteAsync(Path, state, Options, ct).ConfigureAwait(false);
 
         _log.Debug(LogCategory.Lock,
             $"persisted {state.Entries.Count} auto-stash record(s) to {Path}");

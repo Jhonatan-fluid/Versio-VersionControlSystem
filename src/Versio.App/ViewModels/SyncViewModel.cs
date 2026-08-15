@@ -149,9 +149,6 @@ public sealed class SyncViewModel : ObservableObject
     private FileChangeWatcher? _watcher;
     private DispatcherTimer? _deferredTick;
 
-    /// <summary>Captured at construction, which happens on the UI thread.</summary>
-    private readonly SynchronizationContext? _ui = SynchronizationContext.Current;
-
     private string _stalenessSummary = string.Empty;
     private int _unexportedCount;
     private string _treeSearch = string.Empty;
@@ -1638,18 +1635,6 @@ public sealed class SyncViewModel : ObservableObject
         System.IO.Path.Combine(
             _repositoryRoot!,
             repoRelative.Replace('/', System.IO.Path.DirectorySeparatorChar));
-
-    /// <summary>Run on the UI thread, whichever thread we are called from.</summary>
-    private void OnUi(Action action)
-    {
-        if (_ui is null || SynchronizationContext.Current == _ui)
-        {
-            action();
-            return;
-        }
-
-        _ui.Post(_ => action(), null);
-    }
 
     /// <summary>
     /// The whole working tree: every tracked project with its objects, and every other

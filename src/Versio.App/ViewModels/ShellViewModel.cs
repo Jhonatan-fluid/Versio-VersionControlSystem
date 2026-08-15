@@ -339,17 +339,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     private readonly RepositoryLocator _locator;
     private readonly IClock _clock;
 
-    /// <summary>
-    /// The UI thread, captured at construction.
-    /// </summary>
-    /// <remarks>
-    /// Watcher callbacks arrive on threadpool threads, and touching an
-    /// <see cref="ObservableCollection{T}"/> bound to a WPF list from one of those throws.
-    /// Captured rather than taking a Dispatcher dependency so the view model still runs in a
-    /// plain test host, where the context is null and everything runs inline.
-    /// </remarks>
-    private readonly SynchronizationContext? _ui = SynchronizationContext.Current;
-
     private readonly StatusRefreshPolicy _policy;
 
     /// <summary>
@@ -2134,18 +2123,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 OnUi(() => _ = RunRefreshAsync(trigger, null));
             }
         }
-    }
-
-    /// <summary>Marshal to the UI thread, or run inline when there is no UI (tests).</summary>
-    private void OnUi(Action action)
-    {
-        if (_ui is null || SynchronizationContext.Current == _ui)
-        {
-            action();
-            return;
-        }
-
-        _ui.Post(_ => action(), null);
     }
 
     // ---------------------------------------------------------------- git panel
