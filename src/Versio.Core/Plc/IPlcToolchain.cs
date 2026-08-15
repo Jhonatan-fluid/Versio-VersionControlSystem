@@ -106,6 +106,34 @@ public interface IPlcProjectFormat
     /// decided by <see cref="ProjectOccupancyProbe.Resolve"/>.
     /// </remarks>
     ProjectOccupancy ParseOccupancy(string markerContents);
+
+    /// <summary>
+    /// True when <see cref="PlanImport"/> needs this file's content to plan it.
+    /// </summary>
+    /// <remarks>
+    /// The planner is pure and cannot read a disk; the caller can, but which suffixes carry a
+    /// parseable declaration is vendor knowledge. So the caller asks per file and loads text
+    /// for exactly the ones the format names — today, textual sources whose declaration
+    /// header can name an object the manifest does not know yet.
+    /// </remarks>
+    bool NeedsTextToPlan(string relativePath);
+
+    /// <summary>
+    /// Decide what an import of this mirror would do, before the toolchain starts.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Pure: manifest and listing in, plan out. The manifest may be null or stale — the plan
+    /// says so in <see cref="ImportPlan.StructuralChangesUnavailable"/> rather than guessing,
+    /// and still classifies every file from what can be known without it.
+    /// </para>
+    /// <para>
+    /// This is how the import becomes manifest-driven without the sync engine learning any
+    /// vendor's file shapes: the orchestrator walks the directory and reads the manifest, the
+    /// format decides what each file means, and the script executes exactly the plan.
+    /// </para>
+    /// </remarks>
+    ImportPlan PlanImport(Projects.ProjectManifest? manifest, IReadOnlyList<MirrorFile> mirror);
 }
 
 /// <summary>

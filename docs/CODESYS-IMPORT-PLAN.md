@@ -407,17 +407,38 @@ not needing an answer.
 
 ## Phase 1 — Manifest-driven importer *(foundation; G3–G6)*
 
-**New `src/Versio.Core/Projects/ImportPlanner.cs`** — pure:
-`ImportPlan Plan(ProjectManifest manifest, IReadOnlyList<MirrorFile> mirror)`
+~~**New `src/Versio.Core/Projects/ImportPlanner.cs`**~~ → ✅ **built 2026-08-15 as
+`src/Versio.Core/Plc/Codesys/CodesysImportPlanner.cs`**, and the location change is a seam
+correction, not a preference. The planner owns the suffix tables, the stem codec and the form
+dispatch — all CODESYS knowledge — and `Versio.Core.Projects` is one of the namespaces
+`VendorSeamTests` keeps vendor-free. So the plan **types** are neutral
+(`Versio.Core.Plc/ImportPlan.cs`), the entry point is on the existing seam
+(`IPlcProjectFormat.PlanImport`, beside `NeedsTextToPlan` so the caller can load text for
+exactly the files the vendor names without knowing why), and the reasoning lives behind it.
+This document's original path would have been the third vendor leak the seam test exists to
+catch, written into the plan before the test could see it.
 
-- Manifest path present in mirror → **Update** (GUID, the manifest's verbatim `name`, `type`,
-  `form`, `parent`).
-- Mirror path absent from manifest → **Create** (name from `StDeclarationParser`, falling back to
-  `PathMapper.DecodeStem`; warn when they disagree — that is G3).
-- `form == LIBRARIES` or a not-importable type → **skip, announced**.
-- Neither object nor bookkeeping → **skip with a warning**, never `import_native` (G6).
-- Manifest below `ExportCoverage.ReportingSchema`, or absent/unparseable → plan **Update and Create
-  only**, stating that deletes, renames and moves are unavailable until re-export. Never guess.
+- ✅ Manifest path present in mirror → **Update** (GUID, the manifest's verbatim `name`,
+  `form`-dispatched route: `ST_*` → text, `TASK_BOTH` → typed, `NATIVE*` → native, an unknown
+  form → refused with a sentence rather than guessed at).
+- ✅ Mirror path absent from manifest → **Create** (name from `StDeclarationParser`, falling back
+  to `PathMapper.DecodeStem`; warn when they disagree — that is G3). `DecodeStem` had **no
+  production caller** until this; its parity tests now protect live code.
+- ✅ `form == LIBRARIES` / `TASK_NATIVE` → **skip, announced**, with the importable sibling read
+  from the manifest by shared GUID — the disk probe for a typed sibling can go once the script
+  runs from the plan.
+- ✅ Neither object nor bookkeeping → **skip with a warning**, never `import_native` (G6).
+- ✅ Manifest below `ExportCoverage.ReportingSchema`, or absent/unparseable → plan **Update and
+  Create only**, stating that deletes, renames and moves are unavailable until re-export. Never
+  guess — but a recorded name is still believed, because staleness is about what a manifest
+  does *not* list.
+- ✅ **Owner chains resolve by GUID, and the manifest name disambiguates the dotted-stem
+  split** — `My.Thing.xml` whose recorded name is `My.Thing` is *not* split into owner and
+  member, which the filename alone can never decide. G5's surviving half (names that already
+  exist) is handled, not just declared unreachable.
+- ✅ 29 pure tests in `CodesysImportPlannerTests`, including the committed fixture planned end
+  to end, each G-numbered rule exercised with the input that used to break it, and three
+  mutations (G3, G5, G6) verified to turn the suite red.
 
 **Script:** resolve with **`find("a", "b", "c")` varargs** using the manifest's real names — *not*
 a python list, which raises `TypeError: expected Array[str], got list`. `create_textual` takes its
