@@ -200,11 +200,11 @@ already exists.**
 | ~~3rd~~ | ✅ **The committed fixture mirror, regenerated.** Landed 2026-08-15 | It was asserting against a mirror the current exporter cannot produce. **The feared cost did not materialise: every existing content file came back byte-identical**, `Task Configuration.xml` included — the only changes are the new `.tasks.yaml`, one `form` field (`NATIVE_R` → `TASK_NATIVE`), `objectCount` 12 → 13, and the coverage report. One assertion moved, exactly as predicted. It also unlocked the reader test below |
 | ~~4th~~ | ✅ **`.tasks.yaml` parsed by its own reader, against committed bytes.** Landed 2026-08-15 | The cheap half of the typed path's missing coverage, and it needs **no CODESYS** — the same shape as the library test that has run for months. Verified non-vacuous by perturbing an expected value. The expensive half, a real mutation applied to a project, stays in Phase 6 |
 | **NEXT** | **The three honesty fixes** | Small, unrelated to each other, and each makes the *next* failure visible instead of silent. None depends on any phase |
-| **5th** | **Phase 1 — manifest-driven importer** | The foundation. Nothing else can be planned C#-side until the plan exists |
-| **6th** | **`versio_native_equiv.py`** | A shared prerequisite, not a phase. Phase 2's native content check needs it and so does Phase 5 — it was written down as a Phase 5 artifact and is needed earlier |
-| **7th** | **Phases 2 and 3 — deletes, renames, moves** | Together, as originally planned. Phase 3's detection reuses Phase 2's delete candidates |
-| **8th** | **Phase 5 — a mirror that stops churning** | Wants Phases 1–3 settled first, because it changes when files are rewritten and every earlier phase's diffs are easier to read without it |
-| **9th** | **Phase 6 — remaining gaps, tests, docs** | G8 and G9, the parity tests, the integration tests |
+| **6th** | **Phase 1 — manifest-driven importer** | The foundation. Nothing else can be planned C#-side until the plan exists |
+| **7th** | **`versio_native_equiv.py`** | A shared prerequisite, not a phase. Phase 2's native content check needs it and so does Phase 5 — it was written down as a Phase 5 artifact and is needed earlier |
+| **8th** | **Phases 2 and 3 — deletes, renames, moves** | Together, as originally planned. Phase 3's detection reuses Phase 2's delete candidates |
+| **9th** | **Phase 5 — a mirror that stops churning** | Wants Phases 1–3 settled first, because it changes when files are rewritten and every earlier phase's diffs are easier to read without it |
+| **10th** | **Phase 6 — remaining gaps, tests, docs** | G8 and G9, the parity tests, the integration tests |
 
 ### The three honesty fixes
 
@@ -237,7 +237,7 @@ exactly the case its docstring names is worth revisiting either way.
 
 ---
 
-## Phase 4 — Task configuration, typed both ways *(G7 and G11)* · **build first**
+## Phase 4 — Task configuration, typed both ways *(G7 and G11)* · ✅ **built 2026-08-15**
 
 Mirrors the library-reference design exactly, which is the precedent to copy:
 
@@ -299,15 +299,17 @@ Mirrors the library-reference design exactly, which is the precedent to copy:
   itself, came back byte-identical**, which is also the strongest available evidence that
   the export is still deterministic across everything this touched.
 - ⬜ **An integration test that changes a task priority and asserts the project afterwards.**
-  Listed under Phase 6, and worth pulling forward: the typed path is proven by a hand-run
-  mutation today and by nothing automated, which is the same shape as the coverage gap that
-  let G11 live.
-  - **Split it in two, because the halves cost wildly different amounts.** The expensive half
-    is the real-CODESYS mutation — keep it in Phase 6. The cheap half is parsing the committed
-    `.tasks.yaml` with the reader that ships beside it, which needs **no CODESYS at all**:
-    `The_committed_library_file_parses_with_the_reader_that_ships_beside_it` is that test for
-    libraries and has run for months. It cannot be written until the fixture above carries the
-    file, which is the second reason to regenerate first.
+  Listed under Phase 6, and worth pulling forward: the write step is still proven by a
+  hand-run mutation and by nothing automated, which is the same shape as the coverage gap
+  that let G11 live.
+  - **Split in two, because the halves cost wildly different amounts.** ✅ **The cheap half
+    landed 2026-08-15** — `The_committed_task_file_parses_with_the_reader_that_ships_beside_it`
+    parses the committed `.tasks.yaml` with the reader the importer calls, needs **no CODESYS**,
+    and runs in ten seconds. It was impossible until the fixture above carried the file.
+  - ⬜ **The expensive half is what is still open**, and it is the one that matters: nothing
+    writes a priority through the API and asserts the project changed. So the emitter, the
+    reader, the committed bytes and the `TYPED_SIBLING` skip are all watched, and **the write
+    is not** — the single step the entire G7/G11 argument rests on.
 
 **Why this is first.** It is the only phase that fixes something a user is living with today, and
 it fixes two:
