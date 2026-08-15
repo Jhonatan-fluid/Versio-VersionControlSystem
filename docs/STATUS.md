@@ -2,6 +2,21 @@
 
 **Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,385 unit + 478 UI + 192 integration, 0 skipped
 
+> **Also 2026-08-15, on branch `GitImportPlan`: Phase 0 of the import plan started, and its
+> first probe found a defect that reaches users.** P7 measured what an import → export cycle does
+> to an unedited mirror — it churns forever, +3 per cycle, from two causes rather than one — and
+> in passing turned up that **every import after the first silently fails to apply task
+> configuration** on any machine where the project has been opened in the IDE. Root cause: a
+> stale `_project.precompilecache`. One half is fixed (`TransientPatternsFor` now ignores it);
+> the import half has a measured mitigation and no decision. All three suites re-run green
+> afterwards — **1,385 + 478 + 192, 0 skipped**, integration 6m57s against real CODESYS. See the
+> findings, and [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md) for what P7 changed in the
+> plan itself.
+>
+> **One entry in that work was recorded as a cause before it was tested, and was wrong.** It is
+> kept in the finding rather than tidied away, because it is the clearest example in this file of
+> the difference between a story that fits the evidence and a cause.
+
 > **All three re-derived on 2026-08-15**, on branch `CodeAuditCleanup`, after the shell
 > decomposition: `GitAuthViewModel`, `GitRemoteViewModel` and `LogPanelView` out of
 > `ShellViewModel` and `MainWindow.xaml`, which go **5,573 → 4,958** and **1,218 → 936**. The
@@ -86,6 +101,9 @@ opens. That is `SAFEGUARDS.md` phases 1–8, and phase 9 is features rather than
 | Does an edited `.st` reach the project? | **Yes** — export, edit, import, verified byte-changed on the real fixture |
 | Can library references be read at all? | **Yes** — `libman.references`, iterated. Not `get_libraries()`, which returns names only, and not `references[i]`, which indexes by id and raises for a position |
 | Is a library reference's identity stable? | **No.** `ref.id` is re-minted on every open: 34 of 34 changed across two runs, with nothing else moving. Not recorded — the same trap as the `__VisualizationStyle` GUID, caught before it shipped this time |
+| Does an unedited mirror ever stop churning? | **No.** `UniqueIdGenerator` climbs +3 per import→export cycle and never settles; four of the eight native files differ forever, from **two** causes rather than one. Measured over three cycles and reproduced identically on a second run — see P7 |
+| Is the mirror's churn *semantically* nothing? | **Yes** — all four churning files are `NativeXmlNormalizer`-equivalent, with symmetric mask counts on every one, which is what says they differ in the masked positions and nowhere else |
+| Does a fresh export still reproduce the committed mirror? | **Yes** — a P7 baseline export into a different directory, from a project with a different filename, was byte-identical to `fixtures/projects/RefrigeratorControl/` on every object file. The only differences were `bindingId` and `project` inside `_manifest.json`, which are the two fields that *should* differ. An incidental re-confirmation of determinism across a path change, which the fingerprint test does not cover |
 
 ### Known limitations, carried deliberately
 
@@ -457,6 +475,31 @@ does not record them has to be run again.
   test asserts that shape specifically: a pattern matching nothing looks exactly like a pattern
   matching a file that is not there. **Deleting the fix leaves three tests red**, two of them
   pre-existing.
+- **G11 has a measured mitigation and no decision.** Deleting
+  `<project>_project.precompilecache` immediately before an import fixes it, and the import
+  regenerates the cache itself, so nothing is lost. What is undecided is whether Versio should
+  delete another tool's files on six green runs against one fixture, and where that would live —
+  the runner, the orchestrator, or the script. **Until it is decided, every import after the
+  first silently fails to apply task configuration** on any machine where the project has been
+  opened in the IDE. See the finding.
+- **An import's summary is logged with the exporter's field names.**
+  `LocalCodesysRunner.cs:514` builds one message from `walked` / `written` / `skipped` / `gaps`;
+  an import reports `updated` / `unchanged` / `native` / `created` / `missing` / `failed` /
+  `notImported`, and `ScriptEvent.Int` returns null for an absent key — so every import logs a
+  line of blanks. Read from the code, not seen in a log: no import has run through the app in the
+  retained logs. See the finding.
+- **`versio_import.py` does not count a native-import failure.** `ReplaceHandler.progress` warns
+  and returns; `self.failed` stays at zero and `self.native` is incremented anyway, so the
+  summary claims success on a run that lost two objects. One line, and it makes the script's own
+  one-line answer honest.
+- **The phase-split save in `versio_import.py` is conditional and skips the case it was written
+  for.** `if self.created > 0 or self.updated > 0` — an import touching only native files never
+  saves between the phases, which is exactly the shape of run that hit the exception the split
+  exists to prevent.
+- **No test imports twice, and none imports with the project's sidecars present.** Both
+  real-CODESYS import tests in `Versio.Integration.Tests` import once, from a `.project` copied
+  without its `.opt` pair or its compile cache. Both axes are how G11 stayed invisible, and both
+  matter more once the importer grows deletes, renames and moves.
 - **`ToolchainState` is a public observable property with no view.** It survives because the
   runner uses its text as the "why this is unavailable" explanation. It should be a plain
   string, not a bindable one.
@@ -591,7 +634,11 @@ would have gone on passing while checking one fewer every time a panel moved out
 
 Written down with their evidence, because the reasoning is worth more than the fix.
 
-### The second import fails, and the summary line says it did not
+### Every import after the first fails on task configuration, and reports success
+
+> **In one line:** a stale `<project>_project.precompilecache` beside the project makes
+> `import_native` throw on `MainTask` and `VISU_TASK`; the run then reports `failed: 0`. Deleting
+> the cache first fixes it. The ignore-rule half is fixed; the import half is not.
 
 Probe P7 of [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md) ran the round trip three times
 instead of once, on a scratch copy, with the mirror held still between cycles. Cycle 1 is clean:
@@ -604,21 +651,7 @@ System.InvalidOperationException: Collection was modified; enumeration operation
   at _3S.CoDeSys.ObjectManager.AbstractPasteOrMergeOperation.DoExecuteObject(...)
 ```
 
-**That exception is already quoted verbatim in `versio_import.py`'s own `run()` docstring**, as
-the thing the two-phase split with a save between the phases exists to prevent. It did not
-prevent it, and the reason is one line: the save is conditional on `created > 0 or updated > 0`,
-and an import that touches only native files has both at zero. Every cycle here had
-`created: 0, updated: 0`, so **the guard never ran at all during the measurement that found the
-bug it was written for**. A guard that is skipped in exactly the case that trips it is worse than
-no guard, because its docstring reads as coverage.
-
-Nothing is lost — the objects survive and the file is simply not applied. What is wrong is the
-report. `ReplaceHandler.progress` catches the exception and warns, but never increments
-`self.failed`; `handle_file` increments `self.native` regardless. So the summary reads
-`native: 8, failed: 0` on a run where two objects failed. The warnings themselves *do* reach the
-log at `Warn` through `SyncOrchestrator.LogWarnings`, whose own comment already says the right
-thing — "the run succeeded but is not complete". The defect is that the script's one-line answer
-contradicts its own warnings, and the one-line answer is what gets read.
+Nothing is lost — the objects survive and the file is simply not applied.
 
 **The cause is a stale `<project>_project.precompilecache`.** Five runs against the same mirror,
 varying one thing each:
@@ -652,6 +685,29 @@ decided here.
 **Related, and fixed on the way past:** `CodesysProjectFormat.TransientPatternsFor` did not name
 the cache, so an adopted repository left a 277 KB binary untracked beside the project where
 *Stage all* would commit it — see the loose end above.
+
+#### Three smaller defects this exposed, none of them fixed
+
+**One · the guard written for this exact exception never runs.** The exception is quoted verbatim
+in `versio_import.py`'s own `run()` docstring, as the thing the two-phase split with a save
+between the phases exists to prevent. The save is conditional on `created > 0 or updated > 0`,
+and an import touching only native files has both at zero — every cycle here had
+`created: 0, updated: 0`. So **the guard never executed during the measurement that hit the bug
+it was written for.** Whether running it would have helped is untested; a guard skipped in
+exactly the case it names is worth fixing regardless, because its docstring reads as coverage.
+
+**Two · the script's summary contradicts its own warnings.** `ReplaceHandler.progress` catches
+the exception and warns but never increments `self.failed`; `handle_file` increments
+`self.native` regardless. So the summary reads `native: 8, failed: 0` on a run where two objects
+failed. The warnings *do* reach the log at `Warn` through `SyncOrchestrator.LogWarnings`, whose
+comment already says the right thing — "the run succeeded but is not complete" — so this is a
+wrong one-line answer rather than a silent one. The one-line answer is what gets read.
+
+**Three · nothing in the suite imports twice.** Both real-CODESYS import tests in
+`Versio.Integration.Tests` import exactly once, and all of them copy the `.project` without its
+sidecars. So the suite could not have caught this on either axis, and a defect that needs a
+second cycle has no coverage at all. That is the gap worth closing before the import path grows
+deletes, renames and moves.
 
 **The first explanation of this was wrong, and the way it was wrong is worth more than the
 finding.** It said this was "the `Core2` mutation seen from the other end" — cycle 1 mutates the

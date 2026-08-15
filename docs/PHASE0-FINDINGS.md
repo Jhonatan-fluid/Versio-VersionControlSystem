@@ -209,6 +209,19 @@ Cycle  Textual  ExportOnly  Native  Bookkeeping  Structural
 **Verdict: it climbs, linearly, +3 per cycle, and never settles.** G10 is measured rather than
 argued, and Phase 5 is justified.
 
+**The whole run was repeated from scratch and came back identical** — same per-cycle counts, same
+five counter series, same two import failures on the same two objects. That matters twice over:
+it rules out this being one unlucky run, and it says the loop is *deterministic*, which is what
+made the later bisection of the import failure trustworthy. A measurement that moves between runs
+cannot be used to test one variable at a time.
+
+**An incidental confirmation worth keeping.** The cycle-0 baseline — exported into a different
+directory, from a project with a different filename — was byte-identical to the committed
+`fixtures/projects/RefrigeratorControl/` on every object file. The only differences were
+`bindingId` and `project` inside `_manifest.json`, which are exactly the two fields that should
+differ. The determinism fingerprint test compares two exports in one place; this says the output
+does not depend on where the project lives or what it is called.
+
 Three things the measurement changed:
 
 - **Only visualisations climb, and the churn set is smaller than G10 claimed.** G10 said an

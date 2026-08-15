@@ -956,6 +956,7 @@ poke at CODESYS directly.
 | `Run-Codesys.ps1` | Launches one script with a hashtable job. Does exactly what the runner must: BOM-free job file, async drain, timeout + `taskkill /T /F`, protocol split |
 | `Compare-Exports.ps1` | Byte-compares two export trees — the determinism gate, where a byte comparison is exactly right. `-Quiet` returns the result without the banner, for a caller presenting its own verdict |
 | `Test-RoundTrip.ps1` | export → copy → import → export → compare, **judged one layer at a time** (§6.6). **Use `-MutateFirst`** — without a deliberate change the comparison can pass while the import did nothing, and a green result that cannot fail is worse than a red one. `-UpdateEquivalenceFixtures` refreshes the inputs `RealRoundTripEquivalenceTests` reads |
+| `Measure-ImportStability.ps1` | Runs the round trip **N times over one mirror**, re-exporting into it, and reports what differs per cycle plus every `UniqueIdGenerator` as a series. `Test-RoundTrip.ps1` answers "is one round trip lossless"; this answers "does it ever *stop*", which is a different question and the one that found G11. Prints `P7: SETTLES` or `P7: CHURNS`; today it churns. **A clean byte verdict is not enough on its own — check the warning count too**, or a failing import hides under a settled mirror |
 
 > **⚠️ These harnesses do not take the machine-wide mutex.** `LocalCodesysRunner` serialises
 > every CODESYS launch behind `Global\Versio.Codesys.SingleInstance`; `Run-Codesys.ps1` starts
