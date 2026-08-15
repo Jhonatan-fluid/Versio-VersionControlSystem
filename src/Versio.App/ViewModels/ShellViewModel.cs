@@ -1347,10 +1347,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 RaiseHealth();
                 SignInCommand.RaiseCanExecuteChanged();
                 SignOutCommand.RaiseCanExecuteChanged();
-        DeleteBranchesCommand.RaiseCanExecuteChanged();
-        ResolveCommand.RaiseCanExecuteChanged();
-        AbortMergeCommand.RaiseCanExecuteChanged();
-        ReconcileCommand.RaiseCanExecuteChanged();
             }
         }
     }
@@ -3011,6 +3007,24 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(MergeRequest));
         OnPropertyChanged(nameof(MergeRequestTooltip));
         OpenMergeRequestCommand.RaiseCanExecuteChanged();
+
+        // THESE FOUR WERE BEING RAISED FROM THE SETTER OF AuthState, AND NOWHERE ELSE.
+        //
+        // Mis-indented inside it, which is how a paste ends up somewhere nothing about it
+        // belongs: not one of them is gated on anything to do with credentials. Abandon
+        // merge is Ready && IsMidMerge, the rebase-or-merge choice is Ready &&
+        // Standing.State == Diverged, and delete-branches is Ready && Branches.Count > 1
+        // && DefaultBranch.IsKnown.
+        //
+        // AsyncCommand raises a plain event and deliberately does not hook
+        // CommandManager.RequerySuggested, so a command left out of this sweep is never
+        // re-evaluated at all. A refresh that discovered a merge in progress raised
+        // IsMidMerge, called this method, and left Abandon merge exactly as disabled as it
+        // had been - until something unrelated happened to the credentials.
+        DeleteBranchesCommand.RaiseCanExecuteChanged();
+        ResolveCommand.RaiseCanExecuteChanged();
+        AbortMergeCommand.RaiseCanExecuteChanged();
+        ReconcileCommand.RaiseCanExecuteChanged();
     }
 
     /// <summary>Stage or unstage every row in a list.</summary>
