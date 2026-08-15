@@ -72,7 +72,7 @@ public sealed class GitHealthTests
 
         // Nothing to be missing an identity *for*. The prompt is gated on having a repository
         // so that an empty shell is quiet.
-        Assert.False(shell.IdentityIsMissing);
+        Assert.False(shell.Auth.IdentityIsMissing);
     }
 
     [Fact]
@@ -94,10 +94,10 @@ public sealed class GitHealthTests
         shell.CommitMessage = "a real message";
 
         Assert.NotEmpty(shell.Staged);
-        Assert.False(shell.Identity.IsComplete);
-        Assert.True(shell.IdentityIsMissing);
+        Assert.False(shell.Auth.Identity.IsComplete);
+        Assert.True(shell.Auth.IdentityIsMissing);
         Assert.False(shell.CommitCommand.CanExecute(null));
-        Assert.NotEqual(string.Empty, shell.Identity.CommitBlockedReason);
+        Assert.NotEqual(string.Empty, shell.Auth.Identity.CommitBlockedReason);
     }
 
     [Fact]
@@ -113,8 +113,8 @@ public sealed class GitHealthTests
         shell.CommitMessage = "a real message";
 
         Assert.NotEmpty(shell.Staged);
-        Assert.True(shell.Identity.IsComplete);
-        Assert.False(shell.IdentityIsMissing);
+        Assert.True(shell.Auth.Identity.IsComplete);
+        Assert.False(shell.Auth.IdentityIsMissing);
         Assert.True(shell.CommitCommand.CanExecute(null));
     }
 
@@ -128,19 +128,19 @@ public sealed class GitHealthTests
         shell.CommitMessage = "a real message";
         Assert.False(shell.CommitCommand.CanExecute(null));
 
-        shell.IdentityName = "Jane Engineer";
-        shell.IdentityEmail = "jane@example.com";
-        Assert.True(shell.SaveIdentityCommand.CanExecute(null));
+        shell.Auth.IdentityName = "Jane Engineer";
+        shell.Auth.IdentityEmail = "jane@example.com";
+        Assert.True(shell.Auth.SaveIdentityCommand.CanExecute(null));
 
-        await Eventually.Press(shell.SaveIdentityCommand, "save identity");
-        await Eventually.Until(() => shell.Identity.IsComplete, "the identity was written");
+        await Eventually.Press(shell.Auth.SaveIdentityCommand, "save identity");
+        await Eventually.Until(() => shell.Auth.Identity.IsComplete, "the identity was written");
 
         // Re-read from git rather than assumed from what was typed — writing --local into a
         // repository whose global config holds something else is a case where the two are not
         // obviously the same, and the panel must report git's answer.
-        Assert.True(shell.Identity.IsComplete);
-        Assert.Equal("jane@example.com", shell.Identity.Email);
-        Assert.False(shell.IdentityIsMissing);
+        Assert.True(shell.Auth.Identity.IsComplete);
+        Assert.Equal("jane@example.com", shell.Auth.Identity.Email);
+        Assert.False(shell.Auth.IdentityIsMissing);
         Assert.True(shell.CommitCommand.CanExecute(null));
     }
 
@@ -149,17 +149,17 @@ public sealed class GitHealthTests
     {
         using var shell = Shell();
 
-        Assert.False(shell.SaveIdentityCommand.CanExecute(null));
+        Assert.False(shell.Auth.SaveIdentityCommand.CanExecute(null));
 
-        shell.IdentityName = "Jane Engineer";
-        Assert.False(shell.SaveIdentityCommand.CanExecute(null));
+        shell.Auth.IdentityName = "Jane Engineer";
+        Assert.False(shell.Auth.SaveIdentityCommand.CanExecute(null));
 
-        shell.IdentityEmail = "jane@example.com";
+        shell.Auth.IdentityEmail = "jane@example.com";
 
         // Still false: there is no repository to write into. The point is that the field
         // gate alone is not what is holding it.
-        Assert.Equal("Jane Engineer", shell.IdentityName);
-        Assert.Equal("jane@example.com", shell.IdentityEmail);
+        Assert.Equal("Jane Engineer", shell.Auth.IdentityName);
+        Assert.Equal("jane@example.com", shell.Auth.IdentityEmail);
     }
 
     [Fact]
@@ -167,14 +167,14 @@ public sealed class GitHealthTests
     {
         using var shell = Shell();
 
-        shell.IdentityName = "Jane Engineer";
-        shell.IdentityEmail = "Jane Engineer";
-        Assert.True(shell.IdentityEmailLooksWrong);
+        shell.Auth.IdentityName = "Jane Engineer";
+        shell.Auth.IdentityEmail = "Jane Engineer";
+        Assert.True(shell.Auth.IdentityEmailLooksWrong);
 
         // engineer@plc has no dot and is a perfectly good intranet address. Versio must not be
         // stricter than the git it is driving.
-        shell.IdentityEmail = "engineer@plc";
-        Assert.False(shell.IdentityEmailLooksWrong);
+        shell.Auth.IdentityEmail = "engineer@plc";
+        Assert.False(shell.Auth.IdentityEmailLooksWrong);
     }
 
     [Fact]
@@ -184,6 +184,6 @@ public sealed class GitHealthTests
 
         // A work machine carrying a personal global identity is a common and annoying way to
         // attribute commits to the wrong person. Local is the safe default.
-        Assert.False(shell.IdentityGlobal);
+        Assert.False(shell.Auth.IdentityGlobal);
     }
 }

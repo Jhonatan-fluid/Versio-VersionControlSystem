@@ -475,6 +475,20 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // now, and the collision was not theoretical - see NotificationCenter's remarks.
         Notifications = new NotificationCenter(_clock, logger);
 
+        // The credential and the git identity, in a class of their own. Constructed here
+        // because it needs Busy and Notifications, and it is handed `ready` as a DELEGATE
+        // rather than a copy of the predicate: Ready is `a client, and nothing running`, and a
+        // second implementation of that would be a second thing to keep in step.
+        //
+        // The subscription is the seam. Everything in there used to call RaiseHealth and
+        // RaiseGitCommandStates directly, and could not have moved while it did.
+        Auth = new GitAuthViewModel(logger, Busy, Notifications, () => Ready, ReportError);
+        Auth.Changed += () =>
+        {
+            RaiseHealth();
+            RaiseGitCommandStates();
+        };
+
         // Keeps the ahead/behind counts honest without anybody asking. It probes with
         // ls-remote and fetches only when the remote has actually moved - and it NEVER pulls,
         // because a pull rewrites the project and its mirror under the watcher, which is the
@@ -571,6 +585,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// disagree the moment the two overlapped, which is exactly when the user is looking.
     /// </remarks>
     public BusyTracker Busy { get; }
+
+    /// <summary>
+    /// The credential and the git identity — what stands between this machine and the remote.
+    /// </summary>
+    /// <remarks>
+    /// Bound as <c>Auth.X</c> throughout <c>GitPanelView.xaml</c>, like <c>Sync</c>,
+    /// <c>History</c> and <c>Log</c>. It owns the parsed <see cref="RemoteUrl"/> that forge
+    /// detection and the merge-request button read, which is why those two ask it rather than
+    /// the shell keeping a second copy.
+    /// </remarks>
+    public GitAuthViewModel Auth { get; }
 
     /// <summary>The PLC sync panel — what Versio is for, as distinct from the git client.</summary>
     public SyncViewModel Sync { get; }
@@ -920,8 +945,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         AheadBehind = string.Empty;
         Standing = RemoteStanding.None;
         _hasRemote = false;
-        _remote = RemoteUrl.None;
-        AuthState = GitAuthState.Fine;
+        Auth.Reset();
 
         // The poller is about a repository that is no longer open. Resume clears the halt as
         // well, so a credential problem on the last one does not silence the next.
@@ -1328,61 +1352,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
     public string PullLabel => "Pull" + _standing.PullCountSuffix;
 
-    // ----------------------------------------------------------- credentials (plan §12c)
-
-    private RemoteUrl _remote = RemoteUrl.None;
-    private GitAuthState _authState = GitAuthState.Fine;
-
-    /// <summary>
-    /// What stands between this machine and the remote, as far as identity is concerned.
-    /// </summary>
-    /// <remarks>
-    /// Set from a proactive check when a repository opens, and from the classification of any
-    /// network operation that fails. Cleared the moment one succeeds — a stale "sign in needed"
-    /// banner above a working remote is worse than none.
-    /// </remarks>
-    public GitAuthState AuthState
-    {
-        get => _authState;
-        private set
-        {
-            if (SetProperty(ref _authState, value))
-            {
-                OnPropertyChanged(nameof(AuthExplanation));
-                OnPropertyChanged(nameof(NeedsAttentionForAuth));
-                OnPropertyChanged(nameof(CanSignIn));
-                RaiseHealth();
-                SignInCommand.RaiseCanExecuteChanged();
-                SignOutCommand.RaiseCanExecuteChanged();
-            }
-        }
-    }
-
-    /// <summary>The host the credential belongs to, for the sentence and the lookup.</summary>
-    public string RemoteHost => _remote.Host;
-
-    public string AuthExplanation => GitAuthClassifier.Explain(_authState, _remote.Host);
-
-    /// <summary>True whenever there is something to say about credentials.</summary>
-    public bool NeedsAttentionForAuth => _authState is not GitAuthState.Fine;
-
-    /// <summary>
-    /// True only when signing in could plausibly help.
-    /// </summary>
-    /// <remarks>
-    /// <b>False for a 403 and for an SSH key refusal.</b> Both read like authentication
-    /// failures and neither is one: a 403 means the credential worked and the account lacks
-    /// access, and SSH has no credential helper at all. Offering the button on either is
-    /// offering something that cannot work — and in the 403 case it is a loop that cannot
-    /// terminate.
-    /// </remarks>
-    public bool CanSignIn =>
-        _remote.UsesCredentialHelper && GitAuthClassifier.SignInWouldHelp(_authState);
-
-    public AsyncCommand SignInCommand { get; private set; } = null!;
-
-    public AsyncCommand SignOutCommand { get; private set; } = null!;
-
     /// <summary>
     /// What just happened, as against what is currently true.
     /// </summary>
@@ -1423,8 +1392,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         GitMissing = GitIsMissing,
         FailedProject = Sync.FailedProject?.Name ?? string.Empty,
         MidMerge = IsMidMerge,
-        IdentityMissing = IdentityIsMissing,
-        AuthNeedsAttention = NeedsAttentionForAuth,
+        IdentityMissing = Auth.IdentityIsMissing,
+        AuthNeedsAttention = Auth.NeedsAttentionForAuth,
         Diverged = _standing.IsDiverged,
     });
 
@@ -1450,7 +1419,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     // ------------------------------------------------------- git's own health (plan §12a/§12b)
 
     private GitPresence _gitPresence = GitPresence.Unknown;
-    private GitIdentity _identity = GitIdentity.None;
 
     /// <summary>
     /// Whether the git everything runs through is actually there.
@@ -1479,91 +1447,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     public bool GitIsMissing => _gitPresence.Availability == GitAvailability.Missing;
 
     public string GitPresenceExplanation => _gitPresence.Explanation;
-
-    /// <summary>
-    /// Who git will attribute a commit to in the open repository.
-    /// </summary>
-    /// <remarks>
-    /// Read at open, and again after the user sets it. <see cref="CanCommit"/> gates on it, so
-    /// the export gate never runs a 17–31 second CODESYS export for a commit that git was
-    /// always going to refuse.
-    /// </remarks>
-    public GitIdentity Identity
-    {
-        get => _identity;
-        private set
-        {
-            if (SetProperty(ref _identity, value))
-            {
-                OnPropertyChanged(nameof(IdentityIsMissing));
-                OnPropertyChanged(nameof(IdentityExplanation));
-                RaiseHealth();
-                IdentityName = value.Name;
-                IdentityEmail = value.Email;
-                RaiseGitCommandStates();
-            }
-        }
-    }
-
-    /// <summary>True when a repository is open and git could not name a committer.</summary>
-    /// <remarks>
-    /// Gated on having a repository, because with none open there is nothing to be missing an
-    /// identity <i>for</i>, and a prompt on an empty shell is noise.
-    /// </remarks>
-    public bool IdentityIsMissing => _git is not null && !_identity.IsComplete;
-
-    public string IdentityExplanation => _identity.Explanation;
-
-    private string _identityName = string.Empty;
-    private string _identityEmail = string.Empty;
-    private bool _identityGlobal;
-
-    /// <summary>Edit buffer for the name field. Separate from <see cref="Identity"/> so typing
-    /// does not claim to have configured anything until Save is pressed.</summary>
-    public string IdentityName
-    {
-        get => _identityName;
-        set
-        {
-            if (SetProperty(ref _identityName, value))
-            {
-                SaveIdentityCommand.RaiseCanExecuteChanged();
-            }
-        }
-    }
-
-    public string IdentityEmail
-    {
-        get => _identityEmail;
-        set
-        {
-            if (SetProperty(ref _identityEmail, value))
-            {
-                OnPropertyChanged(nameof(IdentityEmailLooksWrong));
-                SaveIdentityCommand.RaiseCanExecuteChanged();
-            }
-        }
-    }
-
-    /// <summary>
-    /// Write to the global config as well as this repository.
-    /// </summary>
-    /// <remarks>
-    /// Off by default. A work machine carrying a personal global identity is a common and
-    /// annoying way to attribute commits to the wrong person, and the repository in front of
-    /// the user is the one they are answering about.
-    /// </remarks>
-    public bool IdentityGlobal
-    {
-        get => _identityGlobal;
-        set => SetProperty(ref _identityGlobal, value);
-    }
-
-    /// <summary>Advisory: the address does not have the shape of one. Never blocks Save.</summary>
-    public bool IdentityEmailLooksWrong =>
-        _identityEmail.Length > 0 && !GitIdentity.From(_identityName, _identityEmail).LooksLikeEmail;
-
-    public AsyncCommand SaveIdentityCommand { get; private set; } = null!;
 
     public string SelectedDiff
     {
@@ -1864,9 +1747,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             GitPresence.ExecutablePath.Length > 0 ? GitPresence.ExecutablePath : "not resolved"));
 
         rows.Add(new Views.SystemInfoRow("Commits as",
-            _identity.IsComplete
-                ? $"{_identity.Name} <{_identity.Email}>"
-                : _identity.Explanation));
+            Auth.Identity.IsComplete
+                ? $"{Auth.Identity.Name} <{Auth.Identity.Email}>"
+                : Auth.Identity.Explanation));
 
         rows.Add(Views.SystemInfoRow.Section("RUNTIME"));
         rows.Add(new Views.SystemInfoRow(".NET",
@@ -1956,6 +1839,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         ResetForRepositoryChange(_repositoryPath, path);
 
         _git = client;
+        Auth.AttachClient(client);
         RepositoryPath = path;
         _autoStash = new JsonAutoStashStore(path, _logger);
 
@@ -1981,7 +1865,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // Before the first refresh, and long before anything can be committed, so the panel
         // can say "git needs a name" while the user is still looking at an empty commit box
         // rather than after a 17-31 s export has run for a commit git will refuse.
-        await LoadIdentityAsync(busy.Token).ConfigureAwait(true);
+        await Auth.LoadIdentityAsync(busy.Token).ConfigureAwait(true);
 
         // Whether there is anywhere to push at all. Read here rather than in the refresh for
         // the reason above, and before the first refresh so the very first Standing computed
@@ -1992,10 +1876,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // The remote's shape decides what a credential failure will mean, so it is parsed once
         // here rather than re-derived at each failure. remoteUrl was already read above for
         // the recent-repositories list.
-        _remote = RemoteUrl.Parse(remoteUrl);
-        OnPropertyChanged(nameof(RemoteHost));
+        Auth.SetRemote(RemoteUrl.Parse(remoteUrl));
 
-        await CheckCredentialAsync(busy.Token).ConfigureAwait(true);
+        await Auth.CheckCredentialAsync(busy.Token).ConfigureAwait(true);
 
         RefreshCommand.RaiseCanExecuteChanged();
 
@@ -2220,7 +2103,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     public string CommitBlockedReason =>
         Commit.BlockedReason(
             hasMessage: !string.IsNullOrWhiteSpace(CommitMessage),
-            hasIdentity: _identity.IsComplete,
+            hasIdentity: Auth.Identity.IsComplete,
             hasConflicts: HasConflicts);
 
     /// <summary>What the commit button will do, live or not.</summary>
@@ -2359,14 +2242,15 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// </summary>
     /// <remarks>
     /// <b>Derived on each read rather than resolved once at open, and that is the point.</b> The
-    /// obvious version caches it beside <c>_remote</c> when the repository opens — but
+    /// obvious version caches it alongside <see cref="GitAuthViewModel.Remote"/> when the
+    /// repository opens — but
     /// <c>repo.json</c> is loaded by <c>Sync.AttachAsync</c>, which runs <i>after</i> that, so
     /// a repository whose forge is only knowable from its config would have cached Unknown and
     /// shown no button until the next repository switch. That is the same ordering trap the
     /// object index hit; there it needed an event, and here it needs nothing at all, because
     /// this is an enum switch over two fields and costs less than the notification would.
     /// </remarks>
-    private ForgeKind Forge => Core.Git.Forge.Detect(_remote, Sync.ConfiguredForge);
+    private ForgeKind Forge => Core.Git.Forge.Detect(Auth.Remote, Sync.ConfiguredForge);
 
     /// <summary>
     /// The merge-request button: whether it is there, what it says, and where it goes.
@@ -2378,7 +2262,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// </remarks>
     public MergeRequestPlan MergeRequest => MergeRequestPlan.For(
         Forge,
-        _remote,
+        Auth.Remote,
         _branch,
         Standing.State,
         DefaultBranch,
@@ -2794,7 +2678,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         PublishCommand = new AsyncCommand(
             PublishAsync, () => Ready && Standing.CanPublish, ReportError);
 
-        SignInCommand = new AsyncCommand(SignInAsync, () => Ready && CanSignIn, ReportError);
 
         // Needs somewhere to go if the current branch is deleted, and something to delete.
         DeleteBranchesCommand = new AsyncCommand(
@@ -2815,12 +2698,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             ReconcileAsync,
             _ => Ready && Standing.State == TrackingState.Diverged, ReportError);
 
-        // Available whenever a credential could be stored, not only when one has failed:
-        // "sign out of this host" is a thing somebody may want to do deliberately, and a
-        // button that only appears after a failure cannot be found before one.
-        SignOutCommand = new AsyncCommand(
-            SignOutAsync, () => Ready && _remote.UsesCredentialHelper, ReportError);
-
         // Enabled only with a row selected. Discard is per-file on purpose: a "discard all"
         // beside "stage all" would put an irreversible button one pixel away from a routine
         // one, and the two are not comparable operations.
@@ -2833,7 +2710,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // whenever nothing else is running, unlike every other command here.
         CloneCommand = new AsyncCommand(() => CloneRepositoryAsync(), () => !Busy.IsBusy, ReportError);
 
-        SaveIdentityCommand = new AsyncCommand(SaveIdentityAsync, CanSaveIdentity, ReportError);
 
         // Every git button consults the same shared flag, so the moment one operation starts
         // they all go dead together. AsyncCommand.IsRunning only disables the button that was
@@ -2906,7 +2782,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         Ready
         && Commit.CanCommit
         && !string.IsNullOrWhiteSpace(CommitMessage)
-        && _identity.IsComplete
+        && Auth.Identity.IsComplete
         && !HasConflicts;
 
     /// <summary>
@@ -2927,70 +2803,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>Read who git will attribute a commit to, and let the panel say so.</summary>
-    private async Task LoadIdentityAsync(CancellationToken ct)
-    {
-        if (_git is null)
-        {
-            Identity = GitIdentity.None;
-            return;
-        }
-
-        Identity = await _git.IdentityAsync(ct).ConfigureAwait(true);
-        OnPropertyChanged(nameof(IdentityIsMissing));
-
-        if (!_identity.IsComplete)
-        {
-            // Info, not Warn: an unconfigured machine is an ordinary state on a first run, and
-            // the panel is already saying so where the user can act on it.
-            _logger.Info(LogCategory.Git, $"commit identity incomplete — {_identity.Explanation}");
-        }
-    }
-
-    /// <summary>Write the name and email the user typed, then re-read what git now reports.</summary>
-    /// <remarks>
-    /// Re-read rather than assumed. Writing <c>--local</c> into a repository whose global config
-    /// already holds a different identity is a case where what git will use and what Versio just
-    /// wrote are not obviously the same thing, and the panel must report git's answer.
-    /// </remarks>
-    private async Task SaveIdentityAsync()
-    {
-        if (_git is null)
-        {
-            return;
-        }
-
-        _logger.Click("Git.SaveIdentity");
-        using var busy = Busy.Begin(WorkKind.GitWrite, "Setting the git identity…");
-
-        var result = await _git.SetIdentityAsync(
-            IdentityName.Trim(), IdentityEmail.Trim(), IdentityGlobal, busy.Token)
-            .ConfigureAwait(true);
-
-        if (!result.Success)
-        {
-            Notifications.Failure("Could not save the identity.",
-                                  result.FailureReason ?? string.Empty);
-            return;
-        }
-
-        await LoadIdentityAsync(busy.Token).ConfigureAwait(true);
-        if (_identity.IsComplete)
-        {
-            Notifications.Success($"Committing as {_identity.Name} <{_identity.Email}>.");
-        }
-        else
-        {
-            Notifications.Warning("The identity is still incomplete.", _identity.Explanation);
-        }
-    }
-
-    private bool CanSaveIdentity() =>
-        _git is not null
-        && !Busy.IsBusy
-        && !string.IsNullOrWhiteSpace(IdentityName)
-        && !string.IsNullOrWhiteSpace(IdentityEmail);
-
     private void RaiseGitCommandStates()
     {
         StageCommand.RaiseCanExecuteChanged();
@@ -3000,14 +2812,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         PushCommand.RaiseCanExecuteChanged();
         FetchCommand.RaiseCanExecuteChanged();
         PublishCommand.RaiseCanExecuteChanged();
-        SignInCommand.RaiseCanExecuteChanged();
-        SignOutCommand.RaiseCanExecuteChanged();
+        Auth.RaiseCommandStates();
         RefreshCommand.RaiseCanExecuteChanged();
         HunkCommand.RaiseCanExecuteChanged();
         DiscardCommand.RaiseCanExecuteChanged();
         CreateBranchCommand.RaiseCanExecuteChanged();
         CloneCommand.RaiseCanExecuteChanged();
-        SaveIdentityCommand.RaiseCanExecuteChanged();
 
         // Every input the plan reads — branch, standing, trunk, dirtiness — has just moved or
         // may have. It is computed, so raising it is the whole update.
@@ -3255,12 +3065,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         if (result.Success)
         {
-            NoteAuthSuccess();
+            Auth.NoteAuthSuccess();
             Notifications.Success("Pulled.");
         }
         else
         {
-            NoteAuthFailure(result);
+            Auth.NoteAuthFailure(result);
             Notifications.Failure("Pull failed.", result.FailureReason ?? string.Empty);
         }
 
@@ -3295,7 +3105,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             // Sticky, and that is the single most important lifetime rule in the panel. A
             // failed push that quietly vanished after four seconds is how somebody goes home
             // believing their work is on the remote.
-            NoteAuthFailure(result);
+            Auth.NoteAuthFailure(result);
             Notifications.Failure("Push failed.", result.FailureReason ?? string.Empty);
             return;
         }
@@ -3303,7 +3113,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         var head = await _git.HeadCommitAsync(busy.Token).ConfigureAwait(true);
         await Sync.ReleaseAfterPushAsync(head, busy.Token).ConfigureAwait(true);
 
-        NoteAuthSuccess();
+        Auth.NoteAuthSuccess();
 
         // Posted BEFORE the refresh, and it survives it. That ordering used to be the bug:
         // StatusSummary was set here and RunRefreshAsync then overwrote it with the file
@@ -3361,7 +3171,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         if (!result.Success)
         {
-            NoteAuthFailure(result);
+            Auth.NoteAuthFailure(result);
             Notifications.Failure($"Could not publish {BranchName}.",
                                   result.FailureReason ?? string.Empty);
             return;
@@ -3370,160 +3180,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         var head = await _git.HeadCommitAsync(busy.Token).ConfigureAwait(true);
         await Sync.ReleaseAfterPushAsync(head, busy.Token).ConfigureAwait(true);
 
-        NoteAuthSuccess();
+        Auth.NoteAuthSuccess();
         Notifications.Success($"{BranchName} is on {remote} now.",
                               "Every direction lock is released.");
 
         await RunRefreshAsync(RefreshTrigger.GitMetadata, null).ConfigureAwait(true);
-    }
-
-    /// <summary>
-    /// Ask, before anything fails, whether this machine can talk to the remote.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// One <c>git credential fill</c> with prompts suppressed. It makes no network call and
-    /// cannot prompt, so it costs a process and tells the panel to say "sign in needed" while
-    /// the user is still looking at the window — rather than after their first push fails.
-    /// </para>
-    /// <para>
-    /// Only for a remote with a credential helper. An SSH remote's readiness is a question
-    /// about keys and an agent, which this cannot answer and must not pretend to.
-    /// </para>
-    /// </remarks>
-    private async Task CheckCredentialAsync(CancellationToken ct)
-    {
-        if (_git is null || !_remote.UsesCredentialHelper)
-        {
-            AuthState = GitAuthState.Fine;
-            return;
-        }
-
-        var stored = await _git.HasStoredCredentialAsync(_remote.Protocol, _remote.Host, ct)
-            .ConfigureAwait(true);
-
-        AuthState = stored ? GitAuthState.Fine : GitAuthState.NoCredential;
-
-        if (!stored)
-        {
-            _logger.Info(LogCategory.Git,
-                $"no credential stored for {_remote.Host} — sign-in will be needed");
-        }
-    }
-
-    /// <summary>
-    /// Read a failed network operation and record what it was actually complaining about.
-    /// </summary>
-    /// <remarks>
-    /// Called from every remote operation's failure path, so the banner and the Sign in button
-    /// follow the most recent real answer rather than the state at open.
-    /// </remarks>
-    private void NoteAuthFailure(GitResult result)
-    {
-        var state = GitAuthClassifier.Classify(result.StdErr, _remote.Transport);
-
-        if (state is not GitAuthState.Fine)
-        {
-            AuthState = state;
-        }
-    }
-
-    /// <summary>Clear the banner: something reached the remote and worked.</summary>
-    private void NoteAuthSuccess()
-    {
-        if (_authState is not GitAuthState.Fine)
-        {
-            _logger.Info(LogCategory.Git, $"the remote accepted us — clearing {_authState}");
-            AuthState = GitAuthState.Fine;
-        }
-    }
-
-    /// <summary>
-    /// Hand off to the credential helper.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>Versio never sees the credential.</b> git invokes whatever helper is configured and
-    /// that helper does its own thing — a window, a browser for OAuth, a token prompt. What
-    /// comes back here is whether it worked.
-    /// </para>
-    /// <para>
-    /// A rejected credential is <b>erased first</b>. The maddening case is not a missing
-    /// credential but a stale one: an expired token the helper keeps cheerfully returning, so
-    /// every attempt fails identically. Without the erase, asking again just replays it.
-    /// </para>
-    /// </remarks>
-    private async Task SignInAsync()
-    {
-        if (_git is null || !_remote.UsesCredentialHelper)
-        {
-            return;
-        }
-
-        _logger.Click("Git.SignIn");
-
-        // Two git calls when a stale credential has to be erased first, and the second only
-        // makes sense read beside the first.
-        using var scope = _logger.BeginOperation(LoggerExtensions.NewOperationId());
-
-        if (GitAuthClassifier.ShouldEraseFirst(_authState))
-        {
-            await _git.SignOutAsync(_remote.Protocol, _remote.Host, CancellationToken.None)
-                .ConfigureAwait(true);
-        }
-
-        // The caption is loud on purpose. The helper's window is a separate process and can
-        // come up BEHIND Versio, at which point the application looks frozen while something
-        // off-screen waits for a password.
-        using var busy = Busy.Begin(
-            WorkKind.GitRead,
-            $"Signing in to {_remote.Host} — finish in the window that opened (check behind Versio)…");
-
-        var result = await _git.SignInAsync(_remote.Protocol, _remote.Host, busy.Token)
-            .ConfigureAwait(true);
-
-        if (!result.Success)
-        {
-            Notifications.Failure($"Not signed in to {_remote.Host}.",
-                                  result.FailureReason ?? string.Empty);
-            return;
-        }
-
-        AuthState = GitAuthState.Fine;
-        Notifications.Success($"Signed in to {_remote.Host}.");
-    }
-
-    /// <summary>
-    /// Erase the stored credential for this host.
-    /// </summary>
-    /// <remarks>
-    /// The button no git GUI offers, and the one that fixes the failure people actually hit.
-    /// Destructive only in the sense that the next network operation will ask again, so it is
-    /// not confirmed — nothing is lost that a sign-in cannot restore.
-    /// </remarks>
-    private async Task SignOutAsync()
-    {
-        if (_git is null || !_remote.UsesCredentialHelper)
-        {
-            return;
-        }
-
-        _logger.Click("Git.SignOut");
-        using var busy = Busy.Begin(WorkKind.GitRead, $"Forgetting the credential for {_remote.Host}…");
-
-        var result = await _git.SignOutAsync(_remote.Protocol, _remote.Host, busy.Token)
-            .ConfigureAwait(true);
-
-        if (!result.Success)
-        {
-            Notifications.Failure("Could not erase the stored credential.",
-                                  result.FailureReason ?? string.Empty);
-            return;
-        }
-
-        AuthState = GitAuthState.NoCredential;
-        Notifications.Success($"Forgot the credential for {_remote.Host}.",
-                              "The next fetch or push will ask for a new one.");
     }
 
     /// <summary>Which remote and branch the poller should watch, or nothing.</summary>
@@ -3572,14 +3233,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         if (!result.Success)
         {
-            var state = GitAuthClassifier.Classify(result.StdErr, _remote.Transport);
-
-            if (GitAuthClassifier.IsTerminal(state))
+            // Stops on the first refusal rather than after the usual run: retrying a
+            // rejected credential every few seconds cannot succeed and may lock an account.
+            // The classification, and the hop back to the UI thread it needs, belong to the
+            // credential collaborator; what stays here is the poller, which is the shell's.
+            if (Auth.NoteBackgroundFailure(result) is { } refusal)
             {
-                // Stops on the first refusal rather than after the usual run: retrying a
-                // rejected credential every few seconds cannot succeed and may lock an account.
-                _poller.NoteRefused(GitAuthClassifier.Explain(state, _remote.Host));
-                OnUi(() => AuthState = state);
+                _poller.NoteRefused(refusal);
             }
 
             return;
@@ -3729,7 +3389,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         if (result.Success)
         {
-            NoteAuthSuccess();
+            Auth.NoteAuthSuccess();
             Notifications.Success($"The {what} finished.");
             return;
         }
@@ -3990,12 +3650,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         if (result.Success)
         {
-            NoteAuthSuccess();
+            Auth.NoteAuthSuccess();
             Notifications.Success("Fetched.");
         }
         else
         {
-            NoteAuthFailure(result);
+            Auth.NoteAuthFailure(result);
             Notifications.Failure("Fetch failed.", result.FailureReason ?? string.Empty);
         }
 

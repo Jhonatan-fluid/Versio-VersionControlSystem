@@ -38,10 +38,10 @@ public sealed class CredentialFlowTests
 
         await shell.OpenAsync(repo.Path);
 
-        Assert.Equal(GitAuthState.Fine, shell.AuthState);
-        Assert.False(shell.NeedsAttentionForAuth);
-        Assert.False(shell.CanSignIn);
-        Assert.False(shell.SignOutCommand.CanExecute(null));
+        Assert.Equal(GitAuthState.Fine, shell.Auth.AuthState);
+        Assert.False(shell.Auth.NeedsAttentionForAuth);
+        Assert.False(shell.Auth.CanSignIn);
+        Assert.False(shell.Auth.SignOutCommand.CanExecute(null));
     }
 
     [Fact]
@@ -52,8 +52,8 @@ public sealed class CredentialFlowTests
 
         await shell.OpenAsync(repo.Path);
 
-        Assert.Equal(GitAuthState.Fine, shell.AuthState);
-        Assert.False(shell.NeedsAttentionForAuth);
+        Assert.Equal(GitAuthState.Fine, shell.Auth.AuthState);
+        Assert.False(shell.Auth.NeedsAttentionForAuth);
     }
 
     [Fact]
@@ -67,9 +67,9 @@ public sealed class CredentialFlowTests
 
         await shell.OpenAsync(repo.Path);
 
-        Assert.False(shell.CanSignIn);
-        Assert.False(shell.SignInCommand.CanExecute(null));
-        Assert.False(shell.SignOutCommand.CanExecute(null));
+        Assert.False(shell.Auth.CanSignIn);
+        Assert.False(shell.Auth.SignInCommand.CanExecute(null));
+        Assert.False(shell.Auth.SignOutCommand.CanExecute(null));
     }
 
     [Fact]
@@ -80,7 +80,7 @@ public sealed class CredentialFlowTests
 
         await shell.OpenAsync(repo.Path);
 
-        Assert.Equal("git.acme.internal", shell.RemoteHost);
+        Assert.Equal("git.acme.internal", shell.Auth.RemoteHost);
     }
 
     [Fact]
@@ -93,7 +93,7 @@ public sealed class CredentialFlowTests
 
         await shell.OpenAsync(repo.Path);
 
-        Assert.True(shell.SignOutCommand.CanExecute(null));
+        Assert.True(shell.Auth.SignOutCommand.CanExecute(null));
     }
 
     [Fact]
@@ -107,11 +107,11 @@ public sealed class CredentialFlowTests
 
         await shell.OpenAsync(repo.Path);
 
-        Assert.Equal(GitAuthState.NoCredential, shell.AuthState);
-        Assert.True(shell.NeedsAttentionForAuth);
-        Assert.True(shell.CanSignIn);
-        Assert.Contains("Sign in", shell.AuthExplanation);
-        Assert.Contains("versio-test.invalid", shell.AuthExplanation);
+        Assert.Equal(GitAuthState.NoCredential, shell.Auth.AuthState);
+        Assert.True(shell.Auth.NeedsAttentionForAuth);
+        Assert.True(shell.Auth.CanSignIn);
+        Assert.Contains("Sign in", shell.Auth.AuthExplanation);
+        Assert.Contains("versio-test.invalid", shell.Auth.AuthExplanation);
     }
 
     [Fact]
@@ -122,13 +122,13 @@ public sealed class CredentialFlowTests
         using var shell = Shell();
 
         await shell.OpenAsync(https.Path);
-        Assert.True(shell.NeedsAttentionForAuth);
+        Assert.True(shell.Auth.NeedsAttentionForAuth);
 
         await shell.OpenAsync(local.Path);
 
         // The banner was about a host this repository has nothing to do with.
-        Assert.False(shell.NeedsAttentionForAuth);
-        Assert.Equal(string.Empty, shell.RemoteHost);
+        Assert.False(shell.Auth.NeedsAttentionForAuth);
+        Assert.Equal(string.Empty, shell.Auth.RemoteHost);
     }
 
     [Fact]
