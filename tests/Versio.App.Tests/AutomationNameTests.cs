@@ -31,8 +31,10 @@ namespace Versio.App.Tests;
 /// </para>
 /// </remarks>
 [Collection("theme")]
-public sealed class AutomationNameTests
+public sealed class AutomationNameTests : IDisposable
 {
+    private readonly List<ShellViewModel> _shells = [];
+
     /// <summary>The Segoe Fluent Icons range. Anything here is a picture, not a word.</summary>
     private static bool IsPrivateUse(char c) => c is >= '' and <= '';
 
@@ -43,13 +45,18 @@ public sealed class AutomationNameTests
     /// looked for icon buttons found zero and would have passed had it not counted them
     /// first. The content element is the root of everything that was arranged.
     /// </remarks>
-    private static (MainWindow Window, FrameworkElement Root) Build()
+    private (MainWindow Window, FrameworkElement Root) Build()
     {
         var logger = new VersioLogger(new SystemClock());
         var sink = new InMemoryLogSink();
         logger.AddSink(sink);
 
-        var window = new MainWindow(new ShellViewModel(logger, new LogViewModel(sink)));
+        // Kept, and not constructed inline as an argument, so that something can dispose it.
+        // See Dispose below for what it costs when nothing can.
+        var shell = new ShellViewModel(logger, new LogViewModel(sink));
+        _shells.Add(shell);
+
+        var window = new MainWindow(shell);
         var content = Assert.IsAssignableFrom<FrameworkElement>(window.Content);
 
         content.Measure(new Size(1400, 900));
@@ -58,6 +65,33 @@ public sealed class AutomationNameTests
 
         return (window, content);
     }
+
+    /// <summary>Release the shells this class built.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>On the STA thread, not this one.</b> Tearing a shell down clears collections that a
+    /// bound <c>CollectionView</c> is watching, and WPF refuses that from any thread but the
+    /// dispatcher's: disposing from the xunit thread throws <c>NotSupportedException</c> —
+    /// <i>"does not support changes to its SourceCollection from a thread different from the
+    /// Dispatcher thread"</i> — and fails every test in this class. Measured, by doing it.
+    /// That is also the proof this teardown is not decorative, which nothing else here asserts.
+    /// </para>
+    /// <para>
+    /// Worth having at all because that harness runs <b>one</b> STA thread with a live
+    /// <c>Dispatcher.Run()</c> for the whole suite. A leaked log pump is not inert here the way
+    /// it would be on a thread nobody pumps: it goes on firing every 100 ms, draining its queue
+    /// into an <c>ObservableCollection</c> on the same thread every later WPF test is using.
+    /// The shell used to be constructed inline as an argument to the window, so nothing could
+    /// have disposed it.
+    /// </para>
+    /// </remarks>
+    public void Dispose() => StaHarness.Run(() =>
+    {
+        foreach (var shell in _shells)
+        {
+            shell.Dispose();
+        }
+    });
 
     [Fact]
     public void No_control_in_the_shell_is_named_after_a_glyph()

@@ -26,19 +26,53 @@ namespace Versio.App.Tests;
 /// </para>
 /// </remarks>
 [Collection("theme")]
-public sealed class ShellLayoutTests
+public sealed class ShellLayoutTests : IDisposable
 {
     /// <summary>A window wide enough to be real and narrow enough to be honest.</summary>
     private const double Narrow = 1000;
 
-    private static MainWindow Build()
+    private readonly List<ShellViewModel> _shells = [];
+
+    private MainWindow Build()
     {
         var logger = new VersioLogger(new SystemClock());
         var sink = new InMemoryLogSink();
         logger.AddSink(sink);
 
-        return new MainWindow(new ShellViewModel(logger, new LogViewModel(sink)));
+        // Kept, and not constructed inline as an argument, so that something can dispose it.
+        // See Dispose below for what it costs when nothing can.
+        var shell = new ShellViewModel(logger, new LogViewModel(sink));
+        _shells.Add(shell);
+
+        return new MainWindow(shell);
     }
+
+    /// <summary>Release the shells this class built.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>On the STA thread, not this one.</b> Tearing a shell down clears collections that a
+    /// bound <c>CollectionView</c> is watching, and WPF refuses that from any thread but the
+    /// dispatcher's: disposing from the xunit thread throws <c>NotSupportedException</c> —
+    /// <i>"does not support changes to its SourceCollection from a thread different from the
+    /// Dispatcher thread"</i> — and fails every test in this class. Measured, by doing it.
+    /// That is also the proof this teardown is not decorative, which nothing else here asserts.
+    /// </para>
+    /// <para>
+    /// Worth having at all because that harness runs <b>one</b> STA thread with a live
+    /// <c>Dispatcher.Run()</c> for the whole suite. A leaked log pump is not inert here the way
+    /// it would be on a thread nobody pumps: it goes on firing every 100 ms, draining its queue
+    /// into an <c>ObservableCollection</c> on the same thread every later WPF test is using.
+    /// Ten of them were leaked from this class alone, and the shell was constructed inline as
+    /// an argument to the window, so nothing could have disposed it.
+    /// </para>
+    /// </remarks>
+    public void Dispose() => StaHarness.Run(() =>
+    {
+        foreach (var shell in _shells)
+        {
+            shell.Dispose();
+        }
+    });
 
     private static FrameworkElement Arrange(MainWindow window, double width = Narrow)
     {
