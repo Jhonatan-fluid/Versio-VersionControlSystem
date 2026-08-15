@@ -1019,7 +1019,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                     new RepoEntry(entry.Path, entry.RemoteUrl, entry.LastOpenedUtc));
             }
 
-            SelectedRepository = RecentRepositories.FirstOrDefault(r => r.Path == _repositoryPath);
+            SelectedRepository = RowFor(_repositoryPath);
         });
 
         _logger.Debug(LogCategory.App,
@@ -1142,13 +1142,41 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                     new RepoEntry(entry.Path, entry.RemoteUrl, entry.LastOpenedUtc));
             }
 
-            SelectedRepository = RecentRepositories.FirstOrDefault(r => r.Path == select);
+            SelectedRepository = RowFor(select);
         });
+
+    /// <summary>
+    /// The dropdown row for a path, however that path happens to be spelled.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>An ordinal <c>==</c> here left the dropdown blank with the list behind it perfectly
+    /// populated.</b> The stored entry is canonical — backslashes, no trailing separator, the
+    /// spelling <see cref="Core.Settings.RecentRepositories.Canonical"/> produces — and the path
+    /// being matched against it is whatever opened the repository. Git answers
+    /// <c>rev-parse --show-toplevel</c> with forward slashes, the folder picker hands back
+    /// backslashes, and a command line carries whatever was typed. Any of those against the
+    /// stored spelling is a miss, and a miss selects nothing.
+    /// </para>
+    /// <para>
+    /// The same argument the recent list itself already makes, applied on the way out as well
+    /// as on the way in: <c>Promote</c> canonicalises so the repository cannot appear twice,
+    /// and this canonicalises so the one row it did produce can still be found. Fixing only
+    /// half of it is what left a list of one with nothing selected.
+    /// </para>
+    /// </remarks>
+    private RepoEntry? RowFor(string? path)
+    {
+        var wanted = Core.Settings.RecentRepositories.Canonical(path);
+
+        return RecentRepositories.FirstOrDefault(
+            r => Core.Settings.RecentRepositories.PathComparer.Equals(
+                Core.Settings.RecentRepositories.Canonical(r.Path), wanted));
+    }
 
     /// <summary>Put the repository dropdown back on the repository that is actually open.</summary>
     private void ShowOpenRepository() =>
-        WithoutSideEffects(() =>
-            SelectedRepository = RecentRepositories.FirstOrDefault(r => r.Path == _repositoryPath));
+        WithoutSideEffects(() => SelectedRepository = RowFor(_repositoryPath));
 
     /// <summary>
     /// Move a dropdown's selection without that counting as the user picking something.

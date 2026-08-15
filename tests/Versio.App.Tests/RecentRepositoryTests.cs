@@ -62,6 +62,32 @@ public sealed class RecentRepositoryTests
     }
 
     [SkippableFact]
+    public async Task The_dropdown_selects_the_open_repository_however_its_path_was_spelled()
+    {
+        // THE DEFECT: the list had one row and nothing was selected, so the control rendered
+        // blank over a perfectly good list. Found by launching the app with a forward-slash
+        // path — which is also what `git rev-parse --show-toplevel` answers, so this is
+        // reachable without anybody typing anything unusual.
+        //
+        // The recent list canonicalises on the way IN, so it correctly refuses to store the
+        // same repository twice. The dropdown then looked it up with an ordinal ==, and the
+        // stored spelling and the opened spelling are not the same string.
+        Skip.IfNot(GitIsAvailable(), "git is not on PATH");
+
+        using var repo = new TempRepo();
+        var store = new MemoryStore();
+
+        using var shell = Build(store);
+        await shell.OpenAsync(repo.Path.Replace('\\', '/'));
+
+        // One row, because the promotion canonicalises — that half already worked.
+        var row = Assert.Single(shell.RecentRepositories);
+
+        Assert.NotNull(shell.SelectedRepository);
+        Assert.Same(row, shell.SelectedRepository);
+    }
+
+    [SkippableFact]
     public async Task Opening_a_repository_writes_it_down_and_a_new_window_lists_it()
     {
         Skip.IfNot(GitIsAvailable(), "git is not on PATH");
