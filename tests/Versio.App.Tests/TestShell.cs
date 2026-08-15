@@ -29,6 +29,15 @@ namespace Versio.App.Tests;
 /// temp directory the test has already deleted.
 /// </para>
 /// <para>
+/// <b>That one line is now the whole rule, including the log.</b> The
+/// <see cref="LogViewModel"/> built below holds a running <c>DispatcherTimer</c> and a
+/// subscription to the sink, and this method has no way to reach it again once it returns —
+/// so for a while it leaked on every single use, including in the tests that were obeying the
+/// paragraph above. The shell disposes it now. The alternative was handing the log back so the
+/// caller could dispose it too, which would have made the rule two things to remember at
+/// thirty-six call sites; a rule with an exception is the rule that gets forgotten.
+/// </para>
+/// <para>
 /// This is not tidiness. Fifty-six undisposed shells made the suite fail roughly one run in
 /// three, on a different test each time, every one of them passing when run alone — which
 /// reads as a defect in whatever test happened to lose, and cost a long time to attribute.

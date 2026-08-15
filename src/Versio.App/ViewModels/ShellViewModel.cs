@@ -553,6 +553,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         logger.Info(LogCategory.App, "Versio started");
     }
 
+    /// <summary>The collapsible log console.</summary>
+    /// <remarks>
+    /// Handed in rather than built here, because the application needs one attached to the
+    /// sink before the shell exists — a crash during startup has to be recorded somewhere.
+    /// <b>The shell owns it from that point on and disposes it</b>; see <see cref="Dispose"/>
+    /// for why, and do not hand the same instance to two shells.
+    /// </remarks>
     public LogViewModel Log { get; }
 
     /// <summary>
@@ -5569,5 +5576,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // Let go of the repository, so the next Versio - or the next launch of this one - does
         // not have to work out that this process is gone before it can open it.
         ReleaseRepository();
+
+        // LAST, because everything above it logs on its way out and those lines should still
+        // reach the panel.
+        //
+        // The log is handed in rather than built here, so disposing it is this class taking
+        // ownership of an object it did not create. That is deliberate. Nothing else keeps a
+        // reference: App hands one over and forgets it, and TestShell builds one and returns
+        // only the shell, so there is no second owner to disagree with. Leaving it out meant a
+        // test that obeyed `using var shell = ...` to the letter still leaked a running
+        // DispatcherTimer and a live subscription to the sink - the one leak that rule could
+        // not prevent, and the named remaining suspect for the suite's residual flake.
+        Log.Dispose();
     }
 }
