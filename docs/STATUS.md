@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-14 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,384 unit + 467 UI + 192 integration, 0 skipped
+**Date:** 2026-08-14 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,384 unit + 471 UI + 192 integration, 0 skipped
 
 > All three re-derived on 2026-08-14, on branch `GitPanel`, after the git-panel plan's **GP-J**
 > (PLC-aware naming of the changed-files rows, the change summary and the drafted commit
@@ -178,10 +178,10 @@ format; `.gitattributes` covers every registered vendor's extensions.
 > product does and is listed in *The shape of the code, after an audit* below. In order, and
 > each one is a session on its own:
 >
-> 1. **Extract auth and identity out of `ShellViewModel`** — the first collaborator, chosen
->    because it has the fewest ties into that class's 68 private fields. The file is 5,531
->    lines across roughly fifteen responsibilities, and its clusters are **not contiguous**, so
->    it cannot be cut by marking it `partial` and slicing on line ranges.
+> 1. ~~**Extract auth and identity out of `ShellViewModel`**~~ — **done.** `GitAuthViewModel`,
+>    545 lines; the shell goes 5,573 → 5,251. The four hazards named here in advance were all
+>    real and none of them surprised the work; what did surprise it was that **deleting the new
+>    subscription left the entire suite green**. See the finding.
 > 2. Then staging, then the repository session, on the same pattern.
 > 3. **The log console is still inside `MainWindow.xaml`** — the one panel not extracted, held
 >    back because it is the one with real code-behind coupling (`LogList`, `LogChevron`,
@@ -379,6 +379,15 @@ does not record them has to be run again.
   hidden when there is nothing to say. One sentence for one finding; a count and the first one
   for more, with the detail still in the log. They were surfaced rather than deleted because
   every one of them is a repository in a state Versio cannot resolve on its own.
+- **Thirteen binding errors at every launch, none of them path errors.** `--trace-bindings`
+  reports `Value produced by BindingExpression is not valid for target property` thirteen times
+  during startup, all of the same shape: `AutomationProperties.Name` and `HelpText` bound to a
+  `ToolTip` or `Tag` that is null at the moment the binding is evaluated, on the rail buttons and
+  the top bar's icon buttons. They come from the accessibility work in the UI pass, they are
+  harmless — the names resolve once the tooltips are set — and they are noise in the one
+  instrument that exists for finding real binding faults. Worth a `TargetNullValue` or a
+  `FallbackValue`, and worth doing before the next binding-heavy change, because a tracer with
+  thirteen expected errors in it is a tracer nobody reads.
 - **`ToolchainState` is a public observable property with no view.** It survives because the
   runner uses its text as the "why this is unavailable" explanation. It should be a plain
   string, not a bindable one.
@@ -481,14 +490,17 @@ What moved, and why each one is worth knowing before editing it:
 | The atomic write, four times | `JsonFile` | The temp-then-replace and the BOM-less UTF-8 really were the same rule four times. **The serializer options were not** and were left alone: the settings store has no enum converter because the theme is deliberately a string, and the lock and session stores have no `PropertyNameCaseInsensitive`. Unifying them would have changed what each accepts off disk, on files shipped versions have already written |
 | Thirteen hand-built test shells | `TestShell.Build` | And the argument most easily forgotten — `toolchains: (_, _) => null`, without which a test goes looking for CODESYS on the machine running it |
 
-**What is still concentrated, and deliberately left.** `ShellViewModel` is 5,531 lines with 68
-private fields, 47 public properties and 23 commands — roughly fifteen responsibilities, and the
-largest single thing in the repository. Its clusters are **not contiguous**: auth appears in two
-places, staging in two more, so it cannot be split by marking it `partial` and cutting on line
-ranges. It needs regrouping into collaborators, starting with auth and identity, which has the
-fewest ties into those 68 fields. `SyncViewModel` at 2,847 lines is the same shape one size down,
-and the log console is still inside `MainWindow.xaml` because it is the one panel with real
-code-behind coupling.
+**What is still concentrated, and deliberately left.** `ShellViewModel` is **5,251** lines —
+down from 5,573 now that auth and identity have gone — and still the largest single thing in the
+repository, at roughly fourteen responsibilities. Its clusters are **not contiguous**: staging
+appears in two places, so it cannot be split by marking it `partial` and cutting on line ranges.
+Next out are staging, then the repository session, on the pattern the auth extraction set:
+**map the cluster before cutting** (all four of its hazards were known in advance and none
+surprised the work), **pass collaborators in rather than reaching for them**, **replace calls
+back into the shell with one event**, and **write the test for that event's subscription first**,
+because the suite will not notice when it goes. `SyncViewModel` at 2,847 lines is the same shape
+one size down, and the log console is still inside `MainWindow.xaml` because it is the one panel
+with real code-behind coupling.
 
 **Two things the refactor itself taught.** A pure move can still lose coverage: three panel
 handlers changed from reading a `_shell` field to asking their own `DataContext`, and disabling
@@ -501,6 +513,64 @@ would have gone on passing while checking one fewer every time a panel moved out
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### The first collaborator out of the shell, and the seam nothing was watching
+
+`GitAuthViewModel` — the credential and the git identity, 545 lines. `ShellViewModel` goes
+**5,573 → 5,251**. First out because it had the fewest ties into that class's 68 private fields,
+not because it is the biggest cluster; auth and identity travel together because they are one
+question asked twice — *can this machine speak to the remote, and does git know who is asking.*
+
+**The four hazards were mapped before a line moved, and all four were real.** `_remote` was read
+by three unrelated things; the identity feeds the commit gate; the setters called back into the
+shell; the commands gate on the shell's busy flag. None of them turned up mid-flight, which is
+the whole argument for mapping a 5,500-line file before cutting it rather than discovering its
+shape from compiler errors.
+
+`_remote` went **to** the collaborator rather than staying behind and being passed in, and the
+reason is worth keeping: it is the credential's subject. What a failure *means* is decided by the
+transport, and who a credential belongs to is decided by the host. Forge detection and the
+merge-request button read it too, so it could have gone either way — but splitting a value from
+the thing that re-reads it on every open is how the two drift apart.
+
+**Then the part that matters. Deleting the `Changed` subscription left all 467 tests green.**
+
+The extraction replaced two direct calls — `RaiseHealth` and `RaiseGitCommandStates` — with one
+event and one subscription. That subscription is now the only thing making the status light move
+and the commit button re-ask when a credential fails or an identity arrives. Removing it entirely
+broke nothing any test could see. This is the **third** sighting of the same shape in this
+repository: three moved panel handlers that no test touched, four commands raised from the wrong
+setter, and now a brand-new seam. **A pure move is exactly when coverage goes missing, because
+nothing about it looks like new behaviour.**
+
+`AuthSeamTests` is written against the *consequences the shell owns* rather than against the
+event — an assertion that `Changed` fired would pass while the shell ignored it. Two of its three
+cases fail with the subscription removed; the third, which pins that the shell reads the
+collaborator's remote rather than a copy, correctly does not.
+
+**Twelve XAML bindings became `Auth.X`, and nothing in the toolchain can check a binding path.**
+Each one is a string that compiles clean, throws nothing, and renders an empty control when it is
+wrong. `--trace-bindings` cannot answer it either, and the reason is specific: both banners in
+that panel are `Collapsed` on any machine whose git is configured and whose credential is
+stored — which is every machine this is developed on. A clean trace over a banner nobody showed
+is indistinguishable from success, which is the trap `App.xaml.cs` already documents.
+
+So the git panel now has a test that realises it and asserts **no `BindingExpression` is in
+`PathError`**, plus a count assertion so a walk that stops reaching bindings cannot pass in
+silence. Mutation-checked by restoring one pre-extraction path: it fails naming the control, the
+path and the fact that it does not resolve. It covers every binding in that panel, not only the
+twelve this change touched.
+
+**Writing that test found a defect in its own file.** `GitPanelChromeTests.Build` read
+`using var shell = TestShell.Build();` and then returned that same instance — disposed at the
+closing brace, before any test touched it, so all sixteen tests in the class ran against a
+torn-down shell. It had been harmless because none of them opens a repository and disposal had
+almost nothing to release. It stopped being harmless in the commit immediately before, when the
+shell began disposing the log console the window is bound to.
+
+**Verified in the app, not only in the suite**: identity and credential both resolve through the
+collaborator on open (`identity: …`, `credential for https://github.com: stored`), zero `ERR`, and
+the binding trace is byte-identical to the run before the extraction.
 
 ### The log said the lock was taken and never that it was given back
 
