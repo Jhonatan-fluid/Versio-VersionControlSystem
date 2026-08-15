@@ -129,12 +129,10 @@ justified by measurement. What P7 also showed is that Phase 5 must key on
 **normaliser-equivalence and not on the counter**: `GlobalTextList.xml` churns every cycle and has
 no counter in it at all.
 
-**Still to measure, and it needs no CODESYS:** run `NativeXmlNormalizer` over
-`phase0/p7/snapshots/002` and `003` and confirm all four steady-state churning files come out
-equivalent. Gate 0.5b says the normaliser masks all three volatility classes and resolves 4 of 5
-files, with `Task Configuration` the holdout — and P7 showed `Task Configuration` settles after
-cycle 1, so the holdout is not in the steady-state set. That reasoning is sound and it is still
-reasoning; Phase 5's rule is only *provably* sufficient once it is run.
+~~**Still to measure, and it needs no CODESYS:**~~ **Measured.** `NativeXmlNormalizer` over
+`phase0/p7/snapshots/002` and `003`: 9 files byte-identical, **4 equivalent — every churning one**,
+and only `_manifest.json` left over, which is derived from the four. The reasoning it replaces was
+sound and was still reasoning. See Phase 5, including the manifest-hash trap the run exposed.
 
 ---
 
@@ -268,7 +266,24 @@ the **existing bytes** into staging instead of the new ones.
 - **The determinism gate still holds.** Two exports into two empty directories stay byte-identical,
   because neither has an existing mirror to preserve. Only export-into-an-existing-mirror is
   affected, and that is the case that matters.
-- Gated by P7: if the counter settles on its own, this phase shrinks.
+- ~~Gated by P7: if the counter settles on its own, this phase shrinks.~~ **P7 says it does not,
+  and the rule is now measured to be sufficient rather than argued to be.** `NativeXmlNormalizer`
+  over two steady-state snapshots of one unedited mirror: **all four churning native files come
+  out equivalent** — the three visualisations and `GlobalTextList.xml` — while the other nine
+  files are byte-identical and need no rule at all. Masked counts are symmetric on every file
+  (695/695, 3656/3656, 521/521 and 30/30 GUIDs), which is what says the two sides differ in the
+  masked positions and nowhere else.
+
+> **The trap this measurement exposed, which is not in the sketch above.** `record()` hashes the
+> payload the exporter *generated* — `h = content_hash(text)` — and `write_text` writes that same
+> `text`. The two agree by construction today, and `write_text`'s docstring states the invariant
+> outright: *"The exporter hashes what it writes."* **Phase 5 breaks it.** Writing the existing
+> bytes while the manifest has already recorded the new payload's hash leaves a manifest that
+> disagrees with the file beside it — and Versio's hash gate reads the bytes on disk, so the
+> disagreement is not cosmetic. `_manifest.json` is the one file still differing between the two
+> snapshots, and it will only settle if the recorded hash follows the bytes actually written.
+> **So the substitution has to happen before the hash is taken, not at write time**, which is a
+> different shape from "when writing a native file, write the existing bytes instead".
 
 ---
 

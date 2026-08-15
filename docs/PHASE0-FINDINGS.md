@@ -238,6 +238,20 @@ Three things the measurement changed:
 export-only differences, and nothing added or removed at any cycle. Gate 0.5 was proven once
 with one mutation; this is the same claim survived three times unattended.
 
+**All four churning files are `NativeXmlNormalizer`-equivalent**, run over snapshots 002 and 003
+— the two steady-state cycles of an unedited mirror. Nine files byte-identical, four equivalent,
+and only `_manifest.json` left, which records the hashes of the four. The masked counts are
+symmetric on every file (695/695, 3656/3656, 521/521 and 30/30 GUIDs; 2/2, 2/2, 2/2 and 1/1
+counters), which is what says the two sides differ in the masked positions and **nowhere else** —
+an asymmetric count would mean one side had something the other did not and the equivalence
+verdict would be hiding it.
+
+So Phase 5's keep-existing-bytes rule is **sufficient for everything P7 found churning**, which
+was previously an inference from gate 0.5b rather than a measurement. It also surfaced a trap in
+how that phase must be built — the manifest records the hash of the payload the exporter
+generated, so substituting bytes at write time would leave the manifest disagreeing with the file
+beside it. See [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md) Phase 5.
+
 ### ⚠️ Every import after the first fails, and says it succeeded
 
 Not what P7 went looking for, and more important than what it did.
