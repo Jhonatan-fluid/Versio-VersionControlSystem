@@ -379,15 +379,13 @@ does not record them has to be run again.
   hidden when there is nothing to say. One sentence for one finding; a count and the first one
   for more, with the detail still in the log. They were surfaced rather than deleted because
   every one of them is a repository in a state Versio cannot resolve on its own.
-- **Thirteen binding errors at every launch, none of them path errors.** `--trace-bindings`
-  reports `Value produced by BindingExpression is not valid for target property` thirteen times
-  during startup, all of the same shape: `AutomationProperties.Name` and `HelpText` bound to a
-  `ToolTip` or `Tag` that is null at the moment the binding is evaluated, on the rail buttons and
-  the top bar's icon buttons. They come from the accessibility work in the UI pass, they are
-  harmless — the names resolve once the tooltips are set — and they are noise in the one
-  instrument that exists for finding real binding faults. Worth a `TargetNullValue` or a
-  `FallbackValue`, and worth doing before the next binding-heavy change, because a tracer with
-  thirteen expected errors in it is a tracer nobody reads.
+- ~~**Thirteen binding errors at every launch, none of them path errors.**~~ — **fixed, and the
+  tracer is clean.** `AutomationProperties.Name` is typed `string` while `ToolTip` and `Tag` are
+  `object`, and a style setter is applied *before* the call site sets either — so for that moment
+  the binding handed null to a string property, once per control. `TargetNullValue=''` on the
+  three setters in `Buttons.xaml`. **13 → 0**, and the accessibility tests still pass, which is
+  what proves the names resolve to the tooltips rather than to the empty string the fix
+  introduced.
 - **`ToolchainState` is a public observable property with no view.** It survives because the
   runner uses its text as the "why this is unavailable" explanation. It should be a plain
   string, not a bindable one.

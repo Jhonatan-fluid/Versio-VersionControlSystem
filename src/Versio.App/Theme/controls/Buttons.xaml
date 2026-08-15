@@ -95,8 +95,19 @@
             tooltip its author was going to write anyway. It follows a ToolTip that changes
             too, which the log's Pause does: it says Resume while paused.
         -->
+        <!--
+            TargetNullValue, because a style setter is applied BEFORE the call site's own
+            ToolTip is. AutomationProperties.Name is typed string and ToolTip is object, so
+            for that moment the binding hands null to a string property and WPF reports
+            "Value produced by BindingExpression is not valid for target property" - once per
+            control, thirteen times across a launch. Harmless, since the binding updates the
+            moment the real tooltip lands, but it filled the one instrument that exists for
+            finding real binding faults, and a tracer with thirteen expected errors in it is a
+            tracer nobody reads.
+        -->
         <Setter Property="AutomationProperties.Name"
-                Value="{Binding ToolTip, RelativeSource={RelativeSource Self}}" />
+                Value="{Binding ToolTip, RelativeSource={RelativeSource Self},
+                    TargetNullValue=''}" />
         <Setter Property="Width" Value="{DynamicResource Size.Control.Height}" />
         <Setter Property="Height" Value="{DynamicResource Size.Control.Height}" />
         <Setter Property="Padding" Value="0" />
@@ -122,10 +133,13 @@
             already holds the short one the panel is called by, so Project, Git and History.
             The sentence stays in HelpText, where a reader offers it on request.
         -->
+        <!-- TargetNullValue on both, for the reason recorded on IconButton above. -->
         <Setter Property="AutomationProperties.Name"
-                Value="{Binding Tag, RelativeSource={RelativeSource Self}}" />
+                Value="{Binding Tag, RelativeSource={RelativeSource Self},
+                    TargetNullValue=''}" />
         <Setter Property="AutomationProperties.HelpText"
-                Value="{Binding ToolTip, RelativeSource={RelativeSource Self}}" />
+                Value="{Binding ToolTip, RelativeSource={RelativeSource Self},
+                    TargetNullValue=''}" />
         <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRingInset}" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Secondary}" />
