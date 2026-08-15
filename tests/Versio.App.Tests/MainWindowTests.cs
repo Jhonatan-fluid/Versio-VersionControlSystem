@@ -60,7 +60,7 @@ public sealed class MainWindowTests
         // No repository is opened: construction is the thing under test, and a window that
         // parses is a window that parses whether or not it has data. Opening one would drag
         // git.exe and a real working tree into a test about XAML.
-        var shell = new ShellViewModel(logger, new LogViewModel(sink));
+        using var shell = new ShellViewModel(logger, new LogViewModel(sink));
         return (new MainWindow(shell), shell);
     }
 
@@ -453,7 +453,7 @@ public sealed class MainWindowTests
         var sink = new InMemoryLogSink();
         logger.AddSink(sink);
 
-        var shell = new ShellViewModel(logger, new LogViewModel(sink));
+        using var shell = new ShellViewModel(logger, new LogViewModel(sink));
 
         Assert.Same(shell.Busy, shell.Sync.Busy);
     }
@@ -467,7 +467,7 @@ public sealed class MainWindowTests
         var sink = new InMemoryLogSink();
         logger.AddSink(sink);
 
-        var shell = new ShellViewModel(logger, new LogViewModel(sink));
+        using var shell = new ShellViewModel(logger, new LogViewModel(sink));
 
         Assert.False(shell.Busy.IsBusy);
 

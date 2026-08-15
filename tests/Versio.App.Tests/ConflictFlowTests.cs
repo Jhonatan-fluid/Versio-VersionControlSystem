@@ -27,7 +27,7 @@ public sealed class ConflictFlowTests
 {
     private static ShellViewModel Shell()
     {
-        var shell = TestShell.Build();
+        using var shell = TestShell.Build();
 
         // Every destructive prompt is answered yes. What is under test is the operation,
         // not the dialog — the refusal path has its own test below.

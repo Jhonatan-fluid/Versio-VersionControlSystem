@@ -40,7 +40,7 @@ public sealed class PanelCodeBehindTests
 {
     private static (MainWindow Window, ShellViewModel Shell, FrameworkElement Content) Build()
     {
-        var shell = TestShell.Build();
+        using var shell = TestShell.Build();
 
         var window = new MainWindow(shell);
         var content = Assert.IsAssignableFrom<FrameworkElement>(window.Content);

@@ -178,7 +178,7 @@ public sealed class BackupRestoreWindowTests
         {
             var sink = new InMemoryLogSink();
             var logger = new VersioLogger(new SystemClock()).AddSink(sink);
-            var shell = new ShellViewModel(
+            using var shell = new ShellViewModel(
                 logger, new LogViewModel(sink), toolchains: (_, _) => null);
 
             _ = new MainWindow(shell);

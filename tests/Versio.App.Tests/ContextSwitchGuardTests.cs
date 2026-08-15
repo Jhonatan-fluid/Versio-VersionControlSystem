@@ -36,7 +36,7 @@ public sealed class ContextSwitchGuardTests
         {
             var sink = new InMemoryLogSink();
             var logger = new VersioLogger(new SystemClock()).AddSink(sink);
-            var shell = new ShellViewModel(logger, new LogViewModel(sink));
+            using var shell = new ShellViewModel(logger, new LogViewModel(sink));
             var fixture = new Fixture { Shell = shell };
 
             shell.Asked().Guard = prompt =>

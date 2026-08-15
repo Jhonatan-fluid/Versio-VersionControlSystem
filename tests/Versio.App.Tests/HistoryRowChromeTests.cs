@@ -34,7 +34,7 @@ public sealed class HistoryRowChromeTests
 {
     private static (MainWindow Window, ShellViewModel Shell) Build()
     {
-        var shell = TestShell.Build();
+        using var shell = TestShell.Build();
         return (new MainWindow(shell), shell);
     }
 

@@ -21,6 +21,18 @@ namespace Versio.App.Tests;
 /// every call site. They read well where they are used and several take arguments of their
 /// own; what was worth removing was thirteen copies of the construction, not the name.
 /// </para>
+/// <para>
+/// <b>DISPOSE WHAT THIS RETURNS — <c>using var shell = ...</c>.</b> A shell that has opened a
+/// repository owns a <c>FileSystemWatcher</c> over it, a <c>RemotePoller</c> that spawns git
+/// subprocesses on a loop, the sync panel's own watchers, and the repository lock. Left
+/// undisposed, every one of those keeps running for the remainder of the suite, against a
+/// temp directory the test has already deleted.
+/// </para>
+/// <para>
+/// This is not tidiness. Fifty-six undisposed shells made the suite fail roughly one run in
+/// three, on a different test each time, every one of them passing when run alone — which
+/// reads as a defect in whatever test happened to lose, and cost a long time to attribute.
+/// </para>
 /// </remarks>
 internal static class TestShell
 {

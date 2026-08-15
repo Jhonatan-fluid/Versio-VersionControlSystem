@@ -94,7 +94,7 @@ public sealed class SecondInstanceTests
         // pid that Windows will hand to something else.
         using var repo = new TempRepo();
 
-        var shell = Shell();
+        using var shell = Shell();
         await shell.OpenAsync(repo.Path);
         Assert.True(File.Exists(MarkerPath(repo)));
 

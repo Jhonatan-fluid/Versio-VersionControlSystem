@@ -116,7 +116,7 @@ public sealed class RecentRepositoryTests
     public async Task Picking_a_repository_that_has_gone_asks_what_to_do_about_it()
     {
         var store = new MemoryStore();
-        var shell = Build(store);
+        using var shell = Build(store);
         MissingRepositoryPrompt? asked = null;
 
         shell.Asked().MissingRepository = prompt =>
@@ -140,7 +140,7 @@ public sealed class RecentRepositoryTests
     public async Task Removing_a_missing_repository_takes_it_out_of_the_list_and_the_file()
     {
         var store = new MemoryStore();
-        var shell = Build(store);
+        using var shell = Build(store);
 
         await store.WriteAsync(
             new AppSettings
@@ -169,7 +169,7 @@ public sealed class RecentRepositoryTests
         // The same rule AskGuard follows. A wiring mistake must not take the branch that
         // throws something away.
         var store = new MemoryStore();
-        var shell = Build(store);
+        using var shell = Build(store);
 
         await store.WriteAsync(
             new AppSettings { Recent = [new RecentRepository { Path = @"C:\nowhere\gone" }] },
@@ -200,7 +200,7 @@ public sealed class RecentRepositoryTests
             },
             CancellationToken.None);
 
-        var shell = Build(store);
+        using var shell = Build(store);
         await shell.LoadRecentAsync();
 
         // The one that is gone is skipped rather than removed, and the fallback keeps looking.
@@ -224,7 +224,7 @@ public sealed class RecentRepositoryTests
 
         using var repo = new TempRepo();
         var sink = new InMemoryLogSink();
-        var shell = new ShellViewModel(
+        using var shell = new ShellViewModel(
             new VersioLogger(new SystemClock()).AddSink(sink),
             new LogViewModel(sink),
             toolchains: (_, _) => null);
@@ -260,7 +260,7 @@ public sealed class RecentRepositoryTests
         using var repo = new TempRepo();
         File.WriteAllText(PathIn(repo, "Machine.project"), "binary-ish");
 
-        var shell = Build(new MemoryStore());
+        using var shell = Build(new MemoryStore());
         await shell.OpenAsync(repo.Path);
 
         Assert.Contains(shell.WatcherIgnoredGlobs, g => g.EndsWith("Machine.~u*", StringComparison.Ordinal));
@@ -292,7 +292,7 @@ public sealed class RecentRepositoryTests
         Directory.CreateDirectory(trash);
         File.WriteAllText(System.IO.Path.Combine(trash, "Main.st"), "PROGRAM Main");
 
-        var shell = Build(new MemoryStore());
+        using var shell = Build(new MemoryStore());
         await shell.OpenAsync(repo.Path);
 
         Assert.True(Directory.Exists(mirror), "the mirror was not restored from the trash");

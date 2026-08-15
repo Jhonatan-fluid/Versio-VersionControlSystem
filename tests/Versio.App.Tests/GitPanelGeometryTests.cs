@@ -44,7 +44,7 @@ public sealed class GitPanelGeometryTests(ITestOutputHelper output)
     private static (MainWindow Window, ShellViewModel Shell, FrameworkElement Panel,
                     FrameworkElement Content) Loaded()
     {
-        var shell = TestShell.Build();
+        using var shell = TestShell.Build();
         var window = new MainWindow(shell);
         var content = (FrameworkElement)window.Content;
 

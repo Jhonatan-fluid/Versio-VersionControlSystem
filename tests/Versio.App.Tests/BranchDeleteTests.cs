@@ -159,7 +159,7 @@ public sealed class BranchDeleteTests
 
     private static ShellViewModel Shell(Func<IReadOnlyList<BranchCandidate>, DeletePlan?> answer)
     {
-        var shell = TestShell.Build();
+        using var shell = TestShell.Build();
 
         var prompts = shell.Asked();
         prompts.BranchDeletion = answer;
