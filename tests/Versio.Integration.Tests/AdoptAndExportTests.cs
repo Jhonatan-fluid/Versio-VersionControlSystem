@@ -324,6 +324,199 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
         Assert.NotEqual(before, await File.ReadAllBytesAsync(projectPath));
     }
 
+    [SkippableFact]
+    public async Task A_task_priority_edited_in_the_mirror_reaches_the_project_and_survives_a_second_import()
+    {
+        // THE TEST PHASE 4 SHIPPED WITHOUT, and the two axes G11 hid behind, in one run.
+        //
+        // Phase 4 stopped handing Task Configuration to import_native and started setting the
+        // fields through typed properties instead. That closed G7 - CODESYS rewriting a task's
+        // CPU core affinity on every import, unasked - and G11 - every import after the first
+        // throwing on MainTask and VISU_TASK while the summary read `failed: 0`.
+        //
+        // Everything around the write was covered: the emitter, the reader, the committed
+        // bytes, the TYPED_SIBLING skip. `setattr(obj, prop, wanted)` was covered by one
+        // hand-run mutation and nothing else - the single step the whole G7/G11 argument rests
+        // on. That is the same shape of gap that let G11 live for months, so it is closed here
+        // rather than left in Phase 6.
+        //
+        // Four CODESYS launches, measured at 72-78 s. That is the price of the only assertion
+        // that can distinguish "the importer applied the file" from "the importer read it",
+        // and it is the most expensive single test in the suite. It earns it: deleting either
+        // half of Phase 4 turns it red, verified both ways rather than assumed - see the note
+        // above the re-export below.
+        var install = Install;
+        Skip.If(install is null, "no CODESYS installation with a profile");
+        Skip.If(!File.Exists(FixtureProject), "fixture project missing");
+
+        await InitRepoAsync();
+        var git = new GitCliClient(_repo, logger: new TestLogger(output));
+        var setup = new RepoSetup(_repo, CodesysProjectFormat.Instance);
+
+        var adopted = await setup.AdoptAsync(
+            ProjectRelativePath, git, install!.Profiles[0], CancellationToken.None);
+        var binding = adopted.Config.Bindings[0];
+        var orchestrator = BuildOrchestrator(adopted.Config, install);
+
+        Assert.Equal(SyncVerdict.Completed, (await Export(orchestrator, binding.Id)).Verdict);
+        await orchestrator.ReleaseAfterPushAsync("c1", CancellationToken.None);
+
+        var tasksFile = Path.Combine(
+            _repo, "plc", "RefrigeratorControl", "Device", "Plc Logic", "Application",
+            "Task Configuration.tasks.yaml");
+        Assert.True(File.Exists(tasksFile), $"the export wrote no {Path.GetFileName(tasksFile)}");
+
+        // The starting values, asserted rather than assumed. If the fixture ever changes so
+        // that MainTask already has the priority written below, the test would set a field to
+        // what it already held and pass while proving nothing.
+        var exported = await File.ReadAllTextAsync(tasksFile);
+        Assert.Equal("1", FieldOf(exported, "MainTask", "priority"));
+        Assert.Equal("-1", FieldOf(exported, "VISU_TASK", "coreBinding"));
+
+        // LF and no BOM: adoption writes `<mirror>/** text eol=lf`, and Versio's hash gate
+        // reads the bytes on disk rather than asking git.
+        await File.WriteAllTextAsync(
+            tasksFile, WithField(exported, "MainTask", "priority", "\"9\""),
+            new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+
+        // Import once. A freshly copied project has no compile cache, so this is the cycle
+        // that always worked - it is here to create the cache for the one below.
+        var first = await TextChanged(orchestrator, binding.Id);
+        output.WriteLine($"import 1 — {first.Verdict}: {SyncNarrative.Describe(first)}");
+        Assert.Equal(SyncVerdict.Completed, first.Verdict);
+
+        // A SECOND, DIFFERENT edit, and it is not padding. Re-running the same import is
+        // refused as NoChange - correctly, by the hash gate, because the mirror has not moved
+        // since the last one - so a second import needs something new to carry. That is not a
+        // workaround: G11's trigger was the compile cache and the measurement recorded that the
+        // mirror's bytes are irrelevant, so any second import with the cache present reproduces
+        // the condition.
+        //
+        // It also makes the final assertion sharper than a repeat would have been. The value
+        // ends at 7 only if the SECOND import applied - the cycle that used to throw on
+        // MainTask while reporting failed: 0. A test that imported 9 twice would read 9 at the
+        // end whether the second cycle worked or did nothing at all.
+        await File.WriteAllTextAsync(
+            tasksFile,
+            WithField(await File.ReadAllTextAsync(tasksFile), "MainTask", "priority", "\"7\""),
+            new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+
+        // WHICH STATE THE SECOND IMPORT IS ABOUT TO RUN IN, asserted rather than assumed.
+        // G11's trigger was a `<project>_project.precompilecache` beside the project, and the
+        // finding says the first import creates one - measured through
+        // tools\Measure-ImportStability.ps1, not from a test. Measured from here now, and it
+        // holds: the cache is present at this point, and so is the `.opt` pair.
+        //
+        // NEITHER IS COPIED IN, and that was worth finding out. This test originally copied the
+        // committed `.opt` files beside the project; deleting that copy left every assertion
+        // here green, because CODESYS writes its own pair the first time it opens the project -
+        // which is the first export, long before any import. So the copy was watching nothing
+        // and is gone; see InitRepoAsync. The loose end that asked for "sidecars present" was
+        // half answered before it was written.
+        //
+        // ASSERTED rather than merely printed, because the whole G11 axis rests on it. If a
+        // future CODESYS stops writing a cache on a headless import, this test would quietly
+        // decay into "imports twice" - still useful, but no longer covering the condition it
+        // was written for, and nothing would say so. This is what says so.
+        var sidecars = Directory.EnumerateFiles(Path.Combine(_repo, "plc"))
+            .Select(Path.GetFileName)
+            .Where(f => !f!.EndsWith(".project", StringComparison.Ordinal))
+            .OrderBy(f => f, StringComparer.Ordinal)
+            .ToList();
+
+        output.WriteLine($"beside the project before import 2: {string.Join(", ", sidecars)}");
+        Assert.Contains(sidecars,
+                        f => f!.EndsWith(".precompilecache", StringComparison.Ordinal));
+        Assert.Contains(sidecars, f => f!.EndsWith(".opt", StringComparison.Ordinal));
+
+        // Import again, with whatever the first one left behind. THIS is the cycle that used
+        // to throw twice and report failed: 0. Asserting on the warnings rather than on the
+        // verdict is the whole point: the verdict was Completed while it was broken.
+        var second = await TextChanged(orchestrator, binding.Id);
+        output.WriteLine($"import 2 — {second.Verdict}: {SyncNarrative.Describe(second)}");
+        Assert.Equal(SyncVerdict.Completed, second.Verdict);
+
+        foreach (var outcome in new[] { first, second })
+        {
+            Assert.DoesNotContain(outcome.Warnings,
+                                  w => w.StartsWith("NATIVE_IMPORT_ERROR", StringComparison.Ordinal));
+            Assert.DoesNotContain(outcome.Warnings,
+                                  w => w.StartsWith("TASK_", StringComparison.Ordinal));
+        }
+
+        // WHAT THESE TWO ASSERTIONS ARE AND ARE NOT WATCHING, because it was measured rather
+        // than assumed. Reverting Phase 4 - making typed_sibling_for return None, so the task
+        // XML goes back to import_native - turns this test red, but at the priority assertion
+        // below and NOT here: the native import re-applies the whole configuration from the
+        // XML and silently overwrites the typed write, without throwing. G11's exception did
+        // not reappear.
+        //
+        // The likely reason is worth the next reader's time: G11 was measured on cycles with
+        // `created: 0, updated: 0`, where versio_import's phase-split save - the guard written
+        // for that exact exception - is skipped by its own `if`. This test edits a task field,
+        // so `updated > 0` and the save runs. That is a lead, not a conclusion; the mutation
+        // changed two things at once and nobody has varied them separately. The open loose end
+        // in STATUS.md asks whether running that guard would have helped, and this is the first
+        // evidence either way.
+        //
+        // So: the priority assertion is what guards Phase 4. These two guard the summary being
+        // honest, and they would have caught the original G11 - a run that warned twice while
+        // reporting failed: 0.
+
+        // Re-export and read the value back out of the PROJECT. Nothing short of this can tell
+        // the difference between a field that was applied and a file that was merely parsed:
+        // every cheaper assertion is satisfied by an importer that reads the YAML and drops it.
+        //
+        // Straight through the runner into a scratch directory, NOT back through the
+        // orchestrator. Asking the orchestrator to export here returns NoChange, and it is
+        // right to: it recorded the project's hash when the import wrote it, so from its point
+        // of view nothing has happened since. That gate is correct and is not what this test is
+        // about - going around it asks the only question that is, which is what the project on
+        // disk now contains. It also means the assertion below cannot be satisfied by anything
+        // Versio cached; the bytes come out of CODESYS.
+        var verify = Path.Combine(_repo, ".versio", "local", "verify");
+        var runner = new LocalCodesysRunner(
+            install.ExecutablePath, new ScriptExtractor(), new TestLogger(output));
+
+        var reread = await runner.RunAsync(new CodesysJob
+        {
+            Operation = CodesysOperation.Export,
+            Profile = install.Profiles[0],
+            Projects =
+            [
+                new ProjectJob
+                {
+                    BindingId = binding.Id,
+                    ProjectPath = Path.Combine(_repo, "plc", "RefrigeratorControl.project"),
+                    Path = verify,
+                },
+            ],
+            Timeout = TimeSpan.FromMinutes(5),
+        }, null, CancellationToken.None);
+
+        Assert.True(reread.Succeeded, reread.FailureReason ?? "the verification export failed");
+
+        var reExported = await File.ReadAllTextAsync(Path.Combine(
+            verify, "Device", "Plc Logic", "Application", "Task Configuration.tasks.yaml"));
+        output.WriteLine(reExported);
+
+        Assert.Equal("7", FieldOf(reExported, "MainTask", "priority"));
+
+        // And G7, free on the same file. `Core2` - core affinity - is the field import_native
+        // moved from -1 to -2 on every import without being asked. Two imports have now run
+        // over this project, and these say both tasks still hold what they held before them.
+        //
+        // The invariant, not a mutation result: the Phase-4-reverted run above never reached
+        // these lines, because it failed on the priority two lines up. So it is unobserved
+        // whether a regression would trip these or only that one, and this comment says so
+        // rather than claiming a coverage it has not been shown to have. What they do assert
+        // is the thing a user cares about - that Versio did not quietly change which CPU core
+        // a task runs on - and that assertion is worth having whether or not it is the first
+        // one to go red.
+        Assert.Equal("-1", FieldOf(reExported, "VISU_TASK", "coreBinding"));
+        Assert.Equal("-2", FieldOf(reExported, "MainTask", "coreBinding"));
+    }
+
     private LockOwner Owner()
     {
         var machine = new MachineIdentity();
@@ -668,9 +861,89 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
         Directory.CreateDirectory(Path.Combine(_repo, "plc"));
         File.Copy(FixtureProject, Path.Combine(_repo, "plc", "RefrigeratorControl.project"));
 
+        // COPYING THE `.opt` SIDECARS WAS TRIED HERE AND REMOVED, because it was watching
+        // nothing. `A_task_priority_edited_…` asserts the sidecars are beside the project
+        // before its second import; deleting the copy left that assertion green, because
+        // CODESYS writes its own `<project>-<user>-<machine>.opt` pair the first time it opens
+        // the project - which every test here does, on its first export, long before it
+        // imports.
+        //
+        // That corrects the loose end this came from, which read "none imports with the
+        // project's sidecars present". The `.opt` half of it was never true: they are there by
+        // import time in every test that exports first. What was genuinely missing is the
+        // compile cache and the second cycle, and those are what the test now covers.
         await RunGitAsync("init", "-b", "main");
         await RunGitAsync("config", "user.email", "test@versio.local");
         await RunGitAsync("config", "user.name", "Versio Test");
+    }
+
+    /// <summary>
+    /// Read one field of one named task out of a <c>.tasks.yaml</c>, by indent, without a
+    /// parser.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not <c>LibraryCatalog</c>-shaped and deliberately not shared with the
+    /// production reader. The point of this test is to check what CODESYS holds after an
+    /// import, and reading the file back with the same code that wrote it would let a bug
+    /// common to both sides cancel out. Twenty lines of dumb line-scanning cannot agree with
+    /// the emitter by accident.
+    ///
+    /// Returns a sentence rather than throwing or returning null on a miss, so a failed
+    /// assertion says which field was not found instead of a bare "expected 9, got ".
+    /// </remarks>
+    private static string FieldOf(string yaml, string task, string field)
+    {
+        const string NameKey = "  - name: ";
+        var wanted = $"    {field}: ";
+        var inTask = false;
+
+        foreach (var line in yaml.Replace("\r\n", "\n").Split('\n'))
+        {
+            if (line.StartsWith(NameKey, StringComparison.Ordinal))
+            {
+                inTask = line[NameKey.Length..].Trim().Trim('"') == task;
+            }
+            else if (inTask && line.StartsWith(wanted, StringComparison.Ordinal))
+            {
+                return line[wanted.Length..].Trim().Trim('"');
+            }
+        }
+
+        return $"<no {field} on a task called {task}>";
+    }
+
+    /// <summary>Rewrite one field of one named task, asserting it hit exactly one line.</summary>
+    /// <remarks>
+    /// The count assertion is the guard that matters. A blind string replace over this file
+    /// would also match <c>watchdogSensitivity: "1"</c> or the other task's value, and a test
+    /// that edits the wrong line still goes green when the importer does nothing - it would be
+    /// asserting that an unchanged value stayed unchanged.
+    /// </remarks>
+    private static string WithField(string yaml, string task, string field, string value)
+    {
+        const string NameKey = "  - name: ";
+        var wanted = $"    {field}: ";
+        var lines = yaml.Replace("\r\n", "\n").Split('\n');
+        var inTask = false;
+        var rewritten = 0;
+
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (lines[i].StartsWith(NameKey, StringComparison.Ordinal))
+            {
+                inTask = lines[i][NameKey.Length..].Trim().Trim('"') == task;
+            }
+            else if (inTask && lines[i].StartsWith(wanted, StringComparison.Ordinal))
+            {
+                lines[i] = wanted + value;
+                inTask = false;
+                rewritten++;
+            }
+        }
+
+        Assert.True(rewritten == 1,
+                    $"expected to rewrite exactly one {field} line for {task}, rewrote {rewritten}");
+        return string.Join("\n", lines);
     }
 
     private async Task RunGitAsync(params string[] args)

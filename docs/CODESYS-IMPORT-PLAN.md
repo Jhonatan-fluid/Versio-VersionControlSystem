@@ -1,7 +1,9 @@
 # Versio — closing the CODESYS import gaps
 
 **Date:** 2026-08-15 · **Phase 0 is complete: all nine probes measured. Phase 4 is built, both
-halves, and closes G7 and G11.** Phases 1, 2, 3, 5 and 6 are not started.
+halves, closes G7 and G11, and — as of the same day — the write is tested against a real
+project.** Phases 1, 2, 3, 5 and 6 are not started. One Phase 4 item is still open and it is
+`TaskCatalog.cs`, the C# reader, so nothing outside python can read a `.tasks.yaml` yet.
 
 > **This header said "nothing in phases 1–6 is built" for the whole of the session that built
 > Phase 4**, while the [build order](#build-order) below it and every G7/G11 row already said
@@ -12,7 +14,7 @@ halves, and closes G7 and G11.** Phases 1, 2, 3, 5 and 6 are not started.
 | | |
 |---|---|
 | Document | **The plan for making the import side a real bidirectional sync.** Deletes, renames, moves, typed task configuration, and a mirror that stops churning after every import |
-| Status | **Phase 0 and Phase 4 done; phases 1, 2, 3, 5, 6 not started.** Two gaps closed as unreachable, four API spellings corrected, two live defects fixed (G7, G11) — and one re-opened and closed again by that same fix, the task XML's one-wayness going unrecorded |
+| Status | **Phase 0 and Phase 4 done; phases 1, 2, 3, 5, 6 not started.** Two gaps closed as unreachable, four API spellings corrected, two live defects fixed (G7, G11) — and one re-opened and closed again by that same fix, the task XML's one-wayness going unrecorded. **One of the three honesty fixes is done**, the one that took the write and both of G11's blind axes into a single real-CODESYS test |
 | Related | [`CODESYS.md`](CODESYS.md) — how CODESYS is driven today, and §12, the audit these gaps came from · [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) — what was measured · [`PLAN.md`](PLAN.md) — the architecture · [`SAFEGUARDS.md`](SAFEGUARDS.md) — what Versio refuses or waits for |
 
 > **These phase numbers are identifiers, not an order**, and they are **not** `PLAN.md`'s phases —
@@ -198,18 +200,26 @@ already exists.**
 | ~~1st~~ | ✅ **Phase 4 — typed task configuration.** Landed 2026-08-15, both halves. **G7 and G11 measured closed** | The only phase that fixes **two live, user-facing defects**: G7 changes CPU core affinity nobody asked to change, and G11 makes every import after the first silently fail. P6 proved the typed path works; a direct experiment proved removing the file from `import_native` fixes G11 without relocating the fault. Independent of everything else here |
 | ~~2nd~~ | ✅ **The task XML's one-wayness, recorded.** Landed 2026-08-15, immediately after | **Not planned — found by re-reading Phase 4 as if somebody else had written it.** Making the YAML importable made the `.xml` a file the export writes and the import discards, and nothing said so: not `_coverage.md`, not the manifest, not the panel's lock glyph. It went first because it is a **live silent-data-loss path introduced by the commit that had just landed**, where the honesty fixes below make *future* failures visible. See the finding in [`STATUS.md`](STATUS.md) |
 | ~~3rd~~ | ✅ **The committed fixture mirror, regenerated.** Landed 2026-08-15 | It was asserting against a mirror the current exporter cannot produce. **The feared cost did not materialise: every existing content file came back byte-identical**, `Task Configuration.xml` included — the only changes are the new `.tasks.yaml`, one `form` field (`NATIVE_R` → `TASK_NATIVE`), `objectCount` 12 → 13, and the coverage report. One assertion moved, exactly as predicted. It also unlocked the reader test below |
-| ~~4th~~ | ✅ **`.tasks.yaml` parsed by its own reader, against committed bytes.** Landed 2026-08-15 | The cheap half of the typed path's missing coverage, and it needs **no CODESYS** — the same shape as the library test that has run for months. Verified non-vacuous by perturbing an expected value. The expensive half, a real mutation applied to a project, stays in Phase 6 |
-| **NEXT** | **The three honesty fixes** | Small, unrelated to each other, and each makes the *next* failure visible instead of silent. None depends on any phase |
-| **6th** | **Phase 1 — manifest-driven importer** | The foundation. Nothing else can be planned C#-side until the plan exists |
-| **7th** | **`versio_native_equiv.py`** | A shared prerequisite, not a phase. Phase 2's native content check needs it and so does Phase 5 — it was written down as a Phase 5 artifact and is needed earlier |
-| **8th** | **Phases 2 and 3 — deletes, renames, moves** | Together, as originally planned. Phase 3's detection reuses Phase 2's delete candidates |
-| **9th** | **Phase 5 — a mirror that stops churning** | Wants Phases 1–3 settled first, because it changes when files are rewritten and every earlier phase's diffs are easier to read without it |
-| **10th** | **Phase 6 — remaining gaps, tests, docs** | G8 and G9, the parity tests, the integration tests |
+| ~~4th~~ | ✅ **`.tasks.yaml` parsed by its own reader, against committed bytes.** Landed 2026-08-15 | The cheap half of the typed path's missing coverage, and it needs **no CODESYS** — the same shape as the library test that has run for months. Verified non-vacuous by perturbing an expected value. ~~The expensive half, a real mutation applied to a project, stays in Phase 6~~ — it did not: it came next instead, as the row below |
+| ~~5th~~ | ✅ **The write, tested against a real project — and the two axes G11 hid behind, in the same run.** Landed 2026-08-15 | **Pulled forward from Phase 6, where it was scheduled dead last.** It was the third honesty fix and the expensive half of Phase 4's coverage, and they turned out to be **one test**: the same fixture, the same adopt-and-export scaffolding, the same CODESYS launches. Splitting them would have paid for that setup twice. It is also the item every other document already called load-bearing — the single step the whole G7/G11 argument rests on. See below |
+| **NEXT** | **The two remaining honesty fixes** | Small, unrelated to each other, and each makes the *next* failure visible instead of silent. None depends on any phase |
+| **7th** | **Phase 1 — manifest-driven importer** | The foundation. Nothing else can be planned C#-side until the plan exists |
+| **8th** | **`versio_native_equiv.py`** | A shared prerequisite, not a phase. Phase 2's native content check needs it and so does Phase 5 — it was written down as a Phase 5 artifact and is needed earlier |
+| **9th** | **Phases 2 and 3 — deletes, renames, moves** | Together, as originally planned. Phase 3's detection reuses Phase 2's delete candidates |
+| **10th** | **Phase 5 — a mirror that stops churning** | Wants Phases 1–3 settled first, because it changes when files are rewritten and every earlier phase's diffs are easier to read without it |
+| **11th** | **Phase 6 — remaining gaps, tests, docs** | G8 and G9, the parity tests, the integration tests |
 
-### The three honesty fixes
+### The three honesty fixes — one done, two left
 
 None is a phase. All three came out of G11's investigation, all three are small, and each one is
 the reason a future defect will be seen rather than missed.
+
+> **The third is done, and it absorbed Phase 4's missing coverage on the way.** It was scheduled
+> here and the Phase 4 write test was scheduled in Phase 6, at opposite ends of this list — and
+> they were the same test. Both wanted an adopted repository, a real export, an edit to the
+> mirror and a real CODESYS import; building them apart would have paid for that twice and left
+> the more valuable one until last. **When two items on a build order want the same fixture, that
+> is usually the list being wrong about how many items there are.**
 
 1. **`versio_import.py` does not count a native-import failure.** `ReplaceHandler.progress` warns
    and returns; `self.failed` stays at zero and `self.native` is incremented anyway, so the summary
@@ -223,11 +233,25 @@ the reason a future defect will be seen rather than missed.
    Only `warnings` is common to both, and it is the only true number on the line. *(The
    `not_imported` case in the same `switch` had a related defect — hard-coded "change this in
    the IDE" — and was **fixed 2026-08-15**. This one is untouched.)*
-3. **No test imports twice, and none imports with the project's sidecars present.** Both
-   real-CODESYS import tests import once, from a `.project` copied without its `.opt` pair or its
-   compile cache — and **one of the two asserts the import is *refused*** because CODESYS holds
-   the project, so it is not an import-success test at all. **Both axes are exactly how G11
-   stayed invisible**, and both matter more once the importer grows deletes, renames and moves.
+3. ~~**No test imports twice, and none imports with the project's sidecars present.**~~ —
+   ✅ **CLOSED 2026-08-15.**
+   `AdoptAndExportTests.A_task_priority_edited_in_the_mirror_reaches_the_project_and_survives_a_second_import`
+   exports, edits a priority in the mirror, imports, edits again, imports again, and reads the
+   value back out of the project through a fresh export. **The compile cache is asserted
+   present before the second import**, not assumed — the first import writes one, which is now
+   measured from a test rather than inherited from `Measure-ImportStability.ps1`, and asserted
+   so the axis cannot decay silently if a future CODESYS stops writing it.
+   - **The `.opt` half of this gap did not exist.** The test was first written copying the
+     committed `.opt` pair beside the project, as this row asked for — and **deleting that copy
+     left every assertion green.** CODESYS writes its own pair the first time it opens the
+     project, which is the first *export*, so every test that exports before importing already
+     had them. The copy was removed as an unwatched path. What was genuinely uncovered is the
+     cache and the second cycle.
+   - **A second import needs a second edit.** Re-running the same import is refused as
+     `NoChange`, correctly, by the hash gate. That is not a workaround: G11's trigger was the
+     cache and the measurement recorded that the mirror's bytes are irrelevant. It also makes
+     the assertion stronger — the final value is the *second* edit's, so it can only be right
+     if the cycle that used to fail actually applied.
 
 There is a fourth, and it is a judgement call rather than a fix: **the phase-split save in
 `versio_import.py` is conditional on `created > 0 or updated > 0`**, so an import touching only
@@ -298,18 +322,33 @@ Mirrors the library-reference design exactly, which is the precedent to copy:
   object change is one `form` field. **Every other file, including `Task Configuration.xml`
   itself, came back byte-identical**, which is also the strongest available evidence that
   the export is still deterministic across everything this touched.
-- ⬜ **An integration test that changes a task priority and asserts the project afterwards.**
-  Listed under Phase 6, and worth pulling forward: the write step is still proven by a
+- ✅ **An integration test that changes a task priority and asserts the project afterwards.**
+  ~~Listed under Phase 6, and worth pulling forward: the write step is still proven by a
   hand-run mutation and by nothing automated, which is the same shape as the coverage gap
-  that let G11 live.
+  that let G11 live.~~ **Pulled forward and landed 2026-08-15.** The "worth pulling forward"
+  turned out to understate it: it was the same test as the third honesty fix, so building it
+  here cost one fixture rather than two.
   - **Split in two, because the halves cost wildly different amounts.** ✅ **The cheap half
     landed 2026-08-15** — `The_committed_task_file_parses_with_the_reader_that_ships_beside_it`
     parses the committed `.tasks.yaml` with the reader the importer calls, needs **no CODESYS**,
     and runs in ten seconds. It was impossible until the fixture above carried the file.
-  - ⬜ **The expensive half is what is still open**, and it is the one that matters: nothing
-    writes a priority through the API and asserts the project changed. So the emitter, the
-    reader, the committed bytes and the `TYPED_SIBLING` skip are all watched, and **the write
-    is not** — the single step the entire G7/G11 argument rests on.
+  - ✅ **The expensive half landed 2026-08-15 too**, pulled forward from Phase 6 because it was
+    the same test as the third honesty fix. It writes a priority through the API and reads it
+    back out of the project, so **the write is watched now** — the single step the entire
+    G7/G11 argument rests on.
+    - **Verified non-vacuous twice, by deleting each half of Phase 4 in turn.** Stubbing out
+      `setattr(obj, prop, wanted)` reads back `1` instead of `7`. Making `typed_sibling_for`
+      return `None` — the pre-Phase-4 world, where the XML goes back to `import_native` — also
+      reads back `1`.
+    - **And the second mutation says something the plan did not know.** It failed on the
+      priority assertion and **not** on the warnings: with the XML back on the `import_native`
+      path and the cache present, the native import silently overwrote the typed write *without
+      throwing*. G11's exception did not come back. The difference from P7 is that this run had
+      `updated > 0`, so the phase-split save — the guard written for that exact exception, and
+      the "fourth honesty fix" below — actually **ran**. That is a lead and not a conclusion,
+      because the mutation moved two things at once. But it is the first evidence on the
+      question that fix has been carrying unanswered: *whether running the guard would have
+      helped*.
 
 **Why this is first.** It is the only phase that fixes something a user is living with today, and
 it fixes two:
@@ -482,9 +521,14 @@ the **existing bytes**.
   `RunPython` already takes a snippet and a JSON payload, so this is a few lines — and it is the
   highest-consequence uncompared pair in the repo, since a bug in `split_st` silently moves code
   between a declaration and an implementation.
-- Integration, on a copy of the fixture: delete an object, rename one, move one, change a task
-  priority, and assert the project afterwards — including that GUIDs survived. **And import
-  twice, with the sidecars present**, which is the pair of axes G11 hid behind.
+- Integration, on a copy of the fixture: delete an object, rename one, move one, and assert the
+  project afterwards — including that GUIDs survived. ~~Change a task priority.~~ ~~**And import
+  twice, with the sidecars present**, which is the pair of axes G11 hid behind.~~ **Those two
+  landed early, on 2026-08-15, as one test** — see the build order. What is left here is the
+  delete/rename/move half, which needs Phases 2 and 3 to exist first. **The scaffolding is
+  already written**: `A_task_priority_edited_in_the_mirror_…` adopts, exports, edits the mirror
+  and imports against real CODESYS with sidecars, so the remaining cases extend it rather than
+  starting over.
 - Docs: [`CODESYS.md`](CODESYS.md) §1.3 (the API this uncovered), §3.1 (job schema 2), §5.2
   (`TASK_BOTH`), §6 (plan-driven import), §7 (G10, and what "deterministic" now means), §12 D1–D6
   resolved rather than described. [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) gate 0.5b annotated:
@@ -507,7 +551,11 @@ the **existing bytes**.
    is exactly how it went unnoticed in the first place.
 5. **Regression gate:** a normal export stays byte-identical to the committed mirror for every file
    Phase 4 does not deliberately change.
-6. Full integration suite against real CODESYS (~7 min).
+6. **The Phase 4 acceptance test**, and it is the cheapest of these to run:
+   `dotnet test tests\Versio.Integration.Tests --filter A_task_priority_edited_in_the_mirror` —
+   four CODESYS launches, 72–78 s, and it is the only thing in the repository that fails if the
+   typed write stops reaching the project.
+7. Full integration suite against real CODESYS (~9 min).
 
 Build with `& "$env:LOCALAPPDATA\Microsoft\dotnet\dotnet.exe"` — `dotnet` on PATH is runtime-only.
 Close Versio.exe first; it locks its own DLLs.

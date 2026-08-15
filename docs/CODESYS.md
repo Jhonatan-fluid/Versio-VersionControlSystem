@@ -825,9 +825,14 @@ resolves 4 of the 5 files. Note the distinction from codescribe: they broke visu
 >
 > **Read the test for what it is.** It runs against bytes captured *before* Phase 4, so it
 > passes whatever the importer does today — it records the measurement rather than guarding the
-> live path, and it would keep passing if Phase 4 were reverted. The guard for the live path is
-> the integration test named in [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md), and it is
-> **not written yet**.
+> live path, and it would keep passing if Phase 4 were reverted.
+>
+> **The guard for the live path is
+> `AdoptAndExportTests.A_task_priority_edited_in_the_mirror_reaches_the_project_and_survives_a_second_import`**,
+> written 2026-08-15. It edits a priority in the mirror, imports twice against real CODESYS with
+> the `.opt` pair and the compile cache present, and reads the value back out of the project
+> through a fresh export. Deleting either half of Phase 4 — the typed write, or the
+> `TYPED_SIBLING` skip — turns it red; both were tried.
 
 ---
 

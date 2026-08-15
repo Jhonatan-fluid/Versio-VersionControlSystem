@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,388 unit + 478 UI + 195 integration, 0 skipped
+**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,388 unit + 478 UI + 196 integration, 0 skipped
 
 > **Also 2026-08-15, on branch `GitImportPlan`: Phase 0 of the import plan started, and its
 > first probe found a defect that reaches users.** P7 measured what an import → export cycle does
@@ -8,7 +8,9 @@
 > in passing turned up that **every import after the first silently fails to apply task
 > configuration** on any machine where the project has been opened in the IDE. Root cause: a
 > stale `_project.precompilecache`. One half is fixed (`TransientPatternsFor` now ignores it);
-> the import half has a measured mitigation and no decision. All three suites re-run green
+> **the import half is fixed too, later the same day — by Phase 4, which stops handing task
+> configuration to `import_native` at all, so the mitigation was never needed and Versio deletes
+> nothing of CODESYS's.** All three suites re-run green
 > afterwards — **1,385 + 478 + 192, 0 skipped**, integration 6m57s against real CODESYS. See the
 > findings, and [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md) for what P7 changed in the
 > plan itself.
@@ -524,16 +526,17 @@ does not record them has to be run again.
   cache is never reached. Versio deletes nothing of CODESYS's. Measured over three cycles:
   zero warnings, where cycles 2 and 3 used to throw twice each. **`Core2` stopped moving in
   the same change**, which closes G7 with it.
-- **The typed task-import path is half covered — the half that writes to CODESYS is not.**
-  `.tasks.yaml` → property assignment is what closes G7 and G11, and **no test writes a
-  `priority` and asserts the project changed**; that is still proven by one hand-run mutation.
-  ~~Nor was the file's own parsing covered.~~ **Closed 2026-08-15**: the committed
-  `.tasks.yaml` is now parsed by the reader the importer calls, in a test needing no CODESYS,
-  and verified non-vacuous by perturbing an expected value. So the emitter, the reader, the
-  committed bytes and the `TYPED_SIBLING` skip are all watched; **the write is not**. It is the
-  same shape of gap that let G11 live, and it is load-bearing — the whole argument for the
-  typed path is that it applies what the YAML says. `TaskCatalog.cs`, the C# reader, is also
-  still unwritten, so nothing outside python can read the file.
+- ~~**The typed task-import path is half covered — the half that writes to CODESYS is not.**~~
+  — **closed 2026-08-15, both halves.** The parsing half went first: the committed
+  `.tasks.yaml` is parsed by the reader the importer calls, in a test needing no CODESYS.
+  **The write half is now covered too** —
+  `AdoptAndExportTests.A_task_priority_edited_in_the_mirror_reaches_the_project_and_survives_a_second_import`
+  edits a priority in the mirror, imports against real CODESYS, and reads the value back out of
+  the project. Verified non-vacuous twice, by deleting each half of Phase 4 in turn: stub the
+  `setattr` and it reads back `1` instead of `7`; make `typed_sibling_for` return `None` and it
+  reads back `1` as well. **`TaskCatalog.cs`, the C# reader, is still unwritten**, so nothing
+  outside python can read the file and the panel cannot show tasks — that part of Phase 4 is
+  still open.
 - ~~**The committed fixture mirror is a shape the exporter can no longer produce.**~~
   **Closed 2026-08-15 by regenerating it**, and it cost far less than "moves committed bytes"
   implied. **Every existing content file came back byte-identical, `Task Configuration.xml`
@@ -562,10 +565,24 @@ does not record them has to be run again.
   for.** `if self.created > 0 or self.updated > 0` — an import touching only native files never
   saves between the phases, which is exactly the shape of run that hit the exception the split
   exists to prevent.
-- **No test imports twice, and none imports with the project's sidecars present.** Both
-  real-CODESYS import tests in `Versio.Integration.Tests` import once, from a `.project` copied
-  without its `.opt` pair or its compile cache. Both axes are how G11 stayed invisible, and both
-  matter more once the importer grows deletes, renames and moves.
+- ~~**No test imports twice, and none imports with the project's sidecars present.**~~ —
+  **closed 2026-08-15, and half of it was never true.** One test imports twice now, and the
+  compile cache is **asserted** present before the second import rather than assumed — the
+  first import writes one, which was inherited from `Measure-ImportStability.ps1` and is
+  measured from a test for the first time. The assertion is there so the axis cannot decay
+  silently if a future CODESYS stops writing a cache on a headless run.
+  - **The `.opt` half of this bullet was wrong, and finding that out is the point.** The test
+    was written copying the committed `.opt` pair beside the project, exactly as this bullet
+    asked. **Deleting that copy left every assertion green**: CODESYS writes its own
+    `<project>-<user>-<machine>.opt` pair the first time it opens a project, which is the
+    first *export* — so every test here that exports before importing already had them. The
+    copy was watching nothing and was removed. **The bullet was written by reading the test
+    setup rather than by looking at what was on disk afterwards**, which is the same mistake
+    as the first G11 explanation one section down: a story that fits, recorded as a fact.
+  - **A second import needs a second edit**, because re-running the same one is refused as
+    `NoChange` by the hash gate, correctly. That turned out to make the test stronger rather
+    than weaker: the final assertion reads the *second* edit's value, so it can only pass if
+    the cycle that used to fail actually applied something.
 - **`ToolchainState` is a public observable property with no view.** It survives because the
   runner uses its text as the "why this is unavailable" explanation. It should be a plain
   string, not a bindable one.
@@ -873,11 +890,27 @@ failed. The warnings *do* reach the log at `Warn` through `SyncOrchestrator.LogW
 comment already says the right thing — "the run succeeded but is not complete" — so this is a
 wrong one-line answer rather than a silent one. The one-line answer is what gets read.
 
-**Three · nothing in the suite imports twice.** Both real-CODESYS import tests in
+**Three · nothing in the suite imports twice.** ~~Both real-CODESYS import tests in
 `Versio.Integration.Tests` import exactly once, and all of them copy the `.project` without its
 sidecars. So the suite could not have caught this on either axis, and a defect that needs a
-second cycle has no coverage at all. That is the gap worth closing before the import path grows
-deletes, renames and moves.
+second cycle has no coverage at all.~~ **Closed 2026-08-15** — and it closed Phase 4's own
+missing write coverage with it, because they wanted the same fixture and turned out to be one
+test. It imports twice with the compile cache present, asserts the cache is there rather than
+trusting that it is, and reads a written priority back out of the project.
+
+> **"and all of them copy the `.project` without its sidecars" was wrong**, which only came out
+> when the fix was built. CODESYS writes the `.opt` pair itself on first open, so every test
+> that exports before importing already had them; copying them in changed nothing and no
+> assertion could see the difference. The cache is the sidecar that mattered, and it is the one
+> the five-run table above had already isolated. See the loose end.
+
+> **One thing it measured that contradicts the story above.** Deliberately reverting Phase 4 —
+> putting the task XML back on the `import_native` path, with the cache present — did **not**
+> bring the exception back. It silently overwrote the typed write instead. The one variable
+> that differs from P7 is that this run had `updated > 0`, so the phase-split save in defect
+> One above actually ran. Two things moved at once, so this is a lead rather than an answer;
+> but it is the first evidence on the question defect One has been carrying, and it points at
+> the guard being real rather than decorative.
 
 **The first explanation of this was wrong, and the way it was wrong is worth more than the
 finding.** It said this was "the `Core2` mutation seen from the other end" — cycle 1 mutates the
