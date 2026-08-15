@@ -330,22 +330,6 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>
-    /// Selecting a row in the tree shows whatever it has to show.
-    /// </summary>
-    /// <remarks>
-    /// A code-behind handler because <c>TreeView.SelectedItem</c> is read-only and cannot be
-    /// bound - the standard WPF workaround, and cheaper than the attached-behaviour it would
-    /// otherwise take.
-    /// </remarks>
-    private void OnTreeNodeSelected(object sender, RoutedPropertyChangedEventArgs<object> e)
-    {
-        if (e.NewValue is TreeRow row)
-        {
-            _shell.Sync.SelectedNode = row;
-        }
-    }
-
     /// <summary>Switch the left panel from the rail.</summary>
     /// <remarks>
     /// Visibility rather than a TabControl: the panels share the card and its header, and a
