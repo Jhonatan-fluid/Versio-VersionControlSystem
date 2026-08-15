@@ -82,7 +82,7 @@ public sealed class RepositoryChangeResetTests
         Assert.Null(shell.SelectedStaged);
         Assert.Null(shell.SelectedUnstaged);
         Assert.Equal("—", shell.BranchName);
-        Assert.Equal(string.Empty, shell.AheadBehind);
+        Assert.Equal(string.Empty, shell.Remote.AheadBehind);
         Assert.Equal(string.Empty, shell.SelectedDiff);
         Assert.Equal(string.Empty, shell.SelectedDiffPath);
         Assert.False(shell.ShowFullFile);

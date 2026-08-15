@@ -217,10 +217,10 @@
                         Background="{DynamicResource Brush.Surface.Sunken}"
                         CornerRadius="{DynamicResource Radius.Control}"
                         Padding="10,8" Margin="0,0,0,10"
-                        Visibility="{Binding Standing.IsDiverged,
+                        Visibility="{Binding Remote.Standing.IsDiverged,
                             Converter={StaticResource BoolToVisibility}}">
                     <StackPanel>
-                        <TextBlock Text="{Binding Standing.Headline}"
+                        <TextBlock Text="{Binding Remote.Standing.Headline}"
                                    TextWrapping="Wrap"
                                    FontFamily="{DynamicResource Font.UI}"
                                    FontSize="{DynamicResource Font.Size.Caption}"
@@ -322,7 +322,7 @@
                                        FontSize="{DynamicResource Font.Size.Body}"
                                        FontWeight="{DynamicResource Font.Weight.Medium}"
                                        Foreground="{DynamicResource Brush.Text.Primary}" />
-                            <TextBlock Text="{Binding AheadBehind}" Margin="10,0,0,0"
+                            <TextBlock Text="{Binding Remote.AheadBehind}" Margin="10,0,0,0"
                                        FontFamily="{DynamicResource Font.Mono}"
                                        FontSize="{DynamicResource Font.Size.Caption}"
                                        Foreground="{DynamicResource Brush.Accent.Default}" />
@@ -360,11 +360,11 @@
 
                              The colour is chosen by RemoteStanding, not here:
                              amber only when doing nothing has a cost. -->
-                        <TextBlock Text="{Binding Standing.Headline}"
+                        <TextBlock Text="{Binding Remote.Standing.Headline}"
                                    TextWrapping="Wrap" Margin="0,6,0,0"
                                    FontFamily="{DynamicResource Font.UI}"
                                    FontSize="{DynamicResource Font.Size.Caption}"
-                                   Foreground="{Binding Standing.BrushKey,
+                                   Foreground="{Binding Remote.Standing.BrushKey,
                                        Converter={StaticResource ResourceKey}}" />
 
                         <!-- Compact: three buttons inside a card that is itself
@@ -383,34 +383,34 @@
                                     Height="{DynamicResource Size.Control.Compact}"
                                     ToolTipService.ShowOnDisabled="True"
                                     ToolTip="Ask the remote what has changed, without touching your files"
-                                    Command="{Binding FetchCommand}" />
-                            <Button Content="{Binding PullLabel}" Margin="6,0,0,0"
+                                    Command="{Binding Remote.FetchCommand}" />
+                            <Button Content="{Binding Remote.PullLabel}" Margin="6,0,0,0"
                                     Style="{StaticResource GhostButton}"
                                     Height="{DynamicResource Size.Control.Compact}"
                                     ToolTipService.ShowOnDisabled="True"
-                                    ToolTip="{Binding Standing.Headline}"
-                                    Command="{Binding PullCommand}" />
+                                    ToolTip="{Binding Remote.Standing.Headline}"
+                                    Command="{Binding Remote.PullCommand}" />
 
                             <!-- Push and Publish swap rather than sharing a button.
                                  A plain push on a branch with no upstream fails
                                  outright, so they are different operations, and one
                                  control meaning both would have a failure mode that
                                  only appears sometimes. -->
-                            <Button Content="{Binding PushLabel}" Margin="6,0,0,0"
+                            <Button Content="{Binding Remote.PushLabel}" Margin="6,0,0,0"
                                     Style="{StaticResource GhostButton}"
                                     Height="{DynamicResource Size.Control.Compact}"
                                     ToolTipService.ShowOnDisabled="True"
-                                    ToolTip="{Binding Standing.Headline}"
-                                    Command="{Binding PushCommand}"
-                                    Visibility="{Binding ShowPush,
+                                    ToolTip="{Binding Remote.Standing.Headline}"
+                                    Command="{Binding Remote.PushCommand}"
+                                    Visibility="{Binding Remote.ShowPush,
                                         Converter={StaticResource BoolToVisibility}}" />
                             <Button Content="Publish branch" Margin="6,0,0,0"
                                     Style="{StaticResource AccentButton}"
                                     Height="{DynamicResource Size.Control.Compact}"
                                     ToolTipService.ShowOnDisabled="True"
                                     ToolTip="Push this branch to the remote and start tracking it"
-                                    Command="{Binding PublishCommand}"
-                                    Visibility="{Binding ShowPublish,
+                                    Command="{Binding Remote.PublishCommand}"
+                                    Visibility="{Binding Remote.ShowPublish,
                                         Converter={StaticResource BoolToVisibility}}" />
                         </StackPanel>
 

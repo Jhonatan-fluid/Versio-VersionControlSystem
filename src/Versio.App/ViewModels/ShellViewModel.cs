@@ -23,6 +23,37 @@ using Versio.Infrastructure.Watching;
 
 namespace Versio.App.ViewModels;
 
+/// <summary>Why a refresh is running.</summary>
+/// <remarks>
+/// <para>
+/// <b>It was private, nested inside the shell, until the remote surface moved out.</b> A
+/// collaborator that asks the shell to refresh has to be able to say which kind it is asking
+/// for — a pressed button and a remote that moved are not the same event to the coalescer or to
+/// the log. Flattening it into two callbacks would have hidden that distinction in the names of
+/// two delegates instead of stating it in a type.
+/// </para>
+/// <para>
+/// Public rather than internal only because it appears in a public constructor's signature and
+/// C# will not allow that to be less accessible than the type. <c>Versio.App</c> is the
+/// application, not a library — nothing outside it consumes this — so widening it costs a line
+/// of explanation and nothing else.
+/// </para>
+/// </remarks>
+public enum RefreshTrigger
+{
+    /// <summary>The toolbar button, or opening a repository.</summary>
+    Manual,
+
+    /// <summary>A file in the working tree changed.</summary>
+    WorkingTree,
+
+    /// <summary>Git's own state moved — staged, committed, checked out elsewhere.</summary>
+    GitMetadata,
+
+    /// <summary>The periodic re-read that covers dropped watcher events.</summary>
+    Backstop,
+}
+
 /// <summary>Which panel the left rail is showing.</summary>
 /// <remarks>
 /// <para>
@@ -386,7 +417,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     private AppSettings _stored = AppSettings.Empty;
 
     private GitCliClient? _git;
-    private readonly RemotePoller _poller;
 
     /// <summary>True while a question is on screen waiting for an answer.</summary>
     /// <remarks>
@@ -421,7 +451,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     private string? _repositoryPath;
     private string _branchName = "—";
     private string _statusSummary = "No repository open";
-    private string _aheadBehind = string.Empty;
     private string _selectedDiff = string.Empty;
     private bool _isBusy;
     private bool _showFullFile;
@@ -489,27 +518,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             RaiseGitCommandStates();
         };
 
-        // Keeps the ahead/behind counts honest without anybody asking. It probes with
-        // ls-remote and fetches only when the remote has actually moved - and it NEVER pulls,
-        // because a pull rewrites the project and its mirror under the watcher, which is the
-        // one scenario SAFEGUARDS §5.A calls able to corrupt a project through no user error.
-        _poller = new RemotePoller(
-            logger,
-            _clock,
-            client: () => _git,
-
-            // One shared flag, so a probe cannot compete with a push for the network or the
-            // credential helper, and a modal question is never answered by a background fetch.
-            suspended: () => Busy.IsBusy || _modalOpen,
-            target: PollTarget,
-            onMoved: FetchBecauseTheRemoteMovedAsync,
-            onHalted: reason => OnUi(() => Notifications.Warning(
-                "Not watching the remote any more.", reason)),
-
-            // On the remote watch's schedule rather than a timer of its own, so it inherits the
-            // backoff, the suspension and the halt on a rejected credential. It asks nothing at
-            // all unless the button is actually offering to create a request.
-            onProbed: ProbeMergeRequestAsync);
 
         // The SHELL's tracker, not one of its own.
         //
@@ -518,6 +526,40 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // toolchain work at all, including the catch-up and commit-gate exports that both
         // carefully open a scope for it. Two objects, both correct, wired to nothing.
         Sync = new SyncViewModel(logger, _clock, Busy, toolchains);
+
+        // Where this branch stands against the remote, and the background watch that keeps it
+        // honest. After Sync, because it holds it: a pull and a push both have to tell the PLC
+        // engine that git is about to move the tree under it.
+        //
+        // The callbacks are the shell's and stay the shell's. A background watch is defined by
+        // them - what counts as busy, what to ask on each probe - and handing over the object
+        // that owns them rather than the delegates would be passing the shell itself.
+        Remote = new GitRemoteViewModel(
+            logger,
+            _clock,
+            Busy,
+            Notifications,
+            Auth,
+            Sync,
+            client: () => _git,
+            ready: () => Ready,
+
+            // One shared flag, so a probe cannot compete with a push for the network or the
+            // credential helper, and a modal question is never answered by a background fetch.
+            suspended: () => Busy.IsBusy || _modalOpen,
+            branchName: () => BranchName,
+            clearForContextChange: ClearForContextChangeAsync,
+            refresh: trigger => RunRefreshAsync(trigger, null),
+
+            // It asks nothing at all unless the button is actually offering to create a request.
+            onProbed: ProbeMergeRequestAsync,
+            reportError: ReportError);
+
+        Remote.Changed += () =>
+        {
+            RaiseHealth();
+            RaiseGitCommandStates();
+        };
 
         // A failed project is the one condition the status light reads that does not live on
         // this view model, so it is the one that has to be listened for rather than raised.
@@ -596,6 +638,16 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// the shell keeping a second copy.
     /// </remarks>
     public GitAuthViewModel Auth { get; }
+
+    /// <summary>
+    /// Where this branch stands against the remote, and the watch that keeps it honest.
+    /// </summary>
+    /// <remarks>
+    /// Bound as <c>Remote.X</c> throughout <c>GitPanelView.xaml</c>. It owns the poller, so the
+    /// shell disposes it — a background loop outliving the window would keep spawning git
+    /// processes against a repository nobody is looking at.
+    /// </remarks>
+    public GitRemoteViewModel Remote { get; }
 
     /// <summary>The PLC sync panel — what Versio is for, as distinct from the git client.</summary>
     public SyncViewModel Sync { get; }
@@ -942,15 +994,10 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         });
 
         BranchName = "—";
-        AheadBehind = string.Empty;
-        Standing = RemoteStanding.None;
-        _hasRemote = false;
         Auth.Reset();
 
-        // The poller is about a repository that is no longer open. Resume clears the halt as
-        // well, so a credential problem on the last one does not silence the next.
-        _poller.Stop();
-        _poller.Resume();
+        // Both are about a repository that is no longer open.
+        Remote.Reset();
 
         // These notifications are about a repository that is no longer open. Keeping them
         // would attach a failed push to whatever is opened next.
@@ -1239,16 +1286,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// panel, means there is a somebody — and the counts should be as live as they were at the
     /// start rather than on a sixty-second cadence inherited from an idle hour.
     /// </remarks>
-    private void WakeThePoller() => _poller.Wake();
-
-    /// <summary>The remote watch, so a test can assert what this shell wired into it.</summary>
-    /// <remarks>
-    /// Internal for the same reason <c>IgnoredPaths()</c> is: trusting that a callback written
-    /// in this file reaches an object constructed in this file is exactly the assumption that
-    /// has been wrong three times here.
-    /// </remarks>
-    internal RemotePoller Poller => _poller;
-
     public ShellPanel ActivePanel
     {
         get => _activePanel;
@@ -1273,7 +1310,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             // to read.
             if (value == ShellPanel.Git)
             {
-                WakeThePoller();
+                Remote.Wake();
             }
         }
     }
@@ -1306,51 +1343,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         get => _branchName;
         private set => SetProperty(ref _branchName, value);
     }
-
-    public string AheadBehind
-    {
-        get => _aheadBehind;
-        private set => SetProperty(ref _aheadBehind, value);
-    }
-
-    private RemoteStanding _standing = RemoteStanding.None;
-    private bool _hasRemote;
-
-    /// <summary>
-    /// Where this branch stands in relation to the remote, in words.
-    /// </summary>
-    /// <remarks>
-    /// Replaces reading the two arrows. <see cref="AheadBehind"/> survives for the branch
-    /// dropdown, where a compact glyph beside a name is the right shape; the panel itself now
-    /// says what the numbers mean, because that is the question people open it to answer.
-    /// </remarks>
-    public RemoteStanding Standing
-    {
-        get => _standing;
-        private set
-        {
-            if (SetProperty(ref _standing, value))
-            {
-                OnPropertyChanged(nameof(PushLabel));
-                OnPropertyChanged(nameof(PullLabel));
-                OnPropertyChanged(nameof(ShowPublish));
-                OnPropertyChanged(nameof(ShowPush));
-                RaiseHealth();
-                RaiseGitCommandStates();
-            }
-        }
-    }
-
-    /// <summary>Push and Publish swap places: they are different operations, so only one is
-    /// offered at a time rather than one button meaning two things.</summary>
-    public bool ShowPublish => _standing.CanPublish;
-
-    public bool ShowPush => !_standing.CanPublish;
-
-    /// <summary>The count on the label, where it informs without gating.</summary>
-    public string PushLabel => "Push" + _standing.PushCountSuffix;
-
-    public string PullLabel => "Pull" + _standing.PullCountSuffix;
 
     /// <summary>
     /// What just happened, as against what is currently true.
@@ -1394,7 +1386,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         MidMerge = IsMidMerge,
         IdentityMissing = Auth.IdentityIsMissing,
         AuthNeedsAttention = Auth.NeedsAttentionForAuth,
-        Diverged = _standing.IsDiverged,
+        Diverged = Remote.Standing.IsDiverged,
     });
 
     /// <summary>Bound through <c>ResourceKeyConverter</c>, so the theme picks the paint.</summary>
@@ -1871,7 +1863,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // the reason above, and before the first refresh so the very first Standing computed
         // is already right - otherwise a repository with a remote would flash "no remote
         // configured" for one frame on every open.
-        _hasRemote = (await client.RemotesAsync(busy.Token).ConfigureAwait(true)).Count > 0;
+        Remote.NoteHasRemote(
+            (await client.RemotesAsync(busy.Token).ConfigureAwait(true)).Count > 0);
 
         // The remote's shape decides what a credential failure will mean, so it is parsed once
         // here rather than re-derived at each failure. remoteUrl was already read above for
@@ -1887,7 +1880,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         // Only once there is something to watch. Start is idempotent, and PollTarget returns
         // nothing until a Standing with an upstream has been computed.
-        _poller.Start();
+        Remote.StartWatching();
 
         await RefreshCoreAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
 
@@ -1902,21 +1895,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>Why a refresh is happening. Only affects logging and how much is reloaded.</summary>
-    private enum RefreshTrigger
-    {
-        /// <summary>The toolbar button, or opening a repository.</summary>
-        Manual,
-
-        /// <summary>A file in the working tree changed.</summary>
-        WorkingTree,
-
-        /// <summary>Git's own state moved — staged, committed, checked out elsewhere.</summary>
-        GitMetadata,
-
-        /// <summary>The periodic re-read that covers dropped watcher events.</summary>
-        Backstop,
-    }
-
     /// <summary>
     /// Begin following <paramref name="path"/>.
     /// </summary>
@@ -2264,7 +2242,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         Forge,
         Auth.Remote,
         _branch,
-        Standing.State,
+        Remote.Standing.State,
         DefaultBranch,
         _treeIsDirty,
         _requestNumber);
@@ -2366,9 +2344,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// deliberate act of its own now, in the remote row where the ahead-count already lives.
     /// </remarks>
     public AsyncCommand CommitCommand { get; private set; } = null!;
-    public AsyncCommand PullCommand { get; private set; } = null!;
-    public AsyncCommand PushCommand { get; private set; } = null!;
-    public AsyncCommand FetchCommand { get; private set; } = null!;
 
     /// <summary>Put a branch on the remote for the first time.</summary>
     /// <remarks>
@@ -2376,7 +2351,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// push on a branch with no upstream fails outright, so folding the two together would
     /// give one button two meanings and a failure that only appears sometimes.
     /// </remarks>
-    public AsyncCommand PublishCommand { get; private set; } = null!;
 
     private string _commitMessage = string.Empty;
 
@@ -2663,21 +2637,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         BuildHunkCommand();
 
-        // Pull is enabled whenever an upstream exists, NOT only when behind. Behind-ness is
-        // as fresh as the last fetch, and disabling a safe fast-forward on stale knowledge
-        // would leave somebody unable to act on a remote that moved a second ago.
-        PullCommand = new AsyncCommand(
-            PullAsync, () => Ready && Standing.CanPull, ReportError);
-        // Push stays live while diverged, where git will reject it. Disabling it would hide
-        // the state the user has to resolve; git's own rejection, in a notification that does
-        // not expire, is the clearest possible explanation of what is wrong.
-        PushCommand = new AsyncCommand(() => PushAsync(afterCommit: false),
-                                       () => Ready && Standing.CanPush, ReportError);
-        FetchCommand = new AsyncCommand(FetchAsync, () => Ready, ReportError);
-
-        PublishCommand = new AsyncCommand(
-            PublishAsync, () => Ready && Standing.CanPublish, ReportError);
-
 
         // Needs somewhere to go if the current branch is deleted, and something to delete.
         DeleteBranchesCommand = new AsyncCommand(
@@ -2696,7 +2655,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // branch, which is advice pointing at a button that cannot work.
         ReconcileCommand = new AsyncCommand<bool>(
             ReconcileAsync,
-            _ => Ready && Standing.State == TrackingState.Diverged, ReportError);
+            _ => Ready && Remote.Standing.State == TrackingState.Diverged, ReportError);
 
         // Enabled only with a row selected. Discard is per-file on purpose: a "discard all"
         // beside "stage all" would put an irreversible button one pixel away from a routine
@@ -2726,7 +2685,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
                     // Any deliberate git action means somebody is here, so the remote is worth
                     // watching closely again. The backoff exists to stop polling for nobody.
-                    WakeThePoller();
+                    Remote.Wake();
                     break;
 
                 case nameof(BusyTracker.HasUninterruptible):
@@ -2808,10 +2767,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         StageCommand.RaiseCanExecuteChanged();
         UnstageCommand.RaiseCanExecuteChanged();
         CommitCommand.RaiseCanExecuteChanged();
-        PullCommand.RaiseCanExecuteChanged();
-        PushCommand.RaiseCanExecuteChanged();
-        FetchCommand.RaiseCanExecuteChanged();
-        PublishCommand.RaiseCanExecuteChanged();
+        Remote.RaiseCommandStates();
         Auth.RaiseCommandStates();
         RefreshCommand.RaiseCanExecuteChanged();
         HunkCommand.RaiseCanExecuteChanged();
@@ -3031,224 +2987,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>Pull, for a test that cannot click the button.</summary>
-    internal Task PullForTestAsync() => PullAsync();
-
-    private async Task PullAsync()
-    {
-        if (_git is null)
-        {
-            return;
-        }
-
-        _logger.Click("Git.Pull");
-
-        // Guarded at last. GuardIntent.Pull has existed, been tested and been deliberately
-        // unwired since the guard was written, because every verdict it produces resolves to
-        // the auto-stash - and offering to stash before anything could would have been a
-        // button that lies. A pull is the last path that can meet a dirty tree, and it is the
-        // worst one to meet it on: it rewrites the project and the mirror together.
-        if (!await ClearForContextChangeAsync(GuardIntent.Pull, "pulling").ConfigureAwait(true))
-        {
-            return;
-        }
-
-        using var busy = Busy.Begin(WorkKind.GitWrite, "Pulling…");
-
-        // Same as a checkout: a pull can land a whole new mirror, and an unheld watcher would
-        // report it as an edit to the exported text and import it into the project.
-        GitResult result = default!;
-
-        await Sync.WhileGitRewritesTheTreeAsync(
-            "pull",
-            async () => result = await _git.PullAsync(null, busy.Token).ConfigureAwait(true))
-            .ConfigureAwait(true);
-
-        if (result.Success)
-        {
-            Auth.NoteAuthSuccess();
-            Notifications.Success("Pulled.");
-        }
-        else
-        {
-            Auth.NoteAuthFailure(result);
-            Notifications.Failure("Pull failed.", result.FailureReason ?? string.Empty);
-        }
-
-        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
-    }
-
-    /// <summary>
-    /// Push, and release the direction locks if it worked.
-    /// </summary>
-    /// <remarks>
-    /// Push is what releases the lock, not commit: until work is pushed nobody else can see
-    /// it, so the direction is still meaningfully owned (plan section 6.5). Push is repo-wide,
-    /// so it releases every binding rather than the one last looked at.
-    /// </remarks>
-    private async Task PushAsync(bool afterCommit)
-    {
-        if (_git is null)
-        {
-            return;
-        }
-
-        if (!afterCommit)
-        {
-            _logger.Click("Git.Push");
-        }
-
-        using var busy = Busy.Begin(WorkKind.GitPush, "Pushing…");
-        var result = await _git.PushAsync(null, busy.Token).ConfigureAwait(true);
-
-        if (!result.Success)
-        {
-            // Sticky, and that is the single most important lifetime rule in the panel. A
-            // failed push that quietly vanished after four seconds is how somebody goes home
-            // believing their work is on the remote.
-            Auth.NoteAuthFailure(result);
-            Notifications.Failure("Push failed.", result.FailureReason ?? string.Empty);
-            return;
-        }
-
-        var head = await _git.HeadCommitAsync(busy.Token).ConfigureAwait(true);
-        await Sync.ReleaseAfterPushAsync(head, busy.Token).ConfigureAwait(true);
-
-        Auth.NoteAuthSuccess();
-
-        // Posted BEFORE the refresh, and it survives it. That ordering used to be the bug:
-        // StatusSummary was set here and RunRefreshAsync then overwrote it with the file
-        // count, so a successful push said nothing at all.
-        Notifications.Success("Pushed.", "Every direction lock is released.");
-        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
-    }
-
-    /// <summary>
-    /// Put this branch on the remote for the first time.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>The remote is chosen, never guessed silently.</b> <c>origin</c> when it exists — which
-    /// it does for anything that was cloned — then the sole remote if there is exactly one.
-    /// With several and no <c>origin</c>, this refuses and says so rather than picking: pushing
-    /// a branch to the wrong remote is not something to do on a coin toss, and a repository
-    /// with three remotes is one where somebody has already thought about which is which.
-    /// </para>
-    /// <para>
-    /// Releases the direction locks on success exactly as <see cref="PushAsync"/> does. The
-    /// lock rule is about work becoming visible to other people, and a publish makes it visible
-    /// for the first time — if anything it is the more complete case.
-    /// </para>
-    /// </remarks>
-    private async Task PublishAsync()
-    {
-        if (_git is null)
-        {
-            return;
-        }
-
-        _logger.Click("Git.Publish");
-        using var scope = _logger.BeginOperation(LoggerExtensions.NewOperationId());
-
-        var remotes = await _git.RemotesAsync(CancellationToken.None).ConfigureAwait(true);
-
-        var remote = remotes.FirstOrDefault(r => r == "origin")
-                     ?? (remotes.Count == 1 ? remotes[0] : null);
-
-        if (remote is null)
-        {
-            Notifications.Failure(
-                "Versio does not know which remote to publish to.",
-                remotes.Count == 0
-                    ? "This repository has no remote."
-                    : $"It has {remotes.Count} remotes and none is called origin: " +
-                      string.Join(", ", remotes));
-            return;
-        }
-
-        using var busy = Busy.Begin(WorkKind.GitPush, $"Publishing {BranchName} to {remote}…");
-        var result = await _git.PublishBranchAsync(remote, BranchName, null, busy.Token)
-            .ConfigureAwait(true);
-
-        if (!result.Success)
-        {
-            Auth.NoteAuthFailure(result);
-            Notifications.Failure($"Could not publish {BranchName}.",
-                                  result.FailureReason ?? string.Empty);
-            return;
-        }
-
-        var head = await _git.HeadCommitAsync(busy.Token).ConfigureAwait(true);
-        await Sync.ReleaseAfterPushAsync(head, busy.Token).ConfigureAwait(true);
-
-        Auth.NoteAuthSuccess();
-        Notifications.Success($"{BranchName} is on {remote} now.",
-                              "Every direction lock is released.");
-
-        await RunRefreshAsync(RefreshTrigger.GitMetadata, null).ConfigureAwait(true);
-    }
-
-    /// <summary>Which remote and branch the poller should watch, or nothing.</summary>
-    /// <remarks>
-    /// Nothing unless there is an upstream: a branch that has never been published has no
-    /// remote counterpart to compare against, and asking about one would fail on every probe.
-    /// </remarks>
-    private (string Remote, string Branch)? PollTarget()
-    {
-        if (_git is null || !_standing.HasUpstream)
-        {
-            return null;
-        }
-
-        // "origin/main" -> ("origin", "main"). The upstream is stored in exactly that shape by
-        // porcelain v2, and a branch name may itself contain slashes, so only the first is a
-        // separator.
-        var slash = _standing.Upstream.IndexOf('/');
-        return slash <= 0
-            ? null
-            : (_standing.Upstream[..slash], _standing.Upstream[(slash + 1)..]);
-    }
-
-    /// <summary>
-    /// The remote moved, so learn what it moved to.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// A fetch, never a pull. This is the only expensive call the poller makes and it runs only
-    /// when a probe has already established there is something new.
-    /// </para>
-    /// <para>
-    /// <b>It does not raise the <see cref="BusyTracker"/>.</b> Every git button consults that
-    /// flag, so raising it here would make the panel flicker dead whenever a colleague pushed —
-    /// the same reasoning that keeps automatic status refreshes off the progress bar.
-    /// </para>
-    /// </remarks>
-    private async Task FetchBecauseTheRemoteMovedAsync(CancellationToken ct)
-    {
-        if (_git is null)
-        {
-            return;
-        }
-
-        var result = await _git.FetchAsync(null, ct).ConfigureAwait(false);
-
-        if (!result.Success)
-        {
-            // Stops on the first refusal rather than after the usual run: retrying a
-            // rejected credential every few seconds cannot succeed and may lock an account.
-            // The classification, and the hop back to the UI thread it needs, belong to the
-            // credential collaborator; what stays here is the poller, which is the shell's.
-            if (Auth.NoteBackgroundFailure(result) is { } refusal)
-            {
-                _poller.NoteRefused(refusal);
-            }
-
-            return;
-        }
-
-        // Back onto the UI thread before anything observable moves. Watcher and timer callbacks
-        // arrive on threadpool threads, and touching a bound collection from one throws.
-        OnUi(() => _ = RunRefreshAsync(RefreshTrigger.GitMetadata, null));
-    }
+    internal Task PullForTestAsync() => Remote.PullForTestAsync();
 
     /// <summary>
     /// Take one side of the selected conflict.
@@ -3634,32 +3373,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
 
         await RunRefreshAsync(RefreshTrigger.GitMetadata, null).ConfigureAwait(true);
-    }
-
-    private async Task FetchAsync()
-    {
-        if (_git is null)
-        {
-            return;
-        }
-
-        _logger.Click("Git.Fetch");
-        using var busy = Busy.Begin(WorkKind.GitRead, "Fetching…");
-
-        var result = await _git.FetchAsync(null, busy.Token).ConfigureAwait(true);
-
-        if (result.Success)
-        {
-            Auth.NoteAuthSuccess();
-            Notifications.Success("Fetched.");
-        }
-        else
-        {
-            Auth.NoteAuthFailure(result);
-            Notifications.Failure("Fetch failed.", result.FailureReason ?? string.Empty);
-        }
-
-        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
     }
 
     // -------------------------------------------------------------- hunks, diffs
@@ -4752,14 +4465,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             {
                 _requestNumber = null;
             }
-            AheadBehind = status.Branch is { Ahead: 0, Behind: 0 }
-                ? string.Empty
-                : $"↑{status.Branch.Ahead} ↓{status.Branch.Behind}";
-
-            // The remote list is read once per repository rather than per refresh: remotes are
-            // configuration, they change when somebody edits them, and a process spawn on
-            // every working-tree save to re-learn that origin still exists is waste.
-            Standing = RemoteStanding.For(status.Branch, _hasRemote);
+            Remote.NoteStatus(status.Branch);
 
             var changed = Reconcile(status.Changes);
 
@@ -4978,7 +4684,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
-        var remoteHead = _hasRemote
+        var remoteHead = Remote.HasRemote
             ? await _git.RemoteHeadAsync("origin", CancellationToken.None).ConfigureAwait(true)
             : string.Empty;
 
@@ -5225,7 +4931,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         // A background loop outliving the window would keep spawning git processes against a
         // repository nobody is looking at.
-        _poller.Dispose();
+        Remote.Dispose();
 
         // The sync panel holds its own watcher over every tracked project and its export
         // tree. Releasing only the shell's would leave those handles open and the repository

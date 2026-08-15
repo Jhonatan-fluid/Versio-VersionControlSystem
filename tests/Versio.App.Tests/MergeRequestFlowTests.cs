@@ -173,7 +173,7 @@ public sealed class MergeRequestFlowTests
         // end-to-end is on the §13 script.
         using var shell = Shell();
 
-        Assert.True(shell.Poller.AsksASecondQuestion);
+        Assert.True(shell.Remote.Poller.AsksASecondQuestion);
     }
 
     [Fact]

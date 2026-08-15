@@ -294,7 +294,7 @@ public sealed class GitPanelChromeTests : IDisposable
             var (window, shell) = Build();
             ShowGitPanel(window);
 
-            Assert.NotEqual(shell.ShowPush, shell.ShowPublish);
+            Assert.NotEqual(shell.Remote.ShowPush, shell.Remote.ShowPublish);
         });
     }
 

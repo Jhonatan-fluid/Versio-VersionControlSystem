@@ -70,8 +70,8 @@ public sealed class ConflictFlowTests
 
         await shell.OpenAsync(repo.Path);
 
-        Assert.Equal(TrackingState.Diverged, shell.Standing.State);
-        Assert.True(shell.Standing.IsDiverged);
+        Assert.Equal(TrackingState.Diverged, shell.Remote.Standing.State);
+        Assert.True(shell.Remote.Standing.IsDiverged);
 
         // The dead end this closes: the badge says pull first, and --ff-only refuses.
         Assert.True(shell.ReconcileCommand.CanExecute(true));
@@ -88,7 +88,7 @@ public sealed class ConflictFlowTests
 
         // Everywhere else the choice is noise, and --ff-only is the right default precisely
         // because auto-merging native CODESYS XML produces a file nobody reviewed.
-        Assert.False(shell.Standing.IsDiverged);
+        Assert.False(shell.Remote.Standing.IsDiverged);
         Assert.False(shell.ReconcileCommand.CanExecute(true));
     }
 
@@ -231,7 +231,7 @@ public sealed class ConflictFlowTests
         // Offering an operation that can stop half-done without offering the way back is how
         // somebody ends up in a state they cannot describe.
         Assert.Empty(shell.Conflicted);
-        Assert.Equal(TrackingState.Diverged, shell.Standing.State);
+        Assert.Equal(TrackingState.Diverged, shell.Remote.Standing.State);
         Assert.Equal("mine\n",
                      File.ReadAllText(Path.Combine(repo.Path, "seed.txt")).Replace("\r\n", "\n"));
     }

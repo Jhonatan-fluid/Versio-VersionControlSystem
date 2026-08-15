@@ -35,10 +35,10 @@ public sealed class RemoteStandingFlowTests
 
         await shell.OpenAsync(repo.Path);
 
-        Assert.Equal(TrackingState.NoRemote, shell.Standing.State);
-        Assert.False(shell.PublishCommand.CanExecute(null));
-        Assert.False(shell.PushCommand.CanExecute(null));
-        Assert.False(shell.PullCommand.CanExecute(null));
+        Assert.Equal(TrackingState.NoRemote, shell.Remote.Standing.State);
+        Assert.False(shell.Remote.PublishCommand.CanExecute(null));
+        Assert.False(shell.Remote.PushCommand.CanExecute(null));
+        Assert.False(shell.Remote.PullCommand.CanExecute(null));
     }
 
     [Fact]
@@ -51,11 +51,11 @@ public sealed class RemoteStandingFlowTests
 
         // The case the old rendering showed as an empty string, identical to being in sync,
         // while the work existed only on this machine.
-        Assert.Equal(TrackingState.NoUpstream, shell.Standing.State);
-        Assert.True(shell.ShowPublish);
-        Assert.False(shell.ShowPush);
-        Assert.True(shell.PublishCommand.CanExecute(null));
-        Assert.False(shell.PushCommand.CanExecute(null));
+        Assert.Equal(TrackingState.NoUpstream, shell.Remote.Standing.State);
+        Assert.True(shell.Remote.ShowPublish);
+        Assert.False(shell.Remote.ShowPush);
+        Assert.True(shell.Remote.PublishCommand.CanExecute(null));
+        Assert.False(shell.Remote.PushCommand.CanExecute(null));
     }
 
     [Fact]
@@ -65,16 +65,16 @@ public sealed class RemoteStandingFlowTests
         using var shell = Shell();
 
         await shell.OpenAsync(repo.Path);
-        Assert.True(shell.ShowPublish);
+        Assert.True(shell.Remote.ShowPublish);
 
-        await Eventually.Press(shell.PublishCommand, "publish");
-        await Eventually.Until(() => shell.Standing.State == TrackingState.InSync,
+        await Eventually.Press(shell.Remote.PublishCommand, "publish");
+        await Eventually.Until(() => shell.Remote.Standing.State == TrackingState.InSync,
                                "the branch became published");
 
-        Assert.Equal("origin/main", shell.Standing.Upstream);
-        Assert.False(shell.ShowPublish);
-        Assert.True(shell.ShowPush);
-        Assert.Contains("Up to date", shell.Standing.Headline);
+        Assert.Equal("origin/main", shell.Remote.Standing.Upstream);
+        Assert.False(shell.Remote.ShowPublish);
+        Assert.True(shell.Remote.ShowPush);
+        Assert.Contains("Up to date", shell.Remote.Standing.Headline);
     }
 
     [Fact]
@@ -86,10 +86,10 @@ public sealed class RemoteStandingFlowTests
         using var shell = Shell();
         await shell.OpenAsync(repo.Path);
 
-        Assert.Equal(TrackingState.Ahead, shell.Standing.State);
-        Assert.Equal(1, shell.Standing.Ahead);
-        Assert.Equal("Push (1)", shell.PushLabel);
-        Assert.True(shell.PushCommand.CanExecute(null));
+        Assert.Equal(TrackingState.Ahead, shell.Remote.Standing.State);
+        Assert.Equal(1, shell.Remote.Standing.Ahead);
+        Assert.Equal("Push (1)", shell.Remote.PushLabel);
+        Assert.True(shell.Remote.PushCommand.CanExecute(null));
     }
 
     [Fact]
@@ -100,13 +100,13 @@ public sealed class RemoteStandingFlowTests
 
         await shell.OpenAsync(repo.Path);
 
-        Assert.Equal(TrackingState.InSync, shell.Standing.State);
-        Assert.False(shell.PushCommand.CanExecute(null));
+        Assert.Equal(TrackingState.InSync, shell.Remote.Standing.State);
+        Assert.False(shell.Remote.PushCommand.CanExecute(null));
 
         // Pull stays live: behind-ness is only as fresh as the last fetch, and a dead button
         // would strand somebody whose remote moved a second ago.
-        Assert.True(shell.PullCommand.CanExecute(null));
-        Assert.Equal("Pull", shell.PullLabel);
+        Assert.True(shell.Remote.PullCommand.CanExecute(null));
+        Assert.Equal("Pull", shell.Remote.PullLabel);
     }
 
     [Fact]
@@ -117,13 +117,13 @@ public sealed class RemoteStandingFlowTests
         using var shell = Shell();
 
         await shell.OpenAsync(withRemote.Path);
-        Assert.Equal(TrackingState.InSync, shell.Standing.State);
+        Assert.Equal(TrackingState.InSync, shell.Remote.Standing.State);
 
         await shell.OpenAsync(without.Path);
 
         // _hasRemote is per repository. Carrying it across would make a local-only repository
         // claim it had somewhere to push.
-        Assert.Equal(TrackingState.NoRemote, shell.Standing.State);
+        Assert.Equal(TrackingState.NoRemote, shell.Remote.Standing.State);
     }
 
     [Fact]

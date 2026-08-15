@@ -216,15 +216,15 @@ public sealed class CommitPlanFlowTests
         shell.CommitMessage = "local only";
         shell.CommitCommand.Execute(null);
 
-        await Eventually.Until(() => shell.Standing.State == TrackingState.Ahead,
+        await Eventually.Until(() => shell.Remote.Standing.State == TrackingState.Ahead,
                                "the branch went ahead");
 
-        Assert.Equal(1, shell.Standing.Ahead);
+        Assert.Equal(1, shell.Remote.Standing.Ahead);
 
         // Asserted on the gating RULE rather than on the command's momentary enabled state:
         // CanExecute also carries `Ready`, which is false for as long as the refresh that
         // follows a commit is still running. That is a different concern with its own tests,
         // and folding it in here would make this assert timing rather than behaviour.
-        Assert.True(shell.Standing.CanPush);
+        Assert.True(shell.Remote.Standing.CanPush);
     }
 }
