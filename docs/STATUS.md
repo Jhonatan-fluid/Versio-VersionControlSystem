@@ -1,18 +1,25 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-14 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,384 unit + 477 UI + 192 integration, 0 skipped
+**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,384 unit + 478 UI + 192 integration, 0 skipped
 
-> All three re-derived on 2026-08-14, on branch `GitPanel`, after the git-panel plan's **GP-J**
-> (PLC-aware naming of the changed-files rows, the change summary and the drafted commit
-> subject), **GP-I** (the merge-request button across five forges), **safeguards §5.C** (the
-> import confirmation, which the app had been answering for itself), **§5.E** (a way to reach the
-> backups that were being written and read by nothing) and **§5.G** (one repository, one
-> Versio) — and after two defects the product owner found by opening the app, both written up
-> under Findings. The integration suite was
-> re-run in full against real CODESYS 3.5.22.20 — **154 passed, 0 skipped** — including
-> `RepositoryWatcherTests.A_deleted_file_is_reported`, the one noted below as flaky, which
-> passed in this run. The five new integration tests read a forge's hidden request refs out of a
-> real bare repository and need no network.
+> **All three re-derived on 2026-08-15**, on branch `CodeAuditCleanup`, after the shell
+> decomposition: `GitAuthViewModel`, `GitRemoteViewModel` and `LogPanelView` out of
+> `ShellViewModel` and `MainWindow.xaml`, which go **5,573 → 4,958** and **1,218 → 936**. The
+> **integration suite was re-run in full against real CODESYS — 192 passed, 0 skipped, 7m02s**,
+> including `RepositoryWatcherTests.A_deleted_file_is_reported`, the one noted below as flaky,
+> which passed. Before that, in the same session: the log console disposal leak, the shells two
+> window helpers could not reach, the silent repository-lock release, and the thirteen binding
+> errors that had been filling the tracer.
+>
+> **The code-shape queue is closed** — see *Deferred, and not on the critical path*, and the
+> queue itself, for what was declined and why. Four product items are deferred there with the
+> reason each one waits and what would bring it back.
+>
+> Earlier, on 2026-08-14, on branch `GitPanel`: the git-panel plan's **GP-J** (PLC-aware naming
+> of the changed-files rows, the change summary and the drafted commit subject), **GP-I** (the
+> merge-request button across five forges), **safeguards §5.C** (the import confirmation, which
+> the app had been answering for itself), **§5.E** (a way to reach the backups that were being
+> written and read by nothing) and **§5.G** (one repository, one Versio).
 
 > **The commit count is the command now, not a number.** It was wrong by twelve when an audit
 > first checked it, and wrong again twice in one afternoon afterwards — including once by the
@@ -168,34 +175,68 @@ format; `.gitattributes` covers every registered vendor's extensions.
 
 ---
 
+## Deferred, and not on the critical path
+
+Decided on 2026-08-15, in one place so that a future session finds the decision rather than
+re-deriving it. **None of these is blocked, none is hard, and none of them is wrong to pick up** —
+they are off the critical path because nothing is broken while they wait, which is a different
+statement from "not worth doing".
+
+| | Why it waits | What would bring it back |
+|---|---|---|
+| **Word-level diff** (§5) | The colours exist and are contrast-checked; `DiffView` tints whole rows. A readability gain on something already correct. | Somebody reading generated XML or ST diffs daily and saying so. It is the strongest candidate of the four. |
+| **Ahead/behind previews** (GP-K, §9d) | The badge already says *how many*; this says *which*. `RecentCommitsAsync` already takes a count and a skip, so it is the smallest thing left in the git plan. | An hour, whenever the git panel is next open on the bench. |
+| **Retry when the IDE closes** (§3) | Every path already recovers — the next save, and reopening the repository. This closes the gap in between. Convenience, not correctness. | A user noticing the wait, or the vendor lock file turning out to be cheap to watch. |
+| **Code signing** (open decision #2) | Nothing external is distributed yet. | **Start this before it is needed, not when.** It is procurement lead time rather than engineering time, and it is the only item on this page that gets worse purely by waiting. |
+
+**Also decided, and more firmly: the code-shape queue is closed.** Staging, the repository
+session and `SyncViewModel` were each measured and declined rather than deferred — see the queue
+below and the finding. The difference matters: the four above are *later*, those three are *no*
+unless something changes.
+
+---
+
 ## What remains, in dependency order
 
 > **Picking this up?** Items 1 and 2 are done and kept for their reasoning. Items 3–8 are
 > untouched: **item 3 is the smallest**, item 4 is the largest piece of user-visible value, and
 > nothing below depends on anything above it except where it says so.
 
-> **There is a second, independent queue: the code-shape work.** It has no bearing on what the
-> product does and is listed in *The shape of the code, after an audit* below. In order, and
-> each one is a session on its own:
+> **The second queue — the code-shape work — is CLOSED, and three of its items were closed by
+> deciding not to do them.** It never had any bearing on what the product does. What was worth
+> taking is taken:
 >
 > 1. ~~**Extract auth and identity out of `ShellViewModel`**~~ — **done.** `GitAuthViewModel`,
->    545 lines; the shell goes 5,573 → 5,251. The four hazards named here in advance were all
->    real and none of them surprised the work; what did surprise it was that **deleting the new
->    subscription left the entire suite green**. See the finding.
-> 2. ~~Then staging~~ — **the remote surface went second instead, on evidence.**
->    `GitRemoteViewModel`, 540 lines; the shell goes 5,251 → **4,958**. `GIT-PANEL-PLAN.md`'s
->    GP-E log had already measured the staging seam and rejected it, and re-measuring agreed:
->    staging makes four calls into the PLC engine including the export gate, this one makes two.
->    See the finding.
-> 3. **Staging, and read GP-E's log before you start.** It is the seam that reaches
->    `EvaluateGateAsync`/`SatisfyGateAsync`, so it runs through the junction where git meets the
->    toolchain. It may want a different shape from the two collaborators so far — possibly the
->    commit *plan* rather than the commit *flow*.
-> 4. Then the repository session, which measured worst of the three by a distance.
-> 3. **The log console is still inside `MainWindow.xaml`** — the one panel not extracted, held
->    back because it is the one with real code-behind coupling (`LogList`, `LogChevron`,
->    `LogSplitter`).
-> 4. `SyncViewModel` at 2,847 lines is the same shape one size down.
+>    545 lines; the shell goes 5,573 → 5,251.
+> 2. ~~**The remote surface**~~ — **done**, and it went ahead of staging on evidence rather than
+>    on the order written here. `GitRemoteViewModel`, 540 lines; 5,251 → **4,958**.
+> 3. ~~**The log console, still inside `MainWindow.xaml`**~~ — **done.** `LogPanelView`;
+>    `MainWindow.xaml` 1,218 → **936**, and all four panels are out.
+>
+> **Not doing, and this is a decision rather than a backlog:**
+>
+> - **Staging.** `GIT-PANEL-PLAN.md`'s GP-E log measured this seam and rejected it — *"a move
+>   dressed as a decomposition"* — and re-measuring agreed: it makes **four** calls into the PLC
+>   engine including `EvaluateGateAsync`/`SatisfyGateAsync`, so the seam runs straight through
+>   the junction where git meets the toolchain. That is the most safety-critical path in the
+>   application and the one place where a refactor that is merely *neutral* is still a bad
+>   trade. Revisit only if staging grows a genuinely separable rule set the way GP-E's selection
+>   logic did — that part already went to Core, which is why the shell grew wiring and shrank
+>   rules.
+> - **The repository session.** Measured **22 borrows**, worst of the three by a distance, and
+>   for a structural reason that will not improve: opening and closing a repository resets
+>   everything, so a collaborator would take most of the shell as arguments. That is the exact
+>   anti-pattern GP-E named.
+> - **`SyncViewModel`, 2,847 lines.** The same shape one size down, and the same answer. It is
+>   the PLC engine's view model — the part of the app that can lose somebody's work — and
+>   nothing about its size is currently costing a reader more than a re-shaping would risk.
+>
+> **What the effort actually produced, and it is not the line count.** Two instruments that did
+> not exist before: `CollaboratorSeamTests`, because deleting a subscription left the suite green
+> **three separate times**; and the git panel's binding-path test, because a renamed binding
+> compiles clean, throws nothing and renders an empty control. Both outlast the refactor and both
+> catch the failure mode that made it risky. **619 lines came out of the shell; the instruments
+> are worth more.**
 >
 > **Do the smaller thing first if you are new to this code**: ~~`LogViewModel` is leaked by
 > thirty tests that construct one inline as a constructor argument~~ — **done**, the shell
@@ -282,7 +323,7 @@ fixture: two library managers, **both exported now**, and `_coverage.md` reports
   is held (plan §9.2 asks for that, with a tooltip saying why). Git refuses a dirty-tree
   checkout on its own, which covers the dangerous case but not the explanation
 
-### 3. Retry automatically when the IDE closes  ← **start here**
+### 3. Retry automatically when the IDE closes — **deferred, not critical path**
 
 Export and import both handle an open project now. The one piece left is the trigger: the
 vendor's lock file disappearing is a filesystem event the watcher could see, which would make
@@ -292,6 +333,10 @@ Today the next save retries, and reopening the repository retries — the catch-
 open. What is missing is the case in between: the IDE is closed while Versio stays open, and
 nothing notices until the next save. The panel says so rather than going quiet, which is what
 `StalenessSummary` is for.
+
+**Deferred deliberately on 2026-08-15.** It is the smallest item here and it remains the obvious
+next one, but nothing is broken while it waits: every path already recovers, just later than it
+could. It buys convenience, not correctness.
 
 ### 4. Finish the project tree
 
@@ -307,9 +352,15 @@ nothing notices until the next save. The panel says so rather than going quiet, 
 - Context menu, and expansion state persisted per repository. It already survives a refresh;
   it does not yet survive the window closing
 
-### 5. Diff view
+### 5. Diff view — **deferred, not critical path**
 
 Side-by-side mode, and word-level intra-line diff.
+
+**Deferred on 2026-08-15**, and it is the one on this list with the strongest case for being
+picked up first when the deferrals are revisited: the colours already exist and are
+contrast-checked, and the diffs being read are generated XML and ST where a long line often
+differs by one identifier. It is a readability improvement to something that already works
+correctly, which is what puts it off the critical path rather than low value.
 
 ### 6. A second vendor
 
@@ -493,26 +544,29 @@ What moved, and why each one is worth knowing before editing it:
 | `Controls.xaml`, 1,228 lines | 70 lines + six dictionaries | Each leaf merges `Primitives.xaml` **itself**. A `StaticResource` resolves against its own dictionary and its own merges, never against a sibling the parent merged — this file's own header records the `XamlParseException` that cost. `StyleSheetResolutionTests` renders every keyed style, so a missing merge fails the suite instead of the first render |
 | Nine settable `Func<>` dialog hooks across two view models, wired from 115 lines inside `MainWindow`'s constructor | `IUserPrompts`, answered by `WindowPrompts` | The set of questions the app can ask now has a name and one place to read it. `NullPrompts` answers "no" to all of them, which is what a view model with no view attached gets — the same answer a user who cancels everything gives, so the call sites needed no new defaulting |
 | `SyncOrchestrator.AttemptAsync`, 275 lines | 112 lines + eleven named gates | The gates above `CoalescerRefuses` only *judge* — they take nothing and release nothing. The coalescer and the breaker **consume** something, which is why they are not in that list and why they report what they took. An `Attempt` record carries the state so every gate judges the same one |
-| `MainWindow.xaml`, 2,517 lines | 1,218 lines + three panels | `Views/Panels/`. A `UserControl` owns its own name scope, so `window.FindName` cannot see inside a panel; and a collapsed one has not applied its template, so its contents are not in the visual tree until shown once. `RowTemplates.xaml` exists because a `UserControl` cannot see the resources of the `Window` hosting it |
+| `MainWindow.xaml`, 2,517 lines | **936 lines + four panels** | `Views/Panels/`. A `UserControl` owns its own name scope, so `window.FindName` cannot see inside a panel; and a collapsed one has not applied its template, so its contents are not in the visual tree until shown once. `RowTemplates.xaml` exists because a `UserControl` cannot see the resources of the `Window` hosting it. The log console was the fourth and last, held back twice because it is the only one with code-behind — and **the margin has to sit on the hosted control, not inside it**, or the named element and the painted one stop being the same rectangle |
 | `GitCliClient`, 1,544 lines | 799 lines + three parts | Split on its own existing section markers, and it was already `partial` for `[GeneratedRegex]`. The primary constructor's parameters are in scope across every part, which is what made it free |
 | `OnUi` and its `SynchronizationContext`, twice | `ObservableObject` | One rule about the one thread allowed to touch a bound collection |
 | The atomic write, four times | `JsonFile` | The temp-then-replace and the BOM-less UTF-8 really were the same rule four times. **The serializer options were not** and were left alone: the settings store has no enum converter because the theme is deliberately a string, and the lock and session stores have no `PropertyNameCaseInsensitive`. Unifying them would have changed what each accepts off disk, on files shipped versions have already written |
 | Thirteen hand-built test shells | `TestShell.Build` | And the argument most easily forgotten — `toolchains: (_, _) => null`, without which a test goes looking for CODESYS on the machine running it |
 
-**What is still concentrated, and deliberately left.** `ShellViewModel` is **4,958** lines —
-down from 5,573, with auth and identity gone and the remote surface after it — and still the
-largest single thing in the repository, at roughly twelve responsibilities. Its clusters are **not contiguous**: staging
+**What is still concentrated, and it is now a decision rather than a backlog.**
+`ShellViewModel` is **4,958** lines — down from 5,573, with auth, identity and the remote
+surface gone — and still the largest single thing in the repository, at roughly twelve
+responsibilities. Its clusters are **not contiguous**: staging
 appears in two places, so it cannot be split by marking it `partial` and cutting on line ranges.
-Next out is staging — **read GP-E's log first**, because it is the seam that reaches the export
-gate and may want a different shape from the two collaborators so far — then the repository
-session, which measured worst of the three by a distance. Both on the pattern the first two
-extractions set:
-**map the cluster before cutting** (all four of its hazards were known in advance and none
-surprised the work), **pass collaborators in rather than reaching for them**, **replace calls
-back into the shell with one event**, and **add a row to `CollaboratorSeamTests` before believing the
-move**, because the suite has now failed to notice a missing subscription twice. `SyncViewModel` at 2,847 lines is the same shape
-one size down, and the log console is still inside `MainWindow.xaml` because it is the one panel
-with real code-behind coupling.
+**Nothing further is planned, and the two remaining clusters were measured before being
+declined.** Staging borrows 8 but makes **four** calls into the PLC engine including the export
+gate; the repository session borrows **22**, because opening and closing a repository resets
+everything. Both would take most of the shell as constructor arguments, which is the
+"move dressed as a decomposition" GP-E named. `SyncViewModel` at 2,847 lines gets the same
+answer for the same reason.
+
+**If a future session does take one of them, the pattern the three extractions set is:** map the
+cluster before cutting — every hazard named in advance was real and none surprised the work —
+**pass collaborators in rather than reaching for them**, **replace calls back into the shell with
+one event**, and **add a row to `CollaboratorSeamTests` before believing the move**, because the
+suite failed to notice a deleted subscription three separate times.
 
 **Two things the refactor itself taught.** A pure move can still lose coverage: three panel
 handlers changed from reading a `_shell` field to asking their own `DataContext`, and disabling
@@ -525,6 +579,57 @@ would have gone on passing while checking one fewer every time a panel moved out
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### Three moves, three deleted subscriptions, three green suites
+
+The log console was the last of the four panels inside `MainWindow.xaml`, and the one held back
+through three earlier passes because it is the only one with real code-behind. `LogPanelView` now
+holds it: **`MainWindow.xaml` 1,218 → 936**, its code-behind 412.
+
+**The code-behind turned out to be the interesting part rather than the obstacle.** Two of the
+three handlers are the console's own — the list follows its tail on append, the chevron swaps
+glyph on expand — and both are view concerns that moved with it. The third could not move at all:
+the `GridSplitter` above the console and the `RowDefinition` it resizes belong to the window's
+grid, and **a panel cannot own the row it is placed in.** So "the log is open" now moves two
+things in two places, and they listen to `IsExpanded` independently rather than one calling the
+other, so neither has to know the other exists.
+
+**The geometry test caught something no other check could have.** Moving the card's `Margin`
+inside the `UserControl` left the control filling the whole grid cell — flush against the rail —
+while the `Border` painted 8 px in. *Nothing looked different*, because the Border still painted
+exactly where it always had. But `FindName("LogConsole")` now returns the **container**, so the
+named element and the painted element had quietly stopped being the same rectangle, and the
+overlap assertion said so. The margin belongs on the host. This is the fourth distinct way a WPF
+layout has been correct and wrong in this repository, and the first where the defect was in what
+the *test* could see rather than in what the user could.
+
+**And then the number that matters.** Deleting the panel's single wiring line — the
+`DataContextChanged` subscription that is the whole reason this panel has code-behind — left
+**all 477 tests green**. The chevron would have pointed the wrong way and the log would have
+stopped following its own tail, in front of a user, with the suite entirely happy.
+
+That is the **third** time in one session:
+
+| Move | Deleted | Suite |
+|---|---|---|
+| Auth and identity | `Auth.Changed` subscription | 467 green |
+| The remote surface | `Remote.Changed` subscription | 475 green |
+| The log console | the panel's `DataContextChanged` wiring | 477 green |
+
+Three for three. **A pure move is the single most likely kind of change to lose its coverage
+silently**, because nothing about it looks like new behaviour — there is no new branch to test, no
+new failure mode to imagine, and the tests that existed go on passing by construction. The rule
+this earns is narrow and worth stating: **after moving a subscription, delete it and run the
+suite.** If nothing goes red, the move is not yet finished.
+
+The test that closes this one expands the log **through the window** rather than by constructing
+the panel and handing it a context, because `DataContextChanged` is precisely what would not fire
+in the second case — a test that built the control directly would have passed against the broken
+version.
+
+**Three tests asserted `IsType<Border>` on the console and now get a `UserControl`**, relaxed to
+`FrameworkElement` exactly as the history panel's move already required, with the same note:
+what those tests want is something to measure, not a particular container.
 
 ### The queue said staging; the evidence said the remote surface
 

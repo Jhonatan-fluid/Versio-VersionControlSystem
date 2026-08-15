@@ -160,7 +160,7 @@ Versio.sln
 │                               and run on CPython too.
 ├─ tests/
 │  ├─ Versio.Core.Tests/        1,384 unit tests — pure, no IO, under a second
-│  ├─ Versio.App.Tests/         477 tests that build the real windows and panels against
+│  ├─ Versio.App.Tests/         478 tests that build the real windows and panels against
 │  │                            the real stylesheet on an STA thread — none is ever shown
 │  └─ Versio.Integration.Tests/ 192 tests against real CODESYS and real git, ~7 min
 ├─ tools/                       PowerShell harnesses used during Phase 0, plus
@@ -192,12 +192,22 @@ alongside it. Drop the merge and the file still compiles, then throws at the fir
 `StyleSheetResolutionTests` renders every keyed style in the merged result, which is what turns
 that back into a build-time answer.
 
-**`Views/Panels/` holds the three panels the rail switches between** — git, history and project —
-as `UserControl`s. `MainWindow.xaml` keeps each one's row, name and visibility, because the rail
-decides which is showing. Two consequences: a `UserControl` owns its own XAML name scope, so
-`window.FindName` cannot see inside a panel; and a collapsed one has not applied its template,
-so its contents are not in the visual tree until it has been shown once. `Views/RowTemplates.xaml`
-exists because a `UserControl` cannot see the resources of the `Window` hosting it.
+**`Views/Panels/` holds all four panels** — the three the rail switches between (git, history,
+project) and the log console — as `UserControl`s. `MainWindow.xaml` is 936 lines and keeps each
+one's row, name and visibility, because the rail decides which is showing.
+
+Three consequences, each of which has cost something at least once: a `UserControl` owns its own
+XAML name scope, so `window.FindName` cannot see inside a panel; a collapsed one has not applied
+its template, so its contents are not in the visual tree until it has been shown once; and **a
+card's outer margin belongs on the hosted control rather than inside it**, or the element
+`FindName` returns and the element that paints stop being the same rectangle — which is invisible
+on screen and immediately visible to a geometry test. `Views/RowTemplates.xaml` exists because a
+`UserControl` cannot see the resources of the `Window` hosting it.
+
+The log console was the last one out and the only one with real code-behind: it auto-scrolls on
+append and swaps its chevron on expand. What stayed behind is the half a panel cannot own — the
+`GridSplitter` above it and the `RowDefinition` it resizes are the window's grid, so both sides
+listen to `IsExpanded` independently rather than one calling the other.
 
 ### Vendor boundaries
 

@@ -94,6 +94,13 @@ of the tests — a second read. This session's second passes each found somethin
 Green tests are not the double pass. Ask instead: what did I change that nothing is watching?
 Then break it deliberately and confirm something fails.
 
+**Moved a subscription? Delete it and run the suite.** Three extractions in one session each
+replaced a direct call with an event and a subscription, and deleting that subscription left the
+whole suite green all three times — at 467, 475 and 477 tests. A pure move is the most likely
+kind of change to lose its coverage silently, because nothing about it looks like new behaviour.
+If nothing goes red, the move is not finished. `CollaboratorSeamTests` exists for this and takes
+one row per collaborator.
+
 ### Commit in coherent chunks
 
 One commit per idea, each building and passing on its own. Not one giant commit, and not a
@@ -181,7 +188,7 @@ stays that way.
 | Suite | Count | Time |
 |---|---|---|
 | `Versio.Core.Tests` | 1,384 | under a second |
-| `Versio.App.Tests` | 477 | ~50 s, STA, no window shown |
+| `Versio.App.Tests` | 478 | ~50 s, STA, no window shown |
 | `Versio.Integration.Tests` | 192 | ~7 min, real CODESYS and real git |
 
 A red integration run is worth re-running a project at a time before reading it as a
