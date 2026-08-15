@@ -573,12 +573,24 @@ does not record them has to be run again.
   silently if a future CODESYS stops writing a cache on a headless run.
   - **The `.opt` half of this bullet was wrong, and finding that out is the point.** The test
     was written copying the committed `.opt` pair beside the project, exactly as this bullet
-    asked. **Deleting that copy left every assertion green**: CODESYS writes its own
-    `<project>-<user>-<machine>.opt` pair the first time it opens a project, which is the
-    first *export* — so every test here that exports before importing already had them. The
-    copy was watching nothing and was removed. **The bullet was written by reading the test
-    setup rather than by looking at what was on disk afterwards**, which is the same mistake
-    as the first G11 explanation one section down: a story that fits, recorded as a fact.
+    asked. **Deleting that copy left every assertion green** — so the copy was watching nothing
+    and was removed. **The bullet was written by reading the test setup rather than by looking
+    at what was on disk afterwards**, which is the same mistake as the first G11 explanation
+    one section down: a story that fits, recorded as a fact.
+  - **Which tool writes which sidecar, now measured rather than reasoned about.** The test
+    lists the project's directory at both import points, and the two lines answer it outright:
+
+    | | Beside the project | Written by |
+    |---|---|---|
+    | before import 1 | the `.opt` pair, **no cache** | the **export** — it opens the project too |
+    | before import 2 | the `.opt` pair **and** the cache | the **import** |
+
+    So *"the first import creates the cache"* holds, and is measured from a test for the first
+    time instead of inherited from `Measure-ImportStability.ps1`. And the `.opt` files are the
+    export's doing, which is exactly why copying them in changed nothing. **The export was
+    never a suspect until the second pass asked which of the two runs had produced them** — the
+    original comment asserted the import created both, from the same not-looking that wrote
+    the bullet.
   - **A second import needs a second edit**, because re-running the same one is refused as
     `NoChange` by the hash gate, correctly. That turned out to make the test stronger rather
     than weaker: the final assertion reads the *second* edit's value, so it can only pass if
@@ -856,10 +868,16 @@ A freshly copied project has no cache and the first import creates one, **so the
 after a clone works and every one after it fails** — which is why it presents as "the second
 cycle", and why it reproduced 4 for 4 across two independent P7 runs.
 
-**This reaches real users and cannot reach the suite.** Anyone who has opened their project in
-the IDE has a cache beside it. `Versio.Integration.Tests` copies the `.project` and nothing
-else, so no test has ever run an import with one present — and both of its real-CODESYS import
-tests import exactly **once**, so they would stop one step short even if it did.
+**This reaches real users and could not reach the suite.** Anyone who has opened their project
+in the IDE has a cache beside it. `Versio.Integration.Tests` copied the `.project` and nothing
+else, so no test had ever run an import with one present — and both of its real-CODESYS import
+tests imported exactly **once**, so they would have stopped one step short even if it did.
+
+> **Both axes closed 2026-08-15** — see the loose end. And the diagnosis in this paragraph is
+> half wrong, kept because the correction is the useful part: *copying* sidecars was never the
+> missing piece. The **export** writes the `.opt` pair and the **import** writes the cache, both
+> now measured from the test itself. So any test that exports, imports, then imports again
+> reaches the failing state without help. The gap was only ever the second cycle.
 
 **Deleting the cache immediately before an import fixes it, and the import regenerates it.**
 Control with the cache present fails; the same directory with the cache removed passes with zero
@@ -880,8 +898,13 @@ in `versio_import.py`'s own `run()` docstring, as the thing the two-phase split 
 between the phases exists to prevent. The save is conditional on `created > 0 or updated > 0`,
 and an import touching only native files has both at zero — every cycle here had
 `created: 0, updated: 0`. So **the guard never executed during the measurement that hit the bug
-it was written for.** Whether running it would have helped is untested; a guard skipped in
-exactly the case it names is worth fixing regardless, because its docstring reads as coverage.
+it was written for.** ~~Whether running it would have helped is untested~~ — **one observation
+exists now, and it favours the guard.** The Phase-4-reverted run inside
+`A_task_priority_edited_…` put the task XML back on the `import_native` path with the cache
+present and the exception did not return; that run had `updated > 0`, so the save ran. The
+mutation moved two things at once, so this is a lead rather than a result — but it is the first
+one. A guard skipped in exactly the case it names is worth fixing regardless, because its
+docstring reads as coverage.
 
 **Two · the script's summary contradicts its own warnings.** `ReplaceHandler.progress` catches
 the exception and warns but never increments `self.failed`; `handle_file` increments

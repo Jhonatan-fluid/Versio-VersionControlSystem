@@ -823,6 +823,13 @@ resolves 4 of the 5 files. Note the distinction from codescribe: they broke visu
 > out of the churn set. It is **no longer diff-only**; the `.xml` half is export-only
 > (`TASK_NATIVE`) and the `.tasks.yaml` beside it is the importable one.
 >
+> **`-2,-1` is `MainTask,VISU_TASK`, and only one of those numbers was ever the defect.**
+> `fixtures/equivalence/baseline/Task Configuration.xml`, captured *before* an import, already
+> has MainTask at `Core2 = -2`; VISU_TASK is at `-1` and reads `-2` in the roundtrip capture.
+> So **VISU_TASK's `-1` is what G7 destroyed** — MainTask's `-2` is its own value and was never
+> touched. The sentence above says "one line" for that reason. Anyone reading a diff of this
+> file should know that **both tasks reading `-2` is the bug**, not either one of them alone.
+>
 > **Read the test for what it is.** It runs against bytes captured *before* Phase 4, so it
 > passes whatever the importer does today — it records the measurement rather than guarding the
 > live path, and it would keep passing if Phase 4 were reverted.
@@ -831,8 +838,9 @@ resolves 4 of the 5 files. Note the distinction from codescribe: they broke visu
 > `AdoptAndExportTests.A_task_priority_edited_in_the_mirror_reaches_the_project_and_survives_a_second_import`**,
 > written 2026-08-15. It edits a priority in the mirror, imports twice against real CODESYS with
 > the `.opt` pair and the compile cache present, and reads the value back out of the project
-> through a fresh export. Deleting either half of Phase 4 — the typed write, or the
-> `TYPED_SIBLING` skip — turns it red; both were tried.
+> through a fresh export. It asserts VISU_TASK's `Core2` as well, which is the canary above.
+> Deleting either half of Phase 4 — the typed write, or the `TYPED_SIBLING` skip — turns it
+> red; both were tried.
 
 ---
 

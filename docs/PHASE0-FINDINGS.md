@@ -184,9 +184,16 @@ That is a task's **CPU core affinity**, and `import_native` changed it without b
 > `Core2` reads `-2,-1` across four consecutive snapshots where it used to move on the first
 > cycle, and `Task Configuration.xml` has dropped out of the churn set. **The deviation above is
 > history, not a live limitation** — the measurement stands, the recommendation is spent.
-> The one thing still missing is a test that writes a field through the typed API and asserts
-> the project changed; the pinning test named above reads bytes captured *before* Phase 4, so
-> it cannot see the live path either way.
+>
+> **And the write is under test now, later the same day.**
+> `AdoptAndExportTests.A_task_priority_edited_in_the_mirror_reaches_the_project_and_survives_a_second_import`
+> edits a priority in the mirror, imports twice against real CODESYS, and reads the value back
+> out of the project. The pinning test named above cannot do that job — it reads bytes captured
+> *before* Phase 4, so it passes whatever the importer does today.
+>
+> **One thing to carry forward from the numbers above: `-2,-1` is `MainTask,VISU_TASK`, and
+> only VISU_TASK's was ever the defect.** The baseline capture already has MainTask at `-2`.
+> Both tasks reading `-2` is the bug; MainTask reading `-2` on its own is not.
 
 ---
 
@@ -353,9 +360,12 @@ Worth recording separately, because it is true whatever the cause turns out to b
 never ran.** It is conditional on `created > 0 or updated > 0`, and both were **0 in every cycle
 here** — an import touching only native files never saves between the phases at all. So the
 guard the docstring presents as covering this exception did not execute once during the
-measurement that hit it. Whether running it would have helped is untested; a guard whose
-docstring reads as coverage and which is skipped in the case it names is worth fixing either
-way.
+measurement that hit it. ~~Whether running it would have helped is untested~~ — **there is one
+observation now, and it points at the guard being real.** Reverting Phase 4 inside the new
+integration test put the task XML back on the `import_native` path with the cache present, and
+the exception **did not** come back; that run had `updated > 0`, so the save executed. Two
+things moved at once, so it is a lead rather than a result. A guard whose docstring reads as
+coverage and which is skipped in the case it names is worth fixing either way.
 
 Nothing is destroyed: the objects survive and the file is simply not applied. What is wrong is
 what the run then reports. `ReplaceHandler.progress` warns and never increments `self.failed`,
@@ -400,7 +410,7 @@ Measured over three import→export cycles with the cache present:
 |---|---|---|
 | warnings, cycles 1/2/3 | 0 / **2** / **2** | **0 / 0 / 0** |
 | native files imported | 8 | 7 — the task XML skipped as `TYPED_SIBLING` |
-| `Core2` across four snapshots | moved on cycle 1 | `-2,-1` throughout |
+| `Core2` across four snapshots | moved on cycle 1 | `-2,-1` throughout — `MainTask,VISU_TASK`, and **only VISU_TASK's `-1` was ever at risk**; MainTask was `-2` in the baseline |
 | `Task Configuration.xml` in the churn set | cycle 1 | never |
 
 **And non-vacuously**, which matters because every cycle reports `updated: 0` when nothing was
@@ -457,10 +467,17 @@ isolation.
 the CODESYS IDE has a precompile cache beside it. Versio's imports work once on a fresh clone and
 then stop applying task configuration, reporting `failed: 0` each time.
 
-**And it is invisible to the suite by construction.** `Versio.Integration.Tests` copies the
-`.project` and nothing beside it, so no test has ever run an import with a cache present — and
-both of its real-CODESYS import tests import exactly **once**, so even with the cache they would
-reach the failing state and stop one step short of it.
+**And it was invisible to the suite by construction.** `Versio.Integration.Tests` copied the
+`.project` and nothing beside it, so no test had ever run an import with a cache present — and
+both of its real-CODESYS import tests imported exactly **once**, so even with the cache they
+would reach the failing state and stop one step short of it.
+
+> **Both axes closed 2026-08-15**, by
+> `AdoptAndExportTests.A_task_priority_edited_in_the_mirror_reaches_the_project_and_survives_a_second_import`.
+> **The reasoning above is half wrong in a way worth keeping**: copying sidecars was never
+> needed. The *export* writes the `.opt` pair and the *import* writes the cache, both measured
+> from that test — so a test that exports, imports, and imports again arrives in the failing
+> state on its own. What was missing was never the copying; it was the second cycle.
 
 > **The cache is not in `TransientPatternsFor`.** `CodesysProjectFormat.TransientPatternsFor`
 > returns `[stem + ".~u*", stem + "-*.opt"]`; `_project.precompilecache` is absent, and its own

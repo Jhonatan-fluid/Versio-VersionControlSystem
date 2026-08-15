@@ -379,8 +379,22 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
             tasksFile, WithField(exported, "MainTask", "priority", "\"9\""),
             new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
 
-        // Import once. A freshly copied project has no compile cache, so this is the cycle
-        // that always worked - it is here to create the cache for the one below.
+        // WHAT IS BESIDE THE PROJECT AT EACH IMPORT, both recorded, because "the first import
+        // creates the cache" had never been checked from a test, and an EXPORT has already run
+        // by this point - which opens the project too, so it was a fair suspect.
+        //
+        // Measured, and the two lines together say which tool writes which sidecar:
+        //
+        //   before import 1   the .opt pair, and NO cache   <- the export wrote the .opt files
+        //   before import 2   the .opt pair AND the cache   <- the import wrote the cache
+        //
+        // So the finding's claim holds, and it is now measured here rather than inherited from
+        // Measure-ImportStability.ps1. It also explains why copying the committed .opt files in
+        // was watching nothing: the export had already produced them.
+        output.WriteLine($"beside the project before import 1: {string.Join(", ", Sidecars())}");
+
+        // Import once. This is the cycle that always worked; the second one below is the one
+        // that used to fail.
         var first = await TextChanged(orchestrator, binding.Id);
         output.WriteLine($"import 1 — {first.Verdict}: {SyncNarrative.Describe(first)}");
         Assert.Equal(SyncVerdict.Completed, first.Verdict);
@@ -402,32 +416,23 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
             new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
 
         // WHICH STATE THE SECOND IMPORT IS ABOUT TO RUN IN, asserted rather than assumed.
-        // G11's trigger was a `<project>_project.precompilecache` beside the project, and the
-        // finding says the first import creates one - measured through
-        // tools\Measure-ImportStability.ps1, not from a test. Measured from here now, and it
-        // holds: the cache is present at this point, and so is the `.opt` pair.
+        // G11's trigger was a `<project>_project.precompilecache` beside the project, and this
+        // is the point at which one exists - see the two measurements above.
         //
-        // NEITHER IS COPIED IN, and that was worth finding out. This test originally copied the
-        // committed `.opt` files beside the project; deleting that copy left every assertion
-        // here green, because CODESYS writes its own pair the first time it opens the project -
-        // which is the first export, long before any import. So the copy was watching nothing
-        // and is gone; see InitRepoAsync. The loose end that asked for "sidecars present" was
-        // half answered before it was written.
+        // NEITHER SIDECAR IS COPIED IN, and that was worth finding out. This test originally
+        // copied the committed `.opt` files beside the project; deleting that copy left every
+        // assertion here green, because the export writes its own pair. So the copy was
+        // watching nothing and is gone - see InitRepoAsync.
         //
         // ASSERTED rather than merely printed, because the whole G11 axis rests on it. If a
         // future CODESYS stops writing a cache on a headless import, this test would quietly
         // decay into "imports twice" - still useful, but no longer covering the condition it
         // was written for, and nothing would say so. This is what says so.
-        var sidecars = Directory.EnumerateFiles(Path.Combine(_repo, "plc"))
-            .Select(Path.GetFileName)
-            .Where(f => !f!.EndsWith(".project", StringComparison.Ordinal))
-            .OrderBy(f => f, StringComparer.Ordinal)
-            .ToList();
-
+        var sidecars = Sidecars();
         output.WriteLine($"beside the project before import 2: {string.Join(", ", sidecars)}");
         Assert.Contains(sidecars,
-                        f => f!.EndsWith(".precompilecache", StringComparison.Ordinal));
-        Assert.Contains(sidecars, f => f!.EndsWith(".opt", StringComparison.Ordinal));
+                        f => f.EndsWith(".precompilecache", StringComparison.Ordinal));
+        Assert.Contains(sidecars, f => f.EndsWith(".opt", StringComparison.Ordinal));
 
         // Import again, with whatever the first one left behind. THIS is the cycle that used
         // to throw twice and report failed: 0. Asserting on the warnings rather than on the
@@ -502,17 +507,27 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
 
         Assert.Equal("7", FieldOf(reExported, "MainTask", "priority"));
 
-        // And G7, free on the same file. `Core2` - core affinity - is the field import_native
-        // moved from -1 to -2 on every import without being asked. Two imports have now run
-        // over this project, and these say both tasks still hold what they held before them.
+        // And G7, free on the same file. `Core2` is a task's CPU core affinity, and
+        // import_native moved it from -1 to -2 on every import without being asked.
         //
-        // The invariant, not a mutation result: the Phase-4-reverted run above never reached
-        // these lines, because it failed on the priority two lines up. So it is unobserved
-        // whether a regression would trip these or only that one, and this comment says so
-        // rather than claiming a coverage it has not been shown to have. What they do assert
-        // is the thing a user cares about - that Versio did not quietly change which CPU core
-        // a task runs on - and that assertion is worth having whether or not it is the first
-        // one to go red.
+        // THE TWO ASSERTIONS ARE NOT INTERCHANGEABLE, and reading the equivalence fixtures is
+        // what shows which is which. In fixtures/equivalence/baseline/Task Configuration.xml -
+        // captured BEFORE an import - MainTask already holds Core2 = -2 and VISU_TASK holds
+        // -1; in the roundtrip capture, taken after, both read -2.
+        //
+        //   VISU_TASK = -1  is the canary. It is the value G7 destroyed, so this is the line
+        //                   that goes red if the typed path ever stops being the one that
+        //                   writes task configuration.
+        //   MainTask  = -2  is the control. It was -2 to begin with, which is exactly why it
+        //                   is worth asserting: a change that set every core binding to -2
+        //                   would satisfy the canary's neighbour and this pair still catches
+        //                   nothing - but a change that moved MainTask off its own value would
+        //                   be caught here and nowhere else.
+        //
+        // Asserting the invariant, not a mutation result: the Phase-4-reverted run above never
+        // reached these lines, because it failed on the priority two lines up. So it is
+        // unobserved whether a regression trips these or only that one, and this says so
+        // rather than claiming a coverage it has not been shown to have.
         Assert.Equal("-1", FieldOf(reExported, "VISU_TASK", "coreBinding"));
         Assert.Equal("-2", FieldOf(reExported, "MainTask", "coreBinding"));
     }
@@ -876,6 +891,13 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
         await RunGitAsync("config", "user.email", "test@versio.local");
         await RunGitAsync("config", "user.name", "Versio Test");
     }
+
+    /// <summary>Everything CODESYS has left beside the project, newest state, sorted.</summary>
+    private List<string> Sidecars() =>
+        [.. Directory.EnumerateFiles(Path.Combine(_repo, "plc"))
+            .Select(f => Path.GetFileName(f)!)
+            .Where(f => !f.EndsWith(".project", StringComparison.Ordinal))
+            .OrderBy(f => f, StringComparer.Ordinal)];
 
     /// <summary>
     /// Read one field of one named task out of a <c>.tasks.yaml</c>, by indent, without a
