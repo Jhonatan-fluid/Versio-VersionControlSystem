@@ -1,14 +1,20 @@
 # Versio — closing the CODESYS import gaps
 
-**Date:** 2026-08-15 · **Phase 0 is complete — all nine measured. Nothing in phases 1–6 is
+**Date:** 2026-08-15 · **Phase 0 is complete: all nine probes measured. Nothing in phases 1–6 is
 built.** The only product code so far is one `.gitignore` pattern, from the compile cache P7's
 second finding turned out to hinge on.
 
 | | |
 |---|---|
 | Document | **The plan for making the import side a real bidirectional sync.** Deletes, renames, moves, typed task configuration, and a mirror that stops churning after every import |
-| Status | **Phase 0 done, phases 1–6 not started.** All nine probes measured on 2026-08-15 — see the Phase 0 section, G10 and G11. Two gaps closed as unreachable, four API spellings corrected, one new defect found (G11) and one open risk answered badly (P3 dangles silently) |
+| Status | **Phase 0 done, phases 1–6 not started.** Two gaps closed as unreachable, four API spellings corrected, one new defect found (G11) and one open risk answered badly (P3 dangles silently) |
 | Related | [`CODESYS.md`](CODESYS.md) — how CODESYS is driven today, and §12, the audit these gaps came from · [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) — what was measured · [`PLAN.md`](PLAN.md) — the architecture · [`SAFEGUARDS.md`](SAFEGUARDS.md) — what Versio refuses or waits for |
+
+> **These phase numbers are identifiers, not an order**, and they are **not** `PLAN.md`'s phases —
+> that document numbers the whole project 1–5 and means something different by every one of them.
+> The order to build these in is in [Build order](#build-order), and it is not 1, 2, 3. The numbers
+> are kept because `PHASE0-FINDINGS.md` and `STATUS.md` cite them, and renumbering would silently
+> repoint every one of those citations.
 
 ---
 
@@ -22,23 +28,23 @@ Ten gaps came out of auditing it ([`CODESYS.md`](CODESYS.md) §12). Nine share o
 reading `_manifest.json`. The tenth is about what `import_native` does to the bytes on the way back.
 
 **An eleventh came out of measuring rather than auditing.** P7 ran the round trip three times
-instead of once, and the second one failed — see G11. That is the argument for probes over
-inspection in one line: ten gaps were found by reading the code carefully, and the eleventh was
-invisible to any amount of reading because it only exists on the *second* cycle.
+instead of once, and the second one failed. That is the argument for probes over inspection in one
+line: ten gaps were found by reading the code carefully, and the eleventh was invisible to any
+amount of reading, because it does not exist on the first cycle.
 
-| | Gap | Today |
+| | Gap | State after Phase 0 |
 |---|---|---|
-| G1 | Deletes don't propagate | Delete a `.st`, colleague imports → the POU is still there |
-| G2 | Renames/moves duplicate | Rename in the mirror → new object created, **old one kept** |
-| G3 | New object named from the filename | `create_textual` uses `parts[-1]`; the parsed `info["name"]` is thrown away. `PROGRAM Foo` in `Bar.st` creates an object called `Bar` |
-| G4 | Encoded names unresolvable | Looks up the *encoded* stem against raw names → duplicate named `weird%3Cname%3E` |
-| G5 | A dot in a name breaks the owner split | `My.Thing.st` → looks for member `Thing` of parent `My` |
-| G6 | Stray files go to `import_native` | A `README.md` in the mirror is handed to CODESYS as native XML |
-| G7 | Task Configuration mutated on every import | `Core2` `-1`→`-2`. Documented as "diff-only" — it never was |
-| G8 | Managed library references unproven | Every fixture reference is a placeholder and the `managed_library` branch has never executed. **P9 closes the hard half:** one `add_library` call produces a real managed reference. (The count here said 34; the Library Manager reports **21**, so the number was wrong as well as the conclusion) |
-| G9 | Total path length unguarded | Stems capped at 80; the **full path** is not, and `.versio_staging` makes it 16 longer |
-| **G10** | **Import → export is not byte-stable** | `UniqueIdGenerator` **44 → 47 → 50 → 53**, +3 per cycle, measured over three cycles by P7 on 2026-08-15. It never settles. **Two corrections to the original wording**, both from the same measurement. Of the **eight** native files the import touches: three visualisations climb on the counter, `GlobalTextList.xml` churns every cycle with **no counter in it at all** (re-minted `GuidInit`/`GuidReInit`/`GuidExitX`), `Task Configuration.xml` moves once and then settles, and `Glob_Var.gvl.xml`, `PLC_PRG.xml` and `Signals.xml` are byte-stable throughout. So it is **four of eight forever, not "every native file it touched"**, and the counter is **one of two causes, not the cause** |
-| **G11** | **Every import after the first fails on task configuration, and reports success** | Found by P7, not predicted here. `import_native` throws `Collection was modified` at `Project.GetUniqueName` on `MainTask` and `VISU_TASK`; the summary still reads `failed: 0`. **Isolated to `<project>_project.precompilecache`** — the cache alone is sufficient, the `.opt` files are innocent, and the mirror's bytes are irrelevant. A fresh clone has no cache, so the first import works and every later one does not. **Not the same root cause as G7**, which is what this row claimed before it was tested |
+| G1 | **Deletes don't propagate** — delete a `.st`, colleague imports, the POU is still there | Open. P3 makes this **more** dangerous to fix than assumed: `remove()` dangles silently |
+| G2 | **Renames/moves duplicate** — rename in the mirror, a new object is created and the old one kept | Open, and **cleanly solvable**: P1/P2 proved identity survives both operations |
+| G3 | **New object named from the filename** — `create_textual` uses `parts[-1]` and throws away the parsed `info["name"]`, so `PROGRAM Foo` in `Bar.st` creates `Bar` | Open, but **smaller than budgeted**: P5 shows the awkward names cannot be created at all |
+| G4 | **Encoded names unresolvable** — looks up the *encoded* stem against raw names, giving a duplicate named `weird%3Cname%3E` | **Unreachable by creation** (P5). Still reachable for names a project already has — see the caveat under P5 |
+| G5 | **A dot in a name breaks the owner split** — `My.Thing.st` looks for member `Thing` of parent `My` | **Unreachable** (P5): CODESYS refuses to create `My.Thing` |
+| G6 | **Stray files go to `import_native`** — a `README.md` in the mirror is handed to CODESYS as native XML | Open. Fixed by Phase 1's shape check |
+| G7 | **Task Configuration mutated on every import** — `Core2` `-1`→`-2`; documented as "diff-only", which it never was | Open. **Phase 4 fixes it, and P6 proves the typed path works** |
+| G8 | **Managed library references unproven** — every fixture reference is a placeholder, so the `managed_library` branch has never executed | **Half closed**: P9 produces a real managed reference in one call, so no hand-built fixture is needed. (This row used to say 34 references; the Library Manager reports **21**) |
+| G9 | **Total path length unguarded** — stems capped at 80, the full path is not, and `.versio_staging` makes it 16 longer | Open, and **entirely ours**: P8 shows CODESYS imposes no limit of its own |
+| **G10** | **Import → export is not byte-stable.** `UniqueIdGenerator` **44 → 47 → 50 → 53**, +3 per cycle, never settling | Open, **measured**. Of the eight native files touched: three visualisations climb on the counter, `GlobalTextList.xml` churns with **no counter at all**, `Task Configuration.xml` moves once then settles, three are byte-stable. **Four of eight forever, from two causes** — not "every file", and not just the counter |
+| **G11** | **Every import after the first fails on task configuration and reports success.** `import_native` throws `Collection was modified` at `Project.GetUniqueName` on `MainTask` and `VISU_TASK`; the summary still reads `failed: 0` | Open, **root-caused and solved on paper**. Trigger is a stale `<project>_project.precompilecache`. **Phase 4 removes it** — measured: with the cache present, excluding `Task Configuration.xml` from the import gives 7 native files and zero errors, and the fault does **not** relocate |
 
 **Intended outcome:** the mirror becomes authoritative for object *existence* and *identity*, not
 just content; task scheduling stops being changed by a tool nobody asked to change it; and an
@@ -49,48 +55,54 @@ import that alters nothing semantically leaves no diff behind.
 ## What the ScriptEngine actually offers
 
 Nobody had checked. Reflecting over `ScriptEngine3.dll` and `ScriptDriverProjects.plugin.dll`, the
-API is **considerably richer than the scripts use**, and three gaps exist only because we never
+API is **considerably richer than the scripts use**, and three gaps existed only because we never
 looked.
 
-**Every row below has now been called** (P0–P9, 2026-08-15). The members are all there, and
-**four of the spellings in the original table were wrong** — struck through, with what actually
-works beside them. Reflection says a member exists; it does not say what the member accepts, and
-that is where all four errors were.
+**Every row has now been called** (P0–P9, 2026-08-15). The members are all there — and **four of
+the seven spellings were wrong**, struck through below with what actually works. Reflection says a
+member exists; it does not say what the member accepts, and that is where every error was.
 
 | Member (`IScriptObject` unless noted) | Closes | Measured |
 |---|---|---|
 | `rename(stNewName)` | **G2** | ✅ works, and **the GUID survives a save/close/reopen** |
 | ~~`move(new_parent, new_index)`~~ → **`move(new_parent, -1)`** | **G2** | ✅ GUID survives. **`new_index` must be `-1`** unless the parent has sorted children — `0` raises `ValueError: index must be -1 if the new parent node does not have sorted children`, and the one-argument form raises a `NullReferenceException` |
-| `remove()` | **G1** | ✅ works — **and see P3: it removes a referenced object silently** |
-| ~~`find(String[] namePath)`~~ → **`find("a", "b", "c")` varargs** | **G4, G5** | ✅ varargs resolves a full path, spaces included. **A python list raises `TypeError: expected Array[str], got list`.** `find(name, True)` is recursive; `find(name)` alone returns an empty list |
+| `remove()` | **G1** | ✅ works — **and removes a referenced object silently.** See P3 |
+| ~~`find(String[] namePath)`~~ → **`find("a", "b", "c")` varargs** | G4, G5 | ✅ varargs resolves a full path, spaces included. **A python list raises `TypeError: expected Array[str], got list`.** `find(name, True)` is recursive; `find(name)` alone returns an empty list |
 | `parent`, `index`, `guid` properties | G1–G2 bookkeeping | ✅ all three read |
-| ~~`ScriptTaskObject`: `set_core_binding`, `set_priority`, …~~ → **plain property assignment** | **G7 at the root** | ✅ all seven fields read. **`set_priority()` does not exist** (`AttributeError`). Assignment works and **the types differ per field**: `priority` wants a **`str`** (`"2"`; an int raises `TypeError: expected str, got int`), `core_binding` wants an **`int`**. Both persist across a reopen |
-| ~~`ScriptLibManObject`: `add_library(name, version)`~~ → **`add_library("Name, 1.2.3.4 (System)")`** | G8 | ✅ **one argument, not two.** Yields a `ScriptManagedLibraryReference` with `is_managed: true` — the branch that had never executed |
+| ~~`ScriptTaskObject`: `set_core_binding`, `set_priority`, …~~ → **plain property assignment** | **G7 at the root** | ✅ all seven fields read. **`set_priority()` does not exist** (`AttributeError`). Assignment works, and **the types differ per field**: `priority` wants a **`str`** (`"2"`; an int raises `TypeError: expected str, got int`), `core_binding` wants an **`int`**. Both persist across a reopen |
+| ~~`ScriptLibManObject`: `add_library(name, version)`~~ → **`add_library("Name, 1.2.3.4 (System)")`** | G8 | ✅ **one argument, not two.** Yields a `ScriptManagedLibraryReference` with `is_managed: true` — the branch that had never executed. It has **no** `effective_resolution`; `is_managed` / `is_placeholder` are the discriminators |
 
-> **Method note, now twice over.** A string search of the binary reported that `move` did not
-> exist; reflection said it does. **Reflection is authoritative over a string search, and calling
-> is authoritative over reflection** — the four corrections above are all things reflection could
-> not tell us, because they are about argument types and values rather than about existence.
+> **Method note, now three deep.** A string search of the binary reported that `move` did not
+> exist; reflection said it does. **Reflection beats a string search, and calling beats
+> reflection** — all four corrections above are about argument types and values, which reflection
+> cannot tell you.
 >
-> **And introspection from inside the script is worthless here**, which is worth knowing before
-> anyone tries it: `dir()` on a `ScriptObject` returns an **empty list**, and `GetType()
-> .GetMembers()` omits `get_children`, `get_name` and `textual_declaration` — three members the
-> exporter has called on every run for months. They arrive through *extenders* at runtime. So
-> **absence from either listing proves nothing**, and the only sound probe is to call the thing.
+> **And introspection from inside the script is worthless here.** `dir()` on a `ScriptObject`
+> returns an **empty list**, and `GetType().GetMembers()` omits `get_children`, `get_name` and
+> `textual_declaration` — three members the exporter has called on every run for months, which
+> arrive through *extenders* at runtime. A probe concluding "the typed task API does not exist"
+> from that listing would have been wrong: all seven fields read fine. **Absence proves nothing.
+> Call the thing.**
 
 **The `Core2` mutation is self-inflicted.** It happens only because task configuration is
-round-tripped as native XML, and a typed API for exactly those fields has been there all along.
+round-tripped as native XML, and **a typed API for exactly those fields has been there all
+along** — P6 has now called every one of them. G7 is not a CODESYS defect Versio has to work
+around; it is a consequence of a choice Versio made, and Phase 4 unmakes it.
 
 ### Decisions taken
 
 - **Renames and moves: implemented properly**, GUID preserved. A "detect and refuse" fallback was
-  considered and is moot — the API exists.
+  considered and is moot — the API exists and P1/P2 prove it keeps identity.
 - **Task Configuration: typed export *and* import.** Fixed at source rather than avoided.
 - **G10: on export, keep the existing bytes when the new export is normaliser-equivalent.** The
   mirror stops churning; nothing about what CODESYS reads changes.
 - **Deletions: named confirmation, no cap.** **Consequence, stated plainly:** empty the mirror and
   the dialog lists every object; one click removes them all. The remaining protections are the
-  pre-import backup, the direction lock and the Phase 2 preconditions — not a threshold.
+  pre-import backup, the direction lock and the Phase 2 preconditions — not a threshold. **P3 makes
+  those preconditions the only protection that exists**, because CODESYS will not object.
+- **G11: fixed by Phase 4, not by deleting CODESYS's compile cache.** Deleting the cache was
+  measured to work, and is not needed: taking task configuration off the `import_native` path
+  removes the fault without Versio deleting another tool's files.
 
 ---
 
@@ -117,95 +129,141 @@ This gives them one, so the parity tests start protecting live code rather than 
 
 ---
 
-## Phase 0 — Empirical baseline against a real project
+## Phase 0 — done
 
-**No product code.** **One scratch copy per probe**, through `tools\Probe-ImportApi.ps1`
-(P1–P9 minus P7) and `tools\Measure-ImportStability.ps1` (P7). One copy each rather than one
-shared, because every probe here mutates and P3 removes a referenced object — what it leaves
-behind is not a project anything else should be measured against.
+**One scratch copy per probe**, through `tools\Probe-ImportApi.ps1` (P0–P9 except P7) and
+`tools\Measure-ImportStability.ps1` (P7). One copy each rather than one shared, because every probe
+mutates and P3 removes a referenced object — what it leaves behind is not a project anything else
+should be measured against.
 
-Two purposes: confirm the API behaves as reflection claims, and establish **which gaps are even
-reachable** — if CODESYS refuses to create a POU named `My.Thing`, G5 closes as "cannot occur"
-rather than costing defensive code.
-
-**Both purposes paid off, and in opposite directions.** Four API spellings were wrong, so the
-first purpose saved a day of debugging Phase 3 and Phase 4. And `My.Thing` *is* refused, so the
-second purpose closed two gaps — though not as completely as that sentence hoped; see the caveat
-under P5.
-
-| # | Test | Answers |
+| # | Test | Answer |
 |---|---|---|
-| ~~P1~~ | ~~`rename` an object; re-read its GUID~~ | ✅ **Yes, and across a save/close/reopen.** Same GUID all three times. Phase 3 is safe to build |
-| ~~P2~~ | ~~`move` an object to another folder~~ | ✅ **GUID survives.** `new_index` is not a position: it **must be `-1`** for an unsorted parent, which is every parent in the fixture |
-| ~~P3~~ | ~~`remove()` an object another object references~~ | ⚠️ **Dangles, silently.** Removing the `Glob_Var` GVL threw nothing, saved cleanly, 25 → 24 objects, gone after reopen. **No warning of any kind.** See below |
-| ~~P4~~ | ~~`find([...namePath])` on an encoded name~~ | ✅ **Varargs works**, spaces included; a python list raises `TypeError`. Moot for encoded names, because P5 says they cannot be created |
-| ~~P5~~ | ~~`create_pou` with awkward names~~ | ✅ **All four refused** — `My.Thing`, `weird<name>`, `Pump ` and `Pump.` each give *“The name is not valid for this object”*. **G4 and G5 are unreachable this way.** Read the caveat below before deleting any code |
-| ~~P6~~ | ~~Read and write task fields typed~~ | ✅ **Sufficient.** All seven read; `priority` and `core_binding` both written and persisted across a reopen. **Phase 4 is viable** |
-| ~~P7~~ | ~~**Three consecutive import→export cycles, unchanged mirror**~~ | ✅ **done 2026-08-15 — it climbs, +3 per cycle, forever.** `tools/Measure-ImportStability.ps1`. Also found G11 |
-| ~~P8~~ | ~~Deep folder chain near 260 characters~~ | ✅ **CODESYS is not the limit** — ten 40-character levels created without complaint, ~420 characters nominal. The 260 ceiling belongs to Windows, and therefore to the exporter |
-| ~~P9~~ | ~~A fixed-version library reference~~ | ✅ **Producible in one call.** `add_library("Standard, 3.5.17.0 (System)")` — 21 → 22 references, the new one a `ScriptManagedLibraryReference` with `is_managed: true`. G8 needs no new fixture project |
+| P0 | What does the API look like from inside? | **Nothing** — `dir()` is empty and `GetMembers()` omits members the exporter calls daily |
+| P1 | `rename` an object; re-read its GUID | ✅ **identity survives**, in session and across save/close/reopen |
+| P2 | `move` an object; re-read GUID and `index` | ✅ **identity survives.** `new_index` **must be `-1`** for an unsorted parent |
+| P3 | `remove()` an object another object references | ⚠️ **dangles, silently** — no throw, no cascade, no warning, 25 → 24 objects |
+| P4 | `find` on a name needing percent-encoding | ✅ **varargs works**, spaces included; a python list raises `TypeError` |
+| P5 | `create_pou` with awkward names | ✅ **all four refused** — `My.Thing`, `weird<name>`, `Pump `, `Pump.` |
+| P6 | Typed task fields, read and write | ✅ **sufficient**, `core_binding` included; both writes persisted |
+| P7 | Three import→export cycles, unchanged mirror | ⚠️ **climbs +3 per cycle, forever**; found G11 |
+| P8 | Deep folder chain near 260 characters | ✅ **CODESYS is not the limit** — ten 40-char levels, ~420 characters, no complaint |
+| P9 | A fixed-version library reference | ✅ **one call**, yields `is_managed: true` |
 
-~~### What Phase 0 answered, and what it changed
+**Phase 0 had two purposes and both paid off, in opposite directions.** Confirming the API saved
+a day of debugging inside Phases 3 and 4, because four of its spellings were wrong. Establishing
+reachability closed two gaps outright: `My.Thing` really is refused, so G5 costs no defensive code
+at all — though not as completely as that hope was written; see the caveat under P5.
 
-**Two results change what gets built. The rest confirm the plan.**
+### The two results that changed the plan
 
-#### P3 — `remove()` dangles silently, and that is the worst of the three possible answers
+**P3 — `remove()` dangles silently, the worst of the three possible answers.** Removing the
+`Glob_Var` GVL, which the POUs read from, produced no exception, no cascade and no warning. The
+save succeeded and it was still gone after a reopen.
 
-The plan listed this as an open risk: *"`remove()` behaviour with referenced objects is unknown."*
-Now known. Removing the `Glob_Var` GVL — a global variable list the POUs read from — produced **no
-exception, no cascade, and no warning**. The save succeeded, the object count went 25 → 24, and it
-was still gone after a reopen. CODESYS neither refuses nor repairs; it leaves the references
-dangling and says nothing.
+**This raises the stakes on Phase 2 rather than lowering them.** Its preconditions are not
+belt-and-braces around a toolchain that would catch the mistake anyway — **they are the only thing
+between a stale manifest and silently breaking somebody's project.** Nothing downstream will
+object.
 
-**This raises the stakes on Phase 2 rather than lowering them.** The preconditions in that phase
-are not belt-and-braces around a toolchain that would catch a mistake anyway — **they are the only
-thing standing between a stale manifest and silently breaking somebody's project.** Nothing
-downstream will object. The named confirmation dialog is doing real work, and so is the rule that
-a missing or unparseable manifest disables deletion entirely.
-
-#### P5 — the awkward names cannot be created, which is *not* the same as cannot exist
-
-`create_pou` refused all four: `My.Thing`, `weird<name>`, `Pump ` and `Pump.`, each with *"The
-name is not valid for this object."* So **G4 and G5 cannot be reached by creating an object**, and
-the defensive code the plan budgeted for them is smaller than assumed.
+**P5 — the awkward names cannot be created, which is *not* the same as cannot exist.** All four
+were refused with *"The name is not valid for this object."* So **G4 and G5 cannot be reached by
+creating an object**, and `create_textual` needs no defence against them.
 
 **Do not read that as "encoded names cannot occur", and do not delete the encoding on the strength
-of it.** Two reasons, both already documented in this repository:
+of it.** Two reasons, both already in this repository:
 
-- **External-file references are named `{GUID}|C:\Users\<user>\...\file.txt`.** That is a real
-  object name, in `README.md`'s own list of things that are not names, carrying `|`, `:` and `\`.
-  It is exactly what `safe_file_stem` shortens, and it did not come from `create_pou`.
-- **P5 tests one door.** Names also arrive from the IDE, from imported libraries and device
-  descriptions, and from `import_native`. This probe says the ScriptEngine validates on creation;
-  it says nothing about what a project can already contain.
+- **External-file references are named `{GUID}\|C:\Users\<user>\...\file.txt`** — a real object
+  name in `README.md`'s own list, carrying `|`, `:` and `\`. It is exactly what `safe_file_stem`
+  shortens, and it did not come from `create_pou`.
+- **P5 tested one door.** Names also arrive from the IDE, from imported libraries and device
+  descriptions, and from `import_native`.
 
-So the honest conclusion is narrower than "G4 and G5 are closed": **the importer will not be asked
-to create an object with such a name, so `create_textual` needs no defence — but resolution and
-file-name encoding still do**, because an object that already has such a name still has to be
-found and still has to be written to disk.
+So the honest conclusion is narrower than "G4 and G5 are closed": **the importer will never be
+asked to create such an object, but resolution and file-name encoding still have to handle one that
+already exists.**
 
-#### The rest, briefly
+---
 
-- **P1 and P2** — identity survives both operations, in session and across a save/close/reopen.
-  Phase 3's whole premise holds. Use `move(parent, -1)`.
-- **P6** — the typed path is sufficient, including `core_binding`, the field `import_native` keeps
-  mutating. **Phase 4 is buildable exactly as designed**, with corrected setter spellings.
-- **P8** — CODESYS accepted ten nested 40-character folders without complaint. The 260-character
-  limit is Windows', so G9 is entirely the exporter's problem and no CODESYS behaviour mitigates it.
-- **P9** — a fixed-version reference takes one call, so G8 needs no hand-built fixture. Note the
-  managed type has **no** `effective_resolution`; `is_managed` / `is_placeholder` are the
-  discriminators, and the fields differ between the two reference types.
+## Build order
 
-**P7 decides whether Phase 5 is needed at all.**~~ **It did, and Phase 5 stays.** The counter
-climbed 44 → 47 → 50 → 53 with nothing edited between cycles, so the keep-existing-bytes rule is
-justified by measurement. What P7 also showed is that Phase 5 must key on
-**normaliser-equivalence and not on the counter**: `GlobalTextList.xml` churns every cycle and has
-no counter in it at all.
+**Not 1, 2, 3.** The numbering is historical; this is the order the measurements argue for.
 
-~~**Still to measure, and it needs no CODESYS:**~~ **Measured.** `NativeXmlNormalizer` over
-`phase0/p7/snapshots/002` and `003`: 9 files byte-identical, **4 equivalent — every churning one**,
-and only `_manifest.json` left over, which is derived from the four. The reasoning it replaces was
-sound and was still reasoning. See Phase 5, including the manifest-hash trap the run exposed.
+| # | What | Why here |
+|---|---|---|
+| **1st** | **Phase 4 — typed task configuration** | The only phase that fixes **two live, user-facing defects**: G7 changes CPU core affinity nobody asked to change, and G11 makes every import after the first silently fail. P6 proved the typed path works; a direct experiment proved removing the file from `import_native` fixes G11 without relocating the fault. Independent of everything else here |
+| **2nd** | **The three honesty fixes** | Small, unrelated to each other, and each makes the *next* failure visible instead of silent. None depends on any phase |
+| **3rd** | **Phase 1 — manifest-driven importer** | The foundation. Nothing else can be planned C#-side until the plan exists |
+| **4th** | **`versio_native_equiv.py`** | A shared prerequisite, not a phase. Phase 2's native content check needs it and so does Phase 5 — it was written down as a Phase 5 artifact and is needed earlier |
+| **5th** | **Phases 2 and 3 — deletes, renames, moves** | Together, as originally planned. Phase 3's detection reuses Phase 2's delete candidates |
+| **6th** | **Phase 5 — a mirror that stops churning** | Wants Phases 1–3 settled first, because it changes when files are rewritten and every earlier phase's diffs are easier to read without it |
+| **7th** | **Phase 6 — remaining gaps, tests, docs** | G8 and G9, the parity tests, the integration tests |
+
+### The three honesty fixes
+
+None is a phase. All three came out of G11's investigation, all three are small, and each one is
+the reason a future defect will be seen rather than missed.
+
+1. **`versio_import.py` does not count a native-import failure.** `ReplaceHandler.progress` warns
+   and returns; `self.failed` stays at zero and `self.native` is incremented anyway, so the summary
+   claims success on a run that lost two objects. The warnings *do* reach the log at `Warn`, so
+   this is a wrong one-line answer rather than a silent one — and the one-line answer is what gets
+   read.
+2. **`LocalCodesysRunner.cs:514` logs an import's summary using the exporter's field names.**
+   `walked` / `written` / `skipped` / `gaps` against an import that reports `updated` /
+   `unchanged` / `native` / `created` / `missing` / `failed` / `notImported`, with
+   `ScriptEvent.Int` returning null for an absent key — so every import logs a line of blanks.
+3. **No test imports twice, and none imports with the project's sidecars present.** Both
+   real-CODESYS import tests import once, from a `.project` copied without its `.opt` pair or its
+   compile cache. **Both axes are exactly how G11 stayed invisible**, and both matter more once the
+   importer grows deletes, renames and moves.
+
+There is a fourth, and it is a judgement call rather than a fix: **the phase-split save in
+`versio_import.py` is conditional on `created > 0 or updated > 0`**, so an import touching only
+native files never saves between the phases — which is the shape of run that hit the exception the
+split exists to prevent. Whether running it would have helped is untested. A guard skipped in
+exactly the case its docstring names is worth revisiting either way.
+
+---
+
+## Phase 4 — Task configuration, typed both ways *(G7 and G11)* · **build first**
+
+Mirrors the library-reference design exactly, which is the precedent to copy:
+
+- **New `versio_tasks.py`** — pure, no `scriptengine` import, handed objects and a `safe` probe,
+  exactly like `versio_libraries.py`. Reads priority, interval, interval unit, core binding,
+  watchdog, POUs and event POU GUID. **P6 confirmed all seven read.**
+- **Rendered through the existing `versio_yaml.document(...)`** — already vendor-neutral, already
+  deterministic, already has key-order discipline.
+- **New form `TASK_BOTH`**, following `GVL_BOTH`: native `.xml` for fidelity *and*
+  `<name>.tasks.yaml` for readability. The **native XML becomes export-only**; the YAML is the
+  importable form. That is what stops `import_native` touching task config.
+- **Import through property assignment**, not the setter methods this plan used to name. **The
+  types differ per field**: `priority` takes a `str`, `core_binding` takes an `int`. Both were
+  written and both survived a reopen.
+- **New `src/Versio.Core/Projects/TaskCatalog.cs`** — a C# reader mirroring `LibraryCatalog`, so
+  the panel can show tasks.
+
+**Why this is first.** It is the only phase that fixes something a user is living with today, and
+it fixes two:
+
+- **G7** — Versio changes a task's CPU core affinity on every import, without being asked. That is
+  a change to what the machine does.
+- **G11** — every import after the first silently fails to apply task configuration on any machine
+  where the project has been opened in the IDE, and reports `failed: 0`.
+
+**G11 being fixed here is measured, not hoped.** With the compile cache present, importing a mirror
+with `Task Configuration.xml` removed gives **7 native files, zero `NATIVE_IMPORT_ERROR`, zero
+other warnings** — the fault does not relocate to another object. So Versio does **not** need to
+delete CODESYS's compile cache, and the uncomfortable question of whether it should is closed by
+not needing an answer.
+
+> **The earlier version of this note got G11 wrong**, and the way it was wrong is kept because it
+> is instructive. It claimed Phase 4 fixed G11 because G11 *was* the `Core2` mutation seen from
+> the other end — cycle 1 mutates the file, cycle 2 chokes on it. That fitted every observation
+> then available and was written into three documents before a single variable had been varied.
+> The first experiment that varied one killed it: a fully round-tripped `Task Configuration.xml`
+> imports cleanly into a project with no cache beside it. **Phase 4 does fix G11 — for a different
+> reason than the one first written down**, and only a direct test could tell those apart.
 
 ---
 
@@ -223,8 +281,9 @@ sound and was still reasoning. See Phase 5, including the manifest-hash trap the
 - Manifest below `ExportCoverage.ReportingSchema`, or absent/unparseable → plan **Update and Create
   only**, stating that deletes, renames and moves are unavailable until re-export. Never guess.
 
-**Script:** resolve with `find(namePath)` using the manifest's real names (G4, G5).
-`create_textual` takes its name from the plan (G3).
+**Script:** resolve with **`find("a", "b", "c")` varargs** using the manifest's real names — *not*
+a python list, which raises `TypeError: expected Array[str], got list`. `create_textual` takes its
+name from the plan (G3).
 
 **Job file:** `CodesysJob` gains `plan`; bump `schema` 1 → 2, and refuse an unknown schema rather
 than half-executing it.
@@ -233,26 +292,42 @@ than half-executing it.
 
 ---
 
+## `versio_native_equiv.py` — a shared prerequisite
+
+Not a phase. **Phase 2 needs it and so does Phase 5**, and it was written down as belonging to the
+latter, which would have made Phase 2 unbuildable in the stated order.
+
+A python-side equivalent of `NativeXmlNormalizer`, joining the parity discipline —
+`versio_native_equiv.py` ↔ `NativeXmlNormalizer`, compared by output in
+`PythonFileNameParityTests`. The C# side already exists and is tested.
+
+**Measured sufficient.** Run over two steady-state snapshots of an unedited mirror: 9 files
+byte-identical, **4 equivalent — every churning one** — and only `_manifest.json` left, which is
+derived from the four. The masked counts are symmetric on every file (695/695, 3656/3656, 521/521
+and 30/30 GUIDs), which is what says the two sides differ in the masked positions and **nowhere
+else**; an asymmetric count would mean one side carried something the other did not and the verdict
+was hiding it.
+
+---
+
 ## Phase 2 — Deletes *(G1)*
 
 **Delete set:** manifest entries whose file is gone from the mirror **and** whose object still
 exists in the project. The preconditions are correctness, not caps — they are what make the delete
-set *mean* anything:
+set *mean* anything, and **P3 makes them the only protection there is**:
 
 - **Only objects the manifest recorded.** One added in the IDE since the last export is not in the
   manifest, so its absence from the mirror is not evidence of a deletion. Never touched.
 - **A missing or unparseable manifest disables deletion entirely**, with a stated reason.
 - **Content check before removal, in the script:** if the live object no longer matches the
   manifest's recorded hash, it changed since the export — refuse *that* deletion and warn.
-  **For a textual object that is a byte comparison and P7 proved it holds** — zero `.st`
-  differences across three round trips. **For a native object it cannot be**, and this was
-  nearly written as though it could: the manifest's `hash` is `content_hash(text)` over the
-  *exported file bytes* (`versio_export.py:183`), so checking a live object against it means
-  exporting that object again — and P7 measured that re-export changing every single cycle
-  with nothing edited. A byte check would refuse every native deletion forever, for a reason
-  that has nothing to do with the object. **The native half must compare through the
-  normaliser, which makes `versio_native_equiv.py` a Phase 2 dependency rather than a Phase 5
-  one.**
+  - **Textual: a byte comparison, and P7 proved it holds** — zero `.st` differences across three
+    round trips.
+  - **Native: it cannot be.** The manifest's `hash` is `content_hash(text)` over the *exported file
+    bytes* (`versio_export.py:183`), so checking a live object against it means exporting that
+    object again — and P7 measured that re-export changing every cycle with nothing edited. A byte
+    check would refuse every native deletion forever, for a reason with nothing to do with the
+    object. **The native half compares through `versio_native_equiv.py`.**
 - A GVL is two files under one GUID: delete only when **every** file for that GUID is gone.
 
 **Confirmation:** extend `PendingImportDetail` in `SyncViewModel` to name each deletion —
@@ -278,95 +353,61 @@ set *mean* anything:
 
 Same directory, different name → **Rename**. Same name, different directory → **Move**.
 
-**Execution:** `obj.rename(new_name)` and `obj.move(new_parent, new_index)`. The GUID is preserved,
-so references, task assignments and visualisation bindings survive — which is the entire reason for
-doing this rather than delete-plus-create.
+**Execution:** `obj.rename(new_name)` and **`obj.move(new_parent, -1)`**. The GUID is preserved —
+**measured, in session and across a save and reopen** — so references, task assignments and
+visualisation bindings survive, which is the entire reason for doing this rather than
+delete-plus-create.
+
+> **`-1` is not a stylistic choice.** `move(dest, 0)` raises `ValueError: index must be -1 if the
+> new parent node does not have sorted children`, and every parent in the fixture is unsorted. The
+> one-argument `move(dest)` raises a `NullReferenceException`. This plan previously wrote
+> `move(new_parent, new_index)` as though the index were a position to choose.
 
 **Files:** `ImportPlanner.cs`, `IGitClient`/`GitCliClient` (a `ShowAtHeadAsync` if absent),
 `versio_import.py`.
 
 ---
 
-## Phase 4 — Task configuration, typed both ways *(G7, G11)*
-
-> **Written 2026-08-15, then corrected the same day.** The first version of this note said P7
-> had shown this phase to be the fix for G11, and reprioritised it on that basis. **That was
-> wrong**, and it was wrong because it was written from one run before anything varied a
-> variable: G11 is caused by a stale `_project.precompilecache`, not by task configuration
-> being native XML, and a round-tripped `Task Configuration.xml` imports cleanly into a project
-> that has no cache beside it.
->
-> **What remains true** is that `MainTask` and `VISU_TASK` are the objects that fail, and they
-> are reached only through this file — so taking it off the `import_native` path does remove
-> *those two* errors. Whether the underlying fault then surfaces on another object is
-> **untested**: the attempt to test it could not reproduce the failure at all, because the
-> throwaway project it built had no cache beside it. That experiment is worth repeating now
-> that the trigger is known.
->
-> So this phase keeps its original priority and its original justification — G7, the `Core2`
-> mutation — and G11 needs a fix of its own.
-
-Mirrors the library-reference design exactly, which is the precedent to copy:
-
-- **New `versio_tasks.py`** — pure, no `scriptengine` import, handed objects and a `safe` probe,
-  exactly like `versio_libraries.py`. Reads priority, interval, interval unit, core binding,
-  watchdog, POUs and event POU GUID.
-- **Rendered through the existing `versio_yaml.document(...)`** — already vendor-neutral, already
-  deterministic, already has key-order discipline.
-- **New form `TASK_BOTH`**, following `GVL_BOTH`: native `.xml` for fidelity *and*
-  `<name>.tasks.yaml` for readability. The **native XML becomes export-only**; the YAML is the
-  importable form. That is what stops `import_native` touching task config, and therefore what
-  stops the `Core2` mutation.
-- **Import** through the typed setters, so the mirror's value wins and the project converges to
-  what was reviewed.
-- **New `src/Versio.Core/Projects/TaskCatalog.cs`** — a C# reader mirroring `LibraryCatalog`, so the
-  panel can show tasks.
-
-Task configuration stops being an opaque XML blob in the diff, which is the point of the tool.
-
----
-
 ## Phase 5 — A mirror that stops churning *(G10)*
 
-In `versio_export.py`, when writing a native file: if the freshly exported payload is
-**`NativeXmlNormalizer`-equivalent** to the file already at that path in the *current* mirror, write
-the **existing bytes** into staging instead of the new ones.
+In `versio_export.py`, when exporting a native object: if the freshly exported payload is
+**`versio_native_equiv`-equivalent** to the file already at that path in the *current* mirror, use
+the **existing bytes**.
 
-- The comparison logic exists and is tested. What is new is a python-side equivalent, so it joins
-  the parity discipline — `versio_native_equiv.py` ↔ `NativeXmlNormalizer`, compared by output in
-  `PythonFileNameParityTests`.
 - Read the old file from `out_root` **before the swap**; staging is empty by construction.
 - **The determinism gate still holds.** Two exports into two empty directories stay byte-identical,
   because neither has an existing mirror to preserve. Only export-into-an-existing-mirror is
   affected, and that is the case that matters.
-- ~~Gated by P7: if the counter settles on its own, this phase shrinks.~~ **P7 says it does not,
-  and the rule is now measured to be sufficient rather than argued to be.** `NativeXmlNormalizer`
-  over two steady-state snapshots of one unedited mirror: **all four churning native files come
-  out equivalent** — the three visualisations and `GlobalTextList.xml` — while the other nine
-  files are byte-identical and need no rule at all. Masked counts are symmetric on every file
-  (695/695, 3656/3656, 521/521 and 30/30 GUIDs), which is what says the two sides differ in the
-  masked positions and nowhere else.
+- **Justified by measurement, not argument.** P7: the counter climbs 44 → 47 → 50 → 53 with nothing
+  edited between cycles, and reproduces identically on a re-run.
+- **Key on equivalence, never on the counter.** `GlobalTextList.xml` churns every cycle and has no
+  counter in it at all — a fix aimed at counters would leave a file diffing forever and look like
+  it worked.
 
-> **The trap this measurement exposed, which is not in the sketch above.** `record()` hashes the
-> payload the exporter *generated* — `h = content_hash(text)` — and `write_text` writes that same
-> `text`. The two agree by construction today, and `write_text`'s docstring states the invariant
-> outright: *"The exporter hashes what it writes."* **Phase 5 breaks it.** Writing the existing
-> bytes while the manifest has already recorded the new payload's hash leaves a manifest that
-> disagrees with the file beside it — and Versio's hash gate reads the bytes on disk, so the
-> disagreement is not cosmetic. `_manifest.json` is the one file still differing between the two
-> snapshots, and it will only settle if the recorded hash follows the bytes actually written.
-> **So the substitution has to happen before the hash is taken, not at write time**, which is a
-> different shape from "when writing a native file, write the existing bytes instead".
+> **The trap, which is not in the one-line rule.** `record()` hashes the payload the exporter
+> *generated* — `h = content_hash(text)` — and `write_text` writes that same `text`. They agree by
+> construction today, and `write_text`'s docstring states the invariant outright: *"The exporter
+> hashes what it writes."* **Writing the existing bytes at write time breaks it**, leaving a
+> manifest that disagrees with the file beside it — and Versio's hash gate reads the bytes on disk,
+> so the disagreement is not cosmetic. `_manifest.json` is the one file still differing between two
+> steady-state snapshots, and it settles only if the recorded hash follows the bytes actually
+> written. **So the substitution happens before the hash is taken, not at write time.**
 
 ---
 
 ## Phase 6 — Remaining gaps, tests and docs
 
 - **G8** — a fixture variant carrying at least one fixed-version reference, asserting the
-  `managed_library` branch. If it cannot be produced quickly, mark the branch unproven in
-  `versio_libraries.py` and stop.
+  `managed_library` branch. **P9 makes this cheap**: `add_library("Standard, 3.5.17.0 (System)")`
+  produces a `ScriptManagedLibraryReference` with `is_managed: true`. Note the managed type has
+  **no** `effective_resolution` — the two reference types carry different fields, and
+  `is_managed` / `is_placeholder` are how they are told apart. **If it still turns out awkward,
+  mark the branch unproven in `versio_libraries.py` and stop** — an untested branch that says so
+  is honest; one that is quietly assumed to work is the thing this gap already was.
 - **G9** — guard the **total** path in the exporter, measured against the staging path since it is
-  the longer of the two. Shorten deeper segments or adopt `\\?\`; warn rather than fail silently.
+  the longer of the two. **P8 confirms nothing upstream will help**: CODESYS accepted ten nested
+  40-character folders, ~420 characters, without complaint. Shorten deeper segments or adopt
+  `\\?\`; warn rather than fail silently.
 - `ImportPlannerTests` — pure and exhaustive: delete, rename, move, rename-and-edit, GVL two-file
   GUID, stale manifest, missing manifest, object-added-in-IDE, encoded names, dotted names.
 - Extend `PythonFileNameParityTests` with an **`StTextCodec` ↔ `versio_text` codec parity test**.
@@ -374,7 +415,8 @@ the **existing bytes** into staging instead of the new ones.
   highest-consequence uncompared pair in the repo, since a bug in `split_st` silently moves code
   between a declaration and an implementation.
 - Integration, on a copy of the fixture: delete an object, rename one, move one, change a task
-  priority, and assert the project afterwards — including that GUIDs survived.
+  priority, and assert the project afterwards — including that GUIDs survived. **And import
+  twice, with the sidecars present**, which is the pair of axes G11 hid behind.
 - Docs: [`CODESYS.md`](CODESYS.md) §1.3 (the API this uncovered), §3.1 (job schema 2), §5.2
   (`TASK_BOTH`), §6 (plan-driven import), §7 (G10, and what "deterministic" now means), §12 D1–D6
   resolved rather than described. [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) gate 0.5b annotated:
@@ -388,13 +430,11 @@ the **existing bytes** into staging instead of the new ones.
 2. `dotnet test tests\Versio.Integration.Tests --filter PythonFileName` — parity, ~9 s.
 3. `tools\Test-RoundTrip.ps1 … -MutateFirst` — the per-layer verdict stays **PASS**, and
    `Task Configuration.xml` drops out of the native-differs list once Phase 4 lands.
-4. **The G10 acceptance test:** three consecutive import→export cycles on an unchanged mirror must
-   leave it **byte-identical**. This is what turns "import is deterministic" into a measured claim
-   rather than an opinion. **The harness exists and the baseline is recorded** —
-   `tools\Measure-ImportStability.ps1`, which today prints `P7: CHURNS` with four files differing
-   per cycle. The acceptance criterion is the same command printing `P7: SETTLES`. Note that it
-   must also come back with **zero warnings**, or G11 is still there underneath a clean byte
-   comparison.
+4. **The G10 acceptance test:** `tools\Measure-ImportStability.ps1` must print **`P7: SETTLES`**.
+   Today it prints `P7: CHURNS` with four files differing per cycle, so the baseline is recorded
+   and the criterion is not vacuous. **It must also come back with zero warnings** — a settled
+   mirror with `NATIVE_IMPORT_ERROR x2` underneath it is G11 hiding under a clean byte comparison,
+   which is exactly how it went unnoticed in the first place.
 5. **Regression gate:** a normal export stays byte-identical to the committed mirror for every file
    Phase 4 does not deliberately change.
 6. Full integration suite against real CODESYS (~7 min).
@@ -406,32 +446,30 @@ Close Versio.exe first; it locks its own DLLs.
 
 ## Risks
 
-- **Deletion is irreversible in the project.** Mitigated by the pre-import backup (ten copies), the
-  confirmation naming every object, and the content check — not by a cap, which was declined
-  deliberately.
+- **Deletion is irreversible in the project, and CODESYS will not object.** P3 measured it:
+  removing a referenced object throws nothing and warns about nothing. Mitigated by the pre-import
+  backup (ten copies), the confirmation naming every object, and the content check — not by a cap,
+  which was declined deliberately.
 - **A stale manifest is the main correctness dependency.** The content check catches the common
-  case; the direction lock and commit gate cover the rest. Confirm during Phase 1 exactly when the
-  manifest is refreshed relative to an import.
-- **`remove()` behaviour with referenced objects is unknown** until P3 answers it.
+  case; the direction lock and commit gate cover the rest. **Partly answered:** a successful import
+  does not re-export, so the manifest only refreshes on the next export — which is the safe
+  direction for deletes, since an object created by an import is absent from the manifest and
+  therefore never deletable on the strength of a missing file.
 - **Phases 4 and 5 move committed bytes** — Phase 4 adds a `.tasks.yaml` per task configuration,
   Phase 5 changes when files are rewritten. Each wants its own review.
-- **Scope.** Phases 1–3 are still worth landing together. **One half of the original claim has
-  moved:** Phase 2 needs `versio_native_equiv.py`, which was Phase 5's artifact, so those two
-  are no longer separable in that direction. Phase 4 keeps its place — the claim that it had
-  become urgent rested on a root cause for G11 that turned out to be wrong. The ordering wants
-  rewriting once the remaining probes have run, deliberately not now, because P1–P6 may move it
-  again.
-- **G11 needs an owner and is not in any phase here.** The trigger is known
-  (`_project.precompilecache`) and **deleting it immediately before an import is measured to fix
-  it** — the import then regenerates the cache itself, so nothing is lost, and an export
-  afterwards is identical bar the GUIDs a *successful* native import re-mints. What is not
-  decided is whether Versio should be deleting another tool's files on that evidence. The
-  `.gitignore` half is done: `TransientPatternsFor` now names the cache.
+- **P5's reachability result is about creation only.** If a project acquires an object whose name
+  needs encoding by some other route, the encoding and resolution paths must still work. Do not
+  delete them.
+- **Scope.** Phase 4 first and alone. Phases 1, 2 and 3 land together, after
+  `versio_native_equiv.py`. Phase 5 and Phase 6 follow.
 
 ## Not doing
 
-- **Two-way library references.** `add_library` / `add_placeholder` / `remove_library` exist, so
-  export-only is now a *choice* rather than a limitation — worth revisiting, but it rewires what the
-  machine compiles against and deserves its own change.
+- **Two-way library references.** `add_library` / `add_placeholder` / `remove_library` exist and
+  P9 proved `add_library` works, so export-only is now a *choice* rather than a limitation — worth
+  revisiting, but it rewires what the machine compiles against and deserves its own change.
+- **Deleting CODESYS's compile cache before an import.** Measured to fix G11, and **not needed**
+  once Phase 4 lands. Kept here because it is the fallback if Phase 4 is ever deferred, and because
+  the measurement was expensive to get.
 - Making the import transactional — the pre-import backup covers it, and it is a much larger change.
 - Any change to the export layout beyond Phase 4's additive `.tasks.yaml`.
