@@ -190,7 +190,7 @@ already exists.**
 
 | # | What | Why here |
 |---|---|---|
-| **1st** | **Phase 4 — typed task configuration** | The only phase that fixes **two live, user-facing defects**: G7 changes CPU core affinity nobody asked to change, and G11 makes every import after the first silently fail. P6 proved the typed path works; a direct experiment proved removing the file from `import_native` fixes G11 without relocating the fault. Independent of everything else here |
+| **1st** | **Phase 4 — typed task configuration** · *export half landed 2026-08-15; the import half is what actually closes G7 and G11* | The only phase that fixes **two live, user-facing defects**: G7 changes CPU core affinity nobody asked to change, and G11 makes every import after the first silently fail. P6 proved the typed path works; a direct experiment proved removing the file from `import_native` fixes G11 without relocating the fault. Independent of everything else here |
 | **2nd** | **The three honesty fixes** | Small, unrelated to each other, and each makes the *next* failure visible instead of silent. None depends on any phase |
 | **3rd** | **Phase 1 — manifest-driven importer** | The foundation. Nothing else can be planned C#-side until the plan exists |
 | **4th** | **`versio_native_equiv.py`** | A shared prerequisite, not a phase. Phase 2's native content check needs it and so does Phase 5 — it was written down as a Phase 5 artifact and is needed earlier |
@@ -229,19 +229,36 @@ exactly the case its docstring names is worth revisiting either way.
 
 Mirrors the library-reference design exactly, which is the precedent to copy:
 
-- **New `versio_tasks.py`** — pure, no `scriptengine` import, handed objects and a `safe` probe,
+- ✅ **`versio_tasks.py`** — pure, no `scriptengine` import, handed objects and a `safe` probe,
   exactly like `versio_libraries.py`. Reads priority, interval, interval unit, core binding,
-  watchdog, POUs and event POU GUID. **P6 confirmed all seven read.**
+  watchdog and POUs. **The event POU GUID is deliberately not recorded** — it was observed
+  changing during a native import, and its meaning for an interval-driven task is
+  unestablished; a value that moves on its own does not belong in a diff, which is the same
+  rule that keeps `ref.id` out of the library file.
+- ✅ **Field types measured, not assumed** (probe P10): `priority` is a **string**, and
+  `interval` is `"t#20ms"` on one task and `"100"` on another **in the same project**. Both
+  are recorded verbatim — a normaliser would rewrite one of them and put a diff in front of
+  somebody that they did not make.
+- ✅ **`core_binding` is the XML's `Core2`** — confirmed on both tasks rather than assumed,
+  because this phase's whole justification rests on it. There is a `Core` field beside
+  `Core2`; had it been that one, the typed path would have been a detour rather than a fix.
 - **Rendered through the existing `versio_yaml.document(...)`** — already vendor-neutral, already
   deterministic, already has key-order discipline.
-- **New form `TASK_BOTH`**, following `GVL_BOTH`: native `.xml` for fidelity *and*
-  `<name>.tasks.yaml` for readability. The **native XML becomes export-only**; the YAML is the
-  importable form. That is what stops `import_native` touching task config.
-- **Import through property assignment**, not the setter methods this plan used to name. **The
-  types differ per field**: `priority` takes a `str`, `core_binding` takes an `int`. Both were
-  written and both survived a reopen.
-- **New `src/Versio.Core/Projects/TaskCatalog.cs`** — a C# reader mirroring `LibraryCatalog`, so
-  the panel can show tasks.
+- ✅ **New form `TASK_BOTH`**, following `GVL_BOTH`: native `.xml` for fidelity *and*
+  `<name>.tasks.yaml`. The `.xml` keeps the name it has always had, so the change is
+  **additive** and no committed file is renamed.
+- ⬜ **The native XML becomes export-only and the YAML becomes the importable form.** Not yet
+  done, and **this is the half that closes G7 and G11** — until it lands, the export writes a
+  `.tasks.yaml` that nothing reads while `Task Configuration.xml` still goes to
+  `import_native`. Needs a python YAML *reader* for the subset (the emitter is write-only
+  today), and the rule that a native file with a typed sibling is not imported.
+- ⬜ **Import through property assignment**, not the setter methods this plan used to name.
+  **The types differ per field**: `priority` takes a `str`, `core_binding` takes an `int`.
+  Both were written and both survived a reopen (P6).
+- ⬜ **New `src/Versio.Core/Projects/TaskCatalog.cs`** — a C# reader mirroring `LibraryCatalog`,
+  so the panel can show tasks.
+- ⬜ **Regenerate the committed fixture mirror** to carry the new file. This moves committed
+  bytes and is the part this plan flags as wanting its own review.
 
 **Why this is first.** It is the only phase that fixes something a user is living with today, and
 it fixes two:

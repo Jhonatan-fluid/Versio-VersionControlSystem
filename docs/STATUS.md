@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,385 unit + 478 UI + 192 integration, 0 skipped
+**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,386 unit + 478 UI + 192 integration, 0 skipped
 
 > **Also 2026-08-15, on branch `GitImportPlan`: Phase 0 of the import plan started, and its
 > first probe found a defect that reaches users.** P7 measured what an import → export cycle does
@@ -90,7 +90,7 @@ opens. That is `SAFEGUARDS.md` phases 1–8, and phase 9 is features rather than
 
 ```
   CODESYS pipeline    ████████████████████  proven on a real project
-  Domain core         ████████████████████  1,385 tests, under 400 ms
+  Domain core         ████████████████████  1,386 tests, under 400 ms
   Vendor seam         ████████████████████  enforced from assembly metadata
   Infrastructure      ████████████████████  drives real CODESYS + real git
   Desktop shell       ███████████████████░  full git surface, diff, and a UI audit applied
@@ -647,6 +647,41 @@ would have gone on passing while checking one fewer every time a panel moved out
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### Two bugs that only running the exporter could show
+
+Phase 4's export half added `TASK_BOTH`: task configuration now writes a `.tasks.yaml` beside
+its `.xml`. Unit tests were green, the solution built warning-free, and both defects below
+were still there.
+
+**One · the walk descended into the task children.** `descends_into_children` decides the
+progress pre-count and a separate guard in `handle()` decides the actual recursion. The new
+form was added to the first and not the second, so the exporter walked `MainTask` and
+`VISU_TASK` as objects in their own right.
+
+**Nothing was written**, because a `TASK` is `FORM_SKIP`. The only symptom was arithmetic:
+`counted 18` against `walked 20`, and `skipped 4 → 6`, on a project that had gained no
+objects. That is exactly the divergence `descends_into_children`'s own docstring says cannot
+happen — *"the count and the walk cannot disagree"* — and it happened the first time a form
+was added after that sentence was written. **A guard that lives in two places has to be
+changed in two places, and only one of them is named after what it does.**
+
+**Two · `pous` rendered as python's `repr`.** The task's POU list came out as
+`pous: "['PLC_PRG', 'Simulation']"` — a quoted string that merely looks like a list, and
+would parse back as one on nobody's reader. `versio_yaml`'s subset had no list-of-scalars, so
+a python list fell through to the scalar branch, where `_to_text` did what it is supposed to
+do.
+
+**This is the same shape as the `FORM_GVL_BOTH` suffix bug**: a value that did not match any
+case in a table quietly took the default, and the default produced a file whose contents lied
+about their own type. The emitter gained a scalar-list construct — its first addition since it
+was written — and its header now records why, because that file states outright that every
+construct added is one both halves have to agree about forever.
+
+**Neither would have been caught by a test**, because neither breaks anything a test asserts:
+the file count is right, the bytes are deterministic, and every existing assertion passes. The
+first shows up only if you read two numbers in the summary against each other, and the second
+only if you read the file.
 
 ### Every import after the first fails on task configuration, and reports success
 

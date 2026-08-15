@@ -396,9 +396,10 @@ CPython.
 | `ST_IMPL` | implementation only (no declaration exists) | `ACTION`, `TRANSITION` |
 | `GVL_BOTH` | **two files** — `.gvl.xml` for structure, `.gvl.st` for a readable diff | `GVL`, `GVL_PERSISTENT` |
 | `NATIVE` | `obj.export_native(path, False)` | `EVC`, `VISUALISATION`, `TEXTLIST`, `GLOBAL_TEXTLIST`, `IMAGEPOOL`, `PROJECT_INFORMATION` |
-| `NATIVE_R` | `obj.export_native(path, True)` — owns children not walked separately | `PROPERTY`, `TASK_CONFIGURATION` |
+| `NATIVE_R` | `obj.export_native(path, True)` — owns children not walked separately | `PROPERTY` |
 | `NATIVE_WITH_CHILDREN` | the node natively **and** a subdirectory for its children | **no type maps to it** — only an *unmapped* type that has children |
 | `LIBRARIES` | `<manager>.libraries.yaml`, **export-only** | `LIBRARY_MANAGER` |
+| `TASK_BOTH` | **two files** — `.xml` (recursive) for fidelity, `<name>.tasks.yaml` for review **and for import** | `TASK_CONFIGURATION` |
 | `SKIP` | nothing, but the reason is recorded | see below |
 
 **The fallbacks are the interesting part.** A POU declared in ST but *drawn* in CFC / LD / FBD
@@ -489,7 +490,8 @@ plc/Machine/                     ← the mirror
 │        ├─ Glob_Var.gvl.st                  ST_DECL   ┐ one object,
 │        ├─ Glob_Var.gvl.xml                 NATIVE    ┘ two files, one GUID
 │        ├─ Live_Visu.vis.xml                NATIVE    (2.5 MB on the fixture)
-│        ├─ Task Configuration.xml           NATIVE_R
+│        ├─ Task Configuration.xml           TASK_BOTH (export-only half)
+│        ├─ Task Configuration.tasks.yaml    TASK_BOTH (the importable half)
 │        └─ Library Manager.libraries.yaml   LIBRARIES (export-only)
 ├─ GlobalTextList.xml
 ├─ Library Manager.libraries.yaml
