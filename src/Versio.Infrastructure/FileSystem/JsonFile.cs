@@ -43,11 +43,32 @@ internal static class JsonFile
     /// </remarks>
     public static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
+    /// <summary>
+    /// Create the folder the file lives in, when it has one.
+    /// </summary>
+    /// <remarks>
+    /// The emptiness check is not decoration. <see cref="Path.GetDirectoryName(string)"/>
+    /// returns null for a root and empty for a bare filename, and
+    /// <see cref="Directory.CreateDirectory(string)"/> throws on both - out of a caller whose
+    /// own catch only expects <see cref="IOException"/> and
+    /// <see cref="UnauthorizedAccessException"/>, so it would escape as an unhandled
+    /// exception rather than the quiet failure that path is written for.
+    /// </remarks>
+    private static void EnsureFolder(string path)
+    {
+        var folder = Path.GetDirectoryName(path);
+
+        if (!string.IsNullOrEmpty(folder))
+        {
+            Directory.CreateDirectory(folder);
+        }
+    }
+
     /// <summary>Serialize <paramref name="value"/> and replace <paramref name="path"/> atomically.</summary>
     public static async Task WriteAsync<T>(
         string path, T value, JsonSerializerOptions options, CancellationToken ct)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        EnsureFolder(path);
 
         var temp = path + ".tmp";
         await File.WriteAllTextAsync(temp, JsonSerializer.Serialize(value, options), Utf8NoBom, ct)
@@ -65,7 +86,7 @@ internal static class JsonFile
     /// </remarks>
     public static void Write<T>(string path, T value, JsonSerializerOptions options)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        EnsureFolder(path);
 
         var temp = path + ".tmp";
         File.WriteAllText(temp, JsonSerializer.Serialize(value, options), Utf8NoBom);
