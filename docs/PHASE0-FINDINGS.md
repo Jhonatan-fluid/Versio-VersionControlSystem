@@ -172,12 +172,21 @@ Core2: -1  ->  -2      (directly beside an unchanged  Core: -1)
 
 That is a task's **CPU core affinity**, and `import_native` changed it without being asked. It is deliberately **not** masked. It is pinned by a test asserting the deviation is *exactly* this one field, so the suite fails the moment it grows.
 
-**Recommendation: treat Task Configuration as diff-only (Tier 3) until this is understood on more projects.** It may be a benign sentinel normalisation, but "probably benign" is not a basis for writing to someone's task scheduling.
+~~**Recommendation: treat Task Configuration as diff-only (Tier 3) until this is understood on more projects.** It may be a benign sentinel normalisation, but "probably benign" is not a basis for writing to someone's task scheduling.~~ **Spent — see the two notes below.** The second sentence was right and the recommendation drawn from it was wrong: the answer was not to wait for more projects but to stop handing the file to `import_native` at all, and the reason it took two supersessions to get there is that the deviation was read as CODESYS's behaviour rather than as a consequence of our own choice.
 
 > **Superseded on 2026-08-15 by P7 below.** Diff-only is not a safe resting place: the very
 > next import of a mirror this deviation produced **fails**, and the failure is silent in the
 > summary. The recommendation now is Phase 4 of [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md)
 > — typed task configuration, so `import_native` never sees this file again.
+>
+> **✅ And that is now built, on the same day.** Task configuration exports as `TASK_BOTH` and
+> is applied back through typed property assignment; `import_native` is never handed the object.
+> `Core2` reads `-2,-1` across four consecutive snapshots where it used to move on the first
+> cycle, and `Task Configuration.xml` has dropped out of the churn set. **The deviation above is
+> history, not a live limitation** — the measurement stands, the recommendation is spent.
+> The one thing still missing is a test that writes a field through the typed API and asserts
+> the project changed; the pinning test named above reads bytes captured *before* Phase 4, so
+> it cannot see the live path either way.
 
 ---
 
@@ -572,7 +581,7 @@ It skips cleanly on a machine without CODESYS or the fixture, so the suite still
 
 | Item | Status |
 |---|---|
-| **Task Configuration `Core2` mutation** | **Confirmed reproducible.** Investigate before enabling task-config import; diff-only until then |
+| ~~**Task Configuration `Core2` mutation**~~ | ~~**Confirmed reproducible.** Investigate before enabling task-config import; diff-only until then~~ — **closed 2026-08-15 by Phase 4**, which took the file off the `import_native` path entirely rather than investigating what CODESYS meant by it. The cause was ours, not CODESYS's. It closed G11 with it |
 | **Recreated objects get NEW GUIDs** | `create_pou` mints a fresh GUID, so anything referencing the old one (task config `EventPOUGuid`) is left stale. Fine when recreating a deleted object; needs thought for cross-machine sync |
 | 0.16 gap types (Interface, TextList, ImagePool…) | Rules written and unit tested; **not exercised** — this project contains none |
 | 0.18 `system.prompt_answers` | Not needed yet — no dialog encountered under 10 headless runs |

@@ -119,7 +119,15 @@ smaller polish items.
 surface, the command line, both sides of the JSON-lines protocol, every script, and the export
 and import mechanics. Its §12 is a standing audit of that integration: what is broken, what is
 merely stale, and where the C# and the python have drifted apart.
-**[docs/PHASE0-FINDINGS.md](docs/PHASE0-FINDINGS.md)** records the measurements and the known limitations — including one real CODESYS mutation (`Core2` in task configuration) that keeps task config **diff-only** for now.
+**[docs/PHASE0-FINDINGS.md](docs/PHASE0-FINDINGS.md)** records the measurements and the known
+limitations — including the one real CODESYS mutation it found: `Core2`, a task's CPU core
+affinity, rewritten by `import_native` without being asked. **That one is fixed** — task
+configuration imports through the typed API now and is no longer diff-only — so read that
+document as a record of what was measured in Phase 0, not as a list of what is still true.
+**[docs/CODESYS-IMPORT-PLAN.md](docs/CODESYS-IMPORT-PLAN.md)** is where the import side is
+being finished, and it is the active plan: eleven numbered gaps, what each measurement closed,
+and the order the evidence argues for building the rest in.
+**[docs/PLAN.md](docs/PLAN.md)** is the full architecture plan behind all of it.
 
 ---
 

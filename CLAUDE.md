@@ -39,8 +39,9 @@ questions about "why is this like this" are already answered there.
 | `docs/PLAN.md` | The full architecture plan |
 | `docs/SAFEGUARDS.md` | What Versio refuses, asks about, or waits for |
 | `docs/CODESYS.md` | How CODESYS is driven end to end, and the audit of it |
+| `docs/CODESYS-IMPORT-PLAN.md` | **The active plan.** Eleven numbered import gaps, what each measurement closed, and the order to build the rest in — which is deliberately not 1, 2, 3 |
 | `docs/GIT-PANEL-PLAN.md` | The git panel's functionality and UX |
-| `docs/PHASE0-FINDINGS.md` | Measured results and known limitations |
+| `docs/PHASE0-FINDINGS.md` | What Phase 0 measured. **A record, not a live limitation list** — read its supersession notes |
 | `README.md` | Repository layout, vendor boundaries, the one architectural rule |
 
 **This is a rule because ignoring it has already cost.** An audit was asked for and re-derived

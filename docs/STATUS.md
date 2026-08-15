@@ -157,8 +157,17 @@ opens. That is `SAFEGUARDS.md` phases 1–8, and phase 9 is features rather than
 - **Managed (fixed-version) library references are untested.** All 34 references in the fixture
   are placeholders, so the branch that reads `version`, `company` and `title` off a managed
   library is written from the API's description and has never run against a real one.
-- **Task configuration is diff-only.** `import_native` changes a task's `Core2` from `-1` to
-  `-2` unasked. Reproduced three times, pinned by a test, not masked.
+- ~~**Task configuration is diff-only.** `import_native` changes a task's `Core2` from `-1` to
+  `-2` unasked.~~ — **no longer true, as of Phase 4 on 2026-08-15.** A task configuration
+  exports as `TASK_BOTH` and its `.tasks.yaml` is applied back through typed property
+  assignment, so `import_native` never sees the object and `Core2` stops moving. The `Core2`
+  measurement itself still stands and is still pinned by a test — but that test reads
+  **committed bytes captured before Phase 4**, so it documents what `import_native` did rather
+  than guarding what Versio now does. **What is still limited, and deliberately:** the `.xml`
+  half is export-only (`TASK_NATIVE`), a task named in the YAML but absent from the project is
+  **warned about, never created**, and a task deleted from the YAML is **left alone** — removing
+  one is a deletion, and deletions are Phase 2. See G7 and G11 in
+  [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md).
 - **Graphical POUs export as native XML**, so their diffs will never read as well as ST.
   Inherent to the format.
 - **Interfaces, text lists, image pools** have export rules written and unit tested but never

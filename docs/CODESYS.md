@@ -810,12 +810,24 @@ in three non-semantic classes:
 resolves 4 of the 5 files. Note the distinction from codescribe: they broke visualisations by
 *rewriting* GUIDs in the file.
 
-> **⚠️ One deviation that is not volatile.** `Task Configuration.xml` still differs after
-> normalisation on exactly one line: `Core2: -1 → -2`, directly beside an unchanged `Core: -1`.
-> That is a task's **CPU core affinity**, and `import_native` changed it without being asked. It
-> is deliberately **not** masked, and is pinned by a test asserting the deviation is exactly this
-> one field, so the suite fails the moment it grows. **Task Configuration is diff-only (Tier 3)
-> until this is understood on more projects.**
+> **⚠️ One deviation that is not volatile — and is now fixed at source.** `Task
+> Configuration.xml` differed after normalisation on exactly one line: `Core2: -1 → -2`,
+> directly beside an unchanged `Core: -1`. That is a task's **CPU core affinity**, and
+> `import_native` changed it without being asked. It is deliberately **not** masked, and is
+> pinned by `RealRoundTripEquivalenceTests.Task_configuration_import_mutates_Core2_and_ONLY_Core2`.
+>
+> **Phase 4 removed the cause rather than tolerating it (2026-08-15).** A task configuration
+> exports as `TASK_BOTH` and is applied back through typed property assignment, so
+> `import_native` is never handed the object and there is nothing left to mutate — measured as
+> `Core2: -2,-1` across four consecutive snapshots, and `Task Configuration.xml` has dropped
+> out of the churn set. It is **no longer diff-only**; the `.xml` half is export-only
+> (`TASK_NATIVE`) and the `.tasks.yaml` beside it is the importable one.
+>
+> **Read the test for what it is.** It runs against bytes captured *before* Phase 4, so it
+> passes whatever the importer does today — it records the measurement rather than guarding the
+> live path, and it would keep passing if Phase 4 were reverted. The guard for the live path is
+> the integration test named in [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md), and it is
+> **not written yet**.
 
 ---
 
@@ -1248,9 +1260,9 @@ listed here because only one of them is currently written down anywhere.
 | D1 | **Deletions do not propagate.** The importer only updates and creates | Removing a `.st` from the mirror does **not** remove the POU from the project |
 | D2 | **Filenames are never decoded.** `unsafe_file_stem` exists and nothing calls it (`versio_text.py:178`); `find_by_path` compares raw CODESYS names against *encoded* path segments | An object or folder whose name needed encoding (`weird<name>` → `weird%3Cname%3E`) cannot be found on import, and a *created* one would be named with the percent escapes literally |
 | D3 | **A dot in an object name breaks the owner split.** `object_name_from_file` treats the last dot before the suffix as the owner/member separator | A POU named `My.Thing` imports as member `Thing` of a non-existent parent `My` → `PARENT_NOT_FOUND`. `versio_export.record`'s own comment names this hazard as the reason the manifest records parents by GUID; the importer still parses filenames |
-| D4 | **Any stray non-`.st` file in the mirror is handed to `import_native`.** Only `_manifest.json`, `_coverage.md` and `*.libraries.yaml` are excluded | A `README.md` or a `.bak` dropped into an export directory is offered to CODESYS as native XML. The code comments show this class is known — it is how `_coverage.md` caused a failure — but the guard is a fixed allow-list, not a shape check |
+| D4 | **Any stray non-`.st` file in the mirror is handed to `import_native`.** Still open. The exclusions are `_manifest.json`, `_coverage.md`, `*.libraries.yaml`, `*.tasks.yaml`, and any `.xml` with a `*.tasks.yaml` sitting beside it — all of them names and adjacency, none of them a shape check | A `README.md` or a `.bak` dropped into an export directory is offered to CODESYS as native XML. The code comments show this class is known — it is how `_coverage.md` caused a failure — but the guard is a fixed allow-list, not a shape check |
 | D5 | **`*.libraries.yaml` is export-only** | Editing it changes nothing. Stated in the file's own header, in `_coverage.md`, in the manifest and by a lock glyph in the UI |
-| D6 | **Task Configuration is diff-only** | `import_native` mutates `Core2` (§7). **Separately — and *not* the same defect, though this row said so for an afternoon — every import run with a `<project>_project.precompilecache` beside the project throws on `MainTask` and `VISU_TASK` while reporting `failed: 0`.** Measured 2026-08-15; the cache alone is sufficient and the mirror's bytes are irrelevant. See G11 in [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md) and the finding in [`STATUS.md`](STATUS.md) |
+| D6 | ~~**Task Configuration is diff-only**~~ — **closed 2026-08-15**, both halves of it | This row carried two defects. `import_native` mutated `Core2` (§7); and — *not* the same defect, though this row said so for an afternoon — every import run with a `<project>_project.precompilecache` beside the project threw on `MainTask` and `VISU_TASK` while reporting `failed: 0`. **Phase 4 removed both by removing the shared cause**: task configuration exports as `TASK_BOTH` and imports through typed property assignment, so `import_native` is never handed the object. Measured over three cycles with the cache present: **zero warnings**, where cycles 2 and 3 used to throw twice each. Versio deletes nothing of CODESYS's. See G7 and G11 in [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md) and the findings in [`STATUS.md`](STATUS.md). **What replaces it, and it is smaller:** the `.xml` half is export-only, a task named in the YAML but absent from the project is warned about rather than created, and a task deleted from the YAML is left alone until Phase 2 |
 
 ### E. Smaller observations
 
