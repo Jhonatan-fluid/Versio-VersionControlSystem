@@ -397,8 +397,10 @@ does not record them has to be run again.
   Versio's own hash gate, which reads the bytes on disk. Adoption writes `<mirror>/** text
   eol=lf` now; see the finding for the measurement both ways.
 - **The spacing scale is declared and unused** — `Space.1`–`Space.7`, `Pad.Row`, `Pad.Panel` and
-  `Pad.Control` have zero references against **239 hardcoded margin and padding literals**, three
-  of the six most frequent being off the stated scale. Left as one deliberate sweep rather than
+  `Pad.Control` have zero references against **246 hardcoded margin and padding literals** (239
+  when this was written; re-derived 2026-08-14, and the drift is the point — the gap widens on
+  its own every time anything is laid out), three of the six most frequent being off the stated
+  scale. Left as one deliberate sweep rather than
   done incrementally, because half-applied is the one state worse than either — and it should end
   with a test that rejects an off-scale literal, so the rule `Spacing.xaml` states is finally one
   that something enforces. Starting with the six repeat offenders covers 79 of the 239.
