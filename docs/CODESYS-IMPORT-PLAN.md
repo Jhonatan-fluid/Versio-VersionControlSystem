@@ -36,7 +36,7 @@ invisible to any amount of reading because it only exists on the *second* cycle.
 | G8 | Managed library references unproven | All 34 fixture references are placeholders; the `managed_library` branch has never executed |
 | G9 | Total path length unguarded | Stems capped at 80; the **full path** is not, and `.versio_staging` makes it 16 longer |
 | **G10** | **Import → export is not byte-stable** | `UniqueIdGenerator` **44 → 47 → 50 → 53**, +3 per cycle, measured over three cycles by P7 on 2026-08-15. It never settles. **Two corrections to the original wording**, both from the same measurement. Of the **eight** native files the import touches: three visualisations climb on the counter, `GlobalTextList.xml` churns every cycle with **no counter in it at all** (re-minted `GuidInit`/`GuidReInit`/`GuidExitX`), `Task Configuration.xml` moves once and then settles, and `Glob_Var.gvl.xml`, `PLC_PRG.xml` and `Signals.xml` are byte-stable throughout. So it is **four of eight forever, not "every native file it touched"**, and the counter is **one of two causes, not the cause** |
-| **G11** | **A second import of a round-tripped mirror fails, and reports success** | Found by P7, not predicted here. From cycle 2 onward `import_native` throws `Collection was modified` at `Project.GetUniqueName` on `MainTask` and `VISU_TASK`; the summary still reads `failed: 0`. Same root cause as G7 — task configuration going through `import_native` — and fixed by the same phase |
+| **G11** | **Every import after the first fails on task configuration, and reports success** | Found by P7, not predicted here. `import_native` throws `Collection was modified` at `Project.GetUniqueName` on `MainTask` and `VISU_TASK`; the summary still reads `failed: 0`. **Isolated to `<project>_project.precompilecache`** — the cache alone is sufficient, the `.opt` files are innocent, and the mirror's bytes are irrelevant. A fresh clone has no cache, so the first import works and every later one does not. **Not the same root cause as G7**, which is what this row claimed before it was tested |
 
 **Intended outcome:** the mirror becomes authoritative for object *existence* and *identity*, not
 just content; task scheduling stops being changed by a tool nobody asked to change it; and an
@@ -218,12 +218,22 @@ doing this rather than delete-plus-create.
 
 ## Phase 4 — Task configuration, typed both ways *(G7, G11)*
 
-> **Reprioritised 2026-08-15.** This was written as a tidy-up for a cosmetic mutation nobody
-> asked for. P7 showed the same file **breaks the import outright on the second cycle** (G11),
-> so this phase is the fix for a live failure and no longer something that can ship later.
-> `MainTask` and `VISU_TASK` are the only two objects that fail, and they fail *because*
-> `Task Configuration.xml` goes through `import_native`. Taking that file off that path takes
-> both defects with it.
+> **Written 2026-08-15, then corrected the same day.** The first version of this note said P7
+> had shown this phase to be the fix for G11, and reprioritised it on that basis. **That was
+> wrong**, and it was wrong because it was written from one run before anything varied a
+> variable: G11 is caused by a stale `_project.precompilecache`, not by task configuration
+> being native XML, and a round-tripped `Task Configuration.xml` imports cleanly into a project
+> that has no cache beside it.
+>
+> **What remains true** is that `MainTask` and `VISU_TASK` are the objects that fail, and they
+> are reached only through this file — so taking it off the `import_native` path does remove
+> *those two* errors. Whether the underlying fault then surfaces on another object is
+> **untested**: the attempt to test it could not reproduce the failure at all, because the
+> throwaway project it built had no cache beside it. That experiment is worth repeating now
+> that the trigger is known.
+>
+> So this phase keeps its original priority and its original justification — G7, the `Core2`
+> mutation — and G11 needs a fix of its own.
 
 Mirrors the library-reference design exactly, which is the precedent to copy:
 
@@ -317,12 +327,17 @@ Close Versio.exe first; it locks its own DLLs.
 - **`remove()` behaviour with referenced objects is unknown** until P3 answers it.
 - **Phases 4 and 5 move committed bytes** — Phase 4 adds a `.tasks.yaml` per task configuration,
   Phase 5 changes when files are rewritten. Each wants its own review.
-- ~~**Scope.** Phases 1–3 are worth landing together. Phases 4 and 5 are separable and could ship
-  after.~~ **Both halves of that are now wrong, and P7 is why.** Phase 4 fixes a live import
-  failure (G11), so it is the *earliest* thing here that a user would notice; and Phase 2 needs
-  `versio_native_equiv.py`, which was Phase 5's artifact, so the two are no longer separable in
-  that direction either. The ordering wants rewriting once the remaining probes have run —
-  deliberately not rewritten now, because P1–P6 may move it again.
+- **Scope.** Phases 1–3 are still worth landing together. **One half of the original claim has
+  moved:** Phase 2 needs `versio_native_equiv.py`, which was Phase 5's artifact, so those two
+  are no longer separable in that direction. Phase 4 keeps its place — the claim that it had
+  become urgent rested on a root cause for G11 that turned out to be wrong. The ordering wants
+  rewriting once the remaining probes have run, deliberately not now, because P1–P6 may move it
+  again.
+- **G11 needs an owner and is not in any phase here.** The trigger is known
+  (`_project.precompilecache`) and the fix is not: deleting a compile cache before every import
+  is a candidate and is not obviously safe, since it is CODESYS's, not Versio's, and the next
+  IDE open pays to rebuild it. It also wants a `TransientPatternsFor` entry regardless of what
+  the import does, so an adopted repository stops leaving it untracked.
 
 ## Not doing
 

@@ -446,6 +446,14 @@ does not record them has to be run again.
   three setters in `Buttons.xaml`. **13 → 0**, and the accessibility tests still pass, which is
   what proves the names resolve to the tooltips rather than to the empty string the fix
   introduced.
+- **`TransientPatternsFor` does not name `_project.precompilecache`.** It returns
+  `[stem + ".~u*", stem + "-*.opt"]`, and its remarks say only observed files are listed — this
+  one was not observed. So an adopted repository has no rule for a 277 KB binary compile cache
+  CODESYS writes beside every project it opens, and *Stage all* would commit it. This repository
+  is not exposed only because `*.precompilecache` was typed into `.gitignore` by hand, which is
+  the same way the staging rule was missing everywhere but here. **One line, and it is separate
+  from the import defect the cache also causes** — the ignore rule is worth adding whatever is
+  decided about G11.
 - **`ToolchainState` is a public observable property with no view.** It survives because the
   runner uses its text as the "why this is unavailable" explanation. It should be a plain
   string, not a bindable one.
@@ -609,14 +617,45 @@ log at `Warn` through `SyncOrchestrator.LogWarnings`, whose own comment already 
 thing — "the run succeeded but is not complete". The defect is that the script's one-line answer
 contradicts its own warnings, and the one-line answer is what gets read.
 
-**It is the `Core2` mutation seen from the other end.** Both exist only because task
-configuration is round-tripped as native XML, and cycle 1's mutation is what the cycle-2 import
-then chokes on. That moves Phase 4 of the import plan from "separable, could ship after" to the
-earliest thing in it a user would notice.
+**The cause is a stale `<project>_project.precompilecache`.** Five runs against the same mirror,
+varying one thing each:
+
+| The project directory carries | Result |
+|---|---|
+| `.project` + `.opt` pair + `_project.precompilecache` | **fails** — `MainTask`, `VISU_TASK` |
+| `.project` + `_project.precompilecache` only | **fails** — same two |
+| `.project` + `.opt` pair only | passes |
+| `.project` alone | passes |
+| pristine project, fully round-tripped mirror | passes |
+
+The cache alone is sufficient; the `.opt` files are innocent; the mirror's bytes are irrelevant.
+A freshly copied project has no cache and the first import creates one, **so the first import
+after a clone works and every one after it fails** — which is why it presents as "the second
+cycle", and why it reproduced 4 for 4 across two independent P7 runs.
+
+**This reaches real users and cannot reach the suite.** Anyone who has opened their project in
+the IDE has a cache beside it. `Versio.Integration.Tests` copies the `.project` and nothing
+else, so no test has ever run an import with one present — and both of its real-CODESYS import
+tests import exactly **once**, so they would stop one step short even if it did.
+
+**Related, and true regardless of the import:** `CodesysProjectFormat.TransientPatternsFor`
+returns `[stem + ".~u*", stem + "-*.opt"]` and does not name the cache. This repository ignores
+it only because `*.precompilecache` was typed into `.gitignore` by hand — the same shape as the
+staging rule `RepoSetup`'s comment records as having been missing from every adopted repository.
+An adopted repository leaves a 277 KB binary cache untracked beside the project, and *Stage all*
+would commit it.
+
+**The first explanation of this was wrong, and the way it was wrong is worth more than the
+finding.** It said this was "the `Core2` mutation seen from the other end" — cycle 1 mutates the
+file, cycle 2 chokes on it. That fitted every observation then available, explained the timing,
+and named a phase that would fix it. It was written into three documents **before a single
+variable had been varied**, and the first experiment that varied one killed it: a fully
+round-tripped `Task Configuration.xml` imports cleanly into a project with no cache. A story
+that fits one run is a hypothesis, and this one was recorded as a cause.
 
 **Found by running the thing twice.** Ten gaps came out of reading the import path carefully;
-this one was invisible to reading, because it does not exist on the first cycle. `tools\Measure-ImportStability.ps1`
-is committed so it stays reproducible.
+this one was invisible to reading, because it does not exist on the first cycle.
+`tools\Measure-ImportStability.ps1` is committed so it stays reproducible.
 
 ### An import's summary is logged with the exporter's field names
 

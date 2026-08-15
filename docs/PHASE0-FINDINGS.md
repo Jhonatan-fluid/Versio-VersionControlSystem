@@ -238,13 +238,14 @@ Three things the measurement changed:
 export-only differences, and nothing added or removed at any cycle. Gate 0.5 was proven once
 with one mutation; this is the same claim survived three times unattended.
 
-### ⚠️ The import fails from cycle 2 onward, and says it succeeded
+### ⚠️ Every import after the first fails, and says it succeeded
 
 Not what P7 went looking for, and more important than what it did.
 
-Cycle 1 imports the pristine mirror: `native: 8, failed: 0, warnings: 0`. Cycles 2 and 3 import
-a mirror that a previous round trip produced, and **both throw twice**, on `MainTask` and
-`VISU_TASK` — the two children of `Task Configuration`:
+Cycle 1 is clean: `native: 8, failed: 0, warnings: 0`. Cycles 2 and 3 **both throw twice**, on
+`MainTask` and `VISU_TASK` — the two children of `Task Configuration`. (The obvious reading of
+that timing is that the mirror cycle 1 produced is what cycle 2 chokes on. It is not; see
+below.)
 
 ```
 System.InvalidOperationException: Collection was modified; enumeration operation may not execute.
@@ -254,10 +255,15 @@ System.InvalidOperationException: Collection was modified; enumeration operation
 ```
 
 That is the **exact** exception `versio_import.py`'s `run()` docstring names, and the two-phase
-split with a save between them was written to prevent it. It did not, because the save is
-conditional on `created > 0 or updated > 0` and both were **0 in every cycle here** — an import
-that only touches native files never saves between the phases at all, so the guard the docstring
-describes did not run once during this measurement.
+split with a save between them was written to prevent it. It did not prevent this one.
+
+Worth recording separately, because it is true whatever the cause turns out to be: **that save
+never ran.** It is conditional on `created > 0 or updated > 0`, and both were **0 in every cycle
+here** — an import touching only native files never saves between the phases at all. So the
+guard the docstring presents as covering this exception did not execute once during the
+measurement that hit it. Whether running it would have helped is untested; a guard whose
+docstring reads as coverage and which is skipped in the case it names is worth fixing either
+way.
 
 Nothing is destroyed: the objects survive and the file is simply not applied. What is wrong is
 what the run then reports. `ReplaceHandler.progress` warns and never increments `self.failed`,
@@ -266,9 +272,57 @@ failed: 0` on a run where two objects failed. The warnings themselves do reach t
 through `SyncOrchestrator.LogWarnings`, so it is not silent; the one-line answer is just wrong,
 and the one-line answer is what gets read.
 
-**This is the same defect as `Core2`, seen from the other end.** Both exist only because task
-configuration is round-tripped as native XML. Phase 4 removes the file from `import_native`'s
-reach and takes both with it — which is why it is no longer a phase that can ship later.
+### What actually causes it: a stale `.precompilecache`
+
+**The first explanation written here was wrong, and is kept because the way it failed is the
+point.** It said this was "the `Core2` mutation seen from the other end" — that cycle 1 mutates
+the file and cycle 2 chokes on what it wrote. That story fitted every observation available at
+the time and was written into three documents before anything tested it. It is false.
+
+The first four rows import the **same mirror** into the **same project bytes**, varying only what
+sits beside the project. The fifth varies the mirror instead, and is the row that killed the
+original explanation:
+
+| Project directory carries | Mirror | Result |
+|---|---|---|
+| `.project` + `.opt` pair + `_project.precompilecache` | round-tripped | **fails** — `MainTask`, `VISU_TASK` |
+| `.project` + `_project.precompilecache` only | round-tripped | **fails** — same two |
+| `.project` + `.opt` pair only | round-tripped | passes |
+| `.project` alone | round-tripped | passes |
+| pristine project, no sidecars | round-tripped (`Core2 = -2`, both `EventPOUGuid`s re-minted) | passes |
+
+**It is `<project>_project.precompilecache`, and nothing else.** The cache alone is sufficient to
+cause it and a project without one imports cleanly; the `.opt` files, which are the user's own
+editor state, make no difference either way; and the mirror's bytes are irrelevant, since a fully
+round-tripped `Task Configuration.xml` imports cleanly into a project that has no cache.
+
+**Not tested:** deleting an existing cache immediately before an import. Every passing cell here
+reached "no cache" by copying the project without one rather than by removing one, and those are
+not quite the same experiment. It is the obvious candidate mitigation and it is still a
+hypothesis.
+
+That also explains the shape of the P7 result, which no theory about file content ever could.
+A freshly copied project has no cache; the first import creates one. **So the first import after
+a fresh clone works, and every import after that fails** — which is exactly cycle 1 passing and
+cycles 2, 3 and 4 failing, reproduced 4 for 4 across two independent P7 runs and again in
+isolation.
+
+**The consequence is worse than a round-trip curiosity.** Anyone who has opened their project in
+the CODESYS IDE has a precompile cache beside it. Versio's imports work once on a fresh clone and
+then stop applying task configuration, reporting `failed: 0` each time.
+
+**And it is invisible to the suite by construction.** `Versio.Integration.Tests` copies the
+`.project` and nothing beside it, so no test has ever run an import with a cache present — and
+both of its real-CODESYS import tests import exactly **once**, so even with the cache they would
+reach the failing state and stop one step short of it.
+
+> **The cache is not in `TransientPatternsFor`.** `CodesysProjectFormat.TransientPatternsFor`
+> returns `[stem + ".~u*", stem + "-*.opt"]`; `_project.precompilecache` is absent, and its own
+> remarks say "only observed files are listed". *This* repository ignores it only because
+> somebody typed `*.precompilecache` into `.gitignore` by hand — the same shape as the staging
+> rule that `RepoSetup` records as having been missing from every adopted repository. An
+> adopted user repository gets no rule for it, so a 277 KB binary cache sits untracked beside
+> the project and *Stage all* would commit it.
 
 ---
 
