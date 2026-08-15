@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using Versio.App.Mvvm;
 using Versio.App.ViewModels;
 using Versio.App.Views;
 using Versio.Core.Git;
@@ -22,7 +23,7 @@ namespace Versio.App.Tests;
 /// </para>
 /// <para>
 /// The flow tests never open a window: the shell asks through
-/// <see cref="ShellViewModel.PromptForBranchDeletion"/>, so a test answers it directly. Every
+/// <see cref="IUserPrompts.PromptForBranchDeletion"/>, so a test answers it directly. Every
 /// rule worth pinning — <c>-d</c> before <c>-D</c>, per-branch reporting, moving off the branch
 /// being deleted — lives on the shell side of that seam.
 /// </para>
