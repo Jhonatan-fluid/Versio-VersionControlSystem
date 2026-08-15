@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-14 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,384 unit + 465 UI + 192 integration, 0 skipped
+**Date:** 2026-08-14 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,384 unit + 467 UI + 192 integration, 0 skipped
 
 > All three re-derived on 2026-08-14, on branch `GitPanel`, after the git-panel plan's **GP-J**
 > (PLC-aware naming of the changed-files rows, the change summary and the drafted commit
@@ -501,6 +501,37 @@ would have gone on passing while checking one fewer every time a panel moved out
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### The log said the lock was taken and never that it was given back
+
+Found by running the app, which is the fifth or sixth time that has produced something no suite
+had. The launch window was clean — zero `ERR`, window constructed, repository opened — and the
+log ended, on a deliberate close, at *"change detection stopped (2 watcher(s) disposed)"*. That
+is the **first** line of the shell's teardown. Everything after it was silent.
+
+Most of that is explained by the code rather than by a defect. But one piece is not:
+`JsonSessionMarkerStore.Release` logs when it **refuses** to release a marker belonging to
+another session, and logs when the delete **fails** — and says nothing on the path that runs on
+every ordinary exit. `Write` announces the claim. So the log of any given run records the
+repository being taken and never handed back, and **a clean shutdown leaves the same trace as a
+crash.**
+
+The evidence that separates them does exist, in the wrong place: the *next* launch reports
+*"the session that left the marker (pid 34692) is gone"*. That is a different run's log, and no
+use at all to somebody reading the log of the session that misbehaved — which is the log they
+will have.
+
+This is the house rule about silent success rather than silent failure, and it is the same shape
+as the rolling file sink that was written, reviewed and never instantiated: the code was correct
+throughout. Nothing was broken. It simply did not say so.
+
+**The second test is the one worth keeping.** Asserting the release line appears is nearly free
+and would pass against a version that logged it unconditionally — including on the branch where
+the release is *refused*, which would have the log stating that a lock this process never held
+had been handed back. That is worse than the silence it replaced. So the pair is pinned: the
+refusal says "not releasing" and must not say "released", and the marker is still on disk
+afterwards, so the log and the disk agree. Mutation-checked by moving the new line above the
+refusal branch — the second test fails, the first still passes.
 
 ### The disposal rule could not reach the one thing it most needed to
 

@@ -103,6 +103,16 @@ public sealed class JsonSessionMarkerStore(string repositoryRoot, IVersioLogger?
             }
 
             File.Delete(Path);
+
+            // Said out loud, because until this line the log recorded the claim and never the
+            // handing back: a clean shutdown and a crash left the same trace in the file for
+            // the run that ended. The only evidence of the difference was in the NEXT run's
+            // log, where the opener reports finding a marker whose process is gone - which is
+            // no use at all to somebody reading the log of the session that misbehaved.
+            //
+            // The two failure paths here have always logged. It was the successful one - the
+            // one that runs on every ordinary exit - that was silent.
+            _log.Debug(LogCategory.Lock, $"released this repository in {Path}");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
