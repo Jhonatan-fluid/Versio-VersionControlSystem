@@ -236,7 +236,7 @@ class Exporter(object):
         nothing had ever written.
 
         The file is EXPORT-ONLY. It is written for review and is never applied back:
-        see EXPORT_ONLY_SUFFIXES in versio_types for why an import path is not merely
+        see EXPORT_ONLY_FORMS in versio_types for why an import path is not merely
         missing but deliberately absent.
         """
         refs = versio_libraries.read_references(

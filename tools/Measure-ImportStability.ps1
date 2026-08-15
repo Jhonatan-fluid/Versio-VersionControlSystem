@@ -118,7 +118,8 @@ $results  = @()
 for ($n = 1; $n -le $Cycles; $n++) {
     Write-Host "`n[cycle $n] importing the mirror back into the copy" -ForegroundColor Cyan
     $ri = & "$tools\Run-Codesys.ps1" -Script "$scripts\versio_import.py" `
-        -Job @{ project = $copyProject; src = $mirror; save = $true } -Profile $Profile -Codesys $Codesys
+        -Job @{ schema = 2; project = $copyProject; src = $mirror; save = $true;
+                plan = (& "$tools\New-ImportPlan.ps1" -Mirror $mirror) } -Profile $Profile -Codesys $Codesys
     if ($ri.ExitCode -ne 0) { throw "cycle $n import failed (exit $($ri.ExitCode))" }
     ($ri.Events | Where-Object t -eq 'summary') | ConvertTo-Json -Compress | Write-Host
     $warned = $ri.Events | Where-Object t -eq 'warning'

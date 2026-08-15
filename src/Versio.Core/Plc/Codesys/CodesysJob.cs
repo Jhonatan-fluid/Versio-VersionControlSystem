@@ -19,6 +19,19 @@ public sealed record ProjectJob
 
     /// <summary>Export destination, or import source, depending on the operation.</summary>
     public required string Path { get; init; }
+
+    /// <summary>
+    /// What an import of <see cref="Path"/> should do, decided C#-side. Required for an
+    /// import — <see cref="CodesysJob.ToJson"/> refuses one without it — and meaningless for
+    /// an export or a probe.
+    /// </summary>
+    /// <remarks>
+    /// The script executes exactly this and decides nothing itself; the filename-derived
+    /// walk it used to run is gone, because that walk was the shared root cause of G3–G6.
+    /// <c>LocalCodesysRunner</c> computes a plan when its caller did not supply one, so
+    /// every import is plan-driven whichever door it came through.
+    /// </remarks>
+    public ImportPlan? Plan { get; init; }
 }
 
 /// <summary>
@@ -85,10 +98,26 @@ public sealed record CodesysJob
 
         var only = Projects[0];
 
+        if (Operation == CodesysOperation.Import && only.Plan is null)
+        {
+            // Same reasoning as the single-project refusal above: fail here, before the
+            // 17-31 s cold start, in words that name the missing thing. The script executes
+            // a plan and nothing else - handing it an import job without one would be asking
+            // it to fall back to the filename-derived walk this schema exists to retire.
+            throw new InvalidOperationException(
+                "an import job carries a plan; this one does not. LocalCodesysRunner "
+                + "computes one from the mirror when its caller has not — a job built by "
+                + "hand must do the same through IPlcProjectFormat.PlanImport.");
+        }
+
         return JsonSerializer.Serialize(new JobDto
         {
             Op = Operation.ToString().ToLowerInvariant(),
-            Schema = 1,
+
+            // 2 since the plan-driven import (Phase 1 of docs/CODESYS-IMPORT-PLAN.md).
+            // The scripts REFUSE a schema they do not expect rather than half-executing
+            // it — a stale extracted script meeting a newer job file must die loudly.
+            Schema = 2,
             OperationId = OperationId,
             Profile = Profile,
             ScrubTimestamps = ScrubTimestamps,
@@ -105,6 +134,7 @@ public sealed record CodesysJob
 
             Src = Operation == CodesysOperation.Import ? only.Path : null,
             BindingId = only.BindingId,
+            Plan = only.Plan is null ? null : PlanDto.From(only.Plan),
 
             // Still written, and still read by nothing. Kept because it costs one line and is
             // the shape a batching protocol would take; the refusal above is what makes its
@@ -137,6 +167,7 @@ public sealed record CodesysJob
         [JsonPropertyName("out")] public string? Out { get; set; }
         [JsonPropertyName("src")] public string? Src { get; set; }
         [JsonPropertyName("bindingId")] public string? BindingId { get; set; }
+        [JsonPropertyName("plan")] public PlanDto? Plan { get; set; }
         [JsonPropertyName("projects")] public List<ProjectDto> Projects { get; set; } = [];
     }
 
@@ -145,6 +176,55 @@ public sealed record CodesysJob
         [JsonPropertyName("bindingId")] public string BindingId { get; set; } = "";
         [JsonPropertyName("project")] public string Project { get; set; } = "";
         [JsonPropertyName("path")] public string Path { get; set; } = "";
+    }
+
+    /// <summary>The plan as the script reads it.</summary>
+    /// <remarks>
+    /// The action and skip tokens below are the wire protocol — <c>versio_import.py</c>
+    /// dispatches on them by string, so renaming an enum member C#-side must not change
+    /// them. Warnings and the missing-file list deliberately do not travel: they are for the
+    /// person and the log, both of which live on this side of the process boundary.
+    /// </remarks>
+    private sealed class PlanDto
+    {
+        [JsonPropertyName("files")] public List<PlanFileDto> Files { get; set; } = [];
+
+        public static PlanDto From(ImportPlan plan) => new()
+        {
+            Files = [.. plan.Files.Select(f => new PlanFileDto
+            {
+                Path = f.Path,
+                Action = f.Action switch
+                {
+                    PlannedAction.ApplyText => "text",
+                    PlannedAction.ApplyTyped => "typed",
+                    PlannedAction.ApplyNative => "native",
+                    PlannedAction.Create => "create",
+                    _ => "skip",
+                },
+                Skip = f.Skip switch
+                {
+                    PlannedSkip.NotSkipped => null,
+                    PlannedSkip.Bookkeeping => "bookkeeping",
+                    PlannedSkip.ExportOnly => "exportOnly",
+                    PlannedSkip.Stray => "stray",
+                    _ => "unknownForm",
+                },
+                Name = f.Name,
+                Resolve = f.Resolve.Count > 0 ? [.. f.Resolve] : null,
+                Sibling = f.ImportableSibling,
+            })],
+        };
+    }
+
+    private sealed class PlanFileDto
+    {
+        [JsonPropertyName("path")] public string Path { get; set; } = "";
+        [JsonPropertyName("action")] public string Action { get; set; } = "";
+        [JsonPropertyName("skip")] public string? Skip { get; set; }
+        [JsonPropertyName("name")] public string? Name { get; set; }
+        [JsonPropertyName("resolve")] public List<string>? Resolve { get; set; }
+        [JsonPropertyName("sibling")] public string? Sibling { get; set; }
     }
 }
 

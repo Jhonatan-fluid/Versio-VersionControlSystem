@@ -170,10 +170,70 @@ public class CodesysJobTests
         var json = (Job(new ProjectJob
         {
             BindingId = "b-1", ProjectPath = @"C:\w\A.project", Path = @"C:\w\A",
+            Plan = new Versio.Core.Plc.ImportPlan { Files = [] },
         }) with { Operation = CodesysOperation.Import }).ToJson();
 
         Assert.Contains("\"src\"", json);
         Assert.DoesNotContain("\"out\"", json);
+    }
+
+    [Fact]
+    public void An_import_job_without_a_plan_is_refused_here_rather_than_by_python()
+    {
+        // Same argument as the multi-project refusal below: fail before the 17-31 s cold
+        // start, in words naming the missing thing. The script executes a plan and nothing
+        // else - its filename-derived walk is gone, so a planless job has no meaning it
+        // could fall back to.
+        var ex = Assert.Throws<InvalidOperationException>(() => (Job(new ProjectJob
+        {
+            BindingId = "b-1", ProjectPath = @"C:\w\A.project", Path = @"C:\w\A",
+        }) with { Operation = CodesysOperation.Import }).ToJson());
+
+        Assert.Contains("plan", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_plan_travels_in_the_words_the_script_dispatches_on()
+    {
+        // The action and skip tokens are the wire protocol: versio_import.py switches on
+        // these strings, so a C#-side enum rename must not reach the JSON. Asserted
+        // against the serialized text for exactly that reason.
+        var json = (Job(new ProjectJob
+        {
+            BindingId = "b-1", ProjectPath = @"C:\w\A.project", Path = @"C:\w\A",
+            Plan = new Versio.Core.Plc.ImportPlan
+            {
+                Files =
+                [
+                    new Versio.Core.Plc.PlannedFile
+                    {
+                        Path = "App/Simulation.st",
+                        Action = Versio.Core.Plc.PlannedAction.ApplyText,
+                        Name = "Simulation",
+                        Resolve = ["App", "Simulation"],
+                    },
+                    new Versio.Core.Plc.PlannedFile
+                    {
+                        Path = "App/Task Configuration.xml",
+                        Action = Versio.Core.Plc.PlannedAction.Skip,
+                        Skip = Versio.Core.Plc.PlannedSkip.ExportOnly,
+                        ImportableSibling = "App/Task Configuration.tasks.yaml",
+                    },
+                ],
+            },
+        }) with { Operation = CodesysOperation.Import }).ToJson();
+
+        Assert.Contains("\"schema\": 2", json);
+        Assert.Contains("\"action\": \"text\"", json);
+        Assert.Contains("\"action\": \"skip\"", json);
+        Assert.Contains("\"skip\": \"exportOnly\"", json);
+        Assert.Contains("\"sibling\": \"App/Task Configuration.tasks.yaml\"", json);
+        Assert.Contains("\"resolve\"", json);
+
+        // Warnings and the missing-file list stay on this side of the process boundary -
+        // they are for the person and the log, and the script has no use for them.
+        Assert.DoesNotContain("missingFromMirror", json);
+        Assert.DoesNotContain("warnings", json);
     }
 
     [Fact]

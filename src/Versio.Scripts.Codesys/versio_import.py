@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
 # REMEMBER: IronPython 2.7 inside CODESYS.
 #
-# Versio importer. Walks an export tree and applies it back to a project.
+# Versio importer. Executes a PLAN against a project - it no longer walks the export tree
+# to decide anything. The plan arrives in the job file (schema 2), computed C#-side from
+# the manifest by CodesysImportPlanner, and says per file: apply as text, apply through
+# the typed API, hand to import_native, create, or skip and why. Files the plan does not
+# mention are warned about and never touched.
 #
-# Strategy, in order of preference:
+# Strategy for the apply steps, in order of preference:
 #   1. ST objects  -> located in the tree and updated IN PLACE via
 #                     textual_declaration.replace() / textual_implementation.replace().
 #                     No removal, no re-creation, no conflict resolution: the object keeps
@@ -23,7 +27,8 @@
 # which is the reported "Could not cast: System.String in System.Char" failure.
 #
 # Usage: --runscript=versio_import.py --scriptargs:"<job.json>"
-# job.json: { "project": "...", "src": "<export root>", "save": true }
+# job.json: { "schema": 2, "project": "...", "src": "<export root>", "save": true,
+#             "plan": { "files": [ {"path", "action", "skip", "name", "resolve", "sibling"} ] } }
 
 import io
 import json
@@ -39,8 +44,7 @@ from versio_decl import (DUT_ALIAS, DUT_ENUM, DUT_STRUCT, DUT_UNION,  # noqa: E4
                          KIND_DUT, KIND_FUNCTION, KIND_FUNCTION_BLOCK,
                          KIND_INTERFACE, KIND_PROGRAM, parse_declaration)
 from versio_text import normalize_decl_only, split_st  # noqa: E402
-from versio_types import (is_export_only, is_typed_form,  # noqa: E402
-                          is_versio_file, type_of, typed_sibling_candidates)
+from versio_types import is_versio_file  # noqa: E402
 import versio_yaml  # noqa: E402
 
 
@@ -87,35 +91,22 @@ def read_text(path):
         return f.read()
 
 
-# Suffixes stripped to recover an object name from a file name. Longest first so that
-# ".gvl.st" is matched before ".st".
+# Suffixes that decide HOW a textual file is applied - declaration only, implementation
+# only, or both halves. Longest first so ".gvl.st" is matched before ".st".
+#
+# WHAT to do with a file, and WHICH object it is, no longer come from its name at all:
+# the plan carries both, computed C#-side from the manifest (CodesysImportPlanner). The
+# helpers that used to derive them here - object_name_from_file, and the disk probe for a
+# typed sibling - are gone with the walk that called them. This list survives because the
+# apply step still differs by suffix, and that really is a property of the file.
 SUFFIXES = [".gvl.st", ".gvl.xml", ".vis.xml", ".action.st", ".transition.st", ".st", ".xml"]
 
 
-def object_name_from_file(file_name):
-    """'Conveyor.Execute.action.st' -> ('Conveyor', 'Execute', '.action.st')"""
+def suffix_of(file_name):
     for suffix in SUFFIXES:
         if file_name.endswith(suffix):
-            stem = file_name[:-len(suffix)]
-            if "." in stem:
-                parent, child = stem.rsplit(".", 1)
-                return parent, child, suffix
-            return None, stem, suffix
-    return None, file_name, ""
-
-
-def typed_sibling_for(abs_path):
-    """The typed file sitting beside this native one, by name, or None.
-
-    The RULE lives in versio_types (which suffixes pair with a .xml); the LOOKING lives
-    here, because this is the half that is allowed to touch a filesystem. Returns the name
-    rather than True so the event can say which file won: "skipped because X is
-    authoritative" is a sentence somebody can act on.
-    """
-    for candidate in typed_sibling_candidates(abs_path):
-        if os.path.isfile(candidate):
-            return os.path.basename(candidate)
-    return None
+            return suffix
+    return ""
 
 
 def _same(current, wanted):
@@ -190,9 +181,22 @@ class ReplaceHandler(scriptengine.NativeImportHandler):  # type: ignore
 
 
 class Importer(object):
-    def __init__(self, proj, src_root):
+    """Executes a plan. Decides nothing.
+
+    The walk that used to live here derived everything from file names, and that
+    derivation was the shared root cause of four of the import plan's gaps: a created
+    object named after its file instead of its declaration (G3), encoded stems compared
+    against raw object names (G4), the owner split guessed from a dot (G5), and any
+    unrecognised file handed to import_native (G6). The plan is computed C#-side from the
+    manifest - CodesysImportPlanner, pure and tested in milliseconds - and arrives through
+    the job file. What remains here is the half only this process can do: calling the
+    ScriptEngine.
+    """
+
+    def __init__(self, proj, src_root, plan):
         self.proj = proj
         self.src_root = src_root
+        self.plan = plan
         self.updated = 0
         self.unchanged = 0
         self.missing = 0
@@ -216,17 +220,10 @@ class Importer(object):
         self.warnings.append({"code": code, "path": path, "detail": detail})
         emit({"t": "warning", "code": code, "path": path, "detail": detail})
 
-    def skip_one_way(self, rel_path):
-        """Note an export-only file that the import deliberately leaves alone.
-
-        NOT a warning. A warning that fires on every single import of every project
-        that has a library manager is noise, and noise is how a real native-import
-        failure gets read past - the exact failure mode _coverage.md caused before it
-        was excluded. It is emitted and counted instead, so the log answers "what
-        happened to my libraries.yaml edit" without anybody having to guess.
-        """
-        self.one_way += 1
-        emit({"t": "not_imported", "path": rel_path, "reason": "EXPORT_ONLY"})
+    # An export-only skip is emitted and counted, NOT warned. A warning that fires on
+    # every single import of every project that has a library manager is noise, and noise
+    # is how a real native-import failure gets read past - the exact failure mode
+    # _coverage.md caused before it was excluded. announce_skip carries the rule now.
 
     def apply_st(self, obj, rel_path, abs_path, suffix):
         content = read_text(abs_path)
@@ -276,21 +273,23 @@ class Importer(object):
         else:
             self.unchanged += 1
 
-    def create_textual(self, parts, abs_path, rel_path, suffix):
+    def create_textual(self, owner_parts, name, abs_path, rel_path, suffix):
         """Create a textual object that does not exist yet.
 
         Everything create_pou / create_dut need is stated in the declaration itself, so it
         is parsed rather than guessed. An unrecognised declaration is REPORTED, never
         approximated: creating the wrong kind of object is worse than creating none.
+
+        The NAME arrives from the plan, which read it out of the declaration C#-side -
+        this used to be parts[-1], the file's stem, which is how PROGRAM Foo in Bar.st
+        created an object called Bar (G3).
         """
-        owner_parts = parts[:-1]
         owner = find_by_path(self.proj, owner_parts) if owner_parts else self.proj
         if owner is None:
             self.missing += 1
             self.warn("PARENT_NOT_FOUND", rel_path, "/".join(owner_parts))
             return None
 
-        name = parts[-1]
         content = read_text(abs_path)
         declaration = normalize_decl_only(content) if suffix == ".gvl.st" else split_st(content)[0]
         info = parse_declaration(declaration)
@@ -370,7 +369,7 @@ class Importer(object):
         ("interval", "interval", "str"),
     ]
 
-    def apply_tasks(self, abs_path, rel_path):
+    def apply_tasks(self, abs_path, rel_path, chain):
         """Apply a `.tasks.yaml` through the typed API.
 
         THIS IS THE POINT OF PHASE 4. Task configuration used to be handed to
@@ -378,24 +377,20 @@ class Importer(object):
         import without being asked, and threw on the task objects on every import after the
         first while the run reported failed: 0. Setting the fields through properties
         instead means CODESYS is told exactly what changed and nothing else moves.
+
+        `chain` is the plan's resolve path to the configuration object - real names, from
+        the manifest. The file's directory and its own `configuration:` key used to supply
+        this; the manifest is the record the export actually wrote, so it wins.
         """
         top, list_key, tasks = versio_yaml.parse_document(read_text(abs_path))
         if list_key != "tasks":
             self.warn("TASKS_DOCUMENT_UNRECOGNISED", rel_path, str(list_key))
             return
 
-        # The configuration object sits where the file does: the mirror's directory path is
-        # the project's object path, which is the whole reason the export writes it there.
-        parts = [p for p in os.path.dirname(rel_path).replace("\\", "/").split("/") if p]
-        config_name = top.get("configuration")
-        if not config_name:
-            self.warn("TASKS_CONFIG_NAME_MISSING", rel_path)
-            return
-
-        config = find_by_path(self.proj, parts + [config_name])
+        config = find_by_path(self.proj, chain)
         if config is None:
             self.missing += 1
-            self.warn("PARENT_NOT_FOUND", rel_path, "/".join(parts + [config_name]))
+            self.warn("PARENT_NOT_FOUND", rel_path, "/".join(chain))
             return
 
         by_name = {}
@@ -464,101 +459,145 @@ class Importer(object):
                   "field": key, "value": u"%s" % (wanted,)})
         return changed
 
-    def handle_file(self, abs_path, rel_path):
-        file_name = os.path.basename(rel_path)
-        if is_versio_file(file_name):
+    def announce_skip(self, entry):
+        """Say what is deliberately not imported, in the words the log already uses.
+
+        Bookkeeping is silent: it is present in every mirror, and a line that always
+        appears is how a real one gets read past. exportOnly emits the not_imported event -
+        reason TYPED_SIBLING when the manifest names an editable sibling, EXPORT_ONLY when
+        the change belongs in the IDE - so the log keeps saying "edit X instead". stray and
+        unknownForm WARN, and that warning IS the fix for G6: before the plan, a stray file
+        was not skipped at all - the walk's last branch handed it to import_native.
+        """
+        rel_path = entry["path"]
+        skip = entry.get("skip")
+        if skip == "bookkeeping":
             return
-        if is_export_only(file_name):
-            # Belt and braces: run() already filters these out. Guarding both entry
-            # points is the lesson from _coverage.md, where the importer knew about
-            # _manifest.json by name in two places and a third file was added to
-            # neither - and CODESYS was handed markdown as native XML.
-            self.skip_one_way(rel_path)
-            return
-
-        rel_dir = os.path.dirname(rel_path).replace("\\", "/")
-        parent_name, obj_name, suffix = object_name_from_file(file_name)
-
-        parts = [p for p in rel_dir.split("/") if p]
-        if parent_name:
-            parts = parts + [parent_name, obj_name]
-        else:
-            parts = parts + [obj_name]
-
-        if not suffix.endswith(".st"):
-            # A native file that has a TYPED SIBLING is export-only: the sibling is the
-            # importable form and this one is written for fidelity and for the diff.
-            #
-            # Sibling adjacency rather than a suffix of its own, because renaming
-            # `Task Configuration.xml` would rewrite a committed file for a reason that has
-            # nothing to do with the project. Once Phase 1 lands, the plan says which files
-            # are importable and this rule can go.
-            sibling = typed_sibling_for(abs_path)
-            if sibling is not None:
+        if skip == "exportOnly":
+            self.one_way += 1
+            sibling = entry.get("sibling")
+            if sibling:
                 emit({"t": "not_imported", "path": rel_path,
-                      "reason": "TYPED_SIBLING", "sibling": sibling})
-                self.one_way += 1
-                return
-
-            # Native XML: import into the OWNING node. This both replaces an existing
-            # object in place and creates one that is not there yet, so it needs no
-            # existence check of its own.
-            owner_parts = parts[:-1]
-            owner = find_by_path(self.proj, owner_parts) if owner_parts else self.proj
-            if owner is None:
-                self.missing += 1
-                self.warn("PARENT_NOT_FOUND", rel_path, "/".join(owner_parts))
-                return
-
-            existed = find_by_path(self.proj, parts) is not None
-            try:
-                handler = ReplaceHandler(self)
-                owner.import_native([abs_path], None, handler)
-
-                # import_native DOES NOT RAISE when an individual object fails. CODESYS hands
-                # the exception to the handler's progress callback and carries on, so the call
-                # above returns normally on a run that lost objects - which is why this branch
-                # used to count `native += 1` and leave `failed` at zero, and the summary read
-                # `native: 8, failed: 0` on the G11 runs where MainTask and VISU_TASK both
-                # threw. The warnings were emitted all along; the one-line answer underneath
-                # them said the opposite, and the one-line answer is what gets read.
-                #
-                # A file, not an object: `failed` counts files everywhere else in this script
-                # (CREATE_FAILED, APPLY_FAILED, NATIVE_IMPORT_FAILED are all per file), so a
-                # file that lost two objects counts once here and the per-object detail stays
-                # in the warnings where it already was. Mixing the two units in one counter
-                # would make the summary wrong in a subtler way than the bug being fixed.
-                if handler.lost:
-                    self.failed += 1
-                    self.partial += 1
-                    emit({"t": "native_partial", "path": rel_path,
-                          "into": "/".join(owner_parts) or "<project>",
-                          "pasted": handler.pasted, "errors": handler.errors,
-                          "refused": handler.refused})
-                    return
-
-                self.native += 1
-                if not existed:
-                    self.created += 1
-                emit({"t": "native_imported", "path": rel_path,
-                      "into": "/".join(owner_parts) or "<project>",
-                      "replaced": existed})
-            except Exception as e:
-                self.failed += 1
-                self.warn("NATIVE_IMPORT_FAILED", rel_path, str(e))
+                      "reason": "TYPED_SIBLING", "sibling": os.path.basename(sibling)})
+            else:
+                emit({"t": "not_imported", "path": rel_path, "reason": "EXPORT_ONLY"})
             return
+        if skip == "stray":
+            self.warn("NOT_IN_EXPORT", rel_path,
+                      "not a file the export writes - never handed to the toolchain")
+            return
+        self.warn("FORM_NOT_UNDERSTOOD", rel_path, str(entry.get("name")))
 
-        obj = find_by_path(self.proj, parts)
+    def entry_paths(self, entry, needs_chain=True):
+        """The absolute path, relative path and resolve chain of one plan entry, or None
+        when the entry cannot be executed - its file vanished after planning, or the plan
+        carries no resolve chain to act on. Both are reported, not guessed around."""
+        rel_path = entry["path"]
+        abs_path = os.path.join(self.src_root, rel_path)
+        if not os.path.isfile(abs_path):
+            self.failed += 1
+            self.warn("PLANNED_FILE_MISSING", rel_path,
+                      "was in the mirror when the import was planned")
+            return None
+
+        chain = entry.get("resolve") or []
+        if needs_chain and not chain:
+            self.failed += 1
+            self.warn("PLAN_ENTRY_UNRESOLVABLE", rel_path, "no resolve chain")
+            return None
+
+        return abs_path, rel_path, chain
+
+    def handle_textual(self, entry):
+        located = self.entry_paths(entry)
+        if located is None:
+            return
+        abs_path, rel_path, chain = located
+
+        obj = find_by_path(self.proj, chain)
         if obj is None:
-            obj = self.create_textual(parts, abs_path, rel_path, suffix)
+            # "text" and "create" converge here on purpose: a planned update whose object
+            # is gone (the manifest is older than the project) is created, and a planned
+            # create that already exists is updated. The plan says what SHOULD exist;
+            # the project says what does; acting on the difference is this side's job.
+            obj = self.create_textual(chain[:-1], entry.get("name") or chain[-1],
+                                      abs_path, rel_path, suffix_of(os.path.basename(rel_path)))
             if obj is None:
                 return
 
         try:
-            self.apply_st(obj, rel_path, abs_path, suffix)
+            self.apply_st(obj, rel_path, abs_path,
+                          suffix_of(os.path.basename(rel_path)))
         except Exception as e:
             self.failed += 1
             self.warn("APPLY_FAILED", rel_path, str(e))
+
+    def handle_native(self, entry):
+        located = self.entry_paths(entry)
+        if located is None:
+            return
+        abs_path, rel_path, chain = located
+
+        # Native XML: import into the OWNING node. This both replaces an existing object
+        # in place and creates one that is not there yet, so it needs no existence check
+        # of its own. The chain is the plan's - real decoded names from the manifest,
+        # where the walk used to compare percent-encoded stems against raw names (G4).
+        owner_parts = chain[:-1]
+        owner = find_by_path(self.proj, owner_parts) if owner_parts else self.proj
+        if owner is None:
+            self.missing += 1
+            self.warn("PARENT_NOT_FOUND", rel_path, "/".join(owner_parts))
+            return
+
+        existed = find_by_path(self.proj, chain) is not None
+        try:
+            handler = ReplaceHandler(self)
+            owner.import_native([abs_path], None, handler)
+
+            # import_native DOES NOT RAISE when an individual object fails. CODESYS hands
+            # the exception to the handler's progress callback and carries on, so the call
+            # above returns normally on a run that lost objects - which is why this branch
+            # used to count `native += 1` and leave `failed` at zero, and the summary read
+            # `native: 8, failed: 0` on the G11 runs where MainTask and VISU_TASK both
+            # threw. The warnings were emitted all along; the one-line answer underneath
+            # them said the opposite, and the one-line answer is what gets read.
+            #
+            # A file, not an object: `failed` counts files everywhere else in this script
+            # (CREATE_FAILED, APPLY_FAILED, NATIVE_IMPORT_FAILED are all per file), so a
+            # file that lost two objects counts once here and the per-object detail stays
+            # in the warnings where it already was. Mixing the two units in one counter
+            # would make the summary wrong in a subtler way than the bug being fixed.
+            if handler.lost:
+                self.failed += 1
+                self.partial += 1
+                emit({"t": "native_partial", "path": rel_path,
+                      "into": "/".join(owner_parts) or "<project>",
+                      "pasted": handler.pasted, "errors": handler.errors,
+                      "refused": handler.refused})
+                return
+
+            self.native += 1
+            if not existed:
+                self.created += 1
+            emit({"t": "native_imported", "path": rel_path,
+                  "into": "/".join(owner_parts) or "<project>",
+                  "replaced": existed})
+        except Exception as e:
+            self.failed += 1
+            self.warn("NATIVE_IMPORT_FAILED", rel_path, str(e))
+
+    def warn_unplanned(self, planned_paths):
+        """Files on disk the plan has never heard of: they arrived between planning and
+        execution. Warned, never imported - G6's rule does not get a race-window
+        exception, and a file nobody planned is a file nobody agreed to apply."""
+        for dir_path, _dir_names, file_names in os.walk(self.src_root):
+            for file_name in sorted(file_names):
+                rel_path = os.path.relpath(
+                    os.path.join(dir_path, file_name), self.src_root).replace("\\", "/")
+                if rel_path in planned_paths or is_versio_file(file_name):
+                    continue
+                self.warn("NOT_IN_PLAN", rel_path,
+                          "appeared after the import was planned - not imported")
 
     def run(self):
         """Two phases, in this order, with a save between them.
@@ -574,46 +613,38 @@ class Importer(object):
         Worse, the exception is swallowed by import_native's progress callback, so the
         import silently does nothing and the result LOOKS correct. Separating the phases
         and saving in between lets the object manager settle first.
+
+        The lists used to be built by walking the mirror; they are read off the plan now.
+        The phase split and everything below it survives unchanged - WHAT to import moved
+        C#-side, WHEN to save did not.
         """
-        textual = []
-        typed = []
-        native = []
-        for dir_path, _dir_names, file_names in os.walk(self.src_root):
-            for file_name in sorted(file_names):
-                # Versio's own bookkeeping - the manifest and the coverage report.
-                # They describe the export; they are not objects in it, and handing
-                # one to CODESYS as native XML is how a junk object gets created.
-                if is_versio_file(file_name):
-                    continue
+        entries = self.plan.get("files") or []
+        by_action = {}
+        for entry in entries:
+            by_action.setdefault(entry.get("action"), []).append(entry)
 
-                # Real project state, written for review, with no import path that
-                # can be trusted - library references today. Skipped here rather than
-                # sorted into the native list, because "native" means "hand it to
-                # import_native" and this is YAML.
-                if is_export_only(file_name):
-                    self.skip_one_way(
-                        os.path.relpath(os.path.join(dir_path, file_name),
-                                        self.src_root).replace("\\", "/"))
-                    continue
+        for entry in by_action.get("skip", []):
+            self.announce_skip(entry)
 
-                abs_path = os.path.join(dir_path, file_name)
-                rel_path = os.path.relpath(abs_path, self.src_root).replace("\\", "/")
-
-                # Typed files go with the textual phase, not the native one: they are
-                # applied through properties and never reach import_native, so they must
-                # not be in the list whose name means "hand this to CODESYS as XML".
-                if is_typed_form(file_name):
-                    typed.append((abs_path, rel_path))
-                else:
-                    (textual if file_name.endswith(".st") else native).append(
-                        (abs_path, rel_path))
+        # "create" joins the textual phase: the planner only plans creates for textual
+        # sources, and handle_textual converges create-and-update anyway. Typed files go
+        # with the textual phase, not the native one: they are applied through properties
+        # and never reach import_native, so they must not be in the list whose name means
+        # "hand this to CODESYS as XML".
+        textual = by_action.get("text", []) + by_action.get("create", [])
+        typed = by_action.get("typed", [])
+        native = by_action.get("native", [])
 
         emit({"t": "phase", "name": "textual", "files": len(textual) + len(typed)})
-        for abs_path, rel_path in textual:
-            self.handle_file(abs_path, rel_path)
-        for abs_path, rel_path in typed:
+        for entry in textual:
+            self.handle_textual(entry)
+        for entry in typed:
+            located = self.entry_paths(entry)
+            if located is None:
+                continue
+            abs_path, rel_path, chain = located
             try:
-                self.apply_tasks(abs_path, rel_path)
+                self.apply_tasks(abs_path, rel_path, chain)
             except Exception as e:
                 self.failed += 1
                 self.warn("TASKS_APPLY_FAILED", rel_path, str(e))
@@ -623,8 +654,20 @@ class Importer(object):
             emit({"t": "phase_saved", "after": "textual"})
 
         emit({"t": "phase", "name": "native", "files": len(native)})
-        for abs_path, rel_path in native:
-            self.handle_file(abs_path, rel_path)
+        for entry in native:
+            self.handle_native(entry)
+
+        # An action this script has never heard of would otherwise vanish without a trace:
+        # bucketed above, consumed by nothing, and exempt from NOT_IN_PLAN because the file
+        # IS in the plan. A newer C# planner speaking a newer verb must be heard refusing,
+        # not silently ignored - the same rule as the schema gate, one level down.
+        for action, dropped in by_action.items():
+            if action not in ("skip", "text", "create", "typed", "native"):
+                for entry in dropped:
+                    self.failed += 1
+                    self.warn("UNKNOWN_PLAN_ACTION", entry.get("path"), str(action))
+
+        self.warn_unplanned(set(entry.get("path") for entry in entries))
 
 
 def main():
@@ -635,12 +678,27 @@ def main():
     with open(args[0], "r") as f:
         job = json.load(f)
 
+    # BEFORE the project is opened, so a refused job holds nothing. The schema is the job
+    # file's shape, and this script executes exactly the plan a schema-2 job carries -
+    # refusing an unexpected schema outright beats half-executing it, which is how a stale
+    # extracted script meeting a newer job file would corrupt quietly.
+    schema = job.get("schema", 1)
+    if schema != 2:
+        emit({"t": "fatal",
+              "msg": "job schema %s is not the 2 this script executes - refusing" % schema})
+        return 2
+
+    plan = job.get("plan")
+    if plan is None:
+        emit({"t": "fatal", "msg": "a schema 2 import job carries a plan; this one does not"})
+        return 2
+
     emit({"t": "start", "project": job["project"], "src": job["src"]})
 
     proj = remember_project(scriptengine.projects.open(job["project"]))
     emit({"t": "opened", "path": str(proj.path)})
 
-    imp = Importer(proj, job["src"])
+    imp = Importer(proj, job["src"], plan)
     imp.run()
 
     # `partial` is in here because a native import that lost some objects still applied the

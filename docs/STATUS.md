@@ -1,6 +1,16 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,388 unit + 478 UI + 198 integration, 0 skipped
+**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,419 unit + 478 UI + 198 integration, 0 skipped
+
+> **The import is plan-driven as of 2026-08-15 — Phase 1 of the import plan.** What an import
+> will do is decided C#-side by `CodesysImportPlanner`, pure, from `_manifest.json` and a
+> directory listing, before CODESYS starts; the job file (schema 2) carries the plan and
+> `versio_import.py` executes exactly it, deciding nothing. The filename-derived walk — the
+> shared root cause of gaps G3–G6 — is deleted, and a planless import job refuses to
+> serialize, so there is no door back to it. G3 and G6 are closed and **proven against real
+> CODESYS**: `PROGRAM Foo` in `Bar.st` creates `Foo`, and a `README.md` in the mirror is
+> warned about instead of being handed to CODESYS as native XML. See
+> [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md).
 
 > **Also 2026-08-15, on branch `GitImportPlan`: Phase 0 of the import plan started, and its
 > first probe found a defect that reaches users.** P7 measured what an import → export cycle does
@@ -112,7 +122,7 @@ opens. That is `SAFEGUARDS.md` phases 1–8, and phase 9 is features rather than
 
 ```
   CODESYS pipeline    ████████████████████  proven on a real project
-  Domain core         ████████████████████  1,388 tests, under 400 ms
+  Domain core         ████████████████████  1,419 tests, under 400 ms
   Vendor seam         ████████████████████  enforced from assembly metadata
   Infrastructure      ████████████████████  drives real CODESYS + real git
   Desktop shell       ███████████████████░  full git surface, diff, and a UI audit applied

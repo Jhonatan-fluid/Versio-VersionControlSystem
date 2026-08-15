@@ -176,70 +176,22 @@ def is_versio_file(file_name):
     return file_name in VERSIO_FILES
 
 
-# Files that are part of the PROJECT but travel one way only: exported for review,
-# never applied back.
-#
-# The export tree turns out to hold THREE kinds of file, not two:
+# The export tree holds THREE kinds of file, not two:
 #
 #   1. objects           - .st and .xml, exported and imported
 #   2. bookkeeping       - VERSIO_FILES, about the export rather than in it
 #   3. export-only       - real project state, written for the diff, but with no
-#                          import path that can be trusted
+#                          import path that can be trusted (EXPORT_ONLY_FORMS above:
+#                          library references, and the native half of a task pair)
 #
-# Library references are the first of the third kind. Handing this file to
-# import_native would be the _coverage.md defect again - CODESYS would be asked to
-# parse YAML as native XML and every import would carry a failure warning that is
-# always present and therefore always read past. Adding a library through the
-# scripting API is a different operation from importing an object, and doing it
-# wrongly rewires what the machine compiles against, so it is not attempted here:
-# the file is diff-only, and both the coverage report and the manifest say so.
-EXPORT_ONLY_SUFFIXES = (".libraries.yaml",)
-
-# Files the import applies through the toolchain's TYPED api rather than by handing them
-# over as native XML. The distinction matters to the importer twice over: these must not
-# reach import_native, and the native file BESIDE one of them must not either - that is
-# what stops CODESYS rewriting a task's core binding on every import (G7) and throwing on
-# the task objects on every import after the first (G11).
-TYPED_SUFFIXES = (".tasks.yaml",)
-
-
-def is_typed_form(file_name):
-    """True for a file the import applies through the typed api."""
-    lowered = file_name.lower()
-    for suffix in TYPED_SUFFIXES:
-        if lowered.endswith(suffix):
-            return True
-    return False
-
-
-def typed_sibling_candidates(path):
-    """The typed file names that would supersede this native one, if any existed.
-
-    PURE, and deliberately so: it answers "what would the pair be called", not "is it
-    there". THIS MODULE TOUCHES NO FILESYSTEM - it is the table-and-decision half that
-    PythonFileNameTests runs against the C# tables, and the first draft of this function
-    called os.path.isfile, which made it the only IO in the file and would have made it
-    untestable in the same breath as everything around it. The caller does the looking.
-
-    ADJACENCY, not a suffix of its own. `Task Configuration.xml` could have been renamed to
-    something self-describing, and that would rewrite a committed file for a reason with
-    nothing to do with the project - so the pair is recognised by sitting beside each other
-    instead. Once the importer is plan-driven, the plan says which files are importable and
-    this rule goes.
-    """
-    if not path.lower().endswith(".xml"):
-        return []
-    stem = path[:-len(".xml")]
-    return [stem + suffix for suffix in TYPED_SUFFIXES]
-
-
-def is_export_only(file_name):
-    """True for a file the export writes that the import must not feed to the toolchain."""
-    lowered = file_name.lower()
-    for suffix in EXPORT_ONLY_SUFFIXES:
-        if lowered.endswith(suffix):
-            return True
-    return False
+# The import side used to re-derive the third kind from file suffixes here -
+# is_export_only, is_typed_form, and typed_sibling_candidates, whose docstring promised
+# "once the importer is plan-driven, the plan says which files are importable and this
+# rule goes". The importer is plan-driven now (job schema 2), the plan is computed
+# C#-side from the manifest's per-file `form`, and those three functions went with the
+# walk that called them. What remains authoritative on this side is EXPORT_ONLY_FORMS -
+# the coverage report reads it, and TypeTableParityTests holds it equal to
+# ExportCoverage.IsExportOnly so the two languages cannot drift.
 
 
 # Why a type is skipped, and whether that is a decision or a gap.

@@ -1,10 +1,11 @@
 # Versio — closing the CODESYS import gaps
 
-**Date:** 2026-08-15 · **Phase 0 is complete: all nine probes measured. Phase 4 is built, both
-halves, closes G7 and G11, and the write is tested against a real project. All three honesty
-fixes are done.** Phases 1, 2, 3, 5 and 6 are not started. One Phase 4 item is still open and it
-is `TaskCatalog.cs`, the C# reader, so nothing outside python can read a `.tasks.yaml` yet.
-**Phase 1 is next.**
+**Date:** 2026-08-15 · **Phases 0, 4 and 1 are built. Phase 4 closes G7 and G11 with the
+write tested against a real project; Phase 1 closes G3 and G6 outright, G4's resolution half,
+and G5's recorded-object half — the import is plan-driven end to end.** All three honesty
+fixes are done. Phases 2, 3, 5 and 6 are not started; **`versio_native_equiv.py` is next**,
+then phases 2 and 3 together. One Phase 4 item is still open and it is `TaskCatalog.cs`, the
+C# reader, so nothing outside python can read a `.tasks.yaml` yet.
 
 > **This header said "nothing in phases 1–6 is built" for the whole of the session that built
 > Phase 4**, while the [build order](#build-order) below it and every G7/G11 row already said
@@ -15,7 +16,7 @@ is `TaskCatalog.cs`, the C# reader, so nothing outside python can read a `.tasks
 | | |
 |---|---|
 | Document | **The plan for making the import side a real bidirectional sync.** Deletes, renames, moves, typed task configuration, and a mirror that stops churning after every import |
-| Status | **Phase 0, Phase 4 and all three honesty fixes done; phases 1, 2, 3, 5, 6 not started.** Two gaps closed as unreachable, four API spellings corrected, two live defects fixed (G7, G11) — and one re-opened and closed again by that same fix, the task XML's one-wayness going unrecorded. The honesty fixes closed a third: **every import in the application's history logged a line of blanks**, and the one event that records Versio changing a task's CPU core binding logged as `· task_set` |
+| Status | **Phases 0, 4 and 1 done, with all three honesty fixes; phases 2, 3, 5, 6 not started.** Two gaps closed as unreachable, four API spellings corrected, four live defects fixed — G7 and G11 by Phase 4, G3 and G6 by Phase 1, with G4's resolution half and G5's recorded-object half beside them. The import is **plan-driven end to end**: decided C#-side from the manifest, refused without a plan, executed by a script that decides nothing |
 | Related | [`CODESYS.md`](CODESYS.md) — how CODESYS is driven today, and §12, the audit these gaps came from · [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) — what was measured · [`PLAN.md`](PLAN.md) — the architecture · [`SAFEGUARDS.md`](SAFEGUARDS.md) — what Versio refuses or waits for |
 
 > **These phase numbers are identifiers, not an order**, and they are **not** `PLAN.md`'s phases —
@@ -44,10 +45,10 @@ amount of reading, because it does not exist on the first cycle.
 |---|---|---|
 | G1 | **Deletes don't propagate** — delete a `.st`, colleague imports, the POU is still there | Open. P3 makes this **more** dangerous to fix than assumed: `remove()` dangles silently |
 | G2 | **Renames/moves duplicate** — rename in the mirror, a new object is created and the old one kept | Open, and **cleanly solvable**: P1/P2 proved identity survives both operations |
-| G3 | **New object named from the filename** — `create_textual` uses `parts[-1]` and throws away the parsed `info["name"]`, so `PROGRAM Foo` in `Bar.st` creates `Bar` | Open, but **smaller than budgeted**: P5 shows the awkward names cannot be created at all |
-| G4 | **Encoded names unresolvable** — looks up the *encoded* stem against raw names, giving a duplicate named `weird%3Cname%3E` | **Unreachable by creation** (P5). Still reachable for names a project already has — see the caveat under P5 |
-| G5 | **A dot in a name breaks the owner split** — `My.Thing.st` looks for member `Thing` of parent `My` | **Unreachable** (P5): CODESYS refuses to create `My.Thing` |
-| G6 | **Stray files go to `import_native`** — a `README.md` in the mirror is handed to CODESYS as native XML | Open. Fixed by Phase 1's shape check |
+| G3 | **New object named from the filename** — `create_textual` uses `parts[-1]` and throws away the parsed `info["name"]`, so `PROGRAM Foo` in `Bar.st` creates `Bar` | ✅ **CLOSED by Phase 1, 2026-08-15.** The plan carries the declaration's name and the script takes it; the disagreement is a warning naming both. **Proven live**: a `Bar.st` declaring `PROGRAM Foo` creates `Foo` against real CODESYS, in `ImportLoggingTests` |
+| G4 | **Encoded names unresolvable** — looks up the *encoded* stem against raw names, giving a duplicate named `weird%3Cname%3E` | ✅ **Resolution CLOSED by Phase 1, 2026-08-15**: chains are real decoded names from the manifest, built C#-side where `DecodeStem` lives and is parity-tested. What remains is the shortened-stem residue — a digest tail decodes to nothing, and such an object is reported as unresolvable rather than guessed at. Creation was already unreachable (P5) |
+| G5 | **A dot in a name breaks the owner split** — `My.Thing.st` looks for member `Thing` of parent `My` | **Unreachable by creation** (P5), and ✅ **the existing-object half CLOSED by Phase 1**: ownership comes from the manifest's parent-GUID chain, and for pre-schema-4 mirrors the recorded name disambiguates — a name equal to the whole stem is never split. Only a manifest-absent dotted *create* still splits, and P5 says CODESYS would refuse it anyway |
+| G6 | **Stray files go to `import_native`** — a `README.md` in the mirror is handed to CODESYS as native XML | ✅ **CLOSED by Phase 1, 2026-08-15.** A file that is neither a recorded object, bookkeeping, nor a recognisable source is skipped with a warning and never handed to the toolchain — including unrecorded YAML, and files appearing between planning and execution (`NOT_IN_PLAN`). **Proven live** with a real `README.md` in `ImportLoggingTests` |
 | G7 | **Task Configuration mutated on every import** — `Core2` `-1`→`-2`; documented as "diff-only", which it never was | ✅ **CLOSED by Phase 4, 2026-08-15.** `Core2` reads `-2,-1` across four consecutive snapshots where it used to move on the first cycle, and `Task Configuration.xml` has dropped out of the churn set entirely. **`-2,-1` is `MainTask,VISU_TASK`, and only the second number was ever the defect** — the baseline capture has MainTask at `-2` already, so **VISU_TASK's `-1` is the one G7 destroyed** and the one an integration test now asserts. Worth knowing before reading a diff of this file: a run where both read `-2` is the bug, not a run where either does |
 | G8 | **Managed library references unproven** — every fixture reference is a placeholder, so the `managed_library` branch has never executed | **Half closed**: P9 produces a real managed reference in one call, so no hand-built fixture is needed. (This row used to say 34 references; the Library Manager reports **21**) |
 | G9 | **Total path length unguarded** — stems capped at 80, the full path is not, and `.versio_staging` makes it 16 longer | Open, and **entirely ours**: P8 shows CODESYS imposes no limit of its own |
@@ -132,8 +133,9 @@ built in `SyncViewModel`. A plan discovered inside the script arrives 17–31 s 
 to. It also makes the decision a pure function — unit-testable in milliseconds, the way
 `CommitGate`, `ExportFormRules` and `SyncNarrative` already are.
 
-**Side benefit.** `StDeclarationParser` and `PathMapper` currently have **no production caller**.
-This gives them one, so the parity tests start protecting live code rather than a specification.
+**Side benefit — realised.** `StDeclarationParser` and `PathMapper` had **no production
+caller**; the planner is now one for both, so the parity tests protect live code rather than a
+specification.
 
 ---
 
@@ -204,8 +206,9 @@ already exists.**
 | ~~4th~~ | ✅ **`.tasks.yaml` parsed by its own reader, against committed bytes.** Landed 2026-08-15 | The cheap half of the typed path's missing coverage, and it needs **no CODESYS** — the same shape as the library test that has run for months. Verified non-vacuous by perturbing an expected value. ~~The expensive half, a real mutation applied to a project, stays in Phase 6~~ — it did not: it came next instead, as the row below |
 | ~~5th~~ | ✅ **The write, tested against a real project — and the two axes G11 hid behind, in the same run.** Landed 2026-08-15 | **Pulled forward from Phase 6, where it was scheduled dead last.** It was the third honesty fix and the expensive half of Phase 4's coverage, and they turned out to be **one test**: the same fixture, the same adopt-and-export scaffolding, the same CODESYS launches. Splitting them would have paid for that setup twice. It is also the item every other document already called load-bearing — the single step the whole G7/G11 argument rests on. See below |
 | ~~6th~~ | ✅ **The other two honesty fixes.** Landed 2026-08-15 | The uncounted native-import failure, and the import summary logged in the exporter's vocabulary — plus **four import events that had no handler at all**, `task_set` among them, so Versio changing a task's CPU core binding logged as the literal string `· task_set`. Each makes the *next* failure visible instead of silent |
-| **NEXT** | **Phase 1 — manifest-driven importer** | The foundation. Nothing else can be planned C#-side until the plan exists |
-| **8th** | **`versio_native_equiv.py`** | A shared prerequisite, not a phase. Phase 2's native content check needs it and so does Phase 5 — it was written down as a Phase 5 artifact and is needed earlier |
+| ~~7th~~ | ✅ **Phase 1 — manifest-driven importer.** Landed 2026-08-15, both halves: the pure planner behind the seam, then schema 2 and the script executing exactly the plan | The foundation. The walk that inferred everything from file names is deleted, not bypassed — a planless import job now refuses to serialize, so there is no door back to it |
+| **NEXT** | **`versio_native_equiv.py`** — moved up from 8th, unchanged reasons | |
+| ~~8th~~ | **`versio_native_equiv.py`** — see NEXT above | A shared prerequisite, not a phase. Phase 2's native content check needs it and so does Phase 5 — it was written down as a Phase 5 artifact and is needed earlier |
 | **9th** | **Phases 2 and 3 — deletes, renames, moves** | Together, as originally planned. Phase 3's detection reuses Phase 2's delete candidates |
 | **10th** | **Phase 5 — a mirror that stops churning** | Wants Phases 1–3 settled first, because it changes when files are rewritten and every earlier phase's diffs are easier to read without it |
 | **11th** | **Phase 6 — remaining gaps, tests, docs** | G8 and G9, the parity tests, the integration tests |
@@ -440,14 +443,37 @@ catch, written into the plan before the test could see it.
   to end, each G-numbered rule exercised with the input that used to break it, and three
   mutations (G3, G5, G6) verified to turn the suite red.
 
-**Script:** resolve with **`find("a", "b", "c")` varargs** using the manifest's real names — *not*
-a python list, which raises `TypeError: expected Array[str], got list`. `create_textual` takes its
-name from the plan (G3).
+✅ **Script, rebuilt 2026-08-15: `versio_import.py` executes a plan and decides nothing.**
+The walk is gone — `object_name_from_file`, the typed-sibling disk probe, and the
+"everything else must be native XML" fallback went with it, and `versio_types.py` lost
+`is_export_only` / `is_typed_form` / `typed_sibling_candidates`, whose own docstring had
+promised to go when this landed. What survives script-side is what only that process can do:
+the ScriptEngine calls, the two-phase order with its save, and the per-suffix *how* of a
+textual apply. Resolution stayed on `find_by_path`'s name walk rather than moving to `find`
+varargs — same result, chain-driven either way, and one less API shape to be wrong about.
+Files the plan never mentions are warned (`NOT_IN_PLAN`) and untouched, so the race window
+between planning and execution does not reopen G6.
 
-**Job file:** `CodesysJob` gains `plan`; bump `schema` 1 → 2, and refuse an unknown schema rather
-than half-executing it.
+✅ **Job file: schema 1 → 2**, `ProjectJob` carries the plan, and both sides refuse rather
+than half-execute: `ToJson` throws on a planless import before the 17–31 s cold start is
+paid, and the script dies on an unexpected schema before it opens the project.
 
-**Files:** `ImportPlanner.cs` (new), `CodesysJob.cs`, `versio_import.py`, `versio_types.py`.
+✅ **`LocalCodesysRunner` computes the plan when its caller did not supply one** — the IO
+half (manifest read, directory walk, text loads) beside the pure planner, so every import
+is plan-driven whichever door it came through, a test driving the runner directly included.
+The planner's warnings reach the log at Warn, and a mirror with files missing gets the
+sentence that answers "I deleted the file, why is the object still there". **Phase 2 lifts
+plan computation into the orchestrator** so the confirmation dialog and the execution share
+one plan; the carriage for that (plan on the job) already exists.
+
+**Proven live, not just in unit tests** — `ImportLoggingTests`' failing-import run now also
+carries a `README.md` and a `Bar.st` declaring `PROGRAM Foo`: the markdown is warned about
+and never handed to CODESYS (G6), and the project gains an object named **Foo**, with the
+file name appearing only as the thing being corrected (G3). Summary:
+`1 updated, 1 created, 6 native, 3 unchanged, 3 not applied (export-only), 1 FAILED — 2 warning(s)`.
+
+**Files:** `CodesysImportPlanner.cs` + `ImportPlan.cs` (new), `CodesysJob.cs`,
+`LocalCodesysRunner.cs`, `versio_import.py`, `versio_types.py`.
 
 ---
 
@@ -587,6 +613,41 @@ the **existing bytes**.
   the `Core2` deviation is fixed, not tolerated.
 
 ---
+
+## Handoff — picking this up after Phase 1
+
+**Where you are.** The import is plan-driven end to end. `CodesysImportPlanner` (pure,
+`Versio.Core.Plc.Codesys`) decides; `LocalCodesysRunner.PlanImport` does the IO half and
+computes a plan when the caller supplied none; the job file (schema 2) carries it;
+`versio_import.py` executes it and decides nothing. A planless import refuses to serialize.
+`ImportPlan.MissingFromMirror` already lists Phase 2's delete candidates — computed, logged as
+a count, acted on by nothing.
+
+**Next, in order:**
+
+1. **`versio_native_equiv.py`** — the python twin of `NativeXmlNormalizer`, compared by output
+   in `PythonFileNameParityTests`. Phase 2's native content check needs it (a byte check would
+   refuse every native deletion forever — see Phase 2's section) and so does Phase 5.
+2. **Phases 2 and 3 together** — deletes, renames, moves. The planner is where detection goes
+   (it already has the manifest, the mirror and the GUID index); the confirmation dialog is
+   why plan computation must **move up into the orchestrator** so the plan the user agrees to
+   is the plan the script executes — the carriage (`ProjectJob.Plan`, `PlcProjectJob`?) exists
+   runner-side today. `SyncViewModel`'s `PendingImportDetail` names the files; extend it to
+   name the deletions. **P3 is the thing to respect**: `remove()` deletes a referenced object
+   silently, so the preconditions in Phase 2's section are the entire safety story.
+3. **Phase 5, then Phase 6** as written below.
+4. **Still open from Phase 4:** `TaskCatalog.cs`, the C# reader, so the panel can show tasks.
+
+**What to be careful of, learned building Phase 1:**
+
+- The plan document originally placed the planner in `Versio.Core/Projects/` — a vendor leak
+  the seam test would have caught late. New import machinery goes behind
+  `IPlcProjectFormat` / `Versio.Core.Plc.Codesys` unless it is genuinely vendor-neutral.
+- The wire tokens (`text` / `typed` / `native` / `create` / `skip`, and the skip reasons) are
+  dispatch strings in `versio_import.py`. `ScriptProtocolTests` pins them; a C# enum rename
+  must not reach the JSON.
+- Mutation-check anything that looks like a pure move. Three rules here (G3, G5, G6) were
+  each deliberately broken to prove a test goes red before the suite was believed.
 
 ## Verification
 

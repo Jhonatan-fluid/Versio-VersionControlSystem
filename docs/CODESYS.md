@@ -221,7 +221,7 @@ command line**; everything else travels as JSON inside the file it names.
 ```json
 {
   "op": "export",
-  "schema": 1,
+  "schema": 2,
   "operationId": "a1b2c3d4",
   "profile": "CODESYS V3.5 SP22 Patch 2",
   "scrubTimestamps": true,
@@ -241,7 +241,9 @@ command line**; everything else travels as JSON inside the file it names.
 | `src` | **import** with one project | import (mirror root) |
 | `save` | always | import only |
 | `bindingId` | one project in the job | export — stamped into `_manifest.json` |
-| `op`, `schema`, `operationId`, `profile` | always | **nothing** — see finding B3 |
+| `plan` | **import** with one project | import — the whole of what it does; see section 6 |
+| `schema` | always | **import**, which refuses any value but 2 before opening the project — a stale script meeting a newer job file must die loudly, not half-execute. Export and probe still ignore it |
+| `op`, `operationId`, `profile` | always | **nothing** — see finding B3, which this schema row partially supersedes |
 | `scrubTimestamps`, `emitPlcopen` | always | **nothing** — the scrub is unconditional in `versio_text.scrub_native_xml`; PLCopen is not implemented |
 | `projects[]` | always | **nothing** — see finding A2 |
 
@@ -597,20 +599,32 @@ about dict order and the export must be byte-identical across runs.
 
 ## 6. Import
 
-`versio_import.py` — 450 lines. Job: `{ project, src, save }`. This is the direction that writes
-into a binary file the user cannot diff afterwards, so the orchestrator logs it at **Warn**, and
-copies the `.project` aside first — a failed backup fails the import.
+`versio_import.py`. Job: `{ schema: 2, project, src, save, plan }`. This is the direction that
+writes into a binary file the user cannot diff afterwards, so the orchestrator logs it at
+**Warn**, and copies the `.project` aside first — a failed backup fails the import.
+
+**Plan-driven since 2026-08-15.** The script used to walk the mirror and classify every file
+from its name; that walk was the shared root cause of gaps G3–G6 and it is gone. The plan is
+computed C#-side by `CodesysImportPlanner` — pure, from `_manifest.json` and a directory
+listing, before CODESYS starts — and arrives in the job file: per file, an action (`text`,
+`typed`, `native`, `create`, `skip`), the object's **verbatim name**, and a **resolve chain**
+of real decoded names from the project root. `LocalCodesysRunner` computes the plan when its
+caller has not, so every import is plan-driven whichever door it came through. Files the plan
+does not mention are warned about (`NOT_IN_PLAN`) and never touched.
 
 ### 6.1 Two phases, with a save between them
 
 ```mermaid
 flowchart TD
-    A[walk the mirror] --> B{file name}
-    B -->|"_manifest.json / _coverage.md"| SKIP1["ignored — bookkeeping"]
-    B -->|"*.libraries.yaml"| SKIP2["emit not_imported — export-only"]
-    B -->|"*.st"| T[textual list]
-    B -->|"anything else"| N[native list]
+    A[plan, from the job file] --> B{action}
+    B -->|"skip · bookkeeping"| SKIP1["silent"]
+    B -->|"skip · exportOnly"| SKIP2["emit not_imported<br/>(TYPED_SIBLING when the manifest names one)"]
+    B -->|"skip · stray / unknownForm"| SKIP3["warn — never handed to the toolchain"]
+    B -->|"text / create"| T[textual list]
+    B -->|"typed"| TY["typed list — .tasks.yaml"]
+    B -->|"native"| N[native list]
 
+    TY --> P1
     T --> P1["PHASE 1 — textual"]
     P1 --> P1a{object found by path?}
     P1a -->|yes| P1b["textual_declaration.replace()<br/>textual_implementation.replace()"]
@@ -1273,9 +1287,9 @@ listed here because only one of them is currently written down anywhere.
 | # | Limitation | Consequence |
 |---|---|---|
 | D1 | **Deletions do not propagate.** The importer only updates and creates | Removing a `.st` from the mirror does **not** remove the POU from the project |
-| D2 | **Filenames are never decoded.** `unsafe_file_stem` exists and nothing calls it (`versio_text.py:178`); `find_by_path` compares raw CODESYS names against *encoded* path segments | An object or folder whose name needed encoding (`weird<name>` → `weird%3Cname%3E`) cannot be found on import, and a *created* one would be named with the percent escapes literally |
-| D3 | **A dot in an object name breaks the owner split.** `object_name_from_file` treats the last dot before the suffix as the owner/member separator | A POU named `My.Thing` imports as member `Thing` of a non-existent parent `My` → `PARENT_NOT_FOUND`. `versio_export.record`'s own comment names this hazard as the reason the manifest records parents by GUID; the importer still parses filenames |
-| D4 | **Any stray non-`.st` file in the mirror is handed to `import_native`.** Still open. The exclusions are `_manifest.json`, `_coverage.md`, `*.libraries.yaml`, `*.tasks.yaml`, and any `.xml` with a `*.tasks.yaml` sitting beside it — all of them names and adjacency, none of them a shape check | A `README.md` or a `.bak` dropped into an export directory is offered to CODESYS as native XML. The code comments show this class is known — it is how `_coverage.md` caused a failure — but the guard is a fixed allow-list, not a shape check |
+| D2 | ~~**Filenames are never decoded.**~~ — **closed 2026-08-15 by the plan-driven import.** Resolution chains are built C#-side by `CodesysImportPlanner` from the manifest's verbatim names, with directory segments decoded through `PathMapper.DecodeStem` — which gained its first production caller in the process. The script compares real names against real names | An object or folder whose name needed encoding resolves now. A *shortened* stem (digest tail) still cannot be recovered from the path alone — the object it names simply does not resolve, and the script reports it rather than guessing |
+| D3 | ~~**A dot in an object name breaks the owner split.**~~ — **closed 2026-08-15 for recorded objects**: the manifest's `parent` GUID chain decides ownership, and for pre-schema-4 mirrors the recorded *name* disambiguates the split — a name equal to the whole stem is not split, however many dots the filename carries. **Still true for a manifest-absent create**, where only the filename exists; P5 measured that such names cannot be created, so that residue is unreachable by the only door left | `My.Thing.xml` recorded as `My.Thing` resolves as one object. A brand-new dotted file with no manifest record would still be read as owner and member — and CODESYS would refuse to create it anyway |
+| D4 | ~~**Any stray non-`.st` file in the mirror is handed to `import_native`.**~~ — **closed 2026-08-15.** The planner classifies from the manifest, and a file that is neither a recorded object, bookkeeping, nor a recognisable source is **skipped with a warning, never handed to the toolchain** — including a YAML the manifest does not record, and including files that appear between planning and execution (`NOT_IN_PLAN`) | Proven live: a `README.md` dropped into the mirror is warned about and never imported, in the same run that catches a corrupt native file — see `ImportLoggingTests` |
 | D5 | **`*.libraries.yaml` is export-only** | Editing it changes nothing. Stated in the file's own header, in `_coverage.md`, in the manifest and by a lock glyph in the UI |
 | D6 | ~~**Task Configuration is diff-only**~~ — **closed 2026-08-15**, both halves of it | This row carried two defects. `import_native` mutated `Core2` (§7); and — *not* the same defect, though this row said so for an afternoon — every import run with a `<project>_project.precompilecache` beside the project threw on `MainTask` and `VISU_TASK` while reporting `failed: 0`. **Phase 4 removed both by removing the shared cause**: task configuration exports as `TASK_BOTH` and imports through typed property assignment, so `import_native` is never handed the object. Measured over three cycles with the cache present: **zero warnings**, where cycles 2 and 3 used to throw twice each. Versio deletes nothing of CODESYS's. See G7 and G11 in [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md) and the findings in [`STATUS.md`](STATUS.md). **What replaces it, and it is smaller:** the `.xml` half is export-only, a task named in the YAML but absent from the project is warned about rather than created, and a task deleted from the YAML is left alone until Phase 2 |
 

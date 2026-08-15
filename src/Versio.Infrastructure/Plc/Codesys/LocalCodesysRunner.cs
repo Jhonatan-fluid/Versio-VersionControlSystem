@@ -122,6 +122,20 @@ public sealed class LocalCodesysRunner(
         // being parsed inside this scope rather than by carrying the id itself.
         using var scope = _log.BeginOperation(job.OperationId);
 
+        // An import runs from a plan, decided before CODESYS starts — the script executes
+        // exactly what the plan says and derives nothing from file names (Phase 1 of
+        // docs/CODESYS-IMPORT-PLAN.md). A caller that computed its own plan keeps it; one
+        // that did not gets it computed here, so every import is plan-driven whichever door
+        // it came through, including a test driving the runner directly.
+        if (job.Operation == CodesysOperation.Import
+            && job.Projects.Count == 1 && job.Projects[0].Plan is null)
+        {
+            job = job with
+            {
+                Projects = [job.Projects[0] with { Plan = PlanImport(job.Projects[0].Path) }],
+            };
+        }
+
         var script = ScriptFor(job.Operation);
         var scriptPath = scripts.PathFor(script);
         var jobFile = WriteJobFile(job);
@@ -691,6 +705,94 @@ public sealed class LocalCodesysRunner(
         CodesysOperation.Probe => "versio_probe.py",
         _ => throw new ArgumentOutOfRangeException(nameof(operation)),
     };
+
+    /// <summary>
+    /// Read the mirror and decide what importing it would do. The IO half of planning; the
+    /// rules live in <see cref="CodesysImportPlanner"/>, which is pure.
+    /// </summary>
+    /// <remarks>
+    /// A manifest that is missing or unreadable does not fail the import — the planner plans
+    /// updates and creates without one and says structural changes are unavailable, which is
+    /// the honest answer for a mirror somebody hand-built. The planner's warnings go to the
+    /// log here, at Warn, because they are decisions a person may disagree with — a created
+    /// object taking its declaration's name over its file's, a stray file refused.
+    /// </remarks>
+    private Versio.Core.Plc.ImportPlan PlanImport(string mirrorRoot)
+    {
+        Versio.Core.Projects.ProjectManifest? manifest = null;
+        try
+        {
+            var manifestPath = Path.Combine(mirrorRoot, "_manifest.json");
+            if (File.Exists(manifestPath))
+            {
+                // The reporting overload, because Parse never throws: garbage comes back as
+                // Empty at schema 1, which the planner correctly refuses to trust — but
+                // silently, and a manifest that rotted into "plan everything from file
+                // names" is a downgrade somebody should be able to find in the log.
+                manifest = Versio.Core.Projects.ProjectManifest.Parse(
+                    File.ReadAllText(manifestPath), out var problems);
+                foreach (var problem in problems)
+                {
+                    _log.Warn(LogCategory.Codesys, $"_manifest.json: {problem}");
+                }
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            _log.Warn(LogCategory.Codesys,
+                $"the mirror's manifest could not be read ({e.Message}) — planning the "
+                + "import without it");
+        }
+
+        List<Versio.Core.Plc.MirrorFile> mirror = [];
+        foreach (var absolute in Directory.EnumerateFiles(
+                     mirrorRoot, "*", SearchOption.AllDirectories))
+        {
+            var relative = Path.GetRelativePath(mirrorRoot, absolute).Replace('\\', '/');
+            string? text = null;
+            if (CodesysImportPlanner.NeedsText(relative))
+            {
+                try
+                {
+                    text = File.ReadAllText(absolute);
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                    // Planned from its name alone; if it is still unreadable when the
+                    // script reaches it, the script reports that per file.
+                    _log.Debug(LogCategory.Codesys,
+                        $"could not read {relative} while planning: {e.Message}");
+                }
+            }
+
+            mirror.Add(new Versio.Core.Plc.MirrorFile { Path = relative, Text = text });
+        }
+
+        var plan = CodesysImportPlanner.Plan(manifest, mirror);
+
+        foreach (var warning in plan.Warnings)
+        {
+            _log.Warn(LogCategory.Codesys, warning);
+        }
+
+        if (plan.StructuralChangesUnavailable is { } why)
+        {
+            _log.Debug(LogCategory.Codesys, why);
+        }
+
+        if (plan.MissingFromMirror.Count > 0)
+        {
+            // Info, not Warn: this is the state every mirror with a deleted file is in until
+            // Phase 2 exists, and it is the sentence that answers "I deleted the file, why
+            // is the object still there".
+            _log.Info(LogCategory.Codesys,
+                $"{plan.MissingFromMirror.Count} exported file(s) are no longer in the "
+                + "mirror; deleting objects from the project is not applied by this version, "
+                + "so they remain in the project");
+        }
+
+        return plan;
+    }
 
     private static string WriteJobFile(CodesysJob job)
     {

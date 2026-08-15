@@ -228,6 +228,18 @@ public sealed class ImportLoggingTests(ITestOutputHelper output) : IDisposable
             broken, xml.Replace("Type=\"System.Guid\"", "Type=\"System.Nonsense\""),
             new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
 
+        // And the two files the old walk handled WRONG, in the same run since the CODESYS
+        // launches are already paid for. The markdown is G6: the walk's last branch handed
+        // it to import_native as native XML. The mis-named source is G3: the walk created
+        // an object called Bar because the file was called Bar.st, and PROGRAM Foo inside
+        // it was never consulted.
+        var app = Path.Combine(mirror, "Device", "Plc Logic", "Application");
+        await File.WriteAllTextAsync(Path.Combine(app, "README.md"),
+            "# not a PLC object\n");
+        await File.WriteAllTextAsync(Path.Combine(app, "Bar.st"),
+            "PROGRAM Foo\nVAR\nEND_VAR\n\nfooCounter := fooCounter;\n",
+            new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+
         var exportLines = buffer.Snapshot().Count;
         await RunAsync(CodesysOperation.Import);
 
@@ -239,16 +251,33 @@ public sealed class ImportLoggingTests(ITestOutputHelper output) : IDisposable
         var summary = Assert.Single(lines, IsSummary);
         output.WriteLine($"summary: {summary}");
 
-        // The failure is on the line, in capitals, and the warning count is no longer the only
-        // true number on it.
+        // The failure is on the line, in capitals, and the warning count is no longer the
+        // only true number on it. Two warnings: the corrupt file, and the stray markdown.
         Assert.Contains("1 FAILED", summary, StringComparison.Ordinal);
-        Assert.Contains("1 warning(s)", summary, StringComparison.Ordinal);
+        Assert.Contains("2 warning(s)", summary, StringComparison.Ordinal);
 
         // And the run is still mostly a success, which is the distinction the summary exists
         // to draw: six native files did import. A line reading only "FAILED" would be as
         // useless as one reading only "0 failed".
         Assert.Contains("native", summary, StringComparison.Ordinal);
         Assert.DoesNotContain(lines, l => l.StartsWith("walked", StringComparison.Ordinal));
+
+        // G6, live: the stray file is warned about by the planner and appears in nothing
+        // else — no native_imported line, no created line, no object in the project. Before
+        // the plan-driven import this file was handed to CODESYS as native XML.
+        Assert.Contains(lines, l => l.Contains("README.md", StringComparison.Ordinal)
+                                    && l.Contains("not part of the export", StringComparison.Ordinal));
+        Assert.DoesNotContain(lines, l => l.StartsWith("imported", StringComparison.Ordinal)
+                                          && l.Contains("README", StringComparison.Ordinal));
+
+        // G3, live: the object is created under its declaration's name, and both the
+        // planner's sentence and the script's created event say Foo — the file name Bar
+        // appears only as the thing being corrected.
+        Assert.Contains(lines, l => l.Contains("'Foo'", StringComparison.Ordinal)
+                                    && l.Contains("'Bar'", StringComparison.Ordinal));
+        Assert.Contains(lines, l => l.StartsWith("created", StringComparison.Ordinal)
+                                    && l.Contains("Foo", StringComparison.Ordinal));
+        Assert.Contains("1 created", summary, StringComparison.Ordinal);
 
         // NOT COVERED HERE, and stated rather than left to look covered: `native_partial`,
         // the branch where CODESYS reports a per-object exception through the handler's
