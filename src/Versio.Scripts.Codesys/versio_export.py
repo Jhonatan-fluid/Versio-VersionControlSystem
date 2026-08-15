@@ -25,10 +25,11 @@ from versio_text import (content_hash, join_st, normalize_decl_only,  # noqa: E4
 from versio_types import (FORM_CONTAINER, FORM_GVL_BOTH, FORM_LIBRARIES,  # noqa: E402
                           FORM_NATIVE, FORM_NATIVE_R, FORM_NATIVE_WITH_CHILDREN,
                           FORM_SKIP, FORM_ST_DECL, FORM_ST_FULL, FORM_ST_IMPL,
-                          SKIP_EXPLANATION, SKIP_GAP, decide_form,
+                          FORM_TASK_BOTH, SKIP_EXPLANATION, SKIP_GAP, decide_form,
                           descends_into_children, file_name_for, skip_reason,
                           type_of)
 import versio_libraries  # noqa: E402
+import versio_tasks  # noqa: E402
 import versio_yaml  # noqa: E402
 
 
@@ -251,6 +252,28 @@ class Exporter(object):
               "system": len([r for r in refs if r.get("systemLibrary")])})
         return text
 
+    def export_tasks(self, obj, object_path, rel_path):
+        """Render one task configuration's tasks as neutral YAML.
+
+        Unlike the library file beside it, this one is IMPORTABLE and is the authoritative
+        half of the pair. The .xml is written too, for fidelity and for a reviewer who
+        wants the whole picture, but it is never applied back - handing it to import_native
+        is what rewrote Core2 on every import (G7) and what threw on the task objects while
+        reporting failed: 0 (G11).
+        """
+        tasks = versio_tasks.read_tasks(
+            obj, safe,
+            on_error=lambda code, detail: self.warn(code, rel_path, detail))
+
+        name = safe(lambda: obj.get_name(), u"Task Configuration")
+        text = versio_tasks.catalog_document(versio_yaml, name, object_path, tasks)
+
+        # Said out loud, at Info, for the same reason the library count is: this is state
+        # that used to be an opaque XML blob in the diff, and "how many tasks" is a
+        # question somebody may need answered without opening the file.
+        emit({"t": "tasks", "path": rel_path.replace("\\", "/"), "count": len(tasks)})
+        return text
+
     def handle(self, obj, rel_dir, parent_name, parent_guid=None):
         """Export one object and recurse into its children.
 
@@ -351,6 +374,20 @@ class Exporter(object):
                 write_text(abs_path, st_text)
                 self.record(obj, obj_type, FORM_ST_DECL, rel_path, st_text, parent_guid)
 
+            elif form == FORM_TASK_BOTH:
+                # Two files, one object, one GUID - exactly like GVL_BOTH. The .xml keeps
+                # the name it has always had, so this is additive: no committed file is
+                # renamed and no mirror churns structurally on the way in.
+                xml_path = os.path.join(rel_dir, stem_name + ".xml")
+                xml_text, _ = self.export_native(
+                    obj, os.path.join(self.out_root, xml_path), True)
+                self.record(obj, obj_type, FORM_NATIVE_R, xml_path, xml_text, parent_guid)
+
+                object_path = (rel_dir + "/" + name).replace("\\", "/").lstrip("/")
+                text = self.export_tasks(obj, object_path, rel_path)
+                write_text(abs_path, text)
+                self.record(obj, obj_type, form, rel_path, text, parent_guid)
+
             elif form == FORM_LIBRARIES:
                 object_path = (rel_dir + "/" + name).replace("\\", "/").lstrip("/")
                 text = self.export_libraries(obj, object_path, rel_path)
@@ -378,7 +415,15 @@ class Exporter(object):
 
         # Children of a leaf object (methods, actions, properties on a POU) live
         # alongside it in the same folder, prefixed with the parent name.
-        if form != FORM_NATIVE_R:
+        #
+        # TASK_BOTH does not recurse, for the same reason NATIVE_R does not: its recursive
+        # .xml already contains every task, and its .tasks.yaml lists them again. Walking
+        # them a third time wrote nothing extra - a TASK is FORM_SKIP - but it moved the
+        # counters, and THAT is what caught it: walked 18 -> 20 and skipped 4 -> 6 on a
+        # project that had gained no objects. descends_into_children was updated for the
+        # pre-count and this guard was not, so the count and the walk disagreed, which is
+        # precisely the divergence that function's docstring says cannot happen.
+        if form not in (FORM_NATIVE_R, FORM_TASK_BOTH):
             own_guid = safe(lambda: str(obj.guid), "")
             for child in children:
                 self.handle(child, rel_dir, name, own_guid)

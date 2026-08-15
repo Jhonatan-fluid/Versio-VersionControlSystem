@@ -548,6 +548,48 @@ def probe_library_reference(proj):
     return out
 
 
+# ============================================================================ P10
+def probe_task_shape(proj, project_path):
+    """What a task configuration and its tasks actually expose, field by field.
+
+    P6 proved the seven fields READ. Two of them came back as objects -- a ScriptWatchdog
+    and a ScriptPouObjectList -- and "it returned an object" is not enough to write a
+    reader against. versio_tasks.py has to name sub-fields, and naming them from the API
+    docs is how four wrong spellings got into the plan in the first place.
+    """
+    cfg = find_at(proj, APP_PATH + ["Task Configuration"])
+    if cfg is None:
+        return {"verdict": "NO_TARGET", "detail": "Task Configuration not found"}
+
+    out = {"config": members(cfg), "tasks": []}
+
+    for child in safe(lambda: cfg.get_children(), []) or []:
+        name = safe(lambda: child.get_name(), None)
+        row = {"name": name, "clr_type": _plain(safe(lambda: child.GetType().Name, None))}
+
+        for field in TASK_FIELDS:
+            row[field] = describe(lambda f=field, c=child: getattr(c, f))
+
+        wd = safe(lambda: child.watchdog, None)
+        if wd is not None:
+            row["watchdog_type"] = _plain(safe(lambda: wd.GetType().Name, None))
+            row["watchdog_members"] = members(wd)
+            row["watchdog_fields"] = {}
+            for f in ("enabled", "time", "sensitivity", "is_enabled"):
+                row["watchdog_fields"][f] = describe(lambda ff=f, w=wd: getattr(w, ff))
+
+        pous = safe(lambda: child.pous, None)
+        if pous is not None:
+            row["pous_type"] = _plain(safe(lambda: pous.GetType().Name, None))
+            row["pous_members"] = members(pous)
+            row["pous_list"] = describe(
+                lambda p=pous: [_plain(safe(lambda x=x: x.get_name(), x)) for x in p])
+
+        out["tasks"].append(row)
+
+    return out
+
+
 PROBES = {
     "P0": ("API surface", lambda proj, path: probe_api(proj)),
     "P1": ("rename preserves identity", probe_rename),
@@ -557,6 +599,7 @@ PROBES = {
     "P6": ("typed task configuration", probe_task_object),
     "P8": ("deep folder chain", lambda proj, path: probe_path_length(proj)),
     "P9": ("fixed-version library reference", lambda proj, path: probe_library_reference(proj)),
+    "P10": ("task configuration shape, for versio_tasks.py", probe_task_shape),
 }
 
 

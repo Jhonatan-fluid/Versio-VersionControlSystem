@@ -61,6 +61,27 @@ public enum ExportForm
     /// neither.
     /// </remarks>
     NativeWithChildren,
+
+    /// <summary>
+    /// Native <c>.xml</c> for fidelity plus <c>.tasks.yaml</c> for review — and the YAML is
+    /// the half that imports.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Shaped after <see cref="GvlBoth"/>: one object, two files, one GUID in the manifest.
+    /// The difference is which half is authoritative. A GVL imports from its <c>.st</c>; a
+    /// task configuration imports from its <c>.tasks.yaml</c>, and its native XML is
+    /// export-only.
+    /// </para>
+    /// <para>
+    /// <b>That asymmetry is the entire point, and it is not about readability.</b> Handing
+    /// task configuration to <c>import_native</c> cost two measured defects: it rewrote
+    /// <c>Core2</c> — a task's CPU core affinity — on every import without being asked, and
+    /// every import after the first threw on the task objects while the run reported
+    /// <c>failed: 0</c>. Both stop when this file stops going through that path.
+    /// </para>
+    /// </remarks>
+    TaskBoth,
 }
 
 /// <summary>
@@ -89,7 +110,7 @@ public static class ExportFormRules
         [CodesysObjectType.Transition] = ExportForm.StImplementation,
 
         [CodesysObjectType.Visualisation] = ExportForm.Native,
-        [CodesysObjectType.TaskConfiguration] = ExportForm.NativeRecursive,
+        [CodesysObjectType.TaskConfiguration] = ExportForm.TaskBoth,
         [CodesysObjectType.TextList] = ExportForm.Native,
         [CodesysObjectType.GlobalTextList] = ExportForm.Native,
         [CodesysObjectType.ImagePool] = ExportForm.Native,

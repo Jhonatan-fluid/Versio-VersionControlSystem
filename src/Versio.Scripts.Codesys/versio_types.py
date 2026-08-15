@@ -60,6 +60,12 @@ FORM_ST_FULL = "ST_FULL"
 FORM_ST_DECL = "ST_DECL"
 FORM_ST_IMPL = "ST_IMPL"
 FORM_GVL_BOTH = "GVL_BOTH"
+# Native .xml for fidelity plus .tasks.yaml for review AND for import. Follows
+# GVL_BOTH exactly: one object, two files, one GUID in the manifest. The difference
+# is which half is authoritative - a GVL imports from its .st, and a task
+# configuration imports from its .tasks.yaml, because handing the .xml to
+# import_native is what rewrites Core2 (G7) and throws on the task objects (G11).
+FORM_TASK_BOTH = "TASK_BOTH"
 FORM_NATIVE = "NATIVE"
 FORM_NATIVE_R = "NATIVE_R"
 FORM_CONTAINER = "CONTAINER"
@@ -103,7 +109,10 @@ TYPE_FORM = {
     "TRANSITION": FORM_ST_IMPL,
 
     "VISUALISATION": FORM_NATIVE,
-    "TASK_CONFIGURATION": FORM_NATIVE_R,
+    # Was FORM_NATIVE_R, which round-tripped through import_native and cost two
+    # defects: G7 (Core2 rewritten unasked) and G11 (every import after the first
+    # throws on MainTask and VISU_TASK while reporting failed: 0).
+    "TASK_CONFIGURATION": FORM_TASK_BOTH,
     "TEXTLIST": FORM_NATIVE,           # [VERSIO] gap closed vs codescribe
     "GLOBAL_TEXTLIST": FORM_NATIVE,    # [VERSIO]
     "IMAGEPOOL": FORM_NATIVE,          # [VERSIO]
@@ -162,7 +171,12 @@ def is_versio_file(file_name):
 # scripting API is a different operation from importing an object, and doing it
 # wrongly rewires what the machine compiles against, so it is not attempted here:
 # the file is diff-only, and both the coverage report and the manifest say so.
-EXPORT_ONLY_SUFFIXES = (".libraries.yaml",)
+# INTERIM: .tasks.yaml is listed here while only the export half of Phase 4 exists.
+# It is the file the import half will READ, so this entry comes back out in the same
+# phase. It is here rather than absent because the importer hands anything that is
+# not .st to import_native, and offering CODESYS a YAML document as native XML is
+# exactly the failure _coverage.md caused once already.
+EXPORT_ONLY_SUFFIXES = (".libraries.yaml", ".tasks.yaml")
 
 
 def is_export_only(file_name):
@@ -253,6 +267,7 @@ SUFFIX = {
     FORM_NATIVE_R: ".xml",
     FORM_NATIVE_WITH_CHILDREN: ".xml",
     FORM_LIBRARIES: ".libraries.yaml",
+    FORM_TASK_BOTH: ".tasks.yaml",
 }
 
 # Types whose file name gets an infix to avoid colliding with a same-named sibling
@@ -313,7 +328,10 @@ def descends_into_children(obj_type):
       anything else  walked, including an unmapped type, which is why the default is True
     """
     form = TYPE_FORM.get(obj_type)
-    return form not in (FORM_SKIP, FORM_NATIVE_R)
+    # TASK_BOTH joins NATIVE_R: its .xml is a recursive export that already contains
+    # the tasks, and its .tasks.yaml lists them too. Walking them again would write a
+    # third copy of each task as a file of its own.
+    return form not in (FORM_SKIP, FORM_NATIVE_R, FORM_TASK_BOTH)
 
 
 def file_name_for(name, obj_type, form, parent_name=None):

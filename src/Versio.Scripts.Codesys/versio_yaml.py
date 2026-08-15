@@ -21,6 +21,9 @@
 #   key: scalar                     a mapping of scalars
 #   key:                            a nested mapping of scalars
 #     inner: scalar
+#   key:                            a list of SCALARS
+#     - one
+#     - two
 #   key:                            a list of mappings
 #     - a: 1
 #       b: 2
@@ -29,6 +32,13 @@
 # document. Anything outside that shape is a bug here rather than a feature request:
 # the format exists to be read by humans in a diff and by one specific parser, and
 # every construct added is one both halves have to agree about forever.
+#
+# THE SCALAR LIST IS THE ONLY CONSTRUCT ADDED SINCE THIS FILE WAS WRITTEN, and it was
+# not a preference. A task's POU list is an ordered list of names and the order is what
+# they run in; without this the emitter fell through to the scalar branch and wrote
+# python's repr - pous: "['PLC_PRG', 'Simulation']" - which is a string that merely looks
+# like a list, would parse back as one on nobody's reader, and is exactly the kind of
+# silent lie this subset exists to prevent.
 #
 # DETERMINISM IS LOAD-BEARING. The export is byte-identical across runs and this file
 # is part of it, so nothing here may depend on dict iteration order (IronPython 2.7 and
@@ -149,6 +159,14 @@ def emit_mapping(lines, mapping, keys, depth):
             for inner in sorted(value.keys()):
                 lines.append(u"%s%s%s: %s"
                              % (pad, INDENT, scalar(inner), scalar(value[inner])))
+        elif isinstance(value, (list, tuple)):
+            # NOT sorted: a scalar list is ordered because its caller's data is ordered.
+            # The one that exists - a task's POUs - lists them in the order they run.
+            if not value:
+                continue                      # an empty list says nothing; omit it
+            lines.append(u"%s%s:" % (pad, key))
+            for item in value:
+                lines.append(u"%s%s- %s" % (pad, INDENT, scalar(item)))
         else:
             rendered = scalar(value)
             lines.append(u"%s%s:%s" % (pad, key, (u" " + rendered) if rendered else u""))
