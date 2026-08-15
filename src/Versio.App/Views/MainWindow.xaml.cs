@@ -403,17 +403,6 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Selecting a row in the history shows it.
-    /// </summary>
-    /// <remarks>
-    /// Code-behind for the same reason the project tree needs it: <c>TreeView.SelectedItem</c>
-    /// is read-only and cannot be bound. What was picked - a commit or one file inside it - is
-    /// the view model's decision, not this handler's.
-    /// </remarks>
-    private void OnHistoryRowSelected(object sender, RoutedPropertyChangedEventArgs<object> e) =>
-        _shell.History.Select(e.NewValue);
-
-    /// <summary>
     /// Show what this machine has: toolchains, versions, paths.
     /// </summary>
     /// <remarks>

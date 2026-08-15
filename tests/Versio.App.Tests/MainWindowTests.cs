@@ -137,7 +137,8 @@ public sealed class MainWindowTests
             shell.History.Commits[0].IsExpanded = true;
             Assert.NotEmpty(shell.History.Commits[0].Children);
 
-            var panel = Assert.IsType<Border>(window.FindName("HistoryPanel"));
+            var panel = Assert.IsAssignableFrom<FrameworkElement>(
+                window.FindName("HistoryPanel"));
             Assert.Equal(Visibility.Visible, panel.Visibility);
 
             content.Measure(new Size(1400, 900));
@@ -178,7 +179,30 @@ public sealed class MainWindowTests
             content.UpdateLayout();
 
             var expected = Assert.IsType<Style>(Application.Current.Resources["TreeRowItem"]);
-            var trees = AllOf<TreeView>(content).ToList();
+
+            // EVERY PANEL IS SHOWN IN TURN, AND THAT IS NOT BELT-AND-BRACES.
+            //
+            // A panel that lives in its own file is a UserControl, and a UserControl applies
+            // its template when it is first measured — so while it is collapsed its content
+            // is not in the visual tree at all and a walk from the window cannot see it. The
+            // old markup had every panel inline, where a collapsed Border still held its
+            // children, so a single walk found everything.
+            //
+            // Walking once would therefore still pass while quietly checking one tree fewer
+            // each time a panel moves out — the exact failure this test exists to prevent,
+            // reintroduced by the thing that was supposed to be a pure move.
+            var trees = new List<TreeView>();
+
+            foreach (var rail in new[] { "RailProject", "RailGit", "RailHistory" })
+            {
+                Assert.IsType<RadioButton>(window.FindName(rail)).IsChecked = true;
+
+                content.Measure(new Size(1400, 900));
+                content.Arrange(new Rect(0, 0, 1400, 900));
+                content.UpdateLayout();
+
+                trees.AddRange(AllOf<TreeView>(content).Except(trees));
+            }
 
             // The project tree and the history tree. If a third appears, it needs the same
             // treatment, and this is where that gets noticed.

@@ -136,7 +136,10 @@ public sealed class ShellLayoutTests
             button.IsChecked = true;
 
             var content = Arrange(window, width: 1400);
-            var border = Assert.IsType<Border>(window.FindName(panel));
+            // Border for two of the three and a UserControl for the history panel,
+            // which lives in its own file. What matters here is the geometry.
+            var border = Assert.IsAssignableFrom<FrameworkElement>(
+                window.FindName(panel));
 
             Assert.Equal(Visibility.Visible, border.Visibility);
 
