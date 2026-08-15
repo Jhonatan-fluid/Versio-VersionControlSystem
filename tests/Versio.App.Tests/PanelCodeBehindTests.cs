@@ -40,9 +40,7 @@ public sealed class PanelCodeBehindTests
 {
     private static (MainWindow Window, ShellViewModel Shell, FrameworkElement Content) Build()
     {
-        var sink = new InMemoryLogSink();
-        var logger = new VersioLogger(new SystemClock()).AddSink(sink);
-        var shell = new ShellViewModel(logger, new LogViewModel(sink), toolchains: (_, _) => null);
+        var shell = TestShell.Build();
 
         var window = new MainWindow(shell);
         var content = Assert.IsAssignableFrom<FrameworkElement>(window.Content);

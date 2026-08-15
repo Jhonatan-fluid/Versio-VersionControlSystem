@@ -27,12 +27,7 @@ namespace Versio.App.Tests;
 /// </remarks>
 public sealed class PlcAwareNamingFlowTests
 {
-    private static ShellViewModel Shell()
-    {
-        var sink = new InMemoryLogSink();
-        var logger = new VersioLogger(new SystemClock()).AddSink(sink);
-        return new ShellViewModel(logger, new LogViewModel(sink), toolchains: (_, _) => null);
-    }
+    private static ShellViewModel Shell() => TestShell.Build();
 
     /// <summary>
     /// A repository with one tracked project whose export tree is already on disk.

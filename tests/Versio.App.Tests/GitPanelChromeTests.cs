@@ -37,9 +37,7 @@ public sealed class GitPanelChromeTests
 {
     private static (MainWindow Window, ShellViewModel Shell) Build()
     {
-        var sink = new InMemoryLogSink();
-        var logger = new VersioLogger(new SystemClock()).AddSink(sink);
-        var shell = new ShellViewModel(logger, new LogViewModel(sink), toolchains: (_, _) => null);
+        var shell = TestShell.Build();
         return (new MainWindow(shell), shell);
     }
 

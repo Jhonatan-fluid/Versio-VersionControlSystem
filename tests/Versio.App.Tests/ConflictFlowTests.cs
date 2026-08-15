@@ -27,9 +27,7 @@ public sealed class ConflictFlowTests
 {
     private static ShellViewModel Shell()
     {
-        var sink = new InMemoryLogSink();
-        var logger = new VersioLogger(new SystemClock()).AddSink(sink);
-        var shell = new ShellViewModel(logger, new LogViewModel(sink), toolchains: (_, _) => null);
+        var shell = TestShell.Build();
 
         // Every destructive prompt is answered yes. What is under test is the operation,
         // not the dialog — the refusal path has its own test below.

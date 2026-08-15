@@ -30,12 +30,7 @@ namespace Versio.App.Tests;
 [Collection("theme")]
 public sealed class MergeRequestFlowTests
 {
-    private static ShellViewModel Shell()
-    {
-        var sink = new InMemoryLogSink();
-        var logger = new VersioLogger(new SystemClock()).AddSink(sink);
-        return new ShellViewModel(logger, new LogViewModel(sink), toolchains: (_, _) => null);
-    }
+    private static ShellViewModel Shell() => TestShell.Build();
 
     [Fact]
     public async Task A_repository_with_no_forge_shows_no_button()

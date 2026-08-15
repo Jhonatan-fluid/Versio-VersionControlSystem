@@ -27,12 +27,7 @@ namespace Versio.App.Tests;
 /// </remarks>
 public sealed class GitHealthTests
 {
-    private static ShellViewModel Shell()
-    {
-        var sink = new InMemoryLogSink();
-        var logger = new VersioLogger(new SystemClock()).AddSink(sink);
-        return new ShellViewModel(logger, new LogViewModel(sink), toolchains: (_, _) => null);
-    }
+    private static ShellViewModel Shell() => TestShell.Build();
 
     [Fact]
     public void Git_is_not_reported_missing_before_the_probe_has_answered()

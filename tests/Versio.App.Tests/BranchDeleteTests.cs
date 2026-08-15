@@ -159,10 +159,7 @@ public sealed class BranchDeleteTests
 
     private static ShellViewModel Shell(Func<IReadOnlyList<BranchCandidate>, DeletePlan?> answer)
     {
-        var sink = new InMemoryLogSink();
-        var logger = new VersioLogger(new SystemClock()).AddSink(sink);
-
-        var shell = new ShellViewModel(logger, new LogViewModel(sink), toolchains: (_, _) => null);
+        var shell = TestShell.Build();
 
         var prompts = shell.Asked();
         prompts.BranchDeletion = answer;

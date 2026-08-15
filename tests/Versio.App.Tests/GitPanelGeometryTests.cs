@@ -44,9 +44,7 @@ public sealed class GitPanelGeometryTests(ITestOutputHelper output)
     private static (MainWindow Window, ShellViewModel Shell, FrameworkElement Panel,
                     FrameworkElement Content) Loaded()
     {
-        var sink = new InMemoryLogSink();
-        var logger = new VersioLogger(new SystemClock()).AddSink(sink);
-        var shell = new ShellViewModel(logger, new LogViewModel(sink), toolchains: (_, _) => null);
+        var shell = TestShell.Build();
         var window = new MainWindow(shell);
         var content = (FrameworkElement)window.Content;
 
