@@ -927,7 +927,7 @@ work**: the IDE would revert it on the next save. Neither direction marks the bi
 
 ## 9. The C# mirror modules — what they are for
 
-Six C# types restate logic that also exists in Python:
+Seven C# types restate logic that also exists in Python:
 
 | C# | Python counterpart | Referenced today by | Compared against the python by |
 |---|---|---|---|
@@ -937,14 +937,22 @@ Six C# types restate logic that also exists in Python:
 | `NativeXmlScrubber` | `scrub_native_xml` | **tests only** | nothing — an open gap |
 | `StTextCodec` | `join_st` / `split_st` | **tests only** | nothing — an open gap |
 | `StDeclarationParser` | `parse_declaration` | **tests only** | nothing — an open gap |
-| `NativeXmlNormalizer` | *(no counterpart — comparison only)* | `RealRoundTripEquivalenceTests` | n/a |
+| `NativeXmlNormalizer` | `versio_native_equiv.py` **(2026-08-15)** | C#: `RealRoundTripEquivalenceTests`. Python: **nothing yet** — Phases 2 and 5 are its callers | `PythonFileNameParityTests` — **runs** the python, 2.9 MB of real CODESYS output plus 18 measured cases, both maskings |
 
-> **The last three rows are where the next drift will happen.** `StTextCodec` in particular is
-> the highest-consequence pure code in the product — a bug in `split_st` silently moves code
-> between a declaration and an implementation — and it is a hand-maintained copy with no
-> output comparison. The machinery to close this now exists: `RunPython` in
-> `PythonFileNameParityTests` takes a snippet and a JSON payload, so a codec parity test is a
-> few lines rather than a new harness.
+> **`NativeXmlScrubber`, `StTextCodec` and `StDeclarationParser` are where the next drift will
+> happen.** `StTextCodec` in particular is the highest-consequence pure code in the product — a
+> bug in `split_st` silently moves code between a declaration and an implementation — and it is
+> a hand-maintained copy with no output comparison. The machinery to close this now exists:
+> `RunPython` in `PythonFileNameParityTests` takes a snippet and a JSON payload, so a codec
+> parity test is a few lines rather than a new harness.
+
+> **The normaliser's row was written the other way round, and it is the one to copy.** Its
+> python half and its parity test landed in the same commit, so the pair has never had a
+> moment of being uncompared — which is the state every row above it was created in, and the
+> state all four drifts below happened in. **The parity test is not a follow-up item.** Two of
+> its cases exist only because writing it that way found them: deleting the python's ordinal
+> sort key left the whole suite green until a corpus case above the BMP was added, and the
+> order of the two container tables was unobservable until a line naming two of them was.
 
 This is worth being explicit about, because it is easy to read the C# as the implementation.
 **It is not.** At run time the Python is the only code that decides an object's form, builds a
@@ -972,7 +980,7 @@ failed on all four rows above.
 
 ## 10. Script inventory
 
-All ten `.py` files are embedded into `Versio.Infrastructure` by a glob
+All twelve `.py` files are embedded into `Versio.Infrastructure` by a glob
 (`<EmbeddedResource Include="..\Versio.Scripts.Codesys\*.py" />`) and extracted at run time by
 `ScriptExtractor` into `%TEMP%\Versio\scripts\<content-stamp>\`. The directory is **versioned by
 content hash**, so an upgrade cannot pick up old scripts and a downgrade cannot pick up new ones
@@ -980,21 +988,33 @@ content hash**, so an upgrade cannot pick up old scripts and a downgrade cannot 
 
 | Script | Lines | `scriptengine`? | Role |
 |---|---|---|---|
-| `versio_export.py` | 675 | yes | The exporter. Invoked by `CodesysOperation.Export` |
-| `versio_import.py` | 450 | yes | The importer. Invoked by `CodesysOperation.Import` |
+| `versio_export.py` | 753 | yes | The exporter. Invoked by `CodesysOperation.Export` |
+| `versio_import.py` | 735 | yes | The importer. Invoked by `CodesysOperation.Import`, and since Phase 1 it **executes a plan and decides nothing** — which is most of why it doubled |
 | `versio_probe.py` | 149 | yes | Phase 0 tree probe; writes a `report.json`. Invoked by `CodesysOperation.Probe` (see finding A3) |
 | `versio_probe_native_import.py` | 194 | yes | One-off probe that answered "does `import_native` replace in place?". Never invoked by the app |
 | `versio_delete_objects.py` | 79 | yes | Test fixture helper — deletes named objects so the importer must recreate them. **Never part of the product**, but is embedded in it (finding B4) |
-| `versio_types.py` | 325 | **no** | The GUID table, the form decision, the suffix/infix tables, the skip reasons, the export-only rules |
+| `versio_types.py` | 349 | **no** | The GUID table, the form decision, the suffix/infix tables, the skip reasons, the export-only rules |
 | `versio_text.py` | 196 | **no** | `join_st` / `split_st`, the timestamp scrub, `content_hash`, `safe_file_stem` |
 | `versio_decl.py` | 186 | **no** | ST declaration-header parser for object creation |
 | `versio_libraries.py` | 213 | **no** | Shapes `ScriptLibraryReference` objects into neutral records |
-| `versio_yaml.py` | 184 | **no** | Hand-written YAML emitter for one fixed document shape |
+| `versio_tasks.py` | 212 | **no** | Shapes `ScriptTaskObject`s into neutral records, and applies a `.tasks.yaml` back through typed property assignment (Phase 4) |
+| `versio_yaml.py` | 358 | **no** | Hand-written YAML emitter for one fixed document shape, and — since Phase 4 — the reader for it |
+| `versio_native_equiv.py` | 192 | **no** | The python half of `NativeXmlNormalizer`: is this native payload semantically the same as that one? **No caller yet**; Phases 2 and 5 are what it was written for |
 
-The five pure modules import no `scriptengine` and run on **CPython 3 as well as IronPython 2.7**
-— deliberately, so the functions most likely to harbour a silent data-loss bug can be exercised
-without a 17–31 s CODESYS launch. `PythonFileNameTests` does exactly that, shelling out to
-`python` and skipping cleanly when it is absent.
+The **seven** pure modules import no `scriptengine` and run on **CPython 3 as well as IronPython
+2.7** — deliberately, so the functions most likely to harbour a silent data-loss bug can be
+exercised without a 17–31 s CODESYS launch. `PythonFileNameTests` and
+`PythonFileNameParityTests` do exactly that, shelling out to `python` and skipping cleanly when
+it is absent.
+
+> **This table said "ten files" and "five pure modules" until 2026-08-15**, having missed
+> `versio_tasks.py` and `versio_yaml.py`'s reader when Phase 4 landed — and every line count in
+> it was stale, two of them by more than 60%. Re-derive it rather than editing the number you
+> think changed:
+>
+> ```
+> cd src/Versio.Scripts.Codesys && for f in *.py; do printf "%-32s %s\n" "$f" "$(grep -c '' "$f")"; done
+> ```
 
 ### The PowerShell harnesses
 

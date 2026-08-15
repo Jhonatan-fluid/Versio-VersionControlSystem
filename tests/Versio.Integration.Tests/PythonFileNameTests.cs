@@ -205,9 +205,18 @@ public sealed class PythonFileNameTests(ITestOutputHelper output)
 }
 
 /// <summary>
-/// The file-name rule exists in two languages. This runs both over one corpus.
+/// The rules that exist in two languages. This runs both over one corpus and compares
+/// their <b>outputs</b>.
 /// </summary>
 /// <remarks>
+/// <para>
+/// <b>It has outgrown the name.</b> It started as the file-name rule and now also covers
+/// the export-form decision, the YAML emitter against its own reader, the committed
+/// <c>.tasks.yaml</c>, and <c>versio_native_equiv</c> against
+/// <see cref="NativeXmlNormalizer"/>. They belong in one class because they share
+/// <see cref="RunPython"/> and one skip condition, and because they are one check asked
+/// five times.
+/// </para>
 /// <para>
 /// <c>safe_file_stem</c> in <c>versio_text.py</c> is the implementation that runs;
 /// <c>PathMapper.EncodeStem</c> is the C# statement of the same rule. They had drifted in
@@ -551,6 +560,286 @@ public sealed class PythonFileNameParityTests(ITestOutputHelper output)
             ],
             lines);
     }
+
+    [SkippableFact]
+    public void The_two_native_normalisers_agree_on_every_measured_volatility_case()
+    {
+        // versio_native_equiv.py is the python half of NativeXmlNormalizer, and this is the
+        // check that keeps the pair honest. CODESYS.md section 9 counts four drifts across
+        // the four pairs that came before it - two with the C# right and two with the python
+        // right - and NOT ONE was catchable by comparing the two sources. The GUID tables
+        // were byte-identical every time; the behaviour differed. So this compares outputs.
+        //
+        // The corpus is NativeXmlNormalizerTests' own, case for case, because every entry in
+        // it is a real measured difference between an export and its re-export on 3.5.22.20
+        // rather than a difference somebody imagined. Anything added there belongs here too.
+        //
+        // The normalised TEXT is compared, not a verdict. Two implementations can agree on
+        // "equivalent" for every pair in a corpus while masking different things - a
+        // false-true on both sides looks identical to agreement, which is the failure mode a
+        // pair of booleans cannot see.
+        string[] corpus =
+        [
+            // 1. Counters.
+            """<Single Name="UniqueIdGenerator" Type="string">26</Single>""",
+            """<Single Name="UniqueIdGenerator" Type="string">29</Single>""",
+            """<Single Name="Timestamp" Type="long">638600000000000000</Single>""",
+
+            // 2. Reference GUIDs, including one inside a counter's value - the case that
+            //    pins the ORDER of the two maskings. Counters go first on both sides, so
+            //    this is masked once and the guid count reports what survived into the
+            //    comparison rather than what was in the file.
+            """<Single Name="EventPOUGuid" Type="System.Guid">ac6c9991-dfa0-4172-9770-3ebcbacdf556</Single>""",
+            """<Single Name="UniqueIdGenerator" Type="string">288f98d1-b9d3-4ed7-99e7-12de96a16159</Single>""",
+
+            // 3. Unordered containers, one per name, so dropping any one of the three from
+            //    either table shows up here rather than in a real file six months later.
+            "<List>\n<Single Type=\"string\">UseInitValue</Single>\n<Single Type=\"string\">DescriptionTextId</Single>\n</List>",
+            "<Properties>\n<b/>\n<a/>\n</Properties>",
+            "<Dictionary Count=\"2\">\n<z>1</z>\n<y>2</y>\n</Dictionary>",
+            "<List>\n<Properties>\n<b/>\n<a/>\n</Properties>\n</List>",
+
+            // Two container names on ONE line, closing at different depths. This is the only
+            // case in the corpus where the ORDER of the two container tables is observable:
+            // taking List first stops at </List> and sorts two lines, taking Properties first
+            // runs on to </Properties> and sorts four - including the </List> in between.
+            // Both sides take the first match, so the tables have to agree on order as well
+            // as on membership, and without this case they could disagree silently.
+            "<Properties><List>\n<b/>\n<a/>\n</List>\n<c/>\n</Properties>",
+
+            // Content OUTSIDE a container keeps its order, or a real reordering of things
+            // that ARE ordered - statements, task priorities - would be sorted away.
+            "<Body>\n<b/>\n<a/>\n</Body>",
+
+            // 3b. The sort ORDER itself, above the BMP - and this case had to be added,
+            //     because the first version of this corpus did not have it and deleting the
+            //     python's ordinal sort key left the whole suite green. C# sorts by UTF-16
+            //     code unit and CPython 3 by code point, and the two disagree exactly here:
+            //     U+1F600 is a surrogate pair starting D83D, which sorts BELOW U+E000 as
+            //     code units and ABOVE it as code points. So the two normalisers emit these
+            //     two lines in opposite orders unless the python encodes to UTF-16 first.
+            //
+            //     Not a hypothetical corner of the format. GlobalTextList.xml is where a
+            //     project's translated HMI strings live, it is one of the four files that
+            //     churn on every cycle, and an emoji in an operator message is an ordinary
+            //     thing for it to contain.
+            "<List>\n<t>\U0001F600</t>\n<t>\uE000</t>\n</List>",
+
+            // A self-closing container has no body to sort, and the test is on the whole
+            // line rather than the tag, so this one is left alone by both sides.
+            "<List/>",
+            "<List>\n<a/>\n<b/><c/>\n</List>",
+
+            // Degrade rather than hang or throw: a truncated payload costs one unsorted
+            // block, not the rest of the file.
+            "<List>\n<b/>\n<a/>",
+
+            // Line-ending and empty handling, where the C# tolerates null and python None.
+            "<a/>\r\n<b/>",
+            "",
+
+            // Nothing volatile at all: the pair must agree on leaving a file alone.
+            "<Signals>\n<Single Name=\"Core2\" Type=\"int\">-1</Single>\n</Signals>",
+        ];
+
+        // Both maskings, because they are different questions. Masking is required for an
+        // import round trip and must be OFF for export-to-export, where GUIDs are stable and
+        // a difference in one is genuinely meaningful. A parity test that only ever ran the
+        // default would leave the export-to-export path - Phase 5's path - uncompared.
+        foreach (var maskGuids in new[] { true, false })
+        {
+            var expected = corpus.Select(x =>
+            {
+                var n = NativeXmlNormalizer.Normalize(x, maskGuids);
+                return $"{n.GuidsMasked}|{n.CountersMasked}|{n.Text}";
+            }).ToList();
+
+            var actual = RunPython(
+                JsonSerializer.Serialize(new { cases = corpus, mask = maskGuids }),
+                """
+                import versio_native_equiv as ne
+
+                out = []
+                for case in payload["cases"]:
+                    text, guids, counters = ne.normalize(case, payload["mask"])
+                    out.append(u"%d|%d|%s" % (guids, counters, text))
+                """);
+
+            // Counts first. Indexing straight into actual would report a divergence as an
+            // IndexOutOfRange from inside the assertion loop, which says nothing about which
+            // side came up short.
+            Assert.Equal(expected.Count, actual.Count);
+
+            for (var i = 0; i < expected.Count; i++)
+            {
+                output.WriteLine($"[mask={maskGuids}] {i}: {actual[i].Replace("\n", "\\n")}");
+                Assert.True(expected[i] == actual[i],
+                    $"case {i} (maskGuids: {maskGuids}) diverges.\n"
+                    + $"  C#     : {expected[i].Replace("\n", "\\n")}\n"
+                    + $"  python : {actual[i].Replace("\n", "\\n")}\n"
+                    + $"  input  : {corpus[i].Replace("\n", "\\n")}");
+            }
+        }
+
+        // None is python's null, and the C# tolerates one. Kept out of the corpus above so
+        // the JSON carries a real absence rather than an empty string standing in for it.
+        Assert.Equal(
+            ["0|0|"],
+            RunPython("null", """
+                import versio_native_equiv as ne
+                text, guids, counters = ne.normalize(payload)
+                out = [u"%d|%d|%s" % (guids, counters, text)]
+                """));
+    }
+
+    [SkippableFact]
+    public void The_two_native_normalisers_agree_on_real_CODESYS_output()
+    {
+        // The synthetic corpus above is every case somebody thought to write down. This one
+        // is 2.9 MB of genuine CODESYS output that nobody curated: the equivalence captures
+        // from a real export -> import -> re-export cycle, and every native file in the
+        // committed mirror - Live_Visu.vis.xml among them, at 2.5 MB, which is where the
+        // unordered-container reordering actually occurs at scale.
+        //
+        // It is the half of this pair that would have caught the section 9 drifts, all four
+        // of which were behaviours no unit case covered rather than rules anybody disagreed
+        // about.
+        //
+        // Compared by hash rather than by text: the alternative is deserialising 2.9 MB of
+        // JSON per file for an assertion that is almost always true. The mask counts and the
+        // length travel beside it so a failure still says something - equal lengths with
+        // different hashes is a substitution, unequal counts names which masking diverged.
+        string[] files =
+        [
+            Core.Tests.TestPaths.Equivalence("baseline", "GlobalTextList.xml"),
+            Core.Tests.TestPaths.Equivalence("baseline", "Task Configuration.xml"),
+            Core.Tests.TestPaths.Equivalence("roundtrip", "GlobalTextList.xml"),
+            Core.Tests.TestPaths.Equivalence("roundtrip", "Task Configuration.xml"),
+            .. Directory.EnumerateFiles(
+                    Core.Tests.TestPaths.Project("RefrigeratorControl"),
+                    "*.xml", SearchOption.AllDirectories)
+                .OrderBy(p => p, StringComparer.Ordinal),
+        ];
+
+        // Existence, not a count: the four equivalence paths are named rather than globbed, so
+        // a count test would pass with all four missing and then throw out of ReadAllText.
+        Skip.If(files.Length < 6 || files.Any(f => !File.Exists(f)),
+                "the committed fixtures are not present");
+
+        var expected = files.Select(path =>
+        {
+            var n = NativeXmlNormalizer.Normalize(File.ReadAllText(path));
+            return $"{Path.GetFileName(path)}|{Sha256(n.Text)}|{n.GuidsMasked}|"
+                   + $"{n.CountersMasked}|{n.Text.Length}";
+        }).ToList();
+
+        var actual = RunPython(
+            JsonSerializer.Serialize(files.Select(f => f.Replace("\\", "/")).ToList()),
+            """
+            import hashlib, io, os
+            import versio_native_equiv as ne
+
+            out = []
+            for path in payload:
+                text, guids, counters = ne.normalize(
+                    io.open(path, encoding="utf-8").read())
+                digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+                out.append(u"%s|%s|%d|%d|%d" % (
+                    os.path.basename(path), digest, guids, counters, len(text)))
+            """);
+
+        foreach (var line in actual)
+        {
+            output.WriteLine(line);
+        }
+
+        Assert.Equal(expected, actual);
+
+        // Non-vacuous: a normaliser that returned its input unchanged would agree with
+        // another one that did the same. These files really do carry all three volatility
+        // classes, so both sides really did have work to do.
+        Assert.Contains(expected, e => e.Split('|')[2] != "0");
+        Assert.Contains(expected, e => e.Split('|')[3] != "0");
+    }
+
+    [SkippableFact]
+    public void The_python_normaliser_reaches_the_same_verdicts_the_C_sharp_one_is_pinned_to()
+    {
+        // RealRoundTripEquivalenceTests asserts three things about the committed captures,
+        // and they are the measurements this whole layer rests on. The python side has to
+        // reach them too, because Phase 2 will take the verdict from python and delete an
+        // object on the strength of it.
+        //
+        // The Core2 case is the one that matters most. import_native changed a task's CPU
+        // core affinity from -1 to -2 and it is deliberately NOT masked - it is a real value
+        // CODESYS altered without being asked. A python normaliser that masked it would call
+        // the file equivalent, and Phase 2 would then be willing to delete an object whose
+        // live state had genuinely changed.
+        var files = new[]
+        {
+            Core.Tests.TestPaths.Equivalence("baseline", "GlobalTextList.xml"),
+            Core.Tests.TestPaths.Equivalence("roundtrip", "GlobalTextList.xml"),
+            Core.Tests.TestPaths.Equivalence("baseline", "Task Configuration.xml"),
+            Core.Tests.TestPaths.Equivalence("roundtrip", "Task Configuration.xml"),
+        };
+
+        Skip.If(files.Any(f => !File.Exists(f)), "the equivalence captures are not committed");
+
+        var lines = RunPython(
+            JsonSerializer.Serialize(files.Select(f => f.Replace("\\", "/")).ToList()),
+            """
+            import io
+            import versio_native_equiv as ne
+
+            texts = [io.open(p, encoding="utf-8").read() for p in payload]
+
+            out = [
+                u"raw text list differs=%s" % (texts[0] != texts[1]),
+                u"text list equivalent=%s" % ne.are_equivalent(texts[0], texts[1]),
+                u"raw tasks differ=%s" % (texts[2] != texts[3]),
+                u"tasks equivalent=%s" % ne.are_equivalent(texts[2], texts[3]),
+            ]
+
+            # Exactly one surviving difference, and it is Core2 -1 -> -2.
+            a = ne.normalize(texts[2])[0].split(u"\n")
+            b = ne.normalize(texts[3])[0].split(u"\n")
+            diff = [(x, y) for x, y in zip(a, b) if x != y]
+            out.append(u"task diffs=%d" % len(diff))
+            out.append(u"lines=%d/%d" % (len(a), len(b)))
+            if diff:
+                out.append(u"A=%s" % diff[0][0].strip())
+                out.append(u"B=%s" % diff[0][1].strip())
+            """);
+
+        foreach (var line in lines)
+        {
+            output.WriteLine(line);
+        }
+
+        Assert.Equal(
+            [
+                // Byte-different, or the equivalence result below would mean nothing.
+                "raw text list differs=True",
+                "text list equivalent=True",
+                "raw tasks differ=True",
+
+                // NOT equivalent, and that is the correct answer: the Core2 deviation is a
+                // real change and masking it away is the one thing this normaliser must not
+                // do. It is pinned on the C# side by
+                // Task_configuration_import_mutates_Core2_and_ONLY_Core2.
+                "tasks equivalent=False",
+                "task diffs=1",
+                "lines=188/188",
+                """A=<Single Name="Core2" Type="int">-1</Single>""",
+                """B=<Single Name="Core2" Type="int">-2</Single>""",
+            ],
+            lines);
+    }
+
+    private static string Sha256(string text) =>
+        Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
 
     /// <summary>
     /// Run a snippet against the real modules, with <c>payload</c> in and <c>out</c> out.

@@ -164,13 +164,14 @@ Versio.sln
 │  │
 │  └─ Versio.Scripts.Codesys/   IronPython 2.7, run inside CODESYS. Embedded into
 │                               Versio.Infrastructure as resources. The pure modules
-│                               (text, types, yaml, libraries) import no scriptengine
-│                               and run on CPython too.
+│                               (text, types, decl, yaml, libraries, tasks,
+│                               native_equiv) import no scriptengine and run on
+│                               CPython too, which is what the parity tests use.
 ├─ tests/
 │  ├─ Versio.Core.Tests/        1,419 unit tests — pure, no IO, under a second
 │  ├─ Versio.App.Tests/         478 tests that build the real windows and panels against
 │  │                            the real stylesheet on an STA thread — none is ever shown
-│  └─ Versio.Integration.Tests/ 198 tests against real CODESYS and real git, ~10 min
+│  └─ Versio.Integration.Tests/ 201 tests against real CODESYS and real git, ~10 min
 ├─ tools/                       PowerShell harnesses used during Phase 0, plus
 │                               New-VersioIcon.ps1 which generates the app icon
 ├─ assets/                      versio.svg (reference drawing) and versio.ico

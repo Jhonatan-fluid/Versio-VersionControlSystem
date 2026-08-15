@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,419 unit + 478 UI + 198 integration, 0 skipped
+**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,419 unit + 478 UI + 201 integration, 0 skipped
 
 > **The import is plan-driven as of 2026-08-15 — Phase 1 of the import plan.** What an import
 > will do is decided C#-side by `CodesysImportPlanner`, pure, from `_manifest.json` and a
@@ -525,6 +525,22 @@ does not record them has to be run again.
   test asserts that shape specifically: a pattern matching nothing looks exactly like a pattern
   matching a file that is not there. **Deleting the fix leaves three tests red**, two of them
   pre-existing.
+- **Three of the seven C#/python pairs are still compared by nothing** — `NativeXmlScrubber` ↔
+  `scrub_native_xml`, `StTextCodec` ↔ `join_st`/`split_st`, and `StDeclarationParser` ↔
+  `parse_declaration`. `StTextCodec` is the one that matters: a bug in `split_st` silently
+  moves code between a declaration and an implementation, and it is a hand-maintained copy.
+  **This is not theoretical** — [`CODESYS.md`](CODESYS.md) §9 counts four drifts across the
+  pairs that *are* compared, two with the C# right and two with the python right, and reading
+  the two sources side by side caught none of them. The harness exists: `RunPython` in
+  `PythonFileNameParityTests` takes a snippet and a JSON payload, and
+  `versio_native_equiv.py` ↔ `NativeXmlNormalizer` was added through it on 2026-08-15 in a few
+  dozen lines. Listed in the import plan's Phase 6.
+  - **And the script inventory in §10 had gone stale unnoticed while this was true**: it said
+    ten files and five pure modules when there were twelve and seven, having missed
+    `versio_tasks.py` and `versio_yaml.py`'s reader when Phase 4 landed, and **every line count
+    in it was wrong** — `versio_import.py` read 450 against an actual 735. Corrected
+    2026-08-15, with the one-line re-derivation beside the table, because the numbers will go
+    stale again and editing the one you think changed is what produced this.
 - **Phase 2's delete preconditions are now load-bearing, not defensive.** P3 measured what
   `remove()` does to an object others reference: it removes it, saves cleanly, and warns about
   nothing. There is no toolchain backstop. So the manifest-only rule, the content check and the

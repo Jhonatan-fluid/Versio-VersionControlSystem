@@ -1,11 +1,12 @@
 # Versio — closing the CODESYS import gaps
 
-**Date:** 2026-08-15 · **Phases 0, 4 and 1 are built. Phase 4 closes G7 and G11 with the
-write tested against a real project; Phase 1 closes G3 and G6 outright, G4's resolution half,
-and G5's recorded-object half — the import is plan-driven end to end.** All three honesty
-fixes are done. Phases 2, 3, 5 and 6 are not started; **`versio_native_equiv.py` is next**,
-then phases 2 and 3 together. One Phase 4 item is still open and it is `TaskCatalog.cs`, the
-C# reader, so nothing outside python can read a `.tasks.yaml` yet.
+**Date:** 2026-08-15 · **Phases 0, 4 and 1 are built, and `versio_native_equiv.py` — the
+shared prerequisite Phases 2 and 5 both need — is built with its parity test.** Phase 4 closes
+G7 and G11 with the write tested against a real project; Phase 1 closes G3 and G6 outright,
+G4's resolution half, and G5's recorded-object half — the import is plan-driven end to end.
+All three honesty fixes are done. Phases 2, 3, 5 and 6 are not started; **phases 2 and 3
+together are next**, and nothing blocks them. One Phase 4 item is still open and it is
+`TaskCatalog.cs`, the C# reader, so nothing outside python can read a `.tasks.yaml` yet.
 
 > **This header said "nothing in phases 1–6 is built" for the whole of the session that built
 > Phase 4**, while the [build order](#build-order) below it and every G7/G11 row already said
@@ -207,9 +208,8 @@ already exists.**
 | ~~5th~~ | ✅ **The write, tested against a real project — and the two axes G11 hid behind, in the same run.** Landed 2026-08-15 | **Pulled forward from Phase 6, where it was scheduled dead last.** It was the third honesty fix and the expensive half of Phase 4's coverage, and they turned out to be **one test**: the same fixture, the same adopt-and-export scaffolding, the same CODESYS launches. Splitting them would have paid for that setup twice. It is also the item every other document already called load-bearing — the single step the whole G7/G11 argument rests on. See below |
 | ~~6th~~ | ✅ **The other two honesty fixes.** Landed 2026-08-15 | The uncounted native-import failure, and the import summary logged in the exporter's vocabulary — plus **four import events that had no handler at all**, `task_set` among them, so Versio changing a task's CPU core binding logged as the literal string `· task_set`. Each makes the *next* failure visible instead of silent |
 | ~~7th~~ | ✅ **Phase 1 — manifest-driven importer.** Landed 2026-08-15, both halves: the pure planner behind the seam, then schema 2 and the script executing exactly the plan | The foundation. The walk that inferred everything from file names is deleted, not bypassed — a planless import job now refuses to serialize, so there is no door back to it |
-| **NEXT** | **`versio_native_equiv.py`** — moved up from 8th, unchanged reasons | |
-| ~~8th~~ | **`versio_native_equiv.py`** — see NEXT above | A shared prerequisite, not a phase. Phase 2's native content check needs it and so does Phase 5 — it was written down as a Phase 5 artifact and is needed earlier |
-| **9th** | **Phases 2 and 3 — deletes, renames, moves** | Together, as originally planned. Phase 3's detection reuses Phase 2's delete candidates |
+| ~~8th~~ | ✅ **`versio_native_equiv.py`.** Landed 2026-08-15, with its parity test in the same commit | A shared prerequisite, not a phase. Phase 2's native content check needs it and so does Phase 5 — it was written down as a Phase 5 artifact and is needed earlier. **Moved up from 8th to next for that reason, then built** |
+| **NEXT** | **Phases 2 and 3 — deletes, renames, moves** | Together, as originally planned. Phase 3's detection reuses Phase 2's delete candidates. **Nothing blocks this now** |
 | **10th** | **Phase 5 — a mirror that stops churning** | Wants Phases 1–3 settled first, because it changes when files are rewritten and every earlier phase's diffs are easier to read without it |
 | **11th** | **Phase 6 — remaining gaps, tests, docs** | G8 and G9, the parity tests, the integration tests |
 
@@ -477,7 +477,7 @@ file name appearing only as the thing being corrected (G3). Summary:
 
 ---
 
-## `versio_native_equiv.py` — a shared prerequisite
+## `versio_native_equiv.py` — a shared prerequisite · ✅ **built 2026-08-15**
 
 Not a phase. **Phase 2 needs it and so does Phase 5**, and it was written down as belonging to the
 latter, which would have made Phase 2 unbuildable in the stated order.
@@ -485,6 +485,39 @@ latter, which would have made Phase 2 unbuildable in the stated order.
 A python-side equivalent of `NativeXmlNormalizer`, joining the parity discipline —
 `versio_native_equiv.py` ↔ `NativeXmlNormalizer`, compared by output in
 `PythonFileNameParityTests`. The C# side already exists and is tested.
+
+✅ **`normalize(xml, mask_guids=True) -> (text, guids_masked, counters_masked)` and
+`are_equivalent(a, b, mask_guids=True)`**, a line-for-line mirror of the C#: the two regexes,
+the three unordered-container names, counters masked before GUIDs, and the same degrade-rather
+-than-throw behaviour on a truncated payload. Pure, no `scriptengine`, runs on IronPython 2.7
+and CPython 3.
+
+✅ **Three parity tests, in the same commit as the module** — the rule the whole of §9 of
+[`CODESYS.md`](CODESYS.md) argues for, and the first pair in this repository never to have had
+an uncompared moment:
+
+- **18 measured cases, both maskings.** `NativeXmlNormalizerTests`' own corpus, because every
+  entry in it is a real difference measured on 3.5.22.20 rather than one somebody imagined.
+  The **normalised text** is compared, not a verdict: two implementations can agree on
+  "equivalent" for every pair in a corpus while masking different things, and a false-true on
+  both sides is indistinguishable from agreement.
+- **2.9 MB of uncurated real output** — the equivalence captures and every native file in the
+  committed mirror, `Live_Visu.vis.xml` at 2.5 MB included, which is where the container
+  reordering actually happens at scale. Compared by hash, with the mask counts and the length
+  beside it so a failure still says something.
+- **The pinned verdicts.** `GlobalTextList` equivalent with symmetric 30/1 masks; the task
+  configurations **not** equivalent, differing on exactly one line, and it is `Core2: -1 → -2`.
+  That last one is the point: **a python normaliser that masked `Core2` would call the file
+  equivalent, and Phase 2 would then delete an object whose live state had genuinely changed.**
+
+> **Seven deliberate defects, and the two that mattered were the ones that did not fail.**
+> Swapping the mask order, dropping a container name, masking `Core2`, dropping the
+> self-closing guard and ignoring the `mask_guids` flag each turn the suite red. **Deleting the
+> ordinal sort key did not** — C# sorts by UTF-16 code unit and CPython 3 by code point, they
+> agree across the whole BMP, and the corpus was entirely BMP. A case above it was added and
+> the mutation goes red. The **order** of the container table was unwatched the same way, since
+> no line named two of them. Both were claims the module's own comments made, with nothing
+> checking them; a green suite is not the double pass.
 
 **Measured sufficient.** Run over two steady-state snapshots of an unedited mirror: 9 files
 byte-identical, **4 equivalent — every churning one** — and only `_manifest.json` left, which is
@@ -614,29 +647,51 @@ the **existing bytes**.
 
 ---
 
-## Handoff — picking this up after Phase 1
+## Handoff — picking this up after Phase 1 and `versio_native_equiv.py`
 
 **Where you are.** The import is plan-driven end to end. `CodesysImportPlanner` (pure,
 `Versio.Core.Plc.Codesys`) decides; `LocalCodesysRunner.PlanImport` does the IO half and
 computes a plan when the caller supplied none; the job file (schema 2) carries it;
 `versio_import.py` executes it and decides nothing. A planless import refuses to serialize.
 `ImportPlan.MissingFromMirror` already lists Phase 2's delete candidates — computed, logged as
-a count, acted on by nothing.
+a count, acted on by nothing. `versio_native_equiv.py` answers "are these two native payloads
+the same thing" from inside the CODESYS process, and has **no caller yet**.
 
 **Next, in order:**
 
-1. **`versio_native_equiv.py`** — the python twin of `NativeXmlNormalizer`, compared by output
-   in `PythonFileNameParityTests`. Phase 2's native content check needs it (a byte check would
-   refuse every native deletion forever — see Phase 2's section) and so does Phase 5.
-2. **Phases 2 and 3 together** — deletes, renames, moves. The planner is where detection goes
-   (it already has the manifest, the mirror and the GUID index); the confirmation dialog is
-   why plan computation must **move up into the orchestrator** so the plan the user agrees to
-   is the plan the script executes — the carriage (`ProjectJob.Plan`, `PlcProjectJob`?) exists
-   runner-side today. `SyncViewModel`'s `PendingImportDetail` names the files; extend it to
-   name the deletions. **P3 is the thing to respect**: `remove()` deletes a referenced object
-   silently, so the preconditions in Phase 2's section are the entire safety story.
-3. **Phase 5, then Phase 6** as written below.
-4. **Still open from Phase 4:** `TaskCatalog.cs`, the C# reader, so the panel can show tasks.
+1. **Phases 2 and 3 together** — deletes, renames, moves. The planner is where detection goes
+   (it already has the manifest, the mirror and the GUID index). **P3 is the thing to
+   respect**: `remove()` deletes a referenced object silently, so the preconditions in Phase
+   2's section are the entire safety story.
+2. **Phase 5, then Phase 6** as written below.
+3. **Still open from Phase 4:** `TaskCatalog.cs`, the C# reader, so the panel can show tasks.
+   **Land it with the panel change that consumes it**, not before — a reader with no
+   production caller is a specification pretending to be code, which is exactly what
+   `DecodeStem` and `StDeclarationParser` were until the planner became their first caller.
+
+**The seam step Phase 2 opens with, and it is bigger than "move plan computation up".** The
+confirmation dialog must name deletions before CODESYS starts, so the plan the user agrees to
+has to be the plan the script executes. Three things are in the way, and none is hard once
+they are separated:
+
+- **`ProjectJob.Plan` is on the CODESYS side of the seam** (`Versio.Core.Plc.Codesys`), while
+  the **neutral** `PlcProjectJob` has no `Plan` at all — and it is `SyncOrchestrator`,
+  vendor-neutral, that builds a `PlcJob`. `ImportPlan` is already a neutral type, so a
+  `PlcProjectJob.Plan` is legitimate and leaks nothing.
+- **The IO half has to live somewhere the orchestrator can reach**, and `Versio.Core` touches
+  no disk by rule. `LocalCodesysRunner.PlanImport` reads the manifest, walks the mirror and
+  loads text for exactly the files `NeedsTextToPlan` names; that belongs in Infrastructure with
+  a neutral way in, not in the runner's `RunAsync`.
+- Only then does `SyncViewModel`'s `PendingImportDetail` get extended to name the deletions.
+
+Do it as its own commit, with no behaviour change, ending in a test that the plan the dialog
+saw is the plan the script got. It is independent of everything else in Phase 2, and it is the
+piece that makes the deletion confirmation truthful rather than decorative.
+
+**What to be careful of, learned building `versio_native_equiv.py`:** a parity test can be
+green and watching nothing. Two of its rules — the ordinal sort key and the container table's
+order — were claims the module's comments made that no case exercised, and only deliberately
+breaking each one found that out. **Write the mutation list before believing the suite.**
 
 **What to be careful of, learned building Phase 1:**
 
@@ -652,7 +707,9 @@ a count, acted on by nothing.
 ## Verification
 
 1. `dotnet test tests\Versio.Core.Tests` — pure, ~0.3 s. Carries the bulk of the new coverage.
-2. `dotnet test tests\Versio.Integration.Tests --filter PythonFileName` — parity, ~9 s.
+2. `dotnet test tests\Versio.Integration.Tests --filter PythonFileName` — parity, 51 tests,
+   ~11 s. Needs `python` on PATH and skips cleanly without it, so **a green run on a machine
+   with no python has verified nothing** — check the count, not the colour.
 3. `tools\Test-RoundTrip.ps1 … -MutateFirst` — the per-layer verdict stays **PASS**, and
    `Task Configuration.xml` drops out of the native-differs list once Phase 4 lands.
 4. **The G10 acceptance test:** `tools\Measure-ImportStability.ps1` must print **`P7: SETTLES`**
