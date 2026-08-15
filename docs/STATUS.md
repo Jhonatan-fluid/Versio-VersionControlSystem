@@ -13,6 +13,15 @@
 > findings, and [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md) for what P7 changed in the
 > plan itself.
 >
+> **Phase 0 is now complete — all nine probes measured.** `rename` and `move` preserve identity
+> across a save and reopen, so Phase 3 is safe to build; the typed task API is sufficient, so
+> Phase 4 is; awkward object names cannot be created at all, which closes two gaps as
+> unreachable; and **four of the seven API spellings the plan had were wrong**, because
+> reflection says a member exists without saying what it accepts. The one bad answer is P3:
+> `remove()` deletes an object other objects reference **silently** — no throw, no cascade, no
+> warning — which makes Phase 2's preconditions the only protection there is rather than a
+> second layer of one.
+>
 > **One entry in that work was recorded as a cause before it was tested, and was wrong.** It is
 > kept in the finding rather than tidied away, because it is the clearest example in this file of
 > the difference between a story that fits the evidence and a cause.
@@ -475,6 +484,11 @@ does not record them has to be run again.
   test asserts that shape specifically: a pattern matching nothing looks exactly like a pattern
   matching a file that is not there. **Deleting the fix leaves three tests red**, two of them
   pre-existing.
+- **Phase 2's delete preconditions are now load-bearing, not defensive.** P3 measured what
+  `remove()` does to an object others reference: it removes it, saves cleanly, and warns about
+  nothing. There is no toolchain backstop. So the manifest-only rule, the content check and the
+  named confirmation are the entire safety story for deletion, and each one is worth more than it
+  looked when they were written as belt-and-braces.
 - **G11 has a measured mitigation and no decision.** Deleting
   `<project>_project.precompilecache` immediately before an import fixes it, and the import
   regenerates the cache itself, so nothing is lost. What is undecided is whether Versio should

@@ -1,13 +1,13 @@
 # Versio — closing the CODESYS import gaps
 
-**Date:** 2026-08-15 · **Phase 0 is nine measurements and comes first. One is done (P7), and
-nothing in phases 1–6 is built.** The only product code this has produced so far is one
-`.gitignore` pattern — the compile cache P7's second finding turned out to hinge on.
+**Date:** 2026-08-15 · **Phase 0 is complete — all nine measured. Nothing in phases 1–6 is
+built.** The only product code so far is one `.gitignore` pattern, from the compile cache P7's
+second finding turned out to hinge on.
 
 | | |
 |---|---|
 | Document | **The plan for making the import side a real bidirectional sync.** Deletes, renames, moves, typed task configuration, and a mirror that stops churning after every import |
-| Status | **Phase 0 started, no product code yet. P7 is done — see G10, G11 and [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md).** Eight probes left; two of them may still close gaps outright rather than cost code |
+| Status | **Phase 0 done, phases 1–6 not started.** All nine probes measured on 2026-08-15 — see the Phase 0 section, G10 and G11. Two gaps closed as unreachable, four API spellings corrected, one new defect found (G11) and one open risk answered badly (P3 dangles silently) |
 | Related | [`CODESYS.md`](CODESYS.md) — how CODESYS is driven today, and §12, the audit these gaps came from · [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) — what was measured · [`PLAN.md`](PLAN.md) — the architecture · [`SAFEGUARDS.md`](SAFEGUARDS.md) — what Versio refuses or waits for |
 
 ---
@@ -35,7 +35,7 @@ invisible to any amount of reading because it only exists on the *second* cycle.
 | G5 | A dot in a name breaks the owner split | `My.Thing.st` → looks for member `Thing` of parent `My` |
 | G6 | Stray files go to `import_native` | A `README.md` in the mirror is handed to CODESYS as native XML |
 | G7 | Task Configuration mutated on every import | `Core2` `-1`→`-2`. Documented as "diff-only" — it never was |
-| G8 | Managed library references unproven | All 34 fixture references are placeholders; the `managed_library` branch has never executed |
+| G8 | Managed library references unproven | Every fixture reference is a placeholder and the `managed_library` branch has never executed. **P9 closes the hard half:** one `add_library` call produces a real managed reference. (The count here said 34; the Library Manager reports **21**, so the number was wrong as well as the conclusion) |
 | G9 | Total path length unguarded | Stems capped at 80; the **full path** is not, and `.versio_staging` makes it 16 longer |
 | **G10** | **Import → export is not byte-stable** | `UniqueIdGenerator` **44 → 47 → 50 → 53**, +3 per cycle, measured over three cycles by P7 on 2026-08-15. It never settles. **Two corrections to the original wording**, both from the same measurement. Of the **eight** native files the import touches: three visualisations climb on the counter, `GlobalTextList.xml` churns every cycle with **no counter in it at all** (re-minted `GuidInit`/`GuidReInit`/`GuidExitX`), `Task Configuration.xml` moves once and then settles, and `Glob_Var.gvl.xml`, `PLC_PRG.xml` and `Signals.xml` are byte-stable throughout. So it is **four of eight forever, not "every native file it touched"**, and the counter is **one of two causes, not the cause** |
 | **G11** | **Every import after the first fails on task configuration, and reports success** | Found by P7, not predicted here. `import_native` throws `Collection was modified` at `Project.GetUniqueName` on `MainTask` and `VISU_TASK`; the summary still reads `failed: 0`. **Isolated to `<project>_project.precompilecache`** — the cache alone is sufficient, the `.opt` files are innocent, and the mirror's bytes are irrelevant. A fresh clone has no cache, so the first import works and every later one does not. **Not the same root cause as G7**, which is what this row claimed before it was tested |
@@ -50,22 +50,33 @@ import that alters nothing semantically leaves no diff behind.
 
 Nobody had checked. Reflecting over `ScriptEngine3.dll` and `ScriptDriverProjects.plugin.dll`, the
 API is **considerably richer than the scripts use**, and three gaps exist only because we never
-looked:
+looked.
 
-| Member (`IScriptObject` unless noted) | Closes |
-|---|---|
-| `rename(stNewName)` | **G2** — renames are supported outright |
-| `move(new_parent, new_index)` | **G2** — so are moves |
-| `remove()` | **G1** |
-| `find(String[] namePath)`, `find(name, recursive)` | **G4, G5** — let CODESYS resolve paths instead of parsing file names |
-| `parent`, `index`, `guid` properties | G1–G2 bookkeeping |
-| `ScriptTaskObject`: `set_core_binding`, `set_priority`, `set_interval`, `set_interval_unit`, `watchdog`, `pous`, `event_pou_guid` | **G7 at the root** |
-| `ScriptLibManObject`: `add_library`, `add_placeholder`, `remove_library` | not in scope — see [Not doing](#not-doing) |
+**Every row below has now been called** (P0–P9, 2026-08-15). The members are all there, and
+**four of the spellings in the original table were wrong** — struck through, with what actually
+works beside them. Reflection says a member exists; it does not say what the member accepts, and
+that is where all four errors were.
 
-> **Method note.** A string search of the binary reported that `move` did not exist. Reflection
-> says it does. **Reflection is authoritative**, and the string search nearly wrote a wrong
-> constraint into this plan. Anyone re-checking the API should reflect, resolving dependencies
-> from `Common`, `Common32` and `PlugIns`.
+| Member (`IScriptObject` unless noted) | Closes | Measured |
+|---|---|---|
+| `rename(stNewName)` | **G2** | ✅ works, and **the GUID survives a save/close/reopen** |
+| ~~`move(new_parent, new_index)`~~ → **`move(new_parent, -1)`** | **G2** | ✅ GUID survives. **`new_index` must be `-1`** unless the parent has sorted children — `0` raises `ValueError: index must be -1 if the new parent node does not have sorted children`, and the one-argument form raises a `NullReferenceException` |
+| `remove()` | **G1** | ✅ works — **and see P3: it removes a referenced object silently** |
+| ~~`find(String[] namePath)`~~ → **`find("a", "b", "c")` varargs** | **G4, G5** | ✅ varargs resolves a full path, spaces included. **A python list raises `TypeError: expected Array[str], got list`.** `find(name, True)` is recursive; `find(name)` alone returns an empty list |
+| `parent`, `index`, `guid` properties | G1–G2 bookkeeping | ✅ all three read |
+| ~~`ScriptTaskObject`: `set_core_binding`, `set_priority`, …~~ → **plain property assignment** | **G7 at the root** | ✅ all seven fields read. **`set_priority()` does not exist** (`AttributeError`). Assignment works and **the types differ per field**: `priority` wants a **`str`** (`"2"`; an int raises `TypeError: expected str, got int`), `core_binding` wants an **`int`**. Both persist across a reopen |
+| ~~`ScriptLibManObject`: `add_library(name, version)`~~ → **`add_library("Name, 1.2.3.4 (System)")`** | G8 | ✅ **one argument, not two.** Yields a `ScriptManagedLibraryReference` with `is_managed: true` — the branch that had never executed |
+
+> **Method note, now twice over.** A string search of the binary reported that `move` did not
+> exist; reflection said it does. **Reflection is authoritative over a string search, and calling
+> is authoritative over reflection** — the four corrections above are all things reflection could
+> not tell us, because they are about argument types and values rather than about existence.
+>
+> **And introspection from inside the script is worthless here**, which is worth knowing before
+> anyone tries it: `dir()` on a `ScriptObject` returns an **empty list**, and `GetType()
+> .GetMembers()` omits `get_children`, `get_name` and `textual_declaration` — three members the
+> exporter has called on every run for months. They arrive through *extenders* at runtime. So
+> **absence from either listing proves nothing**, and the only sound probe is to call the thing.
 
 **The `Core2` mutation is self-inflicted.** It happens only because task configuration is
 round-tripped as native XML, and a typed API for exactly those fields has been there all along.
@@ -108,24 +119,84 @@ This gives them one, so the parity tests start protecting live code rather than 
 
 ## Phase 0 — Empirical baseline against a real project
 
-**No product code.** Runs on a **scratch copy** of `RefrigeratorControl.project` through
-`tools/Run-Codesys.ps1`. Two purposes: confirm the API behaves as reflection claims, and establish
-**which gaps are even reachable** — if CODESYS refuses to create a POU named `My.Thing`, G5 closes
-as "cannot occur" rather than costing defensive code.
+**No product code.** **One scratch copy per probe**, through `tools\Probe-ImportApi.ps1`
+(P1–P9 minus P7) and `tools\Measure-ImportStability.ps1` (P7). One copy each rather than one
+shared, because every probe here mutates and P3 removes a referenced object — what it leaves
+behind is not a project anything else should be measured against.
+
+Two purposes: confirm the API behaves as reflection claims, and establish **which gaps are even
+reachable** — if CODESYS refuses to create a POU named `My.Thing`, G5 closes as "cannot occur"
+rather than costing defensive code.
+
+**Both purposes paid off, and in opposite directions.** Four API spellings were wrong, so the
+first purpose saved a day of debugging Phase 3 and Phase 4. And `My.Thing` *is* refused, so the
+second purpose closed two gaps — though not as completely as that sentence hoped; see the caveat
+under P5.
 
 | # | Test | Answers |
 |---|---|---|
-| P1 | `rename` an object; re-read its GUID | Does identity survive? The whole design rests on it |
-| P2 | `move` an object to another folder; re-read GUID and `index` | Same, plus what `new_index` means |
-| P3 | `remove()` an object another object references | Throws, cascades, or dangles? |
-| P4 | `find([...namePath])` on a name needing percent-encoding | G4 — can CODESYS resolve what we cannot? |
-| P5 | `create_pou` with `My.Thing`, `weird<name>`, trailing space | **Reachability** of G3/G4/G5 |
-| P6 | Read `core_binding`/`priority`/`interval` via `ScriptTaskObject`; set one back | G7 — is the typed path sufficient? |
+| ~~P1~~ | ~~`rename` an object; re-read its GUID~~ | ✅ **Yes, and across a save/close/reopen.** Same GUID all three times. Phase 3 is safe to build |
+| ~~P2~~ | ~~`move` an object to another folder~~ | ✅ **GUID survives.** `new_index` is not a position: it **must be `-1`** for an unsorted parent, which is every parent in the fixture |
+| ~~P3~~ | ~~`remove()` an object another object references~~ | ⚠️ **Dangles, silently.** Removing the `Glob_Var` GVL threw nothing, saved cleanly, 25 → 24 objects, gone after reopen. **No warning of any kind.** See below |
+| ~~P4~~ | ~~`find([...namePath])` on an encoded name~~ | ✅ **Varargs works**, spaces included; a python list raises `TypeError`. Moot for encoded names, because P5 says they cannot be created |
+| ~~P5~~ | ~~`create_pou` with awkward names~~ | ✅ **All four refused** — `My.Thing`, `weird<name>`, `Pump ` and `Pump.` each give *“The name is not valid for this object”*. **G4 and G5 are unreachable this way.** Read the caveat below before deleting any code |
+| ~~P6~~ | ~~Read and write task fields typed~~ | ✅ **Sufficient.** All seven read; `priority` and `core_binding` both written and persisted across a reopen. **Phase 4 is viable** |
 | ~~P7~~ | ~~**Three consecutive import→export cycles, unchanged mirror**~~ | ✅ **done 2026-08-15 — it climbs, +3 per cycle, forever.** `tools/Measure-ImportStability.ps1`. Also found G11 |
-| P8 | Deep folder chain near 260 characters | G9 — where it actually breaks |
-| P9 | A fixed-version (non-placeholder) library reference | G8 — exercises `managed_library` |
+| ~~P8~~ | ~~Deep folder chain near 260 characters~~ | ✅ **CODESYS is not the limit** — ten 40-character levels created without complaint, ~420 characters nominal. The 260 ceiling belongs to Windows, and therefore to the exporter |
+| ~~P9~~ | ~~A fixed-version library reference~~ | ✅ **Producible in one call.** `add_library("Standard, 3.5.17.0 (System)")` — 21 → 22 references, the new one a `ScriptManagedLibraryReference` with `is_managed: true`. G8 needs no new fixture project |
 
-~~**P7 decides whether Phase 5 is needed at all.**~~ **It did, and Phase 5 stays.** The counter
+~~### What Phase 0 answered, and what it changed
+
+**Two results change what gets built. The rest confirm the plan.**
+
+#### P3 — `remove()` dangles silently, and that is the worst of the three possible answers
+
+The plan listed this as an open risk: *"`remove()` behaviour with referenced objects is unknown."*
+Now known. Removing the `Glob_Var` GVL — a global variable list the POUs read from — produced **no
+exception, no cascade, and no warning**. The save succeeded, the object count went 25 → 24, and it
+was still gone after a reopen. CODESYS neither refuses nor repairs; it leaves the references
+dangling and says nothing.
+
+**This raises the stakes on Phase 2 rather than lowering them.** The preconditions in that phase
+are not belt-and-braces around a toolchain that would catch a mistake anyway — **they are the only
+thing standing between a stale manifest and silently breaking somebody's project.** Nothing
+downstream will object. The named confirmation dialog is doing real work, and so is the rule that
+a missing or unparseable manifest disables deletion entirely.
+
+#### P5 — the awkward names cannot be created, which is *not* the same as cannot exist
+
+`create_pou` refused all four: `My.Thing`, `weird<name>`, `Pump ` and `Pump.`, each with *"The
+name is not valid for this object."* So **G4 and G5 cannot be reached by creating an object**, and
+the defensive code the plan budgeted for them is smaller than assumed.
+
+**Do not read that as "encoded names cannot occur", and do not delete the encoding on the strength
+of it.** Two reasons, both already documented in this repository:
+
+- **External-file references are named `{GUID}|C:\Users\<user>\...\file.txt`.** That is a real
+  object name, in `README.md`'s own list of things that are not names, carrying `|`, `:` and `\`.
+  It is exactly what `safe_file_stem` shortens, and it did not come from `create_pou`.
+- **P5 tests one door.** Names also arrive from the IDE, from imported libraries and device
+  descriptions, and from `import_native`. This probe says the ScriptEngine validates on creation;
+  it says nothing about what a project can already contain.
+
+So the honest conclusion is narrower than "G4 and G5 are closed": **the importer will not be asked
+to create an object with such a name, so `create_textual` needs no defence — but resolution and
+file-name encoding still do**, because an object that already has such a name still has to be
+found and still has to be written to disk.
+
+#### The rest, briefly
+
+- **P1 and P2** — identity survives both operations, in session and across a save/close/reopen.
+  Phase 3's whole premise holds. Use `move(parent, -1)`.
+- **P6** — the typed path is sufficient, including `core_binding`, the field `import_native` keeps
+  mutating. **Phase 4 is buildable exactly as designed**, with corrected setter spellings.
+- **P8** — CODESYS accepted ten nested 40-character folders without complaint. The 260-character
+  limit is Windows', so G9 is entirely the exporter's problem and no CODESYS behaviour mitigates it.
+- **P9** — a fixed-version reference takes one call, so G8 needs no hand-built fixture. Note the
+  managed type has **no** `effective_resolution`; `is_managed` / `is_placeholder` are the
+  discriminators, and the fields differ between the two reference types.
+
+**P7 decides whether Phase 5 is needed at all.**~~ **It did, and Phase 5 stays.** The counter
 climbed 44 → 47 → 50 → 53 with nothing edited between cycles, so the keep-existing-bytes rule is
 justified by measurement. What P7 also showed is that Phase 5 must key on
 **normaliser-equivalence and not on the counter**: `GlobalTextList.xml` churns every cycle and has

@@ -20,7 +20,8 @@
 | 0.15 | ST round-trip | ✅ verified in code + unit tests |
 | **0.5** | **Round-trip losslessness — textual path** | ✅ **proven with a real mutation** (see below) |
 | 0.5b | Round-trip — native XML path | ⚠️ **not yet tested** — 8 of 10 files skipped by the importer |
-| P7 | Import → export churn over 3 cycles | ⚠️ **climbs +3 per cycle, never settles** — and the import itself fails from cycle 2. See below |
+| P7 | Import → export churn over 3 cycles | ⚠️ **climbs +3 per cycle, never settles** — and every import after the first fails. See below |
+| P0–P9 | The import API, called rather than reflected on | ⚠️ **four of seven documented spellings were wrong**, two gaps closed as unreachable, and `remove()` dangles silently. See below |
 
 ---
 
@@ -177,6 +178,61 @@ That is a task's **CPU core affinity**, and `import_native` changed it without b
 > next import of a mirror this deviation produced **fails**, and the failure is silent in the
 > summary. The recommendation now is Phase 4 of [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md)
 > — typed task configuration, so `import_native` never sees this file again.
+
+---
+
+## P0–P9 — the import API, called rather than reflected on
+
+**Measured 2026-08-15**, `tools\Probe-ImportApi.ps1`, one scratch copy per probe.
+
+The import plan's API table came from reflecting over `ScriptEngine3.dll`. Reflection was already
+an improvement — a string search of the same binary had reported `move` as absent when it exists,
+and nearly wrote a wrong constraint into the design. **Reflection was still not enough: it says a
+member exists, not what it accepts, and four of the seven rows were wrong about that.**
+
+| Probe | Question | Answer |
+|---|---|---|
+| P0 | What does the API surface look like from inside? | **Nothing.** `dir()` on a `ScriptObject` is empty and `GetMembers()` omits members the exporter calls daily |
+| P1 | Does a rename preserve identity? | **Yes** — same GUID in session and after save/close/reopen |
+| P2 | Does a move? What is `new_index`? | **Yes.** `new_index` **must be `-1`** for an unsorted parent |
+| P3 | `remove()` on a referenced object | **Dangles silently** — no throw, no cascade, no warning |
+| P4 | Can `find` resolve what our encoding cannot? | **Varargs yes**, python list `TypeError`, bare name returns empty |
+| P5 | Can awkward names be created? | **No** — all four refused by name validation |
+| P6 | Is the typed task path sufficient? | **Yes**, including `core_binding`; setters are property assignment |
+| P8 | Where does path length break? | **Not in CODESYS** — ten 40-char levels, ~420 characters, no complaint |
+| P9 | Can a fixed-version library reference be made? | **Yes, one call.** Produces `is_managed: true` |
+
+### The three that changed something
+
+**P0 · introspection from inside the script is worthless, and that is the finding.** `dir()` on a
+`ScriptObject` returns an **empty list**. `GetType().GetMembers()` does better — it shows `rename`,
+`move`, `remove`, `find`, `guid`, `parent`, `index` — but it **omits `get_children`, `get_name` and
+`textual_declaration`**, three members `versio_export.py` has called on every run for months. Those
+arrive through *extenders* at runtime.
+
+So **absence from either listing proves nothing**, and a probe that concluded "the typed task API
+does not exist" from the CLR member list would have been wrong: every one of the seven task fields
+reads fine despite none of them appearing there. The only sound probe is to call the thing, which
+is why every probe here reports the exception type and message rather than a bare `None`.
+
+**P3 · `remove()` dangles, silently — the worst of the three possible answers.** The plan called
+this an open risk. Removing the `Glob_Var` GVL, which the POUs read from, threw nothing, cascaded
+nothing, saved cleanly, took the object count 25 → 24, and stayed gone after a reopen.
+
+That **raises** the stakes on Phase 2. Its preconditions are not defence-in-depth over a toolchain
+that would catch the mistake anyway — they are the only thing between a stale manifest and quietly
+breaking a project, because nothing downstream will object.
+
+**P5 · the awkward names are refused, which is narrower than it sounds.** `create_pou` rejected
+`My.Thing`, `weird<name>`, `Pump ` and `Pump.`, each with *"The name is not valid for this
+object."* So the importer will never be asked to *create* one, and G3's blast radius shrinks.
+
+**It does not follow that such names cannot exist, and the encoding must not be deleted on the
+strength of this.** `README.md` already records that an external-file reference is named
+`{GUID}\|C:\Users\<user>\...\file.txt` — a real object name carrying `|`, `:` and `\`, which
+is precisely what `safe_file_stem` shortens, and which did not come from `create_pou`. P5 tested
+one door; names also arrive from the IDE, from libraries and device descriptions, and from
+`import_native`.
 
 ---
 
