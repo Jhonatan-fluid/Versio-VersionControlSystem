@@ -1,6 +1,6 @@
 {
   "bindingId": "6d3f8855e205", 
-  "objectCount": 12, 
+  "objectCount": 13, 
   "objects": [
     {
       "bytes": 217759, 
@@ -75,8 +75,17 @@
       "type": "POU"
     }, 
     {
+      "bytes": 1257, 
+      "form": "TASK_BOTH", 
+      "guid": "7c1a32ef-a1ae-4012-81f7-53c1a9cdd552", 
+      "hash": "sha256:9441bcfe1f4c1433914a7f8c83a960cf5bb24aafb2d349dc2e7b10568b3be6fa", 
+      "name": "Task Configuration", 
+      "path": "Device/Plc Logic/Application/Task Configuration.tasks.yaml", 
+      "type": "TASK_CONFIGURATION"
+    }, 
+    {
       "bytes": 12528, 
-      "form": "NATIVE_R", 
+      "form": "TASK_NATIVE", 
       "guid": "7c1a32ef-a1ae-4012-81f7-53c1a9cdd552", 
       "hash": "sha256:79144a970995d1f6ad66a4adadb7d2920f002bd63387f8d9b00d4baab933d2c8", 
       "name": "Task Configuration", 

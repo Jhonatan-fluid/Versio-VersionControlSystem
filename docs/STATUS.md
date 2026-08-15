@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,388 unit + 478 UI + 194 integration, 0 skipped
+**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,388 unit + 478 UI + 195 integration, 0 skipped
 
 > **Also 2026-08-15, on branch `GitImportPlan`: Phase 0 of the import plan started, and its
 > first probe found a defect that reaches users.** P7 measured what an import → export cycle does
@@ -515,28 +515,24 @@ does not record them has to be run again.
   cache is never reached. Versio deletes nothing of CODESYS's. Measured over three cycles:
   zero warnings, where cycles 2 and 3 used to throw twice each. **`Core2` stopped moving in
   the same change**, which closes G7 with it.
-- **The typed task-import path has no automated test at all.** `.tasks.yaml` → property
-  assignment is what closes G7 and G11, and it is proven by **one hand-run mutation** and by
-  nothing in any suite: no test writes a `priority` and asserts the project changed. What *is*
-  covered is either side of it — the export writes the file, the emitter and reader agree, the
-  XML is skipped as `TYPED_SIBLING` — but not the step that writes to CODESYS. **This is the
-  same shape of gap that let G11 live**, and it is load-bearing: the whole argument for the
+- **The typed task-import path is half covered — the half that writes to CODESYS is not.**
+  `.tasks.yaml` → property assignment is what closes G7 and G11, and **no test writes a
+  `priority` and asserts the project changed**; that is still proven by one hand-run mutation.
+  ~~Nor was the file's own parsing covered.~~ **Closed 2026-08-15**: the committed
+  `.tasks.yaml` is now parsed by the reader the importer calls, in a test needing no CODESYS,
+  and verified non-vacuous by perturbing an expected value. So the emitter, the reader, the
+  committed bytes and the `TYPED_SIBLING` skip are all watched; **the write is not**. It is the
+  same shape of gap that let G11 live, and it is load-bearing — the whole argument for the
   typed path is that it applies what the YAML says. `TaskCatalog.cs`, the C# reader, is also
-  still unwritten, so nothing outside python can read the file either.
-- **The committed fixture mirror is a shape the exporter can no longer produce.** It carries no
-  `Task Configuration.tasks.yaml` and still records that object's XML as `NATIVE_R`, both of
-  which changed on 2026-08-15. Nothing fails, which is the problem:
-  `WorkspaceTreeFromCommittedExportTests` asserts against it under a docstring claiming it
-  describes *"the tree somebody sees when they open this repository in the app"*, so it is now
-  protecting a stale specification rather than a live one. It was left out of Phase 4 because
-  regenerating moves committed bytes and wants its own review — that reason still holds, but the
-  cost of waiting has gone up. **It also blocks a free test:** the committed `.libraries.yaml` is
-  parsed by its reader in a test needing no CODESYS, and the identical test for `.tasks.yaml`
-  cannot be written until the fixture carries one. **One assertion cascades** —
-  `WorkspaceTreeFromCommittedExportTests` reads `ExportOnlyFiles` as 2 and it becomes 3, the same
-  move already made in the real-export suite. `One_object_with_two_layers_is_still_one_row`
-  survives untouched, because it asks `Assert.Single` for the GVL by name rather than counting
-  every two-file object — and the task configuration is about to become the second one.
+  still unwritten, so nothing outside python can read the file.
+- ~~**The committed fixture mirror is a shape the exporter can no longer produce.**~~
+  **Closed 2026-08-15 by regenerating it**, and it cost far less than "moves committed bytes"
+  implied. **Every existing content file came back byte-identical, `Task Configuration.xml`
+  included.** The whole diff is the new `.tasks.yaml`, `_coverage.md`, and one `form` field
+  plus `objectCount` in the manifest. `ExportOnlyFiles` 2 → 3 was the single predicted cascade
+  and the only one. That the other twelve files did not move is itself worth recording: it is
+  the strongest evidence available that the export is still deterministic across everything
+  this touched.
 - **An import's summary is logged with the exporter's field names.** **Still open.**
   `LocalCodesysRunner.cs` builds one `summary` message from `walked` / `written` / `skipped` /
   `gaps`; an import reports `updated` / `unchanged` / `native` / `created` / `missing` /

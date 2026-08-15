@@ -484,6 +484,74 @@ public sealed class PythonFileNameParityTests(ITestOutputHelper output)
             out = [versio_text.safe_file_stem(n) for n in payload]
             """);
 
+    [SkippableFact]
+    public void The_committed_task_file_parses_with_the_reader_that_ships_beside_it()
+    {
+        // The counterpart of the library test in WorkspaceTreeFromCommittedExportTests, and
+        // the cheap half of the coverage the typed import path is missing. It needs no
+        // CODESYS: it reads bytes a real export committed and parses them with the reader the
+        // importer itself calls, so it catches an emitter/reader divergence for free.
+        //
+        // That divergence is not hypothetical. The emitter has been wrong twice on this file
+        // already — a POU list rendered as python's repr, and before that a GVL suffix falling
+        // through to a default — and both produced a file whose contents lied about their own
+        // type while every existing assertion passed.
+        //
+        // It could not exist until 2026-08-15, because the committed mirror had no
+        // .tasks.yaml: the fixture was left unregenerated when Phase 4 landed.
+        var path = Path.Combine(
+            Core.Tests.TestPaths.Root, "fixtures", "projects", "RefrigeratorControl",
+            "Device", "Plc Logic", "Application", "Task Configuration.tasks.yaml");
+
+        Skip.If(!File.Exists(path), "the fixture's export is not committed");
+
+        var lines = RunPython(
+            JsonSerializer.Serialize(new { path = path.Replace("\\", "/") }),
+            """
+            import io
+            import versio_yaml as y
+
+            text = io.open(payload["path"], encoding="utf-8").read()
+            top, key, items = y.parse_document(text)
+
+            out = ["key=%s" % key,
+                   "schema=%s" % top.get("schema"),
+                   "vendor=%s" % top.get("vendor"),
+                   "count=%s" % top.get("taskCount"),
+                   "items=%d" % len(items)]
+            for it in items:
+                out.append("%s|%s|%s|%s|%s" % (
+                    it.get("name"), it.get("priority"), it.get("interval"),
+                    it.get("coreBinding"), ",".join(it.get("pous") or [])))
+            """);
+
+        foreach (var line in lines)
+        {
+            output.WriteLine(line);
+        }
+
+        Assert.Equal(
+            [
+                "key=tasks",
+                "schema=1",
+                "vendor=codesys",
+                "count=2",
+                "items=2",
+
+                // Every value is TEXT, including coreBinding, which CODESYS wants as an int
+                // on the way back. The reader never infers a type, because priority wants a
+                // string and core binding wants an int and one guess would be wrong for one
+                // of them — the caller converts, knowing which field it holds.
+                //
+                // interval is the reason the values are verbatim: "t#20ms" on one task and
+                // "100" on the other, in one project. A normaliser would rewrite one of them
+                // and put a diff in front of somebody that they did not make.
+                "MainTask|1|t#20ms|-2|PLC_PRG,Simulation",
+                "VISU_TASK|31|100|-1|VisuElems.Visu_Prg",
+            ],
+            lines);
+    }
+
     /// <summary>
     /// Run a snippet against the real modules, with <c>payload</c> in and <c>out</c> out.
     /// </summary>

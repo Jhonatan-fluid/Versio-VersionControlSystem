@@ -197,13 +197,14 @@ already exists.**
 |---|---|---|
 | ~~1st~~ | ✅ **Phase 4 — typed task configuration.** Landed 2026-08-15, both halves. **G7 and G11 measured closed** | The only phase that fixes **two live, user-facing defects**: G7 changes CPU core affinity nobody asked to change, and G11 makes every import after the first silently fail. P6 proved the typed path works; a direct experiment proved removing the file from `import_native` fixes G11 without relocating the fault. Independent of everything else here |
 | ~~2nd~~ | ✅ **The task XML's one-wayness, recorded.** Landed 2026-08-15, immediately after | **Not planned — found by re-reading Phase 4 as if somebody else had written it.** Making the YAML importable made the `.xml` a file the export writes and the import discards, and nothing said so: not `_coverage.md`, not the manifest, not the panel's lock glyph. It went first because it is a **live silent-data-loss path introduced by the commit that had just landed**, where the honesty fixes below make *future* failures visible. See the finding in [`STATUS.md`](STATUS.md) |
-| **NEXT** | **Regenerate the committed fixture mirror** | Was "wants its own review" and is now **load-bearing**: the committed manifest still records the task XML as `NATIVE_R` and carries no `.tasks.yaml`, so `WorkspaceTreeFromCommittedExportTests` — whose docstring claims it describes *"the tree somebody sees when they open this repository in the app"* — is asserting against a mirror the current exporter cannot produce. It also unlocks a `.tasks.yaml` reader test that needs no CODESYS, which is the cheap half of the missing coverage below |
-| **3rd** | **The three honesty fixes** | Small, unrelated to each other, and each makes the *next* failure visible instead of silent. None depends on any phase |
-| **4th** | **Phase 1 — manifest-driven importer** | The foundation. Nothing else can be planned C#-side until the plan exists |
-| **5th** | **`versio_native_equiv.py`** | A shared prerequisite, not a phase. Phase 2's native content check needs it and so does Phase 5 — it was written down as a Phase 5 artifact and is needed earlier |
-| **6th** | **Phases 2 and 3 — deletes, renames, moves** | Together, as originally planned. Phase 3's detection reuses Phase 2's delete candidates |
-| **7th** | **Phase 5 — a mirror that stops churning** | Wants Phases 1–3 settled first, because it changes when files are rewritten and every earlier phase's diffs are easier to read without it |
-| **8th** | **Phase 6 — remaining gaps, tests, docs** | G8 and G9, the parity tests, the integration tests |
+| ~~3rd~~ | ✅ **The committed fixture mirror, regenerated.** Landed 2026-08-15 | It was asserting against a mirror the current exporter cannot produce. **The feared cost did not materialise: every existing content file came back byte-identical**, `Task Configuration.xml` included — the only changes are the new `.tasks.yaml`, one `form` field (`NATIVE_R` → `TASK_NATIVE`), `objectCount` 12 → 13, and the coverage report. One assertion moved, exactly as predicted. It also unlocked the reader test below |
+| ~~4th~~ | ✅ **`.tasks.yaml` parsed by its own reader, against committed bytes.** Landed 2026-08-15 | The cheap half of the typed path's missing coverage, and it needs **no CODESYS** — the same shape as the library test that has run for months. Verified non-vacuous by perturbing an expected value. The expensive half, a real mutation applied to a project, stays in Phase 6 |
+| **NEXT** | **The three honesty fixes** | Small, unrelated to each other, and each makes the *next* failure visible instead of silent. None depends on any phase |
+| **5th** | **Phase 1 — manifest-driven importer** | The foundation. Nothing else can be planned C#-side until the plan exists |
+| **6th** | **`versio_native_equiv.py`** | A shared prerequisite, not a phase. Phase 2's native content check needs it and so does Phase 5 — it was written down as a Phase 5 artifact and is needed earlier |
+| **7th** | **Phases 2 and 3 — deletes, renames, moves** | Together, as originally planned. Phase 3's detection reuses Phase 2's delete candidates |
+| **8th** | **Phase 5 — a mirror that stops churning** | Wants Phases 1–3 settled first, because it changes when files are rewritten and every earlier phase's diffs are easier to read without it |
+| **9th** | **Phase 6 — remaining gaps, tests, docs** | G8 and G9, the parity tests, the integration tests |
 
 ### The three honesty fixes
 
@@ -291,10 +292,12 @@ Mirrors the library-reference design exactly, which is the precedent to copy:
 - ⬜ **New `src/Versio.Core/Projects/TaskCatalog.cs`** — a C# reader mirroring `LibraryCatalog`,
   so the panel can show tasks. **It needs the scalar list**, which `LibraryCatalog.Parse`
   does not handle: no library field is a list, so the construct never reached it.
-- ⬜ **Regenerate the committed fixture mirror** to carry the new file. This moves committed
-  bytes and is the part this plan flags as wanting its own review. **Now the next thing to
-  do** — see [Build order](#build-order) for why the cost of leaving it has gone up, and
-  `STATUS.md` for the single assertion it cascades to (`ExportOnlyFiles` 2 → 3).
+- ✅ **Regenerate the committed fixture mirror** to carry the new file. **Done 2026-08-15,
+  and it cost far less than this plan feared.** "Moves committed bytes" turned out to mean
+  three files: the new `.tasks.yaml`, `_coverage.md`, and `_manifest.json` — where the only
+  object change is one `form` field. **Every other file, including `Task Configuration.xml`
+  itself, came back byte-identical**, which is also the strongest available evidence that
+  the export is still deterministic across everything this touched.
 - ⬜ **An integration test that changes a task priority and asserts the project afterwards.**
   Listed under Phase 6, and worth pulling forward: the typed path is proven by a hand-run
   mutation today and by nothing automated, which is the same shape as the coverage gap that

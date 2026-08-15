@@ -226,8 +226,19 @@ public sealed class WorkspaceTreeFromCommittedExportTests(ITestOutputHelper outp
 
         // The fixture has two library managers — one on the project and one under the
         // application — and both now reach the mirror, one file each.
-        Assert.Equal(2, report.ExportOnlyFiles);
+        //
+        // THREE one-way files, not two: the task configuration's native XML joined them when
+        // its .tasks.yaml became the importable half. This assertion read 2 while that was
+        // already true of the running exporter, because the committed mirror it reads had not
+        // been regenerated — a stale fixture makes a true assertion protect a dead
+        // specification, and nothing about it looks stale from here.
+        Assert.Equal(3, report.ExportOnlyFiles);
         Assert.Equal(2, manifest.Objects.Count(o => o.Type == "LIBRARY_MANAGER"));
+
+        // The one that is not a library manager, named rather than left as arithmetic.
+        Assert.Single(manifest.Objects,
+            o => o.Form == ExportCoverage.TaskNativeForm
+                 && o.Path == "Device/Plc Logic/Application/Task Configuration.xml");
 
         // The deliberate skips are still present and still NOT counted as gaps. If that
         // distinction ever collapses, this repository's own panel starts crying wolf about a

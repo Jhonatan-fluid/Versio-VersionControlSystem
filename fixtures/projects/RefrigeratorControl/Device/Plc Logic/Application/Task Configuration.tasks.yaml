@@ -1,0 +1,37 @@
+# Task configuration, exported by Versio. THIS FILE IS THE IMPORTABLE ONE:
+# edit a value here and the next import applies it to the project. The .xml beside it is
+# exported for fidelity and is never imported - which is what stops CODESYS rewriting a
+# task's core binding on every import.
+#
+# Values are recorded VERBATIM, including interval: CODESYS stores "t#20ms" on one task and
+# "100" on another in the same project, and normalising either would put a diff in front of
+# somebody that they did not make.
+#
+# NOT recorded here, on purpose:
+#   * the event POU guid - it was observed changing during a native import, and its meaning
+#     for an interval-driven task is unestablished. A value that moves on its own does not
+#     belong in a diff
+schema: 1
+vendor: codesys
+configuration: "Task Configuration"
+path: "Device/Plc Logic/Application/Task Configuration"
+taskCount: 2
+tasks:
+  - name: MainTask
+    priority: "1"
+    interval: "t#20ms"
+    intervalUnit: ms
+    coreBinding: -2
+    watchdogEnabled: false
+    watchdogSensitivity: "1"
+    pous:
+      - PLC_PRG
+      - Simulation
+  - name: VISU_TASK
+    priority: "31"
+    interval: "100"
+    intervalUnit: ms
+    coreBinding: -1
+    watchdogEnabled: false
+    pous:
+      - VisuElems.Visu_Prg
