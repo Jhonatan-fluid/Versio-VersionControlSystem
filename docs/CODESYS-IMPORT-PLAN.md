@@ -1,6 +1,8 @@
 # Versio — closing the CODESYS import gaps
 
-**Date:** 2026-08-15 · **Nothing built yet — Phase 0 is nine measurements, and it comes first**
+**Date:** 2026-08-15 · **Phase 0 is nine measurements and comes first. One is done (P7), and
+nothing in phases 1–6 is built.** The only product code this has produced so far is one
+`.gitignore` pattern — the compile cache P7's second finding turned out to hinge on.
 
 | | |
 |---|---|
