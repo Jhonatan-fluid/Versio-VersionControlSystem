@@ -166,10 +166,14 @@ public sealed class BackupRestoreWindowTests
     [Fact]
     public void The_main_window_wires_the_dialog_to_the_panel()
     {
-        // THE LINK NOTHING ELSE COVERS. Every flow test sets AskWhichBackup itself, so all of
+        // THE LINK NOTHING ELSE COVERS. Every flow test answers the prompts itself, so all of
         // them stay green with the real wiring deleted — which is exactly how four features in
         // this codebase shipped with no reachable caller. MainWindow's constructor is where the
-        // hooks are attached, so building one and reading the hook is a real reachability test.
+        // prompts are attached, so building one and reading them back is a real reachability
+        // test.
+        //
+        // One assertion covers all nine questions now rather than the two named here, because
+        // they arrive together: a shell still holding NullPrompts is one nothing wired.
         StaHarness.Run(() =>
         {
             var sink = new InMemoryLogSink();
@@ -179,10 +183,11 @@ public sealed class BackupRestoreWindowTests
 
             _ = new MainWindow(shell);
 
-            Assert.NotNull(shell.Sync.AskWhichBackup);
+            Assert.IsType<WindowPrompts>(shell.Prompts);
 
-            // And its neighbour, which had the same shape and the same risk.
-            Assert.NotNull(shell.Sync.ConfirmImport);
+            // And that the panel asking two of the nine got the same ones. Sync is where
+            // AskWhichBackup and ConfirmImport are put, and it holds its own reference.
+            Assert.Same(shell.Prompts, shell.Sync.Prompts);
         });
     }
 

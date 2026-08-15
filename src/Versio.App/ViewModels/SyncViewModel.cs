@@ -2599,19 +2599,15 @@ public sealed class SyncViewModel : ObservableObject
     public AsyncCommand ConfirmImportCommand { get; private set; } = null!;
 
     /// <summary>
-    /// Ask before writing into a <c>.project</c>, and never on the app's own initiative.
+    /// Every question this view model can put to the user.
     /// </summary>
     /// <remarks>
-    /// A delegate rather than a window, for the reason <c>ShellViewModel.ConfirmDestructive</c>
-    /// gives: a view model that opens a window cannot be tested on the STA harness without one
-    /// appearing. <b>Unset means no</b> — the wrong way round for a wiring mistake would be a
-    /// silent import.
-    /// <para>
-    /// A prompt rather than two strings, for the reason <c>ShellViewModel.ConfirmDestructive</c>
-    /// gives: this one asked "Import into Conveyor.project?" and offered OK.
-    /// </para>
+    /// Set by <see cref="ShellViewModel.Prompts"/>, which owns this view model and hands its
+    /// own prompts down, so a host wires one thing rather than two. Defaults to
+    /// <see cref="NullPrompts"/>, which answers "no" — the right way round for a wiring
+    /// mistake, where the wrong way round is a silent import.
     /// </remarks>
-    public Func<DestructivePrompt, bool>? ConfirmImport { get; set; }
+    public IUserPrompts Prompts { get; set; } = NullPrompts.Instance;
 
     private void NotePendingImport(string bindingId)
     {
@@ -2663,8 +2659,8 @@ public sealed class SyncViewModel : ObservableObject
     /// outstanding.
     /// </para>
     /// <para>
-    /// <b>The confirmation is refused by default.</b> An unset hook, a dismissed dialog and a
-    /// closed window all mean no, and no means nothing is written.
+    /// <b>The confirmation is refused by default.</b> Prompts nobody attached, a dismissed
+    /// dialog and a closed window all mean no, and no means nothing is written.
     /// </para>
     /// </remarks>
     private async Task ConfirmImportAsync()
@@ -2683,8 +2679,8 @@ public sealed class SyncViewModel : ObservableObject
 
         _logger.Click("Sync.ConfirmImport");
 
-        if (ConfirmImport?.Invoke(new DestructivePrompt(
-                $"Import into {row.Name}?", PendingImportDetail, Confirm: "Import")) != true)
+        if (!Prompts.ConfirmImport(new DestructivePrompt(
+                $"Import into {row.Name}?", PendingImportDetail, Confirm: "Import")))
         {
             _logger.Info(LogCategory.Sync,
                 $"{id}: import declined; the project is unchanged");
@@ -2727,24 +2723,6 @@ public sealed class SyncViewModel : ObservableObject
 
     /// <summary>Offer the copies of the selected project and put one back.</summary>
     public AsyncCommand RestoreBackupCommand { get; private set; } = null!;
-
-    /// <summary>
-    /// Show the copies and return the one chosen, or null.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// A delegate rather than a window, for the reason <c>ConfirmDestructive</c> gives: a view
-    /// model that opens a window cannot be tested without one appearing. <b>Null means
-    /// cancel</b>, which is the right way round for a wiring mistake to fail.
-    /// </para>
-    /// <para>
-    /// <b>Choosing is the confirmation.</b> There is no second "are you sure" on top: the
-    /// window states what restoring does and what it keeps, and picking a named version from a
-    /// list is already a deliberate act. A dialog on top of a dialog is how people learn to
-    /// dismiss both without reading either.
-    /// </para>
-    /// </remarks>
-    public Func<string, IReadOnlyList<ProjectBackup>, ProjectBackup?>? AskWhichBackup { get; set; }
 
     private bool _selectedHasBackups;
 
@@ -2803,7 +2781,7 @@ public sealed class SyncViewModel : ObservableObject
             return;
         }
 
-        var chosen = AskWhichBackup?.Invoke(row.Name, available);
+        var chosen = Prompts.AskWhichBackup(row.Name, available);
         if (chosen is null)
         {
             _logger.Info(LogCategory.Sync, $"{id}: restore cancelled; the project is unchanged");

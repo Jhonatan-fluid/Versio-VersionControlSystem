@@ -29,12 +29,13 @@ public sealed class ConflictFlowTests
     {
         var sink = new InMemoryLogSink();
         var logger = new VersioLogger(new SystemClock()).AddSink(sink);
-        return new ShellViewModel(logger, new LogViewModel(sink), toolchains: (_, _) => null)
-        {
-            // Every destructive prompt is answered yes. What is under test is the operation,
-            // not the dialog — the refusal path has its own test below.
-            ConfirmDestructive = _ => true,
-        };
+        var shell = new ShellViewModel(logger, new LogViewModel(sink), toolchains: (_, _) => null);
+
+        // Every destructive prompt is answered yes. What is under test is the operation,
+        // not the dialog — the refusal path has its own test below.
+        shell.Asked().Destructive = _ => true;
+
+        return shell;
     }
 
     /// <summary>A repository whose branch conflicts with its upstream on one line.</summary>
@@ -244,10 +245,9 @@ public sealed class ConflictFlowTests
 
         var sink = new InMemoryLogSink();
         var logger = new VersioLogger(new SystemClock()).AddSink(sink);
-        using var shell = new ShellViewModel(logger, new LogViewModel(sink), toolchains: (_, _) => null)
-        {
-            ConfirmDestructive = _ => false,
-        };
+        using var shell = new ShellViewModel(
+            logger, new LogViewModel(sink), toolchains: (_, _) => null);
+        shell.Asked().Destructive = _ => false;
 
         await shell.OpenAsync(repo.Path);
         await Eventually.Press(shell.ReconcileCommand, false, "merge");

@@ -161,11 +161,13 @@ public sealed class BranchDeleteTests
         var sink = new InMemoryLogSink();
         var logger = new VersioLogger(new SystemClock()).AddSink(sink);
 
-        return new ShellViewModel(logger, new LogViewModel(sink), toolchains: (_, _) => null)
-        {
-            PromptForBranchDeletion = answer,
-            ConfirmDestructive = _ => true,
-        };
+        var shell = new ShellViewModel(logger, new LogViewModel(sink), toolchains: (_, _) => null);
+
+        var prompts = shell.Asked();
+        prompts.BranchDeletion = answer;
+        prompts.Destructive = _ => true;
+
+        return shell;
     }
 
     private static DeletePlan Plan(

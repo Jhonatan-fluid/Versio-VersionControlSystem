@@ -119,7 +119,7 @@ public sealed class RecentRepositoryTests
         var shell = Build(store);
         MissingRepositoryPrompt? asked = null;
 
-        shell.AskAboutMissingRepository = prompt =>
+        shell.Asked().MissingRepository = prompt =>
         {
             asked = prompt;
             return MissingRepositoryChoice.Cancel;
@@ -156,7 +156,7 @@ public sealed class RecentRepositoryTests
         await shell.LoadRecentAsync();
         Assert.Equal(2, shell.RecentRepositories.Count);
 
-        shell.AskAboutMissingRepository = _ => MissingRepositoryChoice.Forget;
+        shell.Asked().MissingRepository = _ => MissingRepositoryChoice.Forget;
         await shell.SwitchRepositoryAsync(new RepoEntry(@"C:\nowhere\gone"));
 
         Assert.Equal(@"C:\nowhere\other", Assert.Single(store.Saved.Recent).Path);

@@ -703,17 +703,31 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// Ask the view to decide what to do about a remembered repository that has gone.
+    /// Every question this view model can put to the user.
     /// </summary>
     /// <remarks>
-    /// <b>Unset means cancel</b>, the same way <see cref="AskGuard"/> is unset: a view model
-    /// with no view attached must never take the destructive-looking branch by default.
+    /// <para>
+    /// Settable rather than injected because the host that owns the answers is the window,
+    /// and the window is built from this view model rather than before it. Defaults to
+    /// <see cref="NullPrompts"/>, so a view model with no view attached answers "no" to
+    /// everything instead of needing a null check at each of the fifteen call sites.
+    /// </para>
+    /// <para>
+    /// Assigning it hands the same prompts to <see cref="Sync"/>, which asks two of the nine.
+    /// Two view models, one set of questions, one thing for a host to wire.
+    /// </para>
     /// </remarks>
-    public Func<MissingRepositoryPrompt, MissingRepositoryChoice?>? AskAboutMissingRepository
+    public IUserPrompts Prompts
     {
-        get;
-        set;
+        get => _prompts;
+        set
+        {
+            _prompts = value;
+            Sync.Prompts = value;
+        }
     }
+
+    private IUserPrompts _prompts = NullPrompts.Instance;
 
     /// <summary>
     /// Deal with a recent repository that is no longer where it was.
@@ -751,7 +765,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         var record = target.ToRecord(target.LastOpenedUtc ?? _clock.UtcNow);
         using var asking = AskingSomething();
-        var choice = AskAboutMissingRepository?.Invoke(MissingRepository.Prompt(record, why))
+        var choice = Prompts.AskAboutMissingRepository(MissingRepository.Prompt(record, why))
                      ?? MissingRepositoryChoice.Cancel;
 
         switch (choice)
@@ -2391,15 +2405,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// <summary>Open the delete-branches dialog.</summary>
     public AsyncCommand DeleteBranchesCommand { get; private set; } = null!;
 
-    /// <summary>
-    /// Asks the view to run the delete dialog, returning what the user chose or null.
-    /// </summary>
-    /// <remarks>
-    /// The same shape every other dialog here uses: the view model supplies the candidates and
-    /// performs the deletion, the view supplies the window. Unset means "no", which is the
-    /// right way round for a wiring mistake on a destructive operation.
-    /// </remarks>
-    public Func<IReadOnlyList<BranchCandidate>, DeletePlan?>? PromptForBranchDeletion { get; set; }
 
     /// <summary>Button labels that say what will happen, not what the button is called.</summary>
     public string StageLabel =>
@@ -3612,11 +3617,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         using (AskingSomething())
         {
-            var confirmed = ConfirmDestructive?.Invoke(new DestructivePrompt(
+            var confirmed = Prompts.ConfirmDestructive(new DestructivePrompt(
                 $"Abandon this {what}?",
                 $"The branch goes back to where it was before the {what} started.\n\n" +
                 "Any conflicts you have already resolved are thrown away.",
-                Confirm: "Abandon")) ?? false;
+                Confirm: "Abandon"));
 
             if (!confirmed)
             {
@@ -3758,7 +3763,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         DeletePlan? plan;
         using (AskingSomething())
         {
-            plan = PromptForBranchDeletion?.Invoke(candidates);
+            plan = Prompts.PromptForBranchDeletion(candidates);
         }
 
         if (plan is null || !plan.CanProceed)
@@ -3773,11 +3778,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         if (plan.TouchesRemote)
         {
             using var asking = AskingSomething();
-            var confirmed = ConfirmDestructive?.Invoke(new DestructivePrompt(
+            var confirmed = Prompts.ConfirmDestructive(new DestructivePrompt(
                 plan.Count == 1 ? "Delete this branch from the remote?"
                                 : $"Delete {plan.Count} branches from the remote?",
                 plan.RemoteConfirmation("origin"),
-                Confirm: plan.Count == 1 ? "Delete it" : $"Delete {plan.Count}")) ?? false;
+                Confirm: plan.Count == 1 ? "Delete it" : $"Delete {plan.Count}"));
 
             if (!confirmed)
             {
@@ -3985,21 +3990,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// <summary>Clone a repository, then open it.</summary>
     public AsyncCommand CloneCommand { get; private set; } = null!;
 
-    /// <summary>
-    /// Asks the view to run the clone dialog, returning where the clone landed or null.
-    /// </summary>
-    /// <remarks>
-    /// The dialog drives verify-then-clone itself, because "Clone stays disabled until Verify
-    /// passes" is a rule about a conversation rather than about one operation. What comes back
-    /// is a path on disk, which is all the shell needs to open it.
-    /// </remarks>
-    /// <param name="initialUrl">
-    /// Prefilled when the clone is a repository being fetched back rather than a new one.
-    /// The dialog still requires Verify to pass before it will clone: a remembered URL is a
-    /// convenience, not a claim that the remote is still there.
-    /// </param>
-    public Func<string?, Task<string?>>? PromptForClone { get; set; }
-
     /// <summary>Check a remote is reachable, with no repository open.</summary>
     /// <remarks>Handed to the clone dialog. Lives here rather than in the view so that the
     /// view never constructs a git client of its own.</remarks>
@@ -4011,62 +4001,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         string url, string destination, IProgress<GitProgress>? progress, CancellationToken ct) =>
         GitCliClient.CloneAsync(url, destination, "git", progress, _logger, ct);
 
-    /// <summary>
-    /// Asks the view for a new branch name, or null when the user backs out.
-    /// </summary>
-    /// <remarks>
-    /// A delegate for the same reason as <see cref="ConfirmDestructive"/>: a modal opened from
-    /// here would block whichever thread called it and would make the command untestable. The
-    /// dialog validates while typing with <see cref="Versio.Core.Git.BranchName"/>; this side validates the
-    /// answer again, because a view model that trusts its view has no way to state what it
-    /// requires.
-    /// </remarks>
-    public Func<string?>? PromptForBranchName { get; set; }
-
-    /// <summary>
-    /// Asked before anything destroys work git cannot give back.
-    /// </summary>
-    /// <remarks>
-    /// A delegate set by the view rather than a message box here, for the same reason
-    /// <see cref="RepositoryRejected"/> is an event: a modal in the view model makes this
-    /// untestable and blocks whichever thread happened to call it. Unset means "no", so a
-    /// host that forgets to wire it destroys nothing.
-    /// <para>
-    /// <b>A prompt rather than two strings, because the button's words are part of the
-    /// question.</b> These were answered by a MessageBox, so every one of them ended in OK and
-    /// Cancel while the captions were all phrased as questions - "Discard changes to this
-    /// file?", "Abandon this merge?". OK is not an answer to either.
-    /// </para>
-    /// </remarks>
-    public Func<DestructivePrompt, bool>? ConfirmDestructive { get; set; }
-
-    /// <summary>
-    /// Puts a guard's question to the user and returns what they chose.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Beside <see cref="ConfirmDestructive"/> rather than replacing it. That one asks a
-    /// yes-or-no about a single named file and is answered by a message box; this one offers
-    /// between two and three named courses of action and needs a real dialog. Collapsing them
-    /// would mean the discard confirmation grew a choice list it has no use for.
-    /// </para>
-    /// <para>
-    /// <b>Unset means Cancel</b>, exactly as unset means "no" for the destructive confirm — the
-    /// right way round for a wiring mistake to fail, and what lets <see cref="Ask"/> be called
-    /// from a view model with no view attached at all.
-    /// </para>
-    /// </remarks>
-    public Func<GuardPrompt, GuardChoice?>? AskGuard { get; set; }
-
-    /// <summary>
-    /// Puts the offer of stashed work to the user on returning to a branch.
-    /// </summary>
-    /// <remarks>
-    /// <b>Unset means Leave</b>, not Restore and certainly not Discard. A host that forgets to
-    /// wire this leaves every stash exactly where it is and offers it again next time, which is
-    /// the only one of the three answers that cannot lose anything.
-    /// </remarks>
-    public Func<ChoicePrompt, StashedWorkChoice?>? AskAboutStashedWork { get; set; }
 
     /// <summary>
     /// Evaluate the guard for an intent, and ask the user if it wants asking.
@@ -4125,7 +4059,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         GuardChoice answer;
         using (AskingSomething())
         {
-            answer = AskGuard?.Invoke(prompt) ?? GuardChoice.Cancel;
+            answer = Prompts.AskGuard(prompt) ?? GuardChoice.Cancel;
         }
 
         // A REFUSAL IS NOT A QUESTION.
@@ -4406,7 +4340,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             var offer = arrival.Restorable[i];
             var remaining = arrival.Restorable.Count - i;
             using var asking = AskingSomething();
-            var choice = AskAboutStashedWork?.Invoke(
+            var choice = Prompts.AskAboutStashedWork(
                              AutoStashNarrative.Arrival(arrival, offer, remaining, _clock.UtcNow))
                          ?? StashedWorkChoice.Leave;
 
@@ -4423,8 +4357,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             if (choice == StashedWorkChoice.Discard)
             {
                 var warning = AutoStashNarrative.DiscardWarning(offer);
-                if (ConfirmDestructive?.Invoke(
-                        new DestructivePrompt(warning.Title, warning.Body, "Discard")) != true)
+                if (!Prompts.ConfirmDestructive(
+                        new DestructivePrompt(warning.Title, warning.Body, "Discard")))
                 {
                     return;
                 }
@@ -4880,13 +4814,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
 
         using var asking = AskingSomething();
-        var confirmed = ConfirmDestructive?.Invoke(new DestructivePrompt(
+        var confirmed = Prompts.ConfirmDestructive(new DestructivePrompt(
             "Discard changes to this file?",
             $"{row.Path}\n\n" +
             "The changes are thrown away and cannot be recovered — they are not in a commit " +
             "or in the index.\n\n" +
             "Commit them on a scratch branch if you might want them back.",
-            Confirm: "Discard")) ?? false;
+            Confirm: "Discard"));
 
         if (!confirmed)
         {
@@ -4950,7 +4884,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         _logger.Click("TopBar.CreateBranch");
 
         using var asking = AskingSomething();
-        if (PromptForBranchName?.Invoke() is not { } name)
+        if (Prompts.PromptForBranchName() is not { } name)
         {
             return;
         }
@@ -4996,12 +4930,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     {
         _logger.Click("TopBar.Clone");
 
-        if (PromptForClone is null)
-        {
-            return;
-        }
-
-        if (await PromptForClone(initialUrl).ConfigureAwait(true) is not { } cloned)
+        // No view attached answers null, the same as a user who backs out of the dialog, so
+        // there is nothing to check for separately.
+        if (await Prompts.PromptForClone(initialUrl).ConfigureAwait(true) is not { } cloned)
         {
             return;
         }

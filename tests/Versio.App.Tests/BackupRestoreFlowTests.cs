@@ -1,4 +1,5 @@
 using System.IO;
+using Versio.App.Mvvm;
 using Versio.App.ViewModels;
 using Versio.Core.Logging;
 using Versio.Core.Sync;
@@ -134,7 +135,7 @@ public sealed class BackupRestoreFlowTests
         IReadOnlyList<ProjectBackup> offered = [];
         var project = string.Empty;
 
-        shell.Sync.AskWhichBackup = (name, backups) =>
+        shell.Asked().WhichBackup = (name, backups) =>
         {
             project = name;
             offered = backups;
@@ -169,7 +170,7 @@ public sealed class BackupRestoreFlowTests
         var before = await File.ReadAllBytesAsync(project);
 
         var asked = false;
-        shell.Sync.AskWhichBackup = (_, _) =>
+        shell.Asked().WhichBackup = (_, _) =>
         {
             asked = true;
             return null;
@@ -184,8 +185,8 @@ public sealed class BackupRestoreFlowTests
     [Fact]
     public async Task An_unwired_dialog_restores_nothing()
     {
-        // Null means cancel, and an unset hook is null. The wrong way round for a wiring
-        // mistake would be restoring whichever copy happened to be first.
+        // Null means cancel, and prompts nobody attached answer null. The wrong way round for
+        // a wiring mistake would be restoring whichever copy happened to be first.
         using var repo = new TempRepo();
         GivenATrackedProject(repo);
         GivenABackup(repo, "20260814-093000", [0x09, 0x09, 0x09]);
@@ -197,7 +198,8 @@ public sealed class BackupRestoreFlowTests
         var project = Path.Combine(repo.Path, "plc", "Machine.project");
         var before = await File.ReadAllBytesAsync(project);
 
-        Assert.Null(shell.Sync.AskWhichBackup);
+        // Nothing attached, so the questions are NullPrompts' — which answer no.
+        Assert.Same(NullPrompts.Instance, shell.Sync.Prompts);
         await Eventually.Press(shell.Sync.RestoreBackupCommand, "the restore button");
 
         Assert.Equal(before, await File.ReadAllBytesAsync(project));
@@ -217,7 +219,7 @@ public sealed class BackupRestoreFlowTests
         var project = Path.Combine(repo.Path, "plc", "Machine.project");
         var replaced = await File.ReadAllBytesAsync(project);
 
-        shell.Sync.AskWhichBackup = (_, backups) => backups[0];
+        shell.Asked().WhichBackup = (_, backups) => backups[0];
 
         await Eventually.Press(shell.Sync.RestoreBackupCommand, "the restore button");
         await Eventually.Until(

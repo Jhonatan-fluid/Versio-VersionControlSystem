@@ -39,7 +39,7 @@ public sealed class CloseGuardTests
             var shell = new ShellViewModel(logger, new LogViewModel(sink));
             var fixture = new Fixture { Shell = shell };
 
-            shell.AskGuard = prompt =>
+            shell.Asked().Guard = prompt =>
             {
                 fixture.Asked.Add(prompt);
                 return answer;
