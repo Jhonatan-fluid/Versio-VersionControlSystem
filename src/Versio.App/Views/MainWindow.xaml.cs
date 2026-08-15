@@ -30,21 +30,13 @@ public partial class MainWindow : Window
         DataContext = shell;
         _layout = layout ?? new LayoutSettings();
 
-        // Auto-scroll on append, unless paused. Done here rather than in the view model
-        // because a ScrollViewer is a view concern.
-        shell.Log.RowsAppended += () =>
-        {
-            if (!shell.Log.IsPaused && shell.Log.Rows.Count > 0)
-            {
-                LogList.ScrollIntoView(shell.Log.Rows[^1]);
-            }
-        };
-
+        // The log console's own auto-scroll and chevron went with it into LogPanelView.
+        // What is left here is the part a panel cannot own: the row it sits in.
         shell.Log.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(LogViewModel.IsExpanded))
             {
-                ApplyLogVisibility();
+                ApplyLogRowHeight();
             }
         };
 
@@ -73,7 +65,7 @@ public partial class MainWindow : Window
         // whole onto a laptop screen.
         Loaded += (_, _) => ApplyStoredLayout();
 
-        ApplyLogVisibility();
+        ApplyLogRowHeight();
         SyncThemeRadios();
 
         InputBindings.Add(new KeyBinding(shell.RefreshCommand, Key.F5, ModifierKeys.None));
@@ -202,24 +194,24 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Collapse the log list, leaving its header in place.
+    /// Give the log's row a height, and a splitter to drag it with.
     /// </summary>
     /// <remarks>
-    /// The header stays visible so the panel can be reopened and the entry count is still
-    /// readable — collapsing the whole thing to nothing leaves no obvious way back.
+    /// <b>The half of "the log is open" that a panel cannot do for itself.</b> Showing the list
+    /// and turning the chevron belong to <c>LogPanelView</c>; the row and the splitter are this
+    /// window's grid. Both listen to <c>IsExpanded</c> independently rather than one calling
+    /// the other, so neither has to know the other exists.
+    /// <para>
+    /// A GridSplitter cannot resize an Auto row, so the row carries a pixel height while the
+    /// log is open and goes back to Auto - header only - when it closes. The splitter follows,
+    /// because a drag handle above something that cannot grow is a control that lies about what
+    /// it does.
+    /// </para>
     /// </remarks>
-    private void ApplyLogVisibility()
+    private void ApplyLogRowHeight()
     {
         var expanded = _shell.Log.IsExpanded;
 
-        LogList.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
-        LogChevron.Text = (string)FindResource(
-            expanded ? "Icon.ChevronDown" : "Icon.ChevronUp");
-
-        // A GridSplitter cannot resize an Auto row, so the row carries a pixel height while
-        // the log is open and goes back to Auto - header only - when it closes. The splitter
-        // follows, because a drag handle above something that cannot grow is a control that
-        // lies about what it does.
         LogSplitter.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
         LogRow.Height = expanded
             ? new GridLength(LogHeight(), GridUnitType.Pixel)
@@ -270,7 +262,7 @@ public partial class MainWindow : Window
             PanelColumn.Width = new GridLength(width, GridUnitType.Pixel);
         }
 
-        ApplyLogVisibility();
+        ApplyLogRowHeight();
     }
 
     private async void OnOpenRepository(object sender, RoutedEventArgs e) =>

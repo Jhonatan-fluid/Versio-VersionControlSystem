@@ -2,6 +2,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using Versio.App.ViewModels;
+using Versio.App.Views;
+using Versio.Infrastructure.Platform;
 using Versio.Core.Logging;
 using Xunit;
 
@@ -238,6 +240,64 @@ public sealed class LogPanelChromeTests
         Assert.Equal(2, filters.Categories.Single(c => c.Name == LogCategory.Git).Count);
         Assert.Equal(1, filters.Categories.Single(c => c.Name == LogCategory.Sync).Count);
         Assert.Equal(0, filters.Categories.Single(c => c.Name == LogCategory.Plc).Count);
+    }
+
+    /// <summary>
+    /// Expanding the log reaches the panel, which shows its list and turns its chevron.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The seam this pins.</b> The log console moved out of <c>MainWindow.xaml</c> into
+    /// <c>LogPanelView</c>, and with it the two handlers that were the reason it had been held
+    /// back: auto-scroll on append, and the chevron glyph. A panel built by the XAML parser is
+    /// handed nothing, so it wires itself when its DataContext arrives — one line, in a
+    /// constructor.
+    /// </para>
+    /// <para>
+    /// <b>Deleting that line left all 477 tests green.</b> Third time in this session that a
+    /// moved subscription was watched by nothing; the chevron would have pointed the wrong way
+    /// and the log would have stopped following its own tail, in front of a user, with the suite
+    /// entirely happy. So: expand it and look.
+    /// </para>
+    /// <para>
+    /// Asserted through the window rather than by constructing the panel alone, because
+    /// <c>DataContextChanged</c> is exactly what would not fire if the control were newed up and
+    /// handed a context by hand.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void Expanding_the_log_shows_its_list_and_turns_its_chevron()
+    {
+        StaHarness.Run(() =>
+        {
+            var logger = new VersioLogger(new SystemClock());
+            var sink = new InMemoryLogSink();
+            logger.AddSink(sink);
+
+            using var shell = new ShellViewModel(logger, new LogViewModel(sink));
+            var window = new MainWindow(shell);
+
+            var content = Assert.IsAssignableFrom<FrameworkElement>(window.Content);
+            content.Measure(new Size(1400, 900));
+            content.Arrange(new Rect(0, 0, 1400, 900));
+            content.UpdateLayout();
+
+            var panel = Assert.IsAssignableFrom<FrameworkElement>(window.FindName("LogConsole"));
+
+            // A UserControl owns its own name scope, so the window cannot see inside it.
+            var list = Assert.IsAssignableFrom<ListBox>(panel.FindName("LogList"));
+            var chevron = Assert.IsAssignableFrom<TextBlock>(panel.FindName("LogChevron"));
+
+            // Collapsed at startup: the log is a diagnostic, not the main event.
+            Assert.False(shell.Log.IsExpanded);
+            Assert.Equal(Visibility.Collapsed, list.Visibility);
+            var closed = chevron.Text;
+
+            shell.Log.IsExpanded = true;
+
+            Assert.Equal(Visibility.Visible, list.Visibility);
+            Assert.NotEqual(closed, chevron.Text);
+        });
     }
 
     private static LogEvent Entry(LogLevel level, string category, string message = "message") =>

@@ -178,7 +178,11 @@ public sealed class AutomationNameTests : IDisposable
         {
             var (window, _) = Build();
             var shell = Assert.IsType<ShellViewModel>(window.DataContext);
-            var log = Assert.IsType<Border>(window.FindName("LogConsole"));
+            // A UserControl since the log console moved into its own file, the way the history
+            // panel already had. What this test wants is something to measure, not a
+            // particular container.
+            var log = Assert.IsAssignableFrom<FrameworkElement>(
+                window.FindName("LogConsole"));
 
             var pause = Descendants(log).OfType<Button>()
                 .Single(b => NameOf(b).Contains("Freeze", StringComparison.Ordinal));
