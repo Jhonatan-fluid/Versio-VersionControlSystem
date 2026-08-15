@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Versio.Core.Projects;
 using Versio.Core.Plc.Codesys;
 using Xunit;
 
@@ -126,6 +127,63 @@ public class TypeTableParityTests
 
         Assert.Contains("40b404f9-e5dc-42c6-907f-c89f4a517386", text);
         Assert.Contains("639b491f-5557-464c-af91-1471bac9f549", text);
+    }
+
+    [Fact]
+    public void Python_and_csharp_agree_on_which_forms_are_never_applied_back()
+    {
+        // The seam that did not exist when it was needed.
+        //
+        // One-wayness is decided twice: versio_types.EXPORT_ONLY_FORMS drives the
+        // "Exported for review, not applied back" section of _coverage.md, and
+        // ExportCoverage.IsExportOnly drives the panel's lock glyph. Neither can see the
+        // other, and disagreeing is worse than either being wrong alone — the file is
+        // announced in the markdown nobody has open and looks freely editable in the app
+        // somebody is actually staging from, which reads as a considered "this one is fine".
+        //
+        // TASK_NATIVE is why this is here. When Phase 4 made .tasks.yaml the importable half,
+        // the .xml beside it stopped being applied and NOTHING went red, on either side.
+        var text = File.ReadAllText(PythonTablePath());
+        var block = Between(text, "EXPORT_ONLY_FORMS = (", ")");
+
+        // The tuple holds constant NAMES, so each one is resolved to the string it is
+        // assigned. Comparing names would pass while the two sides used different spellings
+        // of the same idea, which is the failure this is here to catch.
+        var pythonForms = Regex
+            .Matches(block, @"\bFORM_[A-Z_]+\b")
+            .Select(m => m.Value)
+            .Distinct(StringComparer.Ordinal)
+            .Select(name =>
+            {
+                var assigned = Regex.Match(
+                    text, $"^{name} = \"(?<value>[A-Z_]+)\"", RegexOptions.Multiline);
+                Assert.True(assigned.Success,
+                    $"{name} is in EXPORT_ONLY_FORMS with no literal assignment above it");
+                return assigned.Groups["value"].Value;
+            })
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.NotEmpty(pythonForms);
+
+        // Both directions. A form only python knows leaves the glyph off a file that is
+        // silently discarded; a form only C# knows locks a row the importer applies fine.
+        foreach (var form in pythonForms)
+        {
+            Assert.True(ExportCoverage.IsExportOnly(form),
+                $"versio_types.py calls {form} export-only and ExportCoverage does not, so " +
+                "the file is named in _coverage.md and still looks editable in the panel");
+        }
+
+        foreach (var form in new[] { ExportCoverage.LibrariesForm, ExportCoverage.TaskNativeForm })
+        {
+            Assert.True(pythonForms.Contains(form),
+                $"ExportCoverage calls {form} export-only and versio_types.py does not, so " +
+                "the panel locks a row that _coverage.md never mentions");
+        }
+
+        // The form the task XML used to carry. It is a real, importable form — a property's
+        // recursive export — and the whole defect was that the two were indistinguishable.
+        Assert.False(ExportCoverage.IsExportOnly("NATIVE_R"));
     }
 
     [Fact]

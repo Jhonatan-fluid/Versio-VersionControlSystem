@@ -399,7 +399,8 @@ CPython.
 | `NATIVE_R` | `obj.export_native(path, True)` — owns children not walked separately | `PROPERTY` |
 | `NATIVE_WITH_CHILDREN` | the node natively **and** a subdirectory for its children | **no type maps to it** — only an *unmapped* type that has children |
 | `LIBRARIES` | `<manager>.libraries.yaml`, **export-only** | `LIBRARY_MANAGER` |
-| `TASK_BOTH` | **two files** — `.xml` (recursive) for fidelity, `<name>.tasks.yaml` for review **and for import** | `TASK_CONFIGURATION` |
+| `TASK_BOTH` | **two files** — `.xml` (recursive) for fidelity, `<name>.tasks.yaml` for review **and for import**. The *decision* is `TASK_BOTH`; the two files are **recorded** `TASK_NATIVE` and `TASK_BOTH`, because only the YAML is applied back | `TASK_CONFIGURATION` |
+| `TASK_NATIVE` | **recorded, never decided.** The `.xml` half above, marked so the manifest says it is export-only. It carried `NATIVE_R` until 2026-08-15, which is an *importable* form — see the finding in [`STATUS.md`](STATUS.md) | — |
 | `SKIP` | nothing, but the reason is recorded | see below |
 
 **The fallbacks are the interesting part.** A POU declared in ST but *drawn* in CFC / LD / FBD
@@ -490,8 +491,8 @@ plc/Machine/                     ← the mirror
 │        ├─ Glob_Var.gvl.st                  ST_DECL   ┐ one object,
 │        ├─ Glob_Var.gvl.xml                 NATIVE    ┘ two files, one GUID
 │        ├─ Live_Visu.vis.xml                NATIVE    (2.5 MB on the fixture)
-│        ├─ Task Configuration.xml           TASK_BOTH (export-only half)
-│        ├─ Task Configuration.tasks.yaml    TASK_BOTH (the importable half)
+│        ├─ Task Configuration.xml           TASK_NATIVE ┐ one object, two files,
+│        ├─ Task Configuration.tasks.yaml    TASK_BOTH   ┘ one GUID; only the yaml imports
 │        └─ Library Manager.libraries.yaml   LIBRARIES (export-only)
 ├─ GlobalTextList.xml
 ├─ Library Manager.libraries.yaml
@@ -722,8 +723,14 @@ drift.
 
 Library YAML is diff-only rather than merely unimplemented: adding a library through the
 scripting API is a *different operation* from importing an object, and doing it wrongly rewires
-what the machine compiles against. Both `_coverage.md` and `ExportFormRules.IsExportOnly` say so
+what the machine compiles against. Both `_coverage.md` and `ExportCoverage.IsExportOnly` say so
 out loud, because a file that looks editable and is silently ignored is its own kind of gap.
+
+It is no longer the only such file. **A task configuration's native `.xml` joined it on
+2026-08-15**, when the `.tasks.yaml` beside it became the importable half — and the predicate
+named here used to live on `ExportFormRules`, where it had no caller and could not answer for
+the new one. One-wayness is a property of the manifest's recorded `form` now, read from one
+list per side: `EXPORT_ONLY_FORMS` in `versio_types.py`, `ExportCoverage.IsExportOnly` in C#.
 
 ### 6.6 How the round trip is judged
 

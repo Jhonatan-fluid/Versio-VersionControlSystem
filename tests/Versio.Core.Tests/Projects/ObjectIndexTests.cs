@@ -95,13 +95,42 @@ public sealed class ObjectIndexTests
             Project(objects:
             [
                 Obj("App/Library Manager.libraries.yaml", "Library Manager", "LIBRARY_MANAGER",
-                    "g1", ExportCoverage.ExportOnlyForm),
+                    "g1", ExportCoverage.LibrariesForm),
                 Obj("App/FB_Motor.st", "FB_Motor", "POU", "g2"),
             ]),
         ]);
 
         Assert.True(index.Lookup("plc/Machine/App/Library Manager.libraries.yaml")?.IsExportOnly);
         Assert.False(index.Lookup("plc/Machine/App/FB_Motor.st")?.IsExportOnly);
+    }
+
+    [Fact]
+    public void The_native_half_of_a_task_configuration_is_flagged_and_its_yaml_half_is_not()
+    {
+        // The second export-only form, and the one that showed the first was being treated as
+        // a special case. A task configuration writes two files under ONE guid: the .tasks.yaml
+        // imports, the .xml does not — so the flag has to split a single object's files, which
+        // it can only do because the manifest records a form per file rather than per object.
+        //
+        // The .xml carried NATIVE_R until 2026-08-15. That is a real, importable form — a
+        // property's recursive export uses it — so the panel drew this file as editable and an
+        // edit to it was discarded in silence. The FB_Motor.Execute.xml row is the one that
+        // matters most: it is a real NATIVE_R, and it pins that the fix distinguished the two
+        // rather than making every recursive native export look one-way.
+        var index = ObjectIndex.Of([
+            Project(objects:
+            [
+                Obj("App/Task Configuration.tasks.yaml", "Task Configuration",
+                    "TASK_CONFIGURATION", "g1", "TASK_BOTH"),
+                Obj("App/Task Configuration.xml", "Task Configuration",
+                    "TASK_CONFIGURATION", "g1", ExportCoverage.TaskNativeForm),
+                Obj("App/FB_Motor.Execute.xml", "Execute", "PROPERTY", "g2", "NATIVE_R"),
+            ]),
+        ]);
+
+        Assert.True(index.Lookup("plc/Machine/App/Task Configuration.xml")?.IsExportOnly);
+        Assert.False(index.Lookup("plc/Machine/App/Task Configuration.tasks.yaml")?.IsExportOnly);
+        Assert.False(index.Lookup("plc/Machine/App/FB_Motor.Execute.xml")?.IsExportOnly);
     }
 
     [Fact]

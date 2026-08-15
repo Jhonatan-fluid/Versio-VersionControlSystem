@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,386 unit + 478 UI + 193 integration, 0 skipped
+**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,388 unit + 478 UI + 194 integration, 0 skipped
 
 > **Also 2026-08-15, on branch `GitImportPlan`: Phase 0 of the import plan started, and its
 > first probe found a defect that reaches users.** P7 measured what an import → export cycle does
@@ -21,6 +21,17 @@
 > cycles 2 and 3 used to throw twice each. Versio deletes nothing of CODESYS's; the trigger is
 > simply never reached. Proven non-vacuously — editing the YAML and importing changes the project
 > and reads back changed.
+>
+> **And then a second read of Phase 4 found what closing G7 and G11 had opened.** Making the
+> `.tasks.yaml` the importable half made the `Task Configuration.xml` beside it a file the export
+> writes and the import silently discards — **the exact definition `_coverage.md` exists to
+> report** — and nothing reported it: the XML was still recorded `NATIVE_R`, so the coverage
+> report skipped it and the panel drew it as an ordinary editable row. It is recorded
+> `TASK_NATIVE` now, one-wayness is read from one list per side, and three guards watch it, each
+> **verified by breaking it deliberately**. The clearest evidence is that the code already knew:
+> `TaskBoth`'s own documentation said "its native XML is export-only" while the predicate 114
+> lines below in the same file still answered "libraries only" — a predicate that had **no caller
+> and no test in its entire life**. See the finding.
 >
 > **Phase 0 is now complete — all nine probes measured.** `rename` and `move` preserve identity
 > across a save and reopen, so Phase 3 is safe to build; the typed task API is sufficient, so
@@ -99,7 +110,7 @@ opens. That is `SAFEGUARDS.md` phases 1–8, and phase 9 is features rather than
 
 ```
   CODESYS pipeline    ████████████████████  proven on a real project
-  Domain core         ████████████████████  1,386 tests, under 400 ms
+  Domain core         ████████████████████  1,388 tests, under 400 ms
   Vendor seam         ████████████████████  enforced from assembly metadata
   Infrastructure      ████████████████████  drives real CODESYS + real git
   Desktop shell       ███████████████████░  full git surface, diff, and a UI audit applied
@@ -504,12 +515,40 @@ does not record them has to be run again.
   cache is never reached. Versio deletes nothing of CODESYS's. Measured over three cycles:
   zero warnings, where cycles 2 and 3 used to throw twice each. **`Core2` stopped moving in
   the same change**, which closes G7 with it.
-- **An import's summary is logged with the exporter's field names.**
-  `LocalCodesysRunner.cs:514` builds one message from `walked` / `written` / `skipped` / `gaps`;
-  an import reports `updated` / `unchanged` / `native` / `created` / `missing` / `failed` /
-  `notImported`, and `ScriptEvent.Int` returns null for an absent key — so every import logs a
-  line of blanks. Read from the code, not seen in a log: no import has run through the app in the
-  retained logs. See the finding.
+- **The typed task-import path has no automated test at all.** `.tasks.yaml` → property
+  assignment is what closes G7 and G11, and it is proven by **one hand-run mutation** and by
+  nothing in any suite: no test writes a `priority` and asserts the project changed. What *is*
+  covered is either side of it — the export writes the file, the emitter and reader agree, the
+  XML is skipped as `TYPED_SIBLING` — but not the step that writes to CODESYS. **This is the
+  same shape of gap that let G11 live**, and it is load-bearing: the whole argument for the
+  typed path is that it applies what the YAML says. `TaskCatalog.cs`, the C# reader, is also
+  still unwritten, so nothing outside python can read the file either.
+- **The committed fixture mirror is a shape the exporter can no longer produce.** It carries no
+  `Task Configuration.tasks.yaml` and still records that object's XML as `NATIVE_R`, both of
+  which changed on 2026-08-15. Nothing fails, which is the problem:
+  `WorkspaceTreeFromCommittedExportTests` asserts against it under a docstring claiming it
+  describes *"the tree somebody sees when they open this repository in the app"*, so it is now
+  protecting a stale specification rather than a live one. It was left out of Phase 4 because
+  regenerating moves committed bytes and wants its own review — that reason still holds, but the
+  cost of waiting has gone up. **It also blocks a free test:** the committed `.libraries.yaml` is
+  parsed by its reader in a test needing no CODESYS, and the identical test for `.tasks.yaml`
+  cannot be written until the fixture carries one. **One assertion cascades** —
+  `WorkspaceTreeFromCommittedExportTests` reads `ExportOnlyFiles` as 2 and it becomes 3, the same
+  move already made in the real-export suite. `One_object_with_two_layers_is_still_one_row`
+  survives untouched, because it asks `Assert.Single` for the GVL by name rather than counting
+  every two-file object — and the task configuration is about to become the second one.
+- **An import's summary is logged with the exporter's field names.** **Still open.**
+  `LocalCodesysRunner.cs` builds one `summary` message from `walked` / `written` / `skipped` /
+  `gaps`; an import reports `updated` / `unchanged` / `native` / `created` / `missing` /
+  `failed` / `notImported`, and `ScriptEvent.Int` returns null for an absent key — so every
+  import logs a line of blanks. One field, `warnings`, is common to both and is the only part
+  of the line that is true. Read from the code, not seen in a log: no import has run through
+  the app in the retained logs. See the finding.
+  - ~~The `not_imported` line in the same handler hard-codes "change this in the IDE".~~
+    **Fixed 2026-08-15** alongside the export-only finding. It was right while a library file
+    was the only thing that reached it and wrong the moment a task configuration's XML did —
+    and the script had been sending the `sibling` field all along, which the log discarded.
+    A **different case in the same `switch`**, so the field-name defect above is untouched.
 - **`versio_import.py` does not count a native-import failure.** `ReplaceHandler.progress` warns
   and returns; `self.failed` stays at zero and `self.native` is incremented anyway, so the
   summary claims success on a run that lost two objects. One line, and it makes the script's own
@@ -655,6 +694,71 @@ would have gone on passing while checking one fewer every time a panel moved out
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### Closing G7 and G11 re-opened the gap `_coverage.md` was built to close
+
+> **In one line:** making `Task Configuration.tasks.yaml` the importable half turned the `.xml`
+> beside it into a file the export writes and the import silently discards — and every channel
+> that exists to say so reported it as ordinary, because it was still recorded `NATIVE_R`.
+> **✅ CLOSED 2026-08-15**, by recording it `TASK_NATIVE` and reading one-wayness from one list
+> per side instead of one constant.
+
+Versio has machinery for exactly this. `_coverage.md` carries a section headed *"Exported for
+review, not applied back"*; the manifest records a `form`; the changed-files row draws a lock
+glyph with a tooltip. `STATUS.md` describes the discipline in four places, in the row about
+library references, and the comment in `versio_export.py` above the section states the reason
+outright: *a file that is written for review and silently ignored on the way back is its own kind
+of gap — editing it looks exactly like editing a POU.*
+
+**The task XML got none of the four.** One-wayness was decided by comparing against a single
+constant on each side — `form == FORM_LIBRARIES` in the report, `form == "LIBRARIES"` in
+`ObjectIndex` — so the second one-way form was invisible to both by construction.
+
+**The strongest evidence is that the code already said it.** `CodesysExportForm.cs` documents
+`TaskBoth` with *"its native XML is export-only"*, and 114 lines below it in the same file sat:
+
+```csharp
+// "The predicate the UI needs for the Tier 3 lock glyph … Kept beside the form table so
+//  the next one-way form is declared in the same place as the rule that writes it."
+public static bool IsExportOnly(ExportForm form) => form is ExportForm.Libraries;
+```
+
+The comment names the rule and the function contradicts it. It had **no caller and no test in its
+entire life** — the panel is vendor-neutral and reads a manifest, so the live path never touched
+this enum at all. That is why nothing went red: the one place that claimed to enforce the rule was
+not connected to anything. It is deleted rather than corrected. **A second home for a rule that
+cannot be reached from the code that needs it is not a safeguard, it is a comment that compiles.**
+
+**What it cost a user.** Edit `Task Configuration.xml` in the mirror — a watchdog setting, say,
+which the YAML does not carry — commit it, import. The edit is discarded, the log says nothing
+useful, `_coverage.md` claims the only one-way files are the two library managers, and the panel
+shows an ordinary editable row. The change is in the git history and not in the machine.
+
+**The wrong-remedy half.** Both surfaces that *did* speak hard-coded the library manager's answer,
+*"change this in the IDE"* — which for a task configuration walks the reader straight past the
+`.tasks.yaml` they were meant to edit. The import log discarded the `sibling` field the script was
+already sending it. Both now name the sibling when there is one, and the panel's summary sentence
+names no remedy at all: the remedy is per file, so it is stated per file and in one place.
+
+**What is watching it now**, since three of these changes are the kind nothing would have failed
+on:
+
+| Guard | Breaks when |
+|---|---|
+| `TypeTableParityTests.Python_and_csharp_agree_on_which_forms_are_never_applied_back` | the two `EXPORT_ONLY_FORMS` lists drift — verified red by removing `FORM_TASK_NATIVE` from the python one |
+| `ObjectIndexTests.The_native_half_of_a_task_configuration_is_flagged_and_its_yaml_half_is_not` | the glyph goes back to a single-constant comparison — verified red by restoring it |
+| `ExportCoverageFromRealExportTests.The_task_configurations_native_half_is_recorded_and_named_as_one_way` | the exporter records the wrong form, or the report stops naming the file or its sibling |
+
+The third is against a **real export**, because the defect was in what the exporter wrote and
+every unit test in the repository passed with the old form. `report.ExportOnlyFiles` moved
+**2 → 3** in that suite: the cheapest possible signal, already asserted, and it could not fire
+because it was written before there was a second kind of one-way file to count.
+
+**The general lesson, and it is the one this repository keeps re-learning.** Phase 4 was measured
+carefully — four snapshots for `Core2`, three cycles for G11, a mutation run to prove the result
+was not vacuous. All of it measured *the thing being fixed*. Nothing measured what the fix changed
+about a file it was not about. **A change that makes one file authoritative makes the other file
+something else, and the something else needs a name.**
 
 ### Two bugs that only running the exporter could show
 

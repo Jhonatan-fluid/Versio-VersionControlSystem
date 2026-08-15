@@ -403,6 +403,15 @@ untouched.
 **So the mitigation below was never adopted.** It is kept because it is the fallback if the typed
 path is ever unavailable, and because the measurement cost real time to get.
 
+> **What this table did not measure, and a second read found.** Every number above is about the
+> file being fixed. None of them asks what the fix did to the file beside it — and making the
+> `.tasks.yaml` authoritative made `Task Configuration.xml` a file the export writes and the
+> import discards, with nothing recording it: the manifest still said `NATIVE_R`, so
+> `_coverage.md` skipped it and the panel drew it as editable. **Closed the same day** by
+> recording it `TASK_NATIVE`; see the finding in [`STATUS.md`](STATUS.md). The general form is
+> worth carrying into Phases 1–3: *a measurement aimed at the defect will not see what the fix
+> changed about anything else.*
+
 ### The mitigation that turned out not to be needed
 
 The cells above all reached "no cache" by copying a project that never had one, which is not the

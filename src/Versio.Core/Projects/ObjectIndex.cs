@@ -29,13 +29,18 @@ public sealed record NamedObject
     /// Exported for review and never applied back.
     /// </summary>
     /// <remarks>
-    /// Library references are the only one today, and the panel is where it matters: the file
-    /// is in the changed list, it looks exactly like an editable one, and staging an edit to it
-    /// commits a change that will never reach the project — the next export rewrites the file
-    /// from the project and the edit is gone. <c>STATUS.md</c> carried that as a known
-    /// limitation for a long time with "the panel does not say so yet" beside it; this is the
-    /// flag that closed it, and the source of truth is
-    /// <see cref="ExportCoverage.ExportOnlyForm"/> rather than a list of filenames.
+    /// Library references and the native half of a task configuration, and the panel is where
+    /// it matters: the file is in the changed list, it looks exactly like an editable one, and
+    /// staging an edit to it commits a change that will never reach the project — the next
+    /// export rewrites the file from the project and the edit is gone. <c>STATUS.md</c> carried
+    /// that as a known limitation for a long time with "the panel does not say so yet" beside
+    /// it; this is the flag that closed it, and the source of truth is
+    /// <see cref="ExportCoverage.IsExportOnly(string)"/> rather than a list of filenames.
+    /// <para>
+    /// <b>Asking the predicate rather than comparing to one constant is the point.</b> This
+    /// read <c>form == "LIBRARIES"</c> until 2026-08-15, so the day a second export-only form
+    /// arrived the glyph was silently right for one file and silently wrong for another.
+    /// </para>
     /// </remarks>
     public bool IsExportOnly { get; init; }
 
@@ -120,8 +125,7 @@ public sealed class ObjectIndex
                         Type = obj.Type,
                         Guid = obj.Guid,
                         Project = name,
-                        IsExportOnly = string.Equals(
-                            obj.Form, ExportCoverage.ExportOnlyForm, StringComparison.Ordinal),
+                        IsExportOnly = ExportCoverage.IsExportOnly(obj.Form),
                     });
             }
         }

@@ -1,13 +1,18 @@
 # Versio — closing the CODESYS import gaps
 
-**Date:** 2026-08-15 · **Phase 0 is complete: all nine probes measured. Nothing in phases 1–6 is
-built.** The only product code so far is one `.gitignore` pattern, from the compile cache P7's
-second finding turned out to hinge on.
+**Date:** 2026-08-15 · **Phase 0 is complete: all nine probes measured. Phase 4 is built, both
+halves, and closes G7 and G11.** Phases 1, 2, 3, 5 and 6 are not started.
+
+> **This header said "nothing in phases 1–6 is built" for the whole of the session that built
+> Phase 4**, while the [build order](#build-order) below it and every G7/G11 row already said
+> the opposite. It is the second time this file's header has claimed less than the file — commit
+> `f391e55` fixed the first. A header is what a reader trusts before they have read anything, so
+> it is the one line in a plan that cannot be left to catch up later.
 
 | | |
 |---|---|
 | Document | **The plan for making the import side a real bidirectional sync.** Deletes, renames, moves, typed task configuration, and a mirror that stops churning after every import |
-| Status | **Phase 0 done, phases 1–6 not started.** Two gaps closed as unreachable, four API spellings corrected, one new defect found (G11) and one open risk answered badly (P3 dangles silently) |
+| Status | **Phase 0 and Phase 4 done; phases 1, 2, 3, 5, 6 not started.** Two gaps closed as unreachable, four API spellings corrected, two live defects fixed (G7, G11) — and one re-opened and closed again by that same fix, the task XML's one-wayness going unrecorded |
 | Related | [`CODESYS.md`](CODESYS.md) — how CODESYS is driven today, and §12, the audit these gaps came from · [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) — what was measured · [`PLAN.md`](PLAN.md) — the architecture · [`SAFEGUARDS.md`](SAFEGUARDS.md) — what Versio refuses or waits for |
 
 > **These phase numbers are identifiers, not an order**, and they are **not** `PLAN.md`'s phases —
@@ -191,12 +196,14 @@ already exists.**
 | # | What | Why here |
 |---|---|---|
 | ~~1st~~ | ✅ **Phase 4 — typed task configuration.** Landed 2026-08-15, both halves. **G7 and G11 measured closed** | The only phase that fixes **two live, user-facing defects**: G7 changes CPU core affinity nobody asked to change, and G11 makes every import after the first silently fail. P6 proved the typed path works; a direct experiment proved removing the file from `import_native` fixes G11 without relocating the fault. Independent of everything else here |
-| **NEXT** | **The three honesty fixes** | Small, unrelated to each other, and each makes the *next* failure visible instead of silent. None depends on any phase |
-| **3rd** | **Phase 1 — manifest-driven importer** | The foundation. Nothing else can be planned C#-side until the plan exists |
-| **4th** | **`versio_native_equiv.py`** | A shared prerequisite, not a phase. Phase 2's native content check needs it and so does Phase 5 — it was written down as a Phase 5 artifact and is needed earlier |
-| **5th** | **Phases 2 and 3 — deletes, renames, moves** | Together, as originally planned. Phase 3's detection reuses Phase 2's delete candidates |
-| **6th** | **Phase 5 — a mirror that stops churning** | Wants Phases 1–3 settled first, because it changes when files are rewritten and every earlier phase's diffs are easier to read without it |
-| **7th** | **Phase 6 — remaining gaps, tests, docs** | G8 and G9, the parity tests, the integration tests |
+| ~~2nd~~ | ✅ **The task XML's one-wayness, recorded.** Landed 2026-08-15, immediately after | **Not planned — found by re-reading Phase 4 as if somebody else had written it.** Making the YAML importable made the `.xml` a file the export writes and the import discards, and nothing said so: not `_coverage.md`, not the manifest, not the panel's lock glyph. It went first because it is a **live silent-data-loss path introduced by the commit that had just landed**, where the honesty fixes below make *future* failures visible. See the finding in [`STATUS.md`](STATUS.md) |
+| **NEXT** | **Regenerate the committed fixture mirror** | Was "wants its own review" and is now **load-bearing**: the committed manifest still records the task XML as `NATIVE_R` and carries no `.tasks.yaml`, so `WorkspaceTreeFromCommittedExportTests` — whose docstring claims it describes *"the tree somebody sees when they open this repository in the app"* — is asserting against a mirror the current exporter cannot produce. It also unlocks a `.tasks.yaml` reader test that needs no CODESYS, which is the cheap half of the missing coverage below |
+| **3rd** | **The three honesty fixes** | Small, unrelated to each other, and each makes the *next* failure visible instead of silent. None depends on any phase |
+| **4th** | **Phase 1 — manifest-driven importer** | The foundation. Nothing else can be planned C#-side until the plan exists |
+| **5th** | **`versio_native_equiv.py`** | A shared prerequisite, not a phase. Phase 2's native content check needs it and so does Phase 5 — it was written down as a Phase 5 artifact and is needed earlier |
+| **6th** | **Phases 2 and 3 — deletes, renames, moves** | Together, as originally planned. Phase 3's detection reuses Phase 2's delete candidates |
+| **7th** | **Phase 5 — a mirror that stops churning** | Wants Phases 1–3 settled first, because it changes when files are rewritten and every earlier phase's diffs are easier to read without it |
+| **8th** | **Phase 6 — remaining gaps, tests, docs** | G8 and G9, the parity tests, the integration tests |
 
 ### The three honesty fixes
 
@@ -208,14 +215,18 @@ the reason a future defect will be seen rather than missed.
    claims success on a run that lost two objects. The warnings *do* reach the log at `Warn`, so
    this is a wrong one-line answer rather than a silent one — and the one-line answer is what gets
    read.
-2. **`LocalCodesysRunner.cs:514` logs an import's summary using the exporter's field names.**
+2. **`LocalCodesysRunner`'s `summary` case logs an import using the exporter's field names.**
    `walked` / `written` / `skipped` / `gaps` against an import that reports `updated` /
    `unchanged` / `native` / `created` / `missing` / `failed` / `notImported`, with
    `ScriptEvent.Int` returning null for an absent key — so every import logs a line of blanks.
+   Only `warnings` is common to both, and it is the only true number on the line. *(The
+   `not_imported` case in the same `switch` had a related defect — hard-coded "change this in
+   the IDE" — and was **fixed 2026-08-15**. This one is untouched.)*
 3. **No test imports twice, and none imports with the project's sidecars present.** Both
    real-CODESYS import tests import once, from a `.project` copied without its `.opt` pair or its
-   compile cache. **Both axes are exactly how G11 stayed invisible**, and both matter more once the
-   importer grows deletes, renames and moves.
+   compile cache — and **one of the two asserts the import is *refused*** because CODESYS holds
+   the project, so it is not an import-success test at all. **Both axes are exactly how G11
+   stayed invisible**, and both matter more once the importer grows deletes, renames and moves.
 
 There is a fourth, and it is a judgement call rather than a fix: **the phase-split save in
 `versio_import.py` is conditional on `created > 0 or updated > 0`**, so an import touching only
@@ -251,6 +262,17 @@ Mirrors the library-reference design exactly, which is the precedent to copy:
   skipped when a typed file sits **beside** it — adjacency rather than a suffix of its own,
   so no committed file had to be renamed. The event names the winner
   (`TYPED_SIBLING`, `sibling: Task Configuration.tasks.yaml`) rather than going quiet.
+- ✅ **And the manifest says so — added 2026-08-15, after the rest of Phase 4 had shipped
+  without it.** Making the YAML importable made the `.xml` beside it a file the export
+  writes and the import discards, which is the precise definition `_coverage.md` exists to
+  report. It reported nothing: the XML was recorded `NATIVE_R`, the same form a property's
+  recursive export carries, so the coverage report skipped it and the panel drew it as an
+  ordinary editable row. **Recorded `TASK_NATIVE` now**, one-wayness is read from a single
+  list on each side (`EXPORT_ONLY_FORMS` ↔ `ExportCoverage.IsExportOnly`), and the two are
+  compared in a unit test. See the finding in [`STATUS.md`](STATUS.md).
+  - **A side effect worth having:** the importer currently probes the disk for a typed
+    sibling, with a comment saying the check can go once Phase 1 reads the manifest. The
+    manifest now carries the answer, so Phase 1 inherits it rather than having to derive it.
 - ✅ **`versio_yaml` gained a reader.** Nothing python-side had ever read a document it
   wrote — `.libraries.yaml` is export-only and the C# `LibraryCatalog.Parse` was the only
   parser in existence. Emitting and re-reading in one process is now a test, and it covers
@@ -270,11 +292,19 @@ Mirrors the library-reference design exactly, which is the precedent to copy:
   so the panel can show tasks. **It needs the scalar list**, which `LibraryCatalog.Parse`
   does not handle: no library field is a list, so the construct never reached it.
 - ⬜ **Regenerate the committed fixture mirror** to carry the new file. This moves committed
-  bytes and is the part this plan flags as wanting its own review.
+  bytes and is the part this plan flags as wanting its own review. **Now the next thing to
+  do** — see [Build order](#build-order) for why the cost of leaving it has gone up, and
+  `STATUS.md` for the single assertion it cascades to (`ExportOnlyFiles` 2 → 3).
 - ⬜ **An integration test that changes a task priority and asserts the project afterwards.**
   Listed under Phase 6, and worth pulling forward: the typed path is proven by a hand-run
   mutation today and by nothing automated, which is the same shape as the coverage gap that
   let G11 live.
+  - **Split it in two, because the halves cost wildly different amounts.** The expensive half
+    is the real-CODESYS mutation — keep it in Phase 6. The cheap half is parsing the committed
+    `.tasks.yaml` with the reader that ships beside it, which needs **no CODESYS at all**:
+    `The_committed_library_file_parses_with_the_reader_that_ships_beside_it` is that test for
+    libraries and has run for months. It cannot be written until the fixture above carries the
+    file, which is the second reason to regenerate first.
 
 **Why this is first.** It is the only phase that fixes something a user is living with today, and
 it fixes two:

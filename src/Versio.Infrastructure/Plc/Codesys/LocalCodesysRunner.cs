@@ -489,9 +489,18 @@ public sealed class LocalCodesysRunner(
                     // warned: it happens on every import of every project that has a
                     // library manager, and a warning that is always present is how a
                     // real one gets read past.
+                    //
+                    // The advice was hard-coded to "change this in the IDE", which was right
+                    // while a library file was the only thing that reached here. A task
+                    // configuration's XML has its importable half sitting beside it, and the
+                    // script already says which file that is — so the line said the one thing
+                    // guaranteed to send the reader past it.
                     _log.Info(LogCategory.Codesys,
                         $"not applied to the project ({evt.String("reason")}): " +
-                        $"{evt.String("path")} — change this in the IDE");
+                        $"{evt.String("path")} — " +
+                        (evt.String("sibling") is { Length: > 0 } sibling
+                            ? $"edit {sibling} instead"
+                            : "change this in the IDE"));
                     break;
 
                 case "counted":

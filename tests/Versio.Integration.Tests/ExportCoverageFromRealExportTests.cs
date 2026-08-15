@@ -191,20 +191,74 @@ public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) 
         var written = manifest.Objects.Where(o => o.Type == "LIBRARY_MANAGER").ToList();
 
         Assert.Equal(2, written.Count);
-        Assert.All(written, o => Assert.Equal(ExportCoverage.ExportOnlyForm, o.Form));
+        Assert.All(written, o => Assert.Equal(ExportCoverage.LibrariesForm, o.Form));
         Assert.Contains(written, o => o.Path == "Library Manager.libraries.yaml");
         Assert.Contains(written,
             o => o.Path == "Device/Plc Logic/Application/Library Manager.libraries.yaml");
 
         // Exported is not the same as editable, and the report says so rather than leaving
         // it to be found out by editing one.
-        Assert.Equal(2, report.ExportOnlyFiles);
+        //
+        // THREE, not two: the two library files plus the task configuration's native .xml,
+        // which stopped being applied back when Phase 4 made its .tasks.yaml the importable
+        // half. This number was 2 for as long as that was already true, which is the whole
+        // finding — the count is the cheapest thing that could have noticed and it was
+        // written before there was a second kind of one-way file to notice.
+        Assert.Equal(3, report.ExportOnlyFiles);
         Assert.Contains("not applied back", report.Describe(), StringComparison.Ordinal);
 
         // The deliberate skips are still not counted as gaps: the fixture's visualisation
         // manager is skipped for a reason that loses nothing.
         Assert.Contains(manifest.Skipped, s => s.Reason == "SERVICE_OBJECT");
         Assert.DoesNotContain(report.Gaps, g => g.Reason == "SERVICE_OBJECT");
+    }
+
+    [SkippableFact]
+    public async Task The_task_configurations_native_half_is_recorded_and_named_as_one_way()
+    {
+        // What nothing was watching. The .tasks.yaml is the importable half and the .xml
+        // beside it is discarded by the importer as TYPED_SIBLING — but the manifest recorded
+        // that .xml as NATIVE_R, a form that a property's recursive export uses and that the
+        // importer applies. So the panel drew it as an ordinary editable file and _coverage.md
+        // never mentioned it: an edit to a task's XML was thrown away in silence.
+        //
+        // Against a real export rather than a hand-built manifest, because the defect was in
+        // what the exporter WROTE. The unit tests would all have passed with the old form: the
+        // C#/python seam only proves the two sides agree about which forms are one-way, not
+        // that this file carries one of them.
+        var exportRoot = await ExportAsync("first");
+
+        var manifest = ProjectManifest.Parse(
+            await File.ReadAllTextAsync(Path.Combine(exportRoot, "_manifest.json")));
+
+        var task = manifest.Objects
+            .Where(o => o.Type == "TASK_CONFIGURATION")
+            .OrderBy(o => o.Path, StringComparer.Ordinal)
+            .ToList();
+
+        output.WriteLine(string.Join("\n", task.Select(o => $"{o.Form,-12} {o.Path}")));
+
+        // One object, two files, one GUID — the GVL_BOTH shape, with the halves reversed.
+        Assert.Equal(2, task.Count);
+        Assert.Single(task.Select(o => o.Guid).Distinct(StringComparer.Ordinal));
+
+        var xml = Assert.Single(task, o => o.Path.EndsWith(".xml", StringComparison.Ordinal));
+        var yaml = Assert.Single(task,
+            o => o.Path.EndsWith(".tasks.yaml", StringComparison.Ordinal));
+
+        Assert.Equal(ExportCoverage.TaskNativeForm, xml.Form);
+        Assert.True(ExportCoverage.IsExportOnly(xml.Form));
+        Assert.False(ExportCoverage.IsExportOnly(yaml.Form));
+
+        // And said out loud where somebody will meet it, with the remedy that is actually
+        // right for this file. "Change it in the IDE" — correct for a library manager — would
+        // walk the reader straight past the .tasks.yaml they were meant to edit.
+        var coverage = await File.ReadAllTextAsync(Path.Combine(exportRoot, "_coverage.md"));
+        output.WriteLine(coverage);
+
+        Assert.Contains("Exported for review, not applied back", coverage, StringComparison.Ordinal);
+        Assert.Contains(xml.Path, coverage, StringComparison.Ordinal);
+        Assert.Contains($"edit `{yaml.Path}` instead", coverage, StringComparison.Ordinal);
     }
 
     [SkippableFact]

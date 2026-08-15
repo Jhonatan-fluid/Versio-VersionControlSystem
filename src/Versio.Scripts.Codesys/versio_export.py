@@ -22,10 +22,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from versio_text import (content_hash, join_st, normalize_decl_only,  # noqa: E402
                          safe_file_stem, scrub_native_xml)
-from versio_types import (FORM_CONTAINER, FORM_GVL_BOTH, FORM_LIBRARIES,  # noqa: E402
+from versio_types import (EXPORT_ONLY_FORMS, FORM_CONTAINER,  # noqa: E402
+                          FORM_GVL_BOTH, FORM_LIBRARIES,
                           FORM_NATIVE, FORM_NATIVE_R, FORM_NATIVE_WITH_CHILDREN,
                           FORM_SKIP, FORM_ST_DECL, FORM_ST_FULL, FORM_ST_IMPL,
-                          FORM_TASK_BOTH, SKIP_EXPLANATION, SKIP_GAP, decide_form,
+                          FORM_TASK_BOTH, FORM_TASK_NATIVE, SKIP_EXPLANATION,
+                          SKIP_GAP, decide_form,
                           descends_into_children, file_name_for, skip_reason,
                           type_of)
 import versio_libraries  # noqa: E402
@@ -381,7 +383,15 @@ class Exporter(object):
                 xml_path = os.path.join(rel_dir, stem_name + ".xml")
                 xml_text, _ = self.export_native(
                     obj, os.path.join(self.out_root, xml_path), True)
-                self.record(obj, obj_type, FORM_NATIVE_R, xml_path, xml_text, parent_guid)
+
+                # Recorded TASK_NATIVE, not NATIVE_R. The bytes are a recursive native
+                # export either way, but the manifest's form is the only thing that tells
+                # a reader this file is never applied back - and the import stopped
+                # applying it the moment the .tasks.yaml beside it became the importable
+                # half. NATIVE_R said the opposite, because a PROPERTY's NATIVE_R does
+                # import.
+                self.record(obj, obj_type, FORM_TASK_NATIVE, xml_path, xml_text,
+                            parent_guid)
 
                 object_path = (rel_dir + "/" + name).replace("\\", "/").lstrip("/")
                 text = self.export_tasks(obj, object_path, rel_path)
@@ -516,17 +526,40 @@ def coverage_markdown(project, records, skips, warnings):
     # on the way back is its own kind of gap: editing it looks exactly like editing a
     # POU, and nothing would tell the engineer their change went nowhere. Stated here
     # for the same reason the skips are.
-    one_way = [r for r in records if r.get("form") == FORM_LIBRARIES]
+    #
+    # The remedy differs per file, and saying the wrong one is its own small defect. A
+    # library file has no importable form anywhere, so the answer really is "in the IDE".
+    # A task configuration has its importable half sitting right beside it, and sending
+    # somebody to the IDE would walk them past the file they were meant to edit.
+    #
+    # The sibling is found by GUID rather than by rewriting the suffix, because the GUID is
+    # the identity everywhere else in this manifest and a suffix rule would have to be kept
+    # in step with SUFFIX by hand. Any future one object, two files form gets this for free.
+    one_way = [r for r in records if r.get("form") in EXPORT_ONLY_FORMS]
     if one_way:
+        # Empty GUIDs are excluded rather than indexed. record() falls back to "" when
+        # obj.guid raises, so indexing on it would file every unreadable object under one
+        # key and hand a one-way file the path of an unrelated object as its remedy -
+        # a confidently wrong instruction, which is worse than the generic one.
+        importable = {}
+        for r in records:
+            if r.get("form") not in EXPORT_ONLY_FORMS and r.get("guid"):
+                importable.setdefault(r["guid"], r.get("path"))
+
         lines.append(u"## Exported for review, not applied back")
         lines.append(u"")
         lines.append(u"**These files are written by the export and ignored by the import.**")
         lines.append(u"They show what the project asks for, so a change reaches the diff and")
-        lines.append(u"the commit - but editing one here does not change the project. Change")
-        lines.append(u"these in the IDE.")
+        lines.append(u"the commit - but editing one here does not change the project.")
         lines.append(u"")
         for r in sorted(one_way, key=lambda x: x["path"]):
-            lines.append(u"- `%s` — %s" % (r["path"], r["type"]))
+            sibling = importable.get(r["guid"]) if r.get("guid") else None
+            if sibling:
+                lines.append(u"- `%s` — %s · edit `%s` instead"
+                             % (r["path"], r["type"], sibling))
+            else:
+                lines.append(u"- `%s` — %s · change it in the IDE"
+                             % (r["path"], r["type"]))
         lines.append(u"")
 
     other = sorted(k for k in by_reason if k != SKIP_GAP)

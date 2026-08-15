@@ -72,6 +72,28 @@ FORM_CONTAINER = "CONTAINER"
 FORM_LIBRARIES = "LIBRARIES"
 FORM_SKIP = "SKIP"
 
+# TASK_NATIVE - the .xml half of a TASK_BOTH pair. RECORDED, NEVER DECIDED: decide_form
+# does not return it, TYPE_FORM does not contain it, and it never reaches file_name_for,
+# because the TASK_BOTH branch of the exporter builds that path itself. It exists for one
+# reason - so the manifest SAYS the file is export-only instead of leaving a reader to
+# infer it.
+#
+# It was recorded as NATIVE_R until 2026-08-15, which made it indistinguishable from a
+# PROPERTY's recursive export - an importable file. That is how Phase 4 re-opened the gap
+# _coverage.md was built to close: the moment the .tasks.yaml became the importable half,
+# the .xml beside it became a file the export writes and the import silently ignores, and
+# nothing anywhere said so. Editing it looked exactly like editing a POU.
+FORM_TASK_NATIVE = "TASK_NATIVE"
+
+# Forms whose file is written for review and never applied back.
+#
+# ONE list, because the rule has to be in one place: it is read by the coverage report
+# here and mirrored by ExportCoverage.IsExportOnly on the C# side, which is what the
+# panel's lock glyph reads. The two are compared in TypeTableParityTests - a form added
+# here and not there means the file is announced in _coverage.md and still looks editable
+# in the app, which is half a warning and worse than none.
+EXPORT_ONLY_FORMS = (FORM_LIBRARIES, FORM_TASK_NATIVE)
+
 # NATIVE_WITH_CHILDREN - export the node itself natively, non-recursively, AND descend into
 # a subdirectory for its children.
 #

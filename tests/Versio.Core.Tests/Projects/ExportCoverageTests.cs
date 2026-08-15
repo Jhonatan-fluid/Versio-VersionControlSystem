@@ -134,7 +134,7 @@ public sealed class ExportCoverageTests
                 new ProjectObject
                 {
                     Path = "App/Library Manager.libraries.yaml",
-                    Form = ExportCoverage.ExportOnlyForm,
+                    Form = ExportCoverage.LibrariesForm,
                     Type = "LIBRARY_MANAGER",
                     Guid = "g2",
                 },
@@ -151,7 +151,14 @@ public sealed class ExportCoverageTests
         Assert.Contains("Everything in this project reaches the mirror", sentence,
                         StringComparison.Ordinal);
         Assert.Contains("not applied back", sentence, StringComparison.Ordinal);
-        Assert.Contains("change those in the IDE", sentence, StringComparison.Ordinal);
+
+        // It points at _coverage.md rather than naming a remedy. The sentence used to say
+        // "library references … change those in the IDE", which was true only while libraries
+        // were the sole one-way form: a task configuration's XML is fixed by editing the
+        // .tasks.yaml beside it, and the remedy is per file. Stating it here as well would be
+        // a second copy of a rule that already has a home, and the copy is what goes stale.
+        Assert.Contains("_coverage.md", sentence, StringComparison.Ordinal);
+        Assert.DoesNotContain("change those in the IDE", sentence, StringComparison.Ordinal);
 
         // Still no badge: this is a property of the format, not a problem with the export.
         // A row that said something on every project with a library manager — which is every

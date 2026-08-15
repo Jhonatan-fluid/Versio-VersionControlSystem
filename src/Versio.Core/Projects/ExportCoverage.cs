@@ -65,16 +65,59 @@ public static class ExportCoverage
     public const string GapReason = "NOT_IMPLEMENTED";
 
     /// <summary>
-    /// The manifest's <c>form</c> for a file that is exported and never applied back.
+    /// The manifest's <c>form</c> for library references — exported, never applied back.
     /// </summary>
     /// <remarks>
     /// A stable machine string produced by the exporter, like the skip reasons. Library
-    /// references are the first of these: real project state, written so a change reaches the
+    /// references were the first of these: real project state, written so a change reaches the
     /// diff, with no import path that can be trusted. A file that looks editable and is
     /// silently ignored is its own kind of gap, so it is counted and said out loud rather than
     /// left for somebody to discover by editing one.
     /// </remarks>
-    public const string ExportOnlyForm = "LIBRARIES";
+    public const string LibrariesForm = "LIBRARIES";
+
+    /// <summary>
+    /// The manifest's <c>form</c> for the native <c>.xml</c> half of a task configuration.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The second export-only form, and the one that proves the first was not a special case.
+    /// A task configuration writes two files: <c>.tasks.yaml</c>, which imports, and this
+    /// <c>.xml</c>, which is kept for fidelity and for the diff and is never applied back.
+    /// </para>
+    /// <para>
+    /// <b>It was recorded as <c>NATIVE_R</c> until 2026-08-15</b>, which is the form a
+    /// property's recursive export carries — an importable file. So for the whole of Phase 4
+    /// the mirror held a file that the import silently discarded while every channel that
+    /// exists to say so reported it as ordinary: no line in <c>_coverage.md</c>, no lock glyph
+    /// in the panel, nothing in the manifest. That is precisely the gap this class was written
+    /// for, re-opened by the change that closed G7 and G11.
+    /// </para>
+    /// </remarks>
+    public const string TaskNativeForm = "TASK_NATIVE";
+
+    /// <summary>
+    /// True for a manifest <c>form</c> whose file is written for review and never applied back.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The authority on one-wayness, and deliberately the only one.</b> It keys off the
+    /// manifest string rather than any vendor's form enum, because the panel that draws the
+    /// lock glyph is vendor-neutral and a manifest is all it ever has. A CODESYS-side
+    /// predicate saying the same thing existed until 2026-08-15, had no caller and no test,
+    /// and was wrong — it still answered "libraries only" long after <c>TaskBoth</c>'s own
+    /// documentation said its XML was export-only. Two homes for one rule is how that drifted.
+    /// </para>
+    /// <para>
+    /// The mirror of <c>EXPORT_ONLY_FORMS</c> in <c>versio_types.py</c>, which the exporter
+    /// uses for the same decision in <c>_coverage.md</c>. The two are compared in
+    /// <c>TypeTableParityTests</c>: a form on one side only means the file is announced in one
+    /// place and looks editable in the other, which is worse than not warning at all.
+    /// </para>
+    /// </remarks>
+    public static bool IsExportOnly(string? form) =>
+        string.Equals(form, LibrariesForm, StringComparison.Ordinal)
+        || string.Equals(form, TaskNativeForm, StringComparison.Ordinal);
 
     /// <summary>What an export covers, from its manifest alone.</summary>
     public static CoverageReport Of(ProjectManifest? manifest)
@@ -101,8 +144,7 @@ public static class ExportCoverage
             Gaps = gaps,
             DeliberateSkips = deliberate,
             FilesWritten = manifest.Objects.Count,
-            ExportOnlyFiles = manifest.Objects
-                .Count(o => string.Equals(o.Form, ExportOnlyForm, StringComparison.Ordinal)),
+            ExportOnlyFiles = manifest.Objects.Count(o => IsExportOnly(o.Form)),
         };
     }
 }
@@ -180,15 +222,26 @@ public sealed record CoverageReport
 
     /// <summary>The sentence about one-way files, or nothing when there are none.</summary>
     /// <remarks>
+    /// <para>
     /// Appended rather than woven in, so the reader sees the coverage answer first and this
     /// second. It qualifies "everything reaches the mirror" without contradicting it: the
     /// content is there, the edit direction is not.
+    /// </para>
+    /// <para>
+    /// <b>It names no remedy, on purpose.</b> It used to say "library references … change those
+    /// in the IDE", which was true while libraries were the only one-way form and became wrong
+    /// the moment a task configuration's XML joined them — its remedy is the
+    /// <c>.tasks.yaml</c> beside it, and sending somebody to the IDE walks them past the file
+    /// they were meant to edit. The remedy is per file, so it is stated per file, in
+    /// <c>_coverage.md</c> and nowhere else. A summary that restates a per-file rule is a
+    /// second copy of it, and the second copy is the one that goes stale.
+    /// </para>
     /// </remarks>
     private string OneWay() =>
         ExportOnlyFiles == 0
             ? string.Empty
-            : $" {ExportOnlyFiles} file(s) — library references — are exported for review " +
-              "and not applied back; change those in the IDE.";
+            : $" {ExportOnlyFiles} file(s) are exported for review and not applied back; " +
+              "_coverage.md names each one and what to edit instead.";
 
     /// <summary>The distinct CODESYS types behind the gaps, in a readable list.</summary>
     private string Types()
