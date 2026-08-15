@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-14 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,384 unit + 455 UI + 192 integration, 0 skipped
+**Date:** 2026-08-14 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,384 unit + 465 UI + 192 integration, 0 skipped
 
 > All three re-derived on 2026-08-14, on branch `GitPanel`, after the git-panel plan's **GP-J**
 > (PLC-aware naming of the changed-files rows, the change summary and the drafted commit
@@ -20,6 +20,12 @@
 > every commit cannot be written down in a file that every commit touches. The test counts stay
 > as numbers because they only move when the tests do, and `dotnet test` prints a total per
 > suite when they have.
+>
+> **And that argument has now failed once, which is worth keeping rather than quietly
+> correcting.** The UI count sat at 455 while the suite ran 463: the commit that added
+> `CommandNotificationTests` added eight cases and did not re-derive the header. "They only move
+> when the tests do" is true and is not the same as "somebody notices when they move" — the
+> defence is re-deriving before believing, not the number being slow.
 
 > One integration test, `RepositoryWatcherTests.A_deleted_file_is_reported`, is **flaky under
 > full-suite load** — see Findings. It passes in isolation and failed once during a complete
@@ -53,7 +59,7 @@ opens. That is `SAFEGUARDS.md` phases 1–8, and phase 9 is features rather than
 
 ```
   CODESYS pipeline    ████████████████████  proven on a real project
-  Domain core         ████████████████████  1,379 tests, 426 ms
+  Domain core         ████████████████████  1,384 tests, under 400 ms
   Vendor seam         ████████████████████  enforced from assembly metadata
   Infrastructure      ████████████████████  drives real CODESYS + real git
   Desktop shell       ███████████████████░  full git surface, diff, and a UI audit applied
@@ -182,10 +188,12 @@ format; `.gitattributes` covers every registered vendor's extensions.
 >    `LogSplitter`).
 > 4. `SyncViewModel` at 2,847 lines is the same shape one size down.
 >
-> **Do the smaller thing first if you are new to this code**: `LogViewModel` is leaked by thirty
-> tests that construct one inline as a constructor argument (see the shell-disposal finding),
-> and `OrphanScanner.cs:194` states *"never deleted automatically because it is committed
-> history"* unconditionally — which is wrong for an export tree sitting under an ignored path.
+> **Do the smaller thing first if you are new to this code**: ~~`LogViewModel` is leaked by
+> thirty tests that construct one inline as a constructor argument~~ — **done**, the shell
+> disposes it now and two window helpers that could not reach their shell at all were fixed with
+> it; see the finding. What is left of that list is `OrphanScanner.cs:194`, which states *"never
+> deleted automatically because it is committed history"* unconditionally — wrong for an export
+> tree sitting under an ignored path.
 
 > **Two other plans are tracked separately, and both are ahead of this list.**
 >
@@ -403,8 +411,14 @@ does not record them has to be run again.
   directories their own test had already deleted and competing for the same git binary as
   whatever was actually running. That is why the failure moved, why it never reproduced alone,
   and why it reproduced on `main`. Measured: four failures in fourteen observed full runs
-  before, one in the next fourteen after — roughly 29% down to 7%. **Reduced, not cured**: the
-  remaining suspect is the `LogViewModel` leak in the bullet below. See the finding.
+  before, one in the next fourteen after — roughly 29% down to 7%. **Reduced, not cured** — and
+  ~~the remaining suspect is the `LogViewModel` leak in the bullet below~~ **that suspect is now
+  closed without the flake closing with it**: the shell disposes its log, and the shells two
+  window helpers built inline as arguments — where no `using` could reach them — are disposed
+  too. Ten runs after that: eight green, two red, under load this session inflicted on itself,
+  so no rate can be read off it. The three tests that failed all drive **real git subprocesses**
+  and all dispose correctly, which points the remainder at process and filesystem contention
+  rather than at anything leaked. See the finding.
 - **The integration suite is not covered by that fix**, and one of the three classes originally
   named — `AdoptAndExportTests` — lives there. `Versio.Integration.Tests` constructs no
   `ShellViewModel` at all, so it leaked none; it drives real CODESYS with real timeouts, and
@@ -487,6 +501,86 @@ would have gone on passing while checking one fewer every time a panel moved out
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### The disposal rule could not reach the one thing it most needed to
+
+`ShellViewModel.Dispose` stopped the watcher, the remote poller, the sync and history panels and
+the repository lock. It did nothing about `LogViewModel` — which is `IDisposable` precisely
+because it owns a running `DispatcherTimer` and a subscription to the log sink.
+
+So a test that obeyed `using var shell = ...` **to the letter still leaked a timer and a live
+handler, every time.** That is the sharp part: the rule written up after fifty-six undisposed
+shells was being followed, and could not have helped, because `TestShell` builds the log, hands
+it to the shell and returns only the shell. Nothing the test can reach owns it. Thirty-six call
+sites, all leaking, all of them looking correct.
+
+**The cost is not what the previous write-up assumed.** It said the timer "cannot tick on a
+thread with nothing pumping a dispatcher, so the practical cost is the subscription rather than
+the work". `StaHarness` disproves it in its own remarks: there is **one** long-lived STA thread
+running `Dispatcher.Run()` for the entire suite, and it has to be one, because the theme's
+`Freezable`s belong to the thread that created them. Every log built inside a windowed test puts
+its 100 ms pump on the one dispatcher that actually pumps. A leaked one keeps firing for the rest
+of the run — draining its queue, calling `Filters.UpdateCounts(_sink.Snapshot())` and mutating an
+`ObservableCollection` on the same thread every later WPF test is using. That is a mechanism for
+a failure that is load-dependent, moves between tests, and never reproduces alone.
+
+**The shell disposes the log now, and it is handed one rather than building it** — so this is a
+class taking ownership of an object it did not create. Deliberate, and stated on the property.
+Nothing else keeps a reference: `App` hands one over and forgets it, `TestShell` returns only the
+shell, so there is no second owner to disagree. The alternative — handing the log back so the
+caller disposes it too — makes the rule two things to remember at thirty-six sites, and a rule
+with an exception is the rule that gets forgotten. Disposed last, because everything above it in
+`Dispose` logs on the way out and those lines should still reach the panel.
+
+**More shells were leaking where no rule could have reached them — one per test, across two
+classes, seventeen tests between them.**
+`AutomationNameTests` and `ShellLayoutTests` each built their shell *inline as an argument* to
+`MainWindow`, so it was never in a variable and there was nothing to put `using` on. The helpers
+are instance methods recording what they build now, and the classes dispose them; dropping
+`static` was the whole edit, so every call site is unchanged.
+
+**Two things the tests themselves taught, both by failing for the wrong reason first.**
+
+The first version asserted `HeldCount == 0` after disposal. It failed against the broken code —
+by two and by three — and it would have failed against the fixed code just as surely, because
+`Dispose` stops the pump and releases the subscription without emptying the queue: the entries
+the shell logged while it was alive are still sitting in it, and nothing drains them without a
+dispatcher. **A baseline that survives the fix is not evidence**, and a test that goes red at the
+moment you want it to is not thereby going red for your reason. It asserts on a specific entry now, emitted after disposal, not
+arriving. Worth knowing for anything similar: the filter path is unusable here, because `Rebuild`
+repopulates from `_sink.Snapshot()` directly and would show that entry whether the subscription
+was released or not — a test written through it passes against both versions of the code.
+
+**Measured afterwards, and it does not say what it would be convenient for it to say.** Ten
+consecutive full runs of `Versio.App.Tests`: **eight green, two red** — a 2-failure run and a
+1-failure run. That is not an improvement on the 1-in-14 the previous fix left behind, and it is
+not evidence of a regression either; 1/14 against 2/10 is nothing at this sample size.
+
+**The measurement is contaminated, by me.** A second test host was running filtered classes
+concurrently while runs 3 to 5 were in flight, and those runs took 1m38s, 1m57s and 2m01s
+against 40-50s for the five that followed. Both red runs are inside that window. Since the whole
+phenomenon is load-dependent, a measurement taken under self-inflicted extra load establishes
+nothing about the rate. **Run the measurement on an otherwise idle machine, and do not touch it
+while it runs** — the same discipline the fifty-six-shell measurement needed.
+
+**What the failures do point at.** Every one of them —
+`GitHealthTests.Setting_an_identity_from_the_panel_unblocks_the_commit`, and two in
+`AutoStashFlowTests` — is a test that drives **real git subprocesses against a real temp
+repository**, and all three dispose their shells correctly. So what survives here looks like
+contention for the git binary and the filesystem, not a leaked object. That is a different
+problem from the one this finding closes, and it wants a different fix.
+
+**So: the leak is closed, and the flake is not.** Those are separate claims and only the first
+one is proven — by a test that fails against the old code and passes against the new, which is
+the only instrument here that answers a question rather than a mood.
+
+And the disposal in those two window helpers **is watched by nothing**, by construction:
+cross-test resource hygiene is invisible to every test in a suite. So it was broken deliberately,
+by disposing on the xunit thread instead of the STA one. That throws
+`NotSupportedException` — *"does not support changes to its SourceCollection from a thread
+different from the Dispatcher thread"* — from `CollectionView`, and fails all thirteen tests in
+the class. It also corrected the comment: the reason given for marshalling to the STA thread had
+been the timer's thread affinity, which was a guess about which thing objects first, and wrong.
 
 ### A dropdown centred in its own column, half a bar away from its buttons
 
@@ -2559,11 +2653,15 @@ a regression yet; do read a second one as this, still.
 
 Two things this leaves behind.
 
-**`LogViewModel` is still leaked**, thirty times over, by tests that construct one inline as a
-constructor argument. It is `IDisposable`, starts a `DispatcherTimer` and subscribes to its
-sink. The timer cannot tick on a thread with nothing pumping a dispatcher, so the practical cost
-is the subscription rather than the work — and fixing it properly means changing who owns the
-log rather than restructuring thirty call sites.
+~~**`LogViewModel` is still leaked**, thirty times over, by tests that construct one inline as a
+constructor argument.~~ — **fixed, and the sentence that followed it here was wrong.** It read:
+*"the timer cannot tick on a thread with nothing pumping a dispatcher, so the practical cost is
+the subscription rather than the work"*. `StaHarness` runs **one** long-lived STA thread with a
+live `Dispatcher.Run()` for the whole suite — it has to, because the theme's `Freezable`s belong
+to the thread that created them — so every log built inside a windowed test puts its 100 ms pump
+on the one dispatcher that does pump, and a leaked one goes on doing the work for the rest of the
+run. The instinct about ownership was right, though: the fix was changing who owns the log, not
+restructuring thirty call sites. See the finding above.
 
 **`CA2000` was tried as a guard and rejected.** It fires fifty-four times on the suite *after*
 the fix, almost all of them on that `new LogViewModel(sink)` argument, and it cannot see

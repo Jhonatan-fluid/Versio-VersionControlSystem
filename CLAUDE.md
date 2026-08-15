@@ -148,9 +148,16 @@ explicit `encoding='utf-8', newline='\n'`, or the editing tools.
 silently. Write the script to a file and run it.
 
 **The suite is the safety net, so keep it honest.** `Versio.App.Tests` shells own watchers,
-pollers and the repository lock — `using var shell = ...`, always. Fifty-six that did not made
-the suite fail one run in three on a different test each time; fixing them took it to about one
-in fourteen, so **a lone red run is still worth re-running before believing it**.
+pollers, the log console and the repository lock — `using var shell = ...`, always, and never
+construct one inline as an argument, because then there is nothing to put `using` on. Fifty-six
+that did not made the suite fail one run in three on a different test each time; fixing them took
+it to about one in fourteen, so **a lone red run is still worth re-running before believing it**.
+
+**It still flakes, and what is left of it looks like real git rather than leaked objects.** The
+last three failures observed were all in tests that drive git subprocesses against a temp
+repository, and all of them dispose correctly. If you measure the rate, **do it on an idle
+machine and leave it alone while it runs** — a measurement taken while a second `dotnet test` is
+running measures that instead.
 
 **`Versio.Core` never touches the outside world** — no `System.IO`, no `Process`, no
 `DateTimeOffset.Now`, no UI. That is what makes the lock model and the state machine testable
@@ -174,7 +181,7 @@ stays that way.
 | Suite | Count | Time |
 |---|---|---|
 | `Versio.Core.Tests` | 1,384 | under a second |
-| `Versio.App.Tests` | 455 | ~45 s, STA, no window shown |
+| `Versio.App.Tests` | 465 | ~50 s, STA, no window shown |
 | `Versio.Integration.Tests` | 192 | ~7 min, real CODESYS and real git |
 
 A red integration run is worth re-running a project at a time before reading it as a

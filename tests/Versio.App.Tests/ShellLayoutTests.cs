@@ -62,8 +62,8 @@ public sealed class ShellLayoutTests : IDisposable
     /// <c>Dispatcher.Run()</c> for the whole suite. A leaked log pump is not inert here the way
     /// it would be on a thread nobody pumps: it goes on firing every 100 ms, draining its queue
     /// into an <c>ObservableCollection</c> on the same thread every later WPF test is using.
-    /// Ten of them were leaked from this class alone, and the shell was constructed inline as
-    /// an argument to the window, so nothing could have disposed it.
+    /// One was leaked for every test in this class, because the shell was constructed inline
+    /// as an argument to the window and there was nothing to put <c>using</c> on.
     /// </para>
     /// </remarks>
     public void Dispose() => StaHarness.Run(() =>
