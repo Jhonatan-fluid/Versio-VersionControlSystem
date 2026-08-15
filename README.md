@@ -170,7 +170,7 @@ Versio.sln
 │  ├─ Versio.Core.Tests/        1,388 unit tests — pure, no IO, under a second
 │  ├─ Versio.App.Tests/         478 tests that build the real windows and panels against
 │  │                            the real stylesheet on an STA thread — none is ever shown
-│  └─ Versio.Integration.Tests/ 196 tests against real CODESYS and real git, ~8 min
+│  └─ Versio.Integration.Tests/ 198 tests against real CODESYS and real git, ~10 min
 ├─ tools/                       PowerShell harnesses used during Phase 0, plus
 │                               New-VersioIcon.ps1 which generates the app icon
 ├─ assets/                      versio.svg (reference drawing) and versio.ico
@@ -283,7 +283,7 @@ dotnet test tests/Versio.Core.Tests
 |---|---|---|
 | `Versio.Core.Tests` | nothing — pure, no IO, no clock, no UI | ~0.3 s |
 | `Versio.App.Tests` | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~0.4 s |
-| `Versio.Integration.Tests` | a real CODESYS and a real `git.exe`, and **skips cleanly** when either is absent | ~8 min |
+| `Versio.Integration.Tests` | a real CODESYS and a real `git.exe`, and **skips cleanly** when either is absent | ~10 min |
 
 ```bash
 dotnet test

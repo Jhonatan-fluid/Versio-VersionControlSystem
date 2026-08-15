@@ -162,6 +162,11 @@ class ReplaceHandler(scriptengine.NativeImportHandler):  # type: ignore
         self.owner = owner
         self.replaced = 0
         self.pasted = 0
+        # Objects CODESYS reported an exception for, and objects it declined to import at
+        # all. COUNTED, not just warned about - see the note on handle_file's native branch
+        # for why the difference mattered enough to be worth two fields.
+        self.errors = 0
+        self.refused = 0
 
     def conflict(self, name, existingObject, newguid):
         self.replaced += 1
@@ -169,12 +174,19 @@ class ReplaceHandler(scriptengine.NativeImportHandler):  # type: ignore
 
     def progress(self, name, pastedObject, exception):
         if exception:
+            self.errors += 1
             self.owner.warn("NATIVE_IMPORT_ERROR", str(name), str(exception))
         else:
             self.pasted += 1
 
     def skipped(self, name):
+        self.refused += 1
         self.owner.warn("NATIVE_IMPORT_SKIPPED_BY_CODESYS", str(name))
+
+    @property
+    def lost(self):
+        """Objects in this file that did not reach the project, for any reason."""
+        return self.errors + self.refused
 
 
 class Importer(object):
@@ -188,6 +200,16 @@ class Importer(object):
         self.native = 0
         self.created = 0
         self.one_way = 0
+
+        # Files whose native import applied SOME of their objects and lost others. Counted in
+        # `failed` as well - this is not a second failure count, it is the answer to "did the
+        # project change anyway", which decides whether the run saves.
+        #
+        # Without it, making a partial import stop incrementing `native` would have made
+        # `dirty` below read False on exactly the run that had already written to the project,
+        # so the objects that DID paste would be dropped on close. Fixing a lying counter must
+        # not cost somebody the half of the import that worked.
+        self.partial = 0
         self.warnings = []
 
     def warn(self, code, path, detail=None):
@@ -492,6 +514,29 @@ class Importer(object):
             try:
                 handler = ReplaceHandler(self)
                 owner.import_native([abs_path], None, handler)
+
+                # import_native DOES NOT RAISE when an individual object fails. CODESYS hands
+                # the exception to the handler's progress callback and carries on, so the call
+                # above returns normally on a run that lost objects - which is why this branch
+                # used to count `native += 1` and leave `failed` at zero, and the summary read
+                # `native: 8, failed: 0` on the G11 runs where MainTask and VISU_TASK both
+                # threw. The warnings were emitted all along; the one-line answer underneath
+                # them said the opposite, and the one-line answer is what gets read.
+                #
+                # A file, not an object: `failed` counts files everywhere else in this script
+                # (CREATE_FAILED, APPLY_FAILED, NATIVE_IMPORT_FAILED are all per file), so a
+                # file that lost two objects counts once here and the per-object detail stays
+                # in the warnings where it already was. Mixing the two units in one counter
+                # would make the summary wrong in a subtler way than the bug being fixed.
+                if handler.lost:
+                    self.failed += 1
+                    self.partial += 1
+                    emit({"t": "native_partial", "path": rel_path,
+                          "into": "/".join(owner_parts) or "<project>",
+                          "pasted": handler.pasted, "errors": handler.errors,
+                          "refused": handler.refused})
+                    return
+
                 self.native += 1
                 if not existed:
                     self.created += 1
@@ -598,7 +643,10 @@ def main():
     imp = Importer(proj, job["src"])
     imp.run()
 
-    dirty = imp.updated > 0 or imp.native > 0
+    # `partial` is in here because a native import that lost some objects still applied the
+    # rest. It no longer counts towards `native`, and if the save keyed only on that, the run
+    # that wrote to the project would be the one that did not save it.
+    dirty = imp.updated > 0 or imp.native > 0 or imp.partial > 0
     if job.get("save", True) and dirty:
         proj.save()
         emit({"t": "saved"})
@@ -608,6 +656,7 @@ def main():
     emit({"t": "summary", "updated": imp.updated, "unchanged": imp.unchanged,
           "native": imp.native, "created": imp.created,
           "missing": imp.missing, "failed": imp.failed,
+          "partial": imp.partial,
           "notImported": imp.one_way, "warnings": len(imp.warnings)})
 
     close_project(proj)

@@ -287,10 +287,12 @@ on, because a script that dies mid-write is exactly when the diagnostics matter:
 | `staging-cleared` | export | **Warn** — a previous export was killed |
 | `trash-cleared` | export | **Warn** — a previous export died inside the swap; says where the old mirror went |
 | `swap` / `swapped` | export | Info — the file counts before and after the directory replacement |
-| `updated`, `created`, `native_imported` | import | `created` is Info; the others Debug |
+| `updated`, `created`, `native_imported` | import | `created` is Info; the others Debug. **This row described handling that did not exist until 2026-08-15** — `updated` and `native_imported` had no `case`, so they fell through to `· <type>`. A protocol table is a claim about the C# side, and this one had drifted into being a claim about the python side alone |
+| **`task_set`** | import | **Info**, and deliberately louder than its neighbours: it is Versio writing a task's priority, interval or **CPU core binding** — a change to what the machine runs. There are a handful of tasks in a project, so the volume argument that keeps one-per-object lines at Debug does not apply. It had **no handler at all** until 2026-08-15 and logged as the literal string `· task_set` |
+| **`native_partial`** | import | **Warn** — a native file where some objects imported and others did not. `import_native` does not raise for a per-object failure; it calls the handler and carries on, so without this the run looks entirely successful |
 | `not_imported` | import | Info — an export-only file the import left alone. **Not** a warning, on purpose: one that fires on every import is how a real one gets read past |
-| `nothing_to_save`, `saved` | import | Debug |
-| `summary` | export, import, probe | Info — the roll-up line |
+| `nothing_to_save`, `saved` | import | `saved` and `nothing_to_save` are Info — "I edited the mirror and nothing happened" is a question somebody asks, and `nothing_to_save` is the line that answers it. `phase_saved` stays Debug |
+| `summary` | export, import, probe | Info — the roll-up line, **and it has two forms.** It is keyed on the job's operation, not on which fields are present: the export's `walked / wrote / skipped / gaps`, and the import's `import: N updated, N native, … — N warning(s)` with zero-valued fields omitted. Reading an import's summary with the exporter's field names logged a line of blanks for the whole life of the import path; see the finding in [`STATUS.md`](STATUS.md) |
 | `fatal` | all | **Error**, and becomes `CodesysResult.FailureReason` |
 | `exit` | all | `ScriptOutput.ScriptExitCode` |
 | `done` | all | `ScriptOutput.Completed` |

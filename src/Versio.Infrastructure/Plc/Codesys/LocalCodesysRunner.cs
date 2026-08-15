@@ -359,7 +359,7 @@ public sealed class LocalCodesysRunner(
         // a single count - "events=24" - which said that something happened and nothing about
         // what. The export deletes an entire directory and writes a new one in its place; a
         // log that cannot show that step is not a log of the export.
-        LogScriptEvents(output);
+        LogScriptEvents(job, output);
 
         // CODESYS's own output, kept at Debug. It is verbose and mostly uninteresting until
         // an export fails for a reason our protocol did not model, at which point it is the
@@ -431,7 +431,7 @@ public sealed class LocalCodesysRunner(
     /// actually asks afterwards.
     /// </para>
     /// </remarks>
-    private void LogScriptEvents(ScriptOutput output)
+    private void LogScriptEvents(CodesysJob job, ScriptOutput output)
     {
         foreach (var evt in output.Events)
         {
@@ -521,10 +521,25 @@ public sealed class LocalCodesysRunner(
                     break;
 
                 case "summary":
-                    _log.Info(LogCategory.Codesys,
-                        $"walked {evt.Int("walked")}, wrote {evt.Int("written")}, " +
-                        $"skipped {evt.Int("skipped")} (of which {evt.Int("gaps")} " +
-                        $"not implemented), {evt.Int("warnings")} warning(s)");
+                    // TWO SCRIPTS, TWO SETS OF FIELDS, and this used to read only the
+                    // exporter's. An import reports updated / unchanged / native / created /
+                    // missing / failed / partial / notImported, and `ScriptEvent.Int` returns
+                    // null for a key that is not there - so every import in the application's
+                    // history logged "walked , wrote , skipped  (of which  not implemented),
+                    // 0 warning(s)". Four blanks and one number, and the number was the only
+                    // true thing on the line because `warnings` happens to be common to both.
+                    //
+                    // Keyed on the JOB rather than on which keys are present. Sniffing the
+                    // payload would have worked today and would silently pick a branch the
+                    // day a third script grows a summary; a switch on the operation makes
+                    // that a compiler error instead.
+                    _log.Info(LogCategory.Codesys, job.Operation switch
+                    {
+                        CodesysOperation.Import => ImportSummary(evt),
+                        _ => $"walked {evt.Int("walked")}, wrote {evt.Int("written")}, " +
+                             $"skipped {evt.Int("skipped")} (of which {evt.Int("gaps")} " +
+                             $"not implemented), {evt.Int("warnings")} warning(s)",
+                    });
                     break;
 
                 case "fatal":
@@ -537,6 +552,60 @@ public sealed class LocalCodesysRunner(
                         $"in {evt.String("into")}");
                     break;
 
+                case "updated":
+                    // One per file the import changed, so Debug for the same reason "object"
+                    // is: bounded by what was edited today, but there is no ceiling on that.
+                    _log.Debug(LogCategory.Codesys,
+                        $"applied {evt.String("path")} ({evt.String("part")})");
+                    break;
+
+                case "native_imported":
+                    _log.Debug(LogCategory.Codesys,
+                        $"imported {evt.String("path")} as native XML into " +
+                        $"{evt.String("into")}");
+                    break;
+
+                case "native_partial":
+                    // WARN, and the only event in this switch that is. CODESYS does not raise
+                    // when an individual object inside a native import fails - it hands the
+                    // exception to a callback and carries on - so this is the difference
+                    // between a file that was applied and one that was half applied, on a run
+                    // that otherwise looks entirely successful.
+                    _log.Warn(LogCategory.Codesys,
+                        $"{evt.String("path")} was only partly applied: " +
+                        $"{evt.Int("pasted")} object(s) imported, {evt.Int("errors")} failed, " +
+                        $"{evt.Int("refused")} refused by CODESYS — the project has some of " +
+                        "this file's objects and not others");
+                    break;
+
+                case "task_set":
+                    // INFO, deliberately, where its neighbours are Debug. There are a handful
+                    // of tasks in a project, so the volume argument that puts one-per-object
+                    // lines at Debug does not apply - and this is Versio changing what the
+                    // machine runs: a priority, an interval, or the CPU core a task is bound
+                    // to. It logged as "· task_set" with no detail at all until 2026-08-15,
+                    // which is a poor way to record the one write this whole path exists for.
+                    _log.Info(LogCategory.Codesys,
+                        $"set {evt.String("task")}.{evt.String("field")} = " +
+                        $"{evt.String("value")} ({evt.String("path")})");
+                    break;
+
+                case "phase_saved":
+                    _log.Debug(LogCategory.Codesys,
+                        $"saved after the {evt.String("after")} phase");
+                    break;
+
+                case "saved":
+                    _log.Info(LogCategory.Codesys, "project saved");
+                    break;
+
+                case "nothing_to_save":
+                    // Info, because "I edited the mirror and nothing happened" is a question
+                    // somebody asks, and this is the line that answers it.
+                    _log.Info(LogCategory.Codesys,
+                        "the project was not modified, so nothing was saved");
+                    break;
+
                 case "object":
                     _log.Debug(LogCategory.Codesys,
                         $"wrote {evt.String("path")} [{evt.String("form")}]");
@@ -547,6 +616,49 @@ public sealed class LocalCodesysRunner(
                     break;
             }
         }
+    }
+
+    /// <summary>The import script's own summary fields, in its own words.</summary>
+    /// <remarks>
+    /// <para>
+    /// Built as a list and joined rather than as one interpolated sentence, because the
+    /// interesting half of an import summary is usually zero. "0 failed" on every line is the
+    /// noise that made the original blank line survive unnoticed for as long as it did, so the
+    /// counts that are zero are simply absent, and a completely uneventful import says so in
+    /// three words instead of eight numbers.
+    /// </para>
+    /// <para>
+    /// <c>failed</c> and <c>partial</c> are always shown when non-zero and never merged.
+    /// A partly-applied file is counted in both — <c>failed</c> is the file count and
+    /// <c>partial</c> says how many of those still changed the project — and collapsing them
+    /// would recreate the exact ambiguity this fix exists to remove.
+    /// </para>
+    /// </remarks>
+    private static string ImportSummary(ScriptEvent evt)
+    {
+        List<string> parts = [];
+
+        void Add(string label, string key)
+        {
+            var value = evt.Int(key);
+            if (value is > 0)
+            {
+                parts.Add($"{value} {label}");
+            }
+        }
+
+        Add("updated", "updated");
+        Add("created", "created");
+        Add("native", "native");
+        Add("unchanged", "unchanged");
+        Add("not applied (export-only)", "notImported");
+        Add("missing", "missing");
+        Add("FAILED", "failed");
+        Add("partly applied", "partial");
+
+        var warnings = evt.Int("warnings") ?? 0;
+        return (parts.Count == 0 ? "import applied nothing" : "import: " + string.Join(", ", parts))
+               + $" — {warnings} warning(s)";
     }
 
     /// <summary>

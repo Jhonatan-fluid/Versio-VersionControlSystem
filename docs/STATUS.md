@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,388 unit + 478 UI + 196 integration, 0 skipped
+**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,388 unit + 478 UI + 198 integration, 0 skipped
 
 > **Also 2026-08-15, on branch `GitImportPlan`: Phase 0 of the import plan started, and its
 > first probe found a defect that reaches users.** P7 measured what an import → export cycle does
@@ -545,22 +545,44 @@ does not record them has to be run again.
   and the only one. That the other twelve files did not move is itself worth recording: it is
   the strongest evidence available that the export is still deterministic across everything
   this touched.
-- **An import's summary is logged with the exporter's field names.** **Still open.**
-  `LocalCodesysRunner.cs` builds one `summary` message from `walked` / `written` / `skipped` /
-  `gaps`; an import reports `updated` / `unchanged` / `native` / `created` / `missing` /
-  `failed` / `notImported`, and `ScriptEvent.Int` returns null for an absent key — so every
-  import logs a line of blanks. One field, `warnings`, is common to both and is the only part
-  of the line that is true. Read from the code, not seen in a log: no import has run through
-  the app in the retained logs. See the finding.
+- ~~**An import's summary is logged with the exporter's field names.**~~ — **fixed 2026-08-15,
+  and it was worse than the bullet said.** `walked` / `written` / `skipped` / `gaps` against an
+  import that reports none of them, so every import logged a line of blanks with one true
+  number on it. It reads `import: 1 updated, 7 native, 2 unchanged, 3 not applied
+  (export-only) — 0 warning(s)` now, keyed on the job's operation rather than on which keys
+  happen to be present, with zero-valued fields omitted.
+  - **"Read from the code, not seen in a log" is no longer true either** — it was watched
+    happening, twice, while building the Phase 4 integration test, which is what turned this
+    from a code-reading finding into something with a reproduction.
+  - **Four import events had no `case` at all** and fell through to `_log.Debug("· {type}")`.
+    The one that matters is **`task_set`**: Versio writing a task's priority, interval or CPU
+    core binding logged as the literal string `· task_set` — no task, no field, no value, at
+    Debug. That is the single write the whole Phase 4 argument exists for, and it was the least
+    legible line in the log. `Info` now.
+  - **`ImportLoggingTests` is new**, the sibling `ExportLoggingTests` never had: one test for a
+    clean import's numbers, one for **an import that loses a file**. The second exists because
+    nothing in the suite had ever run a failing import, so "the summary is wrong when something
+    goes wrong" had no way to be caught — the same shape as G11.
   - ~~The `not_imported` line in the same handler hard-codes "change this in the IDE".~~
     **Fixed 2026-08-15** alongside the export-only finding. It was right while a library file
     was the only thing that reached it and wrong the moment a task configuration's XML did —
     and the script had been sending the `sibling` field all along, which the log discarded.
     A **different case in the same `switch`**, so the field-name defect above is untouched.
-- **`versio_import.py` does not count a native-import failure.** `ReplaceHandler.progress` warns
-  and returns; `self.failed` stays at zero and `self.native` is incremented anyway, so the
-  summary claims success on a run that lost two objects. One line, and it makes the script's own
-  one-line answer honest.
+- ~~**`versio_import.py` does not count a native-import failure.**~~ — **fixed 2026-08-15, and
+  it was not one line.** `ReplaceHandler` counts `errors` and `refused` now; a file that lost
+  any object is counted in `failed`, taken out of `native`, and reported as a new
+  `native_partial` event with how many objects survived.
+  - **The hazard the one-line version would have caused.** `main()` decides whether to save
+    from `dirty = updated > 0 or native > 0`. Taking a partly-failed file out of `native` would
+    have made the run that had *already written to the project* the one that skipped its save,
+    dropping the objects that did paste. A `partial` counter is in the `dirty` test for that
+    reason. **Fixing a lying counter must not cost somebody the half of the import that
+    worked**, and reading the fix as "one line" is what would have.
+  - **The `native_partial` branch itself is uncovered and says so in the test.** It needs
+    CODESYS to report a per-object exception through the progress callback and continue; the
+    only trigger anyone has observed was G11, and Phase 4 removed it. Forcing one with
+    malformed XML produces the other route instead — `import_native` raises — which is now
+    tested and reports `1 FAILED`.
 - **The phase-split save in `versio_import.py` is conditional and skips the case it was written
   for.** `if self.created > 0 or self.updated > 0` — an import touching only native files never
   saves between the phases, which is exactly the shape of run that hit the exception the split
@@ -891,7 +913,7 @@ decided here.
 the cache, so an adopted repository left a 277 KB binary untracked beside the project where
 *Stage all* would commit it — see the loose end above.
 
-#### Three smaller defects this exposed, none of them fixed
+#### Three smaller defects this exposed — **two and three fixed 2026-08-15, one still open**
 
 **One · the guard written for this exact exception never runs.** The exception is quoted verbatim
 in `versio_import.py`'s own `run()` docstring, as the thing the two-phase split with a save
@@ -906,12 +928,19 @@ mutation moved two things at once, so this is a lead rather than a result — bu
 one. A guard skipped in exactly the case it names is worth fixing regardless, because its
 docstring reads as coverage.
 
-**Two · the script's summary contradicts its own warnings.** `ReplaceHandler.progress` catches
+**Two · the script's summary contradicts its own warnings.** ~~`ReplaceHandler.progress` catches
 the exception and warns but never increments `self.failed`; `handle_file` increments
 `self.native` regardless. So the summary reads `native: 8, failed: 0` on a run where two objects
-failed. The warnings *do* reach the log at `Warn` through `SyncOrchestrator.LogWarnings`, whose
-comment already says the right thing — "the run succeeded but is not complete" — so this is a
+failed.~~ The warnings *do* reach the log at `Warn` through `SyncOrchestrator.LogWarnings`, whose
+comment already says the right thing — "the run succeeded but is not complete" — so this was a
 wrong one-line answer rather than a silent one. The one-line answer is what gets read.
+
+**✅ Fixed 2026-08-15**, and not as the one-liner it looked like. Counting a partly-failed file
+out of `native` also takes it out of `dirty = updated > 0 or native > 0`, which is what decides
+whether the run saves — so the naive fix would have made the run that had already written to the
+project the one that discarded it. There is a `partial` counter in that test now. **The lesson
+generalises past this defect: a counter that decides a side effect is not just a report, and
+correcting what it reports can change what it does.**
 
 **Three · nothing in the suite imports twice.** ~~Both real-CODESYS import tests in
 `Versio.Integration.Tests` import exactly once, and all of them copy the `.project` without its
@@ -947,7 +976,7 @@ that fits one run is a hypothesis, and this one was recorded as a cause.
 this one was invisible to reading, because it does not exist on the first cycle.
 `tools\Measure-ImportStability.ps1` is committed so it stays reproducible.
 
-### An import's summary is logged with the exporter's field names
+### An import's summary was logged with the exporter's field names, and four of its events with nothing at all
 
 Found while tracing the above. `LocalCodesysRunner.cs:514` handles `case "summary"` with one
 message built from `walked`, `written`, `skipped` and `gaps` — which are the **exporter's**
@@ -960,10 +989,31 @@ walked , wrote , skipped  (of which  not implemented), 2 warning(s)
 ```
 
 The warning count is the only true number in it, and the six an import actually reports never
-reach the log at `Info` at all. **Not observed in a log**, because no import has run through the
-app in the retained logs — read from the code rather than from evidence, which is worth stating
-rather than blurring. It is the same class as the rolling file sink that was never
-instantiated: a log line that exists, is reached, and says nothing.
+reach the log at `Info` at all. ~~**Not observed in a log**, because no import has run through
+the app in the retained logs — read from the code rather than from evidence, which is worth
+stating rather than blurring.~~ **It was observed on 2026-08-15**, twice, in the logs of the
+Phase 4 integration test being built — exactly as written above, blanks and all. Recording that
+because the caveat was the right thing to write at the time and the upgrade from "read from the
+code" to "watched happening" is the part a reader should be able to see. It is the same class as
+the rolling file sink that was never instantiated: a log line that exists, is reached, and says
+nothing.
+
+**✅ FIXED 2026-08-15.** The `summary` case switches on the job's operation, and an import reads
+`import: 1 updated, 7 native, 2 unchanged, 3 not applied (export-only) — 0 warning(s)`. Keyed on
+the operation rather than on which keys are present, so a third script growing a summary is a
+compiler error rather than a silently-chosen branch; zero-valued fields are omitted, because
+`0 failed` on every line is the noise that let the blank version survive.
+
+**And the same reading found four events with no `case` at all**, falling through to
+`_log.Debug("· {type}")`. The worst by a distance was **`task_set`** — Versio setting a task's
+priority, interval or **CPU core binding** logged as the literal string `· task_set`, with no
+task, field or value. That is the one write the entire G7/G11 argument exists to make deliberate,
+and it was the least legible line in the log. `Info` now, naming all three.
+
+**`ImportLoggingTests` is the instrument this finding was missing.** `ExportLoggingTests` had
+existed for months; the import had no equivalent, which is the whole reason a line of blanks
+survived unnoticed. Two tests — a clean import's numbers, and **an import that loses a file**,
+because nothing in the suite had ever run a failing import at all. Both verified by mutation.
 
 ### Three moves, three deleted subscriptions, three green suites
 

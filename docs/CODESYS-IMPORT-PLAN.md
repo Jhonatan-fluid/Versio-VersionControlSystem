@@ -1,9 +1,10 @@
 # Versio — closing the CODESYS import gaps
 
 **Date:** 2026-08-15 · **Phase 0 is complete: all nine probes measured. Phase 4 is built, both
-halves, closes G7 and G11, and — as of the same day — the write is tested against a real
-project.** Phases 1, 2, 3, 5 and 6 are not started. One Phase 4 item is still open and it is
-`TaskCatalog.cs`, the C# reader, so nothing outside python can read a `.tasks.yaml` yet.
+halves, closes G7 and G11, and the write is tested against a real project. All three honesty
+fixes are done.** Phases 1, 2, 3, 5 and 6 are not started. One Phase 4 item is still open and it
+is `TaskCatalog.cs`, the C# reader, so nothing outside python can read a `.tasks.yaml` yet.
+**Phase 1 is next.**
 
 > **This header said "nothing in phases 1–6 is built" for the whole of the session that built
 > Phase 4**, while the [build order](#build-order) below it and every G7/G11 row already said
@@ -14,7 +15,7 @@ project.** Phases 1, 2, 3, 5 and 6 are not started. One Phase 4 item is still op
 | | |
 |---|---|
 | Document | **The plan for making the import side a real bidirectional sync.** Deletes, renames, moves, typed task configuration, and a mirror that stops churning after every import |
-| Status | **Phase 0 and Phase 4 done; phases 1, 2, 3, 5, 6 not started.** Two gaps closed as unreachable, four API spellings corrected, two live defects fixed (G7, G11) — and one re-opened and closed again by that same fix, the task XML's one-wayness going unrecorded. **One of the three honesty fixes is done**, the one that took the write and both of G11's blind axes into a single real-CODESYS test |
+| Status | **Phase 0, Phase 4 and all three honesty fixes done; phases 1, 2, 3, 5, 6 not started.** Two gaps closed as unreachable, four API spellings corrected, two live defects fixed (G7, G11) — and one re-opened and closed again by that same fix, the task XML's one-wayness going unrecorded. The honesty fixes closed a third: **every import in the application's history logged a line of blanks**, and the one event that records Versio changing a task's CPU core binding logged as `· task_set` |
 | Related | [`CODESYS.md`](CODESYS.md) — how CODESYS is driven today, and §12, the audit these gaps came from · [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) — what was measured · [`PLAN.md`](PLAN.md) — the architecture · [`SAFEGUARDS.md`](SAFEGUARDS.md) — what Versio refuses or waits for |
 
 > **These phase numbers are identifiers, not an order**, and they are **not** `PLAN.md`'s phases —
@@ -202,14 +203,14 @@ already exists.**
 | ~~3rd~~ | ✅ **The committed fixture mirror, regenerated.** Landed 2026-08-15 | It was asserting against a mirror the current exporter cannot produce. **The feared cost did not materialise: every existing content file came back byte-identical**, `Task Configuration.xml` included — the only changes are the new `.tasks.yaml`, one `form` field (`NATIVE_R` → `TASK_NATIVE`), `objectCount` 12 → 13, and the coverage report. One assertion moved, exactly as predicted. It also unlocked the reader test below |
 | ~~4th~~ | ✅ **`.tasks.yaml` parsed by its own reader, against committed bytes.** Landed 2026-08-15 | The cheap half of the typed path's missing coverage, and it needs **no CODESYS** — the same shape as the library test that has run for months. Verified non-vacuous by perturbing an expected value. ~~The expensive half, a real mutation applied to a project, stays in Phase 6~~ — it did not: it came next instead, as the row below |
 | ~~5th~~ | ✅ **The write, tested against a real project — and the two axes G11 hid behind, in the same run.** Landed 2026-08-15 | **Pulled forward from Phase 6, where it was scheduled dead last.** It was the third honesty fix and the expensive half of Phase 4's coverage, and they turned out to be **one test**: the same fixture, the same adopt-and-export scaffolding, the same CODESYS launches. Splitting them would have paid for that setup twice. It is also the item every other document already called load-bearing — the single step the whole G7/G11 argument rests on. See below |
-| **NEXT** | **The two remaining honesty fixes** | Small, unrelated to each other, and each makes the *next* failure visible instead of silent. None depends on any phase |
-| **7th** | **Phase 1 — manifest-driven importer** | The foundation. Nothing else can be planned C#-side until the plan exists |
+| ~~6th~~ | ✅ **The other two honesty fixes.** Landed 2026-08-15 | The uncounted native-import failure, and the import summary logged in the exporter's vocabulary — plus **four import events that had no handler at all**, `task_set` among them, so Versio changing a task's CPU core binding logged as the literal string `· task_set`. Each makes the *next* failure visible instead of silent |
+| **NEXT** | **Phase 1 — manifest-driven importer** | The foundation. Nothing else can be planned C#-side until the plan exists |
 | **8th** | **`versio_native_equiv.py`** | A shared prerequisite, not a phase. Phase 2's native content check needs it and so does Phase 5 — it was written down as a Phase 5 artifact and is needed earlier |
 | **9th** | **Phases 2 and 3 — deletes, renames, moves** | Together, as originally planned. Phase 3's detection reuses Phase 2's delete candidates |
 | **10th** | **Phase 5 — a mirror that stops churning** | Wants Phases 1–3 settled first, because it changes when files are rewritten and every earlier phase's diffs are easier to read without it |
 | **11th** | **Phase 6 — remaining gaps, tests, docs** | G8 and G9, the parity tests, the integration tests |
 
-### The three honesty fixes — one done, two left
+### The three honesty fixes — all three done
 
 None is a phase. All three came out of G11's investigation, all three are small, and each one is
 the reason a future defect will be seen rather than missed.
@@ -221,18 +222,48 @@ the reason a future defect will be seen rather than missed.
 > the more valuable one until last. **When two items on a build order want the same fixture, that
 > is usually the list being wrong about how many items there are.**
 
-1. **`versio_import.py` does not count a native-import failure.** `ReplaceHandler.progress` warns
-   and returns; `self.failed` stays at zero and `self.native` is incremented anyway, so the summary
-   claims success on a run that lost two objects. The warnings *do* reach the log at `Warn`, so
-   this is a wrong one-line answer rather than a silent one — and the one-line answer is what gets
-   read.
-2. **`LocalCodesysRunner`'s `summary` case logs an import using the exporter's field names.**
-   `walked` / `written` / `skipped` / `gaps` against an import that reports `updated` /
-   `unchanged` / `native` / `created` / `missing` / `failed` / `notImported`, with
-   `ScriptEvent.Int` returning null for an absent key — so every import logs a line of blanks.
-   Only `warnings` is common to both, and it is the only true number on the line. *(The
-   `not_imported` case in the same `switch` had a related defect — hard-coded "change this in
-   the IDE" — and was **fixed 2026-08-15**. This one is untouched.)*
+1. ~~**`versio_import.py` does not count a native-import failure.**~~ — ✅ **FIXED 2026-08-15.**
+   `ReplaceHandler` counts `errors` and `refused`; a file that lost any object is counted in
+   `failed`, is no longer counted in `native`, and emits a new `native_partial` event carrying
+   how many objects made it and how many did not.
+   - **One hazard found while doing it, and it is the reason this was not a one-line change.**
+     `main()` computes `dirty = updated > 0 or native > 0` and skips the save when it is false.
+     Taking a partly-failed file *out* of `native` would therefore have made the run that had
+     already written to the project the one that did not save it — losing the objects that did
+     paste. There is a `partial` counter in the `dirty` test for exactly that. **A fix to a
+     lying counter must not cost somebody the half of the import that worked.**
+   - ⬜ **The `native_partial` branch itself is not covered, and says so in the test.** It needs
+     CODESYS to report a per-object exception through the progress callback and carry on; the
+     only observed trigger was G11, which Phase 4 removed. Manufacturing one with malformed XML
+     was tried and produces the *other* route — `import_native` raises, landing in the
+     pre-existing `NATIVE_IMPORT_FAILED` path. That route is now tested.
+2. ~~**`LocalCodesysRunner`'s `summary` case logs an import using the exporter's field names.**~~
+   — ✅ **FIXED 2026-08-15.** It read `walked` / `written` / `skipped` / `gaps` against an import
+   that reports `updated` / `unchanged` / `native` / `created` / `missing` / `failed` /
+   `notImported`, and `ScriptEvent.Int` returns null for an absent key, so **every import in the
+   application's history logged `walked , wrote , skipped  (of which  not implemented), 0
+   warning(s)`** — four blanks and one number, and the number was true only because `warnings`
+   is common to both scripts. It now reads `import: 1 updated, 7 native, 2 unchanged, 3 not
+   applied (export-only) — 0 warning(s)`.
+   - **Keyed on the job's operation, not on which keys are present.** Sniffing the payload works
+     today and would silently pick a branch the day a third script grows a summary.
+   - **Zero-valued fields are omitted rather than printed.** `0 failed` on every line is the
+     noise that let the blank line survive unnoticed; the counts that matter are the ones that
+     are not zero.
+   - **And four import events had no `case` at all**, so they fell through to
+     `_log.Debug("· {type}")`. The worst was **`task_set`** — Versio changing a task's priority,
+     interval or CPU core binding logged as the literal string `· task_set`, with no task, no
+     field and no value. It is `Info` now, and it is the one line in an import that records a
+     change to what the machine runs. `updated`, `native_imported`, `native_partial`,
+     `phase_saved`, `saved` and `nothing_to_save` are handled too; `native_partial` is the only
+     `Warn` among them.
+   - **Covered by a new `ImportLoggingTests`**, the sibling `ExportLoggingTests` never had. Two
+     tests: a clean import reports honest numbers, and **an import that loses a file says so** —
+     the second because nothing in the suite had ever run a *failing* import, which is how "the
+     summary is wrong when something goes wrong" had no way to be caught. Both verified by
+     mutation: deleting the summary branch and disabling the `task_set` case each turn one red.
+   - *(The `not_imported` case in the same `switch` had a related defect — hard-coded "change
+     this in the IDE" — and was fixed earlier the same day.)*
 3. ~~**No test imports twice, and none imports with the project's sidecars present.**~~ —
    ✅ **CLOSED 2026-08-15.**
    `AdoptAndExportTests.A_task_priority_edited_in_the_mirror_reaches_the_project_and_survives_a_second_import`
@@ -555,7 +586,7 @@ the **existing bytes**.
    `dotnet test tests\Versio.Integration.Tests --filter A_task_priority_edited_in_the_mirror` —
    four CODESYS launches, 72–78 s, and it is the only thing in the repository that fails if the
    typed write stops reaching the project.
-7. Full integration suite against real CODESYS (~9 min).
+7. Full integration suite against real CODESYS (~10 min).
 
 Build with `& "$env:LOCALAPPDATA\Microsoft\dotnet\dotnet.exe"` — `dotnet` on PATH is runtime-only.
 Close Versio.exe first; it locks its own DLLs.
