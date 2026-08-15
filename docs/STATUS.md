@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-14 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,384 unit + 471 UI + 192 integration, 0 skipped
+**Date:** 2026-08-14 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,384 unit + 477 UI + 192 integration, 0 skipped
 
 > All three re-derived on 2026-08-14, on branch `GitPanel`, after the git-panel plan's **GP-J**
 > (PLC-aware naming of the changed-files rows, the change summary and the drafted commit
@@ -182,7 +182,16 @@ format; `.gitattributes` covers every registered vendor's extensions.
 >    545 lines; the shell goes 5,573 → 5,251. The four hazards named here in advance were all
 >    real and none of them surprised the work; what did surprise it was that **deleting the new
 >    subscription left the entire suite green**. See the finding.
-> 2. Then staging, then the repository session, on the same pattern.
+> 2. ~~Then staging~~ — **the remote surface went second instead, on evidence.**
+>    `GitRemoteViewModel`, 540 lines; the shell goes 5,251 → **4,958**. `GIT-PANEL-PLAN.md`'s
+>    GP-E log had already measured the staging seam and rejected it, and re-measuring agreed:
+>    staging makes four calls into the PLC engine including the export gate, this one makes two.
+>    See the finding.
+> 3. **Staging, and read GP-E's log before you start.** It is the seam that reaches
+>    `EvaluateGateAsync`/`SatisfyGateAsync`, so it runs through the junction where git meets the
+>    toolchain. It may want a different shape from the two collaborators so far — possibly the
+>    commit *plan* rather than the commit *flow*.
+> 4. Then the repository session, which measured worst of the three by a distance.
 > 3. **The log console is still inside `MainWindow.xaml`** — the one panel not extracted, held
 >    back because it is the one with real code-behind coupling (`LogList`, `LogChevron`,
 >    `LogSplitter`).
@@ -490,15 +499,18 @@ What moved, and why each one is worth knowing before editing it:
 | The atomic write, four times | `JsonFile` | The temp-then-replace and the BOM-less UTF-8 really were the same rule four times. **The serializer options were not** and were left alone: the settings store has no enum converter because the theme is deliberately a string, and the lock and session stores have no `PropertyNameCaseInsensitive`. Unifying them would have changed what each accepts off disk, on files shipped versions have already written |
 | Thirteen hand-built test shells | `TestShell.Build` | And the argument most easily forgotten — `toolchains: (_, _) => null`, without which a test goes looking for CODESYS on the machine running it |
 
-**What is still concentrated, and deliberately left.** `ShellViewModel` is **5,251** lines —
-down from 5,573 now that auth and identity have gone — and still the largest single thing in the
-repository, at roughly fourteen responsibilities. Its clusters are **not contiguous**: staging
+**What is still concentrated, and deliberately left.** `ShellViewModel` is **4,958** lines —
+down from 5,573, with auth and identity gone and the remote surface after it — and still the
+largest single thing in the repository, at roughly twelve responsibilities. Its clusters are **not contiguous**: staging
 appears in two places, so it cannot be split by marking it `partial` and cutting on line ranges.
-Next out are staging, then the repository session, on the pattern the auth extraction set:
+Next out is staging — **read GP-E's log first**, because it is the seam that reaches the export
+gate and may want a different shape from the two collaborators so far — then the repository
+session, which measured worst of the three by a distance. Both on the pattern the first two
+extractions set:
 **map the cluster before cutting** (all four of its hazards were known in advance and none
 surprised the work), **pass collaborators in rather than reaching for them**, **replace calls
-back into the shell with one event**, and **write the test for that event's subscription first**,
-because the suite will not notice when it goes. `SyncViewModel` at 2,847 lines is the same shape
+back into the shell with one event**, and **add a row to `CollaboratorSeamTests` before believing the
+move**, because the suite has now failed to notice a missing subscription twice. `SyncViewModel` at 2,847 lines is the same shape
 one size down, and the log console is still inside `MainWindow.xaml` because it is the one panel
 with real code-behind coupling.
 
@@ -513,6 +525,73 @@ would have gone on passing while checking one fewer every time a panel moved out
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### The queue said staging; the evidence said the remote surface
+
+`GitRemoteViewModel` — the standing, the background watch and fetch/pull/push/publish, 540
+lines. `ShellViewModel` goes **5,251 → 4,958**, under five thousand for the first time.
+
+**It is not what the queue said to do next, and the disagreement was already written down.**
+`GIT-PANEL-PLAN.md`'s GP-E log records that a `GitPanelViewModel` extraction — the staging seam —
+was measured and deliberately dropped: *"a move dressed as a decomposition"*, because
+`CommitAsync` alone reaches eight collaborators. It named the remote surface as the seam worth
+cutting instead. That document also states that where the plan and the phase log disagree, **the
+phase log is right**.
+
+Re-measured rather than taken on faith, because a note from an earlier phase can go stale:
+
+| Cluster | Borrows | Calls into the PLC engine |
+|---|---|---|
+| Staging | 8 | **4** — including `EvaluateGateAsync` and `SatisfyGateAsync`, the export gate |
+| Remote | 9 | **2** — `ReleaseAfterPushAsync`, `WhileGitRewritesTheTreeAsync` |
+| Repository session | **22** | 4 |
+
+Same order of borrow count for the first two; completely different depth. Staging's seam runs
+through the junction where git meets the toolchain — committing *runs a CODESYS export* — which
+is the most safety-critical path in the application. The remote surface's two calls are both
+narrow, and extracting auth had already made it cleaner, because `Auth` is now a collaborator it
+can simply hold rather than a tangle it shares.
+
+**The measuring instrument was wrong twice before it was right, and that is worth recording.** A
+first pass scored the clusters against a hand-written list of collaborators, so it could only
+find what was already on the list — it missed `BranchName` and `ClearForContextChangeAsync`
+entirely and reported 8 where the answer was 9. A second pass brace-counted method bodies from
+their signature, which runs away on an expression-bodied member: `WakeThePoller() =>
+_poller.Wake();` has no opening brace, so the parser swallowed the rest of the file and invented
+four borrows the cluster never had. **A measurement that over-reports argues for the wrong seam**,
+which is worse than not measuring.
+
+**`ReconcileAsync` stayed behind.** Including it took the borrow count from nine to eleven for
+one method: exiting a divergence reads `Conflicted` and `IsMidMerge` and belongs with GP-G's
+conflict surface.
+
+**Nine borrows against auth's four, and the poller is all of the difference.** A background watch
+*is* its callbacks — what counts as busy, what to do when the remote moves, what to ask on each
+probe — and every one of those is the shell's. They were already delegates before this moved,
+which is what makes nine honest rather than alarming. Handing over the object that owns them
+instead of the delegates would be passing the shell itself, which is precisely the anti-pattern
+GP-E named.
+
+**Deleting the `Changed` subscription left all 475 tests green. That is the second time in one
+session** — auth was the first, at 467. Two occurrences stop being bad luck and start being a
+property of the work: a pure move looks like nothing to a test suite, so nothing gets written to
+watch it. The seam test is therefore a **theory over collaborators** now rather than a class per
+extraction, and staging and the repository session should each arrive as one more row — which is
+far likelier than each remembering to write its own class. Both existing rows fail with their
+subscription removed, verified one at a time.
+
+`CommandNotificationTests` needed the same treatment for the same reason. It named
+`ShellViewModel` members, so four commands moving to `Remote` would have silently dropped out of
+the theory that exists to catch a command missing from the sweep — the failure it guards against,
+one level up. It carries an owner beside each command now.
+
+**The blanket XAML rename introduced a bug, and auditing every site rather than trusting the
+regex is what caught it.** The branch dropdown's `AheadBehind` lives inside an `ItemTemplate`, so
+its DataContext is a `BranchEntry`, which has its own per-branch `AheadBehind`. It never bound to
+the shell's and must not bind to the collaborator's. The other fifteen were then each checked for
+the same thing rather than assumed — none is inside a template. Worth knowing for the next
+rename: **the binding-path test covers the git panel, and this binding was in `MainWindow`**, in
+a template that is only realised once the dropdown has branches.
 
 ### The first collaborator out of the shell, and the seam nothing was watching
 
