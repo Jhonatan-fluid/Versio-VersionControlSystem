@@ -580,6 +580,62 @@ would have gone on passing while checking one fewer every time a panel moved out
 
 Written down with their evidence, because the reasoning is worth more than the fix.
 
+### The second import fails, and the summary line says it did not
+
+Probe P7 of [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md) ran the round trip three times
+instead of once, on a scratch copy, with the mirror held still between cycles. Cycle 1 is clean:
+`native: 8, failed: 0, warnings: 0`. **Cycles 2 and 3 each throw twice** — on `MainTask` and
+`VISU_TASK`, the two children of `Task Configuration`:
+
+```
+System.InvalidOperationException: Collection was modified; enumeration operation may not execute.
+  at _3S.CoDeSys.ObjectManager.Project.GetUniqueName(...)
+  at _3S.CoDeSys.ObjectManager.AbstractPasteOrMergeOperation.DoExecuteObject(...)
+```
+
+**That exception is already quoted verbatim in `versio_import.py`'s own `run()` docstring**, as
+the thing the two-phase split with a save between the phases exists to prevent. It did not
+prevent it, and the reason is one line: the save is conditional on `created > 0 or updated > 0`,
+and an import that touches only native files has both at zero. Every cycle here had
+`created: 0, updated: 0`, so **the guard never ran at all during the measurement that found the
+bug it was written for**. A guard that is skipped in exactly the case that trips it is worse than
+no guard, because its docstring reads as coverage.
+
+Nothing is lost — the objects survive and the file is simply not applied. What is wrong is the
+report. `ReplaceHandler.progress` catches the exception and warns, but never increments
+`self.failed`; `handle_file` increments `self.native` regardless. So the summary reads
+`native: 8, failed: 0` on a run where two objects failed. The warnings themselves *do* reach the
+log at `Warn` through `SyncOrchestrator.LogWarnings`, whose own comment already says the right
+thing — "the run succeeded but is not complete". The defect is that the script's one-line answer
+contradicts its own warnings, and the one-line answer is what gets read.
+
+**It is the `Core2` mutation seen from the other end.** Both exist only because task
+configuration is round-tripped as native XML, and cycle 1's mutation is what the cycle-2 import
+then chokes on. That moves Phase 4 of the import plan from "separable, could ship after" to the
+earliest thing in it a user would notice.
+
+**Found by running the thing twice.** Ten gaps came out of reading the import path carefully;
+this one was invisible to reading, because it does not exist on the first cycle. `tools\Measure-ImportStability.ps1`
+is committed so it stays reproducible.
+
+### An import's summary is logged with the exporter's field names
+
+Found while tracing the above. `LocalCodesysRunner.cs:514` handles `case "summary"` with one
+message built from `walked`, `written`, `skipped` and `gaps` — which are the **exporter's**
+fields. An import summary carries `updated`, `unchanged`, `native`, `created`, `missing`,
+`failed` and `notImported`, and `ScriptEvent.Int` returns `int?`, null for an absent key. So
+every import logs:
+
+```
+walked , wrote , skipped  (of which  not implemented), 2 warning(s)
+```
+
+The warning count is the only true number in it, and the six an import actually reports never
+reach the log at `Info` at all. **Not observed in a log**, because no import has run through the
+app in the retained logs — read from the code rather than from evidence, which is worth stating
+rather than blurring. It is the same class as the rolling file sink that was never
+instantiated: a log line that exists, is reached, and says nothing.
+
 ### Three moves, three deleted subscriptions, three green suites
 
 The log console was the last of the four panels inside `MainWindow.xaml`, and the one held back

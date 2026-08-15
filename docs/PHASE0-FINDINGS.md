@@ -20,6 +20,7 @@
 | 0.15 | ST round-trip | ✅ verified in code + unit tests |
 | **0.5** | **Round-trip losslessness — textual path** | ✅ **proven with a real mutation** (see below) |
 | 0.5b | Round-trip — native XML path | ⚠️ **not yet tested** — 8 of 10 files skipped by the importer |
+| P7 | Import → export churn over 3 cycles | ⚠️ **climbs +3 per cycle, never settles** — and the import itself fails from cycle 2. See below |
 
 ---
 
@@ -171,6 +172,103 @@ Core2: -1  ->  -2      (directly beside an unchanged  Core: -1)
 That is a task's **CPU core affinity**, and `import_native` changed it without being asked. It is deliberately **not** masked. It is pinned by a test asserting the deviation is *exactly* this one field, so the suite fails the moment it grows.
 
 **Recommendation: treat Task Configuration as diff-only (Tier 3) until this is understood on more projects.** It may be a benign sentinel normalisation, but "probably benign" is not a basis for writing to someone's task scheduling.
+
+> **Superseded on 2026-08-15 by P7 below.** Diff-only is not a safe resting place: the very
+> next import of a mirror this deviation produced **fails**, and the failure is silent in the
+> summary. The recommendation now is Phase 4 of [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md)
+> — typed task configuration, so `import_native` never sees this file again.
+
+---
+
+## P7 — the churn does not settle, and it is narrower than G10 assumed
+
+**Measured 2026-08-15**, `tools/Measure-ImportStability.ps1`, on a scratch copy of the fixture.
+Three consecutive import → export cycles over **one** mirror directory, re-exported into,
+**nothing edited between cycles**. Every difference below is therefore produced by the round
+trip and by nothing else, which is the whole reason for holding the mirror still.
+
+This is probe P7 of [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md), and it exists to decide
+one thing: whether the counter climbs forever or settles the way `Core2` does. Until now that
+was an argument.
+
+```
+Cycle  Textual  ExportOnly  Native  Bookkeeping  Structural
+  1       0          0        5          1           0
+  2       0          0        4          1           0
+  3       0          0        4          1           0
+```
+
+| File | `UniqueIdGenerator`, by cycle | |
+|---|---|---|
+| `Diagnosis.vis.xml` | 44 → 47 → 50 → 53 | **climbing** |
+| `Live_Visu.vis.xml` | 26 → 29 → 32 → 35 | **climbing** |
+| `Visualization.vis.xml` | 26 → 29 → 32 → 35 | **climbing** |
+| `PLC_PRG.xml` | 347 → 347 → 347 → 347 | flat |
+| `Signals.xml` | 149 → 149 → 149 → 149 | flat |
+
+**Verdict: it climbs, linearly, +3 per cycle, and never settles.** G10 is measured rather than
+argued, and Phase 5 is justified.
+
+Three things the measurement changed:
+
+- **Only visualisations climb, and the churn set is smaller than G10 claimed.** G10 said an
+  import leaves a diff in "every native file it touched". It touches **eight**, and they split
+  four ways:
+
+  | | Files |
+  |---|---|
+  | climb on the counter, every cycle | `Diagnosis.vis.xml`, `Live_Visu.vis.xml`, `Visualization.vis.xml` |
+  | churn every cycle with **no counter** | `GlobalTextList.xml` |
+  | move once, then settle | `Task Configuration.xml` |
+  | byte-stable throughout | `Glob_Var.gvl.xml`, `PLC_PRG.xml`, `Signals.xml` |
+
+  So the steady state is **four of eight, forever** — not all eight, and not only the ones with
+  a counter in them.
+- **`Task Configuration.xml` settles after one cycle.** `Core2` −1 → −2 plus two `EventPOUGuid`
+  re-mints in cycle 1, then byte-identical in cycles 2 and 3. It is the one file that behaves
+  the way the counter was assumed to.
+- **`GlobalTextList.xml` churns every cycle and carries no counter at all.** Its diff is three
+  lines — `GuidInit`, `GuidReInit`, `GuidExitX` — which is the re-minted-internal-GUID class
+  above, at identical byte length. So the steady-state churn has **two** causes, not one, and
+  **a fix aimed at the counter would leave a file diffing forever.** This is the concrete reason
+  Phase 5's rule has to key on normaliser-equivalence rather than on the counter, and it is
+  worth more than the counter measurement it came in beside.
+
+**And the textual path held.** Zero `.st` differences across three round trips, zero
+export-only differences, and nothing added or removed at any cycle. Gate 0.5 was proven once
+with one mutation; this is the same claim survived three times unattended.
+
+### ⚠️ The import fails from cycle 2 onward, and says it succeeded
+
+Not what P7 went looking for, and more important than what it did.
+
+Cycle 1 imports the pristine mirror: `native: 8, failed: 0, warnings: 0`. Cycles 2 and 3 import
+a mirror that a previous round trip produced, and **both throw twice**, on `MainTask` and
+`VISU_TASK` — the two children of `Task Configuration`:
+
+```
+System.InvalidOperationException: Collection was modified; enumeration operation may not execute.
+  at _3S.CoDeSys.Utilities.LDictionary`2.ValueCollection.Enumerator.MoveNext()
+  at _3S.CoDeSys.ObjectManager.Project.GetUniqueName(...)
+  at _3S.CoDeSys.ObjectManager.AbstractPasteOrMergeOperation.DoExecuteObject(...)
+```
+
+That is the **exact** exception `versio_import.py`'s `run()` docstring names, and the two-phase
+split with a save between them was written to prevent it. It did not, because the save is
+conditional on `created > 0 or updated > 0` and both were **0 in every cycle here** — an import
+that only touches native files never saves between the phases at all, so the guard the docstring
+describes did not run once during this measurement.
+
+Nothing is destroyed: the objects survive and the file is simply not applied. What is wrong is
+what the run then reports. `ReplaceHandler.progress` warns and never increments `self.failed`,
+and `handle_file` increments `self.native` regardless — so the summary reads `native: 8,
+failed: 0` on a run where two objects failed. The warnings themselves do reach the log at `Warn`
+through `SyncOrchestrator.LogWarnings`, so it is not silent; the one-line answer is just wrong,
+and the one-line answer is what gets read.
+
+**This is the same defect as `Core2`, seen from the other end.** Both exist only because task
+configuration is round-tripped as native XML. Phase 4 removes the file from `import_native`'s
+reach and takes both with it — which is why it is no longer a phase that can ship later.
 
 ---
 

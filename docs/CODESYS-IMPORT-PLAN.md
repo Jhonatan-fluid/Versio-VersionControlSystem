@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | Document | **The plan for making the import side a real bidirectional sync.** Deletes, renames, moves, typed task configuration, and a mirror that stops churning after every import |
-| Status | **Planned, not started.** Phase 0 measures nine things against a real project before any product code is written; two of its probes may close gaps outright rather than cost code |
+| Status | **Phase 0 started, no product code yet. P7 is done — see G10, G11 and [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md).** Eight probes left; two of them may still close gaps outright rather than cost code |
 | Related | [`CODESYS.md`](CODESYS.md) — how CODESYS is driven today, and §12, the audit these gaps came from · [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) — what was measured · [`PLAN.md`](PLAN.md) — the architecture · [`SAFEGUARDS.md`](SAFEGUARDS.md) — what Versio refuses or waits for |
 
 ---
@@ -19,6 +19,11 @@ Ten gaps came out of auditing it ([`CODESYS.md`](CODESYS.md) §12). Nine share o
 `versio_import.py` walks the **mirror filesystem** and infers everything from **file names**, never
 reading `_manifest.json`. The tenth is about what `import_native` does to the bytes on the way back.
 
+**An eleventh came out of measuring rather than auditing.** P7 ran the round trip three times
+instead of once, and the second one failed — see G11. That is the argument for probes over
+inspection in one line: ten gaps were found by reading the code carefully, and the eleventh was
+invisible to any amount of reading because it only exists on the *second* cycle.
+
 | | Gap | Today |
 |---|---|---|
 | G1 | Deletes don't propagate | Delete a `.st`, colleague imports → the POU is still there |
@@ -30,7 +35,8 @@ reading `_manifest.json`. The tenth is about what `import_native` does to the by
 | G7 | Task Configuration mutated on every import | `Core2` `-1`→`-2`. Documented as "diff-only" — it never was |
 | G8 | Managed library references unproven | All 34 fixture references are placeholders; the `managed_library` branch has never executed |
 | G9 | Total path length unguarded | Stems capped at 80; the **full path** is not, and `.versio_staging` makes it 16 longer |
-| **G10** | **Import → export is not byte-stable** | `UniqueIdGenerator` **44→47** measured 2026-08-14 (gate 0.5b saw 26→29). Every import leaves a diff in every native file it touched, and a counter is a high-water mark, so it **climbs again each cycle** — it never settles the way `Core2` does |
+| **G10** | **Import → export is not byte-stable** | `UniqueIdGenerator` **44 → 47 → 50 → 53**, +3 per cycle, measured over three cycles by P7 on 2026-08-15. It never settles. **Two corrections to the original wording**, both from the same measurement. Of the **eight** native files the import touches: three visualisations climb on the counter, `GlobalTextList.xml` churns every cycle with **no counter in it at all** (re-minted `GuidInit`/`GuidReInit`/`GuidExitX`), `Task Configuration.xml` moves once and then settles, and `Glob_Var.gvl.xml`, `PLC_PRG.xml` and `Signals.xml` are byte-stable throughout. So it is **four of eight forever, not "every native file it touched"**, and the counter is **one of two causes, not the cause** |
+| **G11** | **A second import of a round-tripped mirror fails, and reports success** | Found by P7, not predicted here. From cycle 2 onward `import_native` throws `Collection was modified` at `Project.GetUniqueName` on `MainTask` and `VISU_TASK`; the summary still reads `failed: 0`. Same root cause as G7 — task configuration going through `import_native` — and fixed by the same phase |
 
 **Intended outcome:** the mirror becomes authoritative for object *existence* and *identity*, not
 just content; task scheduling stops being changed by a tool nobody asked to change it; and an
@@ -113,13 +119,22 @@ as "cannot occur" rather than costing defensive code.
 | P4 | `find([...namePath])` on a name needing percent-encoding | G4 — can CODESYS resolve what we cannot? |
 | P5 | `create_pou` with `My.Thing`, `weird<name>`, trailing space | **Reachability** of G3/G4/G5 |
 | P6 | Read `core_binding`/`priority`/`interval` via `ScriptTaskObject`; set one back | G7 — is the typed path sufficient? |
-| P7 | **Three consecutive import→export cycles, unchanged mirror** | **G10** — does `UniqueIdGenerator` climb each time, or settle? |
+| ~~P7~~ | ~~**Three consecutive import→export cycles, unchanged mirror**~~ | ✅ **done 2026-08-15 — it climbs, +3 per cycle, forever.** `tools/Measure-ImportStability.ps1`. Also found G11 |
 | P8 | Deep folder chain near 260 characters | G9 — where it actually breaks |
 | P9 | A fixed-version (non-placeholder) library reference | G8 — exercises `managed_library` |
 
-**P7 decides whether Phase 5 is needed at all.** If the counter settles after one cycle, the fix is
-smaller than assumed. If it climbs, the keep-existing-bytes rule is justified by measurement rather
-than by argument.
+~~**P7 decides whether Phase 5 is needed at all.**~~ **It did, and Phase 5 stays.** The counter
+climbed 44 → 47 → 50 → 53 with nothing edited between cycles, so the keep-existing-bytes rule is
+justified by measurement. What P7 also showed is that Phase 5 must key on
+**normaliser-equivalence and not on the counter**: `GlobalTextList.xml` churns every cycle and has
+no counter in it at all.
+
+**Still to measure, and it needs no CODESYS:** run `NativeXmlNormalizer` over
+`phase0/p7/snapshots/002` and `003` and confirm all four steady-state churning files come out
+equivalent. Gate 0.5b says the normaliser masks all three volatility classes and resolves 4 of 5
+files, with `Task Configuration` the holdout — and P7 showed `Task Configuration` settles after
+cycle 1, so the holdout is not in the steady-state set. That reasoning is sound and it is still
+reasoning; Phase 5's rule is only *provably* sufficient once it is run.
 
 ---
 
@@ -158,6 +173,15 @@ set *mean* anything:
 - **A missing or unparseable manifest disables deletion entirely**, with a stated reason.
 - **Content check before removal, in the script:** if the live object no longer matches the
   manifest's recorded hash, it changed since the export — refuse *that* deletion and warn.
+  **For a textual object that is a byte comparison and P7 proved it holds** — zero `.st`
+  differences across three round trips. **For a native object it cannot be**, and this was
+  nearly written as though it could: the manifest's `hash` is `content_hash(text)` over the
+  *exported file bytes* (`versio_export.py:183`), so checking a live object against it means
+  exporting that object again — and P7 measured that re-export changing every single cycle
+  with nothing edited. A byte check would refuse every native deletion forever, for a reason
+  that has nothing to do with the object. **The native half must compare through the
+  normaliser, which makes `versio_native_equiv.py` a Phase 2 dependency rather than a Phase 5
+  one.**
 - A GVL is two files under one GUID: delete only when **every** file for that GUID is gone.
 
 **Confirmation:** extend `PendingImportDetail` in `SyncViewModel` to name each deletion —
@@ -192,7 +216,14 @@ doing this rather than delete-plus-create.
 
 ---
 
-## Phase 4 — Task configuration, typed both ways *(G7)*
+## Phase 4 — Task configuration, typed both ways *(G7, G11)*
+
+> **Reprioritised 2026-08-15.** This was written as a tidy-up for a cosmetic mutation nobody
+> asked for. P7 showed the same file **breaks the import outright on the second cycle** (G11),
+> so this phase is the fix for a live failure and no longer something that can ship later.
+> `MainTask` and `VISU_TASK` are the only two objects that fail, and they fail *because*
+> `Task Configuration.xml` goes through `import_native`. Taking that file off that path takes
+> both defects with it.
 
 Mirrors the library-reference design exactly, which is the precedent to copy:
 
@@ -261,7 +292,11 @@ the **existing bytes** into staging instead of the new ones.
    `Task Configuration.xml` drops out of the native-differs list once Phase 4 lands.
 4. **The G10 acceptance test:** three consecutive import→export cycles on an unchanged mirror must
    leave it **byte-identical**. This is what turns "import is deterministic" into a measured claim
-   rather than an opinion.
+   rather than an opinion. **The harness exists and the baseline is recorded** —
+   `tools\Measure-ImportStability.ps1`, which today prints `P7: CHURNS` with four files differing
+   per cycle. The acceptance criterion is the same command printing `P7: SETTLES`. Note that it
+   must also come back with **zero warnings**, or G11 is still there underneath a clean byte
+   comparison.
 5. **Regression gate:** a normal export stays byte-identical to the committed mirror for every file
    Phase 4 does not deliberately change.
 6. Full integration suite against real CODESYS (~7 min).
@@ -282,8 +317,12 @@ Close Versio.exe first; it locks its own DLLs.
 - **`remove()` behaviour with referenced objects is unknown** until P3 answers it.
 - **Phases 4 and 5 move committed bytes** — Phase 4 adds a `.tasks.yaml` per task configuration,
   Phase 5 changes when files are rewritten. Each wants its own review.
-- **Scope.** Phases 1–3 are worth landing together. Phases 4 and 5 are separable and could ship
-  after.
+- ~~**Scope.** Phases 1–3 are worth landing together. Phases 4 and 5 are separable and could ship
+  after.~~ **Both halves of that are now wrong, and P7 is why.** Phase 4 fixes a live import
+  failure (G11), so it is the *earliest* thing here that a user would notice; and Phase 2 needs
+  `versio_native_equiv.py`, which was Phase 5's artifact, so the two are no longer separable in
+  that direction either. The ordering wants rewriting once the remaining probes have run —
+  deliberately not rewritten now, because P1–P6 may move it again.
 
 ## Not doing
 

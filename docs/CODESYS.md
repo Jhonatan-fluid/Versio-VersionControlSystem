@@ -1239,7 +1239,7 @@ listed here because only one of them is currently written down anywhere.
 | D3 | **A dot in an object name breaks the owner split.** `object_name_from_file` treats the last dot before the suffix as the owner/member separator | A POU named `My.Thing` imports as member `Thing` of a non-existent parent `My` → `PARENT_NOT_FOUND`. `versio_export.record`'s own comment names this hazard as the reason the manifest records parents by GUID; the importer still parses filenames |
 | D4 | **Any stray non-`.st` file in the mirror is handed to `import_native`.** Only `_manifest.json`, `_coverage.md` and `*.libraries.yaml` are excluded | A `README.md` or a `.bak` dropped into an export directory is offered to CODESYS as native XML. The code comments show this class is known — it is how `_coverage.md` caused a failure — but the guard is a fixed allow-list, not a shape check |
 | D5 | **`*.libraries.yaml` is export-only** | Editing it changes nothing. Stated in the file's own header, in `_coverage.md`, in the manifest and by a lock glyph in the UI |
-| D6 | **Task Configuration is diff-only** | `import_native` mutates `Core2` (§7) |
+| D6 | **Task Configuration is diff-only** | `import_native` mutates `Core2` (§7) — **and, measured by P7 on 2026-08-15, the *next* import of the mirror that mutation produced throws on `MainTask` and `VISU_TASK` while reporting `failed: 0`.** This row was written as a limitation; the second half of it is a defect. See G11 in [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md) and the finding in [`STATUS.md`](STATUS.md) |
 
 ### E. Smaller observations
 
