@@ -858,11 +858,12 @@ public sealed class SyncOrchestrator
     /// transition FROM <c>ProjectAuthoritative</c>, so the direction has to be claimed first.
     /// </para>
     /// <para>
-    /// <b>Separate from the gates for the same reason the notification lives here.</b> Every
-    /// refusal returns before this is called, which is what makes the run notice honest: a
-    /// save that changed nothing, was coalesced, was throttled or was refused by the lock is
-    /// the common case, and lighting a progress bar for the 200 ms it takes to decide that
-    /// would flicker on every keystroke-triggered settle.
+    /// <b>Separate from the gates, which is also why the run notice is raised here rather
+    /// than by the caller wrapping the call.</b> It is said out loud the moment the work
+    /// actually begins and not one gate earlier: every refusal returns before this method is
+    /// reached, and a save that changed nothing, was coalesced, was throttled or was refused
+    /// by the lock is the common case. Lighting a progress bar for the 200 ms it takes to
+    /// decide that would flicker on every keystroke-triggered settle.
     /// </para>
     /// </remarks>
     private async Task<SyncOutcome> ClaimTheDirectionAndRunAsync(
@@ -1200,8 +1201,8 @@ public sealed class SyncOrchestrator
             return null;
         }
 
-        // Worth an explicit line — it is the loop defence of last resort, and its firing
-        // means the other two failed.
+        // The threshold was just crossed. Worth an explicit line — this is the loop defence
+        // of last resort, and its firing means the other two failed.
         _log.Warn(LogCategory.Sync,
             $"{attempt.Job.BindingId}: circuit breaker tripped after " +
             $"{_breaker.CountInWindow(attempt.Job.BindingId)} syncs within " +
