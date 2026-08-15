@@ -173,7 +173,7 @@ stays that way.
 | Suite | Count | Time |
 |---|---|---|
 | `Versio.Core.Tests` | 1,384 | under a second |
-| `Versio.App.Tests` | 454 | ~45 s, STA, no window shown |
+| `Versio.App.Tests` | 455 | ~45 s, STA, no window shown |
 | `Versio.Integration.Tests` | 192 | ~7 min, real CODESYS and real git |
 
 A red integration run is worth re-running a project at a time before reading it as a

@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-14 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,384 unit + 454 UI + 192 integration, 0 skipped
+**Date:** 2026-08-14 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,384 unit + 455 UI + 192 integration, 0 skipped
 
 > All three re-derived on 2026-08-14, on branch `GitPanel`, after the git-panel plan's **GP-J**
 > (PLC-aware naming of the changed-files rows, the change summary and the drafted commit
@@ -167,6 +167,25 @@ format; `.gitattributes` covers every registered vendor's extensions.
 > **Picking this up?** Items 1 and 2 are done and kept for their reasoning. Items 3–8 are
 > untouched: **item 3 is the smallest**, item 4 is the largest piece of user-visible value, and
 > nothing below depends on anything above it except where it says so.
+
+> **There is a second, independent queue: the code-shape work.** It has no bearing on what the
+> product does and is listed in *The shape of the code, after an audit* below. In order, and
+> each one is a session on its own:
+>
+> 1. **Extract auth and identity out of `ShellViewModel`** — the first collaborator, chosen
+>    because it has the fewest ties into that class's 68 private fields. The file is 5,531
+>    lines across roughly fifteen responsibilities, and its clusters are **not contiguous**, so
+>    it cannot be cut by marking it `partial` and slicing on line ranges.
+> 2. Then staging, then the repository session, on the same pattern.
+> 3. **The log console is still inside `MainWindow.xaml`** — the one panel not extracted, held
+>    back because it is the one with real code-behind coupling (`LogList`, `LogChevron`,
+>    `LogSplitter`).
+> 4. `SyncViewModel` at 2,847 lines is the same shape one size down.
+>
+> **Do the smaller thing first if you are new to this code**: `LogViewModel` is leaked by thirty
+> tests that construct one inline as a constructor argument (see the shell-disposal finding),
+> and `OrphanScanner.cs:194` states *"never deleted automatically because it is committed
+> history"* unconditionally — which is wrong for an export tree sitting under an ignored path.
 
 > **Two other plans are tracked separately, and both are ahead of this list.**
 >
@@ -399,6 +418,12 @@ does not record them has to be run again.
   and `dotnet test --filter FullyQualifiedName~<TestClass>` for a per-area figure.
 - **One integration test is flaky under full-suite load** — see the finding below. Diagnosed,
   two fixes attempted and reverted, left alone deliberately.
+- **The orphan scanner's sentence is unconditional and sometimes wrong.**
+  `OrphanScanner.cs:194` reports an export directory with no bound project as "never deleted
+  automatically because it is committed history". That is the usual case and the right default,
+  but it is stated as fact: the scanner never asks git. An export tree under an ignored path -
+  `phase0/roundtrip/baseline`, written by `tools/Test-RoundTrip.ps1` - was reported with the
+  same words while being neither committed nor history.
 - **`RefrigeratorControl.~u` is in pushed history.** Untracked and ignored now, but the commit
   that carried a username, machine name and pid to `origin/main` is still there. Removing it
   means rewriting a pushed commit — the owner's call, not a maintenance task.
@@ -2452,6 +2477,46 @@ context is part of the environment, alongside the per-user .NET install already 
 differs from the number of distinct objects exactly when an object exports to more than one
 layer — which the fixture does, via its GVL. Found by an assertion that trusted the field's
 name. Nothing depends on it today; the integration test asserts against distinct GUIDs.
+
+### The repository dropdown was blank over a list of one
+
+The control rendered empty while the list behind it held exactly the right entry, selected
+nothing, and reported no error anywhere.
+
+`RecentRepositories.Canonical` exists precisely for this — its own remarks record the sibling
+defect, *"git answers `rev-parse --show-toplevel` with forward slashes and the Windows folder
+picker hands back backslashes, so opening one repository both ways put two entries in the list
+for it"*. That fix was applied **on the way in**: `Promote` canonicalises, so the list correctly
+refuses to hold one repository twice.
+
+The dropdown then looked the selection up **on the way out** with an ordinal `==`:
+
+```csharp
+SelectedRepository = RecentRepositories.FirstOrDefault(r => r.Path == select);
+```
+
+The stored spelling is canonical. The opened spelling is whatever opened it. `C:\GIT\Versio`
+and `C:/GIT/Versio` are not the same string, `FirstOrDefault` returned null, and a
+`ComboBox` with a null `SelectedItem` draws nothing. Half an argument, applied to half a
+problem, leaves a list of one with nothing selected.
+
+**Nothing was watching it, in three separate ways.** No binding failed — the binding tracer over
+the running app reported thirteen errors and not one of them on this control, because a
+successful binding to null is not an error. No test covered it: the recent-list tests assert on
+what is *stored*, which was always right. And the app itself logged `1 recent repositor(ies)
+restored`, which was also true.
+
+Found by launching the app and looking at it. It needed nobody to type anything unusual — a
+forward-slash path is what git itself answers — and it had been reachable since the canonical
+fix went in.
+
+All three lookups go through one `RowFor` now, and the test opens a repository by the other
+spelling and asserts the row is selected. It fails with the canonicalisation removed.
+
+**The tell worth keeping.** A control that is blank rather than wrong is the shape of a
+successful binding to a null, and no instrument in this codebase reports one — not the binding
+tracer, not the log, not a test that asserts on the view model's inputs. The only thing that
+catches it is opening the app.
 
 ### Fifty-six shells nobody disposed, and a suite that failed at random
 
