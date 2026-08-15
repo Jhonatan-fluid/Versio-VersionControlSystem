@@ -149,7 +149,8 @@ silently. Write the script to a file and run it.
 
 **The suite is the safety net, so keep it honest.** `Versio.App.Tests` shells own watchers,
 pollers and the repository lock — `using var shell = ...`, always. Fifty-six that did not made
-the suite fail one run in three on a different test each time.
+the suite fail one run in three on a different test each time; fixing them took it to about one
+in fourteen, so **a lone red run is still worth re-running before believing it**.
 
 **`Versio.Core` never touches the outside world** — no `System.IO`, no `Process`, no
 `DateTimeOffset.Now`, no UI. That is what makes the lock model and the state machine testable

@@ -403,7 +403,8 @@ does not record them has to be run again.
   directories their own test had already deleted and competing for the same git binary as
   whatever was actually running. That is why the failure moved, why it never reproduced alone,
   and why it reproduced on `main`. Measured: four failures in fourteen observed full runs
-  before, ten consecutive clean runs after. See the finding.
+  before, one in the next fourteen after — roughly 29% down to 7%. **Reduced, not cured**: the
+  remaining suspect is the `LogViewModel` leak in the bullet below. See the finding.
 - **The integration suite is not covered by that fix**, and one of the three classes originally
   named — `AdoptAndExportTests` — lives there. `Versio.Integration.Tests` constructs no
   `ShellViewModel` at all, so it leaked none; it drives real CODESYS with real timeouts, and
@@ -2548,10 +2549,13 @@ unlucky enough to be waiting on git when the noise peaks. **It never reproduces 
 alone there is nothing else running. **It reproduces on `main`** because the leak predates every
 branch that inherited it.
 
-**Measured rather than argued.** Before: four failures across fourteen observed full runs, on
-`main` as well as the working branch. After `using var shell = ...` at all fifty-six sites: ten
-consecutive clean runs. At the old rate that is about three times in a hundred — strong, and not
-the same thing as proof.
+**Measured rather than argued, and it is a reduction rather than a cure.** Before: four failures
+across fourteen observed full runs, on `main` as well as the working branch — roughly one run in
+three. After `using var shell = ...` at all fifty-six sites: one failure across the next
+fourteen, the first ten of them consecutive. So about 29% down to about 7%.
+
+**Something is still leaking, and the candidate is named below.** Do not read a single red run as
+a regression yet; do read a second one as this, still.
 
 Two things this leaves behind.
 
