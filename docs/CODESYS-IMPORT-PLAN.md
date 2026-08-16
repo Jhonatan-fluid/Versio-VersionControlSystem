@@ -1,18 +1,25 @@
 # Versio — closing the CODESYS import gaps
 
-**Date:** 2026-08-15 · **Phases 0, 4, 1 and 2 are built and Phase 2 is COMPLETE**, along with
-`versio_native_equiv.py`, the shared prerequisite Phase 5 also needs. **Versio deletes objects
-now — textual and native alike.** G1 is closed outright: delete a `.st` and the POU goes,
-delete a `.gvl.xml` and the GVL goes, and an object edited in the IDE since the export is kept
-either way. Proven against real CODESYS four ways, including one that makes a real edit and
-demands the deletion be refused. Phase 4 closes G7 and G11; Phase 1 closes G3 and G6 outright,
-G4's resolution half and G5's recorded-object half. All three honesty fixes are done.
+**Date:** 2026-08-16 · **Phases 0, 4, 1, 2 and 3 are COMPLETE**, along with
+`versio_native_equiv.py`, the shared prerequisite Phase 5 also needs. **Phases 5 and 6 are what
+remain.** (Dates below read 2026-08-15 for work that ran past midnight into the 16th; the git
+log is the authority on when anything landed.)
 
-**Phase 3 is complete and G2 is closed.** A rename keeps the object's GUID through all three
-detection passes — exact content, the implementation hash (schema 6, because a POU's name lives
-inside its own declaration), and content similarity against the departed file's bytes from HEAD
-for a rename that also edited the body. **Phases 5 and 6 are what remain.** One other item is open and not on the critical path: `TaskCatalog.cs`, so nothing
-outside python can read a `.tasks.yaml`.
+**Versio deletes objects — textual and native alike.** G1 is closed outright: delete a `.st` and
+the POU goes, delete a `.gvl.xml` and the GVL goes, and an object edited in the IDE since the
+export is kept either way. Proven against real CODESYS four ways, including one that makes a
+real edit and demands the deletion be refused.
+
+**Versio renames and moves them, and G2 is closed.** A rename keeps the object's GUID through
+three detection passes — exact content, the implementation hash (schema 6, because a POU's name
+lives inside its own declaration), and content similarity for a rename that edited the body too,
+scored against HEAD's bytes or against a fingerprint the export recorded (schema 7) when the
+mirror was never committed. **A task that ran the renamed object is repointed at it**, because
+CODESYS stores that list by name and a rename does not update it.
+
+Phase 4 closes G7 and G11; Phase 1 closes G3 and G6 outright, G4's resolution half and G5's
+recorded-object half. All three honesty fixes are done. One item is open and not on the critical
+path: `TaskCatalog.cs`, so nothing outside python can read a `.tasks.yaml`.
 
 > **This header said "nothing in phases 1–6 is built" for the whole of the session that built
 > Phase 4**, while the [build order](#build-order) below it and every G7/G11 row already said
@@ -37,7 +44,7 @@ outside python can read a `.tasks.yaml`.
 | | |
 |---|---|
 | Document | **The plan for making the import side a real bidirectional sync.** Deletes, renames, moves, typed task configuration, and a mirror that stops churning after every import |
-| Status | **Phases 0, 4, 1, 2 and 3 complete, with all three honesty fixes; phases 5 and 6 not started.** Two gaps closed as unreachable, four API spellings corrected, six live defects fixed — G7 and G11 by Phase 4, G3 and G6 by Phase 1, **G1 by Phase 2 outright, textual and native**, with G4's resolution half and G5's recorded-object half beside them, and the confirmation dialog corrected after it spent a commit promising the opposite of what an import did. The import is **plan-driven end to end**: decided C#-side from the manifest, agreed to before CODESYS starts, refused without a plan, executed by a script that decides nothing — and it now **removes** objects as well as adding them, saying beforehand which ones will really go |
+| Status | **Phases 0, 4, 1, 2 and 3 COMPLETE, with all three honesty fixes; phases 5 and 6 not started.** G1 and G2 both closed outright. Two gaps closed as unreachable, four API spellings corrected, six live defects fixed — G7 and G11 by Phase 4, G3 and G6 by Phase 1, **G1 by Phase 2 outright, textual and native**, with G4's resolution half and G5's recorded-object half beside them, and the confirmation dialog corrected after it spent a commit promising the opposite of what an import did. The import is **plan-driven end to end**: decided C#-side from the manifest, agreed to before CODESYS starts, refused without a plan, executed by a script that decides nothing — and it now **removes, renames and moves** objects as well as adding them, saying beforehand which ones will really go and which will really stay |
 | Related | [`CODESYS.md`](CODESYS.md) — how CODESYS is driven today, and §12, the audit these gaps came from · [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) — what was measured · [`PLAN.md`](PLAN.md) — the architecture · [`SAFEGUARDS.md`](SAFEGUARDS.md) — what Versio refuses or waits for |
 
 > **These phase numbers are identifiers, not an order**, and they are **not** `PLAN.md`'s phases —
@@ -1088,9 +1095,10 @@ the **existing bytes**.
 
 ---
 
-## Handoff — picking this up after Phase 2
+## Handoff — picking this up after Phase 3
 
-**Where you are.** The import is plan-driven end to end and **Versio now deletes objects**.
+**Where you are.** The import is plan-driven end to end, and Versio now **deletes, renames and
+moves** objects as well as applying text.
 
 ```
 SyncViewModel decides the plan ─► asks ─► SyncJob.Plan ─► PlcProjectJob.Plan
@@ -1098,47 +1106,65 @@ SyncViewModel decides the plan ─► asks ─► SyncJob.Plan ─► PlcProject
 ```
 
 - `CodesysImportPlanner` (pure, `Versio.Core.Plc.Codesys`) decides **what**: updates, creates,
-  skips, and deletions behind five preconditions.
+  skips, deletions behind five preconditions, and renames through three matching passes.
 - `ImportPlanReader` (`Versio.Core/Plc/`, on `IFileSystem`) does the **IO half** — manifest,
-  directory walk, text for the files the format asks for. Shared by the orchestrator and the
-  runner, so there is one walk rather than two.
+  directory walk, text for the files the format asks for, and the departed files' content from
+  HEAD. Shared by the orchestrator and the runner, so there is one walk rather than two.
 - `SyncViewModel` computes the plan **before** the confirmation question and hands it on;
   `ImportNarrative` turns it into what the dialog says. The plan agreed to is the plan
   executed — nothing recomputes after the answer.
 - `versio_import.py` executes and decides nothing. A planless import refuses to serialize.
+  Its phases run **rename → textual → native → delete**, and that order is load-bearing.
 - `versio_native_equiv.py` answers "are these two native payloads the same thing" from inside
-  the CODESYS process. **Still no caller** — Phase 5 is its other one.
+  the CODESYS process — used by the delete check, and **Phase 5 is its other caller**.
+
+**The manifest is the memory, and every schema bump exists because a hash could not answer
+something.** Read `_manifest.json`'s table in [`CODESYS.md`](CODESYS.md) §5.4 before touching
+the exporter: `nhash` (5) makes a native deletion checkable, `ihash` (6) makes a renamed POU
+recognisable, `shash` (7) makes a renamed-and-edited one recognisable without git. Each is
+additive, each is unavailable until the next export, and **absent never means "unchanged"**.
 
 **Next, in order:**
 
-1. **Phase 3 step 2 — the rename detection that reaches a POU.** Step 1 is built and its
-   executing half is proven, GUID intact; what it cannot do is *see* the common case, because
-   an `ST_FULL` file opens `PROGRAM Simulation` and any real rename therefore changes the
-   content. Step 1 detects a rename only for a form whose content does not carry the name.
-   - **Whatever you do, it needs the departed file's content, and the manifest does not keep
-     it.** One `hash` per file, and the file is gone. Check that before designing anything:
-     the first plan written here assumed the old implementation was available and it is not.
-   - **Cheap half — record it at export time.** `ihash` over the implementation and `dhash`
-     over the declaration with its name masked, per textual record, schema 6. A pure POU rename
-     changes neither while the whole-file hash changes, so the pair is exactly the signal.
-     Additive and unavailable until the next export, like `nhash`.
-   - **`git show HEAD:<path>` is what covers the rest** — a rename that also genuinely edits the
-     body, which no recorded hash can reach.
-   - **The shared-prerequisite argument for it is gone.** It used to be worth pairing with
-     option (2) for the native content check; the check took option (1) instead, so
-     `ShowAtHeadAsync` now has exactly one consumer. Do not adopt (2) to justify sharing.
-   - `IGitClient` has **no** `ShowAtHeadAsync` today — checked, all 40-odd members. Only
-     `DetectRenamesAsync`, which runs `git diff HEAD` and so cannot see an untracked rename
-     target.
-   - **Settle the move question while you are here.** `move()` was measured accepting an
-     instruction and not performing it; whether it works for a *legal* destination is unknown,
-     because the fixture has no folder. Add one, move an object into it, and find out.
-2. **Phase 5, then Phase 6.** Phase 5 has its prerequisite already: `versio_native_equiv`, and
-   now also the proof that normalisation is stable across round trips.
+1. **Phase 5 — a mirror that stops churning.** Its prerequisite is ready twice over:
+   `versio_native_equiv` exists, and Phase 2 measured that normalisation is stable across
+   round trips. **The trap is written up in Phase 5's own section and is not the one-line
+   rule**: the substitution has to happen *before* the hash is taken, or `_manifest.json`
+   disagrees with the bytes beside it and the hash gate reads the bytes.
+2. **Phase 6 — G8, G9, the remaining parity tests, integration breadth.** The
+   `StTextCodec` ↔ `versio_text` codec pair is the highest-consequence uncompared thing left:
+   a bug in `split_st` silently moves code between a declaration and an implementation.
 3. **Still open from Phase 4:** `TaskCatalog.cs`, the C# reader. **Land it with the panel
    change that consumes it**, not before — a reader with no production caller is a
    specification pretending to be code, which is exactly what `DecodeStem` and
    `StDeclarationParser` were until the planner became their first caller.
+
+**What to be careful of, learned building Phase 3:**
+
+- **This toolchain reports success for work it did not do, and it has done so three times.**
+  `move()` accepted an instruction and left the object where it was. `create_folder` returned
+  `None` while creating the folder. `pous.remove(name)` reported success and changed nothing.
+  None raised. **Read the value back after every write** — the rename phase re-resolves the
+  object at its intended location for exactly this reason, and that check is what turns a
+  silent refusal into a reported one.
+- **A counter incremented next to an operation is not evidence the operation happened.** That
+  is the shape of all three, and of the rename whose old and new names were equal: the script
+  performed neither call, found the object where it had left it, and counted a rename.
+- **The object's name may be inside its own content.** An `ST_FULL` file opens
+  `PROGRAM Simulation`, so renaming a POU rewrites its file and no whole-file hash matches.
+  Any "compare the content" rule needs to say which content.
+- **GUID equality is not reference safety.** A renamed object keeps its GUID and its task
+  still lists the old *name*, because CODESYS stores that list by name. The dialog claimed
+  otherwise for a while on the strength of the GUID alone. If a future change touches renames,
+  ask what else refers to an object by name — visualisation bindings have **not** been
+  measured.
+- **Two similarity numbers are not comparable because both are called similarity.** The exact
+  path scores shared lines over the larger side; the sketch estimates Jaccard, which counts
+  every change twice. Their thresholds differ for that reason and neither is a "quality"
+  setting to be nudged.
+- **`Select(SomeStatic.Method)` can bind to the index overload.** `corpus.Select(LineSketch.Of)`
+  passed each element's position as the sketch size. It compiles, warns about nothing, and the
+  output looks plausible. Only the parity test caught it.
 
 **What to be careful of, learned building Phase 2:**
 

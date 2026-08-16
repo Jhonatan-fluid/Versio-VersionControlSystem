@@ -1,11 +1,17 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,484 unit + 480 UI + 211 integration, 0 skipped
-· *(integration run four times this session: 12m45s, 12m52s, 10m29s with one flake, 12m27s — see the flake note in `CLAUDE.md`)*
+**Date:** 2026-08-16 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,484 unit + 480 UI + 211 integration, 0 skipped
+· *(integration run nine times across this session, 10–16 min each, with one flake — see the flake note in `CLAUDE.md`)*
 
-> **⚠️ Versio removes objects from projects as of 2026-08-15 — Phase 2 of the import plan, and
-> the first thing it does that destroys work.** Delete a `.st` from the mirror, confirm the
-> import, and the POU leaves the project. Read this before anything else in this file.
+> **⚠️ Versio removes, renames and moves objects in projects — Phases 2 and 3 of the import
+> plan, and the first things it does that destroy work.** Delete a `.st` from the mirror,
+> confirm the import, and the POU leaves the project. Read this before anything else in this
+> file.
+>
+> **Renaming is the safe half of that pair and is still worth knowing about**: a file renamed
+> in the mirror renames the *object*, keeping its GUID, and any task that ran it is repointed.
+> What Versio does **not** fix is a reference held by name that it does not know about — a
+> visualisation binding has never been measured.
 >
 > **It is built as a set of refusals with one door**, because P3 measured that CODESYS's
 > `remove()` takes referenced objects with it silently — no exception, no cascade, no warning,
@@ -303,6 +309,11 @@ unless something changes.
 > **Picking this up?** Items 1 and 2 are done and kept for their reasoning. Items 3–8 are
 > untouched: **item 3 is the smallest**, item 4 is the largest piece of user-visible value, and
 > nothing below depends on anything above it except where it says so.
+>
+> **This list is not the active work.** The import side has its own plan and its own queue —
+> [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md), whose *Handoff* section is the one to read
+> first. Phases 0–4 there are complete; **Phase 5 is next**, and its trap is written up rather
+> than left to be discovered.
 
 > **The second queue — the code-shape work — is CLOSED, and three of its items were closed by
 > deciding not to do them.** It never had any bearing on what the product does. What was worth
