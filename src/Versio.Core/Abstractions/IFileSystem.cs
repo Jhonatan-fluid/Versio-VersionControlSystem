@@ -21,7 +21,26 @@ public interface IFileSystem
 
     Task WriteAllTextAsync(string path, string content, CancellationToken ct);
 
-    /// <summary>Enumerate files beneath a root, repo-relative with forward slashes.</summary>
+    /// <summary>
+    /// Enumerate files beneath a root, recursively, as <b>absolute</b> paths in the
+    /// platform's own separator. Empty when the root does not exist.
+    /// </summary>
+    /// <remarks>
+    /// <b>This said "repo-relative with forward slashes" until 2026-08-15, and it never was.</b>
+    /// The implementation returns what <c>Directory.EnumerateFiles</c> returns, and every
+    /// caller in the repository already relativises for itself — <c>Path.GetRelativePath</c>
+    /// in the hash walk, <c>Relative</c> in the backup catalogue — or hands the result
+    /// straight back to a method that wants an absolute path, which is why nothing was ever
+    /// broken by it. The comment was wrong rather than the code.
+    /// <para>
+    /// It is corrected rather than left because the next caller is a mirror walk that feeds
+    /// <c>IPlcProjectFormat.PlanImport</c>, and that planner keys every decision on
+    /// <b>mirror-relative</b> paths taken from the manifest. A caller that believed this
+    /// comment would hand it absolute ones, match nothing against the manifest, and plan a
+    /// Create for every file in the mirror — a silent, total misplan that looks like a
+    /// working import right up until it runs.
+    /// </para>
+    /// </remarks>
     IEnumerable<string> EnumerateFiles(string root, string searchPattern = "*");
 
     /// <summary>
