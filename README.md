@@ -173,7 +173,7 @@ Versio.sln
 │  ├─ Versio.Core.Tests/        1,484 unit tests — pure, no IO, under a second
 │  ├─ Versio.App.Tests/         480 tests that build the real windows and panels against
 │  │                            the real stylesheet on an STA thread — none is ever shown
-│  └─ Versio.Integration.Tests/ 227 tests against real CODESYS and real git, ~30 min
+│  └─ Versio.Integration.Tests/ 228 tests against real CODESYS and real git, ~30 min
 ├─ tools/                       PowerShell harnesses used during Phase 0, plus
 │                               New-VersioIcon.ps1 which generates the app icon
 ├─ assets/                      versio.svg (reference drawing) and versio.ico

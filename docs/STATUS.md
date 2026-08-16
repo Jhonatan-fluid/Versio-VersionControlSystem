@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-16 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,485 unit + 480 UI + 227 integration, 0 skipped
+**Date:** 2026-08-16 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,485 unit + 480 UI + 228 integration, 0 skipped
 · *(integration now runs ~30 min, not the 10–16 it did before the import feature checklist added
 13 tests; run three times end to end on 2026-08-16 with no flake, plus every affected test
 individually — see the flake note in `CLAUDE.md`, which is about earlier runs)*
@@ -960,6 +960,70 @@ would have gone on passing while checking one fewer every time a panel moved out
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### The two ST codecs disagreed about four characters, and a rename is what it would have cost
+
+**Found 2026-08-16 by writing the parity test the plan had been asking for**, on its first run.
+
+`StTextCodec` (C#) and `versio_text` (python) both split a `.st` file into a declaration and an
+implementation, and both trimmed the edges of each half with their own language's default —
+`string.Trim()` and `str.strip()`. Those are not the same set. Enumerated rather than read off
+either documentation:
+
+```
+python strips 29 codepoints
+C#     trims  25
+python only:  U+001C U+001D U+001E U+001F   (file, group, record and unit separators)
+C# only:      none
+```
+
+**Everything else matched exactly**, across the whole range scanned — the two disagreed about
+four control characters and nothing else.
+
+**What it would have cost, which is not "a stray character".** The exporter records `ihash` over
+python's `split_st(...)` implementation. `CodesysImportPlanner` re-computes that hash over
+`StTextCodec.Split(...)`'s, and **the two hashes are what pair a renamed POU with the file it
+became** — Phase 3's second pass, the one that handles the ordinary case where a POU's name
+lives inside its own declaration. A body ending in one of those four characters hashes
+differently on the two sides, the pass finds no match, and the rename is not detected: the
+object is destroyed and rebuilt with a new GUID, taking every reference and task assignment
+with it. That is G2's failure mode, reached by a control character.
+
+Both C# callers of the codec are **readers** of what python wrote, which is what makes the
+direction of the divergence matter rather than being symmetrical.
+
+**Fixed by naming the set once, on both sides, instead of inheriting it.** `versio_text.WS` and
+`Versio.Core.Text.PayloadWhitespace` are the same 29 characters, spelled out. Python's set was
+adopted because the exporter is the writer and every hash in every committed manifest came from
+it.
+
+**And it was not one surface but three, which is why the definition moved out into a type of its
+own.** `LineSketch` had the identical divergence with the identical consequence one pass further
+along: a line whose edge is trimmed differently hashes differently, so the two sketches share no
+digest for it and the similarity is under-reported — losing the rename that the sketch fallback
+exists to catch on a mirror git never saw. `versio_import.apply_st` had it too, in a comparison
+rather than a hash: it asks whether the live text differs from what `split_st` produced, and two
+different trims would report an unchanged object as changed and rewrite it on every import,
+forever. `TextSimilarity` has no python mirror but reads the same array now, because
+`line_sketch`'s own docstring promises the two "agree about what a line is" — a shared
+definition is what makes that true rather than aspirational.
+
+**And that removes an assumption nobody could have tested.** The python that runs inside CODESYS
+is **IronPython 2.7**; the python that tests it is CPython 3. A bare `strip()` makes the rule
+whatever the interpreter thinks it is, and no test in this repository can see IronPython's
+answer. Naming the characters makes the two agree by construction.
+
+**Byte-neutral, verified rather than asserted, and verified twice.** No text file in either
+committed mirror contains any of the four. Both fixtures were re-exported and diffed after the
+codec change, and again after the `line_sketch` change: every content file identical, and every
+recorded `hash`, `ihash`, `shash` and `nhash` identical, with only the `bindingId` differing
+because the check passed a different one.
+
+**Both halves of the test were mutation-checked.** Removing `U+001C` from the C# set fails on the
+corpus payload that contains it; removing `U+205F` — which no payload contains — fails **only**
+the assertion that compares the two sets directly. That second check is the one that earns its
+place: the divergence this test actually found was in the corpus only because somebody guessed
+it might be worth including.
 
 ### A GVL's declaration is applied and then overwritten by its own XML, and the log says it worked
 

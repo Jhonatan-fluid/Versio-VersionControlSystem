@@ -1,3 +1,5 @@
+using Versio.Core.Text;
+
 namespace Versio.Core.Diff;
 
 /// <summary>
@@ -79,6 +81,17 @@ public static class TextSimilarity
         string.IsNullOrEmpty(text)
             ? []
             : [.. text.Replace("\r\n", "\n").Split('\n')
-                .Select(l => l.Trim())
+                // The same set LineSketch uses, because line_sketch's docstring promises
+                // the two "agree about what a line is" and a shared definition is what
+                // makes that true. No python mirror of this one exists - it scores against
+                // HEAD's bytes, which only the C# side ever has.
+                //
+                // A LAMBDA, NOT A METHOD GROUP, and deliberately. Trim takes one argument
+                // today so `Select(PayloadWhitespace.Trim)` binds correctly - but that is
+                // exactly what `corpus.Select(LineSketch.Of)` looked like before it silently
+                // bound to Select's INDEX overload and passed each element's position as the
+                // sketch size. It compiled, warned about nothing, and produced plausible
+                // output. One overload added to Trim would reproduce it here.
+                .Select(l => PayloadWhitespace.Trim(l))
                 .Where(l => l.Length > 0)];
 }

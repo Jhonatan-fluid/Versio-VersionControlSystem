@@ -22,6 +22,37 @@ IMPL_DELIMITER = u"// --- BEGIN IMPLEMENTATION ---"
 _ESC = u"//!VERSIO-ESC!"
 
 
+# The characters both codecs trim from the edge of a payload.
+#
+# EXPLICIT, because the two languages disagree and neither default is checkable from the
+# other. CPython 3's str.strip() removes 29 codepoints; C#'s string.Trim() removes 25 - the
+# four missing ones are the ASCII separators U+001C-U+001F, which Python calls whitespace
+# and .NET does not. Measured by enumerating both sets rather than by reading either
+# documentation.
+#
+# WHAT THE DIVERGENCE COST, so nobody "simplifies" this back to a bare strip(): the exporter
+# records `ihash` over split_st()'s implementation, and CodesysImportPlanner re-computes it
+# over StTextCodec.Split()'s. Those two hashes are what pair a renamed POU with the file it
+# became. A declaration or a body ending in one of those four characters would hash
+# differently on the two sides, no rename would be detected, and the object would be
+# destroyed and rebuilt with a new GUID - G2's failure mode, reintroduced by a control
+# character.
+#
+# THE SET IS PYTHON'S, not .NET's, and deliberately: the exporter is the writer, every hash
+# in every committed manifest was produced by it, and matching the writer leaves them all
+# valid. No mirror file in this repository contains any of the four.
+#
+# It is also spelled out rather than inherited because THE PYTHON THAT RUNS THIS IS
+# IRONPYTHON 2.7 and the python that tests it is CPython 3. A bare strip() makes the rule
+# whatever the interpreter thinks; naming the characters makes the two agree by
+# construction, and PythonFileNameParityTests compares the sets themselves as well as the
+# outputs. Public, because versio_import compares live object text against a
+# split_st result and has to trim it the same way.
+WS = (u"\t\n\x0b\x0c\r\x1c\x1d\x1e\x1f \x85\xa0"
+       u"\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a"
+       u"\u2028\u2029\u202f\u205f\u3000")
+
+
 def _escape(s):
     # Order matters: escape the marker itself first, so decoding can tell a literal
     # marker in the source from one we added.
@@ -38,8 +69,8 @@ def join_st(declaration, implementation):
     Normalisation (strip + single trailing newline) is what makes
     export -> import -> export byte-identical instead of accumulating whitespace.
     """
-    decl = _escape((declaration or u"").replace(u"\r\n", u"\n").strip())
-    impl = _escape((implementation or u"").replace(u"\r\n", u"\n").strip())
+    decl = _escape((declaration or u"").replace(u"\r\n", u"\n").strip(WS))
+    impl = _escape((implementation or u"").replace(u"\r\n", u"\n").strip(WS))
     return decl + u"\n\n" + IMPL_DELIMITER + u"\n\n" + impl + u"\n"
 
 
@@ -53,15 +84,15 @@ def split_st(content):
     idx = text.find(IMPL_DELIMITER)
     if idx < 0:
         # No delimiter: treat the whole file as a declaration (DUTs, GVLs).
-        return _unescape(text.strip()), u""
+        return _unescape(text.strip(WS)), u""
     decl = text[:idx]
     impl = text[idx + len(IMPL_DELIMITER):]
-    return _unescape(decl.strip()), _unescape(impl.strip())
+    return _unescape(decl.strip(WS)), _unescape(impl.strip(WS))
 
 
 def normalize_decl_only(content):
     """For DUT / GVL declaration-only files."""
-    return (content or u"").replace(u"\r\n", u"\n").strip() + u"\n"
+    return (content or u"").replace(u"\r\n", u"\n").strip(WS) + u"\n"
 
 
 # CODESYS native export writes a fresh Timestamp on every run. Scrubbing it is what
@@ -121,7 +152,9 @@ def line_sketch(text, size=SKETCH_SIZE):
 
     seen = set()
     for raw in text.replace(u"\r\n", u"\n").split(u"\n"):
-        line = raw.strip()
+        # WS, not a bare strip(): see the comment on WS. The C# mirror trims the
+        # same set, and a line trimmed differently hashes differently.
+        line = raw.strip(WS)
         if line:
             # First 4 bytes of sha256, as an unsigned 32-bit value. sha256 because both sides
             # already have it and it is identical everywhere; a language's own hash() is not,

@@ -44,7 +44,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from versio_decl import (DUT_ALIAS, DUT_ENUM, DUT_STRUCT, DUT_UNION,  # noqa: E402
                          KIND_DUT, KIND_FUNCTION, KIND_FUNCTION_BLOCK,
                          KIND_INTERFACE, KIND_PROGRAM, parse_declaration)
-from versio_text import (content_hash, join_st, normalize_decl_only,  # noqa: E402
+from versio_text import (WS, content_hash, join_st, normalize_decl_only,  # noqa: E402
                          scrub_native_xml, split_st)
 from versio_types import (FORM_NATIVE_R, NATIVE_FORMS, can_verify,  # noqa: E402
                           is_versio_file)
@@ -286,13 +286,17 @@ class Importer(object):
         changed = False
 
         old_decl = safe(lambda: obj.textual_declaration.text, None)
-        if old_decl is not None and old_decl.replace(u"\r\n", u"\n").strip() != decl:
+        # WS rather than a bare strip(), for the reason versio_text.WS gives: `decl` came
+        # from split_st and was trimmed with WS, so comparing it against a differently
+        # trimmed live text would report an unchanged object as changed and rewrite it on
+        # every single import.
+        if old_decl is not None and old_decl.replace(u"\r\n", u"\n").strip(WS) != decl:
             obj.textual_declaration.replace(decl + u"\n")
             changed = True
 
         if safe(lambda: obj.has_textual_implementation, False):
             old_impl = safe(lambda: obj.textual_implementation.text, None)
-            if old_impl is not None and old_impl.replace(u"\r\n", u"\n").strip() != impl:
+            if old_impl is not None and old_impl.replace(u"\r\n", u"\n").strip(WS) != impl:
                 obj.textual_implementation.replace(impl + u"\n")
                 changed = True
 

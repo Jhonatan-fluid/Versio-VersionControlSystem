@@ -1087,10 +1087,18 @@ the **existing bytes**.
   `\\?\`; warn rather than fail silently.
 - `ImportPlannerTests` — pure and exhaustive: delete, rename, move, rename-and-edit, GVL two-file
   GUID, stale manifest, missing manifest, object-added-in-IDE, encoded names, dotted names.
-- Extend `PythonFileNameParityTests` with an **`StTextCodec` ↔ `versio_text` codec parity test**.
-  `RunPython` already takes a snippet and a JSON payload, so this is a few lines — and it is the
-  highest-consequence uncompared pair in the repo, since a bug in `split_st` silently moves code
-  between a declaration and an implementation.
+- ~~Extend `PythonFileNameParityTests` with an **`StTextCodec` ↔ `versio_text` codec parity
+  test**.~~ ✅ **Done 2026-08-16, and it found a divergence on its first run.** The two codecs
+  trimmed the edges of a payload with their own language's default, and `str.strip()` removes
+  four characters `string.Trim()` does not — U+001C–U+001F. The consequence was not cosmetic:
+  the exporter records `ihash` over python's split and the planner re-computes it over the C#
+  one, so a body ending in one of those four would have failed to pair a renamed POU with its
+  new file, and the object would have been destroyed and rebuilt with a new GUID. **Both sides
+  now name the same 29 characters** rather than inheriting a language default — which also
+  removes an assumption nothing could test, since the python that *runs* is IronPython 2.7 and
+  the python that *tests* is CPython 3. The test compares the two sets directly as well as 27
+  payloads and 81 splits, and both halves are mutation-checked. See the finding in
+  [`STATUS.md`](STATUS.md).
 - Integration, on a copy of the fixture: delete an object, rename one, move one, and assert the
   project afterwards — including that GUIDs survived. ~~Change a task priority.~~ ~~**And import
   twice, with the sidecars present**, which is the pair of axes G11 hid behind.~~ **Those two

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using Versio.Core.Diff;
+using Versio.Core.Iec;
 using Versio.Core.Plc.Codesys;
 using Versio.Core.Projects;
 using Versio.Core.Serialization;
@@ -1024,6 +1025,260 @@ public sealed class PythonFileNameParityTests(ITestOutputHelper output)
     /// <c>payload</c>. Everything else — the module path, the JSON plumbing, the encoding — is
     /// handled here so a new parity test is a few lines rather than a copy of this method.
     /// </remarks>
+    // ── The ST codec ──────────────────────────────────────────
+
+    /// <summary>
+    /// Every ST payload these tests can think of, packed and unpacked by both codecs.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The pair the plan calls the highest-consequence uncompared thing in the repository,
+    /// and it was right.</b> <c>StTextCodec</c> and <c>versio_text</c> both split a
+    /// <c>.st</c> file into a declaration and an implementation. A disagreement between them
+    /// does not fail, warn or throw: it silently moves code from one half of a POU into the
+    /// other, and the result is a project that compiles into something nobody wrote.
+    /// </para>
+    /// <para>
+    /// <b>Outputs, not intentions.</b> Each side already has its own round-trip tests and
+    /// each passes them; that is exactly the arrangement <c>safe_file_stem</c> was in when it
+    /// had drifted from <c>EncodeStem</c> in two directions at once. The only check that
+    /// closes it is running both over the same input and comparing what comes out.
+    /// </para>
+    /// <para>
+    /// <b>Real files are in the corpus as well as adversarial ones</b>, taken from the two
+    /// committed fixtures: a POU, a member method whose file carries the delimiter, an action
+    /// with no declaration at all, and a DUT with no delimiter. The awkward cases are what
+    /// finds a bug; the ordinary ones are what stops a "fix" for it renaming or re-splitting
+    /// every file anybody has already committed.
+    /// </para>
+    /// <para>
+    /// <b>One caveat this cannot cover, stated rather than left implicit.</b> The code that
+    /// actually runs inside CODESYS is IronPython 2.7 and this harness runs whatever
+    /// <c>python</c> on PATH is — CPython 3. Where the two Pythons agree, which is
+    /// everything the codec does with <c>strip</c>, <c>replace</c> and <c>find</c>, that is
+    /// sound. It is not a substitute for the round trip through a real CODESYS, which
+    /// <c>AdoptAndExportTests</c> provides.
+    /// </para>
+    /// </remarks>
+    [SkippableFact]
+    public void The_st_codec_and_versio_text_agree_about_every_payload_either_can_produce()
+    {
+        Skip.IfNot(PythonFileNameTests.PythonIsAvailable(), "python is not on PATH");
+
+        var corpus = StCorpus();
+
+        // Enough shapes that a green run means something. If this number falls, a case was
+        // deleted rather than a rule proven.
+        Assert.True(corpus.Count >= 20, $"only {corpus.Count} payloads in the corpus");
+
+        // ── one: JOIN, declaration + implementation into one file ──────────────────
+        var joinPayload = corpus.Select(c => new[] { c.Declaration, c.Implementation });
+        var pythonJoined = RunPython(JsonSerializer.Serialize(joinPayload), """
+            import versio_text
+            out = [versio_text.join_st(p[0], p[1]) for p in payload]
+            """);
+
+        var csharpJoined = corpus
+            .Select(c => StTextCodec.Join(c.Declaration, c.Implementation))
+            .ToList();
+
+        for (var i = 0; i < corpus.Count; i++)
+        {
+            Assert.True(csharpJoined[i] == pythonJoined[i],
+                $"join disagrees on '{corpus[i].Name}':\n"
+                + $"  C#     {Visible(csharpJoined[i])}\n"
+                + $"  python {Visible(pythonJoined[i])}");
+        }
+
+        // ── two: SPLIT, the direction that corrupts source when it is wrong ────────
+        //
+        // Fed the JOINED text and every raw payload as well: a file on disk was not
+        // necessarily written by Join. It may have been hand-edited, checked out with
+        // different line endings, or written by an older Versio.
+        var toSplit = csharpJoined
+            .Concat(corpus.Select(c => c.Declaration))
+            .Concat(corpus.Select(c => c.Implementation))
+            .ToList();
+
+        var pythonSplit = RunPython(JsonSerializer.Serialize(toSplit), """
+            import json
+            import versio_text
+            out = [json.dumps(list(versio_text.split_st(t))) for t in payload]
+            """);
+
+        for (var i = 0; i < toSplit.Count; i++)
+        {
+            var (declaration, implementation) = StTextCodec.Split(toSplit[i]);
+            var fromPython = JsonSerializer.Deserialize<string[]>(pythonSplit[i])!;
+
+            Assert.True(declaration == fromPython[0],
+                $"split disagrees about the DECLARATION of payload {i}:\n"
+                + $"  C#     {Visible(declaration)}\n"
+                + $"  python {Visible(fromPython[0])}");
+
+            Assert.True(implementation == fromPython[1],
+                $"split disagrees about the IMPLEMENTATION of payload {i} — which is code "
+                + $"moving between halves:\n"
+                + $"  C#     {Visible(implementation)}\n"
+                + $"  python {Visible(fromPython[1])}");
+        }
+
+        // ── three: the declaration-only path, which a GVL and a DUT take ───────────
+        var pythonDeclOnly = RunPython(
+            JsonSerializer.Serialize(corpus.Select(c => c.Declaration)), """
+            import versio_text
+            out = [versio_text.normalize_decl_only(d) for d in payload]
+            """);
+
+        for (var i = 0; i < corpus.Count; i++)
+        {
+            Assert.True(StTextCodec.DeclarationOnly(corpus[i].Declaration) == pythonDeclOnly[i],
+                $"normalize_decl_only disagrees on '{corpus[i].Name}'");
+        }
+
+        // ── four: the round trip, on BOTH sides, over the same corpus ──────────────
+        //
+        // Agreeing with each other and being wrong together is a real outcome, and the two
+        // checks above cannot see it. This is the invariant each side already claims.
+        for (var i = 0; i < corpus.Count; i++)
+        {
+            var (declaration, implementation) = StTextCodec.Split(csharpJoined[i]);
+
+            // Visible(), because every difference this can find is an invisible character:
+            // a bare Assert.Equal prints two strings that look identical to each other.
+            Assert.True(Normalized(corpus[i].Declaration) == declaration,
+                $"round trip lost the declaration of '{corpus[i].Name}':\n"
+                + $"  in  {Visible(Normalized(corpus[i].Declaration))}\n"
+                + $"  out {Visible(declaration)}");
+
+            Assert.True(Normalized(corpus[i].Implementation) == implementation,
+                $"round trip lost the implementation of '{corpus[i].Name}':\n"
+                + $"  in  {Visible(Normalized(corpus[i].Implementation))}\n"
+                + $"  out {Visible(implementation)}");
+        }
+
+        // ── five: the RULE, not a sample of it ────────────────────────────
+        //
+        // The four cases above can only find a divergence they happen to contain, and the
+        // one they DID find - U+001C-U+001F, which python calls whitespace and .NET does not
+        // - was in the corpus because somebody guessed it might be. This compares the trim
+        // sets themselves, so the next disagreement does not need to be guessed at first.
+        var pythonTrimSet = RunPython("[]", """
+            import versio_text
+            out = sorted(u"%04X" % ord(c) for c in versio_text.WS)
+            """);
+
+        Assert.Equal(
+            StTextCodec.TrimmedCharacters.Select(c => ((int)c).ToString("X4"))
+                .OrderBy(h => h, StringComparer.Ordinal),
+            pythonTrimSet);
+
+        output.WriteLine($"{corpus.Count} payloads joined, {toSplit.Count} split, "
+                         + $"{pythonTrimSet.Count} trim characters, "
+                         + "both codecs agreeing on every one");
+    }
+
+    /// <summary>What <c>Trim</c> and <c>strip</c> are both expected to have done.</summary>
+    /// <remarks>
+    /// Trimmed with the codec's OWN set rather than with <c>string.Trim()</c>. Writing the
+    /// default here made this round-trip check fail against a payload the two codecs had just
+    /// agreed on — the expectation was asserting .NET's 25 characters against an implementation
+    /// that trims python's 29, which is the very divergence this test exists to catch,
+    /// restated as a bug in the test.
+    /// </remarks>
+    private static string Normalized(string s) =>
+        s.Replace("\r\n", "\n").Trim([.. StTextCodec.TrimmedCharacters]);
+
+    /// <summary>Control characters made visible, so a failure names the byte.</summary>
+    private static string Visible(string s) =>
+        string.Concat(s.Select(c => c switch
+        {
+            '\n' => "\\n",
+            '\r' => "\\r",
+            '\t' => "\\t",
+            _ when char.IsControl(c) => $"\\x{(int)c:x2}",
+            _ => c.ToString(),
+        }));
+
+    private sealed record StPayload(string Name, string Declaration, string Implementation);
+
+    /// <summary>
+    /// Every ST payload shape worth asking both codecs about.
+    /// </summary>
+    /// <remarks>
+    /// The delimiter and escape-marker cases are the ones that corrupt source when they are
+    /// wrong: a declaration containing the delimiter made an earlier version of this codec
+    /// cut in the wrong place and move code between halves, which is what the escape marker
+    /// exists to prevent and what the pair of implementations has to agree about exactly.
+    /// </remarks>
+    private static List<StPayload> StCorpus()
+    {
+        const string delimiter = StTextCodec.ImplementationDelimiter;
+        const string escape = "//!VERSIO-ESC!";
+
+        List<StPayload> corpus =
+        [
+            new("ordinary", "PROGRAM Main\nVAR\n\tx : INT;\nEND_VAR", "x := x + 1;"),
+            new("empty implementation", "PROGRAM Empty\nVAR\nEND_VAR", ""),
+            new("empty declaration", "", "x := 1;"),
+            new("both empty", "", ""),
+            new("delimiter in the declaration", $"PROGRAM D\n{delimiter}\nVAR\nEND_VAR", "x := 1;"),
+            new("delimiter in the implementation", "PROGRAM D\nVAR\nEND_VAR", $"x := 1;\n{delimiter}\ny := 2;"),
+            new("delimiter twice", $"{delimiter}\n{delimiter}", $"{delimiter}"),
+            new("escape marker present", $"PROGRAM E\n{escape}\nVAR\nEND_VAR", $"{escape}D"),
+            new("escape marker doubled", $"{escape}{escape}", $"{escape}E{escape}D"),
+            new("crlf throughout", "PROGRAM C\r\nVAR\r\nEND_VAR", "x := 1;\r\ny := 2;"),
+            new("leading and trailing blank lines", "\n\n\nPROGRAM B\n\n\n", "\n\nx := 1;\n\n"),
+            new("tabs and spaces around", "\t  PROGRAM T  \t", "  \tx := 1;\t  "),
+            new("trailing whitespace only", "   ", "\t\n "),
+            new("unicode in a comment", "PROGRAM U\nVAR\nEND_VAR\n(* em—dash, box │ char *)", "x := 1; (* café *)"),
+            new("very long single line", "PROGRAM L\nVAR\n\ts : STRING := '" + new string('a', 500) + "';\nEND_VAR", "x := 1;"),
+            new("no trailing newline", "PROGRAM N\nVAR\nEND_VAR", "x := 1;"),
+            new("only a delimiter", delimiter, ""),
+            new("blank lines inside", "PROGRAM I\n\nVAR\n\n\tx : INT;\n\nEND_VAR", "x := 1;\n\n\ny := 2;"),
+
+            // The separator characters CPython's str.strip() removes and char.IsWhiteSpace
+            // does NOT consider whitespace. If the two codecs ever disagree about the edge
+            // of a payload, this is where it shows.
+            new("ascii separators at the edges", "\u001cPROGRAM S\nVAR\nEND_VAR\u001f", "\u001ex := 1;\u001d"),
+            new("non-breaking space at the edges", "\u00a0PROGRAM NB\u00a0", "\u00a0x := 1;\u00a0"),
+            new("next-line character", "\u0085PROGRAM NL", "x := 1;\u0085"),
+        ];
+
+        // AND THE REAL FILES, from both committed fixtures. The adversarial cases above are
+        // what finds a bug; these are what says the fix did not change how an ordinary POU,
+        // a member method, an action or a DUT is packed - which would re-split every file in
+        // every mirror anybody has committed.
+        foreach (var relative in new[]
+                 {
+                     "RefrigeratorControl/Device/Plc Logic/Application/Simulation.st",
+                     "RefrigeratorControl/Device/Plc Logic/Application/Glob_Var.gvl.st",
+                     "MachineWithMembers/Device/Plc Logic/Application/E_Mode.st",
+                     "MachineWithMembers/Device/Plc Logic/Application/Pumps/FB_Pump.st",
+                     "MachineWithMembers/Device/Plc Logic/Application/Pumps/FB_Pump.Start.st",
+                     "MachineWithMembers/Device/Plc Logic/Application/Pumps/FB_Pump.Stop.action.st",
+                 })
+        {
+            var path = Path.Combine(
+                Core.Tests.TestPaths.Fixtures, "projects",
+                relative.Replace('/', Path.DirectorySeparatorChar));
+
+            if (!File.Exists(path))
+            {
+                continue;
+            }
+
+            // Split with the C# codec and feed BOTH halves back in as a payload of their
+            // own. Whatever the exporter wrote is a real declaration and a real
+            // implementation, and this is how they get into the corpus without a fixture
+            // author having to retype them.
+            var (declaration, implementation) = StTextCodec.Split(File.ReadAllText(path));
+            corpus.Add(new StPayload(relative, declaration, implementation));
+        }
+
+        return corpus;
+    }
+
     private static IReadOnlyList<string> RunPython(string payloadJson, string body)
     {
         var input = Path.GetTempFileName();

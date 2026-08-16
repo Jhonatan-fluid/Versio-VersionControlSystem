@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Versio.Core.Text;
 
 namespace Versio.Core.Diff;
 
@@ -50,7 +51,12 @@ public static class LineSketch
         var seen = new SortedSet<string>(StringComparer.Ordinal);
         foreach (var raw in text.Replace("\r\n", "\n").Split('\n'))
         {
-            var line = raw.Trim();
+            // PayloadWhitespace, not Trim(): python's line_sketch strips four ASCII
+            // separators .NET does not call whitespace, and a line whose edge is trimmed
+            // differently hashes differently - so the two sketches would share no digest
+            // for that line and the similarity would be under-reported, losing the rename
+            // this sketch exists to find. See PayloadWhitespace.
+            var line = PayloadWhitespace.Trim(raw);
             if (line.Length == 0)
             {
                 continue;
