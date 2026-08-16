@@ -91,10 +91,20 @@ public static class ImportNarrative
             var described = plan.Renames.Select(r =>
                 r.IsRename ? $"{r.OldName} → {r.NewName}" : r.OldName);
 
+            // WHAT THIS SENTENCE MAY AND MAY NOT PROMISE.
+            //
+            // It said "so their references and task assignments survive" until 2026-08-15,
+            // which was an inference from the object keeping its GUID and was measured false:
+            // CODESYS stores a task's POU list by NAME, and a scripted rename does not rewrite
+            // it, so a renamed POU leaves its task pointing at a name nothing answers to. The
+            // object surviving is true and worth saying; what that buys the reader is not
+            // something this dialog knows.
             lines.Add(
                 $"{Objects(plan.Renames.Count)} will be {Verb(plan.Renames.Count, moves)} in "
-                + $"the project rather than removed and recreated, so {Their(plan.Renames.Count)} "
-                + $"references and task assignments survive: {string.Join(", ", described)}.");
+                + "the project rather than removed and recreated, so the same object is kept: "
+                + $"{string.Join(", ", described)}. Anything that referred to "
+                + $"{(plan.Renames.Count == 1 ? "it" : "them")} by name — a task's POU list, for "
+                + "instance — still uses the old name and needs checking in the IDE.");
         }
 
         // Two sentences, because there are two outcomes and a dialog that merged them would be

@@ -812,8 +812,16 @@ business raising a change event in it.
 ## Phase 3 — Renames and moves *(G2)* · ✅ **COMPLETE 2026-08-15**
 
 **All three detection passes are built and G2 is closed.** A rename keeps the object's GUID —
-measured, the same `980a4bef…` before and after — and with it every reference, task assignment
-and visualisation binding that pointed at it.
+measured, the same `980a4bef…` before and after — so the object survives rather than being
+destroyed and rebuilt.
+
+> ⛔ **What that does NOT buy, measured after the fact.** A reference held by **name** does not
+> follow the rename: `MainTask` lists `Simulation` among its POUs, and after renaming the object
+> to `Renamed` the task still says `Simulation` — a POU that no longer exists. CODESYS stores
+> the list by name and a scripted `rename()` does not rewrite it. This plan, the README,
+> `SAFEGUARDS` and the confirmation dialog all claimed otherwise on the strength of GUID
+> equality alone. Corrected; see the Finding in [`STATUS.md`](STATUS.md). Whether Versio should
+> rewrite the task is open and deliberately not decided here.
 
 | Pass | Sees | Needs |
 |---|---|---|

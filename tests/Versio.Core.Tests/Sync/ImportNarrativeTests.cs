@@ -83,7 +83,7 @@ public class ImportNarrativeTests
         };
 
     [Fact]
-    public void A_renamed_object_is_named_with_both_names_and_said_to_keep_its_references()
+    public void A_renamed_object_is_named_with_both_names_and_promises_only_what_holds()
     {
         // The reassuring half, and it comes FIRST on purpose: somebody who renamed a file is
         // scanning this dialog for their object's name, and finding it in a deletion sentence
@@ -96,7 +96,15 @@ public class ImportNarrativeTests
 
         Assert.Contains("1 object will be renamed", text, StringComparison.Ordinal);
         Assert.Contains("Old → New", text, StringComparison.Ordinal);
-        Assert.Contains("references and task assignments survive", text, StringComparison.Ordinal);
+        Assert.Contains("the same object is kept", text, StringComparison.Ordinal);
+
+        // AND IT MUST NOT PROMISE WHAT WAS MEASURED FALSE. The sentence said "so their
+        // references and task assignments survive" until a test went looking: CODESYS stores a
+        // task's POU list by NAME, and a scripted rename does not rewrite it, so a renamed POU
+        // leaves its task pointing at a name nothing answers to. Asserted absent, not merely
+        // replaced — the same two-sided discipline the deletion wording needed.
+        Assert.DoesNotContain("task assignments survive", text, StringComparison.Ordinal);
+        Assert.Contains("still uses the old name", text, StringComparison.Ordinal);
 
         // And it must NOT read as a deletion, which is what it would have been without the
         // pairing — the whole point of Phase 3.

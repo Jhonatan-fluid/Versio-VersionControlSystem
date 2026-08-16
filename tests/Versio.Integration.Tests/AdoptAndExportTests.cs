@@ -863,6 +863,30 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
         // THE WHOLE POINT: the same object under a new name, not a new object wearing it.
         Assert.Equal(original.Guid, renamed.Guid);
 
+        // ⛔ AND THE THING THE GUID WAS A PROXY FOR, WHICH DOES NOT HOLD.
+        //
+        // "References and task assignments survive" was written into the README, the plan and
+        // the confirmation dialog as the reason a rename beats a delete-plus-create. It was an
+        // INFERENCE from GUID equality, never a measurement, and this assertion was added to
+        // turn it into one. It measured the opposite.
+        //
+        // MainTask lists Simulation among its POUs in this fixture. After the object is renamed
+        // — same GUID, so genuinely the same object — the task STILL SAYS Simulation, a POU
+        // that no longer exists. CODESYS stores a task's POU list by NAME, and the scripted
+        // rename() does not rewrite it. versio_import.py never writes `pous`, so this is the
+        // live project talking and not a stale file being echoed back.
+        //
+        // Pinned as it actually behaves rather than deleted, because it is the only thing that
+        // will notice if a future CODESYS, or a fix on our side, starts updating the reference.
+        // The finding is written up in STATUS.md.
+        var tasks = await File.ReadAllTextAsync(Path.Combine(
+            await ReExport(install, binding.Id, "verify-refs"),
+            RelApp, "Task Configuration.tasks.yaml"));
+
+        output.WriteLine(tasks);
+        Assert.Contains("- Simulation", tasks, StringComparison.Ordinal);
+        Assert.DoesNotContain("- Renamed", tasks, StringComparison.Ordinal);
+
         // And the new declaration actually reached the object. The rename is followed by
         // APPLYING the file — skip that and the object wears its new name over its old
         // declaration, which re-exports as `PROGRAM Simulation` in a file called Renamed.st.

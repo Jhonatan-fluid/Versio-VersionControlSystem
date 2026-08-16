@@ -940,6 +940,48 @@ would have gone on passing while checking one fewer every time a panel moved out
 
 Written down with their evidence, because the reasoning is worth more than the fix.
 
+### "References and task assignments survive" was an inference, and it is false
+
+> **In one line:** a renamed POU keeps its GUID — genuinely the same object — and **its task
+> still lists the old name**, because CODESYS stores a task's POU list by NAME and a scripted
+> `rename()` does not rewrite it. The claim was written into the README, the plan, `SAFEGUARDS`
+> and the **confirmation dialog** on the strength of GUID equality, never measured.
+> **✅ Corrected 2026-08-15**; the limitation itself is open.
+
+**It was found by a question, not by a test.** Asked whether a real project had actually been
+renamed and imported, the honest answer was "yes, and the GUID was asserted" — which is evidence
+that the object survived, and *not* evidence of what that survival buys. The fixture happens to
+have `MainTask` listing `Simulation` among its POUs, so the claim was directly checkable. It
+was checked. It failed.
+
+```
+before   pous: [PLC_PRG, Simulation]        Simulation.st, guid 980a4bef…
+rename   Simulation → Renamed               same guid 980a4bef… — same object
+after    pous: [PLC_PRG, Simulation]        ← the task still names a POU that no longer exists
+```
+
+**This is the live project talking, not a stale file.** `versio_import.py` never writes `pous`;
+it applies priority, interval, core binding and watchdog only. So the re-export is reading what
+the task actually holds.
+
+**What it costs a user.** Rename a POU in the mirror, import, and the object is renamed properly
+— but any task that ran it now references a name nothing answers to. Nothing warns, because
+Versio did exactly what it was asked. A delete-plus-create would have broken the same reference,
+so this is not a regression; the defect was **claiming otherwise in the one dialog somebody
+reads before agreeing**.
+
+**Corrected rather than quietly dropped.** The dialog now says the same object is kept and that
+anything referring to it *by name* still uses the old name and needs checking in the IDE. The
+narrative test asserts the false phrase is **absent**, not merely that the new one is present —
+the same two-sided discipline the deletion wording needed after it lied in the other direction.
+The integration test pins the behaviour as it really is, so it will notice if a future CODESYS,
+or a fix here, starts updating the reference.
+
+**Still open, and deliberately not fixed in the same change**: whether Versio should rewrite a
+task's POU list when it renames the object it names. It is a second write to a second object on
+the strength of a pairing that is itself a judgement in the similarity case, and that deserves
+its own decision rather than riding along with the correction.
+
 ### A rename that renames nothing was reported as a rename — and the test that found it was written to assert the opposite
 
 > **In one line:** exact-content rename matching cannot see a POU rename, because a POU's name
