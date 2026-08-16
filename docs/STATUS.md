@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,435 unit + 479 UI + 203 integration, 0 skipped
+**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,442 unit + 480 UI + 203 integration, 0 skipped
 
 > **The import is plan-driven as of 2026-08-15 — Phase 1 of the import plan.** What an import
 > will do is decided C#-side by `CodesysImportPlanner`, pure, from `_manifest.json` and a
@@ -590,6 +590,15 @@ does not record them has to be run again.
     in it was wrong** — `versio_import.py` read 450 against an actual 735. Corrected
     2026-08-15, with the one-line re-derivation beside the table, because the numbers will go
     stale again and editing the one you think changed is what produced this.
+- ~~**An object whose exported file has gone is accounted for only in the log.**~~ —
+  **closed 2026-08-15.** `ImportNarrative.Describe` puts it in the confirmation dialog, named,
+  alongside how much will be applied, the planner's warnings, and whether structural changes
+  are available at all. The log is not where anybody is looking at the moment they are
+  deciding whether to press Import.
+  - **In the present tense**, because deletions are planned and executed by nothing: it says
+    the objects *will stay*. A dialog promising removal would be a fresh lie in the exact place
+    this chain exists to make truthful. Two tests pin it — one on `will stay`, one on the
+    absence of *will be removed* — so the wording cannot drift ahead of the script.
 - **The delete set is planned and executed by nothing** (2026-08-15). `ImportPlan.Deletions`
   carries objects the mirror no longer holds any file for, having passed five preconditions:
   a trusted manifest, every file for the GUID gone, export-only records neither voting nor

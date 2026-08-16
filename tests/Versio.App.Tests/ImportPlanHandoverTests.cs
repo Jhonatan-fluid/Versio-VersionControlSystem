@@ -95,4 +95,64 @@ public sealed class ImportPlanHandoverTests
         // merely an old one.
         Assert.Contains(plan.Files, f => f.Path == "App/FB_Motor.st");
     }
+
+    [Fact]
+    public async Task The_dialog_names_the_object_whose_exported_file_has_gone()
+    {
+        // The plan reaching the view model is worth nothing if the view model does not say
+        // what is in it. Until this test, the sentence answering "I deleted the file, why is
+        // the object still there" existed only in the log — which is not where anybody is
+        // looking at the moment they are deciding whether to press Import.
+        using var repo = new TempRepo();
+        ImportConfirmationTests.GivenATrackedProject(repo);
+
+        // A second recorded object with no file. The fixture's manifest records one object and
+        // the mirror holds it, so nothing is ever missing from it — which is the right default
+        // for every other test and useless for this one.
+        var manifest = Path.Combine(repo.Path, "plc", "Machine", "_manifest.json");
+        await File.WriteAllTextAsync(manifest, """
+        {
+          "schema": 4, "bindingId": "b1", "project": "Machine.project", "objectCount": 2,
+          "objects": [
+            { "guid": "g1", "name": "FB_Motor", "type": "POU", "form": "ST_FULL",
+              "path": "App/FB_Motor.st", "hash": "sha256:0", "bytes": 1 },
+            { "guid": "g2", "name": "Pump_Control", "type": "POU", "form": "ST_FULL",
+              "path": "App/Pump_Control.st", "hash": "sha256:0", "bytes": 1 }
+          ],
+          "warnings": [], "skipped": []
+        }
+        """);
+
+        var toolchain = new CapturingToolchain();
+        using var shell = TestShell.Build(out _, toolchain: toolchain);
+        await shell.OpenAsync(repo.Path);
+        await shell.Sync.ReleaseAfterDiscardAsync("b1", CancellationToken.None);
+
+        await ImportConfirmationTests.EditTheMirrorAndSettle(repo, shell);
+
+        string? body = null;
+        shell.Asked().Import = prompt =>
+        {
+            body = prompt.Body;
+
+            // Declined: this test is about what the question SAYS, and running the import
+            // would only add a toolchain launch to something already answered by the text.
+            return false;
+        };
+
+        await Eventually.Press(shell.Sync.ConfirmImportCommand, "the import button");
+
+        Assert.NotNull(body);
+
+        // The banner's sentence survives — this is an addition, not a replacement.
+        Assert.Contains("plc/Machine.project", body, StringComparison.Ordinal);
+
+        // And the object nobody could otherwise account for is named.
+        Assert.Contains("Pump_Control", body, StringComparison.Ordinal);
+
+        // In the present tense. Deletions are planned and executed by nothing, so a dialog
+        // promising removal would be a fresh lie in the place this whole chain exists to make
+        // truthful. When the script grows remove(), this assertion is what has to change.
+        Assert.Contains("they will stay", body, StringComparison.Ordinal);
+    }
 }

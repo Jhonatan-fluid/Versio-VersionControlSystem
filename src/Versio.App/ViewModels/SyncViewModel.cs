@@ -2684,8 +2684,16 @@ public sealed class SyncViewModel : ObservableObject
         var plan = await _orchestrator.PlanImportAsync(id, CancellationToken.None)
             .ConfigureAwait(true);
 
+        // The banner's sentence, then what this particular import would actually do. They are
+        // built in different places on purpose: the banner is refreshed on every watcher event
+        // and must not walk a mirror to do it, while this runs once, when somebody has asked
+        // the question — which is also the only moment the answer is worth the walk.
+        var detail = ImportNarrative.Describe(plan) is { Length: > 0 } what
+            ? $"{PendingImportDetail}\n\n{what}"
+            : PendingImportDetail;
+
         if (!Prompts.ConfirmImport(new DestructivePrompt(
-                $"Import into {row.Name}?", PendingImportDetail, Confirm: "Import")))
+                $"Import into {row.Name}?", detail, Confirm: "Import")))
         {
             _logger.Info(LogCategory.Sync,
                 $"{id}: import declined; the project is unchanged");

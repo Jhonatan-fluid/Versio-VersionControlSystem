@@ -621,10 +621,31 @@ whichever half of the script change lands first, the other is named as missing.
 
 Five deliberate defects, one per rule, each failing exactly the test written for it.
 
+### ✅ The dialog says it, landed 2026-08-15
+
+`ImportNarrative.Describe(plan)` — pure, in `Versio.Core/Sync/` beside `SyncNarrative` and for
+its reason: this is the wording on the one dialog that precedes writing into a binary file
+nobody can diff afterwards, so it is part of the feature and is asserted rather than eyeballed.
+The confirmation body is the banner's sentence plus what *this* import would do: how much will
+be applied, how many objects are new, **every object with no exported file, named**, the
+planner's own warnings, and — when the manifest cannot be trusted — that structural changes are
+off the table, without naming a schema number at somebody who asked about their project.
+
+**Built where the plan is, not where the banner is.** The banner refreshes on every watcher
+event and must not walk a mirror to do it; the dialog runs once, when somebody has asked, which
+is the only moment the walk is worth paying for.
+
+> **Present tense, and that is the whole discipline of it.** Deletions are planned and executed
+> by nothing, so the dialog says the objects **will stay** — it does not promise removal.
+> Naming three objects as doomed and then leaving them there is the same class of lie as the
+> one this entire chain exists to prevent, pointed the other way. Two tests pin the wording,
+> one asserting `will stay` and one asserting the absence of *will be removed*; when the script
+> grows `remove()`, they are what say the wording changes with it.
+
 **What is left for Phase 2** is the executing half: the content check through
 `versio_native_equiv` (the manifest's hash is over exported bytes, so a native object cannot be
-byte-compared — see above), `PendingImportDetail` naming each object, `obj.remove()` in the
-script, and the `deletions` key on the wire that the tripwire test is currently holding shut.
+byte-compared — see above), `obj.remove()` in the script, and the `deletions` key on the wire
+that the tripwire test is currently holding shut.
 
 **Script:** `obj.remove()` for exactly the planned deletions, emitting `{"t":"removed"}` — the event
 `versio_delete_objects.py` already uses.
