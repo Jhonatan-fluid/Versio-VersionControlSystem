@@ -189,8 +189,27 @@ public sealed record CodesysJob
     {
         [JsonPropertyName("files")] public List<PlanFileDto> Files { get; set; } = [];
 
+        /// <summary>
+        /// Objects to remove. Every precondition the planner can check has already passed;
+        /// the script checks the one it cannot — that the live object still matches what was
+        /// exported — and refuses its own deletion if it does not.
+        /// </summary>
+        [JsonPropertyName("deletions")] public List<PlanDeletionDto>? Deletions { get; set; }
+
         public static PlanDto From(ImportPlan plan) => new()
         {
+            Deletions = plan.Deletions.Count == 0
+                ? null
+                : [.. plan.Deletions.Select(d => new PlanDeletionDto
+                {
+                    Guid = d.Guid,
+                    Name = d.Name,
+                    Resolve = [.. d.Resolve],
+                    Files = [.. d.Files.Select(f => new DeletedFileDto
+                    {
+                        Path = f.Path, Hash = f.Hash, Form = f.Form,
+                    })],
+                })],
             Files = [.. plan.Files.Select(f => new PlanFileDto
             {
                 Path = f.Path,
@@ -225,6 +244,30 @@ public sealed record CodesysJob
         [JsonPropertyName("name")] public string? Name { get; set; }
         [JsonPropertyName("resolve")] public List<string>? Resolve { get; set; }
         [JsonPropertyName("sibling")] public string? Sibling { get; set; }
+    }
+
+    private sealed class PlanDeletionDto
+    {
+        [JsonPropertyName("guid")] public string Guid { get; set; } = "";
+        [JsonPropertyName("name")] public string Name { get; set; } = "";
+
+        /// <summary>Real decoded names from the project root. The script walks these; it
+        /// never derives a location from a path, because the file is gone.</summary>
+        [JsonPropertyName("resolve")] public List<string> Resolve { get; set; } = [];
+
+        [JsonPropertyName("files")] public List<DeletedFileDto> Files { get; set; } = [];
+    }
+
+    private sealed class DeletedFileDto
+    {
+        [JsonPropertyName("path")] public string Path { get; set; } = "";
+
+        /// <summary>What the export recorded for these bytes. The script rebuilds the live
+        /// object's text the way the exporter did and compares — a mismatch means the object
+        /// changed in the IDE since, so its absence from the mirror is not permission.</summary>
+        [JsonPropertyName("hash")] public string Hash { get; set; } = "";
+
+        [JsonPropertyName("form")] public string Form { get; set; } = "";
     }
 }
 

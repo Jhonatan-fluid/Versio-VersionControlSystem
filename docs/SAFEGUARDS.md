@@ -165,6 +165,8 @@ Phase 7's two prerequisites (§5.A and §5.B) are both built, so it is unblocked
 | The project is copied aside before an import writes to it; a failed backup fails the import | `src/Versio.Core/Sync/SyncOrchestrator.cs:806` |
 | **An import whose mirror is not there is refused, before the backup** — an empty plan means "touch no file", so this used to run, change nothing and report success | `SyncOrchestrator.ImportAsync` |
 | **The plan a person confirmed is the plan executed** — decided before the question, carried to the script, never recomputed after the answer | `SyncViewModel.ConfirmImportAsync` → `SyncJob.Plan` → `PlcProjectJob.Plan` |
+| **An object edited since the export is never deleted**, however plainly its file has gone — the script rebuilds what the exporter would have written, hashes it, and keeps the object when it no longer matches | `versio_import.py` `why_not_delete` |
+| **A deletion nothing can verify is refused rather than assumed** — a native object's export cannot be rebuilt, so whether it changed is unknowable | `versio_import.py` `exported_text_of` |
 | **A deletion is proposed only when five preconditions hold**: a trusted manifest, every file for the GUID gone, export-only records neither voting nor vetoing, nothing surviving inside it at any depth, and an owner chain recorded rather than guessed. Nothing executes one yet | `CodesysImportPlanner.PlanDeletions` |
 | An abandoned lock is never auto-cleared; recovery re-validates against content hashes | `src/Versio.Core/Locking/LockRecovery.cs` |
 | Two CODESYS runs cannot overlap on one machine | `src/Versio.Infrastructure/Plc/Codesys/LocalCodesysRunner.cs:39` |

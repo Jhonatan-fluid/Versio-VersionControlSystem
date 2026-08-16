@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,442 unit + 480 UI + 203 integration, 0 skipped
+**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,443 unit + 480 UI + 204 integration, 0 skipped
 
 > **The import is plan-driven as of 2026-08-15 — Phase 1 of the import plan.** What an import
 > will do is decided C#-side by `CodesysImportPlanner`, pure, from `_manifest.json` and a
@@ -599,13 +599,36 @@ does not record them has to be run again.
     the objects *will stay*. A dialog promising removal would be a fresh lie in the exact place
     this chain exists to make truthful. Two tests pin it — one on `will stay`, one on the
     absence of *will be removed* — so the wording cannot drift ahead of the script.
-- **The delete set is planned and executed by nothing** (2026-08-15). `ImportPlan.Deletions`
-  carries objects the mirror no longer holds any file for, having passed five preconditions:
+- ~~**Deletes do not propagate.**~~ — **closed 2026-08-15 for textual objects, and deliberately
+  refused for native ones.** `versio_import.py` runs a delete phase **last**, after everything
+  that adds, because `remove()` takes referenced objects with it silently (P3). Proven against
+  real CODESYS in one test with three halves: an object edited since the export is kept, the
+  same object with an honest hash is removed, and a GVL is refused.
+  - **The content check is the script's own**, because only the CODESYS process can see the
+    project. It rebuilds what the exporter *would* have written for the live object and
+    compares to the manifest's hash; a mismatch means somebody edited it in the IDE since, and
+    a missing mirror file is not permission to destroy work that exists nowhere else.
+  - **⛔ Native objects cannot be checked, so they are never deleted.** The manifest's hash is
+    over exported native bytes, P7 measured a re-export of an untouched native object changing
+    every cycle, and comparing through `versio_native_equiv` needs the **old bytes** — which
+    are in the file that was deleted. Two ways out are written up in the import plan;
+    recording a normalised hash at export time is the cleaner one and was not taken here
+    because it changes the manifest. **This limit was found by the integration test, not by
+    review.**
+  - **`removed` had to go into the `dirty` test**, or a run whose only work was a deletion
+    closes without saving and the object comes back. Second time this project has nearly paid
+    for that: `partial` exists for the same reason.
+- **The delete set is planned in C#, before CODESYS starts** (2026-08-15).
+  `ImportPlan.Deletions` carries objects the mirror no longer holds any file for, having
+  passed five preconditions:
   a trusted manifest, every file for the GUID gone, export-only records neither voting nor
   vetoing, nothing surviving living inside it at any depth, and an owner chain that is
-  **recorded rather than guessed**. The job file deliberately does
-  not carry them and a **tripwire test** asserts that — so whichever half of the script change
-  lands first, the other is named as missing rather than silently absent.
+  **recorded rather than guessed**. The script checks the one thing the planner cannot — that
+  the live object still matches what was exported — and refuses its own deletion if it does
+  not, so the two halves are independent rather than layered.
+  - The tripwire test that held the wire shut while only one half existed has **flipped**: it
+    now asserts what crosses, and that `deletions` is omitted entirely when there is nothing
+    to delete.
   - **The transitive orphan rule was a bug a pre-existing test found**, not a review. Checking
     direct children only would delete a class whose property is gone while the property's
     *accessor* survives, taking both. What went red was a resolution test whose fixture listed

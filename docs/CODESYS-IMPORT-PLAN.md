@@ -1,12 +1,15 @@
 # Versio — closing the CODESYS import gaps
 
-**Date:** 2026-08-15 · **Phases 0, 4 and 1 are built, and `versio_native_equiv.py` — the
-shared prerequisite Phases 2 and 5 both need — is built with its parity test.** Phase 4 closes
-G7 and G11 with the write tested against a real project; Phase 1 closes G3 and G6 outright,
-G4's resolution half, and G5's recorded-object half — the import is plan-driven end to end.
-All three honesty fixes are done. Phases 2, 3, 5 and 6 are not started; **phases 2 and 3
-together are next**, and nothing blocks them. One Phase 4 item is still open and it is
-`TaskCatalog.cs`, the C# reader, so nothing outside python can read a `.tasks.yaml` yet.
+**Date:** 2026-08-15 · **Phases 0, 4, 1 and 2 are built**, along with `versio_native_equiv.py`,
+the shared prerequisite Phase 5 also needs. **Versio deletes objects now** — G1 is closed for
+textual objects and deliberately refused for native ones, proven against real CODESYS.
+Phase 4 closes G7 and G11; Phase 1 closes G3 and G6 outright, G4's resolution half and G5's
+recorded-object half. All three honesty fixes are done.
+
+**Phase 3 is next** — renames and moves — and nothing blocks it. Phases 5 and 6 follow. Two
+items are open and neither is on the critical path: `TaskCatalog.cs`, so nothing outside python
+can read a `.tasks.yaml`, and the **native content check**, which is why a GVL or a
+visualisation is refused rather than deleted (see [Phase 2](#-the-executing-half-landed-2026-08-15--versio-deletes-things-now)).
 
 > **This header said "nothing in phases 1–6 is built" for the whole of the session that built
 > Phase 4**, while the [build order](#build-order) below it and every G7/G11 row already said
@@ -44,7 +47,7 @@ amount of reading, because it does not exist on the first cycle.
 
 | | Gap | State after Phase 0 |
 |---|---|---|
-| G1 | **Deletes don't propagate** — delete a `.st`, colleague imports, the POU is still there | Open, **half built**. The delete set is planned and vetted (`ImportPlan.Deletions`, 2026-08-15) and executed by nothing; the script has no `remove()` yet. P3 makes this **more** dangerous to finish than assumed: `remove()` dangles silently |
+| G1 | **Deletes don't propagate** — delete a `.st`, colleague imports, the POU is still there | ✅ **CLOSED by Phase 2 for textual objects, 2026-08-15**, and **deliberately refused for native ones**. Delete a `.st` and the POU leaves the project; delete a `.gvl.xml` and it does not, because whether that object changed since the export is unknowable — see Phase 2's open half. An object edited in the IDE since is kept either way. P3 is why every rule is a refusal rather than a check: `remove()` dangles silently |
 | G2 | **Renames/moves duplicate** — rename in the mirror, a new object is created and the old one kept | Open, and **cleanly solvable**: P1/P2 proved identity survives both operations |
 | G3 | **New object named from the filename** — `create_textual` uses `parts[-1]` and throws away the parsed `info["name"]`, so `PROGRAM Foo` in `Bar.st` creates `Bar` | ✅ **CLOSED by Phase 1, 2026-08-15.** The plan carries the declaration's name and the script takes it; the disagreement is a warning naming both. **Proven live**: a `Bar.st` declaring `PROGRAM Foo` creates `Foo` against real CODESYS, in `ImportLoggingTests` |
 | G4 | **Encoded names unresolvable** — looks up the *encoded* stem against raw names, giving a duplicate named `weird%3Cname%3E` | ✅ **Resolution CLOSED by Phase 1, 2026-08-15**: chains are real decoded names from the manifest, built C#-side where `DecodeStem` lives and is parity-tested. What remains is the shortened-stem residue — a digest tail decodes to nothing, and such an object is reported as unresolvable rather than guessed at. Creation was already unreachable (P5) |
@@ -642,10 +645,52 @@ is the only moment the walk is worth paying for.
 > one asserting `will stay` and one asserting the absence of *will be removed*; when the script
 > grows `remove()`, they are what say the wording changes with it.
 
-**What is left for Phase 2** is the executing half: the content check through
-`versio_native_equiv` (the manifest's hash is over exported bytes, so a native object cannot be
-byte-compared — see above), `obj.remove()` in the script, and the `deletions` key on the wire
-that the tripwire test is currently holding shut.
+### ✅ The executing half, landed 2026-08-15 — Versio deletes things now
+
+The `deletions` key crosses the wire, `versio_import.py` grew a delete phase, and an object
+whose file left the mirror leaves the project. **Proven against real CODESYS**, three ways in
+one test (`An_object_whose_file_is_deleted_leaves_the_project_and_an_edited_one_does_not`,
+~2 min, five launches).
+
+- **Deletions run last.** Everything else puts objects in; this takes them out, and P3 measured
+  that `remove()` takes a referenced object with it silently. Last means the project is
+  otherwise complete at the moment anything is destroyed.
+- **`removed` is in the `dirty` test.** A run whose only work was a deletion would otherwise
+  close without saving — an import that reported success, removed something, and changed
+  nothing. That is the same defect `partial` was added for, and the second time this project
+  has nearly paid for it.
+- **The content check is the script's own, because only it can make one.** The planner cannot
+  see the project. The script rebuilds what the exporter *would* have written for the live
+  object — `join_st` for `ST_FULL`, `normalize_decl_only` for the others — hashes it, and
+  compares to the manifest. A mismatch means the object was edited in the IDE since the export,
+  so the missing file is **not** permission to destroy that work: `DELETE_CONTENT_CHANGED`,
+  kept, warned.
+- **A refusal is not a failure.** The import still completes; marking the binding failed would
+  stop all syncing over Versio declining to destroy something.
+- **`removed` is logged at Info, near the front of the summary.** It is the one line in an
+  import that records work leaving a project.
+
+> **⛔ Native objects are refused, and this is the open half of Phase 2.** `exported_text_of`
+> can rebuild a textual export and nothing else, so a GVL, a visualisation or any `NATIVE` form
+> gets `DELETE_UNVERIFIABLE` and is kept. The reason is the one Phase 2 always knew about,
+> reaching further than expected: the manifest's hash is over exported native bytes, P7
+> measured a re-export of an untouched native object changing every cycle, and comparing
+> through `versio_native_equiv` needs the **old bytes** — which are in the file that was
+> deleted. Two ways out, neither taken yet:
+>
+> 1. **Record a normalised hash at export time**, so a fresh export can be normalised and
+>    compared without the old bytes. Additive to the manifest, needs a re-export before native
+>    deletions work on any existing mirror — the same "unavailable until the next export"
+>    shape the planner already uses.
+> 2. **Fetch the old bytes from `git show HEAD:<path>`**, which Phase 3 needs anyway for
+>    rename-and-edit. Works only for a mirror that was committed.
+>
+> **(1) is the cleaner of the two** and does not drag git into the script. It was not decided
+> here because it changes the manifest, and that deserves its own change rather than riding
+> along with the first commit that deletes anything.
+>
+> **This limit was found by the test, not by design review.** The refusal case originally used
+> the GVL and reported `DELETE_UNVERIFIABLE` where `DELETE_CONTENT_CHANGED` was expected.
 
 **Script:** `obj.remove()` for exactly the planned deletions, emitting `{"t":"removed"}` — the event
 `versio_delete_objects.py` already uses.
@@ -742,38 +787,61 @@ the **existing bytes**.
 
 ---
 
-## Handoff — picking this up after Phase 1 and `versio_native_equiv.py`
+## Handoff — picking this up after Phase 2
 
-**Where you are.** The import is plan-driven end to end. `CodesysImportPlanner` (pure,
-`Versio.Core.Plc.Codesys`) decides; `LocalCodesysRunner.PlanImport` does the IO half and
-computes a plan when the caller supplied none; the job file (schema 2) carries it;
-`versio_import.py` executes it and decides nothing. A planless import refuses to serialize.
-`ImportPlan.MissingFromMirror` already lists Phase 2's delete candidates — computed, logged as
-a count, acted on by nothing. `versio_native_equiv.py` answers "are these two native payloads
-the same thing" from inside the CODESYS process, and has **no caller yet**.
+**Where you are.** The import is plan-driven end to end and **Versio now deletes objects**.
+
+```
+SyncViewModel decides the plan ─► asks ─► SyncJob.Plan ─► PlcProjectJob.Plan
+   ─► ToNative ─► ProjectJob.Plan ─► job file (schema 2) ─► versio_import.py
+```
+
+- `CodesysImportPlanner` (pure, `Versio.Core.Plc.Codesys`) decides **what**: updates, creates,
+  skips, and deletions behind five preconditions.
+- `ImportPlanReader` (`Versio.Core/Plc/`, on `IFileSystem`) does the **IO half** — manifest,
+  directory walk, text for the files the format asks for. Shared by the orchestrator and the
+  runner, so there is one walk rather than two.
+- `SyncViewModel` computes the plan **before** the confirmation question and hands it on;
+  `ImportNarrative` turns it into what the dialog says. The plan agreed to is the plan
+  executed — nothing recomputes after the answer.
+- `versio_import.py` executes and decides nothing. A planless import refuses to serialize.
+- `versio_native_equiv.py` answers "are these two native payloads the same thing" from inside
+  the CODESYS process. **Still no caller** — Phase 5 is its other one.
 
 **Next, in order:**
 
-1. **Phases 2 and 3 together** — deletes, renames, moves. The planner is where detection goes
-   (it already has the manifest, the mirror and the GUID index). **P3 is the thing to
-   respect**: `remove()` deletes a referenced object silently, so the preconditions in Phase
-   2's section are the entire safety story.
-2. **Phase 5, then Phase 6** as written below.
-3. **Still open from Phase 4:** `TaskCatalog.cs`, the C# reader, so the panel can show tasks.
-   **Land it with the panel change that consumes it**, not before — a reader with no
-   production caller is a specification pretending to be code, which is exactly what
-   `DecodeStem` and `StDeclarationParser` were until the planner became their first caller.
+1. **Phase 3 — renames and moves.** Detection goes in the planner, which already has the
+   manifest, the mirror and the GUID index; `rename()` and `move(parent, -1)` preserve the
+   GUID, measured. Phase 3's similarity pass wants `git show HEAD:<path>`, which is also
+   option (2) for the native content check below — **look at both before choosing**, because
+   one `IGitClient.ShowAtHeadAsync` may serve them both.
+2. **The native content check**, which is the open half of Phase 2 and the reason a GVL or a
+   visualisation is refused rather than deleted. Two ways out are written up in Phase 2's
+   section; **(1), a normalised hash recorded at export time, is the cleaner one** and does not
+   drag git into the script.
+3. **Phase 5, then Phase 6.**
+4. **Still open from Phase 4:** `TaskCatalog.cs`, the C# reader. **Land it with the panel
+   change that consumes it**, not before — a reader with no production caller is a
+   specification pretending to be code, which is exactly what `DecodeStem` and
+   `StDeclarationParser` were until the planner became their first caller.
 
-**✅ The seam step is done** — see [Phase 2's section](#-the-seam-step-landed-2026-08-15--the-plan-now-crosses-to-the-dialog-and-back). The plan is decided in
-`SyncViewModel` before the question is asked, travels on `SyncJob.Plan` → `PlcProjectJob.Plan` →
-the CODESYS job → the job file, and the orchestrator computes one only when nobody was asked.
-The walk itself is `ImportPlanReader`, shared between the orchestrator and the runner. So
-**`PendingImportDetail` naming each deletion is now a change to one method**, not a plumbing
-exercise.
+**What to be careful of, learned building Phase 2:**
 
-The IO half turned out to belong in `Versio.Core` rather than Infrastructure, because
-`SyncOrchestrator` already takes an `IFileSystem` — which is also what keeps it testable without
-a disk.
+- **The manifest is written with `sort_keys`**, so an object's members are alphabetical and
+  `hash` comes *before* `path`. A test helper that searched forward from a path to find "its"
+  hash poisoned the **next object's** record, the deletion went ahead, and the failure looked
+  like a defect in the script. Nothing about the code under test was wrong.
+- **A counter that decides whether to SAVE must count every way the project can be written
+  to.** `removed` is in the `dirty` test for the same reason `partial` is; without it a
+  delete-only run closes without saving and the object comes back.
+- **`exported_text_of` must stay exactly in step with `versio_export.py`.** The content check
+  means "unchanged" only while the two agree on how a form is rendered; the day they diverge it
+  starts meaning "exported by a different version" and refuses every deletion for a reason
+  that has nothing to do with the object.
+- **Reach for an integration test earlier than feels comfortable here.** The script imports
+  `scriptengine` at module level, so none of the delete path can be loaded under CPython — no
+  parity test, no unit test, nothing but real CODESYS. The native-refusal limit was found by
+  that test rather than by review.
 
 **What to be careful of, learned building `versio_native_equiv.py`:** a parity test can be
 green and watching nothing. Two of its rules — the ordinal sort key and the container table's
@@ -785,9 +853,12 @@ breaking each one found that out. **Write the mutation list before believing the
 - The plan document originally placed the planner in `Versio.Core/Projects/` — a vendor leak
   the seam test would have caught late. New import machinery goes behind
   `IPlcProjectFormat` / `Versio.Core.Plc.Codesys` unless it is genuinely vendor-neutral.
-- The wire tokens (`text` / `typed` / `native` / `create` / `skip`, and the skip reasons) are
-  dispatch strings in `versio_import.py`. `ScriptProtocolTests` pins them; a C# enum rename
-  must not reach the JSON.
+- The wire tokens (`text` / `typed` / `native` / `create` / `skip`, the skip reasons, and now
+  the `deletions` block) are dispatch strings in `versio_import.py`. `ScriptProtocolTests`
+  pins them; a C# enum rename must not reach the JSON. **`deletions` is omitted entirely when
+  there is nothing to delete** — an always-present empty list would put the most dangerous word
+  in the protocol into every job file, and a key that is normally there is a key nobody looks
+  twice at on the day it is not empty.
 - Mutation-check anything that looks like a pure move. Three rules here (G3, G5, G6) were
   each deliberately broken to prove a test goes red before the suite was believed.
 
@@ -808,11 +879,17 @@ breaking each one found that out. **Write the mutation list before believing the
    is exactly how it went unnoticed in the first place.
 5. **Regression gate:** a normal export stays byte-identical to the committed mirror for every file
    Phase 4 does not deliberately change.
-6. **The Phase 4 acceptance test**, and it is the cheapest of these to run:
+6. **The Phase 2 acceptance test**, and it is the one that matters most now:
+   `dotnet test tests\Versio.Integration.Tests --filter An_object_whose_file_is_deleted` —
+   five CODESYS launches, ~2 min. It is the only thing in the repository that fails if Versio
+   starts deleting objects it should keep, or stops deleting ones it should not. **Read the
+   three halves as one claim**: a refusal test that never lets anything through and a delete
+   test that never refuses are each satisfied by a broken implementation.
+7. **The Phase 4 acceptance test**, and it is the cheapest of these to run:
    `dotnet test tests\Versio.Integration.Tests --filter A_task_priority_edited_in_the_mirror` —
    four CODESYS launches, 72–78 s, and it is the only thing in the repository that fails if the
    typed write stops reaching the project.
-7. Full integration suite against real CODESYS (~10 min).
+8. Full integration suite against real CODESYS (~10 min).
 
 Build with `& "$env:LOCALAPPDATA\Microsoft\dotnet\dotnet.exe"` — `dotnet` on PATH is runtime-only.
 Close Versio.exe first; it locks its own DLLs.

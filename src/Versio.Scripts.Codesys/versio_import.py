@@ -43,7 +43,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from versio_decl import (DUT_ALIAS, DUT_ENUM, DUT_STRUCT, DUT_UNION,  # noqa: E402
                          KIND_DUT, KIND_FUNCTION, KIND_FUNCTION_BLOCK,
                          KIND_INTERFACE, KIND_PROGRAM, parse_declaration)
-from versio_text import normalize_decl_only, split_st  # noqa: E402
+from versio_text import content_hash, join_st, normalize_decl_only, split_st  # noqa: E402
 from versio_types import is_versio_file  # noqa: E402
 import versio_yaml  # noqa: E402
 
@@ -214,6 +214,13 @@ class Importer(object):
         # so the objects that DID paste would be dropped on close. Fixing a lying counter must
         # not cost somebody the half of the import that worked.
         self.partial = 0
+
+        # Objects taken out of the project, and deletions this script refused to perform.
+        # Separate counters because they answer different questions: the first is what
+        # changed, the second is what somebody asked for and did not get - and a refusal
+        # that only appears as a smaller number than expected is a refusal nobody reads.
+        self.removed = 0
+        self.kept = 0
         self.warnings = []
 
     def warn(self, code, path, detail=None):
@@ -599,6 +606,123 @@ class Importer(object):
                 self.warn("NOT_IN_PLAN", rel_path,
                           "appeared after the import was planned - not imported")
 
+    def exported_text_of(self, obj, form):
+        """Rebuild what the exporter would have written for this object, or None.
+
+        The content check turns on this being EXACTLY what versio_export.py produces:
+        join_st for a full ST body, normalize_decl_only for a declaration- or
+        implementation-only one. If the two ever diverge the check stops meaning
+        "unchanged" and starts meaning "exported by a different version", which would
+        refuse every deletion for a reason that has nothing to do with the object.
+
+        Returns None for any form this cannot rebuild - which is every NATIVE form, and
+        deliberately. The manifest's hash is over the exported native bytes, and P7 measured
+        a re-export of an untouched native object changing on every cycle, so hashing a
+        fresh one proves nothing. Comparing through versio_native_equiv would need the OLD
+        bytes, and the file holding them is the one that was deleted.
+        """
+        if form == "ST_FULL":
+            decl = safe(lambda: obj.textual_declaration.text, None)
+            impl = safe(lambda: obj.textual_implementation.text, None)
+            if decl is None or impl is None:
+                return None
+            return join_st(decl, impl)
+
+        if form == "ST_DECL":
+            decl = safe(lambda: obj.textual_declaration.text, None)
+            return None if decl is None else normalize_decl_only(decl)
+
+        if form == "ST_IMPL":
+            impl = safe(lambda: obj.textual_implementation.text, None)
+            return None if impl is None else normalize_decl_only(impl)
+
+        return None
+
+    def delete_planned(self):
+        """Remove objects the mirror no longer has any file for.
+
+        The planner has already checked everything it can see: a trusted manifest, every
+        file for the GUID gone, export-only records neither voting nor vetoing, nothing
+        surviving inside the object at any depth, and an owner chain that was recorded
+        rather than guessed. What only this process can check is the project itself - that
+        the object is still there, and that it still matches what was exported.
+
+        THAT LAST CHECK IS THE POINT. A file missing from the mirror says somebody deleted
+        it. It does not say the object is unchanged since: an engineer may have edited it in
+        the IDE in the meantime, and that work exists nowhere else. So a live object whose
+        content no longer hashes to what the manifest recorded is KEPT, and said so.
+        """
+        deletions = self.plan.get("deletions") or []
+        if not deletions:
+            return
+
+        emit({"t": "phase", "name": "delete", "files": len(deletions)})
+
+        for deletion in deletions:
+            name = deletion.get("name") or ""
+            chain = deletion.get("resolve") or []
+            files = deletion.get("files") or []
+
+            if not chain:
+                # Nothing to walk. Refusing beats guessing at a location for an operation
+                # that cannot be undone.
+                self.kept += 1
+                self.warn("DELETE_NO_CHAIN", name, "the plan carries no resolve chain")
+                continue
+
+            obj = find_by_path(self.proj, chain)
+            if obj is None:
+                # Already gone - somebody deleted it in the IDE, or a previous import did.
+                # The mirror and the project agree; there is simply nothing left to do, so
+                # this is not a failure and not a refusal.
+                emit({"t": "already_gone", "name": name, "path": "/".join(chain)})
+                continue
+
+            refusal = self.why_not_delete(obj, name, files)
+            if refusal is not None:
+                self.kept += 1
+                self.warn(refusal[0], name, refusal[1])
+                continue
+
+            try:
+                obj.remove()
+            except Exception as e:
+                self.failed += 1
+                self.warn("DELETE_FAILED", name, str(e))
+                continue
+
+            self.removed += 1
+            emit({"t": "removed", "name": name, "path": "/".join(chain),
+                  "files": [f.get("path") for f in files]})
+
+    def why_not_delete(self, obj, name, files):
+        """(code, detail) when this deletion must not happen, or None to proceed."""
+        if not files:
+            return ("DELETE_NO_RECORD",
+                    "the plan lists no exported file for it, so there is nothing to check "
+                    "the live object against")
+
+        for entry in files:
+            form = entry.get("form") or ""
+            recorded = entry.get("hash") or ""
+
+            live = self.exported_text_of(obj, form)
+            if live is None:
+                # No way to rebuild what was exported, so no way to know whether the object
+                # changed since. Refused rather than assumed - this is the one operation
+                # where being wrong destroys work nothing else holds a copy of.
+                return ("DELETE_UNVERIFIABLE",
+                        "its %s file cannot be rebuilt from the live object, so whether it "
+                        "changed since the export is unknowable" % (form or "recorded"))
+
+            if content_hash(live) != recorded:
+                return ("DELETE_CONTENT_CHANGED",
+                        "the object in the project no longer matches what was exported to "
+                        "%s, so it has been edited since - the missing file is not "
+                        "permission to destroy that work" % entry.get("path"))
+
+        return None
+
     def run(self):
         """Two phases, in this order, with a save between them.
 
@@ -657,6 +781,15 @@ class Importer(object):
         for entry in native:
             self.handle_native(entry)
 
+        # DELETIONS LAST, and that is not arbitrary.
+        #
+        # Everything above puts objects into the project; this takes them out. Running it
+        # first would remove an object a later step might still be resolving through - and
+        # P3 measured that remove() takes a referenced object out silently, with no
+        # exception, no cascade and no warning. Last means the project is otherwise complete
+        # at the moment anything is destroyed.
+        self.delete_planned()
+
         # An action this script has never heard of would otherwise vanish without a trace:
         # bucketed above, consumed by nothing, and exempt from NOT_IN_PLAN because the file
         # IS in the plan. A newer C# planner speaking a newer verb must be heard refusing,
@@ -704,7 +837,13 @@ def main():
     # `partial` is in here because a native import that lost some objects still applied the
     # rest. It no longer counts towards `native`, and if the save keyed only on that, the run
     # that wrote to the project would be the one that did not save it.
-    dirty = imp.updated > 0 or imp.native > 0 or imp.partial > 0
+    # `removed` is in here for the same reason `partial` is, and the reason is a bug this
+    # project has already paid for once: a counter that decides whether to SAVE must count
+    # every way the project can have been written to. A run whose only work was deleting an
+    # object would otherwise close without saving, putting the object back - an import that
+    # reported success, removed something, and changed nothing.
+    dirty = (imp.updated > 0 or imp.native > 0 or imp.partial > 0
+             or imp.removed > 0)
     if job.get("save", True) and dirty:
         proj.save()
         emit({"t": "saved"})
@@ -714,7 +853,7 @@ def main():
     emit({"t": "summary", "updated": imp.updated, "unchanged": imp.unchanged,
           "native": imp.native, "created": imp.created,
           "missing": imp.missing, "failed": imp.failed,
-          "partial": imp.partial,
+          "partial": imp.partial, "removed": imp.removed, "kept": imp.kept,
           "notImported": imp.one_way, "warnings": len(imp.warnings)})
 
     close_project(proj)

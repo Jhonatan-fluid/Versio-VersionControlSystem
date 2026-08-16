@@ -193,18 +193,21 @@ public class CodesysJobTests
     }
 
     [Fact]
-    public void Planned_deletions_are_computed_but_do_NOT_yet_cross_the_wire()
+    public void A_planned_deletion_crosses_the_wire_with_what_the_script_needs_to_refuse_it()
     {
-        // A TRIPWIRE, not a preference. The planner proposes deletions and every precondition
-        // for them is tested, but versio_import.py has no delete action yet — so the job file
-        // deliberately does not carry them, and the C# side is the only consumer: the log
-        // today, the confirmation dialog next.
+        // This test used to assert the OPPOSITE, and that was its job. While the planner
+        // proposed deletions and the script could not execute them, it held the two halves
+        // together: adding remove() without this field would have produced a script that
+        // deletes nothing while everything above it said deletions were planned, and adding
+        // the field without the script would have sent a key nothing reads.
         //
-        // Asserted rather than left to a comment because the failure mode is silence. Adding
-        // remove() to the script without adding the field here would produce a script that
-        // deletes nothing while everything above it says deletions are planned; adding the
-        // field without the script would send a key nothing reads. Whichever half lands
-        // first, THIS test is what says the other one is missing.
+        // Both halves are here now, so it flips to asserting what crosses — and what crosses
+        // is chosen by what the script must be able to REFUSE with, not by what it needs to
+        // act. The resolve chain, because the file is gone and a location can no longer be
+        // derived from a path. The recorded hash and form per file, because the one check
+        // only the CODESYS process can make is whether the live object still matches what was
+        // exported — a mirror file being absent says somebody deleted it, not that nobody
+        // edited the object since.
         var json = (Job(new ProjectJob
         {
             BindingId = "b-1", ProjectPath = @"C:\w\A.project", Path = @"C:\w\A",
@@ -217,6 +220,7 @@ public class CodesysJobTests
                     {
                         Guid = "g1",
                         Name = "FB_Motor",
+                        Resolve = ["Device", "Plc Logic", "Application", "FB_Motor"],
                         Files = [new Versio.Core.Plc.DeletedFile(
                             "App/FB_Motor.st", "sha256:aaa", "ST_FULL")],
                     },
@@ -224,7 +228,26 @@ public class CodesysJobTests
             },
         }) with { Operation = CodesysOperation.Import }).ToJson();
 
-        Assert.DoesNotContain("FB_Motor", json, StringComparison.Ordinal);
+        Assert.Contains("\"deletions\"", json, StringComparison.Ordinal);
+        Assert.Contains("FB_Motor", json, StringComparison.Ordinal);
+        Assert.Contains("Plc Logic", json, StringComparison.Ordinal);
+        Assert.Contains("sha256:aaa", json, StringComparison.Ordinal);
+        Assert.Contains("ST_FULL", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_plan_with_nothing_to_delete_sends_no_deletions_key_at_all()
+    {
+        // Omitted rather than sent empty. Every import carries a plan and almost none of them
+        // delete anything, so an always-present "deletions": [] would put the most dangerous
+        // word in the protocol into every job file Versio has ever written — and a key that
+        // is normally there is a key nobody looks twice at on the day it is not empty.
+        var json = (Job(new ProjectJob
+        {
+            BindingId = "b-1", ProjectPath = @"C:\w\A.project", Path = @"C:\w\A",
+            Plan = new Versio.Core.Plc.ImportPlan { Files = [] },
+        }) with { Operation = CodesysOperation.Import }).ToJson();
+
         Assert.DoesNotContain("deletions", json, StringComparison.OrdinalIgnoreCase);
     }
 

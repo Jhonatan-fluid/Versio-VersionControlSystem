@@ -590,6 +590,23 @@ public sealed class LocalCodesysRunner(
                         $"in {evt.String("into")}");
                     break;
 
+                case "removed":
+                    // Info, and the only line in an import that records work leaving the
+                    // project. Everything else here either adds or replaces; this is the one
+                    // that cannot be undone from the mirror, so it names the object and where
+                    // it lived rather than a count somebody has to go and expand.
+                    _log.Info(LogCategory.Codesys,
+                        $"removed {evt.String("name")} from {evt.String("path")}");
+                    break;
+
+                case "already_gone":
+                    // Not a failure and not a refusal: the mirror said delete it and the
+                    // project no longer has it, so the two agree. Debug because the
+                    // interesting case is the one where something WAS removed.
+                    _log.Debug(LogCategory.Codesys,
+                        $"{evt.String("name")} is already gone from the project");
+                    break;
+
                 case "updated":
                     // One per file the import changed, so Debug for the same reason "object"
                     // is: bounded by what was edited today, but there is no ceiling on that.
@@ -688,6 +705,13 @@ public sealed class LocalCodesysRunner(
         Add("updated", "updated");
         Add("created", "created");
         Add("native", "native");
+
+        // REMOVED goes with the writes, not with the warnings, and it is deliberately not
+        // last: an import that took objects out of a project is the single most consequential
+        // thing this line can report, and a reader scanning the front of a sentence must not
+        // have to reach the end to find it.
+        Add("REMOVED", "removed");
+        Add("kept (not deleted)", "kept");
         Add("unchanged", "unchanged");
         Add("not applied (export-only)", "notImported");
         Add("missing", "missing");

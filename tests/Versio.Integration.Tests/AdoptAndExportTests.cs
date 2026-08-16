@@ -545,6 +545,211 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
         };
     }
 
+    [SkippableFact]
+    [Trait("Category", "Integration")]
+    public async Task An_object_whose_file_is_deleted_leaves_the_project_and_an_edited_one_does_not()
+    {
+        // THE FIRST TEST OF VERSIO DESTROYING SOMETHING, and it is written as two halves in
+        // one run because the halves are only meaningful against each other: a delete path
+        // that never refuses is indistinguishable from one that always deletes, and a refusal
+        // that never lets anything through is indistinguishable from a delete path that does
+        // not work.
+        //
+        // P3 measured what remove() does to an object others reference: it removes it, saves
+        // cleanly, and warns about nothing. There is no toolchain backstop. So the planner's
+        // preconditions and the script's content check are the entire safety story, and the
+        // content check is the half that no unit test can reach - versio_import.py imports
+        // scriptengine at module level, so it cannot be loaded under CPython at all.
+        var install = Install;
+        Skip.If(install is null, "no CODESYS installation with a profile");
+        Skip.If(!File.Exists(FixtureProject), "fixture project missing");
+
+        await InitRepoAsync();
+        var git = new GitCliClient(_repo, logger: new TestLogger(output));
+        var setup = new RepoSetup(_repo, CodesysProjectFormat.Instance);
+
+        var adopted = await setup.AdoptAsync(
+            ProjectRelativePath, git, install!.Profiles[0], CancellationToken.None);
+        var binding = adopted.Config.Bindings[0];
+        var orchestrator = BuildOrchestrator(adopted.Config, install);
+
+        Assert.Equal(SyncVerdict.Completed, (await Export(orchestrator, binding.Id)).Verdict);
+        await orchestrator.ReleaseAfterPushAsync("c1", CancellationToken.None);
+
+        var app = Path.Combine(
+            _repo, "plc", "RefrigeratorControl", "Device", "Plc Logic", "Application");
+
+        var doomed = Path.Combine(app, "Simulation.st");
+        var gvl = Path.Combine(app, "Glob_Var.gvl.st");
+
+        Assert.True(File.Exists(doomed), "the export wrote no Simulation.st");
+        Assert.True(File.Exists(gvl), "the export wrote no Glob_Var.gvl.st");
+
+        var manifestPath = Path.Combine(_repo, "plc", "RefrigeratorControl", "_manifest.json");
+        var honest = await File.ReadAllTextAsync(manifestPath);
+
+        // ── one: an object edited since the export is KEPT ───────────────────────────
+        //
+        // Simulation.st is deleted from the mirror and the manifest's recorded hash for it is
+        // falsified. That is exactly the state an engineer creates by editing the object in
+        // the IDE after the last export: the project no longer matches what was exported, so
+        // the missing file is not permission to destroy that work.
+        //
+        // Falsifying the hash rather than driving the IDE is what makes this affordable, and
+        // it is not a weaker test — comparing the live object against the recorded hash is
+        // the WHOLE of the script's check, so it cannot tell the two apart.
+        //
+        // THE SAME OBJECT IS DELETED SUCCESSFULLY BELOW, with only the hash different. That
+        // is the point of ordering it this way: a refusal test using a different object could
+        // pass because that object was undeletable for some unrelated reason.
+        File.Delete(doomed);
+
+        await File.WriteAllTextAsync(manifestPath, PoisonHashFor(honest, "Simulation.st"),
+            new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+
+        var refused = await TextChanged(orchestrator, binding.Id);
+        output.WriteLine($"import 1 — {refused.Verdict}: {SyncNarrative.Describe(refused)}");
+
+        // The import SUCCEEDS. A refused deletion is a refusal, not a failure — marking the
+        // binding failed would stop all syncing over Versio declining to destroy something.
+        Assert.Equal(SyncVerdict.Completed, refused.Verdict);
+        Assert.Contains(refused.Warnings,
+            w => w.Contains("DELETE_CONTENT_CHANGED", StringComparison.Ordinal));
+
+        // Read back out of the PROJECT, and STRAIGHT THROUGH THE RUNNER rather than back
+        // through the orchestrator. Asking the orchestrator to export here returns NoChange
+        // and is right to: it recorded the project's hash when the import ran, so from its
+        // point of view nothing has happened since. Going around that gate asks the only
+        // question this test is about — what the project on disk now contains.
+        var afterRefusal = await ReExport(install, binding.Id, "verify-kept");
+
+        Assert.True(File.Exists(Path.Combine(afterRefusal, RelApp, "Simulation.st")),
+            "Simulation was deleted despite no longer matching what was exported");
+
+        // ── two: with an honest hash, the same object goes ───────────────────────────
+        //
+        // Nothing changes but the manifest. If this fails while the refusal above passed, the
+        // delete path does not work; if it passed while the refusal failed, the check does
+        // not. Only both together say the script is deciding rather than defaulting.
+        await File.WriteAllTextAsync(manifestPath, honest,
+            new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+
+        var deleted = await TextChanged(orchestrator, binding.Id);
+        output.WriteLine($"import 2 — {deleted.Verdict}: {SyncNarrative.Describe(deleted)}");
+        Assert.Equal(SyncVerdict.Completed, deleted.Verdict);
+
+        var afterDelete = await ReExport(install, binding.Id, "verify-delete");
+
+        Assert.False(File.Exists(Path.Combine(afterDelete, RelApp, "Simulation.st")),
+            "Simulation came back, so the object is still in the project");
+
+        // And nothing else went with it. remove() dangles referenced objects silently (P3),
+        // so "the right object left" and "only the right object left" are two claims.
+        Assert.True(File.Exists(Path.Combine(afterDelete, RelApp, "PLC_PRG.xml")),
+            "PLC_PRG went missing — the deletion took more than it was asked to");
+        Assert.True(File.Exists(Path.Combine(afterDelete, RelApp, "Glob_Var.gvl.st")),
+            "Glob_Var went missing — the deletion took more than it was asked to");
+
+        // ── three: an object whose export cannot be rebuilt is never deleted ─────────
+        //
+        // A GVL is two files under one GUID — a declaration and its native XML — and the
+        // manifest's hash for the XML is over exported native bytes. P7 measured a re-export
+        // of an untouched native object changing on every cycle, so hashing a fresh one
+        // proves nothing, and the old bytes are in the file that was just deleted. Whether
+        // the object changed since is therefore unknowable, and unknowable means kept.
+        //
+        // Found by this test rather than by design review: half two originally used the GVL
+        // and reported DELETE_UNVERIFIABLE where DELETE_CONTENT_CHANGED was expected.
+        File.Delete(gvl);
+        File.Delete(Path.Combine(app, "Glob_Var.gvl.xml"));
+
+        var unverifiable = await TextChanged(orchestrator, binding.Id);
+        output.WriteLine($"import 3 — {unverifiable.Verdict}: {SyncNarrative.Describe(unverifiable)}");
+
+        Assert.Equal(SyncVerdict.Completed, unverifiable.Verdict);
+        Assert.Contains(unverifiable.Warnings,
+            w => w.Contains("DELETE_UNVERIFIABLE", StringComparison.Ordinal));
+
+        var afterUnverifiable = await ReExport(install, binding.Id, "verify-native");
+
+        Assert.True(File.Exists(Path.Combine(afterUnverifiable, RelApp, "Glob_Var.gvl.st")),
+            "the GVL was deleted on the strength of a check that could not be made");
+    }
+
+    /// <summary>Where the fixture's objects live, relative to a mirror root.</summary>
+    private static string RelApp => Path.Combine("Device", "Plc Logic", "Application");
+
+    /// <summary>
+    /// Export the project into a scratch directory, through the runner.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not through the orchestrator: it recorded the project's hash when the
+    /// import wrote it, so it answers <c>NoChange</c> — correctly. This asks CODESYS what the
+    /// project contains now, which is the only thing that can tell an applied change from a
+    /// parsed one.
+    /// </remarks>
+    private async Task<string> ReExport(CodesysInstall install, string bindingId, string into)
+    {
+        var target = Path.Combine(_repo, ".versio", "local", into);
+
+        var result = await new LocalCodesysRunner(
+                install.ExecutablePath, new ScriptExtractor(), new TestLogger(output))
+            .RunAsync(new CodesysJob
+            {
+                Operation = CodesysOperation.Export,
+                Profile = install.Profiles[0],
+                Projects =
+                [
+                    new ProjectJob
+                    {
+                        BindingId = bindingId,
+                        ProjectPath = Path.Combine(_repo, "plc", "RefrigeratorControl.project"),
+                        Path = target,
+                    },
+                ],
+                Timeout = TimeSpan.FromMinutes(5),
+            }, null, CancellationToken.None);
+
+        Assert.True(result.Succeeded, $"the verification export failed: {result.FailureReason}");
+        return target;
+    }
+
+    /// <summary>
+    /// Rewrite one object's recorded hash so the live object cannot match it.
+    /// </summary>
+    /// <remarks>
+    /// Stands in for "somebody edited this in the IDE since the last export", which is the
+    /// only state the script's content check is looking for — and which it cannot tell apart
+    /// from this, because comparing the live object against the recorded hash is the whole of
+    /// the check.
+    /// </remarks>
+    private static string PoisonHashFor(string manifest, string fileName)
+    {
+        const string key = "\"hash\": \"";
+
+        var at = manifest.IndexOf(fileName, StringComparison.Ordinal);
+        Assert.True(at > 0, $"{fileName} is not in the manifest");
+
+        // BACKWARDS from the path, not forwards. The manifest is written with sort_keys, so
+        // an object's members are alphabetical and `hash` comes BEFORE `path` — searching
+        // forward finds the NEXT object's hash and poisons a record this test never touches.
+        // It did exactly that first time round: the deletion went ahead, the assertion failed
+        // on an empty warning list, and nothing about the code under test was wrong.
+        var hashAt = manifest.LastIndexOf(key, at, StringComparison.Ordinal);
+        Assert.True(hashAt > 0, $"no hash recorded before {fileName}");
+
+        // And prove it belongs to the same record: no object boundary may sit between them.
+        Assert.DoesNotContain("}", manifest[hashAt..at], StringComparison.Ordinal);
+
+        var valueAt = hashAt + key.Length;
+        var end = manifest.IndexOf('"', valueAt);
+        Assert.True(end > valueAt, "the recorded hash is not a string");
+
+        return manifest[..valueAt]
+               + "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+               + manifest[end..];
+    }
+
     private static Task<SyncOutcome> Export(SyncOrchestrator orchestrator, string bindingId) =>
         orchestrator.HandleChangeAsync(new SyncJob
         {
