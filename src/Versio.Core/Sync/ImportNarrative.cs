@@ -13,12 +13,25 @@ namespace Versio.Core.Sync;
 /// rather than eyeballed.
 /// </para>
 /// <para>
-/// <b>Present tense, and only about what this version actually does.</b> Deletions are planned
-/// and executed by nothing today, so this says objects <i>will stay</i> — not that they will be
-/// removed. Naming three objects as doomed and then leaving them there is the same class of
-/// lie as the dialog this whole chain exists to make truthful, pointed the other way. When the
-/// script grows <c>remove()</c>, this wording changes with it, and the test below is what says
-/// so.
+/// <b>Only about what this version actually does — and it has been wrong about that once.</b>
+/// This said objects <i>will stay</i> while <c>versio_import.py</c> removed them, for the one
+/// commit between the script growing <c>remove()</c> and anybody noticing. That is the exact
+/// lie the whole confirmation chain exists to prevent, arrived at from the other direction:
+/// every gate around it worked and the sentence it delivered was false.
+/// </para>
+/// <para>
+/// <b>Two sentences, because there are two outcomes.</b> A deletion the executing side can
+/// check will really happen; one it cannot is really refused, and the split is
+/// <see cref="PlannedDeletion.CannotVerify"/>. Merging them would be wrong about one group
+/// whichever tense it picked — and re-wording alone would have swapped one lie for another,
+/// since the script refuses any deletion it cannot verify.
+/// </para>
+/// <para>
+/// <b>The tests assert both sides on purpose.</b> The pair that failed to catch the original
+/// defect asserted only that this said <i>will stay</i> and did <i>not</i> say <i>will be
+/// removed</i> — assertions on the old sentence, which cannot fail when the behaviour moves
+/// and can only fail when somebody fixes the wording. A tripwire that points one way is a
+/// lock.
 /// </para>
 /// <para>
 /// <b>Deletions are named in full, with no cap.</b> That is a decision taken deliberately in

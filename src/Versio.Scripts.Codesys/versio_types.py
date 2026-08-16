@@ -94,33 +94,6 @@ FORM_TASK_NATIVE = "TASK_NATIVE"
 # in the app, which is half a warning and worse than none.
 EXPORT_ONLY_FORMS = (FORM_LIBRARIES, FORM_TASK_NATIVE)
 
-# Forms whose exported file can be rebuilt from a live object, and therefore the only forms
-# whose DELETION can be checked before it happens.
-#
-# Here rather than in versio_import.py for two reasons, and the second is the load-bearing
-# one. This module is pure - no scriptengine - so the rule can be run under CPython and
-# compared against its C# mirror, CodesysImportPlanner.WhyUnverifiable, by
-# PythonFileNameParityTests. The importer cannot be imported outside CODESYS at all, so a
-# rule living there is a rule nothing can compare.
-#
-# The two sides have to agree because they answer the same question ~20 s apart: the planner
-# answers it for the confirmation dialog, before CODESYS is started, and the script answers it
-# for the object itself. A planner that promises a removal the script then refuses puts a lie
-# in front of somebody about to destroy work - which is exactly what shipped once, pointed the
-# other way, when the script grew remove() and the dialog went on saying objects would stay.
-#
-# Native forms are absent DELIBERATELY, and not for want of trying. The manifest's hash is
-# over the exported native bytes, and P7 measured a re-export of an untouched native object
-# changing every cycle, so hashing a fresh export proves nothing. Comparing through
-# versio_native_equiv needs the OLD bytes, and those were in the file that was deleted.
-CAN_VERIFY_FORMS = (FORM_ST_FULL, FORM_ST_DECL, FORM_ST_IMPL)
-
-
-def can_verify(form):
-    """Can a deletion of an object exported in this form be checked before it happens?"""
-    return form in CAN_VERIFY_FORMS
-
-
 # NATIVE_WITH_CHILDREN - export the node itself natively, non-recursively, AND descend into
 # a subdirectory for its children.
 #
@@ -138,6 +111,68 @@ def can_verify(form):
 # prevent. Adding the two probed GUIDs to the table hid it rather than fixed it: the next
 # unmapped container would have flattened just the same.
 FORM_NATIVE_WITH_CHILDREN = "NATIVE_WITH_CHILDREN"
+
+
+# Forms whose exported file can be rebuilt from a live object, and therefore the only forms
+# whose DELETION can be checked before it happens.
+#
+# Here rather than in versio_import.py for two reasons, and the second is the load-bearing
+# one. This module is pure - no scriptengine - so the rule can be run under CPython and
+# compared against its C# mirror, CodesysImportPlanner.WhyUnverifiable, by
+# PythonFileNameParityTests. The importer cannot be imported outside CODESYS at all, so a
+# rule living there is a rule nothing can compare.
+#
+# The two sides have to agree because they answer the same question ~20 s apart: the planner
+# answers it for the confirmation dialog, before CODESYS is started, and the script answers it
+# for the object itself. A planner that promises a removal the script then refuses puts a lie
+# in front of somebody about to destroy work - which is exactly what shipped once, pointed the
+# other way, when the script grew remove() and the dialog went on saying objects would stay.
+#
+# A textual form is checked by rebuilding the file byte for byte - P7 measured zero .st
+# differences across three round trips, so the comparison means what it says.
+CAN_VERIFY_FORMS = (FORM_ST_FULL, FORM_ST_DECL, FORM_ST_IMPL)
+
+# Native forms are checked through the NORMALISED hash the export recorded beside the raw one,
+# and only when the manifest carries it - schema 5 and later.
+#
+# The raw hash cannot be used and that is measured, not assumed. It is taken over the exported
+# native bytes, and those churn: across three export/import round trips of the fixture with
+# nothing edited, 4 native files came back byte-different every time. Hashing a fresh export
+# against the recorded raw hash would refuse every native deletion forever, for a reason with
+# nothing to do with the object.
+#
+# So the export records content_hash(normalize(text)) as well, and a delete check re-exports
+# the live object, normalises it the same way, and compares. What normalisation removes is
+# exactly the churn: counter values, and the ordering of unordered containers.
+#
+# MASKED GUIDS, and this is the subtle one. versio_native_equiv.normalize says masking must be
+# OFF when comparing two exports of the same project, because GUIDs are stable across exports -
+# and M1 confirms that, two exports into two empty directories are byte-identical. But this is
+# not that comparison. The recorded hash and the fresh export are separated by however many
+# round trips have happened since, and ACROSS A ROUND TRIP CODESYS re-mints GUIDs: measured on
+# GlobalTextList.xml, 3 lines of 117 differ and all three are System.Guid values (GuidInit,
+# GuidReInit, GuidExitX). That is the round-trip case the docstring says masking is required
+# for.
+#
+# What it costs: an edit that changes GUID VALUES and nothing else would read as unchanged.
+# Masking is positional - each GUID becomes <masked-guid>, so an added or removed one still
+# shows - and no realistic IDE edit changes only the value of an existing GUID. It is stated
+# here rather than glossed because it is the one way this check can be wrong, and being wrong
+# here destroys work nothing else holds a copy of.
+NATIVE_FORMS = (FORM_NATIVE, FORM_NATIVE_R, FORM_NATIVE_WITH_CHILDREN)
+
+
+def can_verify(form, normalized_hash=None):
+    """Can a deletion of an object exported in this form be checked before it happens?
+
+    `normalized_hash` is the manifest's `nhash` for the file, absent on a pre-schema-5
+    mirror. A native object exported before Versio recorded one stays unverifiable until
+    the project is exported again - the same "unavailable until the next export" shape the
+    planner already uses for a manifest below the reporting schema.
+    """
+    if form in CAN_VERIFY_FORMS:
+        return True
+    return form in NATIVE_FORMS and bool(normalized_hash)
 
 TYPE_FORM = {
     "FOLDER": FORM_CONTAINER,

@@ -34,6 +34,7 @@ import io
 import json
 import os
 import sys
+import tempfile
 import traceback
 
 import scriptengine  # type: ignore
@@ -43,8 +44,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from versio_decl import (DUT_ALIAS, DUT_ENUM, DUT_STRUCT, DUT_UNION,  # noqa: E402
                          KIND_DUT, KIND_FUNCTION, KIND_FUNCTION_BLOCK,
                          KIND_INTERFACE, KIND_PROGRAM, parse_declaration)
-from versio_text import content_hash, join_st, normalize_decl_only, split_st  # noqa: E402
-from versio_types import can_verify, is_versio_file  # noqa: E402
+from versio_text import (content_hash, join_st, normalize_decl_only,  # noqa: E402
+                         scrub_native_xml, split_st)
+from versio_types import (FORM_NATIVE_R, NATIVE_FORMS, can_verify,  # noqa: E402
+                          is_versio_file)
+from versio_native_equiv import normalize  # noqa: E402
 import versio_yaml  # noqa: E402
 
 
@@ -609,9 +613,11 @@ class Importer(object):
     def exported_text_of(self, obj, form):
         """Rebuild what the exporter would have written for this object, or None.
 
-        Only ever called for a form CAN_VERIFY_FORMS admits, so a None from here means the
-        live object did not yield its text - a different failure from "this form can never
-        be checked", and reported as a different code.
+        TEXTUAL forms only - CAN_VERIFY_FORMS is exactly the set this handles, and a native
+        one goes to normalized_native_of instead, which compares through a re-export rather
+        than a rebuild. So a None from here means the live object did not yield its text: a
+        different failure from "this form can never be checked", and reported as a different
+        code.
 
         The content check turns on this being EXACTLY what versio_export.py produces:
         join_st for a full ST body, normalize_decl_only for a declaration- or
@@ -703,31 +709,85 @@ class Importer(object):
         for entry in files:
             form = entry.get("form") or ""
             recorded = entry.get("hash") or ""
+            nrecorded = entry.get("nhash") or ""
 
-            if not can_verify(form):
-                # The form itself can never be checked. Predictable without opening the
+            if not can_verify(form, nrecorded):
+                # Either a form that can never be checked, or a native one exported before
+                # Versio recorded a normalised hash. Both are predictable without opening the
                 # project, which is why the planner says the same thing to the dialog.
                 return ("DELETE_UNVERIFIABLE",
-                        "its %s file cannot be rebuilt from the live object, so whether it "
-                        "changed since the export is unknowable" % (form or "recorded"))
+                        "its %s file cannot be compared against the live object, so whether "
+                        "it changed since the export is unknowable" % (form or "recorded"))
 
-            live = self.exported_text_of(obj, form)
-            if live is None:
-                # A form that CAN be checked, on an object that would not give up its text.
-                # Reported apart from the line above because they are different problems: one
-                # is a limit of this version and the other is this object, right now, and
-                # merging them would have the log blame the form for something it did not do.
-                return ("DELETE_UNREADABLE",
-                        "its %s file should be rebuildable but the live object returned no "
-                        "text, so the deletion cannot be checked" % form)
+            if form in NATIVE_FORMS:
+                live = self.normalized_native_of(obj, form)
+                if live is None:
+                    return ("DELETE_UNREADABLE",
+                            "its %s file could not be re-exported from the live object, so "
+                            "the deletion cannot be checked" % form)
+                compare_to = nrecorded
+            else:
+                live = self.exported_text_of(obj, form)
+                if live is None:
+                    # A form that CAN be checked, on an object that would not give up its
+                    # text. Reported apart from the line above because they are different
+                    # problems: one is a limit of this version and the other is this object,
+                    # right now, and merging them would have the log blame the form for
+                    # something it did not do.
+                    return ("DELETE_UNREADABLE",
+                            "its %s file should be rebuildable but the live object returned "
+                            "no text, so the deletion cannot be checked" % form)
+                compare_to = recorded
 
-            if content_hash(live) != recorded:
+            if content_hash(live) != compare_to:
                 return ("DELETE_CONTENT_CHANGED",
                         "the object in the project no longer matches what was exported to "
                         "%s, so it has been edited since - the missing file is not "
                         "permission to destroy that work" % entry.get("path"))
 
         return None
+
+    def normalized_native_of(self, obj, form):
+        """Re-export this object natively and return its comparison form, or None.
+
+        The native half of the content check, and the thing that closes Phase 2's open
+        half. It cannot work the way the textual half does: `hash` in the manifest is over
+        the exported bytes, and those churn - three round trips of the fixture with nothing
+        edited came back byte-different on 4 native files every time - so a fresh export
+        never reproduces the recorded value. The manifest carries `nhash` as well from
+        schema 5, over the NORMALISED payload, and normalisation is exactly what removes
+        that churn.
+
+        Every step here has to match versio_export.py, because the recorded value was
+        produced by it:
+
+          - recursive only for NATIVE_R, which is the rule export_native is called with;
+          - scrub_native_xml, which removes the Timestamp CODESYS re-mints per run;
+          - normalize with masking left at its default.
+
+        Any divergence turns the check from "unchanged" into "exported by a different
+        version of Versio", which would refuse every native deletion for a reason that has
+        nothing to do with the object.
+        """
+        # The system temp directory, NOT the mirror. The mirror is a git working tree with a
+        # RepositoryWatcher on it, and writing into it mid-import would raise a change event
+        # for a file that is not part of the export - a check that was supposed to observe the
+        # project and nothing else, kicking the sync engine instead.
+        handle, tmp = tempfile.mkstemp(suffix=".xml", prefix="versio_delete_check_")
+        os.close(handle)
+        try:
+            try:
+                obj.export_native(tmp, form == FORM_NATIVE_R)
+                raw = read_text(tmp)
+            finally:
+                if os.path.isfile(tmp):
+                    os.remove(tmp)
+        except Exception as e:
+            self.warn("DELETE_REEXPORT_FAILED", safe(lambda: obj.get_name(), ""), str(e))
+            return None
+
+        scrubbed, _ = scrub_native_xml(raw)
+        return normalize(scrubbed)[0]
 
     def run(self):
         """Two phases, in this order, with a save between them.

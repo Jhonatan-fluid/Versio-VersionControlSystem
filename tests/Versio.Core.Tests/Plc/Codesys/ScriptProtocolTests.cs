@@ -233,6 +233,40 @@ public class CodesysJobTests
         Assert.Contains("Plc Logic", json, StringComparison.Ordinal);
         Assert.Contains("sha256:aaa", json, StringComparison.Ordinal);
         Assert.Contains("ST_FULL", json, StringComparison.Ordinal);
+
+        // A textual record carries no nhash, and the key is omitted rather than sent empty —
+        // so a mirror with nothing normalised to send produces the job file it always did.
+        Assert.DoesNotContain("nhash", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_native_deletion_carries_the_normalised_hash_the_script_compares_against()
+    {
+        // The raw hash is over bytes that churn between exports, so it is not what a native
+        // deletion is checked against and sending it alone would have the script refuse every
+        // one of them. nhash is the whole of the native check crossing the wire.
+        var json = (Job(new ProjectJob
+        {
+            BindingId = "b-1", ProjectPath = @"C:\w\A.project", Path = @"C:\w\A",
+            Plan = new Versio.Core.Plc.ImportPlan
+            {
+                Files = [],
+                Deletions =
+                [
+                    new Versio.Core.Plc.PlannedDeletion
+                    {
+                        Guid = "g1",
+                        Name = "Glob_Var",
+                        Resolve = ["Device", "Glob_Var"],
+                        Files = [new Versio.Core.Plc.DeletedFile(
+                            "App/Glob_Var.gvl.xml", "sha256:raw", "NATIVE", "sha256:norm")],
+                    },
+                ],
+            },
+        }) with { Operation = CodesysOperation.Import }).ToJson();
+
+        Assert.Contains("\"nhash\": \"sha256:norm\"", json, StringComparison.Ordinal);
+        Assert.Contains("sha256:raw", json, StringComparison.Ordinal);
     }
 
     [Fact]

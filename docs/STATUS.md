@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,443 unit + 480 UI + 204 integration, 0 skipped
+**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,451 unit + 480 UI + 205 integration, 0 skipped
 
 > **⚠️ Versio removes objects from projects as of 2026-08-15 — Phase 2 of the import plan, and
 > the first thing it does that destroys work.** Delete a `.st` from the mirror, confirm the
@@ -146,7 +146,7 @@ opens. That is `SAFEGUARDS.md` phases 1–8, and phase 9 is features rather than
 
 ```
   CODESYS pipeline    ████████████████████  proven on a real project
-  Domain core         ████████████████████  1,419 tests, under 400 ms
+  Domain core         ████████████████████  1,451 tests, under 400 ms
   Vendor seam         ████████████████████  enforced from assembly metadata
   Infrastructure      ████████████████████  drives real CODESYS + real git
   Desktop shell       ███████████████████░  full git surface, diff, and a UI audit applied
@@ -626,22 +626,33 @@ does not record them has to be run again.
     on the *old* sentence, so they could only have failed if somebody fixed it. The dialog
     promised objects would stay and the import deleted them. **Fixed 2026-08-15**: the dialog
     names what will really go and what will really stay, separately — see the Finding above.
-- ~~**Deletes do not propagate.**~~ — **closed 2026-08-15 for textual objects, and deliberately
-  refused for native ones.** `versio_import.py` runs a delete phase **last**, after everything
-  that adds, because `remove()` takes referenced objects with it silently (P3). Proven against
-  real CODESYS in one test with three halves: an object edited since the export is kept, the
-  same object with an honest hash is removed, and a GVL is refused.
+- ~~**Deletes do not propagate.**~~ — **closed outright 2026-08-15, textual and native.**
+  `versio_import.py` runs a delete phase **last**, after everything that adds, because
+  `remove()` takes referenced objects with it silently (P3). Proven against real CODESYS in
+  one test with three halves: an object edited since the export is kept, the same object with
+  an honest hash is removed, and a GVL goes only when **both** of its files check out.
   - **The content check is the script's own**, because only the CODESYS process can see the
     project. It rebuilds what the exporter *would* have written for the live object and
     compares to the manifest's hash; a mismatch means somebody edited it in the IDE since, and
     a missing mirror file is not permission to destroy work that exists nowhere else.
-  - **⛔ Native objects cannot be checked, so they are never deleted.** The manifest's hash is
-    over exported native bytes, P7 measured a re-export of an untouched native object changing
-    every cycle, and comparing through `versio_native_equiv` needs the **old bytes** — which
-    are in the file that was deleted. Two ways out are written up in the import plan;
-    recording a normalised hash at export time is the cleaner one and was not taken here
-    because it changes the manifest. **This limit was found by the integration test, not by
-    review.**
+  - ~~**⛔ Native objects cannot be checked, so they are never deleted.**~~ — **closed the
+    same day, by manifest schema 5.** The obstacle was real: comparing through
+    `versio_native_equiv` needs the old bytes, and for a deletion those were in the file that
+    was deleted. Recording the **normalised** hash at export time puts the old side in the
+    manifest instead, so a fresh export has something to be compared against. **This limit
+    was found by the integration test, not by review**, and the test that found it now
+    asserts the opposite.
+    - **The design was wrong on first principles and a measurement caught it.** It was going
+      to compare with GUIDs unmasked, because `normalize`'s docstring says masking must be off
+      when comparing two exports of one project. True — across two exports. **Across a round
+      trip CODESYS re-mints GUIDs**: 3 differing lines of 117 in `GlobalTextList.xml`, all
+      three `System.Guid` values. Masked, and the residual risk — a GUID-value-only edit
+      reading as unchanged — is stated in `versio_types.py` rather than glossed.
+    - **Four scenarios against real CODESYS, because a check that refuses everything and one
+      that approves everything both look green from one angle**: a clean native delete
+      (removed), a genuinely edited object judged against the original manifest (kept,
+      `DELETE_CONTENT_CHANGED`), two round trips of churn in between (removed — the raw hash
+      moved and `nhash` did not), and a schema-4 mirror (kept, `DELETE_UNVERIFIABLE`).
   - **`removed` had to go into the `dirty` test**, or a run whose only work was a deletion
     closes without saving and the object comes back. Second time this project has nearly paid
     for that: `partial` exists for the same reason.

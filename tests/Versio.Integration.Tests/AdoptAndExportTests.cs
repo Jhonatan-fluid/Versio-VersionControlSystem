@@ -650,30 +650,40 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
         Assert.True(File.Exists(Path.Combine(afterDelete, RelApp, "Glob_Var.gvl.st")),
             "Glob_Var went missing — the deletion took more than it was asked to");
 
-        // ── three: an object whose export cannot be rebuilt is never deleted ─────────
+        // ── three: a two-file object goes only when BOTH halves check out ────────────
         //
-        // A GVL is two files under one GUID — a declaration and its native XML — and the
-        // manifest's hash for the XML is over exported native bytes. P7 measured a re-export
-        // of an untouched native object changing on every cycle, so hashing a fresh one
-        // proves nothing, and the old bytes are in the file that was just deleted. Whether
-        // the object changed since is therefore unknowable, and unknowable means kept.
+        // A GVL is two files under one GUID — a declaration and its native XML — so this is
+        // the case where the textual and the native checks have to agree before anything is
+        // destroyed. The .gvl.st is rebuilt and compared byte for byte; the .gvl.xml is
+        // re-exported, normalised and compared against the manifest's nhash.
         //
-        // Found by this test rather than by design review: half two originally used the GVL
-        // and reported DELETE_UNVERIFIABLE where DELETE_CONTENT_CHANGED was expected.
+        // THIS ASSERTED THE OPPOSITE UNTIL 2026-08-15, and it was right to. The manifest's
+        // raw hash for a native file is over bytes that churn — P7 measured a re-export of an
+        // untouched native object changing every cycle — and the bytes that would have
+        // settled it were in the file just deleted, so the answer was unknowable and
+        // unknowable meant kept. Schema 5 records the NORMALISED hash at export time, which
+        // is what breaks that circle: the old side now lives in the manifest rather than in
+        // the deleted file.
+        //
+        // The assertion is inverted rather than deleted, because what it guards is the same
+        // thing pointed the other way — that this object's fate is decided by a check and not
+        // by a guess.
         File.Delete(gvl);
         File.Delete(Path.Combine(app, "Glob_Var.gvl.xml"));
 
-        var unverifiable = await TextChanged(orchestrator, binding.Id);
-        output.WriteLine($"import 3 — {unverifiable.Verdict}: {SyncNarrative.Describe(unverifiable)}");
+        var native = await TextChanged(orchestrator, binding.Id);
+        output.WriteLine($"import 3 — {native.Verdict}: {SyncNarrative.Describe(native)}");
 
-        Assert.Equal(SyncVerdict.Completed, unverifiable.Verdict);
-        Assert.Contains(unverifiable.Warnings,
+        Assert.Equal(SyncVerdict.Completed, native.Verdict);
+        Assert.DoesNotContain(native.Warnings,
             w => w.Contains("DELETE_UNVERIFIABLE", StringComparison.Ordinal));
 
-        var afterUnverifiable = await ReExport(install, binding.Id, "verify-native");
+        var afterNative = await ReExport(install, binding.Id, "verify-native");
 
-        Assert.True(File.Exists(Path.Combine(afterUnverifiable, RelApp, "Glob_Var.gvl.st")),
-            "the GVL was deleted on the strength of a check that could not be made");
+        Assert.False(File.Exists(Path.Combine(afterNative, RelApp, "Glob_Var.gvl.st")),
+            "the GVL's declaration survived a deletion that both its halves passed");
+        Assert.False(File.Exists(Path.Combine(afterNative, RelApp, "Glob_Var.gvl.xml")),
+            "the GVL's native half survived a deletion that both its halves passed");
     }
 
     /// <summary>Where the fixture's objects live, relative to a mirror root.</summary>

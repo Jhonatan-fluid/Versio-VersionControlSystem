@@ -188,9 +188,9 @@ stays that way.
 
 | Suite | Count | Time |
 |---|---|---|
-| `Versio.Core.Tests` | 1,419 | under a second |
-| `Versio.App.Tests` | 478 | ~50 s, STA, no window shown |
-| `Versio.Integration.Tests` | 198 | ~10 min, real CODESYS and real git |
+| `Versio.Core.Tests` | 1,451 | under a second |
+| `Versio.App.Tests` | 480 | ~50 s, STA, no window shown |
+| `Versio.Integration.Tests` | 205 | ~10 min, real CODESYS and real git |
 
 A red integration run is worth re-running a project at a time before reading it as a
 regression — it drives real CODESYS with real timeouts.

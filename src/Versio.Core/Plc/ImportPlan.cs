@@ -108,7 +108,13 @@ public sealed record PlannedFile
 /// </param>
 /// <param name="Form">The export form, so the executing side knows how to compare — a textual
 /// file byte for byte, a native one through an equivalence normaliser.</param>
-public sealed record DeletedFile(string Path, string Hash, string Form);
+/// <param name="NormalizedHash">
+/// For a native form, the hash of the normalised payload — the only value a re-export can be
+/// compared against, because the raw bytes churn. Empty on a pre-schema-5 mirror, which is what
+/// makes such a deletion unverifiable rather than assumed unchanged.
+/// </param>
+public sealed record DeletedFile(
+    string Path, string Hash, string Form, string NormalizedHash = "");
 
 /// <summary>
 /// An object the mirror no longer holds any file for.

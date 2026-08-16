@@ -1,15 +1,16 @@
 # Versio — closing the CODESYS import gaps
 
-**Date:** 2026-08-15 · **Phases 0, 4, 1 and 2 are built**, along with `versio_native_equiv.py`,
-the shared prerequisite Phase 5 also needs. **Versio deletes objects now** — G1 is closed for
-textual objects and deliberately refused for native ones, proven against real CODESYS.
-Phase 4 closes G7 and G11; Phase 1 closes G3 and G6 outright, G4's resolution half and G5's
-recorded-object half. All three honesty fixes are done.
+**Date:** 2026-08-15 · **Phases 0, 4, 1 and 2 are built and Phase 2 is COMPLETE**, along with
+`versio_native_equiv.py`, the shared prerequisite Phase 5 also needs. **Versio deletes objects
+now — textual and native alike.** G1 is closed outright: delete a `.st` and the POU goes,
+delete a `.gvl.xml` and the GVL goes, and an object edited in the IDE since the export is kept
+either way. Proven against real CODESYS four ways, including one that makes a real edit and
+demands the deletion be refused. Phase 4 closes G7 and G11; Phase 1 closes G3 and G6 outright,
+G4's resolution half and G5's recorded-object half. All three honesty fixes are done.
 
-**Phase 3 is next** — renames and moves — and nothing blocks it. Phases 5 and 6 follow. Two
-items are open and neither is on the critical path: `TaskCatalog.cs`, so nothing outside python
-can read a `.tasks.yaml`, and the **native content check**, which is why a GVL or a
-visualisation is refused rather than deleted (see [Phase 2](#-the-executing-half-landed-2026-08-15--versio-deletes-things-now)).
+**Phase 3 is next** — renames and moves — and nothing blocks it. Phases 5 and 6 follow. One
+item is open and it is not on the critical path: `TaskCatalog.cs`, so nothing outside python
+can read a `.tasks.yaml`.
 
 > **This header said "nothing in phases 1–6 is built" for the whole of the session that built
 > Phase 4**, while the [build order](#build-order) below it and every G7/G11 row already said
@@ -21,11 +22,20 @@ visualisation is refused rather than deleted (see [Phase 2](#-the-executing-half
 > **Status row two blocks below it still read "phases 2, 3, 5, 6 not started"**. Caught by
 > re-reading the top of the file rather than by a test, because nothing can test this. **The
 > header and the Status row are one claim in two places** — change either and check the other.
+>
+> **It held on the fourth pass**, when Phase 2 was completed: header, Status row, the G1 row
+> and the build order were edited together and checked against each other afterwards. The rule
+> works; it just has to be applied deliberately, because nothing will apply it for you.
+>
+> **And the same failure had already escaped this file into the product.** The confirmation
+> dialog kept saying objects *will stay* for a commit after the script began deleting them —
+> the identical "one claim in two places" defect, in the one place where a stale sentence
+> destroys work rather than misleading a reader.
 
 | | |
 |---|---|
 | Document | **The plan for making the import side a real bidirectional sync.** Deletes, renames, moves, typed task configuration, and a mirror that stops churning after every import |
-| Status | **Phases 0, 4, 1 and 2 done, with all three honesty fixes; phases 3, 5 and 6 not started.** Two gaps closed as unreachable, four API spellings corrected, five live defects fixed — G7 and G11 by Phase 4, G3 and G6 by Phase 1, **G1 by Phase 2 for textual objects**, with G4's resolution half and G5's recorded-object half beside them. The import is **plan-driven end to end**: decided C#-side from the manifest, agreed to before CODESYS starts, refused without a plan, executed by a script that decides nothing — and it now **removes** objects as well as adding them |
+| Status | **Phases 0, 4, 1 and 2 done and Phase 2 complete, with all three honesty fixes; phases 3, 5 and 6 not started.** Two gaps closed as unreachable, four API spellings corrected, six live defects fixed — G7 and G11 by Phase 4, G3 and G6 by Phase 1, **G1 by Phase 2 outright, textual and native**, with G4's resolution half and G5's recorded-object half beside them, and the confirmation dialog corrected after it spent a commit promising the opposite of what an import did. The import is **plan-driven end to end**: decided C#-side from the manifest, agreed to before CODESYS starts, refused without a plan, executed by a script that decides nothing — and it now **removes** objects as well as adding them, saying beforehand which ones will really go |
 | Related | [`CODESYS.md`](CODESYS.md) — how CODESYS is driven today, and §12, the audit these gaps came from · [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) — what was measured · [`PLAN.md`](PLAN.md) — the architecture · [`SAFEGUARDS.md`](SAFEGUARDS.md) — what Versio refuses or waits for |
 
 > **These phase numbers are identifiers, not an order**, and they are **not** `PLAN.md`'s phases —
@@ -52,7 +62,7 @@ amount of reading, because it does not exist on the first cycle.
 
 | | Gap | State after Phase 0 |
 |---|---|---|
-| G1 | **Deletes don't propagate** — delete a `.st`, colleague imports, the POU is still there | ✅ **CLOSED by Phase 2 for textual objects, 2026-08-15**, and **deliberately refused for native ones**. Delete a `.st` and the POU leaves the project; delete a `.gvl.xml` and it does not, because whether that object changed since the export is unknowable — see Phase 2's open half. An object edited in the IDE since is kept either way. P3 is why every rule is a refusal rather than a check: `remove()` dangles silently |
+| G1 | **Deletes don't propagate** — delete a `.st`, colleague imports, the POU is still there | ✅ **CLOSED OUTRIGHT by Phase 2, 2026-08-15, textual and native.** Delete a `.st` and the POU leaves the project; delete a `.gvl.xml` and the GVL leaves it too, because manifest schema 5 records the **normalised** hash of a native payload and a re-export can be compared against that. An object edited in the IDE since is kept either way — measured with a real edit, not a synthetic one. A native object on a pre-schema-5 mirror stays refused until the next export. P3 is why every rule is a refusal rather than a check: `remove()` dangles silently |
 | G2 | **Renames/moves duplicate** — rename in the mirror, a new object is created and the old one kept | Open, and **cleanly solvable**: P1/P2 proved identity survives both operations |
 | G3 | **New object named from the filename** — `create_textual` uses `parts[-1]` and throws away the parsed `info["name"]`, so `PROGRAM Foo` in `Bar.st` creates `Bar` | ✅ **CLOSED by Phase 1, 2026-08-15.** The plan carries the declaration's name and the script takes it; the disagreement is a warning naming both. **Proven live**: a `Bar.st` declaring `PROGRAM Foo` creates `Foo` against real CODESYS, in `ImportLoggingTests` |
 | G4 | **Encoded names unresolvable** — looks up the *encoded* stem against raw names, giving a duplicate named `weird%3Cname%3E` | ✅ **Resolution CLOSED by Phase 1, 2026-08-15**: chains are real decoded names from the manifest, built C#-side where `DecodeStem` lives and is parity-tested. What remains is the shortened-stem residue — a digest tail decodes to nothing, and such an object is reported as unresolvable rather than guessed at. Creation was already unreachable (P5) |
@@ -217,10 +227,12 @@ already exists.**
 | ~~6th~~ | ✅ **The other two honesty fixes.** Landed 2026-08-15 | The uncounted native-import failure, and the import summary logged in the exporter's vocabulary — plus **four import events that had no handler at all**, `task_set` among them, so Versio changing a task's CPU core binding logged as the literal string `· task_set`. Each makes the *next* failure visible instead of silent |
 | ~~7th~~ | ✅ **Phase 1 — manifest-driven importer.** Landed 2026-08-15, both halves: the pure planner behind the seam, then schema 2 and the script executing exactly the plan | The foundation. The walk that inferred everything from file names is deleted, not bypassed — a planless import job now refuses to serialize, so there is no door back to it |
 | ~~8th~~ | ✅ **`versio_native_equiv.py`.** Landed 2026-08-15, with its parity test in the same commit | A shared prerequisite, not a phase. Phase 2's native content check needs it and so does Phase 5 — it was written down as a Phase 5 artifact and is needed earlier. **Moved up from 8th to next for that reason, then built** |
-| ~~9th~~ | ✅ **Phase 2 — deletes.** Landed 2026-08-15 in four commits: the seam, the delete set, the dialog, the executing half | Planned to land with Phase 3 and split from it deliberately. Deletion is the first thing Versio does that destroys work, and the safety argument is entirely its own — five planner preconditions and a content check only the CODESYS process can make. Renames share the detection input, not the risk |
-| **NEXT** | **Phase 3 — renames and moves** | `rename()` and `move(parent, -1)` preserve the GUID, measured. Detection goes in the planner, which already has the manifest, the mirror and the GUID index. Its similarity pass wants `git show HEAD:<path>` — **so does Phase 2's open native content check**, so look at both before adding one |
-| **10th** | **Phase 5 — a mirror that stops churning** | Wants Phases 1–3 settled first, because it changes when files are rewritten and every earlier phase's diffs are easier to read without it |
-| **11th** | **Phase 6 — remaining gaps, tests, docs** | G8 and G9, the parity tests, the integration tests |
+| ~~9th~~ | ✅ **Phase 2 — deletes.** Landed 2026-08-15 in six commits: the seam, the delete set, the dialog, the executing half, the dialog's honesty, the native half | Planned to land with Phase 3 and split from it deliberately. Deletion is the first thing Versio does that destroys work, and the safety argument is entirely its own — five planner preconditions and a content check only the CODESYS process can make. Renames share the detection input, not the risk |
+| ~~10th~~ | ✅ **The dialog corrected.** Landed 2026-08-15 | **Not planned — found by re-reading the executing half as if somebody else had written it.** The script grew `remove()` and no sentence moved, so the confirmation dialog told people their objects would stay and then deleted them. Same shape as the 2nd row: a live defect introduced by the commit that had just landed. See the finding in [`STATUS.md`](STATUS.md) |
+| ~~11th~~ | ✅ **The native content check — Phase 2's open half.** Landed 2026-08-15, manifest schema 5 | It went before Phase 3 because it makes deletion **whole** rather than a feature that works on 2 of the fixture's 13 objects, and because the alternative design would have dragged git into the script to serve a phase that had not been written yet. Verified four ways against real CODESYS, including a falsification case |
+| **NEXT** | **Phase 3 — renames and moves** | `rename()` and `move(parent, -1)` preserve the GUID, measured. Detection goes in the planner, which already has the manifest, the mirror and the GUID index. **It splits**: exact-content-match detection needs no git at all, and only the rename-and-edit similarity pass wants `git show HEAD:<path>`. The shared-prerequisite argument for that is gone — the native check took the other option, so `ShowAtHeadAsync` has exactly one consumer |
+| **12th** | **Phase 5 — a mirror that stops churning** | Wants Phases 1–3 settled first, because it changes when files are rewritten and every earlier phase's diffs are easier to read without it |
+| **13th** | **Phase 6 — remaining gaps, tests, docs** | G8 and G9, the parity tests, the integration tests |
 
 ### The three honesty fixes — all three done
 
@@ -554,13 +566,13 @@ set *mean* anything, and **P3 makes them the only protection there is**:
     bytes* (`versio_export.py:183`), so checking a live object against it means exporting that
     object again — and P7 measured that re-export changing every cycle with nothing edited. A byte
     check would refuse every native deletion forever, for a reason with nothing to do with the
-    object. ~~**The native half compares through `versio_native_equiv.py`.**~~
-    - ⛔ **This is the one thing Phase 2 planned and did not deliver, and the plan was
-      incomplete rather than unbuilt.** An equivalence comparison needs *two* payloads, and
-      the second one — what the object looked like at the last export — lives in the mirror
-      file that was just deleted. `versio_native_equiv` is the right instrument with nothing
-      to point at. A native deletion is therefore **refused**, not attempted; the two ways
-      out are in [the executing half](#-the-executing-half-landed-2026-08-15--versio-deletes-things-now).
+    object. **The native half compares through `versio_native_equiv.py`.**
+    - ✅ **CLOSED 2026-08-15 by recording the comparison form at export time** — option (1) of
+      the two that were written up. An equivalence comparison needs *two* payloads and the
+      second one lived in the file that was just deleted; the manifest now carries it, as
+      `nhash`, so the fresh export has something to point at. **Schema 5, additive**: no
+      existing mirror is invalidated and no committed file changed shape — regenerating this
+      repository's own mirror touched `_manifest.json` and nothing else.
 - A GVL is two files under one GUID: delete only when **every** file for that GUID is gone.
 
 **Confirmation:** extend `PendingImportDetail` in `SyncViewModel` to name each deletion —
@@ -708,27 +720,74 @@ one test (`An_object_whose_file_is_deleted_leaves_the_project_and_an_edited_one_
 - **`removed` is logged at Info, near the front of the summary.** It is the one line in an
   import that records work leaving a project.
 
-> **⛔ Native objects are refused, and this is the open half of Phase 2.** `exported_text_of`
-> can rebuild a textual export and nothing else, so a GVL, a visualisation or any `NATIVE` form
-> gets `DELETE_UNVERIFIABLE` and is kept. The reason is the one Phase 2 always knew about,
-> reaching further than expected: the manifest's hash is over exported native bytes, P7
-> measured a re-export of an untouched native object changing every cycle, and comparing
-> through `versio_native_equiv` needs the **old bytes** — which are in the file that was
-> deleted. Two ways out, neither taken yet:
->
-> 1. **Record a normalised hash at export time**, so a fresh export can be normalised and
->    compared without the old bytes. Additive to the manifest, needs a re-export before native
->    deletions work on any existing mirror — the same "unavailable until the next export"
->    shape the planner already uses.
-> 2. **Fetch the old bytes from `git show HEAD:<path>`**, which Phase 3 needs anyway for
->    rename-and-edit. Works only for a mirror that was committed.
->
-> **(1) is the cleaner of the two** and does not drag git into the script. It was not decided
-> here because it changes the manifest, and that deserves its own change rather than riding
-> along with the first commit that deletes anything.
+> ~~**⛔ Native objects are refused, and this is the open half of Phase 2.**~~ — ✅ **closed
+> 2026-08-15**, by option (1): **record a normalised hash at export time**, so a fresh export
+> can be normalised and compared without the old bytes. Option (2), fetching them from
+> `git show HEAD:<path>`, was rejected — it works only for a committed mirror and drags git
+> into a script that has no business knowing about it. See the section below.
 >
 > **This limit was found by the test, not by design review.** The refusal case originally used
 > the GVL and reported `DELETE_UNVERIFIABLE` where `DELETE_CONTENT_CHANGED` was expected.
+
+### ✅ The native half, landed 2026-08-15 — a GVL and a visualisation are deleted now
+
+The manifest records `nhash` beside `hash` for every native record — `content_hash` over the
+`versio_native_equiv`-normalised payload — and the delete check re-exports the live object,
+normalises it the same way, and compares. **Manifest schema 5.** It closes G1 outright.
+
+**Why the raw hash cannot be used, measured rather than argued.** Three export/import round
+trips of the fixture with nothing edited: **4 native files came back byte-different every
+time**, and their normalised form did not move at all. `hash` is over the bytes on disk, so a
+re-export never reproduces it and a comparison against it would refuse every native deletion
+forever, for a reason with nothing to do with the object.
+
+> **GUIDs are masked, and that is the subtle decision in this whole change.**
+> `versio_native_equiv.normalize` says masking must be **off** when comparing two exports of
+> the same project, because GUIDs are stable across exports — and that is true: two exports
+> into two empty directories are byte-identical, measured. **But this is not that comparison.**
+> The recorded hash and the fresh export are separated by however many round trips have
+> happened since, and **across a round trip CODESYS re-mints GUIDs**: measured on
+> `GlobalTextList.xml`, exactly **3 differing lines out of 117, all three `System.Guid`
+> values** — `GuidInit`, `GuidReInit`, `GuidExitX`. That is the round-trip case the docstring
+> says masking is *required* for. An unmasked hash was the first design here and the
+> measurement killed it before any code was written on top of it.
+>
+> **What it costs, stated rather than glossed.** An edit that changes GUID *values* and
+> nothing else would read as unchanged. Masking is positional — each GUID becomes
+> `<masked-guid>`, so an added or removed one still shows — and no realistic IDE edit changes
+> only the value of an existing GUID. It is the one way this check can be wrong, and being
+> wrong here destroys work nothing else holds a copy of.
+
+**Absent is not "unchanged".** A schema-4 manifest has no `nhash` because nothing wrote one,
+and reading that as agreement would delete work on every mirror exported before today. A native
+object without one stays unverifiable, and the dialog says *"export the project again and this
+will resolve itself"* — the same shape the planner already uses for a manifest below the
+reporting schema.
+
+**Verified against real CODESYS 3.5.22.20, four ways**, because a check that refuses everything
+and a check that approves everything both look like a passing test from one angle:
+
+| | Scenario | Expected | Result |
+|---|---|---|---|
+| A | export, delete the `.vis.xml`, import | removed | ✅ removed |
+| B | **edit the object through the mirror, then delete and judge against the original manifest** | kept, `DELETE_CONTENT_CHANGED` | ✅ kept |
+| C | **two round trips of churn, then delete against the original manifest** | removed | ✅ removed, raw hash moved and `nhash` did not |
+| D | strip `nhash` to simulate a schema-4 mirror | kept, `DELETE_UNVERIFIABLE` | ✅ kept |
+
+**B is the falsification test and the one that matters.** Masking GUIDs is what makes C work,
+and a masker that also hid a real edit would delete work while reporting success. The edit is a
+font name — `Arial` → `Courier New`, neither a GUID nor a counter — applied through the real
+import path, and the check still refuses. **C is what the design rests on**: the recorded hash
+has to survive the project being saved and reopened arbitrarily often, because that is the
+normal life of a project between an export and somebody deleting a file.
+
+**`TASK_BOTH` is still refused**, deliberately. Its `.tasks.yaml` is rendered through the typed
+task API rather than read off the object, and a task configuration is the one object whose
+accidental removal takes every task with it. An untested branch that says so is honest.
+
+The re-export writes to the **system temp directory, not the mirror**: the mirror is a git
+working tree with a watcher on it, and a check that exists to observe the project has no
+business raising a change event in it.
 
 **Script:** `obj.remove()` for exactly the planned deletions, emitting `{"t":"removed"}` — the event
 `versio_delete_objects.py` already uses.
@@ -850,15 +909,21 @@ SyncViewModel decides the plan ─► asks ─► SyncJob.Plan ─► PlcProject
 
 1. **Phase 3 — renames and moves.** Detection goes in the planner, which already has the
    manifest, the mirror and the GUID index; `rename()` and `move(parent, -1)` preserve the
-   GUID, measured. Phase 3's similarity pass wants `git show HEAD:<path>`, which is also
-   option (2) for the native content check below — **look at both before choosing**, because
-   one `IGitClient.ShowAtHeadAsync` may serve them both.
-2. **The native content check**, which is the open half of Phase 2 and the reason a GVL or a
-   visualisation is refused rather than deleted. Two ways out are written up in Phase 2's
-   section; **(1), a normalised hash recorded at export time, is the cleaner one** and does not
-   drag git into the script.
-3. **Phase 5, then Phase 6.**
-4. **Still open from Phase 4:** `TaskCatalog.cs`, the C# reader. **Land it with the panel
+   GUID, measured.
+   - **It splits, and the first half needs no git at all.** Detection step 1 (exact content
+     match — a Create candidate whose hash equals a Delete candidate's manifest hash) and
+     step 3 (unmatched → Delete + Create) are pure planner work over data already in the
+     manifest, and step 1 covers rename-without-editing, which is most renames. Only step 2,
+     the rename-and-edit similarity pass, wants `git show HEAD:<path>`.
+   - **The shared-prerequisite argument for it is gone.** It used to be worth pairing with
+     option (2) for the native content check; the check took option (1) instead, so
+     `ShowAtHeadAsync` now has exactly one consumer. Do not adopt (2) to justify sharing.
+   - `IGitClient` has **no** `ShowAtHeadAsync` today — checked, all 40-odd members. Only
+     `DetectRenamesAsync`, which runs `git diff HEAD` and so cannot see an untracked rename
+     target.
+2. **Phase 5, then Phase 6.** Phase 5 has its prerequisite already: `versio_native_equiv`, and
+   now also the proof that normalisation is stable across round trips.
+3. **Still open from Phase 4:** `TaskCatalog.cs`, the C# reader. **Land it with the panel
    change that consumes it**, not before — a reader with no production caller is a
    specification pretending to be code, which is exactly what `DecodeStem` and
    `StDeclarationParser` were until the planner became their first caller.
@@ -880,6 +945,16 @@ SyncViewModel decides the plan ─► asks ─► SyncJob.Plan ─► PlcProject
   `scriptengine` at module level, so none of the delete path can be loaded under CPython — no
   parity test, no unit test, nothing but real CODESYS. The native-refusal limit was found by
   that test rather than by review.
+  - **The fix for that is to put the rule where CPython can reach it.** `CAN_VERIFY_FORMS`
+    and `can_verify` live in `versio_types.py`, which is pure, so the planner's copy of the
+    rule can be compared against the real one without CODESYS. A rule that lives in
+    `versio_import.py` is a rule nothing can compare.
+- **Measure the premise before building on it, and measure the right thing.** The native check
+  was designed with GUIDs unmasked, on the strength of `normalize`'s own docstring saying
+  GUIDs are stable across exports. They are — across two exports. **Across a round trip they
+  are not**, and the first measurement taken was of two exports into empty directories, which
+  is the determinism gate and shows no churn at all. The design was wrong for one measurement
+  and right for the next; both took ten minutes and neither cost any code.
 
 **What to be careful of, learned building `versio_native_equiv.py`:** a parity test can be
 green and watching nothing. Two of its rules — the ordinal sort key and the container table's

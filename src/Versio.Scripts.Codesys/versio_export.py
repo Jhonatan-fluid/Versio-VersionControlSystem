@@ -26,10 +26,11 @@ from versio_types import (EXPORT_ONLY_FORMS, FORM_CONTAINER,  # noqa: E402
                           FORM_GVL_BOTH, FORM_LIBRARIES,
                           FORM_NATIVE, FORM_NATIVE_R, FORM_NATIVE_WITH_CHILDREN,
                           FORM_SKIP, FORM_ST_DECL, FORM_ST_FULL, FORM_ST_IMPL,
-                          FORM_TASK_BOTH, FORM_TASK_NATIVE, SKIP_EXPLANATION,
-                          SKIP_GAP, decide_form,
+                          FORM_TASK_BOTH, FORM_TASK_NATIVE, NATIVE_FORMS,
+                          SKIP_EXPLANATION, SKIP_GAP, decide_form,
                           descends_into_children, file_name_for, skip_reason,
                           type_of)
+from versio_native_equiv import normalize  # noqa: E402
 import versio_libraries  # noqa: E402
 import versio_tasks  # noqa: E402
 import versio_yaml  # noqa: E402
@@ -193,6 +194,30 @@ class Exporter(object):
             "hash": h,
             "bytes": len(text.encode("utf-8")),
         }
+
+        # A second hash for native payloads, over the NORMALISED form - schema 5.
+        #
+        # `hash` above is over the bytes on disk, and for a native file those churn: three
+        # export/import round trips of the fixture with nothing edited came back
+        # byte-different on 4 of them every time. That makes `hash` useless for the one
+        # question a delete has to answer - "is the live object still what was exported?" -
+        # because a re-export never reproduces it. Comparing through versio_native_equiv
+        # would settle it, but it needs the OLD bytes, and for a deletion those were in the
+        # file that was just deleted. Recording the comparison form HERE is what breaks that
+        # circle: the old side is in the manifest, so the fresh export has something to be
+        # compared against.
+        #
+        # Additive, and deliberately so. A pre-schema-5 mirror simply has no nhash, and
+        # can_verify answers False for its native objects - the same "unavailable until the
+        # next export" shape the planner already uses. No existing mirror is invalidated and
+        # no committed file changes shape.
+        #
+        # mask_guids is left at its default of True, and that is the load-bearing choice: see
+        # the note above NATIVE_FORMS in versio_types.py. Across a round trip CODESYS re-mints
+        # GUIDs, measured as 3 differing lines of 117 in GlobalTextList.xml and all three
+        # System.Guid values, so an unmasked hash would refuse those deletions forever.
+        if form in NATIVE_FORMS:
+            rec["nhash"] = content_hash(normalize(text)[0])
 
         # Omitted rather than written empty, so a top-level object's record is
         # byte-identical to what schema 3 wrote. An export that changed every line
@@ -666,7 +691,14 @@ def main():
         # owns it. A schema-3 manifest carries no parents at all, which is why the
         # reader falls back to the flat shape rather than treating "no parents" as
         # "nothing is a member".
-        "schema": 4,
+        #
+        # 5: a native record carries "nhash", the hash of its NORMALISED payload,
+        # beside the raw one. Same ambiguity as every bump above, and the reason
+        # the field cannot simply be read optimistically: on a schema-4 manifest a
+        # native object with no nhash means nobody was writing them yet, and its
+        # deletion has to stay refused. Reading "absent" as "unchanged" would
+        # delete work on every mirror exported before today.
+        "schema": 5,
         "bindingId": job.get("bindingId", ""),
         "project": os.path.basename(job["project"]),
         "objectCount": len(ex.records),

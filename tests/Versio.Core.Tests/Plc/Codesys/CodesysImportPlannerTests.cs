@@ -394,6 +394,68 @@ public class CodesysImportPlannerTests
     // below is not belt-and-braces — it is the only thing between a stale mirror and somebody
     // losing work. Each has its own test for that reason.
 
+    // ── Which deletions the dialog may promise ─────────────────────────────────
+    //
+    // CannotVerify is what the confirmation dialog reads to decide between "will be removed"
+    // and "will stay", so a wrong answer here is a lie in front of somebody about to destroy
+    // work. It is a prediction of the script's own refusal; PythonFileNameParityTests is what
+    // says the two agree.
+
+    [Fact]
+    public void A_textual_deletion_is_promised_because_its_file_can_be_rebuilt()
+    {
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(Obj("App/Gone.st", "Gone", "POU", "ST_FULL", guid: "g1")),
+            []);
+
+        Assert.Null(Assert.Single(plan.Deletions).CannotVerify);
+    }
+
+    [Fact]
+    public void A_native_deletion_is_promised_once_the_export_recorded_a_normalised_hash()
+    {
+        // Schema 5. The raw hash is over bytes that churn between exports, so nhash is the
+        // only thing a re-export can be compared against — and recording it is what closed
+        // Phase 2's open half.
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(Obj("App/Visu.vis.xml", "Visu", "VISUALISATION", "NATIVE", guid: "g1")
+                with { Hash = "sha256:raw", NormalizedHash = "sha256:norm" }),
+            []);
+
+        Assert.Null(Assert.Single(plan.Deletions).CannotVerify);
+    }
+
+    [Fact]
+    public void A_native_deletion_from_a_pre_schema_5_mirror_is_refused_and_says_what_to_do()
+    {
+        // Absent is NOT "unchanged". Every mirror exported before 2026-08-15 has no nhash,
+        // and reading that as agreement would delete work on all of them.
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(Obj("App/Visu.vis.xml", "Visu", "VISUALISATION", "NATIVE", guid: "g1")
+                with { Hash = "sha256:raw" }),
+            []);
+
+        var why = Assert.Single(plan.Deletions).CannotVerify;
+        Assert.NotNull(why);
+        Assert.Contains("export the project again", why, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void One_unverifiable_file_holds_back_the_whole_object()
+    {
+        // A GVL is two files under one GUID and the script refuses on the FIRST it cannot
+        // check, so a per-file answer here would promise removal for an object its second
+        // file keeps. Verified by giving the native half no nhash while the textual half is
+        // perfectly checkable.
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(
+                Obj("App/G.gvl.st", "G", "GVL", "ST_DECL", guid: "g1"),
+                Obj("App/G.gvl.xml", "G", "GVL", "NATIVE", guid: "g1")),
+            []);
+
+        Assert.NotNull(Assert.Single(plan.Deletions).CannotVerify);
+    }
+
     [Fact]
     public void An_object_whose_only_file_has_gone_is_proposed_for_deletion()
     {

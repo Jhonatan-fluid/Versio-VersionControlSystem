@@ -864,20 +864,26 @@ public sealed class PythonFileNameParityTests(ITestOutputHelper output)
         // Every importable form the exporter can record. The two export-only forms are
         // deliberately absent: PlanDeletions drops them before verifiability is asked, because
         // a file rewritten by every export and applied by nothing is not evidence of anything.
-        string[] forms =
+        // Each form twice: once with a recorded normalised hash and once without. The second
+        // half is not padding — it is the whole of the schema-5 condition, and a corpus of
+        // forms alone would have both sides answering from the form and agreeing about a rule
+        // neither was applying.
+        (string Form, string NHash)[] cases =
         [
-            "ST_FULL", "ST_DECL", "ST_IMPL",
-            "NATIVE", "NATIVE_R", "NATIVE_WITH_CHILDREN",
-            "TASK_BOTH",
+            ("ST_FULL", ""), ("ST_DECL", ""), ("ST_IMPL", ""),
+            ("NATIVE", ""), ("NATIVE_R", ""), ("NATIVE_WITH_CHILDREN", ""),
+            ("NATIVE", "sha256:n"), ("NATIVE_R", "sha256:n"),
+            ("NATIVE_WITH_CHILDREN", "sha256:n"),
+            ("TASK_BOTH", ""), ("TASK_BOTH", "sha256:n"),
         ];
 
         var manifest = new ProjectManifest
         {
             Schema = ExportCoverage.CurrentSchema,
-            Objects = [.. forms.Select((f, i) => new ProjectObject
+            Objects = [.. cases.Select((c, i) => new ProjectObject
             {
-                Guid = $"g{i}", Name = f, Type = "POU", Form = f,
-                Path = $"App/{f}.bin", Hash = "sha256:0",
+                Guid = $"g{i}", Name = $"{c.Form}#{i}", Type = "POU", Form = c.Form,
+                Path = $"App/{c.Form}{i}.bin", Hash = "sha256:0", NormalizedHash = c.NHash,
             })],
         };
 
@@ -888,11 +894,18 @@ public sealed class PythonFileNameParityTests(ITestOutputHelper output)
         var fromPlanner = plan.Deletions
             .ToDictionary(d => d.Name, d => d.CannotVerify is null, StringComparer.Ordinal);
 
-        var csharp = forms.Select(f => $"{f}={fromPlanner[f]}").ToList();
+        var csharp = cases
+            .Select((c, i) => $"{c.Form}/{(c.NHash.Length > 0 ? "nhash" : "none")}"
+                              + $"={fromPlanner[$"{c.Form}#{i}"]}")
+            .ToList();
 
-        var python = RunPython(JsonSerializer.Serialize(forms), """
+        var python = RunPython(
+            JsonSerializer.Serialize(cases.Select(c => new { form = c.Form, nhash = c.NHash })),
+            """
             import versio_types
-            out = ["%s=%s" % (f, versio_types.can_verify(f)) for f in payload]
+            out = ["%s/%s=%s" % (c["form"], "nhash" if c["nhash"] else "none",
+                                 versio_types.can_verify(c["form"], c["nhash"]))
+                   for c in payload]
             """);
 
         foreach (var line in csharp)
@@ -902,10 +915,13 @@ public sealed class PythonFileNameParityTests(ITestOutputHelper output)
 
         Assert.Equal(csharp, python);
 
-        // And the corpus is not vacuous in either direction — a rule that answered the same
-        // way for everything would pass the comparison above while checking nothing.
-        Assert.Contains("ST_FULL=True", csharp);
-        Assert.Contains("NATIVE=False", csharp);
+        // And the corpus is not vacuous in any direction — a rule that answered the same way
+        // for everything would pass the comparison above while checking nothing. All three
+        // outcomes are asserted: always-yes, yes-only-with-a-hash, and never.
+        Assert.Contains("ST_FULL/none=True", csharp);
+        Assert.Contains("NATIVE/none=False", csharp);
+        Assert.Contains("NATIVE/nhash=True", csharp);
+        Assert.Contains("TASK_BOTH/nhash=False", csharp);
     }
 
     private static string Sha256(string text) =>

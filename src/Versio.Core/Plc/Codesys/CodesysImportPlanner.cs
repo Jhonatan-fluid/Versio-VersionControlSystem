@@ -278,7 +278,7 @@ public static class CodesysImportPlanner
                 Resolve = ResolveKnown(identity.Path, identity, byGuid, warnings),
                 Files = [.. gone
                     .OrderBy(o => o.Path, StringComparer.Ordinal)
-                    .Select(o => new DeletedFile(o.Path, o.Hash, o.Form))],
+                    .Select(o => new DeletedFile(o.Path, o.Hash, o.Form, o.NormalizedHash))],
                 CannotVerify = WhyUnverifiable(gone),
             });
         }
@@ -305,6 +305,13 @@ public static class CodesysImportPlanner
     /// the same shape or the dialog would promise removal for an object held back by its
     /// second file.
     /// </para>
+    /// <para>
+    /// <b>Textual and native are checked against different things.</b> A textual file is
+    /// rebuilt and compared byte for byte; a native one is re-exported, normalised, and
+    /// compared against <see cref="ProjectObject.NormalizedHash"/>, which exists only from
+    /// manifest schema 5. That is the whole of the native condition — the raw hash is over
+    /// bytes that churn between exports and cannot stand in for it.
+    /// </para>
     /// </remarks>
     private static string? WhyUnverifiable(List<ProjectObject> gone)
     {
@@ -319,14 +326,21 @@ public static class CodesysImportPlanner
 
             if (NativeForms.Contains(file.Form, StringComparer.Ordinal))
             {
-                // The whole of Phase 2's open half, in one sentence. The manifest's hash is
-                // over the exported native bytes and a re-export of an untouched object does
-                // not reproduce them, so there is nothing here to compare a live object
-                // against — and the bytes that would settle it were in the file that was
-                // deleted.
-                return "The export recorded no hash that a native object can be compared "
-                    + "against, so whether it changed in the IDE since is unknowable and "
-                    + "Versio will not guess";
+                if (!string.IsNullOrEmpty(file.NormalizedHash))
+                {
+                    // Schema 5 and later: the manifest carries the normalised payload's hash,
+                    // so the script can re-export the live object, normalise it the same way
+                    // and compare. This is what closed Phase 2's open half.
+                    continue;
+                }
+
+                // Exported before Versio recorded one. The raw hash cannot stand in: it is
+                // over bytes that churn between exports, so comparing a re-export against it
+                // would refuse this deletion for a reason with nothing to do with the object.
+                // Says what to do about it, because there is something.
+                return "It was exported before Versio recorded a comparable hash for native "
+                    + "objects, so whether it changed in the IDE since is unknowable — "
+                    + "export the project again and this will resolve itself";
             }
 
             // TASK_BOTH is the only form left that reaches here, and its .tasks.yaml is

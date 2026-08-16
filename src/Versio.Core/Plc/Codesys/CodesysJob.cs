@@ -208,6 +208,10 @@ public sealed record CodesysJob
                     Files = [.. d.Files.Select(f => new DeletedFileDto
                     {
                         Path = f.Path, Hash = f.Hash, Form = f.Form,
+
+                        // Null rather than "" so WhenWritingNull drops it: a pre-schema-5
+                        // mirror then produces byte-for-byte the job file it always did.
+                        NormalizedHash = f.NormalizedHash.Length == 0 ? null : f.NormalizedHash,
                     })],
                 })],
             Files = [.. plan.Files.Select(f => new PlanFileDto
@@ -268,6 +272,16 @@ public sealed record CodesysJob
         [JsonPropertyName("hash")] public string Hash { get; set; } = "";
 
         [JsonPropertyName("form")] public string Form { get; set; } = "";
+
+        /// <summary>
+        /// For a native form, the hash of the normalised payload — what the script compares a
+        /// re-export against, because the raw bytes churn between exports.
+        /// </summary>
+        /// <remarks>
+        /// Omitted when empty, so a pre-schema-5 mirror produces the same job file it always
+        /// did and the script's <c>can_verify</c> refuses the deletion on its absence.
+        /// </remarks>
+        [JsonPropertyName("nhash")] public string? NormalizedHash { get; set; }
     }
 }
 

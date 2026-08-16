@@ -47,6 +47,33 @@ public sealed record ProjectObject
     [JsonPropertyName("parent")] public string Parent { get; init; } = string.Empty;
 
     [JsonPropertyName("hash")] public string Hash { get; init; } = string.Empty;
+
+    /// <summary>
+    /// For a native payload, the hash of its <b>normalised</b> form. Empty before schema 5,
+    /// and empty for every non-native record.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="Hash"/> is over the bytes on disk, and for a native file those churn: three
+    /// export/import round trips of the fixture with nothing edited came back byte-different
+    /// on four of them every time. So <see cref="Hash"/> cannot answer the one question a
+    /// deletion has to ask — is the live object still what was exported? — because a
+    /// re-export never reproduces it.
+    /// </para>
+    /// <para>
+    /// <b>Recording the comparison form is what breaks the circle.</b> Comparing through
+    /// <c>versio_native_equiv</c> needs both payloads, and for a deletion the old one was in
+    /// the file that was just deleted. Keeping it in the manifest means the fresh export has
+    /// something to be compared against.
+    /// </para>
+    /// <para>
+    /// <b>Empty is not "unchanged".</b> A schema-4 manifest has no <c>nhash</c> because
+    /// nothing wrote one, and reading that as agreement would delete work on every mirror
+    /// exported before 2026-08-15. A native object without one stays unverifiable until the
+    /// project is exported again.
+    /// </para>
+    /// </remarks>
+    [JsonPropertyName("nhash")] public string NormalizedHash { get; init; } = string.Empty;
     [JsonPropertyName("bytes")] public long Bytes { get; init; }
 }
 
