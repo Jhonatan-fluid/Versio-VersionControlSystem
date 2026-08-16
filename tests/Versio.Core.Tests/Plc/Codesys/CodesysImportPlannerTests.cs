@@ -588,6 +588,37 @@ public class CodesysImportPlannerTests
     }
 
     [Fact]
+    public void A_POU_whose_file_stem_changed_but_whose_name_did_not_is_updated_not_rebuilt()
+    {
+        // `Old.st` gone, `Old_2.st` arrived, both declaring PROGRAM Old with the same body but
+        // an edited declaration. Nothing moved and nothing was renamed — so the object must be
+        // UPDATED, not destroyed and rebuilt under the same name with a new GUID. The code
+        // used to let the deletion and the create both stand here, under a comment claiming it
+        // did the opposite.
+        var body = "MotorOn := TRUE;";
+        var old = $"PROGRAM Old\nVAR\nEND_VAR\n{StTextCodec.ImplementationDelimiter}\n{body}";
+        var edited = $"PROGRAM Old\nVAR\n  x: INT;\nEND_VAR\n"
+                     + $"{StTextCodec.ImplementationDelimiter}\n{body}";
+
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(Obj("App/Old.st", "Old", "POU", "ST_FULL", guid: "g1")
+                with
+                {
+                    Hash = HashOf(old),
+                    ImplementationHash = HashOf(StTextCodec.Split(old).Implementation),
+                }),
+            [File("App/Old_2.st", edited)]);
+
+        Assert.Empty(plan.Renames);
+        Assert.Empty(plan.Deletions);
+
+        var applied = One(plan, "App/Old_2.st");
+        Assert.Equal(PlannedAction.ApplyText, applied.Action);
+        Assert.Equal("g1", applied.Guid);
+        Assert.Equal(["App", "Old"], applied.Resolve);
+    }
+
+    [Fact]
     public void Two_POUs_sharing_a_body_are_refused_which_is_what_makes_an_empty_body_safe()
     {
         // Half the POUs in a project have an empty or near-identical body, so the weaker

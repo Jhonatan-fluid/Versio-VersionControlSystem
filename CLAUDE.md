@@ -196,7 +196,7 @@ stays that way.
 
 | Suite | Count | Time |
 |---|---|---|
-| `Versio.Core.Tests` | 1,471 | under a second |
+| `Versio.Core.Tests` | 1,472 | under a second |
 | `Versio.App.Tests` | 480 | ~50 s, STA, no window shown |
 | `Versio.Integration.Tests` | 207 | ~10 min, real CODESYS and real git |
 

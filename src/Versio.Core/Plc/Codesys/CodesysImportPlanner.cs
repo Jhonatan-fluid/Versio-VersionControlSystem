@@ -434,9 +434,26 @@ public static class CodesysImportPlanner
             if (!proposed.IsRename && !proposed.IsMove)
             {
                 // Same body, same name, same owner, and yet the whole-file hash did not match:
-                // the DECLARATION changed and nothing else. That is an ordinary edit to an
-                // object that never moved, so there is nothing structural to do and the file
-                // is left to be applied as the update it is.
+                // the DECLARATION changed and the file's STEM changed, without the object's
+                // name changing. `Old.st` gone and `Old_2.st` arrived, both declaring
+                // `PROGRAM Old`.
+                //
+                // There is nothing structural to do — but leaving it here would be the worst
+                // of the three outcomes. `continue` would let the deletion stand AND the create
+                // stand, destroying the object and rebuilding it under the same name with a new
+                // GUID, for an edit that never moved or renamed anything. This comment used to
+                // say the file was "left to be applied as the update it is", which is what the
+                // code should have done and did not.
+                //
+                // So the deletion is withdrawn and the arrival is applied to the object where
+                // it already lives.
+                matched.Add(deletion);
+                files[arrival.Index] = arrival.File with
+                {
+                    Action = PlannedAction.ApplyText,
+                    Guid = deletion.Guid,
+                    Resolve = deletion.Resolve,
+                };
                 continue;
             }
 
