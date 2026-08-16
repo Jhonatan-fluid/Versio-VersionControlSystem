@@ -227,6 +227,12 @@ class Importer(object):
         self.kept = 0
         self.warnings = []
 
+        # Why the last native re-export failed, so the ONE warning the caller emits can carry
+        # the toolchain's own words. Initialised here rather than relied on being set by the
+        # path that writes it: IronPython raises AttributeError on an unset attribute, and
+        # that would turn a refusal-with-an-explanation into a fatal.
+        self.reexport_error = None
+
     def warn(self, code, path, detail=None):
         self.warnings.append({"code": code, "path": path, "detail": detail})
         emit({"t": "warning", "code": code, "path": path, "detail": detail})
@@ -724,7 +730,8 @@ class Importer(object):
                 if live is None:
                     return ("DELETE_UNREADABLE",
                             "its %s file could not be re-exported from the live object, so "
-                            "the deletion cannot be checked" % form)
+                            "the deletion cannot be checked: %s"
+                            % (form, self.reexport_error or "no reason reported"))
                 compare_to = nrecorded
             else:
                 live = self.exported_text_of(obj, form)
@@ -783,9 +790,14 @@ class Importer(object):
                 if os.path.isfile(tmp):
                     os.remove(tmp)
         except Exception as e:
-            self.warn("DELETE_REEXPORT_FAILED", safe(lambda: obj.get_name(), ""), str(e))
+            # Recorded, NOT warned about here. The caller turns this into one
+            # DELETE_UNREADABLE carrying this text: warning twice for one event would put two
+            # lines in front of somebody for a single refusal, and the more informative of the
+            # two would be the one the summary did not count.
+            self.reexport_error = str(e)
             return None
 
+        self.reexport_error = None
         scrubbed, _ = scrub_native_xml(raw)
         return normalize(scrubbed)[0]
 

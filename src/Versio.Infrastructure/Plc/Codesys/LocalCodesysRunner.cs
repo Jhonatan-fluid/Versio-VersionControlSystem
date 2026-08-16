@@ -120,9 +120,28 @@ public sealed class LocalCodesysRunner(
                     .Where(p => !string.IsNullOrEmpty(p))
                     .Select(p => p!),
             ],
+            // Code, subject, and THE REASON — which used to be dropped here.
+            //
+            // The scripts have always emitted a `detail` explaining the warning, and this
+            // projection took only the code and the path, so the log and the UI both read
+            // "DELETE_UNVERIFIABLE: Diagnosis" and the sentence saying why went nowhere. That
+            // is a silent failure of the kind that is worse than a missing log line: the
+            // warning is present, looks complete, and answers nothing. It mattered least when
+            // warnings meant "an object was skipped" and most now that they mean "Versio
+            // declined to delete this, and here is what would change that".
+            //
+            // Turned into a sentence HERE rather than upstream because this is the adapter:
+            // SyncOrchestrator.LogWarnings documents that nothing above it knows what a
+            // CODESYS warning code looks like, and that stays true.
             Warnings =
             [
-                .. result.Output.Warnings.Select(w => $"{w.String("code")}: {w.String("path")}"),
+                .. result.Output.Warnings.Select(w =>
+                {
+                    var head = $"{w.String("code")}: {w.String("path")}";
+                    return w.String("detail") is { Length: > 0 } detail
+                        ? $"{head} — {detail}"
+                        : head;
+                }),
             ],
         };
     }

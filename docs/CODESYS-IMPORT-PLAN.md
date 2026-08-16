@@ -691,6 +691,16 @@ when the object will really go, a sentence when it will really stay — and `Imp
 emits one sentence per outcome, the second grouped by reason so *"export again"* is only
 suggested where it would help.
 
+> **The vendor seam decided the shape of this, not convenience.** Which deletions can be
+> checked is a question only a vendor's planner can answer — the forms, the hashes and the
+> toolchain's own limits are all its business — so `CannotVerify` crosses the seam as **opaque
+> prose**, and `ImportNarrative` groups by it without ever inspecting a form. The alternative,
+> a `Verifiable` bool plus form knowledge in `Sync/`, would have put CODESYS's form table in
+> the one namespace the README promises a second vendor never has to touch. **A Siemens or
+> Rockwell planner changes nothing in `Sync/`**, which is the test. `VendorSeamTests` cannot
+> catch this class on its own — it reads type signatures, and a `string` is a `string` — so it
+> is stated here.
+
 > **The two sides now share an authority.** `CAN_VERIFY_FORMS` lives in `versio_types.py`, is
 > mirrored by `CodesysImportPlanner.WhyUnverifiable`, and the two are compared by output in
 > `PythonFileNameParityTests` — verified red by adding `FORM_NATIVE` to the python list. It is

@@ -616,6 +616,17 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
         Assert.Contains(refused.Warnings,
             w => w.Contains("DELETE_CONTENT_CHANGED", StringComparison.Ordinal));
 
+        // AND THE REASON SURVIVES THE SEAM. The scripts have always emitted a `detail`
+        // explaining a warning, and the CODESYS adapter used to project only the code and the
+        // path — so the log and the UI read "DELETE_CONTENT_CHANGED: Simulation" and the
+        // sentence saying why went nowhere. A warning that is present, looks complete and
+        // answers nothing is worse than a missing one, and it matters most for exactly these
+        // codes: they are Versio declining to destroy something, and the detail is what tells
+        // somebody how to proceed. Asserted here because this is the only test that runs the
+        // real script through the real adapter.
+        Assert.Contains(refused.Warnings,
+            w => w.Contains("has been edited since", StringComparison.Ordinal));
+
         // Read back out of the PROJECT, and STRAIGHT THROUGH THE RUNNER rather than back
         // through the orchestrator. Asking the orchestrator to export here returns NoChange
         // and is right to: it recorded the project's hash when the import ran, so from its

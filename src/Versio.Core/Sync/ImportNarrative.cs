@@ -14,10 +14,17 @@ namespace Versio.Core.Sync;
 /// </para>
 /// <para>
 /// <b>Only about what this version actually does — and it has been wrong about that once.</b>
-/// This said objects <i>will stay</i> while <c>versio_import.py</c> removed them, for the one
-/// commit between the script growing <c>remove()</c> and anybody noticing. That is the exact
-/// lie the whole confirmation chain exists to prevent, arrived at from the other direction:
-/// every gate around it worked and the sentence it delivered was false.
+/// This said objects <i>will stay</i> while the toolchain removed them, for the one commit
+/// between the executing side learning to delete and anybody noticing. That is the exact lie
+/// the whole confirmation chain exists to prevent, arrived at from the other direction: every
+/// gate around it worked and the sentence it delivered was false.
+/// </para>
+/// <para>
+/// <b>Vendor-neutral, and it has to be.</b> Which deletions can be checked is a question only
+/// a vendor's planner can answer — the forms, the hashes and the toolchain's own limits are
+/// all its business. So this reads <see cref="PlannedDeletion.CannotVerify"/> as opaque prose
+/// and never inspects a form. A second vendor changes nothing in this file, which is the whole
+/// point of <c>Sync/</c> being on the neutral side of the seam.
 /// </para>
 /// <para>
 /// <b>Two sentences, because there are two outcomes.</b> A deletion the executing side can

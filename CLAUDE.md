@@ -163,7 +163,15 @@ it to about one in fourteen, so **a lone red run is still worth re-running befor
 
 **It still flakes, and what is left of it looks like real git rather than leaked objects.** The
 last three failures observed were all in tests that drive git subprocesses against a temp
-repository, and all of them dispose correctly. If you measure the rate, **do it on an idle
+repository, and all of them dispose correctly. **A fourth, on 2026-08-15, was not**: it was
+`AdoptAndExportTests.A_task_priority_edited_in_the_mirror_…`, a CODESYS test, once in four full
+runs, passing alone immediately afterwards and in the next full run. So the remaining flake is
+not only the git-subprocess class.
+
+**Never run the integration suite with `-v q`.** That failure arrived with no message, because
+quiet verbosity prints the FAIL line and swallows the assertion — so the one run that had
+something to say could not say it, and it cost a full 13-minute re-run to get back to. Use
+plain `--nologo`; the extra output is worth it on a suite this slow to reproduce. If you measure the rate, **do it on an idle
 machine and leave it alone while it runs** — a measurement taken while a second `dotnet test` is
 running measures that instead.
 
@@ -188,7 +196,7 @@ stays that way.
 
 | Suite | Count | Time |
 |---|---|---|
-| `Versio.Core.Tests` | 1,451 | under a second |
+| `Versio.Core.Tests` | 1,455 | under a second |
 | `Versio.App.Tests` | 480 | ~50 s, STA, no window shown |
 | `Versio.Integration.Tests` | 205 | ~10 min, real CODESYS and real git |
 

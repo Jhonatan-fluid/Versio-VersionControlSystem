@@ -1,6 +1,7 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,451 unit + 480 UI + 205 integration, 0 skipped
+**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,455 unit + 480 UI + 205 integration, 0 skipped
+· *(integration run four times this session: 12m45s, 12m52s, 10m29s with one flake, 12m27s — see the flake note in `CLAUDE.md`)*
 
 > **⚠️ Versio removes objects from projects as of 2026-08-15 — Phase 2 of the import plan, and
 > the first thing it does that destroys work.** Delete a `.st` from the mirror, confirm the
@@ -155,7 +156,7 @@ opens. That is `SAFEGUARDS.md` phases 1–8, and phase 9 is features rather than
 
 ```
   CODESYS pipeline    ████████████████████  proven on a real project
-  Domain core         ████████████████████  1,451 tests, under 400 ms
+  Domain core         ████████████████████  1,455 tests, under 400 ms
   Vendor seam         ████████████████████  enforced from assembly metadata
   Infrastructure      ████████████████████  drives real CODESYS + real git
   Desktop shell       ███████████████████░  full git surface, diff, and a UI audit applied
@@ -938,6 +939,49 @@ would have gone on passing while checking one fewer every time a panel moved out
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### The delete path explained itself to nobody — three channels, three different silences
+
+> **In one line:** the dialog said the wrong thing, the plan's log said nothing at all and then
+> said something false, and the adapter threw away the script's explanation — so a refusal to
+> destroy something reached a person as `DELETE_UNVERIFIABLE: Diagnosis` at best.
+> **✅ ALL THREE CLOSED 2026-08-15.** The dialog has its own Finding below; these are the other
+> two, found by auditing the change rather than by any test failing.
+
+**`ImportPlanReader` logged nothing about deletions, and had no tests at all.** It logged the
+planner's warnings, the schema explanation and the missing-file count — and not the one decision
+in a plan that takes work *out* of a project. The removals were logged, but only by the script,
+*after* they happened. What had been decided, and what somebody agreed to ~20 s earlier,
+appeared nowhere.
+
+**Worse, its missing-file line was actively false.** It read *"deleting objects from the project
+is not applied by this version, so they remain in the project"* — written when it was true, left
+in place after the import learned to delete. **The identical stale-sentence defect as the
+dialog, in a second channel, surviving for the identical reason: no assertion had ever read
+it.** `ImportPlanReaderTests` is new and exists because of this; one of its four cases asserts
+that exact sentence is *absent* rather than merely replaced, since a test checking only the new
+wording goes green again the moment somebody restores the old line beside it.
+
+**And the adapter dropped the reason.** `LocalCodesysRunner` projected script warnings as
+`$"{code}: {path}"`, discarding the `detail` the scripts have always emitted. So every refusal
+arrived with its explanation removed:
+
+```
+DELETE_UNVERIFIABLE: Diagnosis                     ← what a user saw
+DELETE_UNVERIFIABLE: Diagnosis — its NATIVE file cannot be compared against
+  the live object, so whether it changed since the export is unknowable   ← what the script said
+```
+
+**A warning that is present, looks complete and answers nothing is worse than a missing one.**
+It mattered least when a warning meant "an object was skipped" and most now that it means
+"Versio declined to delete this, and here is what would change that". Fixed in the adapter,
+because `SyncOrchestrator.LogWarnings` documents that nothing above it knows what a CODESYS
+warning code looks like — and that stays true.
+
+| Guard | Breaks when |
+|---|---|
+| `ImportPlanReaderTests` (4 cases) | the plan stops naming what it will remove or keep, or the false sentence returns — verified red by disabling the removal line |
+| `AdoptAndExportTests` … `_leaves_the_project_and_an_edited_one_does_not` | the adapter drops `detail` again; asserts the reason text against the real script through the real adapter |
 
 ### The confirmation dialog told people their objects would stay, and then deleted them
 

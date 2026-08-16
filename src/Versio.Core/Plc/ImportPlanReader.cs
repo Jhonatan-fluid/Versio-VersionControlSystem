@@ -123,13 +123,48 @@ public static class ImportPlanReader
 
         if (plan.MissingFromMirror.Count > 0)
         {
-            // Info, not Warn: this is the state every mirror with a deleted file is in until
-            // deletes are implemented, and it is the sentence that answers "I deleted the
-            // file, why is the object still there".
+            // The RAW input, and the deletion lines below are the vetted answer. The two differ
+            // whenever a precondition held an object back, and every one of those differences
+            // is a warning already logged above — so this count is only ever a starting point.
+            //
+            // THIS LINE USED TO SAY deleting "is not applied by this version, so they remain
+            // in the project". It went on saying it after the import learned to delete, which
+            // is the same stale-sentence defect that had the confirmation dialog promising
+            // objects would stay while they were removed. A log that describes last version's
+            // behaviour is worse than silence: it is read as evidence.
             log.Info(category,
                 $"{prefix}{plan.MissingFromMirror.Count} exported file(s) are no longer in "
-                + "the mirror; deleting objects from the project is not applied by this "
-                + "version, so they remain in the project");
+                + "the mirror");
+        }
+
+        // The deletions, named and split by what will actually happen to them.
+        //
+        // AT INFO AND NEVER COLLAPSED. This is the one decision in a plan that takes work out
+        // of a project, it is taken ~20 s before CODESYS starts, and until now it was the only
+        // part of a plan that reached no log line at all — the script logged the removals it
+        // performed, but nothing recorded what had been decided or what a person agreed to.
+        // "Quiet when idle, loud when working" cuts the other way here: a run that deletes
+        // something is the definition of working.
+        var removing = plan.Deletions.Where(d => d.CannotVerify is null).ToList();
+        if (removing.Count > 0)
+        {
+            log.Info(category,
+                $"{prefix}{removing.Count} object(s) will be removed from the project: "
+                + string.Join(", ", removing.Select(d => d.Name)));
+        }
+
+        // Grouped by reason, matching the dialog, so the log and the sentence somebody agreed
+        // to can be read against each other rather than guessed at.
+        foreach (var group in plan.Deletions
+                     .Where(d => d.CannotVerify is not null)
+                     .GroupBy(d => d.CannotVerify!, StringComparer.Ordinal)
+                     .OrderBy(g => g.Key, StringComparer.Ordinal))
+        {
+            // Info rather than Warn: refusing to destroy something Versio cannot check is the
+            // system working, not a fault. The executing side warns if it disagrees.
+            log.Info(category,
+                $"{prefix}{group.Count()} object(s) have lost every exported file but will be "
+                + $"kept: {string.Join(", ", group.Select(d => d.Name))} — {group.Key}");
         }
 
         return plan;
