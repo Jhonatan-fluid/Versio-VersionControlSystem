@@ -1,3 +1,4 @@
+using Versio.Core.Hashing;
 using Versio.Core.Iec;
 using Versio.Core.Projects;
 using Versio.Core.Serialization;
@@ -121,16 +122,208 @@ public static class CodesysImportPlanner
                 .ToList()
             : [];
 
+        var deletions = trusted
+            ? PlanDeletions(manifest!, present, byGuid, warnings)
+            : [];
+
+        // Renames are matched LAST, out of the deletions and the creates, because that is what
+        // a rename is: a file that went and a file that arrived. Both lists are rewritten by
+        // the match — the deletion is withdrawn and the create becomes a skip — so a rename
+        // costs the project neither its object nor a duplicate of it.
+        var renames = trusted
+            ? MatchRenames(files, deletions, byGuid, mirror, warnings)
+            : [];
+
         return new ImportPlan
         {
             Files = files,
             Warnings = warnings,
             MissingFromMirror = missing,
-            Deletions = trusted
-                ? PlanDeletions(manifest!, present, byGuid, warnings)
-                : [],
+            Deletions = deletions,
+            Renames = renames,
             StructuralChangesUnavailable = unavailable,
         };
+    }
+
+    /// <summary>
+    /// Pair each deletion with a create holding identical content, and turn the pair into a
+    /// rename. Rewrites <paramref name="files"/> and <paramref name="deletions"/> in place.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Exact content match only — step 1 of Phase 3.</b> A file that moved or was renamed
+    /// without being edited has the bytes the export wrote, so its hash still equals the one
+    /// the manifest recorded for the file that went. That covers rename-without-editing, which
+    /// is most renames, and it needs nothing but the manifest and the mirror.
+    /// </para>
+    /// <para>
+    /// <b>Rename-and-edit is deliberately not detected here</b>, because its content no longer
+    /// matches anything. It needs the old bytes from <c>git show HEAD:&lt;path&gt;</c> and a
+    /// similarity score, and it falls back to delete-plus-create until then — correct, and
+    /// lossy in the one way this whole pass exists to avoid, so it is worth saying out loud
+    /// rather than leaving as a silent gap.
+    /// </para>
+    /// <para>
+    /// <b>Single-file objects only.</b> A GVL is a <c>.gvl.st</c> and a <c>.gvl.xml</c> under
+    /// one GUID; renaming it moves both, and pairing them means matching a set rather than a
+    /// file. Refused rather than half-done: renaming an object on the strength of one of its
+    /// two files is how the two halves end up disagreeing about what the object is called.
+    /// </para>
+    /// <para>
+    /// <b>Ambiguity is refused, not guessed.</b> Two deleted files with identical content —
+    /// two empty actions, say — cannot be told apart from the two creates that replaced them,
+    /// and picking either pairing has a 50% chance of renaming the wrong object. Both stay a
+    /// delete and a create, which is lossy but never wrong.
+    /// </para>
+    /// </remarks>
+    private static List<PlannedRename> MatchRenames(
+        List<PlannedFile> files,
+        List<PlannedDeletion> deletions,
+        Dictionary<string, List<ProjectObject>> byGuid,
+        IReadOnlyList<MirrorFile> mirror,
+        List<string> warnings)
+    {
+        // Content lives on the MirrorFile, not on the plan: the plan says what to DO with a
+        // file and deliberately does not carry its bytes across the wire.
+        var text = mirror
+            .Where(m => m.Text is not null)
+            .ToDictionary(m => m.Path, m => m.Text!, StringComparer.Ordinal);
+
+        // A create the planner has the content of. Text is loaded only for the suffixes the
+        // format asked for, so a create whose text was never read simply does not match — it
+        // cannot, and pretending otherwise would need bytes nobody has.
+        var creates = files
+            .Select((f, i) => (File: f, Index: i))
+            .Where(p => p.File.Action == PlannedAction.Create && text.ContainsKey(p.File.Path))
+            .ToList();
+
+        if (creates.Count == 0 || deletions.Count == 0)
+        {
+            return [];
+        }
+
+        // Hash once per side, then pair. Content is the key on both sides: the deletion knows
+        // what the export wrote, and the create is what is on disk now.
+        var createsByHash = creates
+            .GroupBy(p => ContentHash.Of(text[p.File.Path]), StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+
+        List<PlannedRename> renames = [];
+        List<PlannedDeletion> matched = [];
+
+        foreach (var deletion in deletions.Where(d => d.Files.Count == 1))
+        {
+            var gone = deletion.Files[0];
+            if (!createsByHash.TryGetValue(gone.Hash, out var candidates))
+            {
+                continue;
+            }
+
+            // One deleted file, one arrived file, one meaning. Anything else is a guess.
+            if (candidates.Count != 1)
+            {
+                warnings.Add(
+                    $"{deletion.Name}: its exported file has gone and {candidates.Count} new "
+                    + "files hold exactly its content, so which one is the rename cannot be "
+                    + "told — it is treated as a deletion and separate creates instead");
+                continue;
+            }
+
+            var arrival = candidates[0];
+            if (string.IsNullOrEmpty(arrival.File.Name))
+            {
+                // The declaration did not name it, so there is nothing to rename it TO. G3's
+                // rule pointed the other way: a created object takes its declaration's name,
+                // never its file's, and a rename must not reintroduce the file-stem guess.
+                continue;
+            }
+
+            var newParent = ParentChainOf(arrival.File, deletion, byGuid);
+            if (newParent is null)
+            {
+                warnings.Add(
+                    $"{deletion.Name}: it looks renamed to {arrival.File.Path}, but the folder "
+                    + "it moved into is not an object this mirror records, so where to move it "
+                    + "can only be guessed at — treated as a deletion and a create instead");
+                continue;
+            }
+
+            renames.Add(new PlannedRename
+            {
+                Guid = deletion.Guid,
+                Resolve = deletion.Resolve,
+                OldName = deletion.Name,
+                NewName = arrival.File.Name,
+                NewParent = newParent,
+                OldPath = gone.Path,
+                NewPath = arrival.File.Path,
+            });
+
+            matched.Add(deletion);
+
+            // The create must not also run: the object is already there under its old name,
+            // and creating it would leave the project with two.
+            files[arrival.Index] = arrival.File with
+            {
+                Action = PlannedAction.Skip,
+                Skip = PlannedSkip.RenameTarget,
+            };
+
+            // Consumed, so a second deletion with identical content cannot pair with it too.
+            createsByHash.Remove(gone.Hash);
+        }
+
+        foreach (var done in matched)
+        {
+            deletions.Remove(done);
+        }
+
+        return [.. renames.OrderBy(r => r.OldName, StringComparer.Ordinal)];
+    }
+
+    /// <summary>
+    /// The chain to the object that should own the arrived file, or null when it cannot be
+    /// read from the manifest.
+    /// </summary>
+    /// <remarks>
+    /// Directory segments are decoded object names — the same convention <see cref="ResolveKnown"/>
+    /// builds on — so an unchanged directory yields the old owner chain unchanged and the
+    /// planner can tell a pure rename from a move without a special case.
+    /// </remarks>
+    private static IReadOnlyList<string>? ParentChainOf(
+        PlannedFile arrival,
+        PlannedDeletion deletion,
+        Dictionary<string, List<ProjectObject>> byGuid)
+    {
+        var slash = arrival.Path.LastIndexOf('/');
+        var directory = slash < 0 ? string.Empty : arrival.Path[..slash];
+
+        var oldParent = deletion.Resolve.Take(deletion.Resolve.Count - 1).ToList();
+
+        var oldSlash = deletion.Files[0].Path.LastIndexOf('/');
+        var oldDirectory = oldSlash < 0 ? string.Empty : deletion.Files[0].Path[..oldSlash];
+
+        // Same folder: the owner has not changed, whatever its name decodes to. Taking the
+        // recorded chain rather than re-deriving it from the path is the point — the recorded
+        // one is names, and the path is stems.
+        if (string.Equals(directory, oldDirectory, StringComparison.Ordinal))
+        {
+            return oldParent;
+        }
+
+        // A different folder. Every segment has to decode to a real name, and the resulting
+        // chain has to be one the mirror actually records — otherwise this is a move into a
+        // folder that exists on disk and nowhere in the project.
+        var segments = directory.Length == 0
+            ? []
+            : directory.Split('/').Select(PathMapper.DecodeStem).ToList();
+
+        var known = byGuid.Values
+            .SelectMany(records => records)
+            .Any(o => o.Path.StartsWith(
+                directory.Length == 0 ? string.Empty : directory + "/", StringComparison.Ordinal));
+
+        return known || directory.Length == 0 ? segments : null;
     }
 
     /// <summary>

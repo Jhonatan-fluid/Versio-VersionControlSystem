@@ -394,6 +394,128 @@ public class CodesysImportPlannerTests
     // below is not belt-and-braces — it is the only thing between a stale mirror and somebody
     // losing work. Each has its own test for that reason.
 
+    // ── Renames and moves: Phase 3, step 1 ─────────────────────────────────────
+    //
+    // A rename in the mirror looks exactly like a deletion and an unrelated create. Treating
+    // it as one destroys the object and builds a new one, losing the GUID and with it every
+    // reference, task assignment and visualisation binding pointing at it. These tests are
+    // about the pairing that tells the two apart — and about refusing to pair when it cannot
+    // be told, because renaming the wrong object is worse than not renaming at all.
+
+    /// <summary>Content whose hash is what the manifest records for the file that went.</summary>
+    private const string Body = "PROGRAM Renamed\nVAR\nEND_VAR\n\nx();";
+
+    private static string HashOf(string text) => Versio.Core.Hashing.ContentHash.Of(text);
+
+    [Fact]
+    public void A_file_renamed_without_being_edited_is_a_rename_not_a_delete_and_a_create()
+    {
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(Obj("App/Old.st", "Old", "POU", "ST_FULL", guid: "g1")
+                with { Hash = HashOf(Body) }),
+            [File("App/Renamed.st", Body)]);
+
+        var rename = Assert.Single(plan.Renames);
+        Assert.Equal("g1", rename.Guid);
+        Assert.Equal("Old", rename.OldName);
+
+        // The DECLARATION's name, not the file stem. G3's rule holds here too: a rename that
+        // took its name from the filename would rename the object to whatever somebody called
+        // the file, which is the defect the create path was fixed for.
+        Assert.Equal("Renamed", rename.NewName);
+        Assert.True(rename.IsRename);
+        Assert.False(rename.IsMove);
+
+        // BOTH SIDES ARE WITHDRAWN. A rename that left the deletion standing would delete the
+        // object it had just renamed; one that left the create standing would leave the
+        // project with two of it.
+        Assert.Empty(plan.Deletions);
+        Assert.Equal(PlannedAction.Skip, One(plan, "App/Renamed.st").Action);
+        Assert.Equal(PlannedSkip.RenameTarget, One(plan, "App/Renamed.st").Skip);
+    }
+
+    [Fact]
+    public void The_same_object_in_a_different_folder_is_a_move()
+    {
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(
+                Obj("App/Old.st", "Old", "POU", "ST_FULL", guid: "g1") with { Hash = HashOf(Body) },
+                // A second object under Lib, so the destination folder is one the mirror
+                // actually records rather than a directory that exists only on disk.
+                Obj("Lib/Other.st", "Other", "POU", "ST_FULL", guid: "g2")),
+            [File("Lib/Renamed.st", Body), File("Lib/Other.st")]);
+
+        var rename = Assert.Single(plan.Renames);
+        Assert.True(rename.IsMove);
+        Assert.Equal(["Lib"], rename.NewParent);
+        Assert.Empty(plan.Deletions);
+    }
+
+    [Fact]
+    public void Two_deleted_files_with_identical_content_are_never_paired_by_guessing()
+    {
+        // THE CASE THAT MAKES THIS SAFE. Two empty actions have identical bytes, so content
+        // cannot say which arrival replaced which departure, and either pairing is a coin
+        // toss that renames the wrong object half the time. Both stay a delete and a create:
+        // lossy, and never wrong.
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(
+                Obj("App/A.st", "A", "POU", "ST_FULL", guid: "g1") with { Hash = HashOf(Body) },
+                Obj("App/B.st", "B", "POU", "ST_FULL", guid: "g2") with { Hash = HashOf(Body) }),
+            [File("App/X.st", Body), File("App/Y.st", Body)]);
+
+        Assert.Empty(plan.Renames);
+        Assert.Equal(2, plan.Deletions.Count);
+        Assert.Contains(plan.Warnings, w => w.Contains("cannot be told", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void An_edited_file_that_also_moved_is_left_as_a_delete_and_a_create()
+    {
+        // Rename-and-edit: the content no longer matches anything, so step 1 cannot see it.
+        // It needs the old bytes from git and a similarity score — step 2, not built. Asserted
+        // rather than left implicit, because this is the case the pass exists to catch and
+        // does not: it is lossy in exactly the way a rename is meant to prevent.
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(Obj("App/Old.st", "Old", "POU", "ST_FULL", guid: "g1")
+                with { Hash = HashOf(Body) }),
+            [File("App/Renamed.st", Body + "\ny();")]);
+
+        Assert.Empty(plan.Renames);
+        Assert.Single(plan.Deletions);
+        Assert.Equal(PlannedAction.Create, One(plan, "App/Renamed.st").Action);
+    }
+
+    [Fact]
+    public void A_two_file_object_is_never_renamed_on_the_strength_of_one_half()
+    {
+        // A GVL is a .gvl.st and a .gvl.xml under one GUID. Pairing on the textual half alone
+        // would rename the object while its native half still described the old name.
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(
+                Obj("App/G.gvl.st", "G", "GVL", "ST_DECL", guid: "g1") with { Hash = HashOf(Body) },
+                Obj("App/G.gvl.xml", "G", "GVL", "NATIVE", guid: "g1")),
+            [File("App/H.gvl.st", Body)]);
+
+        Assert.Empty(plan.Renames);
+        Assert.Single(plan.Deletions);
+    }
+
+    [Fact]
+    public void A_stale_manifest_plans_no_renames_for_the_reason_it_plans_no_deletes()
+    {
+        // What a pre-reporting-schema manifest does not list cannot be told apart from what it
+        // never recorded, so a "rename" would be built out of two guesses instead of one.
+        var stale = new ProjectManifest
+        {
+            Schema = 1,
+            Objects = [Obj("App/Old.st", "Old", "POU", "ST_FULL", guid: "g1")
+                with { Hash = HashOf(Body) }],
+        };
+
+        Assert.Empty(CodesysImportPlanner.Plan(stale, [File("App/Renamed.st", Body)]).Renames);
+    }
+
     // ── Which deletions the dialog may promise ─────────────────────────────────
     //
     // CannotVerify is what the confirmation dialog reads to decide between "will be removed"

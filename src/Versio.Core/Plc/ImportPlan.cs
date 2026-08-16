@@ -57,6 +57,18 @@ public enum PlannedSkip
     /// <summary>The manifest records a form this planner does not know. A newer exporter
     /// wrote it; refusing is safer than guessing which importer it belongs to.</summary>
     UnknownForm,
+
+    /// <summary>
+    /// This file is the destination of a rename or move, so its content is already in the
+    /// project under the object's old name and creating it would duplicate the object.
+    /// </summary>
+    /// <remarks>
+    /// The pairing lives in <see cref="ImportPlan.Renames"/>. Skipped rather than removed from
+    /// the plan, because the script warns about any mirror file the plan does not mention —
+    /// <c>NOT_IN_PLAN</c> — and a file silently absent from a plan is exactly the ambiguity
+    /// that walk was deleted to end.
+    /// </remarks>
+    RenameTarget,
 }
 
 /// <summary>One file's planned treatment.</summary>
@@ -187,6 +199,58 @@ public sealed record PlannedDeletion
 }
 
 /// <summary>
+/// An object whose file moved or changed name in the mirror, to be carried out as a rename
+/// and/or a move on the object rather than as a deletion and a create.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>One record covers both operations, because a person can do both in one commit.</b>
+/// Dragging a file to another folder and renaming it is one edit to them and two calls to the
+/// toolchain; splitting it into two plan entries would make the second depend on the first
+/// having already happened, and a half-applied pair leaves an object nobody can find.
+/// </para>
+/// <para>
+/// <b>No content check, and that is a real difference from a deletion.</b> A deletion has one
+/// because being wrong destroys work; a rename moves an object and destroys nothing, so an
+/// object edited in the IDE since the export keeps its edit and gains its new name. What a
+/// rename does need is the same certainty about <i>which</i> object it is — so it is built
+/// only from deletion candidates, which have already passed the recorded-owner-chain rule.
+/// </para>
+/// </remarks>
+public sealed record PlannedRename
+{
+    /// <summary>Manifest identity — the whole point of doing this rather than delete-plus-create.</summary>
+    public required string Guid { get; init; }
+
+    /// <summary>Real object names from the project root to the object, as it is <i>now</i>.</summary>
+    public IReadOnlyList<string> Resolve { get; init; } = [];
+
+    /// <summary>The object's current name, from the manifest.</summary>
+    public required string OldName { get; init; }
+
+    /// <summary>What it should be called, from the file that appeared.</summary>
+    public required string NewName { get; init; }
+
+    /// <summary>
+    /// Real object names from the project root to the object's new owner. Equal to
+    /// <see cref="Resolve"/> minus its last element when only the name changed.
+    /// </summary>
+    public IReadOnlyList<string> NewParent { get; init; } = [];
+
+    /// <summary>The mirror path that went, and the one that appeared — for the log and the dialog.</summary>
+    public required string OldPath { get; init; }
+
+    /// <summary>See <see cref="OldPath"/>.</summary>
+    public required string NewPath { get; init; }
+
+    /// <summary>True when the object changes owner, not merely name.</summary>
+    public bool IsMove => !NewParent.SequenceEqual(Resolve.Take(Resolve.Count - 1));
+
+    /// <summary>True when the object changes name, not merely owner.</summary>
+    public bool IsRename => !string.Equals(OldName, NewName, StringComparison.Ordinal);
+}
+
+/// <summary>
 /// What an import would do, decided before the toolchain starts.
 /// </summary>
 /// <remarks>
@@ -246,6 +310,25 @@ public sealed record ImportPlan
     /// never recorded, so every absence would look like a deletion.
     /// </remarks>
     public IReadOnlyList<PlannedDeletion> Deletions { get; init; } = [];
+
+    /// <summary>
+    /// Objects that moved or were renamed in the mirror, to be carried out on the object
+    /// itself so its identity survives.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Each one replaces a deletion and a create.</b> A rename in the mirror looks exactly
+    /// like a file disappearing and an unrelated file appearing, and treating it that way
+    /// destroys the object and builds a new one — losing the GUID, and with it every
+    /// reference, task assignment and visualisation binding that pointed at it. Detecting the
+    /// pair is what makes the difference between a rename and a rebuild.
+    /// </para>
+    /// <para>
+    /// <b>Empty whenever <see cref="StructuralChangesUnavailable"/> is set</b>, for the same
+    /// reason <see cref="Deletions"/> is: the match needs a manifest that can be believed.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<PlannedRename> Renames { get; init; } = [];
 
     /// <summary>
     /// Why deletes, renames and moves cannot be planned from this mirror — a missing or

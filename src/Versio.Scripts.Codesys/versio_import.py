@@ -225,6 +225,12 @@ class Importer(object):
         # that only appears as a smaller number than expected is a refusal nobody reads.
         self.removed = 0
         self.kept = 0
+
+        # Objects renamed or moved. In the `dirty` test below for the same reason `removed`
+        # and `partial` are: a run whose only work was a rename would otherwise close
+        # without saving, and the object would come back under its old name. That is the
+        # third time this project would have paid for the same omission.
+        self.renamed = 0
         self.warnings = []
 
         # Why the last native re-export failed, so the ONE warning the caller emits can carry
@@ -503,6 +509,13 @@ class Importer(object):
             self.warn("NOT_IN_EXPORT", rel_path,
                       "not a file the export writes - never handed to the toolchain")
             return
+        if skip == "renameTarget":
+            # SILENT, like bookkeeping. This file is where a renamed object's content already
+            # is: the rename phase moved the object, so applying the file would write content
+            # the object already has, and creating it would produce a duplicate. The rename
+            # itself is announced by its own event, which is the line worth reading - saying
+            # it twice, once as a skip, would make an ordinary rename look like two events.
+            return
         self.warn("FORM_NOT_UNDERSTOOD", rel_path, str(entry.get("name")))
 
     def entry_paths(self, entry, needs_chain=True):
@@ -647,6 +660,107 @@ class Importer(object):
             return None if impl is None else normalize_decl_only(impl)
 
         return None
+
+    def rename_planned(self):
+        """Move and rename objects whose file changed name or folder in the mirror.
+
+        WHY THIS EXISTS AT ALL. A rename in the mirror is indistinguishable from a deletion
+        and an unrelated create, and importing it as one destroys the object and builds a
+        new one. The new object gets a new GUID, and every reference, task assignment and
+        visualisation binding that pointed at the old one is left pointing at nothing. P1
+        and P2 measured that rename() and move() preserve the GUID - in session and across
+        a save and reopen - which is the whole reason for doing this rather than the pair.
+
+        NO CONTENT CHECK, and that is a deliberate difference from delete_planned. A
+        deletion has one because being wrong destroys work that exists nowhere else; a
+        rename destroys nothing, so an object edited in the IDE since the export keeps its
+        edit and simply gains its new name. What a rename does need is certainty about
+        WHICH object it is, and that comes from the planner: a rename is only ever built
+        out of a deletion candidate, so it has already passed the recorded-owner-chain rule.
+        """
+        renames = self.plan.get("renames") or []
+        if not renames:
+            return
+
+        emit({"t": "phase", "name": "rename", "files": len(renames)})
+
+        for rename in renames:
+            old_name = rename.get("oldName") or ""
+            new_name = rename.get("newName") or ""
+            chain = rename.get("resolve") or []
+            parent_chain = rename.get("newParent") or []
+
+            if not chain or not new_name:
+                self.failed += 1
+                self.warn("RENAME_INCOMPLETE", old_name,
+                          "the plan carries no location or no new name")
+                continue
+
+            obj = find_by_path(self.proj, chain)
+            if obj is None:
+                # Somebody already renamed it in the IDE, or a previous import did. The
+                # mirror and the project may well agree; either way there is nothing here to
+                # act on and inventing one would be guessing.
+                self.warn("RENAME_NOT_FOUND", old_name,
+                          "no object at %s" % "/".join(chain))
+                continue
+
+            # The move first, then the rename. Moving by the OLD name is the only order that
+            # works: after a rename the object no longer answers to the name the plan's
+            # chain was built from, so a failure between the two steps would leave nothing
+            # able to find it again.
+            if rename.get("isMove"):
+                parent = (find_by_path(self.proj, parent_chain) if parent_chain
+                          else self.proj)
+                if parent is None:
+                    self.failed += 1
+                    self.warn("RENAME_NO_PARENT", old_name,
+                              "no object at %s to move it into" % "/".join(parent_chain))
+                    continue
+                try:
+                    # -1 is not a style choice. move(dest, 0) raises "index must be -1 if the
+                    # new parent node does not have sorted children", and the one-argument
+                    # move(dest) raises a NullReferenceException. Measured, both.
+                    obj.move(parent, -1)
+                except Exception as e:
+                    self.failed += 1
+                    self.warn("MOVE_FAILED", old_name, str(e))
+                    continue
+
+            if old_name != new_name:
+                try:
+                    obj.rename(new_name)
+                except Exception as e:
+                    # A duplicate name lands here, which is the collision the phase ordering
+                    # in run() cannot solve. Counted as a failure so the summary says so.
+                    self.failed += 1
+                    self.warn("RENAME_FAILED", old_name, str(e))
+                    continue
+
+            # CONFIRM IT ACTUALLY HAPPENED, because move() does not always say when it did
+            # not. Measured on 3.5.22.20: moving a POU out of Application and into Plc Logic
+            # raises nothing, returns nothing, and leaves the object exactly where it was.
+            # The import then reported "renamed 1" and a re-export showed the old path - a
+            # success message for work that did not occur, which is the same lie as a dialog
+            # promising an object will stay and then deleting it.
+            #
+            # So the object is re-resolved at the location it was supposed to end up. This is
+            # cheap - a walk of names already in memory - and it is the only thing standing
+            # between "CODESYS declined" and "Versio said it worked".
+            landed = find_by_path(self.proj, list(parent_chain) + [new_name])
+            if landed is None:
+                self.failed += 1
+                self.warn("RENAME_NOT_APPLIED", old_name,
+                          "the toolchain accepted the %s without error but the object is not "
+                          "at %s - it has been left where it was"
+                          % ("move" if rename.get("isMove") else "rename",
+                             "/".join(list(parent_chain) + [new_name])))
+                continue
+
+            self.renamed += 1
+            emit({"t": "renamed", "name": old_name, "newName": new_name,
+                  "path": "/".join(chain), "newParent": "/".join(parent_chain),
+                  "moved": bool(rename.get("isMove"))})
 
     def delete_planned(self):
         """Remove objects the mirror no longer has any file for.
@@ -837,6 +951,24 @@ class Importer(object):
         typed = by_action.get("typed", [])
         native = by_action.get("native", [])
 
+        # RENAMES AND MOVES FIRST, before anything is applied or removed.
+        #
+        # The object has to be at its final name and under its final owner before the
+        # textual and native phases resolve anything, because those phases walk the tree by
+        # NAME. Renaming afterwards would have them resolve the object under its old name -
+        # which still exists at that point, so nothing would fail; the content would simply
+        # land in the object about to be renamed, and the rename would then move an object
+        # carrying somebody else's edit.
+        #
+        # THE ORDER IT DOES NOT SOLVE, said plainly rather than implied. Renaming A to B
+        # while a DIFFERENT object called B is still in the project cannot work from here:
+        # deletions run last, for reasons that outrank this, so B is still there. CODESYS
+        # refuses the duplicate and the rename is reported failed - which is the right
+        # outcome and not a silent one, but it means "swap two objects' names in one commit"
+        # needs two imports. Ordering renames after deletes to fix it would put a
+        # destructive step before a safe one, and that trade is not worth making.
+        self.rename_planned()
+
         emit({"t": "phase", "name": "textual", "files": len(textual) + len(typed)})
         for entry in textual:
             self.handle_textual(entry)
@@ -921,7 +1053,7 @@ def main():
     # object would otherwise close without saving, putting the object back - an import that
     # reported success, removed something, and changed nothing.
     dirty = (imp.updated > 0 or imp.native > 0 or imp.partial > 0
-             or imp.removed > 0)
+             or imp.removed > 0 or imp.renamed > 0)
     if job.get("save", True) and dirty:
         proj.save()
         emit({"t": "saved"})
@@ -931,7 +1063,8 @@ def main():
     emit({"t": "summary", "updated": imp.updated, "unchanged": imp.unchanged,
           "native": imp.native, "created": imp.created,
           "missing": imp.missing, "failed": imp.failed,
-          "partial": imp.partial, "removed": imp.removed, "kept": imp.kept,
+          "partial": imp.partial, "removed": imp.removed, "renamed": imp.renamed,
+          "kept": imp.kept,
           "notImported": imp.one_way, "warnings": len(imp.warnings)})
 
     close_project(proj)

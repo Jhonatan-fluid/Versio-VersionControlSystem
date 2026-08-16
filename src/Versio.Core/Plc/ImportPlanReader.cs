@@ -137,6 +137,19 @@ public static class ImportPlanReader
                 + "the mirror");
         }
 
+        // Renames first, matching the dialog's order and for the same reason: an object that
+        // moved is one that was NOT destroyed, and a reader scanning for their file's name
+        // should find it here rather than in the deletion line.
+        if (plan.Renames.Count > 0)
+        {
+            log.Info(category,
+                $"{prefix}{plan.Renames.Count} object(s) will be renamed or moved rather than "
+                + "removed and recreated: "
+                + string.Join(", ", plan.Renames.Select(r =>
+                    $"{string.Join("/", r.Resolve)} → {string.Join("/", r.NewParent)}"
+                    + $"/{r.NewName}")));
+        }
+
         // The deletions, named and split by what will actually happen to them.
         //
         // AT INFO AND NEVER COLLAPSED. This is the one decision in a plan that takes work out

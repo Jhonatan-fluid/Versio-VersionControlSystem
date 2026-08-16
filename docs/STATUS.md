@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,455 unit + 480 UI + 205 integration, 0 skipped
+**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,463 unit + 480 UI + 205 integration, 0 skipped
 · *(integration run four times this session: 12m45s, 12m52s, 10m29s with one flake, 12m27s — see the flake note in `CLAUDE.md`)*
 
 > **⚠️ Versio removes objects from projects as of 2026-08-15 — Phase 2 of the import plan, and
@@ -156,7 +156,7 @@ opens. That is `SAFEGUARDS.md` phases 1–8, and phase 9 is features rather than
 
 ```
   CODESYS pipeline    ████████████████████  proven on a real project
-  Domain core         ████████████████████  1,455 tests, under 400 ms
+  Domain core         ████████████████████  1,463 tests, under 400 ms
   Vendor seam         ████████████████████  enforced from assembly metadata
   Infrastructure      ████████████████████  drives real CODESYS + real git
   Desktop shell       ███████████████████░  full git surface, diff, and a UI audit applied
@@ -939,6 +939,35 @@ would have gone on passing while checking one fewer every time a panel moved out
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### `move()` accepted an instruction, did nothing, and reported success
+
+> **In one line:** moving a POU out of `Application` into `Plc Logic` raises nothing and moves
+> nothing; the first Phase 3 run reported `renamed: 1`, `failed: 0`, **zero warnings**, and a
+> re-export showed the object at its old path. **✅ CLOSED 2026-08-15** by making the script
+> re-resolve the object where it was supposed to land and report `RENAME_NOT_APPLIED` when it
+> is not there.
+
+**The third silent success in the delete/rename path this session**, after the dialog that
+promised objects would stay while deleting them and the log line that described the previous
+version's behaviour. The shape is identical every time: a step that cannot fail loudly, and a
+counter that is incremented on the assumption it worked.
+
+**What makes this one worse than the others** is that nothing above it could have noticed. The
+import verdict was `Completed`, the summary said one object was renamed, the warning list was
+empty, and the only way to find out was to export the project again and read the paths. **A
+counter incremented next to an operation is not evidence the operation happened** — and this
+codebase now has three examples of exactly that.
+
+**The measurement is honest about what it does not cover.** `Application` → `Plc Logic` may
+simply be an illegal parent for a POU, in which case CODESYS declining is correct and only its
+silence is the defect. Whether a move into a *legal* destination completes is **unknown**: the
+fixture has no folder to try one with. P1/P2 measured that `move()` preserves the GUID, so it
+does something under some conditions, but this repository has never seen it finish. Adding a
+folder to the fixture is the measurement that would settle it, and it is not done.
+
+**Rename in place is unaffected and works**: same GUID before and after, no warnings, verified
+against real CODESYS.
 
 ### The delete path explained itself to nobody — three channels, three different silences
 

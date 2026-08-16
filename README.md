@@ -38,6 +38,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | Import native XML **in place**, GUID preserved | ✅ no delete-and-recreate |
 | Create objects that do not exist yet | ✅ POU / FB / FUNCTION / INTERFACE / DUT / GVL |
 | **Delete a source file and the object leaves the project** | ✅ **textual and native alike.** Deleting is the one thing Versio does that destroys work, so it is built as refusals: five checks before it is even proposed, **the confirmation dialog naming which objects will really go and which will really stay**, and a final check inside CODESYS that the object still matches what was exported — **an object somebody edited in the IDE since is kept**, because a missing file says a file was deleted, not that the object was abandoned. A textual file is rebuilt and compared byte for byte; a native one is re-exported and compared against the normalised hash the export recorded (manifest schema 5), since native bytes churn between exports. A native object exported before that hash existed is refused until the next export |
+| **Rename a source file and the object is renamed, not rebuilt** | ✅ **for a rename without an edit.** The planner pairs the file that went with the file that arrived when their content is identical, and the import renames the object itself — so its GUID survives, and with it every reference, task assignment and visualisation binding pointing at it. Delete-plus-create would leave all of those pointing at nothing. **Two limits, both stated in the dialog and the log rather than hidden**: renaming *and* editing in one commit matches nothing by content and still falls back to delete-plus-create, and a **move into a different container is verified afterwards and reported if the toolchain declined it** — CODESYS was measured accepting one silently without performing it |
 | Drive CODESYS headlessly from C# | ✅ `LocalCodesysRunner` |
 | Git status / branches / stage / commit / diff / push | ✅ `GitCliClient` over real `git.exe` |
 | Direction lock, hash gate, coalescer, commit gate | ✅ pure logic, heavily tested |
@@ -169,7 +170,7 @@ Versio.sln
 │                               native_equiv) import no scriptengine and run on
 │                               CPython too, which is what the parity tests use.
 ├─ tests/
-│  ├─ Versio.Core.Tests/        1,455 unit tests — pure, no IO, under a second
+│  ├─ Versio.Core.Tests/        1,463 unit tests — pure, no IO, under a second
 │  ├─ Versio.App.Tests/         480 tests that build the real windows and panels against
 │  │                            the real stylesheet on an STA thread — none is ever shown
 │  └─ Versio.Integration.Tests/ 205 tests against real CODESYS and real git, ~10 min

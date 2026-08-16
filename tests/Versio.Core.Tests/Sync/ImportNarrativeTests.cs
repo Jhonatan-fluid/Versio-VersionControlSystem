@@ -69,6 +69,64 @@ public class ImportNarrativeTests
         Assert.Equal("2 files will be applied, including 1 new object.", text);
     }
 
+    /// <summary>An object whose file changed name, matched to a rename rather than a rebuild.</summary>
+    private static PlannedRename Moved(
+        string oldName, string newName, string[]? newParent = null) => new()
+        {
+            Guid = oldName,
+            Resolve = ["App", oldName],
+            OldName = oldName,
+            NewName = newName,
+            NewParent = newParent ?? ["App"],
+            OldPath = $"App/{oldName}.st",
+            NewPath = $"{string.Join("/", newParent ?? ["App"])}/{newName}.st",
+        };
+
+    [Fact]
+    public void A_renamed_object_is_named_with_both_names_and_said_to_keep_its_references()
+    {
+        // The reassuring half, and it comes FIRST on purpose: somebody who renamed a file is
+        // scanning this dialog for their object's name, and finding it in a deletion sentence
+        // is the moment they cancel an import that was going to do the right thing.
+        var text = ImportNarrative.Describe(new ImportPlan
+        {
+            Files = [],
+            Renames = [Moved("Old", "New")],
+        });
+
+        Assert.Contains("1 object will be renamed", text, StringComparison.Ordinal);
+        Assert.Contains("Old → New", text, StringComparison.Ordinal);
+        Assert.Contains("references and task assignments survive", text, StringComparison.Ordinal);
+
+        // And it must NOT read as a deletion, which is what it would have been without the
+        // pairing — the whole point of Phase 3.
+        Assert.DoesNotContain("will be removed", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_move_is_called_a_move_and_a_rename_a_rename()
+    {
+        // Being told "renamed" about a file that only changed folder reads as a bug in the
+        // tool, and the reverse hides the fact that a name a colleague greps for has changed.
+        var moved = ImportNarrative.Describe(new ImportPlan
+        {
+            Files = [], Renames = [Moved("Same", "Same", ["Lib"])],
+        });
+        Assert.Contains("will be moved", moved, StringComparison.Ordinal);
+
+        var renamed = ImportNarrative.Describe(new ImportPlan
+        {
+            Files = [], Renames = [Moved("Old", "New")],
+        });
+        Assert.Contains("will be renamed", renamed, StringComparison.Ordinal);
+
+        var both = ImportNarrative.Describe(new ImportPlan
+        {
+            Files = [], Renames = [Moved("Old", "New"), Moved("Same", "Same", ["Lib"])],
+        });
+        Assert.Contains("will be renamed or moved", both, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Objects_the_import_will_remove_are_named_and_said_to_be_going()
     {

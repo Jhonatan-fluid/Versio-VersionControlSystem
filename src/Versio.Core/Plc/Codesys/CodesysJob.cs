@@ -196,8 +196,34 @@ public sealed record CodesysJob
         /// </summary>
         [JsonPropertyName("deletions")] public List<PlanDeletionDto>? Deletions { get; set; }
 
+        /// <summary>
+        /// Objects to rename and/or move, so their identity survives an edit that would
+        /// otherwise read as a deletion plus a create.
+        /// </summary>
+        /// <remarks>
+        /// Omitted entirely when there is nothing to rename, like <see cref="Deletions"/>: a
+        /// key that is always present makes the interesting case indistinguishable from the
+        /// ordinary one in a job file somebody is reading to find out what went wrong.
+        /// </remarks>
+        [JsonPropertyName("renames")] public List<PlanRenameDto>? Renames { get; set; }
+
         public static PlanDto From(ImportPlan plan) => new()
         {
+            Renames = plan.Renames.Count == 0
+                ? null
+                : [.. plan.Renames.Select(r => new PlanRenameDto
+                {
+                    Guid = r.Guid,
+                    Resolve = [.. r.Resolve],
+                    OldName = r.OldName,
+                    NewName = r.NewName,
+                    NewParent = [.. r.NewParent],
+
+                    // Computed here rather than re-derived in the script. IsMove compares the
+                    // new parent chain against the old one, and asking IronPython to redo that
+                    // is asking two languages to agree about a list comparison for no gain.
+                    IsMove = r.IsMove,
+                })],
             Deletions = plan.Deletions.Count == 0
                 ? null
                 : [.. plan.Deletions.Select(d => new PlanDeletionDto
@@ -231,6 +257,7 @@ public sealed record CodesysJob
                     PlannedSkip.Bookkeeping => "bookkeeping",
                     PlannedSkip.ExportOnly => "exportOnly",
                     PlannedSkip.Stray => "stray",
+                    PlannedSkip.RenameTarget => "renameTarget",
                     _ => "unknownForm",
                 },
                 Name = f.Name,
@@ -260,6 +287,22 @@ public sealed record CodesysJob
         [JsonPropertyName("resolve")] public List<string> Resolve { get; set; } = [];
 
         [JsonPropertyName("files")] public List<DeletedFileDto> Files { get; set; } = [];
+    }
+
+    private sealed class PlanRenameDto
+    {
+        [JsonPropertyName("guid")] public string Guid { get; set; } = "";
+
+        /// <summary>Where the object is NOW — the script walks this to find it.</summary>
+        [JsonPropertyName("resolve")] public List<string> Resolve { get; set; } = [];
+
+        [JsonPropertyName("oldName")] public string OldName { get; set; } = "";
+        [JsonPropertyName("newName")] public string NewName { get; set; } = "";
+
+        /// <summary>The chain to its new owner. Empty means the project root.</summary>
+        [JsonPropertyName("newParent")] public List<string> NewParent { get; set; } = [];
+
+        [JsonPropertyName("isMove")] public bool IsMove { get; set; }
     }
 
     private sealed class DeletedFileDto

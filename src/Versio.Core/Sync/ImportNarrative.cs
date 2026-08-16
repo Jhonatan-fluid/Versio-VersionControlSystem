@@ -78,6 +78,25 @@ public static class ImportNarrative
                 : $"{Files(applied)} will be applied.");
         }
 
+        // Renames BEFORE deletions, because that is the reassuring half and the destructive
+        // half in the order somebody wants to read them: an object that moved is an object
+        // that did NOT get destroyed, and saying so first is what stops a reader who renamed
+        // three files from scanning a deletion sentence for their names.
+        if (plan.Renames.Count > 0)
+        {
+            // Named individually, with old and new, because "3 objects will be renamed" is
+            // exactly the sentence that hides one wrong pairing among two right ones — and a
+            // wrong pairing renames somebody else's object.
+            var moves = plan.Renames.Count(r => r.IsMove);
+            var described = plan.Renames.Select(r =>
+                r.IsRename ? $"{r.OldName} → {r.NewName}" : r.OldName);
+
+            lines.Add(
+                $"{Objects(plan.Renames.Count)} will be {Verb(plan.Renames.Count, moves)} in "
+                + $"the project rather than removed and recreated, so {Their(plan.Renames.Count)} "
+                + $"references and task assignments survive: {string.Join(", ", described)}.");
+        }
+
         // Two sentences, because there are two outcomes and a dialog that merged them would be
         // wrong about one of them. Named in the plan's own order — which is sorted, so two
         // readings of the same repository list them the same way round.
@@ -134,4 +153,17 @@ public static class ImportNarrative
     private static string Objects(int n) => n == 1 ? "1 object" : $"{n} objects";
 
     private static string Has(int n) => n == 1 ? "has" : "have";
+
+    private static string Their(int n) => n == 1 ? "its" : "their";
+
+    /// <summary>"renamed", "moved", or "renamed or moved" — whichever the plan actually holds.</summary>
+    /// <remarks>
+    /// Three words rather than one because they are not the same operation to a reader: a
+    /// rename changes what they see in the tree, a move changes where it sits, and being told
+    /// "renamed" about a file that only changed folder reads as a mistake in the tool.
+    /// </remarks>
+    private static string Verb(int total, int moves) =>
+        moves == 0 ? "renamed"
+        : moves == total ? "moved"
+        : "renamed or moved";
 }
