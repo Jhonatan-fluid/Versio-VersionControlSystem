@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-16 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,484 unit + 480 UI + 226 integration, 0 skipped
+**Date:** 2026-08-16 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,485 unit + 480 UI + 227 integration, 0 skipped
 · *(integration now runs ~30 min, not the 10–16 it did before the import feature checklist added
 13 tests; run three times end to end on 2026-08-16 with no flake, plus every affected test
 individually — see the flake note in `CLAUDE.md`, which is about earlier runs)*
@@ -494,6 +494,14 @@ being CODESYS-derived, and Studio 5000 the harshest.
 ### 8. Corpus breadth
 
 More fixture projects. Every field bug becomes a fixture before it is fixed.
+
+**A second one landed 2026-08-16**: `MachineWithMembers`, built against real CODESYS by
+`tools\versio_make_member_fixture.py` because the import feature checklist found five rows that
+`RefrigeratorControl` cannot reach — it has no member object of any kind, so it produces no
+`ST_IMPL`, no `NATIVE_R` and no recorded `parent`. The new one has a folder, a function block
+inside it, and a method, an action and a property inside that. **It closed A3, E1 and E3.** What
+is still uncovered is a name needing percent-encoding, which P5 measured cannot be created —
+it has to arrive from a library or an external-file reference.
 
 ---
 

@@ -1099,6 +1099,101 @@ public class CodesysImportPlannerTests
 
     // ── The committed fixture, planned end to end ──────────────────────────────
 
+    /// <summary>
+    /// The member fixture: ownership from recorded parent GUIDs, and a dotted stem that is
+    /// not split.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The rows the first fixture could not reach.</b> <c>RefrigeratorControl</c> has no
+    /// member object of any kind — no method, no action, no property — so its manifest
+    /// records no <c>parent</c> for anything, and every resolve chain this planner has ever
+    /// built in a test came from directory names or from a hand-written manifest asserting the
+    /// test’s own assumptions. <c>MachineWithMembers</c> exists to end that: it was built
+    /// against real CODESYS by <c>tools\versio_make_member_fixture.py</c> and exported by the
+    /// real exporter, so what is asserted below is what the export actually writes.
+    /// </para>
+    /// <para>
+    /// <b>Members sit BESIDE their owner</b>, as <c>FB_Pump.Start.st</c> and
+    /// <c>FB_Pump.Stop.action.st</c> — one file, a dotted stem, and a parent recorded by
+    /// GUID. That shape is G5 in miniature: read the chain off the stem and
+    /// <c>FB_Pump.Stop</c> becomes member <c>Stop</c> of some parent <c>FB_Pump</c> found by
+    /// name, which is a guess that happens to be right here and is wrong the moment a name
+    /// contains a dot of its own. The manifest’s parent GUID is what makes it not a guess.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void The_member_fixture_resolves_by_recorded_parent_rather_than_by_the_dotted_stem()
+    {
+        var root = Path.Combine(TestPaths.Fixtures, "projects", "MachineWithMembers");
+        var manifest = ProjectManifest.Parse(
+            System.IO.File.ReadAllText(Path.Combine(root, "_manifest.json")));
+
+        var mirror = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+            .Select(p => Path.GetRelativePath(root, p).Replace('\\', '/'))
+            .Select(rel => new MirrorFile
+            {
+                Path = rel,
+                Text = CodesysImportPlanner.NeedsText(rel)
+                    ? System.IO.File.ReadAllText(Path.Combine(root, rel))
+                    : null,
+            })
+            .ToList();
+
+        var plan = CodesysImportPlanner.Plan(manifest, mirror);
+
+        // The fixture has to still BE the fixture, or everything below passes for the
+        // uninteresting reason. These four are the forms the first fixture cannot produce.
+        Assert.Contains(manifest.Objects, o => o.Form == "ST_IMPL");
+        Assert.Contains(manifest.Objects, o => o.Form == "NATIVE_R");
+        Assert.Contains(manifest.Objects, o => o.Type == "METHOD");
+        Assert.Equal(3, manifest.Objects.Count(o => !string.IsNullOrEmpty(o.Parent)));
+
+        Assert.Empty(plan.Warnings);
+        Assert.Empty(plan.MissingFromMirror);
+        Assert.DoesNotContain(plan.Files, f => f.Skip == PlannedSkip.Stray);
+        Assert.DoesNotContain(plan.Files, f => f.Skip == PlannedSkip.UnknownForm);
+        Assert.DoesNotContain(plan.Files, f => f.Action == PlannedAction.Create);
+
+        // E1: the chain walks Pumps (a folder, and a real object) and then FB_Pump (the
+        // owner, from its GUID) before naming the member.
+        Assert.Equal(
+            ["Device", "Plc Logic", "Application", "Pumps", "FB_Pump", "Start"],
+            One(plan, "Device/Plc Logic/Application/Pumps/FB_Pump.Start.st").Resolve);
+
+        // E3: the same for the ACTION, whose stem carries the dot AND the .action suffix.
+        var stop = One(plan, "Device/Plc Logic/Application/Pumps/FB_Pump.Stop.action.st");
+        Assert.Equal(
+            ["Device", "Plc Logic", "Application", "Pumps", "FB_Pump", "Stop"], stop.Resolve);
+
+        // A3: an implementation-only form is applied as text, not handed to import_native.
+        Assert.Equal(PlannedAction.ApplyText, stop.Action);
+
+        // The PROPERTY is NATIVE_R — importable, recursive, and carrying its own
+        // accessors. It is the form TASK_NATIVE was mistakenly recorded as for a whole
+        // phase, and this is the first time the real one has been planned.
+        var speed = One(plan, "Device/Plc Logic/Application/Pumps/FB_Pump.Speed.xml");
+        Assert.Equal(PlannedAction.ApplyNative, speed.Action);
+        Assert.Equal(
+            ["Device", "Plc Logic", "Application", "Pumps", "FB_Pump", "Speed"], speed.Resolve);
+
+        // Its accessors are NOT separate records: NATIVE_R means the recursive export
+        // already contains them, which is what stops them being planned twice.
+        Assert.DoesNotContain(manifest.Objects, o => o.Name == "Get" || o.Name == "Set");
+
+        // The owner itself is an ordinary POU under a folder, with no recorded parent —
+        // the folder is a directory, not an owner.
+        Assert.Equal(
+            ["Device", "Plc Logic", "Application", "Pumps", "FB_Pump"],
+            One(plan, "Device/Plc Logic/Application/Pumps/FB_Pump.st").Resolve);
+
+        // And a DUT gives the declaration-only path a second subject that is not a GVL, so
+        // G12’s fix and the ST_DECL form can be told apart.
+        var dut = One(plan, "Device/Plc Logic/Application/E_Mode.st");
+        Assert.Equal(PlannedAction.ApplyText, dut.Action);
+        Assert.Equal(["Device", "Plc Logic", "Application", "E_Mode"], dut.Resolve);
+    }
+
     [Fact]
     public void The_committed_fixture_plans_cleanly_with_nothing_stray_and_nothing_unknown()
     {

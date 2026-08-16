@@ -1,0 +1,117 @@
+<ExportFile>
+  <StructuredView Guid="{21af5390-2942-461a-bf89-951aaf6999f1}">
+<Single xml:space="preserve" Type="{3daac5e4-660e-42e4-9cea-3711b98bfb63}" Method="IArchivable">
+  <Null Name="Profile" />
+  <List2 Name="EntryList">
+    <Single Type="{6198ad31-4b98-445c-927f-3258a0e82fe3}" Method="IArchivable">
+      <Single Name="IsRoot" Type="bool">True</Single>
+      <Single Name="MetaObject" Type="{81297157-7ec9-45ce-845e-84cab2b88ade}" Method="IArchivable">
+        <Single Name="Guid" Type="System.Guid">b5430773-3042-47d6-a6d3-28650a6ce532</Single>
+        <Single Name="ParentGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+        <Single Name="Name" Type="string">GlobalTextList</Single>
+        <Dictionary Type="{2c41fa04-1834-41c1-816e-303c7aa2c05b}" Name="Properties" />
+        <Single Name="TypeGuid" Type="System.Guid">63784cbb-9ba0-45e6-9d69-babf3f040511</Single>
+        <Array Name="EmbeddedTypeGuids" Type="System.Guid" />
+        <Single Name="Timestamp" Type="long">0</Single>
+      </Single>
+      <Single Name="Object" Type="{63784cbb-9ba0-45e6-9d69-babf3f040511}" Method="IArchivable">
+        <List Name="TextList" Type="System.Collections.ArrayList">
+          <Single Type="{53da1be7-ad25-47c3-b0e8-e26286dad2e0}" Method="IArchivable">
+            <Single Name="TextID" Type="string">942</Single>
+            <Single Name="TextDefault" Type="string">%.0f</Single>
+            <List Name="LanguageTexts" Type="System.Collections.ArrayList" />
+          </Single>
+          <Single Type="{53da1be7-ad25-47c3-b0e8-e26286dad2e0}" Method="IArchivable">
+            <Single Name="TextID" Type="string">24</Single>
+            <Single Name="TextDefault" Type="string">%2.1f °C</Single>
+            <List Name="LanguageTexts" Type="System.Collections.ArrayList" />
+          </Single>
+          <Single Type="{53da1be7-ad25-47c3-b0e8-e26286dad2e0}" Method="IArchivable">
+            <Single Name="TextID" Type="string">13</Single>
+            <Single Name="TextDefault" Type="string">%s</Single>
+            <List Name="LanguageTexts" Type="System.Collections.ArrayList" />
+          </Single>
+          <Single Type="{53da1be7-ad25-47c3-b0e8-e26286dad2e0}" Method="IArchivable">
+            <Single Name="TextID" Type="string">39</Single>
+            <Single Name="TextDefault" Type="string">Actual temperature: %2.1f °C</Single>
+            <List Name="LanguageTexts" Type="System.Collections.ArrayList" />
+          </Single>
+          <Single Type="{53da1be7-ad25-47c3-b0e8-e26286dad2e0}" Method="IArchivable">
+            <Single Name="TextID" Type="string">28</Single>
+            <Single Name="TextDefault" Type="string">Compressor Efficiency Sim</Single>
+            <List Name="LanguageTexts" Type="System.Collections.ArrayList" />
+          </Single>
+          <Single Type="{53da1be7-ad25-47c3-b0e8-e26286dad2e0}" Method="IArchivable">
+            <Single Name="TextID" Type="string">42</Single>
+            <Single Name="TextDefault" Type="string">Cooling compressor</Single>
+            <List Name="LanguageTexts" Type="System.Collections.ArrayList" />
+          </Single>
+          <Single Type="{53da1be7-ad25-47c3-b0e8-e26286dad2e0}" Method="IArchivable">
+            <Single Name="TextID" Type="string">44</Single>
+            <Single Name="TextDefault" Type="string">Door open</Single>
+            <List Name="LanguageTexts" Type="System.Collections.ArrayList" />
+          </Single>
+          <Single Type="{53da1be7-ad25-47c3-b0e8-e26286dad2e0}" Method="IArchivable">
+            <Single Name="TextID" Type="string">34</Single>
+            <Single Name="TextDefault" Type="string">Environ. Efficiency DoorOpen Sim</Single>
+            <List Name="LanguageTexts" Type="System.Collections.ArrayList" />
+          </Single>
+          <Single Type="{53da1be7-ad25-47c3-b0e8-e26286dad2e0}" Method="IArchivable">
+            <Single Name="TextID" Type="string">29</Single>
+            <Single Name="TextDefault" Type="string">Environment Efficiency Sim</Single>
+            <List Name="LanguageTexts" Type="System.Collections.ArrayList" />
+          </Single>
+          <Single Type="{53da1be7-ad25-47c3-b0e8-e26286dad2e0}" Method="IArchivable">
+            <Single Name="TextID" Type="string">27</Single>
+            <Single Name="TextDefault" Type="string">Hysteresis Regulator</Single>
+            <List Name="LanguageTexts" Type="System.Collections.ArrayList" />
+          </Single>
+          <Single Type="{53da1be7-ad25-47c3-b0e8-e26286dad2e0}" Method="IArchivable">
+            <Single Name="TextID" Type="string">474</Single>
+            <Single Name="TextDefault" Type="string">None</Single>
+            <List Name="LanguageTexts" Type="System.Collections.ArrayList" />
+          </Single>
+          <Single Type="{53da1be7-ad25-47c3-b0e8-e26286dad2e0}" Method="IArchivable">
+            <Single Name="TextID" Type="string">26</Single>
+            <Single Name="TextDefault" Type="string">Refrigerator Diagnosis &amp; Service Menu</Single>
+            <List Name="LanguageTexts" Type="System.Collections.ArrayList" />
+          </Single>
+          <Single Type="{53da1be7-ad25-47c3-b0e8-e26286dad2e0}" Method="IArchivable">
+            <Single Name="TextID" Type="string">43</Single>
+            <Single Name="TextDefault" Type="string">Signal (Beep)</Single>
+            <List Name="LanguageTexts" Type="System.Collections.ArrayList" />
+          </Single>
+          <Single Type="{53da1be7-ad25-47c3-b0e8-e26286dad2e0}" Method="IArchivable">
+            <Single Name="TextID" Type="string">41</Single>
+            <Single Name="TextDefault" Type="string">Temperature presetting: %.1f °C</Single>
+            <List Name="LanguageTexts" Type="System.Collections.ArrayList" />
+          </Single>
+          <Single Type="{53da1be7-ad25-47c3-b0e8-e26286dad2e0}" Method="IArchivable">
+            <Single Name="TextID" Type="string">37</Single>
+            <Single Name="TextDefault" Type="string">Time until Beep for Compressor On</Single>
+            <List Name="LanguageTexts" Type="System.Collections.ArrayList" />
+          </Single>
+          <Single Type="{53da1be7-ad25-47c3-b0e8-e26286dad2e0}" Method="IArchivable">
+            <Single Name="TextID" Type="string">35</Single>
+            <Single Name="TextDefault" Type="string">Time until Beep for DoorOpen</Single>
+            <List Name="LanguageTexts" Type="System.Collections.ArrayList" />
+          </Single>
+          <Single Type="{53da1be7-ad25-47c3-b0e8-e26286dad2e0}" Method="IArchivable">
+            <Single Name="TextID" Type="string">941</Single>
+            <Single Name="TextDefault" Type="string">°C</Single>
+            <List Name="LanguageTexts" Type="System.Collections.ArrayList" />
+          </Single>
+        </List>
+        <List Name="Languages" Type="System.Collections.ArrayList" />
+        <Single Name="GuidInit" Type="System.Guid">a0a7012a-665e-4e20-9b4b-b2ca5952f549</Single>
+        <Single Name="GuidReInit" Type="System.Guid">6bb39b56-6d46-4cae-aa4c-06ca63c3be99</Single>
+        <Single Name="GuidExitX" Type="System.Guid">74cb9f3d-e8ba-4751-9ca7-7ed49d42acd7</Single>
+      </Single>
+      <Single Name="ParentSVNodeGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+      <Array Name="Path" Type="string" />
+      <Single Name="Index" Type="int">-1</Single>
+    </Single>
+  </List2>
+  <Null Name="ProfileName" />
+</Single>  </StructuredView>
+</ExportFile>

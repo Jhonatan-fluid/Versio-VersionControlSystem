@@ -925,6 +925,135 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
             l => l.Contains("which is the rename cannot be told", StringComparison.Ordinal));
     }
 
+    // ── A3: the forms only a member object has ───────────────────────
+
+    /// <summary>
+    /// An action, a method and a property, edited in the mirror and read back out of the
+    /// project.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The row the first fixture could not reach.</b> <c>ST_IMPL</c> is the form an ACTION
+    /// and a TRANSITION export as — implementation only, no declaration at all — and
+    /// <c>RefrigeratorControl</c> has neither, so nothing in this repository had ever imported
+    /// one. <c>MachineWithMembers</c> was built against real CODESYS for exactly this;
+    /// <c>tools\versio_make_member_fixture.py</c> is what built it and records what the four
+    /// creation calls actually accept.
+    /// </para>
+    /// <para>
+    /// <b>Three forms in one run, because the CODESYS launches are the cost.</b> The action is
+    /// <c>ST_IMPL</c>, the method is <c>ST_FULL</c> on a member rather than on a top-level POU,
+    /// and the property is <c>NATIVE_R</c> — a recursive native export that carries its own
+    /// Get and Set. Between them they are every route a member takes into a project.
+    /// </para>
+    /// <para>
+    /// <b>Driven straight through the runner</b>, like
+    /// <see cref="The_race_between_planning_and_importing_is_reported_both_ways"/>: no
+    /// adoption, no git, no orchestrator. The subject is the planner and the script against a
+    /// shape neither has met, and the gates above them would only add ways not to reach it.
+    /// </para>
+    /// </remarks>
+    [SkippableFact]
+    public async Task An_action_a_method_and_a_property_edited_in_the_mirror_reach_the_project()
+    {
+        var install = Install;
+        Skip.If(install is null, "no CODESYS installation with a profile");
+
+        var fixture = Core.Tests.TestPaths.Project("MachineWithMembers.project");
+        Skip.If(!File.Exists(fixture), "the member fixture is missing");
+
+        Directory.CreateDirectory(Path.Combine(_repo, "plc"));
+        var project = Path.Combine(_repo, "plc", "MachineWithMembers.project");
+        File.Copy(fixture, project);
+
+        var mirror = Path.Combine(_repo, "plc", "MachineWithMembers");
+        var runner = new LocalCodesysRunner(
+            install!.ExecutablePath, new ScriptExtractor(), new TestLogger(output));
+
+        CodesysJob Job(CodesysOperation operation, string path) => new()
+        {
+            Operation = operation,
+            Profile = install.Profiles[0],
+            Projects = [new ProjectJob
+            {
+                BindingId = "members", ProjectPath = project, Path = path,
+            }],
+            Timeout = TimeSpan.FromMinutes(5),
+        };
+
+        Assert.True((await runner.RunAsync(
+            Job(CodesysOperation.Export, mirror), null, CancellationToken.None)).Succeeded);
+
+        var pumps = Path.Combine(mirror, "Device", "Plc Logic", "Application", "Pumps");
+
+        // THE ACTION — ST_IMPL. Its file is the body and nothing else, so an edit here has
+        // nowhere to hide: there is no declaration for the importer to fall back on.
+        var action = Path.Combine(pumps, "FB_Pump.Stop.action.st");
+        var actionText = await File.ReadAllTextAsync(action);
+        Assert.DoesNotContain("audit_action", actionText, StringComparison.Ordinal);
+        await WriteAsync(action, actionText.TrimEnd() + "\nspeed := 0; (* audit_action *)\n");
+
+        // THE METHOD — ST_FULL, on a member. Both halves edited, so a run that applied the
+        // declaration and dropped the implementation is caught.
+        var method = Path.Combine(pumps, "FB_Pump.Start.st");
+        var methodText = await File.ReadAllTextAsync(method);
+        await WriteAsync(method, methodText
+            .Replace("target : INT;", "target : INT; (* audit_decl *)", StringComparison.Ordinal)
+            .Replace("Start := TRUE;", "Start := TRUE; (* audit_impl *)", StringComparison.Ordinal));
+
+        var import = await runner.RunAsync(
+            Job(CodesysOperation.Import, mirror), null, CancellationToken.None);
+
+        foreach (var w in import.Output.Warnings)
+        {
+            output.WriteLine($"warning: {w.String("code")} {w.String("path")} {w.String("detail")}");
+        }
+
+        Assert.True(import.Succeeded, import.FailureReason ?? "the import failed");
+
+        // No warning at all about the member files. A resolve chain built from the stem
+        // instead of the recorded parent would land here as PARENT_NOT_FOUND.
+        Assert.DoesNotContain(import.Output.Warnings,
+            w => (w.String("path") ?? string.Empty).Contains("FB_Pump", StringComparison.Ordinal));
+
+        // Read back out of the PROJECT. Nothing cheaper distinguishes an applied edit from a
+        // parsed one.
+        var verify = Path.Combine(_repo, "verify-members");
+        Assert.True((await runner.RunAsync(
+            Job(CodesysOperation.Export, verify), null, CancellationToken.None)).Succeeded);
+
+        var verifyPumps = Path.Combine(verify, "Device", "Plc Logic", "Application", "Pumps");
+
+        var reAction = await File.ReadAllTextAsync(
+            Path.Combine(verifyPumps, "FB_Pump.Stop.action.st"));
+        output.WriteLine(reAction);
+        Assert.Contains("audit_action", reAction, StringComparison.Ordinal);
+
+        var reMethod = await File.ReadAllTextAsync(
+            Path.Combine(verifyPumps, "FB_Pump.Start.st"));
+        output.WriteLine(reMethod);
+        Assert.Contains("audit_decl", reMethod, StringComparison.Ordinal);
+        Assert.Contains("audit_impl", reMethod, StringComparison.Ordinal);
+
+        // AND THE PROPERTY SURVIVED THE ROUND TRIP INTACT, which is a different claim from
+        // the two above and the reason NATIVE_R is in this test at all: it is imported
+        // recursively, so a mistake takes its Get and Set with it rather than reporting
+        // anything. The accessors are inside the payload and never appear as records.
+        var property = Path.Combine(verifyPumps, "FB_Pump.Speed.xml");
+        Assert.True(File.Exists(property), "the property left the project");
+
+        var manifest = ProjectManifest.Parse(
+            await File.ReadAllTextAsync(Path.Combine(verify, "_manifest.json")));
+
+        Assert.Equal("NATIVE_R", Assert.Single(
+            manifest.Objects, o => o.Path.EndsWith("FB_Pump.Speed.xml", StringComparison.Ordinal))
+            .Form);
+
+        // The owner chain is still recorded after an import, not just after the export that
+        // built the fixture — three members, each pointing at FB_Pump.
+        Assert.Equal(3, manifest.Objects.Count(o => !string.IsNullOrEmpty(o.Parent)));
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────────────
 
     private static CodesysJob Job(

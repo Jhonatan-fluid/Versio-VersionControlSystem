@@ -1,0 +1,213 @@
+{
+  "bindingId": "9a1c47f0b2de", 
+  "objectCount": 18, 
+  "objects": [
+    {
+      "bytes": 217759, 
+      "form": "NATIVE", 
+      "guid": "9f8998dc-cd78-48bb-9f8d-8bf7be08b5cb", 
+      "hash": "sha256:b590f0e000aee3485c06f33ca3553151186b3b592c8b8545dc525a657838ecfc", 
+      "name": "Diagnosis", 
+      "nhash": "sha256:477d88255087f102da068c4f9febc94929fa040fa17f3fb0e80efa4ab87c0912", 
+      "path": "Device/Plc Logic/Application/Diagnosis.vis.xml", 
+      "type": "VISUALISATION"
+    }, 
+    {
+      "bytes": 54, 
+      "form": "ST_DECL", 
+      "guid": "a993868c-c4bf-4daf-b723-2038825cf9af", 
+      "hash": "sha256:1a834f57d57d2058b4a4dac953661a5a97e6a4e72c050d3cf377b34e5185ff7d", 
+      "name": "E_Mode", 
+      "path": "Device/Plc Logic/Application/E_Mode.st", 
+      "type": "DUT"
+    }, 
+    {
+      "bytes": 238, 
+      "form": "ST_DECL", 
+      "guid": "f8ccf7f9-314d-4201-b460-0f935fbcbf7d", 
+      "hash": "sha256:95040041622aa79187d76c476ede44bd5e1d1f3a0cbbac6fa938b7165dcab870", 
+      "name": "Glob_Var", 
+      "path": "Device/Plc Logic/Application/Glob_Var.gvl.st", 
+      "type": "GVL"
+    }, 
+    {
+      "bytes": 2550, 
+      "form": "GVL_NATIVE", 
+      "guid": "f8ccf7f9-314d-4201-b460-0f935fbcbf7d", 
+      "hash": "sha256:ed690f64e8a6a3daea20d702de9675a47a7853b9d889713624fb7c76baccba4b", 
+      "name": "Glob_Var", 
+      "path": "Device/Plc Logic/Application/Glob_Var.gvl.xml", 
+      "type": "GVL"
+    }, 
+    {
+      "bytes": 6367, 
+      "form": "LIBRARIES", 
+      "guid": "63f43dce-203a-48c5-b1b9-4754ec306ed4", 
+      "hash": "sha256:fa9754bf1ce79f04244d7eca1eb61024b5cffdefce0720b4d7b90cbfb928ce03", 
+      "name": "Library Manager", 
+      "path": "Device/Plc Logic/Application/Library Manager.libraries.yaml", 
+      "type": "LIBRARY_MANAGER"
+    }, 
+    {
+      "bytes": 2569769, 
+      "form": "NATIVE", 
+      "guid": "08412c71-e71d-4e95-8beb-72e28660fbeb", 
+      "hash": "sha256:f6a3a575b86c1e914c73d360c26b9fdd2a399f696e5c1483f2e4d97907ff5847", 
+      "name": "Live_Visu", 
+      "nhash": "sha256:4579a74b524ff62d7b93c3072d09aba9b515e8b41d154e2e9bec0460da4f3094", 
+      "path": "Device/Plc Logic/Application/Live_Visu.vis.xml", 
+      "type": "VISUALISATION"
+    }, 
+    {
+      "bytes": 80028, 
+      "form": "NATIVE", 
+      "guid": "6247544f-164d-4cdc-b8f8-6177e40d8dd8", 
+      "hash": "sha256:11363315357e57973f91cca9562f02864b703390ef5ece6e606093e97343c5f6", 
+      "name": "PLC_PRG", 
+      "nhash": "sha256:74872099bf9fdf35ee712b374d8fda8c0213a5217712e655d9394975fdf2df0a", 
+      "path": "Device/Plc Logic/Application/PLC_PRG.xml", 
+      "type": "POU"
+    }, 
+    {
+      "bytes": 7415, 
+      "form": "NATIVE_R", 
+      "guid": "f70a17d4-a439-4d06-ab56-5f28e6df0c76", 
+      "hash": "sha256:dd0d4d38e56e448158d3ad40b558b3a2050829974be2f5547bfba161a8f12870", 
+      "name": "Speed", 
+      "nhash": "sha256:a72f4a515cfa6ca9409a732a52152eb73e6de38b2969bad88f89d7c2cefd1c49", 
+      "parent": "d02989f7-103d-46c0-984c-6bb98c393532", 
+      "path": "Device/Plc Logic/Application/Pumps/FB_Pump.Speed.xml", 
+      "type": "PROPERTY"
+    }, 
+    {
+      "bytes": 119, 
+      "form": "ST_FULL", 
+      "guid": "e63a4986-d91c-4887-a977-0e29bd2a82c7", 
+      "hash": "sha256:327246f2147a247d16d2746cc6ad724f3bac711be3277270a1c224d51615e754", 
+      "ihash": "sha256:ca0248d905d34c3866b6224111394b7d959b6025746b60802ceeda5bc2f97098", 
+      "name": "Start", 
+      "parent": "d02989f7-103d-46c0-984c-6bb98c393532", 
+      "path": "Device/Plc Logic/Application/Pumps/FB_Pump.Start.st", 
+      "shash": "0fc973f4,3d3336fd,764147a3,a7096452,adac0531,af4dfbbe,d091d3bb", 
+      "type": "METHOD"
+    }, 
+    {
+      "bytes": 30, 
+      "form": "ST_IMPL", 
+      "guid": "41eb05b6-9843-497e-8703-e10fc1c5d68b", 
+      "hash": "sha256:ba9346f0d61bb3394dfb06b02769207824c3d3ab5b84c555105d9a2c52ce2eda", 
+      "name": "Stop", 
+      "parent": "d02989f7-103d-46c0-984c-6bb98c393532", 
+      "path": "Device/Plc Logic/Application/Pumps/FB_Pump.Stop.action.st", 
+      "type": "ACTION"
+    }, 
+    {
+      "bytes": 172, 
+      "form": "ST_FULL", 
+      "guid": "d02989f7-103d-46c0-984c-6bb98c393532", 
+      "hash": "sha256:eb890893638eb83cde3aabd4922358de3207aff7e7958db69884222a465fc553", 
+      "ihash": "sha256:3be4556b31b6a4c8ffe559192a7c974d416e572c3f812b01012e62da464110cc", 
+      "name": "FB_Pump", 
+      "path": "Device/Plc Logic/Application/Pumps/FB_Pump.st", 
+      "shash": "2d6d2aec,3be4556b,3d3336fd,764147a3,a7096452,a9541dd5,aebea00d,b0398cdf,b7f3366e,cf55db8b", 
+      "type": "POU"
+    }, 
+    {
+      "bytes": 39722, 
+      "form": "NATIVE", 
+      "guid": "b18a62c7-546d-4b2a-a116-1c9d0f44cbbb", 
+      "hash": "sha256:af5fa2058ecbcf210b512562c5d99ab566d6fb88401b158dce3fb09f7885b40c", 
+      "name": "Signals", 
+      "nhash": "sha256:1394f238f73b4fe4a6c19a78d56cc43d58cda78e36d30314897bc0e1fe487b99", 
+      "path": "Device/Plc Logic/Application/Signals.xml", 
+      "type": "POU"
+    }, 
+    {
+      "bytes": 1456, 
+      "form": "ST_FULL", 
+      "guid": "980a4bef-b0b7-4f16-816b-1f41192a0ee0", 
+      "hash": "sha256:b6b254799aedf27edd640eb65ef73fa46f507b047f542025447ea7743d5ae4b4", 
+      "ihash": "sha256:9f23efd403a283628b8f785a995d230d2a8e087025ec0040df62b9ce1088c335", 
+      "name": "Simulation", 
+      "path": "Device/Plc Logic/Application/Simulation.st", 
+      "shash": "04c157ff,07c2969d,117c1ea6,11a69cfd,1c0f1e81,1f113b37,2e2aa42d,38049746,3d3336fd,3f4324c9,4670d4a1,4e4b4138,511ed5ce,75439bc7,8793545a,896dcd73", 
+      "type": "POU"
+    }, 
+    {
+      "bytes": 1257, 
+      "form": "TASK_BOTH", 
+      "guid": "7c1a32ef-a1ae-4012-81f7-53c1a9cdd552", 
+      "hash": "sha256:9441bcfe1f4c1433914a7f8c83a960cf5bb24aafb2d349dc2e7b10568b3be6fa", 
+      "name": "Task Configuration", 
+      "path": "Device/Plc Logic/Application/Task Configuration.tasks.yaml", 
+      "type": "TASK_CONFIGURATION"
+    }, 
+    {
+      "bytes": 12528, 
+      "form": "TASK_NATIVE", 
+      "guid": "7c1a32ef-a1ae-4012-81f7-53c1a9cdd552", 
+      "hash": "sha256:79144a970995d1f6ad66a4adadb7d2920f002bd63387f8d9b00d4baab933d2c8", 
+      "name": "Task Configuration", 
+      "path": "Device/Plc Logic/Application/Task Configuration.xml", 
+      "type": "TASK_CONFIGURATION"
+    }, 
+    {
+      "bytes": 180059, 
+      "form": "NATIVE", 
+      "guid": "4f0c492e-5c3e-40e6-a236-cf175e837edf", 
+      "hash": "sha256:aca12fe7e3d37d9f88ec1a63d823acd7e087cfe1bc7ba7f5a9644826bd429e57", 
+      "name": "Visualization", 
+      "nhash": "sha256:8f72606f038318f9a6ca964eaa68cedb6a62f201ba98c2c4acaeec9ad37e5365", 
+      "path": "Device/Plc Logic/Application/Visualization.vis.xml", 
+      "type": "VISUALISATION"
+    }, 
+    {
+      "bytes": 7440, 
+      "form": "NATIVE", 
+      "guid": "b5430773-3042-47d6-a6d3-28650a6ce532", 
+      "hash": "sha256:91526c92d843f9bcc23f9dca0a94dd7e49cb8f22b84b710f9624b050ba27ec36", 
+      "name": "GlobalTextList", 
+      "nhash": "sha256:623a169838fd50c07135bc1933db9b13383f710600969e5ae682a5f313617931", 
+      "path": "GlobalTextList.xml", 
+      "type": "GLOBAL_TEXTLIST"
+    }, 
+    {
+      "bytes": 4320, 
+      "form": "LIBRARIES", 
+      "guid": "a154b962-4c42-4c66-82dc-2eaa6ce24df5", 
+      "hash": "sha256:02fd6bc96b0476661420cd01e902f18578478cbb7e2968f5fa818696df45f25e", 
+      "name": "Library Manager", 
+      "path": "Library Manager.libraries.yaml", 
+      "type": "LIBRARY_MANAGER"
+    }
+  ], 
+  "project": "MachineWithMembers.project", 
+  "schema": 7, 
+  "skipped": [
+    {
+      "name": "Visualization Manager", 
+      "path": "Device/Plc Logic/Application/Visualization Manager", 
+      "reason": "SERVICE_OBJECT", 
+      "type": "VISUALISATION_MANAGER"
+    }, 
+    {
+      "name": "__VisualizationStyle", 
+      "path": "Device/Plc Logic/Application/__VisualizationStyle", 
+      "reason": "SERVICE_OBJECT", 
+      "type": "VISUALISATION_STYLE"
+    }, 
+    {
+      "name": "Project Settings", 
+      "path": "Project Settings", 
+      "reason": "TEMPLATE_ONLY", 
+      "type": "PROJECT_SETTINGS"
+    }, 
+    {
+      "name": "__VisualizationStyle", 
+      "path": "__VisualizationStyle", 
+      "reason": "SERVICE_OBJECT", 
+      "type": "VISUALISATION_STYLE"
+    }
+  ], 
+  "warnings": []
+}

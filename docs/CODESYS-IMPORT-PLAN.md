@@ -1248,7 +1248,7 @@ A2 passes, and C6's rule lost its subject.
 |---|---|
 | **E2E** | Adopt the fixture in a real repository, export, edit the mirror, import through `SyncOrchestrator` — real planner, real plan, real confirmation — then **re-export and read the answer back out of the project.** Nothing cheaper can tell a field that was applied from a file that was merely parsed |
 | **RUNNER** | The same project and the same CODESYS, driven straight through `LocalCodesysRunner` with a plan the caller computed. The door `SyncViewModel` uses, and the only one that can open the window between planning and executing |
-| **PURE** | Refused on the planner's side of the seam, before CODESYS starts. The rule is unit-tested; the row names the run that confirmed the object was still there afterwards |
+| **PURE** | Decided on the planner's side of the seam, so it is asserted without starting CODESYS at all. Two shapes: a rule that **refuses** before the toolchain runs — where the row also names the run that confirmed the object survived — and a plan computed over a **committed mirror the real exporter wrote**, which is bytes from CODESYS read back in milliseconds rather than a hand-built manifest asserting the test's own assumptions |
 | **NOT REACHED** | No verdict from this run, and the row says what would be needed. **Never a pass** |
 
 **Where the rows live.** The E2E and RUNNER rows are `ImportFeatureAuditTests`,
@@ -1261,7 +1261,7 @@ suite, so a green result belongs to the row beside it.
 |---|---|---|---|
 | A1 | **`ST_FULL`** — a POU's declaration and implementation replaced in place | E2E | ✅ the edit is in the project on the re-export |
 | A2 | **`ST_DECL`** — a declaration-only object written without touching an implementation | E2E | ✅ **after the fix.** It failed on the first run — the `.gvl.xml` was imported afterwards and put the old declaration back — which is G12. The XML half is export-only now and the edit reaches the project |
-| A3 | **`ST_IMPL`** — an implementation-only object (action, transition) | NOT REACHED | The fixture has no action and no transition, so this form has never been imported by anything |
+| A3 | **`ST_IMPL`** — an implementation-only object (action, transition) | E2E | ✅ **on the second fixture.** An edit to `FB_Pump.Stop.action.st` is in the project on the re-export, alongside a member `ST_FULL` method and a `NATIVE_R` property in the same run |
 | A4 | A file whose content already matches is counted **unchanged** and not written | E2E | ✅ `2 unchanged` on a run that updated one file |
 | A5 | **Native XML** replaced in place through `import_native` | E2E | ✅ `native: 7` on every import here, each reported `replaced` rather than created, and the re-export holds one object per file |
 | A6 | **`TASK_BOTH`** — task fields written through the typed API | E2E | ✅ `priority` 1 → 5 and → 7 read back out of the project |
@@ -1315,22 +1315,27 @@ suite, so a green result belongs to the row beside it.
 
 ### E — Naming and resolution
 
-**Every row here is NOT REACHED, and for one reason worth stating on its own:
+**Every row here was NOT REACHED on the first run, for one reason worth stating on its own:
 `RefrigeratorControl` has no member objects at all** — no method, no action, no property — so
-its manifest records no `parent` for anything, and every resolve chain in this audit came from
-directory names. Nothing in this repository can exercise a parent-GUID chain, a percent-encoded
-name or a dotted name against a real project.
+its manifest records no `parent` for anything, and every resolve chain in that audit came from
+directory names.
 
-**C7 and C8 are the partial exception, and say so.** Both write a `parent` into the manifest by
-hand, which is enough to exercise the dependants map and the guessed-chain rule but is not the
-same as an export having recorded one. What no row here reaches is a chain the **exporter**
-produced.
+**`MachineWithMembers` was built to end that**, against real CODESYS, by
+`tools\versio_make_member_fixture.py`: a folder, a function block inside it, and a method, an
+action and a property inside that. It records three parent GUIDs, and it is the only source of
+`ST_IMPL` and `NATIVE_R` in the repository. **E1 and E3 are closed on it.** What is still out of
+reach is a name needing percent-encoding: P5 measured that CODESYS refuses to *create* one, so
+the two rows below need an object arriving from a library or an external-file reference.
+
+**C7 and C8 write a `parent` into the manifest by hand**, which exercises the dependants map and
+the guessed-chain rule but is not the same as an export having recorded one. E1 and E3 now are:
+`MachineWithMembers` records three parents the **exporter** produced, and they resolve.
 
 | # | What the import does | Measured | Verdict |
 |---|---|---|---|
-| E1 | Ownership from the manifest's **parent-GUID chain**, not from the file stem | NOT REACHED | Needs a project with a member object |
-| E2 | **Percent-encoded** names decoded before resolution (G4) | NOT REACHED | Needs an object whose name needs encoding. P5 measured that one cannot be *created*; one can still arrive from the IDE or a library |
-| E3 | A **dotted name** is not split into owner and member (G5) | NOT REACHED | Same |
+| E1 | Ownership from the manifest's **parent-GUID chain**, not from the file stem | PURE | ✅ on `MachineWithMembers`, against the bytes the real exporter wrote: `Device / Plc Logic / Application / Pumps / FB_Pump / Start` |
+| E2 | **Percent-encoded** names decoded before resolution (G4) | NOT REACHED | Needs an object whose name needs encoding. P5 measured that one cannot be *created*, so neither fixture can contain one; `README.md`'s own object list has a real example, an external-file reference named `{GUID}\|C:\Users\…` |
+| E3 | A **dotted name** is not split into owner and member (G5) | PURE + E2E | ✅ `FB_Pump.Stop.action.st` carries the dot in its stem and resolves through the recorded parent, and the import applies it without a `PARENT_NOT_FOUND` |
 | E4 | A **shortened stem** that decodes to nothing is reported unresolvable | NOT REACHED | Same |
 
 ### F — The run as a whole
@@ -1367,12 +1372,17 @@ were in what the exporter *wrote*, and every unit test passed throughout both. R
 **It cost the two-file rule its subject** — see C6 and C13 above, and the finding in
 [`STATUS.md`](STATUS.md).
 
-**2 — The only fixture cannot reach a whole section of this list.** `RefrigeratorControl` has
-no member objects — no method, no action, no property — and therefore no `ST_IMPL` file and no
-recorded `parent` on anything. So A3 and all four of E are unmeasured, and will stay unmeasured
-until a project with a member object exists to test against. That is not a defect; it is a
-**hole in the corpus** — and G4 and G5 are both about exactly this half of the importer, so
-the two gaps with the least evidence behind them are the two nothing here can reach.
+**2 — The only fixture could not reach a whole section of this list, so a second one was
+built.** `RefrigeratorControl` has no member objects — no method, no action, no property —
+and therefore no `ST_IMPL` file and no recorded `parent` on anything, which left A3 and all
+four of E unmeasured. That was not a defect; it was a **hole in the corpus**, and G4 and G5 are
+both about exactly this half of the importer, so the two gaps with the least evidence behind
+them were the two nothing could reach.
+
+`MachineWithMembers` closed three of the five the same day. **The remaining two are E2 and E4**,
+and they need a name that needs percent-encoding — which P5 measured cannot be *created*, so
+no fixture builder can produce one. It has to arrive from a library or an external-file
+reference, and that is the next thing this corpus is missing.
 
 **3 — A planner refusal is invisible to anything watching the outcome.** The two-file rule, the
 orphan rule and the guessed chain are all `ImportPlan.Warnings`, which deliberately do not cross
