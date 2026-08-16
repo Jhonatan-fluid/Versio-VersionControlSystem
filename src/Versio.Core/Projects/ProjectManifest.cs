@@ -74,6 +74,30 @@ public sealed record ProjectObject
     /// </para>
     /// </remarks>
     [JsonPropertyName("nhash")] public string NormalizedHash { get; init; } = string.Empty;
+
+    /// <summary>
+    /// For a full ST body, the hash of its <b>implementation alone</b>. Empty before schema 6,
+    /// and empty for every form that is not <c>ST_FULL</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>It exists so a renamed POU can be recognised as one.</b> <see cref="Hash"/> is over
+    /// the whole file, and a POU's file opens <c>PROGRAM Simulation</c> — the object's name is
+    /// <i>in</i> the content — so renaming the object rewrites the file and the whole-file hash
+    /// matches nothing. The body is the half a rename does not touch.
+    /// </para>
+    /// <para>
+    /// <b><c>ST_FULL</c> only, and that is not an oversight.</b> An action or a transition is
+    /// implementation with no declaration, and a GVL's <c>.st</c> is a declaration with no name
+    /// in it — for both, the whole-file hash already survives a rename.
+    /// </para>
+    /// <para>
+    /// <b>Empty is not "no implementation".</b> A schema-5 manifest has none because nothing
+    /// wrote one, so a renamed POU on such a mirror is not recognised and falls back to a
+    /// delete and a create — which is what happened before this existed.
+    /// </para>
+    /// </remarks>
+    [JsonPropertyName("ihash")] public string ImplementationHash { get; init; } = string.Empty;
     [JsonPropertyName("bytes")] public long Bytes { get; init; }
 }
 

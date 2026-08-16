@@ -125,8 +125,14 @@ public sealed record PlannedFile
 /// compared against, because the raw bytes churn. Empty on a pre-schema-5 mirror, which is what
 /// makes such a deletion unverifiable rather than assumed unchanged.
 /// </param>
+/// <param name="ImplementationHash">
+/// For a full ST body, the hash of its implementation alone — the half a rename does not touch,
+/// and therefore the only thing that can pair a renamed POU with the file it became. Empty on a
+/// pre-schema-6 mirror, and for every other form.
+/// </param>
 public sealed record DeletedFile(
-    string Path, string Hash, string Form, string NormalizedHash = "");
+    string Path, string Hash, string Form, string NormalizedHash = "",
+    string ImplementationHash = "");
 
 /// <summary>
 /// An object the mirror no longer holds any file for.

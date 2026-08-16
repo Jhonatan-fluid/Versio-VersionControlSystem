@@ -1,3 +1,4 @@
+using Versio.Core.Iec;
 using Versio.Core.Plc;
 using Versio.Core.Plc.Codesys;
 using Versio.Core.Projects;
@@ -549,6 +550,83 @@ public class CodesysImportPlannerTests
 
         Assert.Empty(plan.Renames);
         Assert.Single(plan.Deletions);
+    }
+
+    /// <summary>A full POU body: declaration naming the object, then the implementation.</summary>
+    private static string Pou(string name, string body = "x();") =>
+        $"PROGRAM {name}\nVAR\nEND_VAR\n{StTextCodec.ImplementationDelimiter}\n{body}";
+
+    [Fact]
+    public void A_renamed_POU_is_matched_on_its_body_because_its_name_is_in_its_declaration()
+    {
+        // THE CASE STEP 1 CANNOT SEE, and the common one. Renaming a POU rewrites
+        // `PROGRAM Old` to `PROGRAM New`, so the whole-file hash matches nothing — but the
+        // implementation is untouched, and schema 6 records it.
+        var body = "MotorOn := TRUE;";
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(Obj("App/Old.st", "Old", "POU", "ST_FULL", guid: "g1")
+                with
+                {
+                    Hash = HashOf(Pou("Old", body)),
+                    ImplementationHash = HashOf(StTextCodec.Split(Pou("Old", body)).Implementation),
+                }),
+            [File("App/New.st", Pou("New", body))]);
+
+        var rename = Assert.Single(plan.Renames);
+        Assert.Equal("Old", rename.OldName);
+        Assert.Equal("New", rename.NewName);
+        Assert.Empty(plan.Deletions);
+
+        // AND THE FILE IS APPLIED, not skipped — this is the difference from an exact-content
+        // match. The declaration genuinely differs, so the object is renamed and then written
+        // into; skipping it would leave the object wearing its new name over its old
+        // declaration.
+        var applied = One(plan, "App/New.st");
+        Assert.Equal(PlannedAction.ApplyText, applied.Action);
+        Assert.Equal("g1", applied.Guid);
+        Assert.Equal(["App", "New"], applied.Resolve);
+    }
+
+    [Fact]
+    public void Two_POUs_sharing_a_body_are_refused_which_is_what_makes_an_empty_body_safe()
+    {
+        // Half the POUs in a project have an empty or near-identical body, so the weaker
+        // signal is only safe because ambiguity is refused. No special case for emptiness:
+        // two bodies the same is two candidates, and two candidates cannot be told apart.
+        var body = string.Empty;
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(
+                Obj("App/A.st", "A", "POU", "ST_FULL", guid: "g1") with
+                {
+                    Hash = HashOf(Pou("A", body)),
+                    ImplementationHash = HashOf(StTextCodec.Split(Pou("A", body)).Implementation),
+                },
+                Obj("App/B.st", "B", "POU", "ST_FULL", guid: "g2") with
+                {
+                    Hash = HashOf(Pou("B", body)),
+                    ImplementationHash = HashOf(StTextCodec.Split(Pou("B", body)).Implementation),
+                }),
+            [File("App/C.st", Pou("C", body))]);
+
+        Assert.Empty(plan.Renames);
+        Assert.Equal(2, plan.Deletions.Count);
+    }
+
+    [Fact]
+    public void A_POU_on_a_pre_schema_6_mirror_is_not_matched_because_nothing_recorded_its_body()
+    {
+        // Absent is not "no implementation". Every mirror exported before today has no ihash,
+        // and such a rename falls back to a delete and a create — which is what happened
+        // before this existed, rather than a new failure.
+        var body = "MotorOn := TRUE;";
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(Obj("App/Old.st", "Old", "POU", "ST_FULL", guid: "g1")
+                with { Hash = HashOf(Pou("Old", body)) }),
+            [File("App/New.st", Pou("New", body))]);
+
+        Assert.Empty(plan.Renames);
+        Assert.Single(plan.Deletions);
+        Assert.Equal(PlannedAction.Create, One(plan, "App/New.st").Action);
     }
 
     [Fact]

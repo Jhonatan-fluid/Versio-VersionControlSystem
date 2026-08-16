@@ -783,6 +783,95 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
             o => o.Path.EndsWith("Renamed.st", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// A POU renamed properly — file <i>and</i> declaration — is renamed, not rebuilt.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The case step 1 could not see, and the common one.</b> Renaming a POU rewrites
+    /// <c>PROGRAM Simulation</c> to <c>PROGRAM Renamed</c>, so the whole-file hash matches
+    /// nothing. The implementation is untouched, and manifest schema 6 records it — that is the
+    /// signal this pairs on.
+    /// </para>
+    /// <para>
+    /// <b>The GUID is the assertion.</b> A delete-plus-create would also leave a project
+    /// containing an object called <c>Renamed</c> — with a new identity, and with every
+    /// reference, task assignment and visualisation binding that pointed at the old one left
+    /// pointing at nothing. A test checking only the name would pass against the exact behaviour
+    /// this exists to replace.
+    /// </para>
+    /// </remarks>
+    [SkippableFact]
+    public async Task A_POU_renamed_in_the_mirror_keeps_its_identity_rather_than_being_rebuilt()
+    {
+        var install = Install;
+        Skip.If(install is null, "no CODESYS installation with a profile");
+        Skip.If(!File.Exists(FixtureProject), "fixture project missing");
+
+        await InitRepoAsync();
+        var git = new GitCliClient(_repo, logger: new TestLogger(output));
+        var setup = new RepoSetup(_repo, CodesysProjectFormat.Instance);
+
+        var adopted = await setup.AdoptAsync(
+            ProjectRelativePath, git, install!.Profiles[0], CancellationToken.None);
+        var binding = adopted.Config.Bindings[0];
+        var orchestrator = BuildOrchestrator(adopted.Config, install);
+
+        Assert.Equal(SyncVerdict.Completed, (await Export(orchestrator, binding.Id)).Verdict);
+        await orchestrator.ReleaseAfterPushAsync("c1", CancellationToken.None);
+
+        var mirror = Path.Combine(_repo, "plc", "RefrigeratorControl");
+        var app = Path.Combine(mirror, RelApp);
+        var before = Versio.Core.Projects.ProjectManifest.Parse(
+            await File.ReadAllTextAsync(Path.Combine(mirror, "_manifest.json")));
+
+        var original = Assert.Single(
+            before.Objects, o => o.Path.EndsWith("Simulation.st", StringComparison.Ordinal));
+        output.WriteLine($"before: {original.Path} guid={original.Guid}");
+
+        // Schema 6 is what makes this reachable at all: without a recorded implementation hash
+        // there is nothing to pair the departed file with.
+        Assert.NotEqual(string.Empty, original.ImplementationHash);
+
+        // A REAL rename: the file moves AND the declaration is rewritten, exactly as renaming
+        // the object in the IDE and re-exporting would leave the mirror.
+        var source = Path.Combine(app, "Simulation.st");
+        var body = await File.ReadAllTextAsync(source);
+        File.Delete(source);
+        await File.WriteAllTextAsync(
+            Path.Combine(app, "Renamed.st"),
+            body.Replace("PROGRAM Simulation", "PROGRAM Renamed", StringComparison.Ordinal),
+            new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+
+        var outcome = await TextChanged(orchestrator, binding.Id);
+        output.WriteLine($"import — {outcome.Verdict}: {SyncNarrative.Describe(outcome)}");
+        Assert.Equal(SyncVerdict.Completed, outcome.Verdict);
+        Assert.DoesNotContain(outcome.Warnings,
+            w => w.Contains("RENAME_NOT_APPLIED", StringComparison.Ordinal));
+
+        var after = Versio.Core.Projects.ProjectManifest.Parse(await File.ReadAllTextAsync(
+            Path.Combine(await ReExport(install, binding.Id, "verify-pou-rename"),
+                         "_manifest.json")));
+
+        Assert.DoesNotContain(after.Objects,
+            o => o.Path.EndsWith("Simulation.st", StringComparison.Ordinal));
+
+        var renamed = Assert.Single(
+            after.Objects, o => o.Path.EndsWith("Renamed.st", StringComparison.Ordinal));
+        output.WriteLine($"after:  {renamed.Path} guid={renamed.Guid}");
+
+        // THE WHOLE POINT: the same object under a new name, not a new object wearing it.
+        Assert.Equal(original.Guid, renamed.Guid);
+
+        // And the new declaration actually reached the object. The rename is followed by
+        // APPLYING the file — skip that and the object wears its new name over its old
+        // declaration, which re-exports as `PROGRAM Simulation` in a file called Renamed.st.
+        var reExported = await File.ReadAllTextAsync(
+            Path.Combine(await ReExport(install, binding.Id, "verify-pou-decl"),
+                         RelApp, "Renamed.st"));
+        Assert.Contains("PROGRAM Renamed", reExported, StringComparison.Ordinal);
+    }
+
     /// <summary>Where the fixture's objects live, relative to a mirror root.</summary>
     private static string RelApp => Path.Combine("Device", "Plc Logic", "Application");
 

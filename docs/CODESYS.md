@@ -508,7 +508,7 @@ plc/Machine/                     ← the mirror
 └─ _coverage.md                  ← what a person reads in a pull request
 ```
 
-**`_manifest.json` is at schema 5.** The schema number is not decoration — each bump exists
+**`_manifest.json` is at schema 6.** The schema number is not decoration — each bump exists
 because an older manifest's *silence* would otherwise be misread:
 
 | Schema | Adds | The ambiguity it resolves |
@@ -516,6 +516,7 @@ because an older manifest's *silence* would otherwise be misread:
 | 2 | `skipped[]` | A schema-1 manifest lists nothing skipped because nobody was counting, not because coverage was complete |
 | 3 | `LIBRARIES` records | On schema 2, "no LIBRARIES records" means nobody was writing them; on schema 3 it means the project has no library manager |
 | 4 | `parent` on members | A schema-3 manifest carries no parents at all, so the tree reads as flat rather than as broken, and starts nesting on the next export |
+| 6 | `ihash` on full ST records | A schema-5 manifest has no implementation hash because nothing wrote one, not because the object has no body. It is what pairs a **renamed POU** with the file it became — the whole-file hash cannot, since `PROGRAM Simulation` is inside the file — so without it a rename falls back to a delete and a create, losing the GUID |
 | 5 | `nhash` on native records | A schema-4 manifest has no normalised hash because nothing wrote one, not because the object is unchanged — reading absence as agreement would delete work on every mirror exported before 2026-08-15. Without it a native deletion stays refused |
 
 Two invariants worth knowing before touching the manifest:

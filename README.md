@@ -38,7 +38,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | Import native XML **in place**, GUID preserved | ✅ no delete-and-recreate |
 | Create objects that do not exist yet | ✅ POU / FB / FUNCTION / INTERFACE / DUT / GVL |
 | **Delete a source file and the object leaves the project** | ✅ **textual and native alike.** Deleting is the one thing Versio does that destroys work, so it is built as refusals: five checks before it is even proposed, **the confirmation dialog naming which objects will really go and which will really stay**, and a final check inside CODESYS that the object still matches what was exported — **an object somebody edited in the IDE since is kept**, because a missing file says a file was deleted, not that the object was abandoned. A textual file is rebuilt and compared byte for byte; a native one is re-exported and compared against the normalised hash the export recorded (manifest schema 5), since native bytes churn between exports. A native object exported before that hash existed is refused until the next export |
-| **Rename a source file and the object is renamed, not rebuilt** | **Partly.** The machinery is built and proven — the import renames and moves the object itself, GUID intact, so every reference, task assignment and visualisation binding pointing at it survives where delete-plus-create would leave them pointing at nothing. **The detection is what is narrow**: it pairs a departed file with an arrived one holding *identical* content, and a POU's name lives inside its declaration — so a real POU rename changes the content and is not yet spotted. Renaming only the file is recognised as changing nothing and says so. A move that the toolchain silently declines is caught and reported rather than counted |
+| **Rename a source file and the object is renamed, not rebuilt** | ✅ **including a POU.** The import renames and moves the object itself, GUID intact, so every reference, task assignment and visualisation binding pointing at it survives where delete-plus-create would leave them pointing at nothing. A POU's name lives inside its declaration, so renaming one rewrites the whole file — it is paired on the **implementation**, which a rename does not touch (manifest schema 6), and the new declaration is then applied to the renamed object. Ambiguity is refused rather than guessed: two objects sharing a body cannot be told apart, so both stay a delete and a create. Renaming only the file is recognised as changing nothing and says so, and a move the toolchain silently declines is caught and reported rather than counted. **Still open**: a rename that also edits the body, which needs the old bytes from git |
 | Drive CODESYS headlessly from C# | ✅ `LocalCodesysRunner` |
 | Git status / branches / stage / commit / diff / push | ✅ `GitCliClient` over real `git.exe` |
 | Direction lock, hash gate, coalescer, commit gate | ✅ pure logic, heavily tested |
@@ -170,10 +170,10 @@ Versio.sln
 │                               native_equiv) import no scriptengine and run on
 │                               CPython too, which is what the parity tests use.
 ├─ tests/
-│  ├─ Versio.Core.Tests/        1,468 unit tests — pure, no IO, under a second
+│  ├─ Versio.Core.Tests/        1,471 unit tests — pure, no IO, under a second
 │  ├─ Versio.App.Tests/         480 tests that build the real windows and panels against
 │  │                            the real stylesheet on an STA thread — none is ever shown
-│  └─ Versio.Integration.Tests/ 206 tests against real CODESYS and real git, ~10 min
+│  └─ Versio.Integration.Tests/ 207 tests against real CODESYS and real git, ~10 min
 ├─ tools/                       PowerShell harnesses used during Phase 0, plus
 │                               New-VersioIcon.ps1 which generates the app icon
 ├─ assets/                      versio.svg (reference drawing) and versio.ico

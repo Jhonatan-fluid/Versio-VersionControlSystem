@@ -75,6 +75,7 @@
       "form": "ST_FULL", 
       "guid": "980a4bef-b0b7-4f16-816b-1f41192a0ee0", 
       "hash": "sha256:b6b254799aedf27edd640eb65ef73fa46f507b047f542025447ea7743d5ae4b4", 
+      "ihash": "sha256:9f23efd403a283628b8f785a995d230d2a8e087025ec0040df62b9ce1088c335", 
       "name": "Simulation", 
       "path": "Device/Plc Logic/Application/Simulation.st", 
       "type": "POU"
@@ -128,7 +129,7 @@
     }
   ], 
   "project": "RefrigeratorControl.project", 
-  "schema": 5, 
+  "schema": 6, 
   "skipped": [
     {
       "name": "Visualization Manager", 

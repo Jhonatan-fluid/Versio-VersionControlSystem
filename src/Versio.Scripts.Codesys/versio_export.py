@@ -21,7 +21,7 @@ import scriptengine  # type: ignore
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from versio_text import (content_hash, join_st, normalize_decl_only,  # noqa: E402
-                         safe_file_stem, scrub_native_xml)
+                         safe_file_stem, scrub_native_xml, split_st)
 from versio_types import (EXPORT_ONLY_FORMS, FORM_CONTAINER,  # noqa: E402
                           FORM_GVL_BOTH, FORM_LIBRARIES,
                           FORM_NATIVE, FORM_NATIVE_R, FORM_NATIVE_WITH_CHILDREN,
@@ -218,6 +218,28 @@ class Exporter(object):
         # System.Guid values, so an unmasked hash would refuse those deletions forever.
         if form in NATIVE_FORMS:
             rec["nhash"] = content_hash(normalize(text)[0])
+
+        # A third hash for a full ST body, over the IMPLEMENTATION alone - schema 6.
+        #
+        # It exists so a renamed POU can be recognised as one. `hash` is over the whole file,
+        # and a POU's file opens `PROGRAM Simulation` - the object's name is IN the content -
+        # so renaming the object changes the file and the whole-file hash matches nothing.
+        # The body does not change, and that is the signal.
+        #
+        # ST_FULL only, and that is not an oversight. An action or a transition is
+        # implementation with no declaration, and a GVL's .st is a declaration with no name
+        # in it, so for both of those the whole-file hash already survives a rename and a
+        # second hash would say nothing new.
+        #
+        # DELIBERATELY NOT a name-masked declaration hash beside it. That was the first
+        # design; masking means finding the name inside the declaration, and doing it
+        # identically in IronPython 2.7 and .NET regex - across Unicode word boundaries and a
+        # comment that happens to contain the object's name - is a parity problem worth more
+        # than it buys. The implementation alone is exact, needs no parsing, and is the half
+        # a rename does not touch.
+        if form == FORM_ST_FULL:
+            _decl, impl = split_st(text)
+            rec["ihash"] = content_hash(impl)
 
         # Omitted rather than written empty, so a top-level object's record is
         # byte-identical to what schema 3 wrote. An export that changed every line
@@ -698,7 +720,11 @@ def main():
         # native object with no nhash means nobody was writing them yet, and its
         # deletion has to stay refused. Reading "absent" as "unchanged" would
         # delete work on every mirror exported before today.
-        "schema": 5,
+        # 6: a full ST record carries "ihash", the hash of its implementation alone.
+        # A schema-5 manifest has none because nothing wrote one, and a renamed POU
+        # is simply not recognised as renamed on such a mirror - it falls back to a
+        # delete and a create, which is what happened before this existed.
+        "schema": 6,
         "bindingId": job.get("bindingId", ""),
         "project": os.path.basename(job["project"]),
         "objectCount": len(ex.records),

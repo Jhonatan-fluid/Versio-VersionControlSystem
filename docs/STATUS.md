@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,468 unit + 480 UI + 206 integration, 0 skipped
+**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,471 unit + 480 UI + 207 integration, 0 skipped
 · *(integration run four times this session: 12m45s, 12m52s, 10m29s with one flake, 12m27s — see the flake note in `CLAUDE.md`)*
 
 > **⚠️ Versio removes objects from projects as of 2026-08-15 — Phase 2 of the import plan, and
@@ -156,7 +156,7 @@ opens. That is `SAFEGUARDS.md` phases 1–8, and phase 9 is features rather than
 
 ```
   CODESYS pipeline    ████████████████████  proven on a real project
-  Domain core         ████████████████████  1,468 tests, under 400 ms
+  Domain core         ████████████████████  1,471 tests, under 400 ms
   Vendor seam         ████████████████████  enforced from assembly metadata
   Infrastructure      ████████████████████  drives real CODESYS + real git
   Desktop shell       ███████████████████░  full git surface, diff, and a UI audit applied
@@ -970,6 +970,13 @@ suite all agreed with each other and none of them touched the real case.
 script's own `RENAME_NOT_APPLIED` verification could not catch it, because the object never had
 to move for the check to pass. **A verification that asks "is it where I expected" cannot notice
 that nothing was asked of it.**
+
+**✅ Closed the same day by manifest schema 6.** A full ST record carries `ihash`, the hash of
+its implementation alone, and a second pass pairs a departed POU with an arrived one on it. A
+real POU rename — file and declaration — now keeps its GUID, measured end to end against real
+CODESYS, with the new declaration applied to the renamed object rather than skipped. **The
+arrival must be applied**, and that is the difference from the exact-content pass: skip it and
+the object wears its new name over its old declaration.
 
 **The first answer written here was also wrong, and is corrected rather than quietly dropped.**
 It said a real POU rename could be matched by comparing the implementation exactly and the

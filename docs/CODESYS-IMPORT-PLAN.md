@@ -11,9 +11,10 @@ G4's resolution half and G5's recorded-object half. All three honesty fixes are 
 **Phase 3's step 1 is built and reaches less than its name suggests**: the executing half
 renames and moves objects with their GUIDs intact, measured, but the *detecting* half matches on
 exact content — and a POU's name lives inside its content, so a real POU rename is invisible to
-it. **Step 2 is what remains**: it needs the departed file's content, which the manifest does
-not keep — so either an extra hash recorded at export time (schema 6) or `git show HEAD:<path>`.
-Phases 5 and 6 follow. One other item is open and not on the critical path: `TaskCatalog.cs`, so nothing
+it — **so schema 6 records the implementation hash and a second pass pairs on that**, which is
+the half a rename does not touch. A renamed POU now keeps its GUID, measured. **What remains is
+a rename that also edits the body**, which no recorded hash can reach and which needs
+`git show HEAD:<path>`. Phases 5 and 6 follow. One other item is open and not on the critical path: `TaskCatalog.cs`, so nothing
 outside python can read a `.tasks.yaml`.
 
 > **This header said "nothing in phases 1–6 is built" for the whole of the session that built
@@ -67,7 +68,7 @@ amount of reading, because it does not exist on the first cycle.
 | | Gap | State after Phase 0 |
 |---|---|---|
 | G1 | **Deletes don't propagate** — delete a `.st`, colleague imports, the POU is still there | ✅ **CLOSED OUTRIGHT by Phase 2, 2026-08-15, textual and native.** Delete a `.st` and the POU leaves the project; delete a `.gvl.xml` and the GVL leaves it too, because manifest schema 5 records the **normalised** hash of a native payload and a re-export can be compared against that. An object edited in the IDE since is kept either way — measured with a real edit, not a synthetic one. A native object on a pre-schema-5 mirror stays refused until the next export. P3 is why every rule is a refusal rather than a check: `remove()` dangles silently |
-| G2 | **Renames/moves duplicate** — rename in the mirror, a new object is created and the old one kept | **Partly closed 2026-08-15, and less than it first appeared.** The planner pairs a departed file with an arrived one holding identical content and turns the pair into a rename on the object; the executing half is proven, GUID intact — the same `980a4bef…` before and after. **What it does NOT yet cover is the common case**: a POU's name lives in its declaration, so renaming it changes the content and no hash matches — that is step 2. Renaming only the file is now recognised as changing nothing and says so, rather than reporting a rename it did not perform. A **move into a different container is verified after the fact** — CODESYS accepted one silently without performing it, so the script reports `RENAME_NOT_APPLIED` |
+| G2 | **Renames/moves duplicate** — rename in the mirror, a new object is created and the old one kept | ✅ **CLOSED for a rename, 2026-08-15.** The planner pairs a departed file with an arrived one holding identical content and turns the pair into a rename on the object; the executing half is proven, GUID intact — the same `980a4bef…` before and after. **The common case took a second pass and manifest schema 6**: a POU's name lives in its declaration, so renaming it changes the whole file and no content hash matches — the *implementation* hash does, and that is what pairs it. The arrival is then applied rather than skipped, so the new declaration reaches the object. What is left is a rename that also edits the body, which needs git. Renaming only the file is now recognised as changing nothing and says so, rather than reporting a rename it did not perform. A **move into a different container is verified after the fact** — CODESYS accepted one silently without performing it, so the script reports `RENAME_NOT_APPLIED` |
 | G3 | **New object named from the filename** — `create_textual` uses `parts[-1]` and throws away the parsed `info["name"]`, so `PROGRAM Foo` in `Bar.st` creates `Bar` | ✅ **CLOSED by Phase 1, 2026-08-15.** The plan carries the declaration's name and the script takes it; the disagreement is a warning naming both. **Proven live**: a `Bar.st` declaring `PROGRAM Foo` creates `Foo` against real CODESYS, in `ImportLoggingTests` |
 | G4 | **Encoded names unresolvable** — looks up the *encoded* stem against raw names, giving a duplicate named `weird%3Cname%3E` | ✅ **Resolution CLOSED by Phase 1, 2026-08-15**: chains are real decoded names from the manifest, built C#-side where `DecodeStem` lives and is parity-tested. What remains is the shortened-stem residue — a digest tail decodes to nothing, and such an object is reported as unresolvable rather than guessed at. Creation was already unreachable (P5) |
 | G5 | **A dot in a name breaks the owner split** — `My.Thing.st` looks for member `Thing` of parent `My` | **Unreachable by creation** (P5), and ✅ **the existing-object half CLOSED by Phase 1**: ownership comes from the manifest's parent-GUID chain, and for pre-schema-4 mirrors the recorded name disambiguates — a name equal to the whole stem is never split. Only a manifest-absent dotted *create* still splits, and P5 says CODESYS would refuse it anyway |
@@ -870,7 +871,34 @@ delete-plus-create.
 > verification could not catch, because the object never had to move for the check to pass.
 > Both sides are now withdrawn instead, with a warning naming the declaration as authoritative.
 >
-> **How to close it, and the first answer written here was wrong.** It said: compare the
+> **✅ Closed 2026-08-15 by option (1), manifest schema 6.** A full ST record now carries
+> `ihash`, the hash of its **implementation alone** — the half a rename does not touch — and a
+> second pass pairs a departed POU with an arrived one on it. Renaming `Simulation` to
+> `Renamed` in the mirror renames the object, GUID intact, measured against real CODESYS.
+>
+> **The arrival is APPLIED, not skipped**, and that is the difference from the exact-content
+> pass. There the two files were byte-identical so writing one over the other was pointless;
+> here the declaration genuinely differs — it carries the new name — so the object is renamed
+> and then written into. Skip it and the object wears its new name over its old declaration,
+> which re-exports as `PROGRAM Simulation` in a file called `Renamed.st`.
+>
+> **A wrong pairing here does not destroy anything**, which is what makes the weaker signal
+> acceptable: two unrelated POUs sharing a body would be paired as a rename, the project ends
+> with the same set of objects either way, and only the GUID lineage differs. Compare a wrong
+> pairing in the deletion set, which loses work. **An empty body is handled by the ambiguity
+> rule rather than a special case** — two empty bodies are two candidates, and two candidates
+> are refused.
+>
+> **No name-masked declaration hash beside it**, which was the other half of the first design.
+> Masking means finding the name inside a declaration identically in IronPython 2.7 and .NET
+> regex, across Unicode word boundaries and a comment that happens to contain the object's
+> name. The implementation alone is exact and needs no parsing.
+>
+> **What is still open** is a rename that also genuinely edits the body: neither hash matches,
+> and only `git show HEAD:<path>` plus a similarity score can reach it. Rarer than renaming a
+> POU, and it should not have set the design.
+
+> **The reasoning that got here, and the first answer written was wrong.** It said: compare the
 > implementation exactly and the declaration with its name masked, needing nothing but the
 > manifest and the mirror. **That cannot work.** The manifest records one `hash` per file and
 > nothing else, and the old file is *gone* — there is no old implementation to compare against.

@@ -327,7 +327,137 @@ public static class CodesysImportPlanner
             deletions.Remove(done);
         }
 
+        MatchRenamedPous(files, deletions, byGuid, text, renames, warnings);
+
         return [.. renames.OrderBy(r => r.OldName, StringComparer.Ordinal)];
+    }
+
+    /// <summary>
+    /// Pair a departed POU with an arrived one holding the same <b>implementation</b>, which is
+    /// the half a rename does not touch. Step 2 of Phase 3, for <c>ST_FULL</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Exact content matching cannot see a POU rename at all</b>, and that is why this
+    /// exists. A POU's file opens <c>PROGRAM Simulation</c>, so renaming the object rewrites the
+    /// file and no whole-file hash matches. The body does not change, and manifest schema 6
+    /// records it — <see cref="ProjectObject.ImplementationHash"/>.
+    /// </para>
+    /// <para>
+    /// <b>The arrival is APPLIED here, not skipped</b>, and that is the difference from the
+    /// exact-content pass above. There the two files were byte-identical, so writing one over
+    /// the other was pointless; here the declaration genuinely differs — it carries the new name
+    /// at the very least — so the object is renamed and then the file is written into it. Skip
+    /// it and the object would wear its new name over its old declaration.
+    /// </para>
+    /// <para>
+    /// <b>A wrong pairing here does not destroy anything</b>, which is what makes the weaker
+    /// signal acceptable. Two unrelated POUs sharing a body would be paired as a rename: the
+    /// project ends with the same set of objects it would have had either way, and only the GUID
+    /// lineage differs. Compare a wrong pairing in <see cref="PlanDeletions"/>, which loses
+    /// work. The ambiguity rules are still applied, so it takes a body shared by exactly one
+    /// departure and exactly one arrival.
+    /// </para>
+    /// <para>
+    /// <b>An empty body is shared by half the POUs in a project</b>, and that is handled by the
+    /// ambiguity rule rather than by a special case: two empty bodies are two candidates, and
+    /// two candidates are refused.
+    /// </para>
+    /// </remarks>
+    private static void MatchRenamedPous(
+        List<PlannedFile> files,
+        List<PlannedDeletion> deletions,
+        Dictionary<string, List<ProjectObject>> byGuid,
+        Dictionary<string, string> text,
+        List<PlannedRename> renames,
+        List<string> warnings)
+    {
+        // Only ST_FULL carries an implementation hash, and only a create the planner has the
+        // text of can have its own computed.
+        var creates = files
+            .Select((f, i) => (File: f, Index: i))
+            .Where(p => p.File.Action == PlannedAction.Create
+                        && !string.IsNullOrEmpty(p.File.Name)
+                        && text.ContainsKey(p.File.Path))
+            .Select(p => (p.File, p.Index,
+                          IHash: ContentHash.Of(StTextCodec.Split(text[p.File.Path]).Implementation)))
+            .ToList();
+
+        var candidates = deletions
+            .Where(d => d.Files.Count == 1
+                        && string.Equals(d.Files[0].Form, "ST_FULL", StringComparison.Ordinal)
+                        && d.Files[0].ImplementationHash.Length > 0)
+            .ToList();
+
+        if (creates.Count == 0 || candidates.Count == 0)
+        {
+            return;
+        }
+
+        List<PlannedDeletion> matched = [];
+
+        foreach (var deletion in candidates)
+        {
+            var key = deletion.Files[0].ImplementationHash;
+
+            // Both sides of the ambiguity, exactly as the exact-content pass does them.
+            var arrivals = creates.Where(c => c.IHash == key).ToList();
+            var departures = candidates.Count(d => d.Files[0].ImplementationHash == key);
+
+            if (arrivals.Count != 1 || departures != 1)
+            {
+                warnings.Add(
+                    $"{deletion.Name}: {departures} POUs lost a file with exactly this body and "
+                    + $"{arrivals.Count} new files hold it, so which is the rename cannot be "
+                    + "told — they are treated as deletions and separate creates instead");
+                continue;
+            }
+
+            var arrival = arrivals[0];
+            var newParent = ParentChainOf(arrival.File, deletion, byGuid);
+            if (newParent is null)
+            {
+                continue;
+            }
+
+            var proposed = new PlannedRename
+            {
+                Guid = deletion.Guid,
+                Resolve = deletion.Resolve,
+                OldName = deletion.Name,
+                NewName = arrival.File.Name!,
+                NewParent = newParent,
+                OldPath = deletion.Files[0].Path,
+                NewPath = arrival.File.Path,
+            };
+
+            if (!proposed.IsRename && !proposed.IsMove)
+            {
+                // Same body, same name, same owner, and yet the whole-file hash did not match:
+                // the DECLARATION changed and nothing else. That is an ordinary edit to an
+                // object that never moved, so there is nothing structural to do and the file
+                // is left to be applied as the update it is.
+                continue;
+            }
+
+            renames.Add(proposed);
+            matched.Add(deletion);
+
+            // APPLIED, not skipped. The declaration differs — it carries the new name — so the
+            // object is renamed first and then written into, and the resolve chain has to name
+            // it where the rename will have put it.
+            files[arrival.Index] = arrival.File with
+            {
+                Action = PlannedAction.ApplyText,
+                Guid = deletion.Guid,
+                Resolve = [.. newParent, arrival.File.Name!],
+            };
+        }
+
+        foreach (var done in matched)
+        {
+            deletions.Remove(done);
+        }
     }
 
     /// <summary>
@@ -520,7 +650,8 @@ public static class CodesysImportPlanner
                 Resolve = ResolveKnown(identity.Path, identity, byGuid, warnings),
                 Files = [.. gone
                     .OrderBy(o => o.Path, StringComparer.Ordinal)
-                    .Select(o => new DeletedFile(o.Path, o.Hash, o.Form, o.NormalizedHash))],
+                    .Select(o => new DeletedFile(
+                        o.Path, o.Hash, o.Form, o.NormalizedHash, o.ImplementationHash))],
                 CannotVerify = WhyUnverifiable(gone),
             });
         }
