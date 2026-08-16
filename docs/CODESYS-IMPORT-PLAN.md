@@ -16,11 +16,16 @@ visualisation is refused rather than deleted (see [Phase 2](#-the-executing-half
 > the opposite. It is the second time this file's header has claimed less than the file — commit
 > `f391e55` fixed the first. A header is what a reader trusts before they have read anything, so
 > it is the one line in a plan that cannot be left to catch up later.
+>
+> **Nearly a third time on 2026-08-15**: the header above was rewritten for Phase 2 and the
+> **Status row two blocks below it still read "phases 2, 3, 5, 6 not started"**. Caught by
+> re-reading the top of the file rather than by a test, because nothing can test this. **The
+> header and the Status row are one claim in two places** — change either and check the other.
 
 | | |
 |---|---|
 | Document | **The plan for making the import side a real bidirectional sync.** Deletes, renames, moves, typed task configuration, and a mirror that stops churning after every import |
-| Status | **Phases 0, 4 and 1 done, with all three honesty fixes; phases 2, 3, 5, 6 not started.** Two gaps closed as unreachable, four API spellings corrected, four live defects fixed — G7 and G11 by Phase 4, G3 and G6 by Phase 1, with G4's resolution half and G5's recorded-object half beside them. The import is **plan-driven end to end**: decided C#-side from the manifest, refused without a plan, executed by a script that decides nothing |
+| Status | **Phases 0, 4, 1 and 2 done, with all three honesty fixes; phases 3, 5 and 6 not started.** Two gaps closed as unreachable, four API spellings corrected, five live defects fixed — G7 and G11 by Phase 4, G3 and G6 by Phase 1, **G1 by Phase 2 for textual objects**, with G4's resolution half and G5's recorded-object half beside them. The import is **plan-driven end to end**: decided C#-side from the manifest, agreed to before CODESYS starts, refused without a plan, executed by a script that decides nothing — and it now **removes** objects as well as adding them |
 | Related | [`CODESYS.md`](CODESYS.md) — how CODESYS is driven today, and §12, the audit these gaps came from · [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) — what was measured · [`PLAN.md`](PLAN.md) — the architecture · [`SAFEGUARDS.md`](SAFEGUARDS.md) — what Versio refuses or waits for |
 
 > **These phase numbers are identifiers, not an order**, and they are **not** `PLAN.md`'s phases —
@@ -212,7 +217,8 @@ already exists.**
 | ~~6th~~ | ✅ **The other two honesty fixes.** Landed 2026-08-15 | The uncounted native-import failure, and the import summary logged in the exporter's vocabulary — plus **four import events that had no handler at all**, `task_set` among them, so Versio changing a task's CPU core binding logged as the literal string `· task_set`. Each makes the *next* failure visible instead of silent |
 | ~~7th~~ | ✅ **Phase 1 — manifest-driven importer.** Landed 2026-08-15, both halves: the pure planner behind the seam, then schema 2 and the script executing exactly the plan | The foundation. The walk that inferred everything from file names is deleted, not bypassed — a planless import job now refuses to serialize, so there is no door back to it |
 | ~~8th~~ | ✅ **`versio_native_equiv.py`.** Landed 2026-08-15, with its parity test in the same commit | A shared prerequisite, not a phase. Phase 2's native content check needs it and so does Phase 5 — it was written down as a Phase 5 artifact and is needed earlier. **Moved up from 8th to next for that reason, then built** |
-| **NEXT** | **Phases 2 and 3 — deletes, renames, moves** | Together, as originally planned. Phase 3's detection reuses Phase 2's delete candidates. **Nothing blocks this now** |
+| ~~9th~~ | ✅ **Phase 2 — deletes.** Landed 2026-08-15 in four commits: the seam, the delete set, the dialog, the executing half | Planned to land with Phase 3 and split from it deliberately. Deletion is the first thing Versio does that destroys work, and the safety argument is entirely its own — five planner preconditions and a content check only the CODESYS process can make. Renames share the detection input, not the risk |
+| **NEXT** | **Phase 3 — renames and moves** | `rename()` and `move(parent, -1)` preserve the GUID, measured. Detection goes in the planner, which already has the manifest, the mirror and the GUID index. Its similarity pass wants `git show HEAD:<path>` — **so does Phase 2's open native content check**, so look at both before adding one |
 | **10th** | **Phase 5 — a mirror that stops churning** | Wants Phases 1–3 settled first, because it changes when files are rewritten and every earlier phase's diffs are easier to read without it |
 | **11th** | **Phase 6 — remaining gaps, tests, docs** | G8 and G9, the parity tests, the integration tests |
 
@@ -531,7 +537,7 @@ was hiding it.
 
 ---
 
-## Phase 2 — Deletes *(G1)*
+## Phase 2 — Deletes *(G1)* · ✅ **built 2026-08-15, textual objects only**
 
 **Delete set:** manifest entries whose file is gone from the mirror **and** whose object still
 exists in the project. The preconditions are correctness, not caps — they are what make the delete
@@ -548,7 +554,13 @@ set *mean* anything, and **P3 makes them the only protection there is**:
     bytes* (`versio_export.py:183`), so checking a live object against it means exporting that
     object again — and P7 measured that re-export changing every cycle with nothing edited. A byte
     check would refuse every native deletion forever, for a reason with nothing to do with the
-    object. **The native half compares through `versio_native_equiv.py`.**
+    object. ~~**The native half compares through `versio_native_equiv.py`.**~~
+    - ⛔ **This is the one thing Phase 2 planned and did not deliver, and the plan was
+      incomplete rather than unbuilt.** An equivalence comparison needs *two* payloads, and
+      the second one — what the object looked like at the last export — lives in the mirror
+      file that was just deleted. `versio_native_equiv` is the right instrument with nothing
+      to point at. A native deletion is therefore **refused**, not attempted; the two ways
+      out are in [the executing half](#-the-executing-half-landed-2026-08-15--versio-deletes-things-now).
 - A GVL is two files under one GUID: delete only when **every** file for that GUID is gone.
 
 **Confirmation:** extend `PendingImportDetail` in `SyncViewModel` to name each deletion —

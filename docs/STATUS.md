@@ -2,6 +2,30 @@
 
 **Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,443 unit + 480 UI + 204 integration, 0 skipped
 
+> **⚠️ Versio removes objects from projects as of 2026-08-15 — Phase 2 of the import plan, and
+> the first thing it does that destroys work.** Delete a `.st` from the mirror, confirm the
+> import, and the POU leaves the project. Read this before anything else in this file.
+>
+> **It is built as a set of refusals with one door**, because P3 measured that CODESYS's
+> `remove()` takes referenced objects with it silently — no exception, no cascade, no warning,
+> so there is no toolchain backstop. The planner proposes a deletion only when five
+> preconditions hold (a trusted manifest, every file for the GUID gone, export-only records
+> neither voting nor vetoing, nothing surviving inside it at any depth, an owner chain recorded
+> rather than guessed); the confirmation dialog names every object; and the script makes the
+> one check only it can — that the live object still matches what was exported. **An object
+> edited in the IDE since the last export is kept**, because a missing mirror file says
+> somebody deleted a file, not that nobody touched the object.
+>
+> **⛔ Native objects are never deleted**, only refused, and that is the open half. Whether one
+> changed since the export is unknowable: the manifest's hash is over exported native bytes,
+> a re-export of an untouched native object changes every cycle (P7), and comparing through
+> `versio_native_equiv` needs the old bytes — which were in the deleted file. Two ways out are
+> written up in [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md); neither is taken yet.
+>
+> Proven against real CODESYS, three halves in one test: refused on a changed object, removed
+> with an honest hash, refused on a GVL. **Nothing else in the repository fails if this starts
+> deleting the wrong things.**
+
 > **The import is plan-driven as of 2026-08-15 — Phase 1 of the import plan.** What an import
 > will do is decided C#-side by `CodesysImportPlanner`, pure, from `_manifest.json` and a
 > directory listing, before CODESYS starts; the job file (schema 2) carries the plan and
