@@ -240,6 +240,68 @@ public class CodesysJobTests
     }
 
     [Fact]
+    public void A_rename_crosses_the_wire_with_where_it_is_and_where_it_should_end_up()
+    {
+        var json = (Job(new ProjectJob
+        {
+            BindingId = "b-1", ProjectPath = @"C:\w\A.project", Path = @"C:\w\A",
+            Plan = new Versio.Core.Plc.ImportPlan
+            {
+                Files =
+                [
+                    new Versio.Core.Plc.PlannedFile
+                    {
+                        Path = "Lib/New.st",
+                        Action = Versio.Core.Plc.PlannedAction.Skip,
+                        Skip = Versio.Core.Plc.PlannedSkip.RenameTarget,
+                    },
+                ],
+                Renames =
+                [
+                    new Versio.Core.Plc.PlannedRename
+                    {
+                        Guid = "g1",
+                        Resolve = ["App", "Old"],
+                        OldName = "Old",
+                        NewName = "New",
+                        NewParent = ["Lib"],
+                        OldPath = "App/Old.st",
+                        NewPath = "Lib/New.st",
+                    },
+                ],
+            },
+        }) with { Operation = CodesysOperation.Import }).ToJson();
+
+        Assert.Contains("\"renames\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"oldName\": \"Old\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"newName\": \"New\"", json, StringComparison.Ordinal);
+
+        // isMove is computed C#-side rather than re-derived in IronPython: it is a list
+        // comparison, and asking two languages to agree about one buys nothing.
+        Assert.Contains("\"isMove\": true", json, StringComparison.Ordinal);
+
+        // THE SKIP KIND THAT REAL CODESYS CAUGHT FIRST. PlannedSkip's serialiser falls back to
+        // "unknownForm" for anything it does not name, so adding RenameTarget without adding
+        // it here sent the script a skip it did not recognise — and the script warned
+        // FORM_NOT_UNDERSTOOD about a file that was perfectly well understood. A rename looked
+        // like a broken plan, on a run that had otherwise worked.
+        Assert.Contains("\"skip\": \"renameTarget\"", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("unknownForm", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_plan_with_nothing_to_rename_sends_no_renames_key_at_all()
+    {
+        var json = (Job(new ProjectJob
+        {
+            BindingId = "b-1", ProjectPath = @"C:\w\A.project", Path = @"C:\w\A",
+            Plan = new Versio.Core.Plc.ImportPlan { Files = [] },
+        }) with { Operation = CodesysOperation.Import }).ToJson();
+
+        Assert.DoesNotContain("renames", json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void A_native_deletion_carries_the_normalised_hash_the_script_compares_against()
     {
         // The raw hash is over bytes that churn between exports, so it is not what a native

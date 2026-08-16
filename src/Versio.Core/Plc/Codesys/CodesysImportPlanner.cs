@@ -211,6 +211,16 @@ public static class CodesysImportPlanner
         List<PlannedRename> renames = [];
         List<PlannedDeletion> matched = [];
 
+        // Ambiguity has TWO sides and only one of them is obvious. Two arrivals holding one
+        // departure's content is the case that comes to mind; two DEPARTURES sharing content
+        // with one arrival is the same coin toss seen from the other end, and it does not
+        // announce itself — the first deletion in iteration order simply wins, silently, and
+        // the second is left as a plain delete. Counted up front so both are refused alike.
+        var deletionsByHash = deletions
+            .Where(d => d.Files.Count == 1)
+            .GroupBy(d => d.Files[0].Hash, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+
         foreach (var deletion in deletions.Where(d => d.Files.Count == 1))
         {
             var gone = deletion.Files[0];
@@ -220,12 +230,13 @@ public static class CodesysImportPlanner
             }
 
             // One deleted file, one arrived file, one meaning. Anything else is a guess.
-            if (candidates.Count != 1)
+            if (candidates.Count != 1 || deletionsByHash[gone.Hash] != 1)
             {
                 warnings.Add(
-                    $"{deletion.Name}: its exported file has gone and {candidates.Count} new "
-                    + "files hold exactly its content, so which one is the rename cannot be "
-                    + "told — it is treated as a deletion and separate creates instead");
+                    $"{deletion.Name}: {deletionsByHash[gone.Hash]} objects have lost a file "
+                    + $"holding exactly this content and {candidates.Count} new files hold it, "
+                    + "so which is the rename cannot be told — they are treated as deletions "
+                    + "and separate creates instead");
                 continue;
             }
 
@@ -248,7 +259,7 @@ public static class CodesysImportPlanner
                 continue;
             }
 
-            renames.Add(new PlannedRename
+            var proposed = new PlannedRename
             {
                 Guid = deletion.Guid,
                 Resolve = deletion.Resolve,
@@ -257,7 +268,42 @@ public static class CodesysImportPlanner
                 NewParent = newParent,
                 OldPath = gone.Path,
                 NewPath = arrival.File.Path,
-            });
+            };
+
+            // A PAIRING THAT CHANGES NOTHING IS NOT A RENAME, and emitting one anyway is how
+            // Versio reports work it did not do.
+            //
+            // This is the ordinary case for a POU, not an edge case. An ST_FULL file opens
+            // `PROGRAM Simulation`, so the object's name lives in the CONTENT — rename the
+            // file alone and the declaration still says what the object is called, the plan
+            // reads that name, and old and new come out equal. The script would then perform
+            // neither operation, find the object exactly where it left it, and count a
+            // rename. The whole pair is withdrawn instead: no delete, no create, no rename.
+            //
+            // Withdrawing rather than leaving it as a delete-and-create matters. The
+            // declaration is what names an object; treating the file name as authoritative
+            // would destroy `Simulation` and build `Renamed` from a file that still declares
+            // itself `Simulation`, which is G3's defect wearing different clothes.
+            if (!proposed.IsRename && !proposed.IsMove)
+            {
+                warnings.Add(
+                    $"{deletion.Name}: {gone.Path} was renamed to {arrival.File.Path}, but the "
+                    + $"declaration inside it still says {arrival.File.Name}, so the object "
+                    + "keeps that name and nothing is renamed — rename the object in the IDE, "
+                    + "or edit the declaration, and the file name will follow on the next "
+                    + "export");
+
+                matched.Add(deletion);
+                files[arrival.Index] = arrival.File with
+                {
+                    Action = PlannedAction.Skip,
+                    Skip = PlannedSkip.RenameTarget,
+                };
+                createsByHash.Remove(gone.Hash);
+                continue;
+            }
+
+            renames.Add(proposed);
 
             matched.Add(deletion);
 
@@ -269,7 +315,10 @@ public static class CodesysImportPlanner
                 Skip = PlannedSkip.RenameTarget,
             };
 
-            // Consumed, so a second deletion with identical content cannot pair with it too.
+            // Belt and braces, and honestly labelled as such: the deletionsByHash guard above
+            // already means at most one deletion per hash reaches here, so nothing can pair
+            // with this arrival twice. Kept because pairing an arrival with two objects would
+            // rename one of them onto the other, and the cost of the line is nothing.
             createsByHash.Remove(gone.Hash);
         }
 

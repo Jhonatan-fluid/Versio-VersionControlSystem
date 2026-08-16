@@ -8,10 +8,12 @@ either way. Proven against real CODESYS four ways, including one that makes a re
 demands the deletion be refused. Phase 4 closes G7 and G11; Phase 1 closes G3 and G6 outright,
 G4's resolution half and G5's recorded-object half. All three honesty fixes are done.
 
-**Phase 3's step 1 is built**: a file renamed without being edited is carried out as a rename on
-the object, so its GUID and every reference to it survive — measured. **Step 2, rename-and-edit,
-is what remains of it**, and it is the one thing still needing `git show HEAD:<path>`. Phases 5
-and 6 follow. One other item is open and not on the critical path: `TaskCatalog.cs`, so nothing
+**Phase 3's step 1 is built and reaches less than its name suggests**: the executing half
+renames and moves objects with their GUIDs intact, measured, but the *detecting* half matches on
+exact content — and a POU's name lives inside its content, so a real POU rename is invisible to
+it. **Step 2 is what remains**, and the cheapest route to it is comparing the implementation
+exactly and the declaration with its name masked, which needs no git at all. Phases 5 and 6
+follow. One other item is open and not on the critical path: `TaskCatalog.cs`, so nothing
 outside python can read a `.tasks.yaml`.
 
 > **This header said "nothing in phases 1–6 is built" for the whole of the session that built
@@ -65,7 +67,7 @@ amount of reading, because it does not exist on the first cycle.
 | | Gap | State after Phase 0 |
 |---|---|---|
 | G1 | **Deletes don't propagate** — delete a `.st`, colleague imports, the POU is still there | ✅ **CLOSED OUTRIGHT by Phase 2, 2026-08-15, textual and native.** Delete a `.st` and the POU leaves the project; delete a `.gvl.xml` and the GVL leaves it too, because manifest schema 5 records the **normalised** hash of a native payload and a re-export can be compared against that. An object edited in the IDE since is kept either way — measured with a real edit, not a synthetic one. A native object on a pre-schema-5 mirror stays refused until the next export. P3 is why every rule is a refusal rather than a check: `remove()` dangles silently |
-| G2 | **Renames/moves duplicate** — rename in the mirror, a new object is created and the old one kept | ✅ **CLOSED for a rename without an edit, 2026-08-15.** The planner pairs a departed file with an arrived one holding identical content and turns the pair into a rename on the object; the GUID survives, measured as the same `980a4bef…` before and after. **Two halves remain open and both are stated rather than hidden**: rename-*and*-edit matches nothing by content and still falls back to delete-plus-create, and a **move into a different container is refused after the fact** — CODESYS accepted one silently without performing it, so the script now verifies and reports `RENAME_NOT_APPLIED` |
+| G2 | **Renames/moves duplicate** — rename in the mirror, a new object is created and the old one kept | **Partly closed 2026-08-15, and less than it first appeared.** The planner pairs a departed file with an arrived one holding identical content and turns the pair into a rename on the object; the executing half is proven, GUID intact — the same `980a4bef…` before and after. **What it does NOT yet cover is the common case**: a POU's name lives in its declaration, so renaming it changes the content and no hash matches — that is step 2. Renaming only the file is now recognised as changing nothing and says so, rather than reporting a rename it did not perform. A **move into a different container is verified after the fact** — CODESYS accepted one silently without performing it, so the script reports `RENAME_NOT_APPLIED` |
 | G3 | **New object named from the filename** — `create_textual` uses `parts[-1]` and throws away the parsed `info["name"]`, so `PROGRAM Foo` in `Bar.st` creates `Bar` | ✅ **CLOSED by Phase 1, 2026-08-15.** The plan carries the declaration's name and the script takes it; the disagreement is a warning naming both. **Proven live**: a `Bar.st` declaring `PROGRAM Foo` creates `Foo` against real CODESYS, in `ImportLoggingTests` |
 | G4 | **Encoded names unresolvable** — looks up the *encoded* stem against raw names, giving a duplicate named `weird%3Cname%3E` | ✅ **Resolution CLOSED by Phase 1, 2026-08-15**: chains are real decoded names from the manifest, built C#-side where `DecodeStem` lives and is parity-tested. What remains is the shortened-stem residue — a digest tail decodes to nothing, and such an object is reported as unresolvable rather than guessed at. Creation was already unreachable (P5) |
 | G5 | **A dot in a name breaks the owner split** — `My.Thing.st` looks for member `Thing` of parent `My` | **Unreachable by creation** (P5), and ✅ **the existing-object half CLOSED by Phase 1**: ownership comes from the manifest's parent-GUID chain, and for pre-schema-4 mirrors the recorded name disambiguates — a name equal to the whole stem is never split. Only a manifest-absent dotted *create* still splits, and P5 says CODESYS would refuse it anyway |
@@ -812,16 +814,17 @@ business raising a change event in it.
 
 ## Phase 3 — Renames and moves *(G2)* · ✅ **step 1 built 2026-08-15**
 
-**Rename in place works and the GUID survives it** — measured against real CODESYS, the same
-`980a4bef…` before and after. **A move into a different container does not, and Versio now says
-so instead of claiming it did.** See the box below; that is the finding of this phase.
+**The executing half works and the GUID survives it** — `rename()` measured against real
+CODESYS, the same `980a4bef…` before and after. **The detecting half reaches fewer cases than it
+looks like it does**, and that is the finding of this phase: exact content matching can only spot
+a rename for a form whose content does *not* carry the object's name. See both boxes below.
 
 **Detection in `ImportPlanner`, in order:**
 
 1. ✅ **Exact content match** — a Create candidate whose hash equals a Delete candidate's manifest
-   hash. Covers rename-without-editing and needs no old content. **Built.** `ContentHash.Of` and
-   python's `content_hash` are the same function over the same bytes, so the two sides compare
-   without a parity test between them.
+   hash. **Built**, and `ContentHash.Of` and python's `content_hash` are the same function over
+   the same bytes, so the two sides compare without a parity test between them. **It covers less
+   than "rename without editing" implies** — see the box below.
    - **Single-file objects only.** A GVL is two files under one GUID; pairing on one of them
      would rename an object whose other half still described the old name.
    - **Ambiguity is refused.** Two deleted files with identical content — two empty actions —
@@ -847,7 +850,34 @@ delete-plus-create.
 > one-argument `move(dest)` raises a `NullReferenceException`. This plan previously wrote
 > `move(new_parent, new_index)` as though the index were a position to choose.
 
-> ### ⛔ `move()` can decline without saying so, and that is the finding of Phase 3
+> ### ⛔ Exact content matching cannot see a POU rename at all
+>
+> **The object's name is in the content.** An `ST_FULL` file opens `PROGRAM Simulation`, so:
+>
+> | What somebody does | What the planner sees | Result |
+> |---|---|---|
+> | rename the file only | declaration still says `Simulation` — old and new names are equal | **nothing to rename**, both sides withdrawn, warned |
+> | rename the file *and* the declaration | content changed, so no hash matches | **no pairing** — delete + create, GUID lost. **Step 2** |
+>
+> **So step 1 detects a rename only for a form whose content does not carry the name** — an
+> action or a transition (`ST_IMPL`). The fixture has none, which is why nothing caught this
+> until an integration test was written against a real POU.
+>
+> **The first version of that test asserted the opposite and was wrong**, and it found a defect
+> doing so: the planner emitted a rename whose old and new names were equal, the script
+> performed neither operation, found the object exactly where it had left it, and **counted a
+> success**. A fourth silent false success in this path — and the one the rename phase's own
+> verification could not catch, because the object never had to move for the check to pass.
+> Both sides are now withdrawn instead, with a warning naming the declaration as authoritative.
+>
+> **The cheapest route to a real POU rename is not git.** Compare the *implementation* exactly
+> and the *declaration* with its name masked: identical bodies plus a declaration differing only
+> in the name is a rename with near-certainty, it needs nothing but the manifest and the mirror,
+> and `StDeclarationParser` and `split_st` already exist. `git show HEAD:<path>` and a similarity
+> score would still be needed for a rename-and-genuinely-edit, but that is a much rarer thing
+> than renaming a POU.
+
+> ### ⛔ `move()` can decline without saying so, and it is the other finding of Phase 3
 >
 > Moving a POU out of `Application` and into `Plc Logic` **raises nothing, returns nothing, and
 > leaves the object exactly where it was.** The first run reported `renamed: 1`, `failed: 0`,
@@ -962,20 +992,26 @@ SyncViewModel decides the plan ─► asks ─► SyncJob.Plan ─► PlcProject
 
 **Next, in order:**
 
-1. **Phase 3 — renames and moves.** Detection goes in the planner, which already has the
-   manifest, the mirror and the GUID index; `rename()` and `move(parent, -1)` preserve the
-   GUID, measured.
-   - **It splits, and the first half needs no git at all.** Detection step 1 (exact content
-     match — a Create candidate whose hash equals a Delete candidate's manifest hash) and
-     step 3 (unmatched → Delete + Create) are pure planner work over data already in the
-     manifest, and step 1 covers rename-without-editing, which is most renames. Only step 2,
-     the rename-and-edit similarity pass, wants `git show HEAD:<path>`.
+1. **Phase 3 step 2 — the rename detection that reaches a POU.** Step 1 is built and its
+   executing half is proven, GUID intact; what it cannot do is *see* the common case, because
+   an `ST_FULL` file opens `PROGRAM Simulation` and any real rename therefore changes the
+   content. Step 1 detects a rename only for a form whose content does not carry the name.
+   - **Do this with the declaration, not with git.** Compare the implementation exactly and the
+     declaration with its **name masked**: identical bodies plus a declaration differing only in
+     the name is a rename with near-certainty. `StDeclarationParser` and `split_st` already
+     exist, it needs nothing but the manifest and the mirror, and it is far less machinery than
+     a similarity score.
+   - **`git show HEAD:<path>` is for what is left after that** — a rename that also genuinely
+     edits the body — which is rarer than renaming a POU and should not set the design.
    - **The shared-prerequisite argument for it is gone.** It used to be worth pairing with
      option (2) for the native content check; the check took option (1) instead, so
      `ShowAtHeadAsync` now has exactly one consumer. Do not adopt (2) to justify sharing.
    - `IGitClient` has **no** `ShowAtHeadAsync` today — checked, all 40-odd members. Only
      `DetectRenamesAsync`, which runs `git diff HEAD` and so cannot see an untracked rename
      target.
+   - **Settle the move question while you are here.** `move()` was measured accepting an
+     instruction and not performing it; whether it works for a *legal* destination is unknown,
+     because the fixture has no folder. Add one, move an object into it, and find out.
 2. **Phase 5, then Phase 6.** Phase 5 has its prerequisite already: `versio_native_equiv`, and
    now also the proof that normalisation is stable across round trips.
 3. **Still open from Phase 4:** `TaskCatalog.cs`, the C# reader. **Land it with the panel

@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,463 unit + 480 UI + 205 integration, 0 skipped
+**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,468 unit + 480 UI + 206 integration, 0 skipped
 · *(integration run four times this session: 12m45s, 12m52s, 10m29s with one flake, 12m27s — see the flake note in `CLAUDE.md`)*
 
 > **⚠️ Versio removes objects from projects as of 2026-08-15 — Phase 2 of the import plan, and
@@ -156,7 +156,7 @@ opens. That is `SAFEGUARDS.md` phases 1–8, and phase 9 is features rather than
 
 ```
   CODESYS pipeline    ████████████████████  proven on a real project
-  Domain core         ████████████████████  1,463 tests, under 400 ms
+  Domain core         ████████████████████  1,468 tests, under 400 ms
   Vendor seam         ████████████████████  enforced from assembly metadata
   Infrastructure      ████████████████████  drives real CODESYS + real git
   Desktop shell       ███████████████████░  full git surface, diff, and a UI audit applied
@@ -939,6 +939,42 @@ would have gone on passing while checking one fewer every time a panel moved out
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### A rename that renames nothing was reported as a rename — and the test that found it was written to assert the opposite
+
+> **In one line:** exact-content rename matching cannot see a POU rename, because a POU's name
+> lives in its own declaration — and when the file alone is renamed the planner emitted a rename
+> whose old and new names were equal, which the script counted as a success.
+> **✅ CLOSED 2026-08-15** by withdrawing both sides and warning instead.
+
+**The measurement that "proved" renames worked had bypassed the planner.** A scratchpad harness
+hand-wrote the rename entry with `newName: "Renamed"` and drove the script with it. That was a
+real and useful measurement — it is what proved `rename()` preserves the GUID — but it proved
+the **executing** half only, and it read as proof of the whole thing.
+
+**The integration test written afterwards is what caught the difference**, by failing. It asserted
+that renaming `Simulation.st` to `Renamed.st` renames the object, and it does not: the file still
+opens `PROGRAM Simulation`, so the plan reads that name, old equals new, and there is nothing to
+rename it to.
+
+| What somebody does | What the planner sees | What happens |
+|---|---|---|
+| rename the file only | declaration still names the object — old = new | nothing renamed, both sides withdrawn, warned |
+| rename the file *and* the declaration | content changed, no hash matches | delete + create, **GUID lost** — step 2 |
+
+**So step 1 detects a rename only for a form whose content does not carry the name** — actions and
+transitions. The fixture has none, which is why unit tests, a hand-built harness and a green
+suite all agreed with each other and none of them touched the real case.
+
+**The false success is the fourth in this path this session**, and the one that got furthest: the
+script's own `RENAME_NOT_APPLIED` verification could not catch it, because the object never had
+to move for the check to pass. **A verification that asks "is it where I expected" cannot notice
+that nothing was asked of it.**
+
+**The cheapest route to a real POU rename is not git**, which is worth recording before anyone
+reaches for `ShowAtHeadAsync`: compare the implementation exactly and the declaration with its
+name masked. Identical bodies plus a declaration differing only in the name is a rename with
+near-certainty, and `StDeclarationParser` and `split_st` already exist.
 
 ### `move()` accepted an instruction, did nothing, and reported success
 

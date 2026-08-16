@@ -697,6 +697,92 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
             "the GVL's native half survived a deletion that both its halves passed");
     }
 
+    /// <summary>
+    /// Renaming a POU's file and nothing else changes nothing, and says why.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This test was written to assert the opposite, and the opposite was wrong.</b> It
+    /// expected the object to be renamed and its GUID preserved. What it found is that an
+    /// <c>ST_FULL</c> file opens <c>PROGRAM Simulation</c> — <b>the object's name lives in the
+    /// content</b> — so renaming the file alone leaves the declaration naming the object what
+    /// it always was, and there is nothing to rename it to.
+    /// </para>
+    /// <para>
+    /// <b>It caught a real defect doing so.</b> The planner paired the files and emitted a
+    /// rename whose old and new names were equal; the script performed neither operation,
+    /// found the object exactly where it had left it, and counted a success. A fourth silent
+    /// false success in this path, and the one the rename phase's own verification could not
+    /// catch — the object never had to move for the check to pass.
+    /// </para>
+    /// <para>
+    /// <b>What this means for Phase 3's step 1</b>, stated because it is easy to miss: exact
+    /// content matching can only detect a rename for a form whose content does <i>not</i>
+    /// carry the object's name. That is actions and transitions (<c>ST_IMPL</c>), and the
+    /// fixture has none. A genuine POU rename edits the declaration too, so its content
+    /// changes and it is a <b>rename-and-edit</b> — step 2, not built.
+    /// </para>
+    /// </remarks>
+    [SkippableFact]
+    public async Task Renaming_only_a_POUs_file_leaves_the_object_alone_and_explains_itself()
+    {
+        var install = Install;
+        Skip.If(install is null, "no CODESYS installation with a profile");
+        Skip.If(!File.Exists(FixtureProject), "fixture project missing");
+
+        await InitRepoAsync();
+        var git = new GitCliClient(_repo, logger: new TestLogger(output));
+        var setup = new RepoSetup(_repo, CodesysProjectFormat.Instance);
+
+        var adopted = await setup.AdoptAsync(
+            ProjectRelativePath, git, install!.Profiles[0], CancellationToken.None);
+        var binding = adopted.Config.Bindings[0];
+        var orchestrator = BuildOrchestrator(adopted.Config, install);
+
+        Assert.Equal(SyncVerdict.Completed, (await Export(orchestrator, binding.Id)).Verdict);
+        await orchestrator.ReleaseAfterPushAsync("c1", CancellationToken.None);
+
+        var mirror = Path.Combine(_repo, "plc", "RefrigeratorControl");
+        var app = Path.Combine(mirror, RelApp);
+        var before = Versio.Core.Projects.ProjectManifest.Parse(
+            await File.ReadAllTextAsync(Path.Combine(mirror, "_manifest.json")));
+
+        var original = Assert.Single(
+            before.Objects, o => o.Path.EndsWith("Simulation.st", StringComparison.Ordinal));
+        output.WriteLine($"before: {original.Path} guid={original.Guid}");
+
+        // The rename, exactly as somebody would do it: move the file, change nothing in it.
+        // The declaration still says PROGRAM Simulation, and that is deliberate — the object's
+        // new name comes from the file this time, because the DECLARATION is what the create
+        // path reads and a rename target's name is the one thing a stem legitimately decides.
+        File.Move(Path.Combine(app, "Simulation.st"), Path.Combine(app, "Renamed.st"));
+
+        var outcome = await TextChanged(orchestrator, binding.Id);
+        output.WriteLine($"import — {outcome.Verdict}: {SyncNarrative.Describe(outcome)}");
+        Assert.Equal(SyncVerdict.Completed, outcome.Verdict);
+
+        // No FORM_NOT_UNDERSTOOD: the rename target is a skip kind the script has to
+        // recognise, and it did not until real CODESYS said so.
+        Assert.DoesNotContain(outcome.Warnings,
+            w => w.Contains("FORM_NOT_UNDERSTOOD", StringComparison.Ordinal));
+
+        var after = Versio.Core.Projects.ProjectManifest.Parse(await File.ReadAllTextAsync(
+            Path.Combine(await ReExport(install, binding.Id, "verify-rename"), "_manifest.json")));
+
+        // THE OBJECT IS UNTOUCHED — same path, same GUID. Not renamed, and just as importantly
+        // not DELETED: pairing the departed file with the arrived one is what withdraws the
+        // deletion, so the object survives a file rename that says nothing about its name.
+        var still = Assert.Single(
+            after.Objects, o => o.Path.EndsWith("Simulation.st", StringComparison.Ordinal));
+        output.WriteLine($"after:  {still.Path} guid={still.Guid}");
+        Assert.Equal(original.Guid, still.Guid);
+
+        // And no duplicate was built from the arrived file, which is what a plain
+        // delete-plus-create would have produced.
+        Assert.DoesNotContain(after.Objects,
+            o => o.Path.EndsWith("Renamed.st", StringComparison.Ordinal));
+    }
+
     /// <summary>Where the fixture's objects live, relative to a mirror root.</summary>
     private static string RelApp => Path.Combine("Device", "Plc Logic", "Application");
 

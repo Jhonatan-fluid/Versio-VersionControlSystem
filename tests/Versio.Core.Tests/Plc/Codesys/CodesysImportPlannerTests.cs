@@ -435,6 +435,37 @@ public class CodesysImportPlannerTests
     }
 
     [Fact]
+    public void Renaming_only_the_file_of_a_POU_renames_nothing_and_says_why()
+    {
+        // THE ORDINARY CASE FOR A POU, and it shipped as a false success for one commit. An
+        // ST_FULL file opens `PROGRAM Renamed`, so the object's name lives in the CONTENT:
+        // rename the file alone and the declaration still says what the object is called, so
+        // old and new come out equal. The script would then perform neither operation, find
+        // the object where it left it, and count a rename — a fourth silent success in this
+        // path, and the one the script's own verification cannot catch, because the object
+        // never had to move for the check to pass.
+        //
+        // Body declares PROGRAM Renamed, so a file called Old.st holding it is exactly this:
+        // a file whose name disagrees with its declaration.
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(Obj("App/Renamed.st", "Renamed", "POU", "ST_FULL", guid: "g1")
+                with { Hash = HashOf(Body) }),
+            [File("App/Old.st", Body)]);
+
+        // Nothing renamed — there is nothing to rename it to.
+        Assert.Empty(plan.Renames);
+
+        // And nothing DESTROYED either. The pairing still withdraws both sides, so the object
+        // survives a file rename that says nothing about what it is called, and no duplicate
+        // is built from a file that declares itself the same object.
+        Assert.Empty(plan.Deletions);
+        Assert.Equal(PlannedSkip.RenameTarget, One(plan, "App/Old.st").Skip);
+
+        Assert.Contains(plan.Warnings,
+            w => w.Contains("the declaration inside it still says", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void The_same_object_in_a_different_folder_is_a_move()
     {
         var plan = CodesysImportPlanner.Plan(
@@ -463,6 +494,25 @@ public class CodesysImportPlannerTests
                 Obj("App/A.st", "A", "POU", "ST_FULL", guid: "g1") with { Hash = HashOf(Body) },
                 Obj("App/B.st", "B", "POU", "ST_FULL", guid: "g2") with { Hash = HashOf(Body) }),
             [File("App/X.st", Body), File("App/Y.st", Body)]);
+
+        Assert.Empty(plan.Renames);
+        Assert.Equal(2, plan.Deletions.Count);
+        Assert.Contains(plan.Warnings, w => w.Contains("cannot be told", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Two_departures_sharing_content_with_one_arrival_are_also_refused()
+    {
+        // THE OTHER SIDE OF THE AMBIGUITY, and the one that does not announce itself. Two
+        // arrivals for one departure is the case anybody thinks of; two DEPARTURES and one
+        // arrival is the same coin toss seen from the other end, and before this it was not
+        // refused — the first deletion in iteration order simply won, silently, and the
+        // second was left as a plain delete. Found by re-reading the loop, not by a failure.
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(
+                Obj("App/A.st", "A", "POU", "ST_FULL", guid: "g1") with { Hash = HashOf(Body) },
+                Obj("App/B.st", "B", "POU", "ST_FULL", guid: "g2") with { Hash = HashOf(Body) }),
+            [File("App/OnlyOne.st", Body)]);
 
         Assert.Empty(plan.Renames);
         Assert.Equal(2, plan.Deletions.Count);

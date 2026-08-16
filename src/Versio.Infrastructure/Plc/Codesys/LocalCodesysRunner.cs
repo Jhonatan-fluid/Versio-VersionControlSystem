@@ -618,6 +618,21 @@ public sealed class LocalCodesysRunner(
                         $"removed {evt.String("name")} from {evt.String("path")}");
                     break;
 
+                case "renamed":
+                    // Info, and it names both ends. A rename is the one structural change that
+                    // is REASSURING rather than destructive — the object survived an edit that
+                    // would otherwise have destroyed and rebuilt it — so it is worth a line
+                    // somebody can find when they go looking for their object's old name.
+                    //
+                    // A handler at all, because four import events once had none and one of
+                    // them logged as the literal string "· task_set".
+                    _log.Info(LogCategory.Codesys,
+                        evt.Bool("moved") == true
+                            ? $"moved {evt.String("name")} to {evt.String("newParent")}"
+                              + $"/{evt.String("newName")}"
+                            : $"renamed {evt.String("name")} to {evt.String("newName")}");
+                    break;
+
                 case "already_gone":
                     // Not a failure and not a refusal: the mirror said delete it and the
                     // project no longer has it, so the two agree. Debug because the
@@ -730,6 +745,12 @@ public sealed class LocalCodesysRunner(
         // thing this line can report, and a reader scanning the front of a sentence must not
         // have to reach the end to find it.
         Add("REMOVED", "removed");
+
+        // Beside REMOVED because both are structural, and before the "kept" counters for the
+        // same reason REMOVED is near the front: a reader scanning this line for what happened
+        // to their object should meet the structural changes before the arithmetic.
+        Add("renamed/moved", "renamed");
+
         Add("kept (not deleted)", "kept");
         Add("unchanged", "unchanged");
         Add("not applied (export-only)", "notImported");

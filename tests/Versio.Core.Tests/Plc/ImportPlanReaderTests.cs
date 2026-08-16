@@ -122,6 +122,41 @@ public sealed class ImportPlanReaderTests
     }
 
     [Fact]
+    public async Task A_rename_is_logged_as_a_rename_and_not_as_a_deletion()
+    {
+        // The reassuring half of the plan, and it has to reach the log for the same reason it
+        // has to reach the dialog: somebody who renamed a file goes looking for its name, and
+        // finding it only in a deletion line is how a correct import gets cancelled.
+        var body = "PROGRAM New\nVAR\nEND_VAR\n\nx();";
+        var fs = new FakeFileSystem();
+        fs.Write(Path.Combine(Root, "_manifest.json"), $$"""
+            {
+              "schema": 5, "bindingId": "b1", "project": "Machine.project", "objectCount": 1,
+              "objects": [
+                { "guid": "g1", "name": "Old", "type": "POU", "form": "ST_FULL",
+                  "path": "App/Old.st", "hash": "{{Versio.Core.Hashing.ContentHash.Of(body)}}",
+                  "bytes": 1 }
+              ],
+              "warnings": [], "skipped": []
+            }
+            """);
+        fs.Write(Path.Combine(Root, "App", "New.st"), body);
+
+        var sink = new InMemoryLogSink();
+        var log = new VersioLogger(new FakeClock(DateTimeOffset.UnixEpoch)).AddSink(sink);
+
+        var plan = await ImportPlanReader.ReadAsync(
+            fs, new CodesysProjectFormat(), Root, log, LogCategory.Sync, "b1",
+            CancellationToken.None);
+
+        Assert.Single(plan.Renames);
+
+        var text = Lines(sink.Snapshot());
+        Assert.Contains("will be renamed or moved", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("will be removed", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_plan_that_deletes_nothing_says_nothing_about_deletions()
     {
         // Quiet when idle. A line that fires on every import is a line nobody reads, and the
