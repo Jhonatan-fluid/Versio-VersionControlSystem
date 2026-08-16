@@ -8,13 +8,10 @@ either way. Proven against real CODESYS four ways, including one that makes a re
 demands the deletion be refused. Phase 4 closes G7 and G11; Phase 1 closes G3 and G6 outright,
 G4's resolution half and G5's recorded-object half. All three honesty fixes are done.
 
-**Phase 3's step 1 is built and reaches less than its name suggests**: the executing half
-renames and moves objects with their GUIDs intact, measured, but the *detecting* half matches on
-exact content — and a POU's name lives inside its content, so a real POU rename is invisible to
-it — **so schema 6 records the implementation hash and a second pass pairs on that**, which is
-the half a rename does not touch. A renamed POU now keeps its GUID, measured. **What remains is
-a rename that also edits the body**, which no recorded hash can reach and which needs
-`git show HEAD:<path>`. Phases 5 and 6 follow. One other item is open and not on the critical path: `TaskCatalog.cs`, so nothing
+**Phase 3 is complete and G2 is closed.** A rename keeps the object's GUID through all three
+detection passes — exact content, the implementation hash (schema 6, because a POU's name lives
+inside its own declaration), and content similarity against the departed file's bytes from HEAD
+for a rename that also edited the body. **Phases 5 and 6 are what remain.** One other item is open and not on the critical path: `TaskCatalog.cs`, so nothing
 outside python can read a `.tasks.yaml`.
 
 > **This header said "nothing in phases 1–6 is built" for the whole of the session that built
@@ -40,7 +37,7 @@ outside python can read a `.tasks.yaml`.
 | | |
 |---|---|
 | Document | **The plan for making the import side a real bidirectional sync.** Deletes, renames, moves, typed task configuration, and a mirror that stops churning after every import |
-| Status | **Phases 0, 4, 1 and 2 done and Phase 2 complete, with all three honesty fixes; Phase 3's step 1 built and its step 2 open; phases 5 and 6 not started.** Two gaps closed as unreachable, four API spellings corrected, six live defects fixed — G7 and G11 by Phase 4, G3 and G6 by Phase 1, **G1 by Phase 2 outright, textual and native**, with G4's resolution half and G5's recorded-object half beside them, and the confirmation dialog corrected after it spent a commit promising the opposite of what an import did. The import is **plan-driven end to end**: decided C#-side from the manifest, agreed to before CODESYS starts, refused without a plan, executed by a script that decides nothing — and it now **removes** objects as well as adding them, saying beforehand which ones will really go |
+| Status | **Phases 0, 4, 1, 2 and 3 complete, with all three honesty fixes; phases 5 and 6 not started.** Two gaps closed as unreachable, four API spellings corrected, six live defects fixed — G7 and G11 by Phase 4, G3 and G6 by Phase 1, **G1 by Phase 2 outright, textual and native**, with G4's resolution half and G5's recorded-object half beside them, and the confirmation dialog corrected after it spent a commit promising the opposite of what an import did. The import is **plan-driven end to end**: decided C#-side from the manifest, agreed to before CODESYS starts, refused without a plan, executed by a script that decides nothing — and it now **removes** objects as well as adding them, saying beforehand which ones will really go |
 | Related | [`CODESYS.md`](CODESYS.md) — how CODESYS is driven today, and §12, the audit these gaps came from · [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) — what was measured · [`PLAN.md`](PLAN.md) — the architecture · [`SAFEGUARDS.md`](SAFEGUARDS.md) — what Versio refuses or waits for |
 
 > **These phase numbers are identifiers, not an order**, and they are **not** `PLAN.md`'s phases —
@@ -68,7 +65,7 @@ amount of reading, because it does not exist on the first cycle.
 | | Gap | State after Phase 0 |
 |---|---|---|
 | G1 | **Deletes don't propagate** — delete a `.st`, colleague imports, the POU is still there | ✅ **CLOSED OUTRIGHT by Phase 2, 2026-08-15, textual and native.** Delete a `.st` and the POU leaves the project; delete a `.gvl.xml` and the GVL leaves it too, because manifest schema 5 records the **normalised** hash of a native payload and a re-export can be compared against that. An object edited in the IDE since is kept either way — measured with a real edit, not a synthetic one. A native object on a pre-schema-5 mirror stays refused until the next export. P3 is why every rule is a refusal rather than a check: `remove()` dangles silently |
-| G2 | **Renames/moves duplicate** — rename in the mirror, a new object is created and the old one kept | ✅ **CLOSED for a rename, 2026-08-15.** The planner pairs a departed file with an arrived one holding identical content and turns the pair into a rename on the object; the executing half is proven, GUID intact — the same `980a4bef…` before and after. **The common case took a second pass and manifest schema 6**: a POU's name lives in its declaration, so renaming it changes the whole file and no content hash matches — the *implementation* hash does, and that is what pairs it. The arrival is then applied rather than skipped, so the new declaration reaches the object. What is left is a rename that also edits the body, which needs git. Renaming only the file is now recognised as changing nothing and says so, rather than reporting a rename it did not perform. A **move into a different container is verified after the fact** — CODESYS accepted one silently without performing it, so the script reports `RENAME_NOT_APPLIED` |
+| G2 | **Renames/moves duplicate** — rename in the mirror, a new object is created and the old one kept | ✅ **CLOSED 2026-08-15.** The planner pairs a departed file with an arrived one holding identical content and turns the pair into a rename on the object; the executing half is proven, GUID intact — the same `980a4bef…` before and after. **The common case took a second pass and manifest schema 6**: a POU's name lives in its declaration, so renaming it changes the whole file and no content hash matches — the *implementation* hash does, and that is what pairs it. The arrival is then applied rather than skipped, so the new declaration reaches the object. A rename that also edits the body is matched on content similarity against the departed file's bytes from HEAD, reached through a one-method probe rather than by giving the sync engine a git client. Renaming only the file is now recognised as changing nothing and says so, rather than reporting a rename it did not perform. A **move into a different container is verified after the fact** — CODESYS accepted one silently without performing it, so the script reports `RENAME_NOT_APPLIED` |
 | G3 | **New object named from the filename** — `create_textual` uses `parts[-1]` and throws away the parsed `info["name"]`, so `PROGRAM Foo` in `Bar.st` creates `Bar` | ✅ **CLOSED by Phase 1, 2026-08-15.** The plan carries the declaration's name and the script takes it; the disagreement is a warning naming both. **Proven live**: a `Bar.st` declaring `PROGRAM Foo` creates `Foo` against real CODESYS, in `ImportLoggingTests` |
 | G4 | **Encoded names unresolvable** — looks up the *encoded* stem against raw names, giving a duplicate named `weird%3Cname%3E` | ✅ **Resolution CLOSED by Phase 1, 2026-08-15**: chains are real decoded names from the manifest, built C#-side where `DecodeStem` lives and is parity-tested. What remains is the shortened-stem residue — a digest tail decodes to nothing, and such an object is reported as unresolvable rather than guessed at. Creation was already unreachable (P5) |
 | G5 | **A dot in a name breaks the owner split** — `My.Thing.st` looks for member `Thing` of parent `My` | **Unreachable by creation** (P5), and ✅ **the existing-object half CLOSED by Phase 1**: ownership comes from the manifest's parent-GUID chain, and for pre-schema-4 mirrors the recorded name disambiguates — a name equal to the whole stem is never split. Only a manifest-absent dotted *create* still splits, and P5 says CODESYS would refuse it anyway |
@@ -235,10 +232,9 @@ already exists.**
 | ~~9th~~ | ✅ **Phase 2 — deletes.** Landed 2026-08-15 in six commits: the seam, the delete set, the dialog, the executing half, the dialog's honesty, the native half | Planned to land with Phase 3 and split from it deliberately. Deletion is the first thing Versio does that destroys work, and the safety argument is entirely its own — five planner preconditions and a content check only the CODESYS process can make. Renames share the detection input, not the risk |
 | ~~10th~~ | ✅ **The dialog corrected.** Landed 2026-08-15 | **Not planned — found by re-reading the executing half as if somebody else had written it.** The script grew `remove()` and no sentence moved, so the confirmation dialog told people their objects would stay and then deleted them. Same shape as the 2nd row: a live defect introduced by the commit that had just landed. See the finding in [`STATUS.md`](STATUS.md) |
 | ~~11th~~ | ✅ **The native content check — Phase 2's open half.** Landed 2026-08-15, manifest schema 5 | It went before Phase 3 because it makes deletion **whole** rather than a feature that works on 2 of the fixture's 13 objects, and because the alternative design would have dragged git into the script to serve a phase that had not been written yet. Verified four ways against real CODESYS, including a falsification case |
-| ~~12th~~ | ✅ **Phase 3 step 1 — rename without an edit.** Landed 2026-08-15 | Split from step 2 deliberately: exact-content matching needs nothing but the manifest and the mirror, covers most real renames, and does not drag git into the planner. It also turned up `move()` succeeding silently without moving anything — see the box in Phase 3 |
-| **NEXT** | **Phase 3 step 2 — rename-and-edit** | A file renamed *and* edited matches nothing by content, so step 1 cannot see it and it still falls back to delete-plus-create — losing the GUID in exactly the way Phase 3 exists to prevent. Needs `git show HEAD:<path>` and a similarity score. `ShowAtHeadAsync` does not exist and now has exactly **one** consumer, the native check having taken the option that does not need git |
-| **13th** | **Phase 5 — a mirror that stops churning** | Wants Phases 1–3 settled first, because it changes when files are rewritten and every earlier phase's diffs are easier to read without it |
-| **14th** | **Phase 6 — remaining gaps, tests, docs** | G8 and G9, the parity tests, the integration tests |
+| ~~12th~~ | ✅ **Phase 3 — renames and moves, all three passes.** Landed 2026-08-15 | Split from step 2 deliberately: exact-content matching needs nothing but the manifest and the mirror, covers most real renames, and does not drag git into the planner. It also turned up `move()` succeeding silently without moving anything — see the box in Phase 3 |
+| **NEXT** | **Phase 5 — a mirror that stops churning** | Its prerequisite is proven twice over: `versio_native_equiv` exists, and Phase 2 measured that normalisation is stable across round trips |
+| **13th** | **Phase 6 — remaining gaps, tests, docs** | G8 and G9, the parity tests, the integration tests |
 
 ### The three honesty fixes — all three done
 
@@ -813,12 +809,21 @@ business raising a change event in it.
 
 ---
 
-## Phase 3 — Renames and moves *(G2)* · ✅ **step 1 built 2026-08-15**
+## Phase 3 — Renames and moves *(G2)* · ✅ **COMPLETE 2026-08-15**
 
-**The executing half works and the GUID survives it** — `rename()` measured against real
-CODESYS, the same `980a4bef…` before and after. **The detecting half reaches fewer cases than it
-looks like it does**, and that is the finding of this phase: exact content matching can only spot
-a rename for a form whose content does *not* carry the object's name. See both boxes below.
+**All three detection passes are built and G2 is closed.** A rename keeps the object's GUID —
+measured, the same `980a4bef…` before and after — and with it every reference, task assignment
+and visualisation binding that pointed at it.
+
+| Pass | Sees | Needs |
+|---|---|---|
+| exact content | a file moved or renamed with **no edit** | nothing |
+| implementation hash | a **POU rename** — its name is in its declaration, so the file changes | manifest schema 6 |
+| content similarity | a rename that **also edited** the body | the old bytes, from HEAD |
+
+**In order of certainty**, so anything reaching the last has already failed every test that could
+have answered without a judgement. The two findings that came out of building it are below and
+both were silent successes.
 
 **Detection in `ImportPlanner`, in order:**
 
@@ -894,9 +899,29 @@ delete-plus-create.
 > regex, across Unicode word boundaries and a comment that happens to contain the object's
 > name. The implementation alone is exact and needs no parsing.
 >
-> **What is still open** is a rename that also genuinely edits the body: neither hash matches,
-> and only `git show HEAD:<path>` plus a similarity score can reach it. Rarer than renaming a
-> POU, and it should not have set the design.
+> **✅ And the last case closed with it, 2026-08-15.** A rename that also edits the body matches
+> neither hash — that is what a hash is for — so the departed file's actual bytes are fetched
+> from HEAD and the pair is scored on content similarity. `Simulation` renamed to `Renamed` with
+> a line added to its body keeps its GUID, measured against real CODESYS with the mirror
+> committed first, so the fallback path cannot be what made it pass.
+>
+> **Three passes, in order of certainty**: exact content, then the implementation hash, then
+> similarity. Each earlier one is exact, so anything reaching the last has already failed every
+> test that could have answered without a judgement — and the last one **says in the dialog and
+> the log that it used one**, with the score.
+>
+> **The threshold is 0.6 and the runner-up margin 0.1**, both judgements rather than
+> measurements. What they separate — "renamed and edited" from "deleted one thing and wrote
+> another" — is not cleanly separable, and being wrong costs a GUID rather than any work: the
+> project ends with the same set of objects either way. That is why a judgement is acceptable
+> here and would not be in the deletion set.
+>
+> **`git show HEAD:./<path>` reaches the sync engine through a one-method probe**,
+> `IHistoricContentProbe`, not through `IGitClient`. The orchestrator has never taken a git
+> client and does not start now: it needs one question answered, and a narrow probe is what
+> keeps it off a forty-member interface — the same shape as `IConflictProbe`. An uncommitted
+> mirror answers empty, and empty means "fall back to a delete and a create", which is what it
+> did before.
 
 > **The reasoning that got here, and the first answer written was wrong.** It said: compare the
 > implementation exactly and the declaration with its name masked, needing nothing but the

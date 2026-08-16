@@ -887,7 +887,12 @@ public sealed class SyncViewModel : ObservableObject
             // Null when there is somehow no client, which leaves the engine on its previous
             // assumption that nothing is ever conflicted rather than crashing over a question
             // it only recently learned to ask.
-            conflicts: _git is null ? null : new GitConflictProbe(_git));
+            conflicts: _git is null ? null : new GitConflictProbe(_git),
+
+            // What HEAD held for a file the mirror has lost. Without it a file that was renamed
+            // AND edited matches no hash, and the import falls back to destroying the object
+            // and rebuilding it under the new name — losing its GUID and every reference to it.
+            history: _git is null ? null : new GitHistoricContent(_git));
 
         AttachRunSignals(_orchestrator);
 

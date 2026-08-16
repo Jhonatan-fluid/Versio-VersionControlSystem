@@ -262,6 +262,34 @@ public sealed class GitCliClientTests(ITestOutputHelper output) : IDisposable
     }
 
     [SkippableFact]
+    public async Task A_file_the_working_tree_has_lost_is_still_readable_at_HEAD()
+    {
+        // The only source of a departed file's content. The import planner needs it to pair a
+        // file that was renamed AND edited with the one it became — no hash can, because the
+        // content changed, and the manifest records a hash rather than the bytes.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        // A trailing newline on purpose: the exporter writes one and hashes what it writes, so
+        // a reader that trimmed would make every comparison fail for a reason that has nothing
+        // to do with the file.
+        Write("plc/Old.st", "PROGRAM Old\nx := 1;\n");
+        await Client.StageAsync(["plc/Old.st"], CancellationToken.None);
+        await Client.CommitAsync("add", CancellationToken.None);
+
+        File.Delete(Path.Combine(_repo, "plc", "Old.st"));
+
+        var atHead = await Client.ShowAtHeadAsync("plc/Old.st", CancellationToken.None);
+        Assert.Equal("PROGRAM Old\nx := 1;\n", atHead.Replace("\r\n", "\n"));
+
+        // A path HEAD never had is empty rather than an error: for the caller, "never
+        // committed" and "no such file" are the same ordinary answer — there is no old copy,
+        // so a rename falls back to a delete and a create.
+        Assert.Equal(
+            string.Empty, await Client.ShowAtHeadAsync("plc/Never.st", CancellationToken.None));
+    }
+
+    [SkippableFact]
     public async Task Branches_are_listed_with_the_current_one_marked()
     {
         Skip.IfNot(GitAvailable, "git not on PATH");

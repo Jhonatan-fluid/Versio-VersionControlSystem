@@ -1,3 +1,4 @@
+using Versio.Core.Diff;
 using Versio.Core.Hashing;
 using Versio.Core.Iec;
 using Versio.Core.Projects;
@@ -73,7 +74,10 @@ public static class CodesysImportPlanner
     public static bool NeedsText(string relativePath) =>
         relativePath.EndsWith(".st", StringComparison.OrdinalIgnoreCase);
 
-    public static ImportPlan Plan(ProjectManifest? manifest, IReadOnlyList<MirrorFile> mirror)
+    public static ImportPlan Plan(
+        ProjectManifest? manifest,
+        IReadOnlyList<MirrorFile> mirror,
+        IReadOnlyDictionary<string, string>? departed = null)
     {
         // A manifest below the reporting schema is still believed about the files it names —
         // a recorded name is a recorded name — but not about what it does NOT name, which is
@@ -131,7 +135,7 @@ public static class CodesysImportPlanner
         // the match — the deletion is withdrawn and the create becomes a skip — so a rename
         // costs the project neither its object nor a duplicate of it.
         var renames = trusted
-            ? MatchRenames(files, deletions, byGuid, mirror, warnings)
+            ? MatchRenames(files, deletions, byGuid, mirror, departed ?? new Dictionary<string, string>(), warnings)
             : [];
 
         return new ImportPlan
@@ -181,6 +185,7 @@ public static class CodesysImportPlanner
         List<PlannedDeletion> deletions,
         Dictionary<string, List<ProjectObject>> byGuid,
         IReadOnlyList<MirrorFile> mirror,
+        IReadOnlyDictionary<string, string> departed,
         List<string> warnings)
     {
         // Content lives on the MirrorFile, not on the plan: the plan says what to DO with a
@@ -328,6 +333,7 @@ public static class CodesysImportPlanner
         }
 
         MatchRenamedPous(files, deletions, byGuid, text, renames, warnings);
+        MatchBySimilarity(files, deletions, byGuid, text, departed, renames, warnings);
 
         return [.. renames.OrderBy(r => r.OldName, StringComparer.Ordinal)];
     }
@@ -476,6 +482,173 @@ public static class CodesysImportPlanner
             deletions.Remove(done);
         }
     }
+
+    /// <summary>
+    /// How alike a departed file and an arrived one must be before they are called the same
+    /// object. Nothing below this is ever paired.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>0.6, and the number is a judgement rather than a measurement.</b> What it has to
+    /// separate is "renamed and edited" from "deleted one thing and wrote another", and those
+    /// are not cleanly separable — a rename that rewrites two thirds of a POU genuinely does
+    /// look like a new object. Set high enough that unrelated ST files, which share their
+    /// keyword lines and little else, stay well under.
+    /// </para>
+    /// <para>
+    /// <b>Being wrong here costs a GUID, not any work.</b> Too low and two unrelated objects are
+    /// paired: the project ends with the same set of objects either way and only the identity
+    /// lineage differs. Too high and a real rename becomes a delete and a create, which is
+    /// exactly what happened before this pass existed. Neither destroys anything, which is why
+    /// a judgement is acceptable here and would not be in the deletion set.
+    /// </para>
+    /// </remarks>
+    private const double SimilarityFloor = 0.6;
+
+    /// <summary>
+    /// Pair a departed file with an arrived one on how alike their content is — the last
+    /// matching pass, and the only one that can see a rename that also edited the file.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>It runs last because it is the only inexact one.</b> Exact content, then the
+    /// implementation hash, then this: each earlier pass is certain, so anything reaching here
+    /// has already failed every test that could have answered without a judgement.
+    /// </para>
+    /// <para>
+    /// <b>It needs the old bytes, and only git has them.</b> The manifest records one hash per
+    /// file, and hashes cannot be compared for similarity — that is what a hash is for. So
+    /// <paramref name="departed"/> is what HEAD held, supplied by the caller, and an uncommitted
+    /// mirror simply has none: the pass then does nothing and the rename falls back to a delete
+    /// and a create, which is what it did before.
+    /// </para>
+    /// <para>
+    /// <b>Best match, and it must be clearly best.</b> Two candidates scoring within a hair of
+    /// each other is the same ambiguity the exact passes refuse outright, and here it is worse
+    /// because neither is certain. A runner-up within <see cref="SimilarityMargin"/> refuses the
+    /// pairing.
+    /// </para>
+    /// </remarks>
+    private static void MatchBySimilarity(
+        List<PlannedFile> files,
+        List<PlannedDeletion> deletions,
+        Dictionary<string, List<ProjectObject>> byGuid,
+        Dictionary<string, string> text,
+        IReadOnlyDictionary<string, string> departed,
+        List<PlannedRename> renames,
+        List<string> warnings)
+    {
+        if (departed.Count == 0 || deletions.Count == 0)
+        {
+            return;
+        }
+
+        var creates = files
+            .Select((f, i) => (File: f, Index: i))
+            .Where(p => p.File.Action == PlannedAction.Create
+                        && !string.IsNullOrEmpty(p.File.Name)
+                        && text.ContainsKey(p.File.Path))
+            .ToList();
+
+        if (creates.Count == 0)
+        {
+            return;
+        }
+
+        List<PlannedDeletion> matched = [];
+
+        foreach (var deletion in deletions.Where(d => d.Files.Count == 1))
+        {
+            if (!departed.TryGetValue(deletion.Files[0].Path, out var old)
+                || string.IsNullOrEmpty(old))
+            {
+                continue;
+            }
+
+            var scored = creates
+                .Select(c => (c.File, c.Index, Score: TextSimilarity.Of(old, text[c.File.Path])))
+                .Where(c => c.Score >= SimilarityFloor)
+                .OrderByDescending(c => c.Score)
+
+                // Ties broken by path so two identical scores do not depend on directory
+                // enumeration order — the runner-up check below is what actually refuses them,
+                // and this only keeps the message stable.
+                .ThenBy(c => c.File.Path, StringComparer.Ordinal)
+                .ToList();
+
+            if (scored.Count == 0)
+            {
+                continue;
+            }
+
+            if (scored.Count > 1 && scored[0].Score - scored[1].Score < SimilarityMargin)
+            {
+                warnings.Add(
+                    $"{deletion.Name}: {scored[0].File.Path} and {scored[1].File.Path} are both "
+                    + $"about as similar to its exported file ({scored[0].Score:P0} and "
+                    + $"{scored[1].Score:P0}), so which is the rename cannot be told — it is "
+                    + "treated as a deletion and separate creates instead");
+                continue;
+            }
+
+            var arrival = scored[0];
+            var newParent = ParentChainOf(arrival.File, deletion, byGuid);
+            if (newParent is null)
+            {
+                continue;
+            }
+
+            var proposed = new PlannedRename
+            {
+                Guid = deletion.Guid,
+                Resolve = deletion.Resolve,
+                OldName = deletion.Name,
+                NewName = arrival.File.Name!,
+                NewParent = newParent,
+                OldPath = deletion.Files[0].Path,
+                NewPath = arrival.File.Path,
+            };
+
+            matched.Add(deletion);
+
+            // Applied either way, as in the implementation-hash pass: the content differs by
+            // definition here, so the object has to be written into after it is renamed.
+            files[arrival.Index] = arrival.File with
+            {
+                Action = PlannedAction.ApplyText,
+                Guid = deletion.Guid,
+                Resolve = [.. newParent, arrival.File.Name!],
+            };
+
+            if (proposed.IsRename || proposed.IsMove)
+            {
+                renames.Add(proposed);
+            }
+
+            warnings.Add(
+                $"{deletion.Name}: matched to {arrival.File.Path} on content similarity "
+                + $"({arrival.Score:P0}), so it is renamed rather than removed and recreated — "
+                + "no hash could pair them, because the file was edited as well as renamed");
+
+            // Consumed: an arrival cannot be two objects.
+            creates.RemoveAll(c => c.Index == arrival.Index);
+        }
+
+        foreach (var done in matched)
+        {
+            deletions.Remove(done);
+        }
+    }
+
+    /// <summary>
+    /// How far clear the best similarity match must be of the runner-up.
+    /// </summary>
+    /// <remarks>
+    /// Without it, two files scoring 0.71 and 0.70 would pair on a hundredth — a difference
+    /// with no meaning, decided by one line. The exact passes refuse ambiguity outright; this
+    /// is the same rule expressed for a score rather than an equality.
+    /// </remarks>
+    private const double SimilarityMargin = 0.1;
 
     /// <summary>
     /// The chain to the object that should own the arrived file, or null when it cannot be

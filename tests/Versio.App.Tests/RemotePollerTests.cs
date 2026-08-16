@@ -48,6 +48,9 @@ public sealed class RemotePollerTests
 
         public Task<string> RevParseAsync(string revision, CancellationToken ct) =>
             Task.FromResult(LocalHead);
+        public Task<string> ShowAtHeadAsync(string path, CancellationToken ct) =>
+            Task.FromResult(string.Empty);
+
 
         /// <summary>What the forge's request refs come back as.</summary>
         public string RequestRefs { get; set; } = string.Empty;

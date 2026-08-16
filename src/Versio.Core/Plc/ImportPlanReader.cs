@@ -56,7 +56,9 @@ public static class ImportPlanReader
         IVersioLogger log,
         string category,
         string label,
-        CancellationToken ct)
+        CancellationToken ct,
+        Sync.IHistoricContentProbe? git = null,
+        string? mirrorPrefix = null)
     {
         var prefix = string.IsNullOrEmpty(label) ? string.Empty : label + ": ";
 
@@ -107,7 +109,23 @@ public static class ImportPlanReader
             mirror.Add(new MirrorFile { Path = relative, Text = text });
         }
 
-        var plan = format.PlanImport(manifest, mirror);
+        // What HEAD still has for files the manifest records and the mirror has lost.
+        //
+        // COMPUTED HERE RATHER THAN AFTER PLANNING, which is what keeps this to one planning
+        // pass. Which recorded paths are absent is a set difference over the manifest and the
+        // directory listing — no vendor knowledge, no rules, nothing the planner has to run
+        // first. Planning, discovering the unmatched deletions and planning again would be
+        // more precise about which files to fetch and would cost a second pass to save a
+        // handful of `git show` calls.
+        //
+        // Only when something is actually missing, so an ordinary import — where every
+        // recorded file is still on disk — runs no git at all.
+        var departed = git is null
+            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            : await DepartedAsync(git, manifest, mirror, mirrorPrefix, log, category, prefix, ct)
+                .ConfigureAwait(false);
+
+        var plan = format.PlanImport(manifest, mirror, departed);
 
         foreach (var warning in plan.Warnings)
         {
@@ -181,6 +199,73 @@ public static class ImportPlanReader
         }
 
         return plan;
+    }
+
+    /// <summary>
+    /// What HEAD holds for every recorded file the mirror no longer has.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Never throws and never fails the plan.</b> An uncommitted mirror, a repository with no
+    /// commits, a path HEAD never had — all answer empty, and all mean the same thing to the
+    /// planner: there is no old copy, so a rename that also edited the file stays a delete and
+    /// a create. That is the behaviour before this existed, so falling back to it costs nothing
+    /// that was ever working.
+    /// </para>
+    /// <para>
+    /// <b>Keyed by MIRROR-relative path</b>, because that is what the manifest and the planner
+    /// speak. <paramref name="mirrorPrefix"/> is what turns one into the repository-relative
+    /// path git wants; without it the fetch is skipped rather than guessed at, since asking git
+    /// for the wrong path returns empty and would look exactly like "never committed".
+    /// </para>
+    /// </remarks>
+    private static async Task<Dictionary<string, string>> DepartedAsync(
+        Sync.IHistoricContentProbe git,
+        Projects.ProjectManifest? manifest,
+        List<MirrorFile> mirror,
+        string? mirrorPrefix,
+        IVersioLogger log,
+        string category,
+        string prefix,
+        CancellationToken ct)
+    {
+        var departed = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (manifest is null)
+        {
+            return departed;
+        }
+
+        var present = new HashSet<string>(mirror.Select(m => m.Path), StringComparer.Ordinal);
+        var missing = manifest.Objects
+            .Select(o => o.Path)
+            .Where(p => !present.Contains(p))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(p => p, StringComparer.Ordinal)
+            .ToList();
+
+        if (missing.Count == 0 || mirrorPrefix is null)
+        {
+            return departed;
+        }
+
+        foreach (var path in missing)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var content = await git.AtHeadAsync($"{mirrorPrefix}/{path}", ct)
+                .ConfigureAwait(false);
+
+            if (content.Length > 0)
+            {
+                departed[path] = content;
+            }
+        }
+
+        log.Debug(category,
+            $"{prefix}{departed.Count} of {missing.Count} departed file(s) still in HEAD, "
+            + "so a rename that edited them can be recognised");
+
+        return departed;
     }
 
     private static async Task<Projects.ProjectManifest?> ReadManifestAsync(

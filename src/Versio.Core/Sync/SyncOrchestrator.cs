@@ -126,6 +126,7 @@ public sealed class SyncOrchestrator
     /// engine assumed before anybody asked.
     /// </summary>
     private readonly IConflictProbe _conflicts;
+    private readonly IHistoricContentProbe _history;
 
     public SyncOrchestrator(
         string repoRoot,
@@ -139,10 +140,12 @@ public sealed class SyncOrchestrator
         IProgress<PlcProgress>? progress = null,
         IVersioLogger? logger = null,
         IProjectOccupancyProbe? occupancy = null,
-        IConflictProbe? conflicts = null)
+        IConflictProbe? conflicts = null,
+        IHistoricContentProbe? history = null)
     {
         _occupancy = occupancy;
         _conflicts = conflicts ?? NoConflicts.Instance;
+        _history = history ?? NoHistory.Instance;
         _repoRoot = repoRoot;
         _owner = owner;
         _progress = progress;
@@ -1557,10 +1560,22 @@ public sealed class SyncOrchestrator
         return await PlanImportAsync(binding, format, ct).ConfigureAwait(false);
     }
 
+    /// <remarks>
+    /// <b>The git client is handed over so a rename that also edited a file can be seen.</b>
+    /// Pairing a departed file with the one it became is exact while its content is unchanged;
+    /// once it has been edited too, the only copy of the old bytes is in HEAD, because the
+    /// manifest keeps a hash rather than the content. The reader fetches them and the planner
+    /// stays pure — it is handed content and never goes looking for any.
+    /// <para>
+    /// <c>binding.ExportPath</c> is repository-relative and the planner speaks mirror-relative,
+    /// so the export path is exactly the prefix that turns one into the other.
+    /// </para>
+    /// </remarks>
     private Task<ImportPlan> PlanImportAsync(
         ProjectBinding binding, IPlcProjectFormat format, CancellationToken ct) =>
         ImportPlanReader.ReadAsync(
-            _fs, format, Absolute(binding.ExportPath), _log, LogCategory.Sync, binding.Id, ct);
+            _fs, format, Absolute(binding.ExportPath), _log, LogCategory.Sync, binding.Id, ct,
+            _history, binding.ExportPath);
 
     private async Task<SyncOutcome> ImportAsync(
         ProjectBinding binding, TransitionResult transition, string operationId,

@@ -133,7 +133,22 @@ public interface IPlcProjectFormat
     /// format decides what each file means, and the script executes exactly the plan.
     /// </para>
     /// </remarks>
-    ImportPlan PlanImport(Projects.ProjectManifest? manifest, IReadOnlyList<MirrorFile> mirror);
+    /// <param name="departed">
+    /// Content the mirror no longer has, by mirror-relative path — what HEAD held for files the
+    /// manifest records and the working tree has lost. Empty when the caller could not supply
+    /// it, which is an ordinary state: an uncommitted mirror has no old copy of anything.
+    /// </param>
+    /// <remarks>
+    /// <b><paramref name="departed"/> exists because a hash cannot answer every question.</b>
+    /// Pairing a renamed file with the file it became is exact while the content is unchanged;
+    /// once it has been edited too, only the old bytes can settle it, and the manifest keeps a
+    /// hash rather than the bytes. Supplying it stays the caller's job so the planner remains
+    /// pure — it is handed content, it never fetches any.
+    /// </remarks>
+    ImportPlan PlanImport(
+        Projects.ProjectManifest? manifest,
+        IReadOnlyList<MirrorFile> mirror,
+        IReadOnlyDictionary<string, string> departed);
 }
 
 /// <summary>

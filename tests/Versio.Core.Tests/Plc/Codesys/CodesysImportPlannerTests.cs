@@ -661,6 +661,109 @@ public class CodesysImportPlannerTests
     }
 
     [Fact]
+    public void A_POU_renamed_AND_edited_is_matched_on_similarity_against_its_old_content()
+    {
+        // The last pass, and the only one that can see this: the name changed AND the body
+        // changed, so neither the whole-file hash nor the implementation hash matches. Only the
+        // departed file's actual bytes can settle it, and the manifest keeps a hash — so they
+        // come from HEAD, supplied by the caller.
+        var old = "PROGRAM Old\nVAR\n  x: INT;\nEND_VAR\n"
+                  + $"{StTextCodec.ImplementationDelimiter}\nx := x + 1;\nIF x > 10 THEN\n"
+                  + "  x := 0;\nEND_IF";
+        var edited = "PROGRAM New\nVAR\n  x: INT;\nEND_VAR\n"
+                     + $"{StTextCodec.ImplementationDelimiter}\nx := x + 2;\nIF x > 10 THEN\n"
+                     + "  x := 0;\nEND_IF";
+
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(Obj("App/Old.st", "Old", "POU", "ST_FULL", guid: "g1")
+                with
+                {
+                    Hash = HashOf(old),
+                    ImplementationHash = HashOf(StTextCodec.Split(old).Implementation),
+                }),
+            [File("App/New.st", edited)],
+            new Dictionary<string, string> { ["App/Old.st"] = old });
+
+        var rename = Assert.Single(plan.Renames);
+        Assert.Equal("Old", rename.OldName);
+        Assert.Equal("New", rename.NewName);
+        Assert.Empty(plan.Deletions);
+
+        // Applied, like the implementation-hash pass: the content differs by definition here.
+        Assert.Equal(PlannedAction.ApplyText, One(plan, "App/New.st").Action);
+
+        // And it says it used a judgement rather than a certainty, because it did.
+        Assert.Contains(plan.Warnings,
+            w => w.Contains("content similarity", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Without_the_old_content_a_renamed_and_edited_POU_stays_a_delete_and_a_create()
+    {
+        // An uncommitted mirror has no HEAD copy of anything, and that is an ordinary state
+        // rather than an error: the pass does nothing and the behaviour is what it was before
+        // the pass existed.
+        var old = "PROGRAM Old\nVAR\nEND_VAR\n"
+                  + $"{StTextCodec.ImplementationDelimiter}\nx := x + 1;";
+        var edited = "PROGRAM New\nVAR\nEND_VAR\n"
+                     + $"{StTextCodec.ImplementationDelimiter}\nx := x + 2;";
+
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(Obj("App/Old.st", "Old", "POU", "ST_FULL", guid: "g1")
+                with { Hash = HashOf(old) }),
+            [File("App/New.st", edited)]);
+
+        Assert.Empty(plan.Renames);
+        Assert.Single(plan.Deletions);
+    }
+
+    [Fact]
+    public void Two_arrivals_that_are_about_equally_similar_are_refused_rather_than_ranked()
+    {
+        // The same ambiguity discipline as the exact passes, expressed for a score: two
+        // candidates within a hair of each other would be separated by one line, which is not
+        // a difference with any meaning behind it.
+        var old = "PROGRAM Old\nVAR\nEND_VAR\n"
+                  + $"{StTextCodec.ImplementationDelimiter}\na();\nb();\nc();\nd();";
+
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(Obj("App/Old.st", "Old", "POU", "ST_FULL", guid: "g1")
+                with { Hash = HashOf(old) }),
+            [
+                File("App/One.st", "PROGRAM One\nVAR\nEND_VAR\n"
+                                   + $"{StTextCodec.ImplementationDelimiter}\na();\nb();\nc();\nz();"),
+                File("App/Two.st", "PROGRAM Two\nVAR\nEND_VAR\n"
+                                   + $"{StTextCodec.ImplementationDelimiter}\na();\nb();\nc();\ny();"),
+            ],
+            new Dictionary<string, string> { ["App/Old.st"] = old });
+
+        Assert.Empty(plan.Renames);
+        Assert.Single(plan.Deletions);
+        Assert.Contains(plan.Warnings,
+            w => w.Contains("about as similar", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void An_unrelated_new_file_is_never_paired_however_lonely_the_deletion_is()
+    {
+        // The floor is what stops "something went and something arrived" becoming a rename.
+        var old = "PROGRAM Old\nVAR\n  x: INT;\nEND_VAR\n"
+                  + $"{StTextCodec.ImplementationDelimiter}\nx := x + 1;\nIF x > 10 THEN\n"
+                  + "  x := 0;\nEND_IF";
+
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(Obj("App/Old.st", "Old", "POU", "ST_FULL", guid: "g1")
+                with { Hash = HashOf(old) }),
+            [File("App/Unrelated.st", "PROGRAM Unrelated\nVAR\nEND_VAR\n"
+                                      + $"{StTextCodec.ImplementationDelimiter}\nSomethingElse();")],
+            new Dictionary<string, string> { ["App/Old.st"] = old });
+
+        Assert.Empty(plan.Renames);
+        Assert.Single(plan.Deletions);
+        Assert.Equal(PlannedAction.Create, One(plan, "App/Unrelated.st").Action);
+    }
+
+    [Fact]
     public void A_stale_manifest_plans_no_renames_for_the_reason_it_plans_no_deletes()
     {
         // What a pre-reporting-schema manifest does not list cannot be told apart from what it

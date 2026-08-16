@@ -157,8 +157,10 @@ public sealed class CodesysProjectFormat : IPlcProjectFormat
     /// <remarks>Delegates to <see cref="CodesysImportPlanner"/>, where the reasoning lives —
     /// this class is the seam's phone book, not its brain.</remarks>
     public ImportPlan PlanImport(
-        Projects.ProjectManifest? manifest, IReadOnlyList<MirrorFile> mirror) =>
-        CodesysImportPlanner.Plan(manifest, mirror);
+        Projects.ProjectManifest? manifest,
+        IReadOnlyList<MirrorFile> mirror,
+        IReadOnlyDictionary<string, string> departed) =>
+        CodesysImportPlanner.Plan(manifest, mirror, departed);
 
     /// <summary>The line separator, written without an escape on purpose.</summary>
     /// <remarks>

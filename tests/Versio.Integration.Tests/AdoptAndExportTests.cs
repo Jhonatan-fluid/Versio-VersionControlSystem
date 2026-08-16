@@ -872,6 +872,82 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
         Assert.Contains("PROGRAM Renamed", reExported, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// A POU renamed <i>and</i> edited is still recognised, from its content at HEAD.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The last case Phase 3 could not see, and the only one needing git.</b> Both the name
+    /// and the body changed, so neither the whole-file hash nor the implementation hash matches
+    /// anything — the manifest records hashes, and a hash cannot be compared for similarity.
+    /// The departed file's actual bytes exist in exactly one place: the last commit.
+    /// </para>
+    /// <para>
+    /// <b>This is what makes the git plumbing load-bearing rather than speculative.</b> The
+    /// mirror is committed first on purpose; without a commit there is no old copy and the
+    /// import correctly falls back to a delete and a create.
+    /// </para>
+    /// </remarks>
+    [SkippableFact]
+    public async Task A_POU_renamed_and_edited_together_is_recognised_from_its_content_at_HEAD()
+    {
+        var install = Install;
+        Skip.If(install is null, "no CODESYS installation with a profile");
+        Skip.If(!File.Exists(FixtureProject), "fixture project missing");
+
+        await InitRepoAsync();
+        var git = new GitCliClient(_repo, logger: new TestLogger(output));
+        var setup = new RepoSetup(_repo, CodesysProjectFormat.Instance);
+
+        var adopted = await setup.AdoptAsync(
+            ProjectRelativePath, git, install!.Profiles[0], CancellationToken.None);
+        var binding = adopted.Config.Bindings[0];
+        var orchestrator = BuildOrchestrator(adopted.Config, install, git);
+
+        Assert.Equal(SyncVerdict.Completed, (await Export(orchestrator, binding.Id)).Verdict);
+        await orchestrator.ReleaseAfterPushAsync("c1", CancellationToken.None);
+
+        var mirror = Path.Combine(_repo, "plc", "RefrigeratorControl");
+        var app = Path.Combine(mirror, RelApp);
+        var before = Versio.Core.Projects.ProjectManifest.Parse(
+            await File.ReadAllTextAsync(Path.Combine(mirror, "_manifest.json")));
+        var original = Assert.Single(
+            before.Objects, o => o.Path.EndsWith("Simulation.st", StringComparison.Ordinal));
+
+        // COMMIT THE MIRROR. Everything below turns on HEAD having the departed file, and
+        // without this the test would pass for the wrong reason — by falling back.
+        await git.StageAsync(["."], CancellationToken.None);
+        await git.CommitAsync("mirror", CancellationToken.None);
+
+        // Renamed AND edited: the declaration's name changes and a line is added to the body,
+        // so the implementation hash cannot pair them either.
+        var source = Path.Combine(app, "Simulation.st");
+        var body = await File.ReadAllTextAsync(source);
+        File.Delete(source);
+        await File.WriteAllTextAsync(
+            Path.Combine(app, "Renamed.st"),
+            body.Replace("PROGRAM Simulation", "PROGRAM Renamed", StringComparison.Ordinal)
+                + "\n(* one more line *)\n",
+            new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+
+        var outcome = await TextChanged(orchestrator, binding.Id);
+        output.WriteLine($"import — {outcome.Verdict}: {SyncNarrative.Describe(outcome)}");
+        Assert.Equal(SyncVerdict.Completed, outcome.Verdict);
+
+        var after = Versio.Core.Projects.ProjectManifest.Parse(await File.ReadAllTextAsync(
+            Path.Combine(await ReExport(install, binding.Id, "verify-similar"),
+                         "_manifest.json")));
+
+        var renamed = Assert.Single(
+            after.Objects, o => o.Path.EndsWith("Renamed.st", StringComparison.Ordinal));
+        output.WriteLine($"after: {renamed.Path} guid={renamed.Guid}");
+
+        // Same object, despite nothing hashing the same on either side.
+        Assert.Equal(original.Guid, renamed.Guid);
+        Assert.DoesNotContain(after.Objects,
+            o => o.Path.EndsWith("Simulation.st", StringComparison.Ordinal));
+    }
+
     /// <summary>Where the fixture's objects live, relative to a mirror root.</summary>
     private static string RelApp => Path.Combine("Device", "Plc Logic", "Application");
 
@@ -1250,8 +1326,14 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
     private static string FixtureProject =>
         Core.Tests.TestPaths.Project("RefrigeratorControl.project");
 
+    /// <param name="git">
+    /// Supplied only by the test that needs a departed file's content from HEAD. Everything
+    /// else leaves it null and the orchestrator uses <c>NoHistory</c>, which is the same state
+    /// as an uncommitted mirror — so no other test's behaviour depends on git being reachable.
+    /// </param>
     private SyncOrchestrator BuildOrchestrator(
-        RepoConfig config, CodesysInstall? install, Versio.Core.Plc.IPlcRunner? runner = null)
+        RepoConfig config, CodesysInstall? install, GitCliClient? git = null,
+        Versio.Core.Plc.IPlcRunner? runner = null)
     {
         var machine = new MachineIdentity();
         return new SyncOrchestrator(
@@ -1269,7 +1351,8 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
             new WindowsFileSystem(),
             runner ?? new LocalCodesysRunner(
                 install!.ExecutablePath, new ScriptExtractor(), new TestLogger(output)),
-            new JsonLockStore(_repo));
+            new JsonLockStore(_repo),
+            history: git is null ? null : new GitHistoricContent(git));
     }
 
     private async Task InitRepoAsync()
