@@ -163,6 +163,9 @@ Phase 7's two prerequisites (§5.A and §5.B) are both built, so it is unblocked
 | Direction lock, hash gate, self-write suppressor, circuit breaker, in that order | `SyncOrchestrator.AttemptAsync` — `src/Versio.Core/Sync/SyncOrchestrator.cs:342` |
 | Export stages into `<mirror>.versio_staging` and swaps only on success | `src/Versio.Scripts.Codesys/versio_export.py:409` |
 | The project is copied aside before an import writes to it; a failed backup fails the import | `src/Versio.Core/Sync/SyncOrchestrator.cs:806` |
+| **An import whose mirror is not there is refused, before the backup** — an empty plan means "touch no file", so this used to run, change nothing and report success | `SyncOrchestrator.ImportAsync` |
+| **The plan a person confirmed is the plan executed** — decided before the question, carried to the script, never recomputed after the answer | `SyncViewModel.ConfirmImportAsync` → `SyncJob.Plan` → `PlcProjectJob.Plan` |
+| **A deletion is proposed only when five preconditions hold**: a trusted manifest, every file for the GUID gone, export-only records neither voting nor vetoing, nothing surviving inside it at any depth, and an owner chain recorded rather than guessed. Nothing executes one yet | `CodesysImportPlanner.PlanDeletions` |
 | An abandoned lock is never auto-cleared; recovery re-validates against content hashes | `src/Versio.Core/Locking/LockRecovery.cs` |
 | Two CODESYS runs cannot overlap on one machine | `src/Versio.Infrastructure/Plc/Codesys/LocalCodesysRunner.cs:39` |
 | Cancellation kills the whole CODESYS process tree | `LocalCodesysRunner.cs:304`, `:551` |
@@ -777,15 +780,30 @@ nonetheless currently a fiction.
 → Either wire a real confirmation — §2.4 provides one — or make the setting honest. Prompting is the
 better answer: this is the direction that writes a binary file the user cannot diff afterwards.
 
-### D. The mirror can vanish entirely in the swap window
+### D. The mirror can vanish entirely in the swap window — **BUILT**
 
-`versio_export.py:469` does `rmtree(out_root)` and then `os.rename(staging, out_root)`. A kill, crash
+`versio_export.py` used to `rmtree(out_root)` and then `os.rename(staging, out_root)`. A kill, crash
 or power loss between those two statements leaves **no mirror at all** — and on the 2.5 MB /
 33,644-line visualisation tree the suite already exercises, `rmtree` is not instantaneous.
 
 → Rename the old tree to `<mirror>.versio_trash`, rename staging into place, then delete the trash.
 Three renames and no window in which nothing exists. Clear a leftover `.versio_trash` on the next
 run, exactly as staging is already cleared and announced.
+
+> **Built exactly as written, and this section said otherwise until 2026-08-15.** The three
+> renames are `versio_export.py:722–733`, `.versio_trash` is in the adoption ignore plan beside
+> `.versio_staging`, and the reasoning above lives in the code as a comment. Renaming is atomic
+> on NTFS, so at every instant the mirror is either the old tree or the new one; a crash leaves
+> a recoverable `.versio_trash` rather than nothing. **Found by an audit looking for something
+> else** — the same way §10 of `CODESYS.md` was found claiming ten scripts when there were
+> twelve. A section that describes built work as a recommendation is worse than one that is
+> merely out of date: it invites somebody to build it twice.
+>
+> **The consumer half landed 2026-08-15 too, and it is a different defence.** However the mirror
+> came to be missing — this window, a deleted folder, a bad checkout — an import against it used
+> to run, change nothing and report **success**. It is refused now, before the project is copied
+> aside. Neither defence makes the other redundant: this one stops the mirror vanishing, that
+> one stops Versio pretending it imported something that was not there.
 
 ### E. There is no backup restore path — **BUILT**
 
