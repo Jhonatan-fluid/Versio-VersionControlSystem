@@ -891,7 +891,8 @@ public sealed class SyncOrchestrator
             return operation == PlcOperation.Export
                 ? await ExportAsync(attempt.Binding, transition, scratchProject, operationId, ct)
                     .ConfigureAwait(false)
-                : await ImportAsync(attempt.Binding, transition, operationId, ct)
+                : await ImportAsync(attempt.Binding, transition, operationId,
+                                    attempt.Job.Plan, ct)
                     .ConfigureAwait(false);
         }
         finally
@@ -1516,9 +1517,54 @@ public sealed class SyncOrchestrator
         }
     }
 
+    /// <summary>
+    /// Decide what importing a binding's mirror would do, without starting the toolchain.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The IO half of planning.</b> The rules are pure and belong to the vendor —
+    /// <see cref="IPlcProjectFormat.PlanImport"/> — but somebody has to read the manifest and
+    /// walk the mirror, and that has to happen where a confirmation dialog can wait for it:
+    /// 17–31 s before CODESYS starts, not inside it. It runs on <see cref="IFileSystem"/>,
+    /// which is why this can sit in <c>Versio.Core</c> at all.
+    /// </para>
+    /// <para>
+    /// <b>Vendor knowledge stays behind the seam.</b> This method knows there is a manifest
+    /// and that some files need their text loaded; it does not know which suffixes, what a
+    /// form is, or that CODESYS exists. The format answers both questions —
+    /// <see cref="IPlcProjectFormat.NeedsTextToPlan"/> per file, then
+    /// <see cref="IPlcProjectFormat.PlanImport"/> once — and this walks the disk for it.
+    /// </para>
+    /// <para>
+    /// Returns null when the binding is unknown or no registered format claims its project,
+    /// which is the same answer as "there is nothing to import here" and never a throw: this
+    /// is called speculatively, to fill in a dialog.
+    /// </para>
+    /// </remarks>
+    public async Task<ImportPlan?> PlanImportAsync(string bindingId, CancellationToken ct)
+    {
+        if (!_bindings.TryGetValue(bindingId, out var binding))
+        {
+            return null;
+        }
+
+        var format = PlcFormats.ForPath(binding.ProjectPath);
+        if (format is null)
+        {
+            return null;
+        }
+
+        return await PlanImportAsync(binding, format, ct).ConfigureAwait(false);
+    }
+
+    private Task<ImportPlan> PlanImportAsync(
+        ProjectBinding binding, IPlcProjectFormat format, CancellationToken ct) =>
+        ImportPlanReader.ReadAsync(
+            _fs, format, Absolute(binding.ExportPath), _log, LogCategory.Sync, binding.Id, ct);
+
     private async Task<SyncOutcome> ImportAsync(
         ProjectBinding binding, TransitionResult transition, string operationId,
-        CancellationToken ct)
+        ImportPlan? agreed, CancellationToken ct)
     {
         var started = _clock.UtcNow;
 
@@ -1546,6 +1592,19 @@ public sealed class SyncOrchestrator
             };
         }
 
+        // The plan a person agreed to, when there was one, rather than a fresh one computed
+        // after they clicked. Recomputing here would make the confirmation dialog's account
+        // of what is about to happen true only by coincidence — see SyncJob.Plan.
+        //
+        // Without a confirmation there is nobody to have agreed, so one is computed now. A
+        // format that no longer claims the path leaves it null and the runner decides; that
+        // is the same door a test driving a runner directly comes through.
+        var plan = agreed;
+        if (plan is null && PlcFormats.ForPath(binding.ProjectPath) is { } format)
+        {
+            plan = await PlanImportAsync(binding, format, ct).ConfigureAwait(false);
+        }
+
         var job = new PlcJob
         {
             Operation = PlcOperation.Import,
@@ -1558,6 +1617,7 @@ public sealed class SyncOrchestrator
                     BindingId = binding.Id,
                     ProjectPath = Absolute(binding.ProjectPath),
                     Path = Absolute(binding.ExportPath),
+                    Plan = plan,
                 },
             ],
         };

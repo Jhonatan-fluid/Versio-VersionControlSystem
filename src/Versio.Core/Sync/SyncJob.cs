@@ -131,4 +131,24 @@ public sealed record SyncJob
     public bool Synchronous { get; init; }
 
     public string Reason { get; init; } = string.Empty;
+
+    /// <summary>
+    /// The import plan the caller already computed — and, when it confirmed, the plan a
+    /// person agreed to.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Travels beside <see cref="Confirmed"/> because it is the same promise made precise.
+    /// <c>Confirmed</c> says somebody said yes; this says <b>what they said yes to</b>. A
+    /// confirmation dialog that names three objects it will delete, followed by an import
+    /// that recomputes its own plan against a mirror that moved in between, is a dialog that
+    /// told the truth about something that then did not happen.
+    /// </para>
+    /// <para>
+    /// Null is the ordinary case and stays supported: a watcher-triggered import has nobody
+    /// to show a plan to, so the orchestrator computes one when it gets there. The window
+    /// this closes is only the one a human sits inside.
+    /// </para>
+    /// </remarks>
+    public Plc.ImportPlan? Plan { get; init; }
 }

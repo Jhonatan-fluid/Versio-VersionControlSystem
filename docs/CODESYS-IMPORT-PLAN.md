@@ -552,6 +552,47 @@ set *mean* anything, and **P3 makes them the only protection there is**:
 `FB_Motor · POU`, resolved through `ObjectIndex` the way changed files already are.
 `DestructivePrompt.Body` is free text, so no model change is strictly required.
 
+### ✅ The seam step, landed 2026-08-15 — the plan now crosses to the dialog and back
+
+**Deletes are not built. The carriage for them is**, and it went first because the confirmation
+is worthless without it: a dialog naming three objects it will delete, followed by an import
+that recomputes its own plan, is a dialog that told the truth about something that then did not
+happen.
+
+- **`SyncJob.Plan` and `PlcProjectJob.Plan`** — both vendor-neutral, `ImportPlan` already being
+  so. The CODESYS job has carried a plan since Phase 1, but that is *below* the seam and the
+  orchestrator that builds a `PlcJob` is above it, so a plan computed for a dialog had no way
+  down.
+- **`ImportPlanReader`** (`Versio.Core/Plc/`) — the IO half of planning, on `IFileSystem`, so it
+  sits in Core and is tested without a disk. **Shared, not copied**: the orchestrator needs a
+  plan before the dialog and `LocalCodesysRunner` needs one when a caller supplies none, and
+  those were about to become two walks with one convention between them.
+- **`SyncOrchestrator.PlanImportAsync`** decides before CODESYS starts; `ImportAsync` uses the
+  agreed plan when there is one and computes only when there is not — the watcher's path, where
+  nobody was asked.
+- **`SyncViewModel` computes the plan before the question**, not after the answer.
+
+> **The link nothing was watching was the last one.** Cutting `SyncJob.Plan`,
+> `PlcProjectJob.Plan`, `ToNative`'s copy, or the mirror-relative path convention each turns a
+> suite red. Cutting the **view model's** hand-over turned nothing red at all — the whole app
+> suite passed with the agreed plan discarded, because the orchestrator silently computes a
+> replacement and an identical mirror yields an identical plan.
+>
+> The two are only distinguishable if the mirror moves in between, so
+> `ImportPlanHandoverTests` moves it **from inside the confirmation prompt** — the one moment
+> guaranteed to sit between deciding and running. That is not a contrivance: a dialog is open
+> for as long as somebody takes to read it, and Versio watches the mirror throughout. With the
+> hand-over cut, the test now fails naming `App/Appeared.st · Create` — a file imported that
+> nobody agreed to.
+>
+> **Reaching that test cost two fixes of its own**, both in this repository's own scaffolding
+> rather than in the product, and both recorded in [`STATUS.md`](STATUS.md): `Eventually.Press`
+> was fire-and-forget, and no app test had ever *accepted* an import.
+
+**What is left for Phase 2** is the deletion logic itself: the delete set and its preconditions,
+the content check through `versio_native_equiv`, `PendingImportDetail` naming each object, and
+`obj.remove()` in the script.
+
 **Script:** `obj.remove()` for exactly the planned deletions, emitting `{"t":"removed"}` — the event
 `versio_delete_objects.py` already uses.
 
@@ -669,24 +710,16 @@ the same thing" from inside the CODESYS process, and has **no caller yet**.
    production caller is a specification pretending to be code, which is exactly what
    `DecodeStem` and `StDeclarationParser` were until the planner became their first caller.
 
-**The seam step Phase 2 opens with, and it is bigger than "move plan computation up".** The
-confirmation dialog must name deletions before CODESYS starts, so the plan the user agrees to
-has to be the plan the script executes. Three things are in the way, and none is hard once
-they are separated:
+**✅ The seam step is done** — see [Phase 2's section](#-the-seam-step-landed-2026-08-15--the-plan-now-crosses-to-the-dialog-and-back). The plan is decided in
+`SyncViewModel` before the question is asked, travels on `SyncJob.Plan` → `PlcProjectJob.Plan` →
+the CODESYS job → the job file, and the orchestrator computes one only when nobody was asked.
+The walk itself is `ImportPlanReader`, shared between the orchestrator and the runner. So
+**`PendingImportDetail` naming each deletion is now a change to one method**, not a plumbing
+exercise.
 
-- **`ProjectJob.Plan` is on the CODESYS side of the seam** (`Versio.Core.Plc.Codesys`), while
-  the **neutral** `PlcProjectJob` has no `Plan` at all — and it is `SyncOrchestrator`,
-  vendor-neutral, that builds a `PlcJob`. `ImportPlan` is already a neutral type, so a
-  `PlcProjectJob.Plan` is legitimate and leaks nothing.
-- **The IO half has to live somewhere the orchestrator can reach**, and `Versio.Core` touches
-  no disk by rule. `LocalCodesysRunner.PlanImport` reads the manifest, walks the mirror and
-  loads text for exactly the files `NeedsTextToPlan` names; that belongs in Infrastructure with
-  a neutral way in, not in the runner's `RunAsync`.
-- Only then does `SyncViewModel`'s `PendingImportDetail` get extended to name the deletions.
-
-Do it as its own commit, with no behaviour change, ending in a test that the plan the dialog
-saw is the plan the script got. It is independent of everything else in Phase 2, and it is the
-piece that makes the deletion confirmation truthful rather than decorative.
+The IO half turned out to belong in `Versio.Core` rather than Infrastructure, because
+`SyncOrchestrator` already takes an `IFileSystem` — which is also what keeps it testable without
+a disk.
 
 **What to be careful of, learned building `versio_native_equiv.py`:** a parity test can be
 green and watching nothing. Two of its rules — the ordinal sort key and the container table's

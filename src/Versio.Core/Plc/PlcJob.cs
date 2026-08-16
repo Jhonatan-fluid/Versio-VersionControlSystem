@@ -23,6 +23,33 @@ public sealed record PlcProjectJob
 
     /// <summary>Export destination, or import source, depending on the operation.</summary>
     public required string Path { get; init; }
+
+    /// <summary>
+    /// For an import: exactly what it will do, decided before the toolchain starts.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Null means the runner computes one for itself, which is what every caller did before
+    /// this field existed and what a test driving a runner directly still does. It is not
+    /// "plan nothing": an import without a plan is refused, because the walk that used to
+    /// infer everything from file names is deleted rather than bypassed.
+    /// </para>
+    /// <para>
+    /// <b>It is here rather than on the vendor's job because of the confirmation dialog.</b>
+    /// A person has to be told what an import will delete <i>before</i> agreeing to it, and
+    /// the only way that promise is worth anything is if the plan they agreed to is the same
+    /// object the script executes. The CODESYS job has carried a plan since Phase 1, but a
+    /// vendor's job type is below the seam and the orchestrator that builds this one is
+    /// above it — so a plan computed for a dialog had no way down.
+    /// </para>
+    /// <para>
+    /// <see cref="ImportPlan"/> is vendor-neutral by construction: the actions are neutral,
+    /// the paths are mirror-relative, and every vendor-specific decision was already made by
+    /// <see cref="IPlcProjectFormat.PlanImport"/> before one of these exists. Carrying it
+    /// here leaks nothing.
+    /// </para>
+    /// </remarks>
+    public ImportPlan? Plan { get; init; }
 }
 
 /// <summary>

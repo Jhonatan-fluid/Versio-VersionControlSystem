@@ -2664,6 +2664,26 @@ public sealed class SyncViewModel : ObservableObject
 
         _logger.Click("Sync.ConfirmImport");
 
+        // The plan is decided HERE, before the question is asked — not inside the orchestrator
+        // after the answer, and not inside CODESYS 17-31 s later. Two reasons, and only the
+        // second is about this commit:
+        //
+        //   - what an import will delete has to be nameable in the dialog, which is what
+        //     PendingImportDetail becomes able to say next;
+        //   - the plan agreed to has to be the plan executed. Recomputing after the click
+        //     would make the dialog's account of what is about to happen true by coincidence,
+        //     and a mirror that moved in between would be applied without anybody being asked.
+        //
+        // Null when the binding has gone or no format claims it. The import is not blocked on
+        // that: the orchestrator falls back to computing one, which is exactly what every
+        // watcher-triggered import does, so the failure mode here is losing the guarantee
+        // rather than losing the import.
+        // CancellationToken.None deliberately: the busy scope below does not exist yet, because
+        // it is opened once the answer is yes. This reads a manifest and walks a mirror — the
+        // work the 17-31 s launch exists to avoid — so there is nothing here worth cancelling.
+        var plan = await _orchestrator.PlanImportAsync(id, CancellationToken.None)
+            .ConfigureAwait(true);
+
         if (!Prompts.ConfirmImport(new DestructivePrompt(
                 $"Import into {row.Name}?", PendingImportDetail, Confirm: "Import")))
         {
@@ -2681,6 +2701,9 @@ public sealed class SyncViewModel : ObservableObject
             Confirmed = true,
             Synchronous = true,
             Reason = "confirmed by the user",
+
+            // The plan the question was asked about, not one computed after it was answered.
+            Plan = plan,
         }, busy.Token).ConfigureAwait(true);
 
         Summary = SyncNarrative.Describe(outcome);

@@ -59,28 +59,45 @@ public sealed class LocalCodesysRunner(
     /// CODESYS warning code looks like.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// The translation itself, as a function — neutral job in, CODESYS job out.
+    /// </summary>
+    /// <remarks>
+    /// <b>Public and static so it can be asserted without launching CODESYS.</b> It was inline
+    /// in <see cref="RunAsync(PlcJob, IProgress{PlcProgress}, CancellationToken)"/>, which
+    /// meant the only way to check that a field survives the boundary was a 17–31 s run — so
+    /// in practice nothing checked. That mattered the moment the job grew a field whose loss
+    /// is silent: drop <c>Plan</c> here and every import still works, still runs from a plan,
+    /// and runs from a <i>different</i> one than the person was shown.
+    /// </remarks>
+    public static CodesysJob ToNative(PlcJob job) => new()
+    {
+        Operation = job.Operation switch
+        {
+            PlcOperation.Export => CodesysOperation.Export,
+            PlcOperation.Import => CodesysOperation.Import,
+            _ => CodesysOperation.Probe,
+        },
+        Profile = job.Profile,
+        Projects = [.. job.Projects.Select(p => new ProjectJob
+        {
+            BindingId = p.BindingId,
+            ProjectPath = p.ProjectPath,
+            Path = p.Path,
+
+            // Carried across, never recomputed. See the remarks above for why losing this
+            // line is the kind of defect that leaves nothing on fire to point at.
+            Plan = p.Plan,
+        })],
+        OperationId = job.OperationId,
+        Save = job.Save,
+        Timeout = job.Timeout,
+    };
+
     public async Task<PlcResult> RunAsync(
         PlcJob job, IProgress<PlcProgress>? progress, CancellationToken cancellationToken)
     {
-        var native = new CodesysJob
-        {
-            Operation = job.Operation switch
-            {
-                PlcOperation.Export => CodesysOperation.Export,
-                PlcOperation.Import => CodesysOperation.Import,
-                _ => CodesysOperation.Probe,
-            },
-            Profile = job.Profile,
-            Projects = [.. job.Projects.Select(p => new ProjectJob
-            {
-                BindingId = p.BindingId,
-                ProjectPath = p.ProjectPath,
-                Path = p.Path,
-            })],
-            OperationId = job.OperationId,
-            Save = job.Save,
-            Timeout = job.Timeout,
-        };
+        var native = ToNative(job);
 
         // Progress crosses the boundary too, so the heartbeat above never sees a Codesys type.
         var relay = progress is null
@@ -132,7 +149,14 @@ public sealed class LocalCodesysRunner(
         {
             job = job with
             {
-                Projects = [job.Projects[0] with { Plan = PlanImport(job.Projects[0].Path) }],
+                Projects =
+                [
+                    job.Projects[0] with
+                    {
+                        Plan = await PlanImportAsync(job.Projects[0].Path, cancellationToken)
+                            .ConfigureAwait(false),
+                    },
+                ],
             };
         }
 
@@ -707,92 +731,39 @@ public sealed class LocalCodesysRunner(
     };
 
     /// <summary>
-    /// Read the mirror and decide what importing it would do. The IO half of planning; the
-    /// rules live in <see cref="CodesysImportPlanner"/>, which is pure.
+    /// Read the mirror and decide what importing it would do, for a caller that did not.
     /// </summary>
     /// <remarks>
-    /// A manifest that is missing or unreadable does not fail the import — the planner plans
-    /// updates and creates without one and says structural changes are unavailable, which is
-    /// the honest answer for a mirror somebody hand-built. The planner's warnings go to the
-    /// log here, at Warn, because they are decisions a person may disagree with — a created
-    /// object taking its declaration's name over its file's, a stray file refused.
+    /// <para>
+    /// <b>The walk itself is not here.</b> It is <see cref="Versio.Core.Plc.ImportPlanReader"/>,
+    /// shared with the orchestrator, which needs the same plan earlier and for a different
+    /// reason: a confirmation dialog cannot name what an import will delete if the plan is not
+    /// decided until CODESYS is already running. Two copies of that walk was the obvious shape
+    /// and the wrong one — it is the arrangement CODESYS.md section 9 counts four drifts in,
+    /// and this walk has a convention inside it (mirror-relative paths, never absolute) that
+    /// is completely silent when got wrong.
+    /// </para>
+    /// <para>
+    /// This entry point survives because a job can still arrive without a plan — a test
+    /// driving the runner directly, or any caller below the orchestrator — and an import must
+    /// be plan-driven whichever door it came through. The walk that inferred everything from
+    /// file names is deleted, not bypassed.
+    /// </para>
     /// </remarks>
-    private Versio.Core.Plc.ImportPlan PlanImport(string mirrorRoot)
-    {
-        Versio.Core.Projects.ProjectManifest? manifest = null;
-        try
-        {
-            var manifestPath = Path.Combine(mirrorRoot, "_manifest.json");
-            if (File.Exists(manifestPath))
-            {
-                // The reporting overload, because Parse never throws: garbage comes back as
-                // Empty at schema 1, which the planner correctly refuses to trust — but
-                // silently, and a manifest that rotted into "plan everything from file
-                // names" is a downgrade somebody should be able to find in the log.
-                manifest = Versio.Core.Projects.ProjectManifest.Parse(
-                    File.ReadAllText(manifestPath), out var problems);
-                foreach (var problem in problems)
-                {
-                    _log.Warn(LogCategory.Codesys, $"_manifest.json: {problem}");
-                }
-            }
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            _log.Warn(LogCategory.Codesys,
-                $"the mirror's manifest could not be read ({e.Message}) — planning the "
-                + "import without it");
-        }
+    private Task<Versio.Core.Plc.ImportPlan> PlanImportAsync(
+        string mirrorRoot, CancellationToken ct) =>
+        Versio.Core.Plc.ImportPlanReader.ReadAsync(
+            new FileSystem.WindowsFileSystem(),
+            CodesysProjectFormat.Instance,
+            mirrorRoot,
+            _log,
+            LogCategory.Codesys,
 
-        List<Versio.Core.Plc.MirrorFile> mirror = [];
-        foreach (var absolute in Directory.EnumerateFiles(
-                     mirrorRoot, "*", SearchOption.AllDirectories))
-        {
-            var relative = Path.GetRelativePath(mirrorRoot, absolute).Replace('\\', '/');
-            string? text = null;
-            if (CodesysImportPlanner.NeedsText(relative))
-            {
-                try
-                {
-                    text = File.ReadAllText(absolute);
-                }
-                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-                {
-                    // Planned from its name alone; if it is still unreadable when the
-                    // script reaches it, the script reports that per file.
-                    _log.Debug(LogCategory.Codesys,
-                        $"could not read {relative} while planning: {e.Message}");
-                }
-            }
-
-            mirror.Add(new Versio.Core.Plc.MirrorFile { Path = relative, Text = text });
-        }
-
-        var plan = CodesysImportPlanner.Plan(manifest, mirror);
-
-        foreach (var warning in plan.Warnings)
-        {
-            _log.Warn(LogCategory.Codesys, warning);
-        }
-
-        if (plan.StructuralChangesUnavailable is { } why)
-        {
-            _log.Debug(LogCategory.Codesys, why);
-        }
-
-        if (plan.MissingFromMirror.Count > 0)
-        {
-            // Info, not Warn: this is the state every mirror with a deleted file is in until
-            // Phase 2 exists, and it is the sentence that answers "I deleted the file, why
-            // is the object still there".
-            _log.Info(LogCategory.Codesys,
-                $"{plan.MissingFromMirror.Count} exported file(s) are no longer in the "
-                + "mirror; deleting objects from the project is not applied by this version, "
-                + "so they remain in the project");
-        }
-
-        return plan;
-    }
+            // No binding id down here: this runner is handed paths, not bindings. The
+            // orchestrator's call supplies one, which is why the reader takes a label rather
+            // than assuming there is always something to name.
+            label: string.Empty,
+            ct);
 
     private static string WriteJobFile(CodesysJob job)
     {

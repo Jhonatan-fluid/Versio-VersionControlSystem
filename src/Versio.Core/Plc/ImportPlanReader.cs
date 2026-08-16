@@ -1,0 +1,159 @@
+using Versio.Core.Abstractions;
+using Versio.Core.Logging;
+
+namespace Versio.Core.Plc;
+
+/// <summary>
+/// The IO half of planning an import: read the manifest, walk the mirror, and hand both to
+/// the vendor's pure planner.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>Split this way because the two halves have different constraints.</b> The rules are
+/// vendor knowledge and must be pure — <see cref="IPlcProjectFormat.PlanImport"/>, unit-tested
+/// in milliseconds. The walk is neither: it is the same walk for every vendor, and it needs a
+/// disk. Putting the walk here, on <see cref="IFileSystem"/>, is what lets it live in
+/// <c>Versio.Core</c> and be tested without one.
+/// </para>
+/// <para>
+/// <b>It exists as a shared class because there were nearly two of it.</b> The orchestrator
+/// needs a plan before the confirmation dialog; the CODESYS runner needs one when a caller
+/// supplies none. Those are different callers in different assemblies with different loggers,
+/// and writing the walk twice is precisely the arrangement <c>CODESYS.md</c> §9 counts four
+/// drifts in — where each copy was right for the caller in front of it and wrong for the next
+/// one. The walk is subtle enough to be worth the class: get the path convention backwards and
+/// every file in the mirror plans as a Create.
+/// </para>
+/// <para>
+/// Nothing here knows a vendor. It knows a mirror has a manifest at a fixed name, that some
+/// files need their text loaded, and that the format decides which — no suffixes, no forms,
+/// no GUIDs.
+/// </para>
+/// </remarks>
+public static class ImportPlanReader
+{
+    /// <summary>Versio's own record of what the last export wrote. Not a vendor's file.</summary>
+    public const string ManifestName = "_manifest.json";
+
+    /// <summary>
+    /// Plan an import of the mirror at <paramref name="root"/>.
+    /// </summary>
+    /// <param name="label">
+    /// Prefix for every log line — a binding id where there is one. The planner's warnings are
+    /// about a specific project's mirror, and a warning that does not say whose is a warning
+    /// somebody has to go and correlate by hand.
+    /// </param>
+    /// <remarks>
+    /// Never throws for an unreadable manifest or an unreadable file: a mirror somebody
+    /// hand-built, or a file being written as this reads it, still plans. What it cannot know
+    /// it declines to guess at — the plan says structural changes are unavailable, and the
+    /// script reports a file it still cannot read when it gets there.
+    /// </remarks>
+    public static async Task<ImportPlan> ReadAsync(
+        IFileSystem fs,
+        IPlcProjectFormat format,
+        string root,
+        IVersioLogger log,
+        string category,
+        string label,
+        CancellationToken ct)
+    {
+        var prefix = string.IsNullOrEmpty(label) ? string.Empty : label + ": ";
+
+        var manifest = await ReadManifestAsync(fs, root, log, category, prefix, ct)
+            .ConfigureAwait(false);
+
+        List<MirrorFile> mirror = [];
+        foreach (var absolute in fs.EnumerateFiles(root))
+        {
+            ct.ThrowIfCancellationRequested();
+
+            // EnumerateFiles hands back ABSOLUTE paths; the planner keys everything on
+            // mirror-relative ones taken from the manifest. Getting this backwards matches
+            // nothing against the manifest and plans a Create for every file in the mirror —
+            // a total misplan that looks like a working import until it runs. The interface's
+            // own comment claimed the opposite until 2026-08-15; see IFileSystem.
+            var relative = System.IO.Path.GetRelativePath(root, absolute).Replace('\\', '/');
+
+            string? text = null;
+            if (format.NeedsTextToPlan(relative))
+            {
+                try
+                {
+                    text = await fs.ReadAllTextAsync(absolute, ct).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // Planned from its name alone. If it is still unreadable when the script
+                    // reaches it, the script reports that per file.
+                    log.Debug(category,
+                        $"{prefix}could not read {relative} while planning: {ex.Message}");
+                }
+            }
+
+            mirror.Add(new MirrorFile { Path = relative, Text = text });
+        }
+
+        var plan = format.PlanImport(manifest, mirror);
+
+        foreach (var warning in plan.Warnings)
+        {
+            // Warn, because these are decisions a person may disagree with: a created object
+            // taking its declaration's name over its file's, a stray file refused.
+            log.Warn(category, $"{prefix}{warning}");
+        }
+
+        if (plan.StructuralChangesUnavailable is { } why)
+        {
+            log.Debug(category, $"{prefix}{why}");
+        }
+
+        if (plan.MissingFromMirror.Count > 0)
+        {
+            // Info, not Warn: this is the state every mirror with a deleted file is in until
+            // deletes are implemented, and it is the sentence that answers "I deleted the
+            // file, why is the object still there".
+            log.Info(category,
+                $"{prefix}{plan.MissingFromMirror.Count} exported file(s) are no longer in "
+                + "the mirror; deleting objects from the project is not applied by this "
+                + "version, so they remain in the project");
+        }
+
+        return plan;
+    }
+
+    private static async Task<Projects.ProjectManifest?> ReadManifestAsync(
+        IFileSystem fs, string root, IVersioLogger log, string category, string prefix,
+        CancellationToken ct)
+    {
+        var path = System.IO.Path.Combine(root, ManifestName);
+        if (!fs.FileExists(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            // The reporting overload, because Parse never throws: garbage comes back as Empty
+            // at schema 1, which the planner correctly refuses to trust — but silently, and a
+            // manifest that rotted into "plan everything from file names" is a downgrade
+            // somebody should be able to find in the log.
+            var manifest = Projects.ProjectManifest.Parse(
+                await fs.ReadAllTextAsync(path, ct).ConfigureAwait(false), out var problems);
+
+            foreach (var problem in problems)
+            {
+                log.Warn(category, $"{prefix}{ManifestName}: {problem}");
+            }
+
+            return manifest;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            log.Warn(category,
+                $"{prefix}the mirror's manifest could not be read ({ex.Message}) — planning "
+                + "the import without it");
+            return null;
+        }
+    }
+}

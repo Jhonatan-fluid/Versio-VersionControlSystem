@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,419 unit + 478 UI + 201 integration, 0 skipped
+**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,423 unit + 479 UI + 203 integration, 0 skipped
 
 > **The import is plan-driven as of 2026-08-15 — Phase 1 of the import plan.** What an import
 > will do is decided C#-side by `CodesysImportPlanner`, pure, from `_manifest.json` and a
@@ -525,6 +525,33 @@ does not record them has to be run again.
   test asserts that shape specifically: a pattern matching nothing looks exactly like a pattern
   matching a file that is not there. **Deleting the fix leaves three tests red**, two of them
   pre-existing.
+- ~~**`Eventually.Press` did not wait for the command it pressed.**~~ — **fixed 2026-08-15,
+  and what it was hiding is worse than the bug.** `AsyncCommand.Execute` is `async void`, so it
+  returns to its caller at the **first `await`**, not at the end. `Press` called it and moved
+  on, which meant every assertion after a press was racing whatever the command did past its
+  first suspension point — and passing only because these commands happened to run
+  synchronously up to the interesting part.
+  - **Found by adding one `await`.** Deciding the import plan *before* asking about it put a
+    suspension point ahead of the confirmation prompt, and `Declining_writes_nothing` went red
+    asserting the question had been asked — before it had been. Nothing was broken except the
+    test's assumption, which is the tell: a suite that fails when correct code is reorganised
+    was measuring the shape of the code, not its behaviour.
+  - `Press` now waits on `IsRunning`, which is set before the first await and cleared in a
+    `finally`. **All 478 tests passed unchanged afterwards**, so nothing had been depending on
+    the fire-and-forget — it was pure latent risk across 35 call sites.
+  - **`AsyncCommand<T>` had no public `IsRunning` while `AsyncCommand` always had.** Same
+    field, same lifecycle, one property — so the parameterised command could not be asked
+    whether it had finished, and there is no other way to ask an `async void`.
+- ~~**No app test ever accepted an import.**~~ — **closed 2026-08-15.** `TestShell` wired
+  `toolchains: (_, _) => null`, so every test in `ImportConfirmationTests` either declines or
+  never presses: the confirmed path — the one that writes into somebody's project — was
+  reachable only through a real 17–31 s CODESYS launch. `CapturingToolchain` reports itself
+  available and records jobs instead of running them.
+  - **Worth knowing before writing the next one:** a toolchain being *present* changes what
+    opening a repository does. Versio catches up by exporting, which takes the direction lock
+    to `ProjectAuthoritative` and correctly refuses an import afterwards, so the fixture has to
+    release it the way the application does. **`SyncTrigger.ForceReleased` has no production
+    caller at all** — only `ReleaseAfterPushAsync` and `ReleaseAfterDiscardAsync` reach Clean.
 - **Three of the seven C#/python pairs are still compared by nothing** — `NativeXmlScrubber` ↔
   `scrub_native_xml`, `StTextCodec` ↔ `join_st`/`split_st`, and `StDeclarationParser` ↔
   `parse_declaration`. `StTextCodec` is the one that matters: a bug in `split_st` silently
