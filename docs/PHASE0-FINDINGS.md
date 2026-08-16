@@ -318,6 +318,17 @@ Three things the measurement changed:
   **a fix aimed at the counter would leave a file diffing forever.** This is the concrete reason
   Phase 5's rule has to key on normaliser-equivalence rather than on the counter, and it is
   worth more than the counter measurement it came in beside.
+  - **It decided a second design on 2026-08-15**, which is not what it was measured for.
+    Phase 2's native content check was going to compare with GUIDs **unmasked**, because
+    `versio_native_equiv.normalize` documents that masking must be off when comparing two
+    exports of one project. True — but a delete check compares an old export against a fresh
+    one across however many round trips have happened since, and **these three lines are
+    exactly what moves across a round trip**. Masking is therefore required, and the residual
+    cost is recorded in `versio_types.py`.
+  - **This finding was re-measured from scratch before it was found here**, which is the cost
+    `CLAUDE.md` warns about. The re-measurement agreed line for line — same three fields, same
+    file. The lesson is not that the measurement was wasted (it decided the design in ten
+    minutes) but that **reading P7 first would have decided it in one**.
 
 **And the textual path held.** Zero `.st` differences across three round trips, zero
 export-only differences, and nothing added or removed at any cycle. Gate 0.5 was proven once

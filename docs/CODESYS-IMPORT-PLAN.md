@@ -616,7 +616,10 @@ happen.
 > rather than in the product, and both recorded in [`STATUS.md`](STATUS.md): `Eventually.Press`
 > was fire-and-forget, and no app test had ever *accepted* an import.
 
-### ✅ The delete set and its preconditions, landed 2026-08-15 — proposed, executed by nothing
+### ✅ The delete set and its preconditions, landed 2026-08-15
+
+*(Landed as "proposed, executed by nothing" — the executing half followed the same day, and the
+heading is corrected here rather than left to read as a live limitation.)*
 
 `ImportPlan.Deletions` is the vetted answer; `MissingFromMirror` stays beside it as the raw
 input, and **the two differ on purpose**. Pure, in the planner, with nothing downstream acting

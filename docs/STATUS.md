@@ -16,15 +16,24 @@
 > edited in the IDE since the last export is kept**, because a missing mirror file says
 > somebody deleted a file, not that nobody touched the object.
 >
-> **⛔ Native objects are never deleted**, only refused, and that is the open half. Whether one
-> changed since the export is unknowable: the manifest's hash is over exported native bytes,
-> a re-export of an untouched native object changes every cycle (P7), and comparing through
-> `versio_native_equiv` needs the old bytes — which were in the deleted file. Two ways out are
-> written up in [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md); neither is taken yet.
+> **Native objects are deleted too, as of the same day** — a GVL, a visualisation, a native
+> POU. The manifest's raw hash could never answer for them: it is over exported native bytes,
+> and a re-export of an untouched native object changes every cycle (P7). **Manifest schema 5
+> records the hash of the NORMALISED payload as well**, so a re-export has something to be
+> compared against, and the old side no longer has to come from the file that was deleted.
+> **A native object on a pre-schema-5 mirror stays refused until the next export** — an absent
+> hash is not evidence of an unchanged object.
 >
-> Proven against real CODESYS, three halves in one test: refused on a changed object, removed
-> with an honest hash, refused on a GVL. **Nothing else in the repository fails if this starts
-> deleting the wrong things.**
+> **The dialog says which objects will really go and which will really stay**, separately. It
+> did not for one commit: the script grew `remove()` while the dialog went on saying objects
+> *will stay*, and a green suite did not notice because the test pinning the wording asserted
+> the old sentence. It is the worst defect this project has shipped, it is written up in full
+> under Findings, and it is the reason the planner now predicts the script's own refusal.
+>
+> Proven against real CODESYS: a changed object is refused, an honest one is removed, a GVL
+> goes only when both its files check out — and, for the native check specifically, four
+> scenarios including one that makes a genuine IDE edit and demands the deletion be refused.
+> **Nothing else in the repository fails if this starts deleting the wrong things.**
 
 > **The import is plan-driven as of 2026-08-15 — Phase 1 of the import plan.** What an import
 > will do is decided C#-side by `CodesysImportPlanner`, pure, from `_manifest.json` and a
@@ -522,6 +531,21 @@ has a window before believing a clean binding trace — see *Verifying the UI* b
 Small, specific, and none of them blocking. Written down because an audit that finds things and
 does not record them has to be run again.
 
+- **Launching the app against this repository adopts the 21 `phase0/` scratch projects and
+  starts exporting all of them.** Observed 2026-08-15 while doing the `CLAUDE.md` "run the app"
+  step: within a second of opening `C:/GIT/Versio` the log reads *"21 newly tracked project(s)
+  have never been exported; exporting now"*, the commit gate demands all 21, and it begins
+  driving real CODESYS — one project at a time, ~20 s each. It also writes 21 rule blocks into
+  `.gitattributes`, 21 into `.gitignore`, and 21 bindings into `.versio/repo.json`.
+  - **Not a defect — it is adoption working exactly as specified** on a repository that happens
+    to contain 22 tracked `.project` files because Phase 0 committed its probe corpus.
+  - **It matters anyway, twice.** It takes the machine-wide CODESYS lock, so it will fight a
+    running `Versio.Integration.Tests` and make both look slow; and the adoption files it
+    writes are unrelated working-tree changes that are easy to commit by accident. `git
+    checkout -- .gitattributes .gitignore .versio/repo.json` afterwards.
+  - **The launch itself is clean**: zero `ERR` lines, so the window constructed, the panels
+    realised and the bindings resolved. That is what the step is for; the rest is noise from
+    the corpus.
 - **Cancelling a running toolchain job is not implemented.** A change arriving mid-run is
   queued, which is correct and cheap; restarting instead would be better when the run has
   barely begun, and needs process cancellation plus cleanup of the staging folder a killed
