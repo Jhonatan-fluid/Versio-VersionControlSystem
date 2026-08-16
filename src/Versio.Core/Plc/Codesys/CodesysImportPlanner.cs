@@ -25,9 +25,11 @@ namespace Versio.Core.Plc.Codesys;
 /// <see cref="ImportPlan"/> through <see cref="IPlcProjectFormat.PlanImport"/>.
 /// </para>
 /// <para>
-/// Phase 1 plans updates, creates and skips. Deletes, renames and moves are phases 2 and 3
-/// of <c>docs/CODESYS-IMPORT-PLAN.md</c>; their raw material
-/// (<see cref="ImportPlan.MissingFromMirror"/>) is recorded here and acted on by nothing.
+/// Plans updates, creates, skips and <b>deletions</b>. A deletion is a proposal and nothing
+/// executes it yet: the planner knows what the last export recorded and what the mirror holds
+/// now, so it can say which objects have lost every file — but not whether the project still
+/// has them, which is the executing side's question. Renames and moves are Phase 3 of
+/// <c>docs/CODESYS-IMPORT-PLAN.md</c>.
 /// </para>
 /// </remarks>
 public static class CodesysImportPlanner
@@ -118,8 +120,194 @@ public static class CodesysImportPlanner
             Files = files,
             Warnings = warnings,
             MissingFromMirror = missing,
+            Deletions = trusted
+                ? PlanDeletions(manifest!, present, byGuid, warnings)
+                : [],
             StructuralChangesUnavailable = unavailable,
         };
+    }
+
+    /// <summary>
+    /// Which recorded objects the mirror no longer holds <b>any</b> file for.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Grouped by GUID rather than walked per file, because the unit being deleted is an
+    /// object and an object can be several files. A GVL is a <c>.gvl.st</c> and a
+    /// <c>.gvl.xml</c> under one identity; a per-file rule would see the <c>.st</c> gone and
+    /// remove the object the surviving <c>.xml</c> still describes.
+    /// </para>
+    /// <para>
+    /// <b>Every rule below is the only thing standing between a stale mirror and destroyed
+    /// work.</b> P3 measured what <c>remove()</c> does to an object others reference: it
+    /// removes it, saves cleanly, and warns about nothing. There is no toolchain backstop, so
+    /// a rule that is merely probably right here is a rule that silently breaks projects.
+    /// </para>
+    /// </remarks>
+    private static List<PlannedDeletion> PlanDeletions(
+        ProjectManifest manifest,
+        HashSet<string> present,
+        Dictionary<string, List<ProjectObject>> byGuid,
+        List<string> warnings)
+    {
+        // Ancestors of everything still in the mirror, by GUID, naming what depends on them.
+        //
+        // TRANSITIVE, and it took a pre-existing test to notice. Checking direct children only
+        // lets a grandparent go: a class whose property is gone from the mirror but whose
+        // property ACCESSOR is still there would have been proposed for deletion, taking both
+        // with it. Ownership chains are two and three deep in a real project — a property owns
+        // its Get and Set — so the question is never "does this have a surviving child" but
+        // "does anything surviving live inside it, at any depth".
+        //
+        // Export-only records cannot vote either way: their files are rewritten by every
+        // export and applied by nothing, so their presence is not evidence an object lives.
+        var dependants = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var obj in manifest.Objects)
+        {
+            if (ExportCoverage.IsExportOnly(obj.Form) || !present.Contains(obj.Path))
+            {
+                continue;
+            }
+
+            var parent = obj.Parent;
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            while (!string.IsNullOrEmpty(parent) && seen.Add(parent))
+            {
+                (dependants.TryGetValue(parent, out var names)
+                    ? names
+                    : dependants[parent] = []).Add(obj.Name);
+
+                parent = byGuid.TryGetValue(parent, out var owner) && owner.Count > 0
+                    ? owner[0].Parent
+                    : string.Empty;
+            }
+        }
+
+        List<PlannedDeletion> deletions = [];
+
+        foreach (var (guid, records) in byGuid.OrderBy(p => p.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            var importable = records.Where(o => !ExportCoverage.IsExportOnly(o.Form)).ToList();
+
+            // An object recorded only as export-only files has nothing whose absence means
+            // anything. Never deletable, and nothing to say about it.
+            if (importable.Count == 0)
+            {
+                continue;
+            }
+
+            // The record this object is described BY — its name, its owner, and the path its
+            // resolve chain is read from. The first IMPORTABLE one rather than the first of
+            // the group, so nothing here depends on the order the manifest happens to list
+            // one object's files in.
+            //
+            // <b>Defensive, and measured to be exactly that.</b> Swapping this back to
+            // records[0] turns no test red, and cannot: two records under one GUID agree on
+            // name and owner by definition, and the paths that differ resolve the same because
+            // StemOf answers null for a .tasks.yaml and so never reaches the dotted-stem
+            // split. It is kept because a deletion resolving to the wrong object is
+            // unrecoverable and manifest order is not something this file should depend on —
+            // but it is not standing in front of a defect anybody has seen.
+            var identity = importable[0];
+
+            var gone = importable.Where(o => !present.Contains(o.Path)).ToList();
+            if (gone.Count == 0)
+            {
+                continue;
+            }
+
+            // THE TWO-FILE RULE. Some gone, some still here: not a decision to destroy the
+            // object. Said out loud rather than passed over, because "I deleted the .st and
+            // the POU is still there" is otherwise unanswerable — and because acting on it
+            // would take the surviving half with it.
+            if (gone.Count != importable.Count)
+            {
+                warnings.Add(
+                    $"{identity.Name}: {Files(gone.Count)} gone from the mirror but "
+                    + $"{string.Join(", ", importable.Except(gone).Select(o => o.Path))} "
+                    + "still there — the object is left alone, because one file of several is "
+                    + "not a decision to delete it");
+                continue;
+            }
+
+            // THE ORPHAN RULE, which is P3 written as a precondition. Removing an object other
+            // objects reference dangles them silently — no exception, no cascade, no warning.
+            // The planner cannot see every reference a project holds, but it can see the one
+            // kind the manifest records: ownership, at any depth.
+            if (dependants.TryGetValue(guid, out var living))
+            {
+                var orphaned = living.Distinct(StringComparer.Ordinal)
+                    .OrderBy(n => n, StringComparer.Ordinal)
+                    .ToList();
+
+                warnings.Add(
+                    $"{identity.Name}: every file for it has gone from the mirror, but "
+                    + $"{string.Join(", ", orphaned)} still {(orphaned.Count == 1 ? "lives" : "live")} "
+                    + "inside it — removing it would take them with it, so it is left alone");
+                continue;
+            }
+
+            // THE GUESSED-CHAIN RULE. ResolveKnown falls back to splitting the file stem when
+            // an owner is not in the manifest, and for an update that is a reasonable guess —
+            // the worst case is text applied to the wrong object, which git can undo. For a
+            // DELETION the same guess resolves to some other object and destroys it, and
+            // nothing downstream objects (P3). A chain that had to be guessed is not a chain
+            // to delete by.
+            if (!OwnerChainIsRecorded(identity, byGuid))
+            {
+                warnings.Add(
+                    $"{identity.Name}: every file for it has gone from the mirror, but its "
+                    + "owner is not in the manifest, so where it lives can only be guessed at "
+                    + "— it is left alone rather than resolved by file name and deleted");
+                continue;
+            }
+
+            deletions.Add(new PlannedDeletion
+            {
+                Guid = guid,
+                Name = identity.Name,
+
+                // From the recorded path, because there is no file to read one from — which is
+                // exactly why the chain is built from the manifest's names rather than stems.
+                Resolve = ResolveKnown(identity.Path, identity, byGuid, warnings),
+                Files = [.. gone
+                    .OrderBy(o => o.Path, StringComparer.Ordinal)
+                    .Select(o => new DeletedFile(o.Path, o.Hash, o.Form))],
+            });
+        }
+
+        return [.. deletions.OrderBy(d => d.Name, StringComparer.Ordinal)];
+    }
+
+    private static string Files(int n) => n == 1 ? "1 file" : $"{n} files";
+
+    /// <summary>
+    /// True when every owner above this object is recorded, so its location is read rather
+    /// than inferred.
+    /// </summary>
+    /// <remarks>
+    /// Mirrors <see cref="ResolveKnown"/>'s walk deliberately: what this asks is precisely
+    /// "would that method have to fall back to splitting the stem". Kept as its own check
+    /// rather than a flag threaded through the resolver, because the two callers want opposite
+    /// things from the same answer — an update is content to guess, a deletion must not.
+    /// </remarks>
+    private static bool OwnerChainIsRecorded(
+        ProjectObject obj, Dictionary<string, List<ProjectObject>> byGuid)
+    {
+        var parent = obj.Parent;
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        while (!string.IsNullOrEmpty(parent) && seen.Add(parent))
+        {
+            if (!byGuid.TryGetValue(parent, out var records) || records.Count == 0)
+            {
+                return false;
+            }
+
+            parent = records[0].Parent;
+        }
+
+        return true;
     }
 
     private static PlannedFile PlanOne(

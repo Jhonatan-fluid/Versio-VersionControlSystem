@@ -99,6 +99,56 @@ public sealed record PlannedFile
     public string? ImportableSibling { get; init; }
 }
 
+/// <summary>One file the export wrote for an object that is now gone from the mirror.</summary>
+/// <param name="Path">Mirror-relative path, forward slashes.</param>
+/// <param name="Hash">
+/// What the export recorded for these bytes. The executing side compares the <i>live</i>
+/// object against it before removing anything: a mismatch means the object changed in the IDE
+/// since the export, so its absence from the mirror is not permission to destroy that work.
+/// </param>
+/// <param name="Form">The export form, so the executing side knows how to compare — a textual
+/// file byte for byte, a native one through an equivalence normaliser.</param>
+public sealed record DeletedFile(string Path, string Hash, string Form);
+
+/// <summary>
+/// An object the mirror no longer holds any file for.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>A proposal, not an instruction.</b> The planner knows what the last export recorded and
+/// what the mirror holds now; it cannot know what the project holds, so the executing side
+/// still confirms the object is there and still matches before removing it.
+/// </para>
+/// <para>
+/// <b>Every precondition here is load-bearing rather than defensive.</b> <c>remove()</c> was
+/// measured to delete a referenced object with no exception, no cascade and no warning (P3),
+/// so nothing downstream will object to a mistake made here.
+/// </para>
+/// </remarks>
+public sealed record PlannedDeletion
+{
+    /// <summary>Manifest identity. Never empty — an object without one is not deletable,
+    /// because identity is the whole basis for believing the absence means anything.</summary>
+    public required string Guid { get; init; }
+
+    /// <summary>The manifest's verbatim name.</summary>
+    public required string Name { get; init; }
+
+    /// <summary>Real decoded names from the project root to the object itself.</summary>
+    public IReadOnlyList<string> Resolve { get; init; } = [];
+
+    /// <summary>
+    /// Every file the export wrote for this object, all of them now absent.
+    /// </summary>
+    /// <remarks>
+    /// Plural because one object can be several files: a GVL is a <c>.gvl.st</c> and a
+    /// <c>.gvl.xml</c> under one GUID. <b>All of them must be gone.</b> One half deleted is
+    /// somebody tidying, mis-editing, or a partial checkout — not a decision to destroy the
+    /// object, and acting on it would take the surviving half with it.
+    /// </remarks>
+    public required IReadOnlyList<DeletedFile> Files { get; init; }
+}
+
 /// <summary>
 /// What an import would do, decided before the toolchain starts.
 /// </summary>
@@ -112,8 +162,9 @@ public sealed record PlannedFile
 /// 17–31 s too late to be agreed to.
 /// </para>
 /// <para>
-/// Phase 1 plans updates, creates and skips. Deletes, renames and moves are phases 2 and 3;
-/// <see cref="MissingFromMirror"/> is their input, recorded here and acted on by nothing.
+/// Updates, creates, skips and <see cref="Deletions"/>. A deletion is a <b>proposal</b>: no
+/// wire carries one yet and nothing executes one, so the plan is read C#-side — the log today,
+/// the confirmation dialog next. Renames and moves are Phase 3.
 /// </para>
 /// </remarks>
 public sealed record ImportPlan
@@ -125,11 +176,28 @@ public sealed record ImportPlan
     public IReadOnlyList<string> Warnings { get; init; } = [];
 
     /// <summary>
-    /// Manifest paths whose file is gone from the mirror. Phase 2's delete candidates —
-    /// recorded, not acted on, and meaningless when
-    /// <see cref="StructuralChangesUnavailable"/> is set.
+    /// Manifest paths whose file is gone from the mirror — the raw input to
+    /// <see cref="Deletions"/>, not the answer.
     /// </summary>
+    /// <remarks>
+    /// Kept beside the vetted set because the two differ, and the difference is the point: a
+    /// GVL whose <c>.st</c> was deleted while its <c>.xml</c> survives appears here and is
+    /// <b>not</b> a deletion. A count from this list is honest as "files that have gone"; it
+    /// is not a count of objects that would be removed. Meaningless when
+    /// <see cref="StructuralChangesUnavailable"/> is set.
+    /// </remarks>
     public IReadOnlyList<string> MissingFromMirror { get; init; } = [];
+
+    /// <summary>
+    /// Objects the mirror no longer holds any file for, having passed every precondition the
+    /// planner can check.
+    /// </summary>
+    /// <remarks>
+    /// <b>Empty whenever <see cref="StructuralChangesUnavailable"/> is set</b>, and that is
+    /// not a formality: what a stale manifest does not list cannot be told apart from what it
+    /// never recorded, so every absence would look like a deletion.
+    /// </remarks>
+    public IReadOnlyList<PlannedDeletion> Deletions { get; init; } = [];
 
     /// <summary>
     /// Why deletes, renames and moves cannot be planned from this mirror — a missing or

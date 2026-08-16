@@ -122,11 +122,43 @@ public class CodesysImportPlannerTests
                     guid: "prop", parent: "pou"),
                 Obj("App/clsLight.Bright.Get.xml", "Get", "PROPERTY_METHOD", "NATIVE",
                     guid: "get", parent: "prop")),
-            [File("App/clsLight.Bright.Get.xml")]);
+
+            // All three files, not just the one being resolved. The listing used to carry
+            // only the accessor, which is a mirror that cannot exist — and once deletions
+            // were planned it stopped being harmless: the two absent ancestors read as
+            // objects somebody had removed. Every test here describes a real directory now.
+            [File("App/clsLight.xml"),
+             File("App/clsLight.Bright.xml"),
+             File("App/clsLight.Bright.Get.xml")]);
 
         Assert.Equal(["App", "clsLight", "Bright", "Get"],
                      One(plan, "App/clsLight.Bright.Get.xml").Resolve);
         Assert.Empty(plan.Warnings);
+        Assert.Empty(plan.Deletions);
+    }
+
+    [Fact]
+    public void An_ancestor_is_not_deleted_out_from_under_a_surviving_grandchild()
+    {
+        // The transitive half of the orphan rule, and it exists because a direct-children-only
+        // check let this through — found when the resolution test above went red, not by
+        // reading the code. A property owns its Get and Set, so chains three deep are ordinary
+        // rather than exotic.
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(
+                Obj("App/clsLight.xml", "clsLight", "POU", "NATIVE", guid: "pou"),
+                Obj("App/clsLight.Bright.xml", "Bright", "PROPERTY", "NATIVE",
+                    guid: "prop", parent: "pou"),
+                Obj("App/clsLight.Bright.Get.xml", "Get", "PROPERTY_METHOD", "NATIVE",
+                    guid: "get", parent: "prop")),
+
+            // The class and its property are gone from the mirror; the accessor inside them
+            // is not. Removing clsLight would take Bright and Get with it, silently.
+            [File("App/clsLight.Bright.Get.xml")]);
+
+        Assert.Empty(plan.Deletions);
+        Assert.Contains(plan.Warnings, w => w.StartsWith("clsLight:", StringComparison.Ordinal));
+        Assert.Contains(plan.Warnings, w => w.StartsWith("Bright:", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -353,6 +385,202 @@ public class CodesysImportPlannerTests
         Assert.Equal(["App/Deleted.st"], plan.MissingFromMirror);
         Assert.Null(plan.StructuralChangesUnavailable);
         Assert.DoesNotContain(plan.Files, f => f.Path == "App/Deleted.st");
+    }
+
+    // ── Deletions, and every precondition that stops one ───────────────────────
+    //
+    // P3 measured what remove() does to an object other objects reference: it removes it,
+    // saves cleanly, and warns about nothing. There is no toolchain backstop, so each rule
+    // below is not belt-and-braces — it is the only thing between a stale mirror and somebody
+    // losing work. Each has its own test for that reason.
+
+    [Fact]
+    public void An_object_whose_only_file_has_gone_is_proposed_for_deletion()
+    {
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(
+                Obj("App/Kept.st", "Kept", "POU", "ST_FULL", guid: "g1"),
+                Obj("App/Deleted.st", "Deleted", "POU", "ST_FULL", guid: "g2")
+                    with { Hash = "sha256:aaa" }),
+            [File("App/Kept.st")]);
+
+        var deletion = Assert.Single(plan.Deletions);
+        Assert.Equal("g2", deletion.Guid);
+        Assert.Equal("Deleted", deletion.Name);
+
+        // The chain comes from the manifest's recorded path and names — there is no file left
+        // to derive one from, which is the reason it was never derived from stems.
+        Assert.Equal(["App", "Deleted"], deletion.Resolve);
+
+        var file = Assert.Single(deletion.Files);
+        Assert.Equal("App/Deleted.st", file.Path);
+        Assert.Equal("sha256:aaa", file.Hash);
+        Assert.Equal("ST_FULL", file.Form);
+
+        Assert.Empty(plan.Warnings);
+    }
+
+    [Fact]
+    public void A_GVL_is_deleted_only_when_both_of_its_files_have_gone()
+    {
+        // One object, two files, one GUID. A per-file rule would see the .st gone and remove
+        // the object the surviving .xml still describes.
+        var manifest = Manifest(
+            Obj("App/Glob_Var.gvl.st", "Glob_Var", "GVL", "GVL_BOTH", guid: "g1"),
+            Obj("App/Glob_Var.gvl.xml", "Glob_Var", "GVL", "GVL_BOTH", guid: "g1"));
+
+        var half = CodesysImportPlanner.Plan(manifest, [File("App/Glob_Var.gvl.xml")]);
+
+        Assert.Empty(half.Deletions);
+
+        // And it says so. "I deleted the .st and the GVL is still there" is otherwise
+        // unanswerable, and silence here reads as the tool ignoring the edit.
+        Assert.Contains(half.Warnings, w =>
+            w.Contains("Glob_Var", StringComparison.Ordinal)
+            && w.Contains("App/Glob_Var.gvl.xml", StringComparison.Ordinal));
+
+        // The raw list still reports the file as gone, because it HAS gone. The two lists
+        // differing is the point of keeping both.
+        Assert.Equal(["App/Glob_Var.gvl.st"], half.MissingFromMirror);
+
+        var both = CodesysImportPlanner.Plan(manifest, []);
+
+        var deletion = Assert.Single(both.Deletions);
+        Assert.Equal(
+            ["App/Glob_Var.gvl.st", "App/Glob_Var.gvl.xml"],
+            deletion.Files.Select(f => f.Path));
+        Assert.Empty(both.Warnings);
+    }
+
+    [Fact]
+    public void An_owner_whose_children_are_still_in_the_mirror_is_left_alone()
+    {
+        // P3 as a precondition. The planner cannot see every reference a project holds, but
+        // ownership is the one kind the manifest records — and removing an owner takes its
+        // children with it, silently.
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(
+                Obj("App/FB_Motor.xml", "FB_Motor", "POU", "NATIVE", guid: "owner"),
+                Obj("App/FB_Motor.Start.st", "Start", "ACTION", "ST_IMPL",
+                    guid: "child", parent: "owner")),
+            [File("App/FB_Motor.Start.st")]);
+
+        Assert.Empty(plan.Deletions);
+        Assert.Contains(plan.Warnings, w =>
+            w.Contains("FB_Motor", StringComparison.Ordinal)
+            && w.Contains("Start", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void An_owner_goes_when_its_children_have_gone_with_it()
+    {
+        // The other half of the rule, or "never delete an owner" would be the real behaviour
+        // and the test above would be passing for the wrong reason.
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(
+                Obj("App/FB_Motor.xml", "FB_Motor", "POU", "NATIVE", guid: "owner"),
+                Obj("App/FB_Motor.Start.st", "Start", "ACTION", "ST_IMPL",
+                    guid: "child", parent: "owner")),
+            []);
+
+        Assert.Equal(["FB_Motor", "Start"], plan.Deletions.Select(d => d.Name));
+    }
+
+    [Fact]
+    public void An_export_only_file_going_missing_never_proposes_a_deletion()
+    {
+        // Its file is rewritten by every export and applied by nothing, so its absence says
+        // the mirror was tidied — not that the object should die.
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(Obj("App/Lib.libraries.yaml", "Lib", "LIBRARY_MANAGER", "LIBRARIES",
+                         guid: "g1")),
+            []);
+
+        Assert.Empty(plan.Deletions);
+        Assert.Empty(plan.MissingFromMirror);
+        Assert.Empty(plan.Warnings);
+    }
+
+    [Fact]
+    public void A_task_configurations_export_only_half_does_not_veto_its_deletion()
+    {
+        // TASK_BOTH and TASK_NATIVE share one GUID: the .tasks.yaml is importable and the
+        // .xml beside it is export-only. Counting the .xml as a file that must also be gone
+        // would make a task configuration undeletable for a reason that has nothing to do
+        // with the object — the same trap as checking a native file byte for byte.
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(
+                // The EXPORT-ONLY record first, deliberately. An object's files arrive in
+                // whatever order the exporter emitted them, and a rule that quietly depends on
+                // which one came first is a rule that works until the exporter changes.
+                Obj("App/Task Configuration.xml", "Task Configuration",
+                    "TASK_CONFIG", "TASK_NATIVE", guid: "g1"),
+                Obj("App/Task Configuration.tasks.yaml", "Task Configuration",
+                    "TASK_CONFIG", "TASK_BOTH", guid: "g1")),
+            [File("App/Task Configuration.xml")]);
+
+        var deletion = Assert.Single(plan.Deletions);
+        Assert.Equal("Task Configuration", deletion.Name);
+        Assert.Equal(["App/Task Configuration.tasks.yaml"], deletion.Files.Select(f => f.Path));
+
+        // The chain a deletion would be executed against, asserted because resolving to the
+        // wrong object is the one mistake here that cannot be undone — and because this is
+        // the only case where an object has two records to be described from.
+        Assert.Equal(["App", "Task Configuration"], deletion.Resolve);
+    }
+
+    [Fact]
+    public void An_object_whose_owner_is_not_recorded_is_never_deleted_by_a_guessed_chain()
+    {
+        // The same input as the fall-back-to-the-stem test above, with the file gone instead
+        // of present — and the two must end differently. Resolving by stem is a reasonable
+        // guess for an UPDATE: the worst case is text applied to the wrong object, which git
+        // undoes. For a deletion the identical guess resolves to some other object and
+        // destroys it, and remove() will not object (P3).
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(
+                Obj("App/Owner.Member.st", "Member", "METHOD", "ST_FULL",
+                    guid: "g1", parent: "an-owner-nobody-recorded")),
+            []);
+
+        Assert.Empty(plan.Deletions);
+        Assert.Contains(plan.Warnings, w =>
+            w.Contains("Member", StringComparison.Ordinal)
+            && w.Contains("guessed", StringComparison.Ordinal));
+
+        // Still reported as a file that has gone — the raw list is honest about the file, and
+        // only the vetted set is a decision.
+        Assert.Equal(["App/Owner.Member.st"], plan.MissingFromMirror);
+    }
+
+    [Fact]
+    public void A_manifest_that_cannot_be_trusted_proposes_no_deletion_at_all()
+    {
+        // What a stale manifest does not list cannot be told apart from what it never
+        // recorded, so every absence would look like a deletion.
+        var stale = new ProjectManifest
+        {
+            Schema = 1,
+            Objects = [Obj("App/Gone.st", "Gone", "POU", "ST_FULL", guid: "g1")],
+        };
+
+        Assert.Empty(CodesysImportPlanner.Plan(stale, []).Deletions);
+        Assert.Empty(CodesysImportPlanner.Plan(null, []).Deletions);
+    }
+
+    [Fact]
+    public void The_deletion_set_is_sorted_whatever_order_the_manifest_arrives_in()
+    {
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(
+                Obj("App/Zeta.st", "Zeta", "POU", "ST_FULL", guid: "g3"),
+                Obj("App/Alpha.st", "Alpha", "POU", "ST_FULL", guid: "g1"),
+                Obj("App/Mid.st", "Mid", "POU", "ST_FULL", guid: "g2")),
+            []);
+
+        // A confirmation dialog lists these to a person, and a list that reorders itself
+        // between two readings of the same repository is a list nobody can check.
+        Assert.Equal(["Alpha", "Mid", "Zeta"], plan.Deletions.Select(d => d.Name));
     }
 
     [Fact]

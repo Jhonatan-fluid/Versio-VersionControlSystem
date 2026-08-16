@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,424 unit + 479 UI + 203 integration, 0 skipped
+**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,435 unit + 479 UI + 203 integration, 0 skipped
 
 > **The import is plan-driven as of 2026-08-15 — Phase 1 of the import plan.** What an import
 > will do is decided C#-side by `CodesysImportPlanner`, pure, from `_manifest.json` and a
@@ -590,6 +590,25 @@ does not record them has to be run again.
     in it was wrong** — `versio_import.py` read 450 against an actual 735. Corrected
     2026-08-15, with the one-line re-derivation beside the table, because the numbers will go
     stale again and editing the one you think changed is what produced this.
+- **The delete set is planned and executed by nothing** (2026-08-15). `ImportPlan.Deletions`
+  carries objects the mirror no longer holds any file for, having passed five preconditions:
+  a trusted manifest, every file for the GUID gone, export-only records neither voting nor
+  vetoing, nothing surviving living inside it at any depth, and an owner chain that is
+  **recorded rather than guessed**. The job file deliberately does
+  not carry them and a **tripwire test** asserts that — so whichever half of the script change
+  lands first, the other is named as missing rather than silently absent.
+  - **The transitive orphan rule was a bug a pre-existing test found**, not a review. Checking
+    direct children only would delete a class whose property is gone while the property's
+    *accessor* survives, taking both. What went red was a resolution test whose fixture listed
+    one file out of three recorded — a mirror that cannot exist, harmless until absences began
+    to mean something. **A fixture that could not occur is a fixture that will eventually lie**;
+    it describes a real directory now.
+  - **The guessed-chain rule came out of a second pass over the same code.** The resolver falls
+    back to splitting a file stem when an owner is missing from the manifest, which is a fair
+    guess for an update — text applied to the wrong object is something git undoes. The
+    identical guess reached by a *deletion* resolves to some other object and destroys it. **A
+    shared helper is only as safe as its most dangerous caller**, and nothing about the
+    resolver's own code says which callers it has.
 - **Phase 2's delete preconditions are now load-bearing, not defensive.** P3 measured what
   `remove()` does to an object others reference: it removes it, saves cleanly, and warns about
   nothing. There is no toolchain backstop. So the manifest-only rule, the content check and the

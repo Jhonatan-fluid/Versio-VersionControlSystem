@@ -193,6 +193,42 @@ public class CodesysJobTests
     }
 
     [Fact]
+    public void Planned_deletions_are_computed_but_do_NOT_yet_cross_the_wire()
+    {
+        // A TRIPWIRE, not a preference. The planner proposes deletions and every precondition
+        // for them is tested, but versio_import.py has no delete action yet — so the job file
+        // deliberately does not carry them, and the C# side is the only consumer: the log
+        // today, the confirmation dialog next.
+        //
+        // Asserted rather than left to a comment because the failure mode is silence. Adding
+        // remove() to the script without adding the field here would produce a script that
+        // deletes nothing while everything above it says deletions are planned; adding the
+        // field without the script would send a key nothing reads. Whichever half lands
+        // first, THIS test is what says the other one is missing.
+        var json = (Job(new ProjectJob
+        {
+            BindingId = "b-1", ProjectPath = @"C:\w\A.project", Path = @"C:\w\A",
+            Plan = new Versio.Core.Plc.ImportPlan
+            {
+                Files = [],
+                Deletions =
+                [
+                    new Versio.Core.Plc.PlannedDeletion
+                    {
+                        Guid = "g1",
+                        Name = "FB_Motor",
+                        Files = [new Versio.Core.Plc.DeletedFile(
+                            "App/FB_Motor.st", "sha256:aaa", "ST_FULL")],
+                    },
+                ],
+            },
+        }) with { Operation = CodesysOperation.Import }).ToJson();
+
+        Assert.DoesNotContain("FB_Motor", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("deletions", json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void The_plan_travels_in_the_words_the_script_dispatches_on()
     {
         // The action and skip tokens are the wire protocol: versio_import.py switches on

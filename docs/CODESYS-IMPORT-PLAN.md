@@ -44,7 +44,7 @@ amount of reading, because it does not exist on the first cycle.
 
 | | Gap | State after Phase 0 |
 |---|---|---|
-| G1 | **Deletes don't propagate** — delete a `.st`, colleague imports, the POU is still there | Open. P3 makes this **more** dangerous to fix than assumed: `remove()` dangles silently |
+| G1 | **Deletes don't propagate** — delete a `.st`, colleague imports, the POU is still there | Open, **half built**. The delete set is planned and vetted (`ImportPlan.Deletions`, 2026-08-15) and executed by nothing; the script has no `remove()` yet. P3 makes this **more** dangerous to finish than assumed: `remove()` dangles silently |
 | G2 | **Renames/moves duplicate** — rename in the mirror, a new object is created and the old one kept | Open, and **cleanly solvable**: P1/P2 proved identity survives both operations |
 | G3 | **New object named from the filename** — `create_textual` uses `parts[-1]` and throws away the parsed `info["name"]`, so `PROGRAM Foo` in `Bar.st` creates `Bar` | ✅ **CLOSED by Phase 1, 2026-08-15.** The plan carries the declaration's name and the script takes it; the disagreement is a warning naming both. **Proven live**: a `Bar.st` declaring `PROGRAM Foo` creates `Foo` against real CODESYS, in `ImportLoggingTests` |
 | G4 | **Encoded names unresolvable** — looks up the *encoded* stem against raw names, giving a duplicate named `weird%3Cname%3E` | ✅ **Resolution CLOSED by Phase 1, 2026-08-15**: chains are real decoded names from the manifest, built C#-side where `DecodeStem` lives and is parity-tested. What remains is the shortened-stem residue — a digest tail decodes to nothing, and such an object is reported as unresolvable rather than guessed at. Creation was already unreachable (P5) |
@@ -589,9 +589,42 @@ happen.
 > rather than in the product, and both recorded in [`STATUS.md`](STATUS.md): `Eventually.Press`
 > was fire-and-forget, and no app test had ever *accepted* an import.
 
-**What is left for Phase 2** is the deletion logic itself: the delete set and its preconditions,
-the content check through `versio_native_equiv`, `PendingImportDetail` naming each object, and
-`obj.remove()` in the script.
+### ✅ The delete set and its preconditions, landed 2026-08-15 — proposed, executed by nothing
+
+`ImportPlan.Deletions` is the vetted answer; `MissingFromMirror` stays beside it as the raw
+input, and **the two differ on purpose**. Pure, in the planner, with nothing downstream acting
+on it: the job file deliberately does not carry deletions yet, and a test asserts that so
+whichever half of the script change lands first, the other is named as missing.
+
+| Precondition | What it stops |
+|---|---|
+| **Only a trusted manifest.** Absent, or below `ReportingSchema` → no deletions at all | What a stale manifest does not list cannot be told apart from what it never recorded, so every absence would look like a deletion |
+| **Every file for the GUID must be gone** | A GVL is a `.gvl.st` and a `.gvl.xml` under one identity. A per-file rule sees the `.st` gone and removes the object the surviving `.xml` still describes. One half missing is somebody tidying or a partial checkout — announced, never acted on |
+| **Export-only records neither vote nor veto** | Their files are rewritten by every export and applied by nothing, so absence is not death — *and* presence is not life. Counting a task configuration's `TASK_NATIVE` half would make it undeletable for a reason unrelated to the object |
+| **Nothing surviving may live inside it, at any depth** | P3 as a precondition. `remove()` dangles referenced objects silently, and ownership is the one kind of reference the manifest records |
+| **Its owner chain must be recorded, not guessed** | `ResolveKnown` falls back to splitting the file stem when an owner is missing from the manifest. For an *update* that is a fair guess — the worst case is text applied to the wrong object, which git undoes. For a *deletion* the identical guess resolves to some other object and destroys it |
+
+> **The transitive half of that last rule was a bug, and a pre-existing test found it rather
+> than a review.** Checking direct children only would have deleted a class whose property was
+> gone from the mirror while the property's **accessor** was still there — taking both with it.
+> Chains are two and three deep in an ordinary project, since a property owns its `Get` and
+> `Set`. What went red was a *resolution* test, because its fixture listed one file out of three
+> recorded — a mirror that cannot exist, harmless until absences started meaning something. The
+> fixture describes a real directory now, and the grandchild case has a test of its own.
+
+> **The guessed-chain rule came out of a second pass, not the plan.** This document's Phase 2
+> section lists the delete set, the manifest gate, the content check and the GVL pairing; it
+> does not mention resolution, because on the update path a guessed chain is an acceptable
+> risk. **The same code reached by a deletion is not the same risk**, and the resolver is shared
+> — which is exactly the kind of thing that is invisible until you re-read the call site asking
+> what it does when it is wrong.
+
+Five deliberate defects, one per rule, each failing exactly the test written for it.
+
+**What is left for Phase 2** is the executing half: the content check through
+`versio_native_equiv` (the manifest's hash is over exported bytes, so a native object cannot be
+byte-compared — see above), `PendingImportDetail` naming each object, `obj.remove()` in the
+script, and the `deletions` key on the wire that the tripwire test is currently holding shut.
 
 **Script:** `obj.remove()` for exactly the planned deletions, emitting `{"t":"removed"}` — the event
 `versio_delete_objects.py` already uses.
