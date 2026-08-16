@@ -830,7 +830,7 @@ destroyed and rebuilt.
 |---|---|---|
 | exact content | a file moved or renamed with **no edit** | nothing |
 | implementation hash | a **POU rename** — its name is in its declaration, so the file changes | manifest schema 6 |
-| content similarity | a rename that **also edited** the body | the old bytes, from HEAD |
+| content similarity | a rename that **also edited** the body | the old bytes from HEAD, **or** the sketch the export recorded |
 
 **In order of certainty**, so anything reaching the last has already failed every test that could
 have answered without a judgement. The two findings that came out of building it are below and
@@ -927,6 +927,35 @@ delete-plus-create.
 > project ends with the same set of objects either way. That is why a judgement is acceptable
 > here and would not be in the deletion set.
 >
+> ### Both sources, because a mirror is not always committed
+>
+> Git has the departed file's **real bytes**, so the score is a comparison. It has nothing at
+> all for a mirror that was never committed, or a file git never tracked — and that is an
+> ordinary state, not an error. So the export also records **`shash`** (schema 7): a bottom-k
+> sketch of the file's distinct lines, 16 values and 128 characters whatever the POU's size.
+>
+> | | Source | Measure | Used |
+> |---|---|---|---|
+> | preferred | HEAD's bytes | `TextSimilarity` — shared lines over the larger side, sees order and repeats | whenever HEAD has the file |
+> | fallback | the recorded sketch | estimated Jaccard over line *sets* | when it does not |
+>
+> **Fallback, not blended.** They are different measures on different scales, and averaging two
+> numbers that do not mean the same thing produces a third that means nothing. The dialog says
+> which was used, because a reader deserves to know whether a rename was decided by a
+> comparison or an estimate.
+>
+> **The two floors are not comparable either, and the first attempt got that wrong.** The
+> sketch floor was set to 0.75 on the reasoning that a coarser instrument should be asked for
+> more — ignoring that Jaccard counts every change *twice*, once as missing and once as added.
+> A two-line edit in a ten-line POU scores 0.8 by the exact measure and 0.67 by the sketch, so
+> demanding more rejected ordinary renames. It is 0.55, which is still stricter than the exact
+> path's equivalent (~0.43 in Jaccard terms) — the original instinct, applied to the right
+> scale. A unit test caught it on the first run.
+>
+> **Recording it costs one line per POU** and is why it is a sketch rather than every line's
+> hash: the full set estimates far better and grows with the file, and `_manifest.json` is read
+> by people in pull requests.
+
 > **`git show HEAD:./<path>` reaches the sync engine through a one-method probe**,
 > `IHistoricContentProbe`, not through `IGitClient`. The orchestrator has never taken a git
 > client and does not start now: it needs one question answered, and a narrow probe is what

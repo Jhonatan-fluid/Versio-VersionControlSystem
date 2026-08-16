@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,482 unit + 480 UI + 209 integration, 0 skipped
+**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,484 unit + 480 UI + 211 integration, 0 skipped
 · *(integration run four times this session: 12m45s, 12m52s, 10m29s with one flake, 12m27s — see the flake note in `CLAUDE.md`)*
 
 > **⚠️ Versio removes objects from projects as of 2026-08-15 — Phase 2 of the import plan, and
@@ -156,7 +156,7 @@ opens. That is `SAFEGUARDS.md` phases 1–8, and phase 9 is features rather than
 
 ```
   CODESYS pipeline    ████████████████████  proven on a real project
-  Domain core         ████████████████████  1,482 tests, under 400 ms
+  Domain core         ████████████████████  1,484 tests, under 400 ms
   Vendor seam         ████████████████████  enforced from assembly metadata
   Infrastructure      ████████████████████  drives real CODESYS + real git
   Desktop shell       ███████████████████░  full git surface, diff, and a UI audit applied

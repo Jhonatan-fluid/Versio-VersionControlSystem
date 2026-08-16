@@ -698,7 +698,60 @@ public class CodesysImportPlannerTests
     }
 
     [Fact]
-    public void Without_the_old_content_a_renamed_and_edited_POU_stays_a_delete_and_a_create()
+    public void With_no_history_a_renamed_and_edited_POU_is_matched_from_the_recorded_sketch()
+    {
+        // THE UNTRACKED CASE. A mirror that was never committed has no old copy in HEAD, so
+        // the departed file's content exists nowhere — except as the fingerprint the export
+        // recorded while the file still existed. Schema 7.
+        var old = "PROGRAM Old\nVAR\n  x: INT;\nEND_VAR\n"
+                  + $"{StTextCodec.ImplementationDelimiter}\nx := x + 1;\nIF x > 10 THEN\n"
+                  + "  x := 0;\nEND_IF\n  y := 2;";
+        var edited = old.Replace("PROGRAM Old", "PROGRAM New", StringComparison.Ordinal)
+            .Replace("x := x + 1;", "x := x + 3;", StringComparison.Ordinal);
+
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(Obj("App/Old.st", "Old", "POU", "ST_FULL", guid: "g1")
+                with { Hash = HashOf(old), LineSketch = Versio.Core.Diff.LineSketch.Of(old) }),
+            [File("App/New.st", edited)],
+
+            // No departed content at all — exactly what an uncommitted mirror gives.
+            new Dictionary<string, string>());
+
+        var rename = Assert.Single(plan.Renames);
+        Assert.Equal("Old", rename.OldName);
+        Assert.Equal("New", rename.NewName);
+        Assert.Empty(plan.Deletions);
+
+        // It says the score was ESTIMATED, because the reader deserves to know which
+        // instrument was used — a sketch cannot see line order or repetition.
+        Assert.Contains(plan.Warnings,
+            w => w.Contains("estimated from the export's recorded fingerprint",
+                            StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void An_unrelated_file_is_not_paired_by_a_sketch_either()
+    {
+        // The sketch floor is higher than the exact one because the measure is weaker — it
+        // compares line SETS. This is what stops "something went, something arrived" becoming
+        // a rename when there is no history to check against.
+        var old = "PROGRAM Old\nVAR\n  x: INT;\nEND_VAR\n"
+                  + $"{StTextCodec.ImplementationDelimiter}\nx := x + 1;\nIF x > 10 THEN\n"
+                  + "  x := 0;\nEND_IF";
+
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(Obj("App/Old.st", "Old", "POU", "ST_FULL", guid: "g1")
+                with { Hash = HashOf(old), LineSketch = Versio.Core.Diff.LineSketch.Of(old) }),
+            [File("App/Unrelated.st", "PROGRAM Unrelated\nVAR\nEND_VAR\n"
+                                      + $"{StTextCodec.ImplementationDelimiter}\nSomethingElse();")],
+            new Dictionary<string, string>());
+
+        Assert.Empty(plan.Renames);
+        Assert.Single(plan.Deletions);
+    }
+
+    [Fact]
+    public void Without_history_or_a_sketch_a_renamed_and_edited_POU_stays_a_delete_and_a_create()
     {
         // An uncommitted mirror has no HEAD copy of anything, and that is an ordinary state
         // rather than an error: the pass does nothing and the behaviour is what it was before

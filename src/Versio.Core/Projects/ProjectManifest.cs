@@ -98,6 +98,26 @@ public sealed record ProjectObject
     /// </para>
     /// </remarks>
     [JsonPropertyName("ihash")] public string ImplementationHash { get; init; } = string.Empty;
+
+    /// <summary>
+    /// For a full ST body, a bounded fingerprint of its lines — enough to <i>estimate</i> how
+    /// alike it and another file are, without keeping the text. Empty before schema 7.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>It covers the case git cannot.</b> A rename that also edited the body matches no
+    /// hash, so the departed file's content is the only thing that can pair it — and the
+    /// mirror has just lost that file. HEAD has it when the mirror was committed; when it was
+    /// not, or when the file was never tracked, this is the only record of what the file
+    /// looked like.
+    /// </para>
+    /// <para>
+    /// <b>An estimate, and second choice on purpose.</b> It compares line <i>sets</i>, so it
+    /// cannot see order or repetition — coarser than comparing the real texts. The planner
+    /// uses git's bytes whenever it has them and falls back to this.
+    /// </para>
+    /// </remarks>
+    [JsonPropertyName("shash")] public string LineSketch { get; init; } = string.Empty;
     [JsonPropertyName("bytes")] public long Bytes { get; init; }
 }
 

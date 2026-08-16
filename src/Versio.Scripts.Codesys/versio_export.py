@@ -21,7 +21,8 @@ import scriptengine  # type: ignore
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from versio_text import (content_hash, join_st, normalize_decl_only,  # noqa: E402
-                         safe_file_stem, scrub_native_xml, split_st)
+                         line_sketch, safe_file_stem, scrub_native_xml,
+                         split_st)
 from versio_types import (EXPORT_ONLY_FORMS, FORM_CONTAINER,  # noqa: E402
                           FORM_GVL_BOTH, FORM_LIBRARIES,
                           FORM_NATIVE, FORM_NATIVE_R, FORM_NATIVE_WITH_CHILDREN,
@@ -240,6 +241,17 @@ class Exporter(object):
         if form == FORM_ST_FULL:
             _decl, impl = split_st(text)
             rec["ihash"] = content_hash(impl)
+
+            # And a bounded fingerprint of the whole file - schema 7.
+            #
+            # `ihash` pairs a rename whose BODY is untouched. A rename that edits the body too
+            # matches no hash at all, and the only way to recognise it is to compare content -
+            # which needs the departed file, and the mirror has just lost it. Git has it when
+            # the mirror was committed; THIS is what covers the case where it was not, or
+            # where the file was never tracked.
+            #
+            # Recorded here because this is the last moment the content exists anywhere.
+            rec["shash"] = line_sketch(text)
 
         # Omitted rather than written empty, so a top-level object's record is
         # byte-identical to what schema 3 wrote. An export that changed every line
@@ -720,11 +732,15 @@ def main():
         # native object with no nhash means nobody was writing them yet, and its
         # deletion has to stay refused. Reading "absent" as "unchanged" would
         # delete work on every mirror exported before today.
+        # 7: a full ST record carries "shash", a bounded fingerprint of its lines,
+        # so a rename that edited the body can be recognised on a mirror that was
+        # never committed - where git has no old copy to compare against.
+        #
         # 6: a full ST record carries "ihash", the hash of its implementation alone.
         # A schema-5 manifest has none because nothing wrote one, and a renamed POU
         # is simply not recognised as renamed on such a mirror - it falls back to a
         # delete and a create, which is what happened before this existed.
-        "schema": 6,
+        "schema": 7,
         "bindingId": job.get("bindingId", ""),
         "project": os.path.basename(job["project"]),
         "objectCount": len(ex.records),

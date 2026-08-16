@@ -87,6 +87,73 @@ def scrub_native_xml(text):
     return scrubbed, n
 
 
+# How many line hashes a sketch keeps. Bottom-k: the k SMALLEST, which is what makes two
+# sketches comparable without either side seeing the other's text.
+#
+# 16 is a size, not a quality setting, and it is chosen to keep _manifest.json readable. The
+# alternative - recording every line's hash - estimates similarity far better and grows with
+# the file: a 400-line POU would add 3 KB to a file people read in pull requests. A sketch is
+# 128 characters whatever the POU does.
+SKETCH_SIZE = 16
+
+
+def line_sketch(text, size=SKETCH_SIZE):
+    """A bounded fingerprint of a text's DISTINCT lines, for estimating similarity later.
+
+    WHAT IT IS FOR. Pairing a renamed-and-edited file with the one it became needs the
+    departed file's content, and the mirror no longer has it. Git has it when the mirror was
+    committed; when it was not, this is what the manifest carries instead - recorded at
+    export time, while the content still exists.
+
+    Bottom-k over 32-bit line hashes. Two sketches estimate the Jaccard similarity of the
+    two line SETS, which is a coarser measure than comparing the texts themselves - it
+    cannot see line order or repetition. That is the price of not keeping the text, and it
+    is why git is preferred whenever HEAD has the file: an estimate is a fallback, not an
+    equal.
+
+    Lines are trimmed and blanks dropped, exactly as TextSimilarity does, so the two
+    measures at least agree about what a line is. The C# mirror is Versio.Core.Diff.LineSketch
+    and the two are compared by output in PythonFileNameParityTests - a sketch that differed
+    between the writer and the reader would silently estimate every similarity as zero.
+    """
+    if not text:
+        return u""
+
+    seen = set()
+    for raw in text.replace(u"\r\n", u"\n").split(u"\n"):
+        line = raw.strip()
+        if line:
+            # First 4 bytes of sha256, as an unsigned 32-bit value. sha256 because both sides
+            # already have it and it is identical everywhere; a language's own hash() is not,
+            # and IronPython's differs from CPython's within one family.
+            digest = hashlib.sha256(line.encode("utf-8")).hexdigest()
+            seen.add(digest[:8])
+
+    return u",".join(sorted(seen)[:size])
+
+
+def sketch_similarity(left, right, size=SKETCH_SIZE):
+    """Estimated Jaccard similarity of two line sketches, 0 to 1.
+
+    Both empty is 0 rather than 1, for the reason TextSimilarity gives: an empty file
+    resembles every other empty file, so 1 would let a threshold pair any two of them, and
+    the caller is asking whether there is EVIDENCE two files are the same object.
+    """
+    a = set(left.split(u",")) - set([u""])
+    b = set(right.split(u",")) - set([u""])
+    if not a or not b:
+        return 0.0
+
+    # Bottom-k estimator: compare over the k smallest of the union, because beyond that
+    # neither sketch is a complete record and their disagreement means nothing.
+    union = sorted(a | b)[:size]
+    if not union:
+        return 0.0
+
+    shared = len([v for v in union if v in a and v in b])
+    return float(shared) / len(union)
+
+
 def content_hash(text):
     """Stable hash of canonical content. sha256 over UTF-8 bytes, no BOM."""
     if isinstance(text, bytes):

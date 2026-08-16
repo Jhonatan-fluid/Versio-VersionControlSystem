@@ -538,7 +538,14 @@ public static class CodesysImportPlanner
         List<PlannedRename> renames,
         List<string> warnings)
     {
-        if (departed.Count == 0 || deletions.Count == 0)
+        // NOT `departed.Count == 0`, which is what this said before the sketch existed and
+        // which silently disabled the whole fallback: an uncommitted mirror supplies no
+        // departed content by definition, and that is precisely the case the sketch is for.
+        // The guard is now "is there anything at all to compare against".
+        if (deletions.Count == 0
+            || (departed.Count == 0
+                && !deletions.Any(d => d.Files.Count == 1
+                                       && d.Files[0].LineSketch.Length > 0)))
         {
             return;
         }
@@ -559,15 +566,35 @@ public static class CodesysImportPlanner
 
         foreach (var deletion in deletions.Where(d => d.Files.Count == 1))
         {
-            if (!departed.TryGetValue(deletion.Files[0].Path, out var old)
-                || string.IsNullOrEmpty(old))
+            // TWO SOURCES, AND GIT IS PREFERRED WHEN IT HAS ANYTHING.
+            //
+            // HEAD holds the departed file's real bytes, so the score is a comparison rather
+            // than an estimate — it sees line order and repetition, which a sketch cannot.
+            // The sketch is what covers a mirror that was never committed, or a file git never
+            // tracked: there the manifest's own record is the only surviving description of
+            // what the file looked like.
+            //
+            // Falling back rather than combining them. They are different measures on
+            // different scales — one over texts, one over line sets — and averaging two
+            // numbers that do not mean the same thing produces a third that means nothing.
+            var old = departed.TryGetValue(deletion.Files[0].Path, out var head)
+                ? head
+                : null;
+
+            var sketch = deletion.Files[0].LineSketch;
+            var exact = !string.IsNullOrEmpty(old);
+
+            if (!exact && string.IsNullOrEmpty(sketch))
             {
                 continue;
             }
 
             var scored = creates
-                .Select(c => (c.File, c.Index, Score: TextSimilarity.Of(old, text[c.File.Path])))
-                .Where(c => c.Score >= SimilarityFloor)
+                .Select(c => (c.File, c.Index, Score: exact
+                    ? TextSimilarity.Of(old, text[c.File.Path])
+                    : Diff.LineSketch.Similarity(
+                        sketch, Diff.LineSketch.Of(text[c.File.Path]))))
+                .Where(c => c.Score >= (exact ? SimilarityFloor : SketchFloor))
                 .OrderByDescending(c => c.Score)
 
                 // Ties broken by path so two identical scores do not depend on directory
@@ -627,8 +654,10 @@ public static class CodesysImportPlanner
 
             warnings.Add(
                 $"{deletion.Name}: matched to {arrival.File.Path} on content similarity "
-                + $"({arrival.Score:P0}), so it is renamed rather than removed and recreated — "
-                + "no hash could pair them, because the file was edited as well as renamed");
+                + $"({arrival.Score:P0}{(exact ? string.Empty : ", estimated from the export's "
+                    + "recorded fingerprint because the old file is not in this repository's "
+                    + "history")}), so it is renamed rather than removed and recreated — no "
+                + "hash could pair them, because the file was edited as well as renamed");
 
             // Consumed: an arrival cannot be two objects.
             creates.RemoveAll(c => c.Index == arrival.Index);
@@ -649,6 +678,33 @@ public static class CodesysImportPlanner
     /// is the same rule expressed for a score rather than an equality.
     /// </remarks>
     private const double SimilarityMargin = 0.1;
+
+    /// <summary>
+    /// The floor for a match scored from a <b>sketch</b> rather than from the real bytes.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Lower than <see cref="SimilarityFloor"/>, and the first attempt got this backwards.</b>
+    /// It was set to 0.75 on the reasoning that a coarser instrument should be asked for more —
+    /// which sounds right and ignores that the two numbers are not on the same scale.
+    /// <see cref="TextSimilarity"/> scores shared over the larger side; a sketch estimates
+    /// <i>Jaccard</i>, shared over the union, which counts every change twice — once as missing
+    /// from one side and once as added to the other. A two-line edit in a ten-line POU scores
+    /// 0.8 one way and 0.67 the other. Demanding more of the harsher measure rejected ordinary
+    /// renames, and a unit test caught it immediately.
+    /// </para>
+    /// <para>
+    /// 0.55 is deliberately <b>stricter than the equivalent</b>: <see cref="SimilarityFloor"/>
+    /// of 0.6 converts to roughly 0.43 in Jaccard terms, so this still asks for more agreement
+    /// than the exact path — which is the original instinct, applied to the right scale.
+    /// </para>
+    /// <para>
+    /// It is also the path with no way to check itself. When git has the bytes the score is a
+    /// real comparison; here it is an estimate from 16 numbers, and the cost of being wrong —
+    /// a GUID, never any work — is what makes an estimate acceptable at all.
+    /// </para>
+    /// </remarks>
+    private const double SketchFloor = 0.55;
 
     /// <summary>
     /// The chain to the object that should own the arrived file, or null when it cannot be
@@ -841,7 +897,8 @@ public static class CodesysImportPlanner
                 Files = [.. gone
                     .OrderBy(o => o.Path, StringComparer.Ordinal)
                     .Select(o => new DeletedFile(
-                        o.Path, o.Hash, o.Form, o.NormalizedHash, o.ImplementationHash))],
+                        o.Path, o.Hash, o.Form, o.NormalizedHash, o.ImplementationHash,
+                        o.LineSketch))],
                 CannotVerify = WhyUnverifiable(gone),
             });
         }

@@ -130,9 +130,14 @@ public sealed record PlannedFile
 /// and therefore the only thing that can pair a renamed POU with the file it became. Empty on a
 /// pre-schema-6 mirror, and for every other form.
 /// </param>
+/// <param name="LineSketch">
+/// For a full ST body, a bounded fingerprint of its lines — what pairs a renamed-and-edited
+/// file when the mirror was never committed and git therefore has no old copy. Empty before
+/// schema 7. An estimate, and second choice to git's actual bytes.
+/// </param>
 public sealed record DeletedFile(
     string Path, string Hash, string Form, string NormalizedHash = "",
-    string ImplementationHash = "");
+    string ImplementationHash = "", string LineSketch = "");
 
 /// <summary>
 /// An object the mirror no longer holds any file for.

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using Versio.Core.Diff;
 using Versio.Core.Plc.Codesys;
 using Versio.Core.Projects;
 using Versio.Core.Serialization;
@@ -922,6 +923,92 @@ public sealed class PythonFileNameParityTests(ITestOutputHelper output)
         Assert.Contains("NATIVE/none=False", csharp);
         Assert.Contains("NATIVE/nhash=True", csharp);
         Assert.Contains("TASK_BOTH/nhash=False", csharp);
+    }
+
+    /// <summary>
+    /// The line sketch, written by the exporter and read by the planner.
+    /// </summary>
+    /// <remarks>
+    /// <b>A disagreement here would not fail — it would go quiet.</b> The exporter records the
+    /// sketch and the planner compares an arrived file against it; two implementations that
+    /// hashed or ordered differently would share no values at all, estimate every similarity as
+    /// zero, and simply stop detecting renames. Nothing would throw, no warning would fire, and
+    /// the fallback looks exactly like "these files are not alike".
+    /// </remarks>
+    [SkippableFact]
+    public void The_two_line_sketch_implementations_produce_the_same_fingerprint()
+    {
+        Skip.If(!Directory.Exists(Scripts), "the scripts are not present");
+
+        // Chosen to hit what the sketch is defined by: blank lines and indentation dropped,
+        // duplicates collapsed to one value, non-ASCII hashed as UTF-8, and more distinct
+        // lines than the sketch keeps so the BOTTOM-K truncation is exercised rather than
+        // assumed.
+        string[] corpus =
+        [
+            string.Empty,
+            "PROGRAM A\nVAR\nEND_VAR\nx := 1;",
+            "  PROGRAM A  \n\n\tVAR\nEND_VAR\n\n  x := 1;  ",
+            "END_IF\nEND_IF\nEND_IF",
+            "Kühlschrank := TRUE;\nКириллица();",
+            string.Join("\n", Enumerable.Range(1, 60).Select(i => $"step_{i}();")),
+        ];
+
+        // A LAMBDA, NOT A METHOD GROUP. `Select(LineSketch.Of)` compiles and binds to Select's
+        // INDEX overload — Func<string,int,string> — so the element's position is passed as the
+        // sketch size: index 1 produced a one-value sketch, index 5 a five-value one. Nothing
+        // warns, and the sketches look plausible. This parity test is what caught it, which is
+        // the argument for comparing two implementations by output rather than reading either.
+        var csharp = corpus.Select(t => LineSketch.Of(t)).ToList();
+
+        var python = RunPython(JsonSerializer.Serialize(corpus), """
+            import versio_text
+            out = [versio_text.line_sketch(t) for t in payload]
+            """);
+
+        foreach (var line in csharp)
+        {
+            output.WriteLine(line.Length == 0 ? "(empty)" : line);
+        }
+
+        Assert.Equal(csharp, python);
+
+        // Non-vacuous: the third case must really have collapsed to fewer values than lines,
+        // and the last must really have been truncated to the sketch size.
+        Assert.Single(csharp[3].Split(','));
+        Assert.Equal(LineSketch.Size, csharp[5].Split(',').Length);
+
+        // And whitespace must genuinely not matter, or the two sides could agree on a rule
+        // that makes the sketch useless.
+        Assert.Equal(csharp[1], csharp[2]);
+    }
+
+    [SkippableFact]
+    public void The_two_sketch_similarity_estimators_agree()
+    {
+        Skip.If(!Directory.Exists(Scripts), "the scripts are not present");
+
+        var a = LineSketch.Of("a();\nb();\nc();\nd();");
+        var b = LineSketch.Of("a();\nb();\nc();\nz();");
+        var unrelated = LineSketch.Of("q();\nr();\ns();\nt();");
+
+        var pairs = new[] { (a, a), (a, b), (a, unrelated), (a, string.Empty) };
+        var csharp = pairs.Select(p => $"{LineSketch.Similarity(p.Item1, p.Item2):F3}").ToList();
+
+        var python = RunPython(
+            JsonSerializer.Serialize(pairs.Select(p => new { a = p.Item1, b = p.Item2 })),
+            """
+            import versio_text
+            out = ["%.3f" % versio_text.sketch_similarity(p["a"], p["b"]) for p in payload]
+            """);
+
+        output.WriteLine(string.Join(" ", csharp));
+        Assert.Equal(csharp, python);
+
+        // Ordered as a similarity measure must be, or agreement would be worthless.
+        Assert.Equal("1.000", csharp[0]);
+        Assert.Equal("0.000", csharp[3]);
+        Assert.True(double.Parse(csharp[1]) > double.Parse(csharp[2]));
     }
 
     private static string Sha256(string text) =>

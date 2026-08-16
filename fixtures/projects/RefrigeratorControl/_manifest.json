@@ -78,6 +78,7 @@
       "ihash": "sha256:9f23efd403a283628b8f785a995d230d2a8e087025ec0040df62b9ce1088c335", 
       "name": "Simulation", 
       "path": "Device/Plc Logic/Application/Simulation.st", 
+      "shash": "04c157ff,07c2969d,117c1ea6,11a69cfd,1c0f1e81,1f113b37,2e2aa42d,38049746,3d3336fd,3f4324c9,4670d4a1,4e4b4138,511ed5ce,75439bc7,8793545a,896dcd73", 
       "type": "POU"
     }, 
     {
@@ -129,7 +130,7 @@
     }
   ], 
   "project": "RefrigeratorControl.project", 
-  "schema": 6, 
+  "schema": 7, 
   "skipped": [
     {
       "name": "Visualization Manager", 
