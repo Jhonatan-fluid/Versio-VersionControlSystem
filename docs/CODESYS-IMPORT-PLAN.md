@@ -21,6 +21,13 @@ Phase 4 closes G7 and G11; Phase 1 closes G3 and G6 outright, G4's resolution ha
 recorded-object half. All three honesty fixes are done. One item is open and not on the critical
 path: `TaskCatalog.cs`, so nothing outside python can read a `.tasks.yaml`.
 
+**Every feature the import has was then run one row at a time against a real project, and one
+of them failed.** The feature checklist below is the list and the verdicts. **G12 is what it
+found**: editing a GVL's `.gvl.st` in the mirror does not reach the project — the `.gvl.xml`
+beside it is imported afterwards and puts the old declaration back, while the log says
+`applied`. It is G7's defect in a different object, and it is **not fixed here**, because
+choosing between the three ways to fix it moves a delete rule.
+
 > **This header said "nothing in phases 1–6 is built" for the whole of the session that built
 > Phase 4**, while the [build order](#build-order) below it and every G7/G11 row already said
 > the opposite. It is the second time this file's header has claimed less than the file — commit
@@ -44,7 +51,7 @@ path: `TaskCatalog.cs`, so nothing outside python can read a `.tasks.yaml`.
 | | |
 |---|---|
 | Document | **The plan for making the import side a real bidirectional sync.** Deletes, renames, moves, typed task configuration, and a mirror that stops churning after every import |
-| Status | **Phases 0, 4, 1, 2 and 3 COMPLETE, with all three honesty fixes; phases 5 and 6 not started.** G1 and G2 both closed outright. Two gaps closed as unreachable, four API spellings corrected, six live defects fixed — G7 and G11 by Phase 4, G3 and G6 by Phase 1, **G1 by Phase 2 outright, textual and native**, with G4's resolution half and G5's recorded-object half beside them, and the confirmation dialog corrected after it spent a commit promising the opposite of what an import did. The import is **plan-driven end to end**: decided C#-side from the manifest, agreed to before CODESYS starts, refused without a plan, executed by a script that decides nothing — and it now **removes, renames and moves** objects as well as adding them, saying beforehand which ones will really go and which will really stay |
+| Status | **Phases 0, 4, 1, 2 and 3 COMPLETE, with all three honesty fixes; phases 5 and 6 not started.** G1 and G2 both closed outright. Two gaps closed as unreachable, four API spellings corrected, six live defects fixed — G7 and G11 by Phase 4, G3 and G6 by Phase 1, **G1 by Phase 2 outright, textual and native**, with G4's resolution half and G5's recorded-object half beside them, and the confirmation dialog corrected after it spent a commit promising the opposite of what an import did. The import is **plan-driven end to end**: decided C#-side from the manifest, agreed to before CODESYS starts, refused without a plan, executed by a script that decides nothing — and it now **removes, renames and moves** objects as well as adding them, saying beforehand which ones will really go and which will really stay. **Every one of those behaviours has now been run against a real project one row at a time** — see the feature checklist — and **one failed: G12**, a GVL's declaration overwritten by its own XML, open and unfixed |
 | Related | [`CODESYS.md`](CODESYS.md) — how CODESYS is driven today, and §12, the audit these gaps came from · [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) — what was measured · [`PLAN.md`](PLAN.md) — the architecture · [`SAFEGUARDS.md`](SAFEGUARDS.md) — what Versio refuses or waits for |
 
 > **These phase numbers are identifiers, not an order**, and they are **not** `PLAN.md`'s phases —
@@ -82,6 +89,7 @@ amount of reading, because it does not exist on the first cycle.
 | G9 | **Total path length unguarded** — stems capped at 80, the full path is not, and `.versio_staging` makes it 16 longer | Open, and **entirely ours**: P8 shows CODESYS imposes no limit of its own |
 | **G10** | **Import → export is not byte-stable.** `UniqueIdGenerator` **44 → 47 → 50 → 53**, +3 per cycle, never settling | Open, **measured**. Of the eight native files touched: three visualisations climb on the counter, `GlobalTextList.xml` churns with **no counter at all**, `Task Configuration.xml` moves once then settles, three are byte-stable. **Four of eight forever, from two causes** — not "every file", and not just the counter |
 | **G11** | **Every import after the first fails on task configuration and reports success.** `import_native` throws `Collection was modified` at `Project.GetUniqueName` on `MainTask` and `VISU_TASK`; the summary still reads `failed: 0` | ✅ **CLOSED by Phase 4, 2026-08-15.** Three import→export cycles with the compile cache present: **zero warnings on every one**, where cycles 2 and 3 used to throw twice each. `native: 8 → 7`, the task XML skipped as `TYPED_SIBLING`. **Versio never deletes CODESYS's compile cache** — the trigger is simply never reached |
+| **G12** | **A GVL's declaration is applied and then overwritten by its own XML**, and the import reports `applied … (declaration)` either way | Open, **found by the feature checklist on 2026-08-16 rather than by reading anything.** `GVL_BOTH` writes a `.gvl.st` recorded `ST_DECL` and a `.gvl.xml` recorded plain `NATIVE`; the phases run textual before native, so the XML puts the old declaration back. **G7 in a different object** — `TASK_BOTH` escapes only because Phase 4 gave its XML half its own `TASK_NATIVE` form, and `ExportCoverage.IsExportOnly` names `LIBRARIES` and `TASK_NATIVE` and nothing else. Proven by a control run that skips the `.gvl.xml` and changes nothing else, after which the edit survives. The three candidate fixes and what each costs are in [`STATUS.md`](STATUS.md) |
 
 **Intended outcome:** the mirror becomes authoritative for object *existence* and *identity*, not
 just content; task scheduling stops being changed by a tool nobody asked to change it; and an
@@ -241,6 +249,7 @@ already exists.**
 | ~~11th~~ | ✅ **The native content check — Phase 2's open half.** Landed 2026-08-15, manifest schema 5 | It went before Phase 3 because it makes deletion **whole** rather than a feature that works on 2 of the fixture's 13 objects, and because the alternative design would have dragged git into the script to serve a phase that had not been written yet. Verified four ways against real CODESYS, including a falsification case |
 | ~~12th~~ | ✅ **Phase 3 — renames and moves, all three passes.** Landed 2026-08-15 | Split from step 2 deliberately: exact-content matching needs nothing but the manifest and the mirror, covers most real renames, and does not drag git into the planner. It also turned up `move()` succeeding silently without moving anything — see the box in Phase 3 |
 | **NEXT** | **Phase 5 — a mirror that stops churning** | Its prerequisite is proven twice over: `versio_native_equiv` exists, and Phase 2 measured that normalisation is stable across round trips |
+| **NEXT, and ahead of Phase 5** | **G12 — a GVL's `.gvl.st` edit reaching the project** | **A live silent-data-loss path**, found by the feature checklist on 2026-08-16 and the only open defect that destroys somebody's edit without saying so. Phase 5 changes when files are rewritten and touches the same export code, so fixing this first keeps the two reviews apart. Its three candidate fixes are not interchangeable and one of them stops the two-file rule protecting a GVL — the choice belongs with somebody looking at the delete rules, which is why the audit measured it and stopped |
 | **13th** | **Phase 6 — remaining gaps, tests, docs** | G8 and G9, the parity tests, the integration tests |
 
 ### The three honesty fixes — all three done
@@ -1126,15 +1135,16 @@ additive, each is unavailable until the next export, and **absent never means "u
 
 **Next, in order:**
 
-1. **Phase 5 — a mirror that stops churning.** Its prerequisite is ready twice over:
+1. **G12 — a GVL's `.gvl.st` edit reaching the project.** Ahead of Phase 5, because it is the only open defect that silently destroys an edit somebody made, and because Phase 5 edits the same exporter. **Read the finding before choosing a fix**: the obvious one — give the `.gvl.xml` its own export-only form, as `TASK_NATIVE` has — also takes the GVL out of the delete planner's two-file rule, so deleting `Glob_Var.gvl.st` alone would start removing the object. That is a decision, not a detail.
+2. **Phase 5 — a mirror that stops churning.** Its prerequisite is ready twice over:
    `versio_native_equiv` exists, and Phase 2 measured that normalisation is stable across
    round trips. **The trap is written up in Phase 5's own section and is not the one-line
    rule**: the substitution has to happen *before* the hash is taken, or `_manifest.json`
    disagrees with the bytes beside it and the hash gate reads the bytes.
-2. **Phase 6 — G8, G9, the remaining parity tests, integration breadth.** The
+3. **Phase 6 — G8, G9, the remaining parity tests, integration breadth.** The
    `StTextCodec` ↔ `versio_text` codec pair is the highest-consequence uncompared thing left:
    a bug in `split_st` silently moves code between a declaration and an implementation.
-3. **Still open from Phase 4:** `TaskCatalog.cs`, the C# reader. **Land it with the panel
+4. **Still open from Phase 4:** `TaskCatalog.cs`, the C# reader. **Land it with the panel
    change that consumes it**, not before — a reader with no production caller is a
    specification pretending to be code, which is exactly what `DecodeStem` and
    `StDeclarationParser` were until the planner became their first caller.
@@ -1212,6 +1222,156 @@ breaking each one found that out. **Write the mutation list before believing the
   twice at on the day it is not empty.
 - Mutation-check anything that looks like a pure move. Three rules here (G3, G5, G6) were
   each deliberately broken to prove a test goes red before the suite was believed.
+
+## The import feature checklist, run one row at a time · 2026-08-16
+
+**Why this is here.** Phases 1–4 each landed with their own measurements and this file records
+them phase by phase. What nobody had was **the list** — every behaviour the import has, in one
+place, each one run against a real project rather than argued from the code that implements it.
+This is that list. It was compiled and executed **before Phase 5 was started**, on the argument
+that a feature list nobody has run end to end is a list of intentions.
+
+**It was worth doing on the first row.** The first row nobody had ever asserted — a GVL's
+declaration, `ST_DECL` — **fails**, and fails silently: the import reports `applied … (declaration)` and the edit is not in the project
+afterwards. It is G7's defect in a different object, and it has been there since GVLs were
+first exported as two files.
+
+### How to read the *Measured* column
+
+| Token | What was actually done |
+|---|---|
+| **E2E** | Adopt the fixture in a real repository, export, edit the mirror, import through `SyncOrchestrator` — real planner, real plan, real confirmation — then **re-export and read the answer back out of the project.** Nothing cheaper can tell a field that was applied from a file that was merely parsed |
+| **RUNNER** | The same project and the same CODESYS, driven straight through `LocalCodesysRunner` with a plan the caller computed. The door `SyncViewModel` uses, and the only one that can open the window between planning and executing |
+| **PURE** | Refused on the planner's side of the seam, before CODESYS starts. The rule is unit-tested; the row names the run that confirmed the object was still there afterwards |
+| **NOT REACHED** | No verdict from this run, and the row says what would be needed. **Never a pass** |
+
+**Where the rows live.** The E2E and RUNNER rows are `ImportFeatureAuditTests`,
+`AdoptAndExportTests` and `ImportLoggingTests`; each was run **on its own**, not as part of a
+suite, so a green result belongs to the row beside it.
+
+### A — Applying what the mirror says
+
+| # | What the import does | Measured | Verdict |
+|---|---|---|---|
+| A1 | **`ST_FULL`** — a POU's declaration and implementation replaced in place | E2E | ✅ the edit is in the project on the re-export |
+| A2 | **`ST_DECL`** — a declaration-only object written without touching an implementation | E2E | ❌ **FAILS on a GVL.** The script says `applied … (declaration)` and the edit is gone: the `.gvl.xml` beside it is imported afterwards and puts the old declaration back. See the finding below |
+| A3 | **`ST_IMPL`** — an implementation-only object (action, transition) | NOT REACHED | The fixture has no action and no transition, so this form has never been imported by anything |
+| A4 | A file whose content already matches is counted **unchanged** and not written | E2E | ✅ `2 unchanged` on a run that updated one file |
+| A5 | **Native XML** replaced in place through `import_native` | E2E | ✅ `native: 7` on every import here, each reported `replaced` rather than created, and the re-export holds one object per file |
+| A6 | **`TASK_BOTH`** — task fields written through the typed API | E2E | ✅ `priority` 1 → 5 and → 7 read back out of the project |
+| A7 | An unrecorded file **creates** an object, named from its **declaration** and never from its file stem (G3) | E2E | ✅ `Bar.st` declaring `PROGRAM Foo` creates `Foo`, and the log names both |
+| A8 | A declaration with no recognisable header is reported, not approximated (`CANNOT_IDENTIFY_DECLARATION`) | NOT REACHED | Needs a mirror file that is textual by suffix and unparseable by content |
+| A9 | A create whose owner is not in the project is reported (`PARENT_NOT_FOUND`) and nothing is created | NOT REACHED | Needs a create under a folder the project does not have |
+
+### B — Deliberately not applying
+
+| # | What the import does | Measured | Verdict |
+|---|---|---|---|
+| B1 | **Bookkeeping** (`_manifest.json`, `_coverage.md`) skipped, and **silently** | E2E | ✅ neither appears in a warning, a create, or a native import — `_coverage.md` was once handed to CODESYS as XML |
+| B2 | **Export-only** (`*.libraries.yaml`, `Task Configuration.xml`) skipped, naming the editable sibling | E2E | ✅ `EXPORT_ONLY … change this in the IDE` and `TYPED_SIBLING … edit Task Configuration.tasks.yaml instead` |
+| B3 | A **stray** file is warned about and **never handed to the toolchain** (G6) | E2E | ✅ a real `README.md` in the mirror: `not part of the export`, and no native import of it |
+| B4 | A record whose **form this version does not know** is skipped rather than routed by guess | E2E | ✅ planner names the form, script warns `FORM_NOT_UNDERSTOOD`, and the edited file is not applied |
+| B5 | A file that **appeared after the plan** is warned about and not imported (`NOT_IN_PLAN`) | RUNNER | ✅ warned, and no object by that name exists afterwards |
+| B6 | A file that **vanished after the plan** is reported (`PLANNED_FILE_MISSING`) | RUNNER | ✅ warned, naming the file |
+
+### C — Deletes
+
+| # | What the import does | Measured | Verdict |
+|---|---|---|---|
+| C1 | A **textual** object whose file is gone leaves the project | E2E | ✅ `Simulation` is not in the re-export |
+| C2 | A **native** object whose file is gone leaves the project, checked against the manifest's `nhash` (schema 5) | E2E | ✅ both halves of the GVL go, and only when both check out |
+| C3 | An object **edited in the IDE since the export** is kept, and the reason reaches the person | E2E | ✅ `DELETE_CONTENT_CHANGED`, with the sentence saying why, and the object survives |
+| C4 | A native deletion with **no normalised hash to check against** is kept | E2E | ✅ `DELETE_UNVERIFIABLE` on a record with its `nhash` stripped; `Diagnosis` survives |
+| C5 | An object whose live text **cannot be re-read** is kept (`DELETE_UNREADABLE`) | NOT REACHED | Needs an object that refuses to yield its text or its native export; none has been observed |
+| C6 | **The two-file rule** — one file of several gone is not a decision to delete the object | E2E | ✅ `1 file gone from the mirror but Glob_Var.gvl.xml still there`, and the GVL is in the re-export |
+| C7 | **The orphan rule** — an object with recorded children inside it is left alone (P3) | E2E | ✅ `Signals still lives inside it — removing it would take them with it`, and `Simulation` survives |
+| C8 | **The guessed-chain rule** — an owner absent from the manifest means the location is a guess | E2E | ✅ `its owner is not in the manifest, so where it lives can only be guessed at`, and `Diagnosis` survives |
+| C9 | **A manifest that cannot be believed** disables deletes, renames and moves entirely | E2E | ✅ mirror with no `_manifest.json`: the object whose file was deleted is still in the project |
+| C10 | An object **already gone from the project** is neither a failure nor a refusal | E2E | ✅ the same deletion imported twice: no `DELETE_FAILED`, run still `Completed` |
+| C11 | **Only the named object goes** — nothing it referenced disappears with it | E2E | ✅ `PLC_PRG` and `Glob_Var` survive a `Simulation` deletion |
+| C12 | A **delete-only** import still saves the project | E2E | ✅ the object is still gone on a re-export, which is a fresh open of the file |
+
+### D — Renames and moves
+
+| # | What the import does | Measured | Verdict |
+|---|---|---|---|
+| D1 | **Pass 1, exact content** — a departed file and an arrived file holding identical bytes are one object | E2E | ✅ a POU moved to another folder with its bytes unchanged is paired as one object, not a delete plus a create |
+| D2 | **Pass 2, implementation hash** (schema 6) — the ordinary POU rename | E2E | ✅ `Simulation` → `Renamed`, same GUID |
+| D3 | **Pass 3, similarity against HEAD** — renamed *and* edited, matched against the committed bytes | E2E | ✅ same GUID, with the mirror committed first so HEAD has the old file |
+| D4 | **Pass 3b, the line sketch** (schema 7) — the same on a mirror that was never committed | E2E | ✅ same GUID, with **no commit and no history probe** — the sketch is the only description of the old file that exists |
+| D5 | Renaming **only the file** changes nothing, is withdrawn, and says so | E2E | ✅ no rename reported, object untouched |
+| D6 | A **move into another container**, verified after the fact | E2E | ✅ **and CODESYS still declines one silently.** `RENAME_NOT_APPLIED: … the toolchain accepted the move without error but the object is not at Device/Plc Logic/Simulation`. The object stayed where it was and the run said so |
+| D7 | The **task that ran the object is repointed** at its new name | E2E | ✅ `- Renamed` in the task list, `- Simulation` gone, `- PLC_PRG` untouched |
+| D8 | An **ambiguous** pairing is refused rather than guessed | E2E | ✅ refused by **both** passes: `2 new files hold it, so which is the rename cannot be told`, then `94% and 88%` inside the margin |
+| D9 | **The GUID survives** a rename | E2E | ✅ identical GUID before and after, read out of two manifests |
+| D10 | The arrived file is **applied after** the rename | E2E | ✅ the re-export reads `PROGRAM Renamed`, not the old declaration |
+
+### E — Naming and resolution
+
+**Every row here is NOT REACHED, and for one reason worth stating on its own:
+`RefrigeratorControl` has no member objects at all** — no method, no action, no property — so
+its manifest records no `parent` for anything, and every resolve chain in this audit came from
+directory names. Nothing in this repository can exercise a parent-GUID chain, a percent-encoded
+name or a dotted name against a real project.
+
+**C7 and C8 are the partial exception, and say so.** Both write a `parent` into the manifest by
+hand, which is enough to exercise the dependants map and the guessed-chain rule but is not the
+same as an export having recorded one. What no row here reaches is a chain the **exporter**
+produced.
+
+| # | What the import does | Measured | Verdict |
+|---|---|---|---|
+| E1 | Ownership from the manifest's **parent-GUID chain**, not from the file stem | NOT REACHED | Needs a project with a member object |
+| E2 | **Percent-encoded** names decoded before resolution (G4) | NOT REACHED | Needs an object whose name needs encoding. P5 measured that one cannot be *created*; one can still arrive from the IDE or a library |
+| E3 | A **dotted name** is not split into owner and member (G5) | NOT REACHED | Same |
+| E4 | A **shortened stem** that decodes to nothing is reported unresolvable | NOT REACHED | Same |
+
+### F — The run as a whole
+
+| # | What the import does | Measured | Verdict |
+|---|---|---|---|
+| F1 | **A second import does not fail** on task configuration (G11) | E2E | ✅ two consecutive imports with the compile cache present, no `NATIVE_IMPORT_ERROR`, no `TASK_*` |
+| F2 | **Task configuration is not mutated** — `VISU_TASK` keeps `Core2 = -1` (G7) | E2E | ✅ `-1` for `VISU_TASK`, `-2` for `MainTask`, read out of the project |
+| F3 | The summary is in the **import's own vocabulary**, and a run that lost a file says `FAILED` | E2E | ✅ `1 updated, 7 native, 2 unchanged …` on a clean run; `1 FAILED, 2 warning(s)` on a broken one |
+| F4 | A warning's **detail crosses the seam** — the sentence, not just the code | E2E | ✅ `has been edited since` reaches the outcome beside `DELETE_CONTENT_CHANGED` |
+| F5 | A job **without a plan is refused** before CODESYS is started | PURE | ✅ `ScriptProtocolTests`; nothing reaches CODESYS, so there is nothing else to observe |
+| F6 | An **unconfirmed** import writes nothing | E2E | ✅ declining leaves the project byte-identical |
+| F7 | Phases run **rename → textual → native → delete**, with a save between textual and native | E2E | ✅ the log shows the order and `saved after the textual phase` on every run |
+
+### What this run found
+
+**1 — A GVL's declaration is applied and then overwritten, and the log says it worked.** The
+first row that had never been asserted was the first row that failed. Edit `Glob_Var.gvl.st`,
+import, re-export: the script reports `applied … (declaration)` and the edit is not in the
+project. A GVL exports as `GVL_BOTH` — a `.gvl.st` recorded `ST_DECL` and a `.gvl.xml` recorded
+plain **`NATIVE`** — and the phases run textual before native, so the XML puts the old
+declaration back seconds later. **This is G7's defect in a different object**, and `TASK_BOTH`
+does not have it only because Phase 4 gave the task XML its own `TASK_NATIVE` form.
+`ExportCoverage.IsExportOnly` names `LIBRARIES` and `TASK_NATIVE`, and nothing else. Proven by
+a control run that changes exactly one thing — the plan's entry for the `.gvl.xml` becomes a
+skip — after which the edit survives. **The full finding, with the three candidate fixes and
+what each costs, is in [`STATUS.md`](STATUS.md).**
+
+**2 — The only fixture cannot reach a whole section of this list.** `RefrigeratorControl` has
+no member objects — no method, no action, no property — and therefore no `ST_IMPL` file and no
+recorded `parent` on anything. So A3 and all four of E are unmeasured, and will stay unmeasured
+until a project with a member object exists to test against. That is not a defect; it is a
+**hole in the corpus** — and G4 and G5 are both about exactly this half of the importer, so
+the two gaps with the least evidence behind them are the two nothing here can reach.
+
+**3 — A planner refusal is invisible to anything watching the outcome.** The two-file rule, the
+orphan rule and the guessed chain are all `ImportPlan.Warnings`, which deliberately do not cross
+the wire — `PlanDto` says so, because they are for a person rather than for the script. They go
+to the **log** and to the confirmation dialog. A harness asserting on `SyncOutcome.Warnings`
+alone sees silence, and this audit's first attempt at those three rows did exactly that. Worth
+knowing before writing the next test of a refusal: **ask which channel the sentence travels on.**
+
+**4 — Nine existing import tests, run individually rather than as a suite, all pass.** Between
+38 s and 2 m 18 s each, ~13 minutes in total. That matters beyond the green: several of them
+share the CODESYS collection and had only ever been observed passing in a full run, where an
+earlier test's leftovers could in principle have been doing the work.
+
+---
 
 ## Verification
 

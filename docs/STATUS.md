@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-16 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,484 unit + 480 UI + 211 integration, 0 skipped
+**Date:** 2026-08-16 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,484 unit + 480 UI + 224 integration, 1 red on purpose
 · *(integration run nine times across this session, 10–16 min each, with one flake — see the flake note in `CLAUDE.md`)*
 
 > **⚠️ Versio removes, renames and moves objects in projects — Phases 2 and 3 of the import
@@ -950,6 +950,73 @@ would have gone on passing while checking one fewer every time a panel moved out
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### A GVL's declaration is applied and then overwritten by its own XML, and the log says it worked
+
+**Found by running the feature checklist rather than by reading anything**, on 2026-08-16, in
+the one import path no test had ever asserted: `ST_DECL`.
+
+Edit `Glob_Var.gvl.st` in the mirror, import, re-export. The import log reads
+
+```
+applied Device/Plc Logic/Application/Glob_Var.gvl.st (declaration)
+...
+imported Device/Plc Logic/Application/Glob_Var.gvl.xml as native XML into Device/Plc Logic/Application
+import: 1 updated, 7 native, 2 unchanged, 3 not applied (export-only) — 0 warning(s)
+```
+
+and **the edit is not in the project.** Both lines are true; the second undoes the first.
+
+**Why.** A GVL exports as `GVL_BOTH`: one object, one GUID, two files — a `.gvl.st` recorded
+`ST_DECL` and a `.gvl.xml` recorded plain **`NATIVE`**. `versio_import.py` runs its phases
+**textual → native → delete**, so the declaration is written into the object and then
+`import_native` replaces that object from an XML holding the declaration as it was at export
+time. The later phase wins, every time, on every GVL.
+
+**This is G7 wearing different clothes, and the fix for G7 was modelled on the thing that is
+broken.** `TASK_BOTH` has exactly the same shape and does not have the defect, because Phase 4
+gave its XML half its own form — `TASK_NATIVE` — and `ExportCoverage.IsExportOnly` names it, so
+the importer skips it and the log says *"edit Task Configuration.tasks.yaml instead"*.
+`IsExportOnly` names `LIBRARIES` and `TASK_NATIVE` and nothing else. The GVL's XML half was
+never given one.
+
+**The intention was written down and never enforced.** `versio_types.py`, on `FORM_TASK_BOTH`:
+
+> Follows GVL_BOTH exactly: one object, two files, one GUID in the manifest. The difference is
+> which half is authoritative — **a GVL imports from its `.st`**, and a task configuration
+> imports from its `.tasks.yaml`
+
+A GVL does not import from its `.st`. It imports from its `.st` and then from its `.xml`.
+
+**And `_coverage.md` says nothing about it**, which is the part that makes this data loss
+rather than an inefficiency. The report names three files as *"exported for review, not applied
+back"* — two `.libraries.yaml` and `Task Configuration.xml` — and in a report whose entire job
+is to list what an edit will not reach, absence from that list is a promise. `Glob_Var.gvl.st`
+is absent from it. **That is the gap `_coverage.md` was built to close, re-opened for the second
+time**; the first was closing G7 and G11, and it has its own finding below.
+
+**How it was proven rather than argued.** Two runs differing in exactly one thing: the second
+turns the plan's entry for `Glob_Var.gvl.xml` into a skip before the job is handed over, and
+leaves the edit and everything else identical. The declaration survives. So the write lands and
+the native phase is what removes it — which the log alone could not have told anybody, because
+it says `applied` either way.
+
+**Not fixed here.** The audit was run before Phase 5 on the argument that a feature list nobody
+has executed is a list of intentions, and fixing this is a change to what an import does to a
+GVL rather than a correction to a document. The three candidate fixes are not equivalent and
+one of them moves a delete rule:
+
+- **Give the XML half its own form**, as `TASK_NATIVE` did. Cleanest, and it makes the log say
+  *"edit Glob_Var.gvl.st instead"* for free. **But an export-only record neither votes nor
+  vetoes in the delete planner**, so the two-file rule stops protecting a GVL: deleting the
+  `.gvl.st` alone would then remove the object, where today it is kept.
+- **Apply textual after native**, which fixes every `BOTH` pair at once and re-orders a phase
+  sequence whose current order is load-bearing for creates (`run()` says why).
+- **Rebuild the XML from the edited declaration before importing it**, which is the only option
+  that keeps both halves authoritative and is by far the most work.
+
+The measurement and the three options are recorded here so the choice is made deliberately
+rather than by whoever touches it next.
 
 ### "References and task assignments survive" was an inference, and it is false
 

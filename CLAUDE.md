@@ -198,7 +198,7 @@ stays that way.
 |---|---|---|
 | `Versio.Core.Tests` | 1,484 | under a second |
 | `Versio.App.Tests` | 480 | ~50 s, STA, no window shown |
-| `Versio.Integration.Tests` | 211 | ~10 min, real CODESYS and real git |
+| `Versio.Integration.Tests` | 224 | ~29 min, real CODESYS and real git. **One is red on purpose** — `A_declaration_only_object_edited_in_the_mirror_…` is G12, an open defect the feature checklist found; see `docs/CODESYS-IMPORT-PLAN.md` |
 
 A red integration run is worth re-running a project at a time before reading it as a
 regression — it drives real CODESYS with real timeouts.
