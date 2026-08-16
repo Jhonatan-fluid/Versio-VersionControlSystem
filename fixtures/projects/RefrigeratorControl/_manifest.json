@@ -23,11 +23,10 @@
     }, 
     {
       "bytes": 2550, 
-      "form": "NATIVE", 
+      "form": "GVL_NATIVE", 
       "guid": "f8ccf7f9-314d-4201-b460-0f935fbcbf7d", 
       "hash": "sha256:ed690f64e8a6a3daea20d702de9675a47a7853b9d889713624fb7c76baccba4b", 
       "name": "Glob_Var", 
-      "nhash": "sha256:062664a4106e5a9fd19e667e8e007eaee033b0813ecb624334e7e9d073376f13", 
       "path": "Device/Plc Logic/Application/Glob_Var.gvl.xml", 
       "type": "GVL"
     }, 

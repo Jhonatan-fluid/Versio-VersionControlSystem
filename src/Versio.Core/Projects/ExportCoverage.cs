@@ -97,6 +97,29 @@ public static class ExportCoverage
     public const string TaskNativeForm = "TASK_NATIVE";
 
     /// <summary>
+    /// The manifest's <c>form</c> for the native <c>.xml</c> half of a GVL.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The third export-only form, and the one that proves the pattern needed a rule rather
+    /// than a habit. A GVL writes two files: <c>.gvl.st</c>, which imports, and this
+    /// <c>.gvl.xml</c>, which is kept for structure and for the diff and is never applied back.
+    /// </para>
+    /// <para>
+    /// <b>It was recorded as plain <c>NATIVE</c> until 2026-08-16 — G12.</b> Both halves were
+    /// importable, and the import applies textual before native, so an edit to the
+    /// <c>.gvl.st</c> reached the object and was overwritten by the XML's copy of the old
+    /// declaration seconds later, while the log said <c>applied</c>. It is
+    /// <see cref="TaskNativeForm"/>'s defect one object along, and it survived the fix for that
+    /// one because <c>TASK_BOTH</c> was patched individually rather than the shape being given
+    /// an invariant. <c>A_two_file_object_has_exactly_one_importable_half</c> is that
+    /// invariant, and it runs against a real export rather than a hand-built manifest, because
+    /// both defects were in what the exporter <i>wrote</i>.
+    /// </para>
+    /// </remarks>
+    public const string GvlNativeForm = "GVL_NATIVE";
+
+    /// <summary>
     /// True for a manifest <c>form</c> whose file is written for review and never applied back.
     /// </summary>
     /// <remarks>
@@ -117,7 +140,8 @@ public static class ExportCoverage
     /// </remarks>
     public static bool IsExportOnly(string? form) =>
         string.Equals(form, LibrariesForm, StringComparison.Ordinal)
-        || string.Equals(form, TaskNativeForm, StringComparison.Ordinal);
+        || string.Equals(form, TaskNativeForm, StringComparison.Ordinal)
+        || string.Equals(form, GvlNativeForm, StringComparison.Ordinal);
 
     /// <summary>What an export covers, from its manifest alone.</summary>
     public static CoverageReport Of(ProjectManifest? manifest)

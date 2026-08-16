@@ -148,13 +148,20 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
     /// been asserted by none.
     /// </para>
     /// <para>
-    /// <b>THIS FAILS, and it is the audit's finding rather than a broken test.</b> The script
-    /// reports <c>applied … (declaration)</c> and the edit is not in the project afterwards: a
-    /// GVL is exported as <c>GVL_BOTH</c> — a <c>.gvl.st</c> recorded <c>ST_DECL</c> and a
-    /// <c>.gvl.xml</c> recorded plain <c>NATIVE</c> — and the import's phases run textual before
-    /// native, so the XML's copy of the old declaration is written over the edit seconds later.
-    /// <c>versio_types.py</c> states the intention outright — <i>"a GVL imports from its
-    /// .st"</i> — and nothing enforces it. See the finding in <c>STATUS.md</c>.
+    /// <b>It failed when it was written, and that failure is G12.</b> The script reported
+    /// <c>applied … (declaration)</c> and the edit was not in the project: a GVL exports as
+    /// <c>GVL_BOTH</c> — a <c>.gvl.st</c> recorded <c>ST_DECL</c> and a <c>.gvl.xml</c> recorded
+    /// plain <c>NATIVE</c> — and the import's phases run textual before native, so the XML's
+    /// copy of the old declaration was written over the edit seconds later.
+    /// <c>versio_types.py</c> stated the intention outright — <i>"a GVL imports from its
+    /// .st"</i> — and nothing enforced it.
+    /// </para>
+    /// <para>
+    /// Fixed the same day by recording that XML as <c>GVL_NATIVE</c>, which
+    /// <c>ExportCoverage.IsExportOnly</c> names, exactly as <c>TASK_NATIVE</c> already was. So
+    /// this is now G12's regression test, and the thing that stops the shape recurring is
+    /// <c>An_object_never_writes_two_files_the_import_would_both_apply</c> rather than this.
+    /// See the finding in <c>STATUS.md</c>.
     /// </para>
     /// </remarks>
     [SkippableFact]
@@ -188,13 +195,12 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
             await ReExport(install!, binding.Id, "verify-decl"), RelApp, "Glob_Var.gvl.st"));
         output.WriteLine(reExported);
 
-        // NAMED IN THE FAILURE, because this test is red on purpose until G12 is fixed and a
-        // red run nobody can attribute is worse than no test at all.
         Assert.True(
             reExported.Contains("audit_marker", StringComparison.Ordinal),
-            "G12: the GVL declaration edit did not reach the project. This is the open defect "
-            + "the import feature checklist found on 2026-08-16, not a regression in this run "
-            + "- see docs/CODESYS-IMPORT-PLAN.md and the finding in docs/STATUS.md.");
+            "G12 is back: the GVL declaration edit did not reach the project, which means "
+            + "something is applying the .gvl.xml after the .gvl.st again. Check that its "
+            + "manifest form is still GVL_NATIVE and that ExportCoverage.IsExportOnly still "
+            + "names it - see the finding in docs/STATUS.md.");
     }
 
     /// <summary>
@@ -270,20 +276,35 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
         Assert.Contains("audit_marker", reExported, StringComparison.Ordinal);
     }
 
-    // ── C6: the two-file rule ────────────────────────────────────────────────────────
+    // ── C6: what replaced the two-file rule ────────────────────────────────────────────────────────
 
     /// <summary>
-    /// One file of a two-file object deleted keeps the object, and says so.
+    /// Deleting a GVL's declaration removes the GVL, and its one-way half does not veto it.
     /// </summary>
     /// <remarks>
-    /// A GVL is a <c>.gvl.st</c> and a <c>.gvl.xml</c> under one GUID. Deleting one of them is
-    /// somebody tidying, mis-editing or half-checking-out — not a decision to destroy the
-    /// object — and acting on it would take the surviving half with it. The rule is the
-    /// planner's; what had never been measured is that the object is still in the project
-    /// afterwards.
+    /// <para>
+    /// <b>This test asserted the opposite until G12 was fixed, and both versions were right at
+    /// the time.</b> A GVL used to write two <i>importable</i> files, so deleting one of them
+    /// was somebody tidying rather than a decision, and the two-file rule kept the object.
+    /// Making the <c>.gvl.xml</c> export-only leaves the GVL with exactly one importable file,
+    /// which makes it an ordinary single-file object: deleting <c>Simulation.st</c> has always
+    /// removed the POU, and this is the same rule reaching the same conclusion.
+    /// </para>
+    /// <para>
+    /// <b>The safety did not go anywhere; it moved.</b> What stands between this and destroying
+    /// work is the content check, not the file count — <c>ST_DECL</c> is verifiable, so the
+    /// live declaration is rebuilt and compared against the manifest before anything is
+    /// removed, and a GVL edited in the IDE since the export is kept.
+    /// </para>
+    /// <para>
+    /// <b>The <c>.gvl.xml</c> is left behind in the mirror</b> until the next export tidies it,
+    /// because an export-only file is not something the import is entitled to delete. Asserted
+    /// rather than tolerated silently, so the next person meets it here rather than in a
+    /// working tree.
+    /// </para>
     /// </remarks>
     [SkippableFact]
-    public async Task Half_of_a_two_file_object_deleted_leaves_the_object_alone()
+    public async Task Deleting_a_GVLs_declaration_removes_it_and_its_one_way_half_does_not_veto()
     {
         var install = Install;
         Skip.If(install is null, "no CODESYS installation with a profile");
@@ -293,7 +314,7 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
         var app = Path.Combine(_repo, "plc", "RefrigeratorControl",
                                RelApp.Replace('/', Path.DirectorySeparatorChar));
 
-        // The declaration goes, the native half stays.
+        // The declaration goes; the one-way half is left exactly where it is.
         File.Delete(Path.Combine(app, "Glob_Var.gvl.st"));
         Assert.True(File.Exists(Path.Combine(app, "Glob_Var.gvl.xml")));
 
@@ -306,16 +327,29 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
 
         Assert.Equal(SyncVerdict.Completed, outcome.Verdict);
 
-        // The sentence a person gets, because "I deleted the .st and the GVL is still there"
-        // is otherwise unanswerable.
-        // THE LOG, not the outcome: a planner sentence never crosses the wire.
-        Assert.Contains(Lines(),
+        // No refusal of any kind. The export-only record neither votes nor vetoes, so there is
+        // nothing here about a file of several going. Read from the LOG, because a planner
+        // sentence never crosses the wire.
+        Assert.DoesNotContain(Lines(),
             l => l.Contains("not a decision to delete it", StringComparison.Ordinal));
+        Assert.DoesNotContain(outcome.Warnings,
+            w => w.Contains("DELETE_", StringComparison.Ordinal));
 
-        var after = await ReExport(install!, binding.Id, "verify-two-file");
-        Assert.True(File.Exists(Path.Combine(after, RelApp, "Glob_Var.gvl.st")),
-                    "the GVL left the project on one of its two files going");
-        Assert.True(File.Exists(Path.Combine(after, RelApp, "Glob_Var.gvl.xml")));
+        var after = await ReExport(install!, binding.Id, "verify-gvl-delete");
+        Assert.False(File.Exists(Path.Combine(after, RelApp, "Glob_Var.gvl.st")),
+                     "the GVL is still in the project, so its .gvl.xml vetoed the deletion");
+
+        // Gone means gone: the object left, so its native half is not re-exported either.
+        Assert.False(File.Exists(Path.Combine(after, RelApp, "Glob_Var.gvl.xml")));
+
+        // And nothing else went with it. remove() dangles referenced objects silently (P3),
+        // and the POUs in this fixture read from this GVL.
+        Assert.True(File.Exists(Path.Combine(after, RelApp, "Simulation.st")));
+        Assert.True(File.Exists(Path.Combine(after, RelApp, "PLC_PRG.xml")));
+
+        // The mirror still holds the orphaned one-way file, which the next export removes.
+        Assert.True(File.Exists(Path.Combine(app, "Glob_Var.gvl.xml")),
+                    "the import deleted an export-only file, which is not its to delete");
     }
 
     // ── C4: a native deletion that cannot be checked ─────────────────────────────────

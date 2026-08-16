@@ -844,6 +844,20 @@ public static class CodesysImportPlanner
             // object. Said out loud rather than passed over, because "I deleted the .st and
             // the POU is still there" is otherwise unanswerable — and because acting on it
             // would take the surviving half with it.
+            //
+            // UNREACHABLE SINCE 2026-08-16, AND KEPT ANYWAY. Fixing G12 gave a GVL's
+            // .gvl.xml its own export-only form, and export-only records are filtered out
+            // of `importable` above — so every object in every manifest this exporter
+            // writes now has exactly ONE importable file, and gone.Count can never differ
+            // from importable.Count. That is not a coincidence to rely on quietly: it is
+            // an invariant, and `An_object_never_writes_two_files_the_import_would_both_
+            // apply` is what holds it, against a real export.
+            //
+            // Kept because the invariant is about what THIS exporter writes today. An
+            // older mirror predating the fix still records a GVL's .gvl.xml as NATIVE and
+            // still reaches this branch, and a second vendor is under no obligation to
+            // adopt the one-importable-file shape at all. Deleting the rule would make
+            // both of those cases silently destructive.
             if (gone.Count != importable.Count)
             {
                 warnings.Add(

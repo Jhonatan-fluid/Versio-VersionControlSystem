@@ -1141,11 +1141,22 @@ public class CodesysImportPlannerTests
         Assert.Equal(["Device", "Plc Logic", "Application", "Simulation"],
                      One(plan, "Device/Plc Logic/Application/Simulation.st").Resolve);
 
-        // The GVL: one object, two importable files, one GUID.
+        // The GVL: one object, two files, one GUID — and exactly ONE of them applied.
+        //
+        // THIS ASSERTED ApplyNative FOR THE XML UNTIL 2026-08-16, and it was describing G12.
+        // Both halves were importable and the import runs textual before native, so an edit to
+        // the .gvl.st was applied to the object and then overwritten by the XML's copy of the
+        // old declaration. The XML is recorded GVL_NATIVE now, which ExportCoverage.IsExportOnly
+        // names — the same shape TASK_BOTH has had since Phase 4, two rows up.
         var gvlSt = One(plan, "Device/Plc Logic/Application/Glob_Var.gvl.st");
         var gvlXml = One(plan, "Device/Plc Logic/Application/Glob_Var.gvl.xml");
         Assert.Equal(PlannedAction.ApplyText, gvlSt.Action);
-        Assert.Equal(PlannedAction.ApplyNative, gvlXml.Action);
+        Assert.Equal(PlannedAction.Skip, gvlXml.Action);
+        Assert.Equal(PlannedSkip.ExportOnly, gvlXml.Skip);
         Assert.Equal(gvlSt.Guid, gvlXml.Guid);
+
+        // And the skip names the half to edit instead, which is what keeps the log from
+        // sending somebody to the IDE for a change they can make in the mirror.
+        Assert.Equal("Device/Plc Logic/Application/Glob_Var.gvl.st", gvlXml.ImportableSibling);
     }
 }

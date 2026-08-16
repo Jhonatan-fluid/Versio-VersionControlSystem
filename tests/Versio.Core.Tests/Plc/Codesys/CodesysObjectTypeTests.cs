@@ -174,7 +174,12 @@ public class TypeTableParityTests
                 "the file is named in _coverage.md and still looks editable in the panel");
         }
 
-        foreach (var form in new[] { ExportCoverage.LibrariesForm, ExportCoverage.TaskNativeForm })
+        foreach (var form in new[]
+                 {
+                     ExportCoverage.LibrariesForm,
+                     ExportCoverage.TaskNativeForm,
+                     ExportCoverage.GvlNativeForm,
+                 })
         {
             Assert.True(pythonForms.Contains(form),
                 $"ExportCoverage calls {form} export-only and versio_types.py does not, so " +

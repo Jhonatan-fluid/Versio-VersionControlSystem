@@ -65,6 +65,12 @@ FORM_GVL_BOTH = "GVL_BOTH"
 # is which half is authoritative - a GVL imports from its .st, and a task
 # configuration imports from its .tasks.yaml, because handing the .xml to
 # import_native is what rewrites Core2 (G7) and throws on the task objects (G11).
+#
+# "A GVL imports from its .st" WAS NOT TRUE WHEN THIS WAS WRITTEN, and stayed untrue for
+# months: the .gvl.xml was recorded plain NATIVE, so both halves were applied and the
+# native phase overwrote the textual one. This paragraph was the specification and
+# FORM_GVL_NATIVE is what finally enforces it - see G12. A sentence describing a sibling
+# form is not a test of it, and this one is why the invariant now has one.
 FORM_TASK_BOTH = "TASK_BOTH"
 FORM_NATIVE = "NATIVE"
 FORM_NATIVE_R = "NATIVE_R"
@@ -85,6 +91,31 @@ FORM_SKIP = "SKIP"
 # nothing anywhere said so. Editing it looked exactly like editing a POU.
 FORM_TASK_NATIVE = "TASK_NATIVE"
 
+# GVL_NATIVE - the .xml half of a GVL_BOTH pair, and the same idea as FORM_TASK_NATIVE
+# above. RECORDED, NEVER DECIDED, for the same reasons and by the same mechanism.
+#
+# It was recorded as plain NATIVE until 2026-08-16, and that is G12. Both halves of a GVL
+# were therefore importable, and versio_import.py runs textual before native - so an edit
+# to the .gvl.st was applied to the object and then overwritten by the .gvl.xml's copy of
+# the declaration as it stood at export time, seconds later, with the log reporting
+# `applied ... (declaration)` on the way past. The comment on FORM_TASK_BOTH said "a GVL
+# imports from its .st" throughout; nothing enforced it, and _coverage.md's silence about
+# the file promised the opposite.
+#
+# WHAT THIS CHANGES BESIDES THE OVERWRITE, because it is not only a label. An export-only
+# record neither votes nor vetoes in the delete planner, so a GVL now has exactly ONE
+# importable file and stops being a two-file object: deleting `Glob_Var.gvl.st` alone
+# removes the GVL, where before the two-file rule kept it. That is deliberate. A GVL now
+# behaves like every other single-file object - deleting Simulation.st has always removed
+# the POU - and the deletion still has to pass the content check, because ST_DECL is
+# verifiable. The .gvl.xml is left in the mirror until the next export tidies it.
+#
+# AN OLDER MIRROR STILL CARRIES `NATIVE` HERE, and therefore still has the defect until it
+# is re-exported. There is no way to tell a pre-fix record from a genuine native object by
+# reading it, which is the same limitation every manifest addition has: absent never means
+# unchanged.
+FORM_GVL_NATIVE = "GVL_NATIVE"
+
 # Forms whose file is written for review and never applied back.
 #
 # ONE list, because the rule has to be in one place: it is read by the coverage report
@@ -92,7 +123,7 @@ FORM_TASK_NATIVE = "TASK_NATIVE"
 # panel's lock glyph reads. The two are compared in TypeTableParityTests - a form added
 # here and not there means the file is announced in _coverage.md and still looks editable
 # in the app, which is half a warning and worse than none.
-EXPORT_ONLY_FORMS = (FORM_LIBRARIES, FORM_TASK_NATIVE)
+EXPORT_ONLY_FORMS = (FORM_LIBRARIES, FORM_TASK_NATIVE, FORM_GVL_NATIVE)
 
 # NATIVE_WITH_CHILDREN - export the node itself natively, non-recursively, AND descend into
 # a subdirectory for its children.

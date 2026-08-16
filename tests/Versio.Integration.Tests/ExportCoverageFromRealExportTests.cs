@@ -199,12 +199,20 @@ public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) 
         // Exported is not the same as editable, and the report says so rather than leaving
         // it to be found out by editing one.
         //
-        // THREE, not two: the two library files plus the task configuration's native .xml,
-        // which stopped being applied back when Phase 4 made its .tasks.yaml the importable
-        // half. This number was 2 for as long as that was already true, which is the whole
-        // finding — the count is the cheapest thing that could have noticed and it was
-        // written before there was a second kind of one-way file to notice.
-        Assert.Equal(3, report.ExportOnlyFiles);
+        // FOUR: the two library files, the task configuration's native .xml, and the GVL's.
+        //
+        // It was 2, then 3, and each step was a defect being closed rather than a feature
+        // arriving. 2 → 3 when Phase 4 made the task's .tasks.yaml the importable half and
+        // nobody re-recorded its .xml; 3 → 4 on 2026-08-16 when G12 found the GVL's .gvl.xml
+        // doing the identical thing — applied after the .gvl.st and overwriting it, with the
+        // log reporting both as successes.
+        //
+        // BOTH TIMES THIS COUNT WAS THE CHEAPEST THING THAT COULD HAVE NOTICED, and both
+        // times it did not, because it was written to pin the number rather than to ask
+        // whether the number was right. What asks that now is
+        // An_object_never_writes_two_files_the_import_would_both_apply, which is about the
+        // shape and cannot be satisfied by an arithmetic that happens to agree.
+        Assert.Equal(4, report.ExportOnlyFiles);
         Assert.Contains("not applied back", report.Describe(), StringComparison.Ordinal);
 
         // The deliberate skips are still not counted as gaps: the fixture's visualisation
@@ -238,7 +246,10 @@ public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) 
 
         output.WriteLine(string.Join("\n", task.Select(o => $"{o.Form,-12} {o.Path}")));
 
-        // One object, two files, one GUID — the GVL_BOTH shape, with the halves reversed.
+        // One object, two files, one GUID — the GVL_BOTH shape, with the halves
+        // reversed. GVL_BOTH was the model this was written against and it had the
+        // identical defect at the time, unnoticed for another day: see G12 and
+        // An_object_never_writes_two_files_the_import_would_both_apply.
         Assert.Equal(2, task.Count);
         Assert.Single(task.Select(o => o.Guid).Distinct(StringComparer.Ordinal));
 
@@ -259,6 +270,125 @@ public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) 
         Assert.Contains("Exported for review, not applied back", coverage, StringComparison.Ordinal);
         Assert.Contains(xml.Path, coverage, StringComparison.Ordinal);
         Assert.Contains($"edit `{yaml.Path}` instead", coverage, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// No object writes two files the import would both apply.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The rule the two-file shape never had, written after it failed twice.</b> A
+    /// <c>_BOTH</c> form gives one object two files under one GUID, and
+    /// <c>versio_import.py</c> runs its phases in a fixed order — rename, textual, native,
+    /// delete. If both files are importable, the later phase silently overwrites whatever the
+    /// earlier one applied, and the log reports both as successes because both were.
+    /// </para>
+    /// <para>
+    /// That is G7 and it is G12. <c>TASK_BOTH</c> was fixed in Phase 4 by giving its XML half
+    /// a form of its own; <c>GVL_BOTH</c> had the identical defect and nobody looked, because
+    /// the fix was applied to the instance and not to the shape. This is the shape.
+    /// </para>
+    /// <para>
+    /// <b>Against a real export, deliberately.</b> Both defects were in what the exporter
+    /// <i>wrote</i>: every unit test passed throughout, and the C#/python seam only proves the
+    /// two sides agree about which forms are one-way — never that the file in front of you
+    /// carries one of them. A hand-built manifest would assert this test's own assumptions.
+    /// </para>
+    /// <para>
+    /// It costs no CODESYS launch of its own: <c>ExportAsync</c> is cached across this class.
+    /// </para>
+    /// </remarks>
+    [SkippableFact]
+    public async Task An_object_never_writes_two_files_the_import_would_both_apply()
+    {
+        var exportRoot = await ExportAsync("first");
+
+        var manifest = ProjectManifest.Parse(
+            await File.ReadAllTextAsync(Path.Combine(exportRoot, "_manifest.json")));
+
+        var doubled = manifest.Objects
+            .Where(o => !ExportCoverage.IsExportOnly(o.Form))
+            .GroupBy(o => o.Guid, StringComparer.OrdinalIgnoreCase)
+
+            // An empty GUID is not an identity. record() falls back to "" when obj.guid
+            // raises, so grouping on it would file every unreadable object together and
+            // report a collision that is really two different objects.
+            .Where(g => !string.IsNullOrEmpty(g.Key) && g.Count() > 1)
+            .OrderBy(g => g.Key, StringComparer.Ordinal)
+            .ToList();
+
+        foreach (var group in doubled)
+        {
+            output.WriteLine($"{group.Key}: "
+                             + string.Join(", ", group.Select(o => $"{o.Form} {o.Path}")));
+        }
+
+        Assert.True(doubled.Count == 0,
+            "these objects write more than one file the import applies, so the last phase to "
+            + "run wins and the other file's edits are discarded in silence — give the "
+            + "non-authoritative half its own form and add it to EXPORT_ONLY_FORMS and "
+            + "ExportCoverage.IsExportOnly, as TASK_NATIVE and GVL_NATIVE both do: "
+            + string.Join(" | ", doubled.Select(g => string.Join(", ", g.Select(o => o.Path)))));
+
+        // NON-VACUOUS, and it has to be said because the assertion above passes on an empty
+        // manifest, on a manifest of one object, and on a project with no two-file form in it
+        // at all. The fixture has two of them — the GVL and the task configuration — so a
+        // regression that made either half importable again lands here.
+        var pairs = manifest.Objects
+            .GroupBy(o => o.Guid, StringComparer.OrdinalIgnoreCase)
+            .Where(g => !string.IsNullOrEmpty(g.Key) && g.Count() > 1)
+            .ToList();
+
+        Assert.Equal(2, pairs.Count);
+
+        foreach (var pair in pairs)
+        {
+            Assert.Single(pair, o => !ExportCoverage.IsExportOnly(o.Form));
+        }
+    }
+    /// <summary>
+    /// A GVL's native half is recorded as one-way, and its declaration is the half that
+    /// imports.
+    /// </summary>
+    /// <remarks>
+    /// G12's regression test, and the sibling of
+    /// <see cref="The_task_configurations_native_half_is_recorded_and_named_as_one_way"/> —
+    /// the same claim about the pair that had the defect rather than the pair that was fixed.
+    /// Until 2026-08-16 the <c>.gvl.xml</c> was recorded plain <c>NATIVE</c>, so the import
+    /// applied it after the <c>.gvl.st</c> and put the old declaration back.
+    /// </remarks>
+    [SkippableFact]
+    public async Task The_GVLs_native_half_is_recorded_and_named_as_one_way()
+    {
+        var exportRoot = await ExportAsync("first");
+
+        var manifest = ProjectManifest.Parse(
+            await File.ReadAllTextAsync(Path.Combine(exportRoot, "_manifest.json")));
+
+        var gvl = manifest.Objects
+            .Where(o => o.Type == "GVL")
+            .OrderBy(o => o.Path, StringComparer.Ordinal)
+            .ToList();
+
+        output.WriteLine(string.Join("\n", gvl.Select(o => $"{o.Form,-12} {o.Path}")));
+
+        Assert.Equal(2, gvl.Count);
+        Assert.Single(gvl.Select(o => o.Guid).Distinct(StringComparer.Ordinal));
+
+        var xml = Assert.Single(gvl, o => o.Path.EndsWith(".gvl.xml", StringComparison.Ordinal));
+        var st = Assert.Single(gvl, o => o.Path.EndsWith(".gvl.st", StringComparison.Ordinal));
+
+        Assert.Equal(ExportCoverage.GvlNativeForm, xml.Form);
+        Assert.True(ExportCoverage.IsExportOnly(xml.Form));
+        Assert.False(ExportCoverage.IsExportOnly(st.Form));
+
+        // And the remedy names the file somebody is meant to edit, rather than sending them
+        // to the IDE. The exporter finds it by GUID, so this sentence costs nothing per form.
+        var coverage = await File.ReadAllTextAsync(Path.Combine(exportRoot, "_coverage.md"));
+        output.WriteLine(coverage);
+
+        Assert.Contains(xml.Path, coverage, StringComparison.Ordinal);
+        Assert.Contains($"edit `{st.Path}` instead", coverage, StringComparison.Ordinal);
     }
 
     [SkippableFact]

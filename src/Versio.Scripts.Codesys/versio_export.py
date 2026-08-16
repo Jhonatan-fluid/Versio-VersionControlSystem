@@ -24,7 +24,7 @@ from versio_text import (content_hash, join_st, normalize_decl_only,  # noqa: E4
                          line_sketch, safe_file_stem, scrub_native_xml,
                          split_st)
 from versio_types import (EXPORT_ONLY_FORMS, FORM_CONTAINER,  # noqa: E402
-                          FORM_GVL_BOTH, FORM_LIBRARIES,
+                          FORM_GVL_BOTH, FORM_GVL_NATIVE, FORM_LIBRARIES,
                           FORM_NATIVE, FORM_NATIVE_R, FORM_NATIVE_WITH_CHILDREN,
                           FORM_SKIP, FORM_ST_DECL, FORM_ST_FULL, FORM_ST_IMPL,
                           FORM_TASK_BOTH, FORM_TASK_NATIVE, NATIVE_FORMS,
@@ -430,7 +430,14 @@ class Exporter(object):
             elif form == FORM_GVL_BOTH:
                 xml_path = os.path.join(rel_dir, stem_name + ".gvl.xml")
                 xml_text, _ = self.export_native(obj, os.path.join(self.out_root, xml_path), False)
-                self.record(obj, obj_type, FORM_NATIVE, xml_path, xml_text, parent_guid)
+
+                # Recorded GVL_NATIVE, not NATIVE. The bytes are the same native export
+                # either way; the form is the only thing that tells the importer, the
+                # coverage report and the panel that this file is not applied back. It
+                # said NATIVE until 2026-08-16, which made both halves importable and
+                # let the later phase overwrite the earlier one - G12.
+                self.record(obj, obj_type, FORM_GVL_NATIVE, xml_path, xml_text,
+                            parent_guid)
                 st_text = normalize_decl_only(obj.textual_declaration.text)
                 write_text(abs_path, st_text)
                 self.record(obj, obj_type, FORM_ST_DECL, rel_path, st_text, parent_guid)

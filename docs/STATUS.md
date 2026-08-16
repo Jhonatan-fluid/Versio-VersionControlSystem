@@ -1,7 +1,9 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-16 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,484 unit + 480 UI + 224 integration, 1 red on purpose
-· *(integration run nine times across this session, 10–16 min each, with one flake — see the flake note in `CLAUDE.md`)*
+**Date:** 2026-08-16 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,484 unit + 480 UI + 226 integration, 0 skipped
+· *(integration now runs ~30 min, not the 10–16 it did before the import feature checklist added
+13 tests; run three times end to end on 2026-08-16 with no flake, plus every affected test
+individually — see the flake note in `CLAUDE.md`, which is about earlier runs)*
 
 > **⚠️ Versio removes, renames and moves objects in projects — Phases 2 and 3 of the import
 > plan, and the first things it does that destroy work.** Delete a `.st` from the mirror,
@@ -1001,15 +1003,35 @@ leaves the edit and everything else identical. The declaration survives. So the 
 the native phase is what removes it — which the log alone could not have told anybody, because
 it says `applied` either way.
 
-**Not fixed here.** The audit was run before Phase 5 on the argument that a feature list nobody
-has executed is a list of intentions, and fixing this is a change to what an import does to a
-GVL rather than a correction to a document. The three candidate fixes are not equivalent and
-one of them moves a delete rule:
+**✅ FIXED 2026-08-16, the same day.** The `.gvl.xml` is recorded `GVL_NATIVE` and
+`ExportCoverage.IsExportOnly` names it, so the import applies the `.gvl.st` alone and the log
+says *"edit `…Glob_Var.gvl.st` instead"*. Verified against real CODESYS: the edit is in the
+project on the re-export, where the same test failed an hour earlier.
 
-- **Give the XML half its own form**, as `TASK_NATIVE` did. Cleanest, and it makes the log say
-  *"edit Glob_Var.gvl.st instead"* for free. **But an export-only record neither votes nor
-  vetoes in the delete planner**, so the two-file rule stops protecting a GVL: deleting the
-  `.gvl.st` alone would then remove the object, where today it is kept.
+**And the shape is an invariant now, which is the part that matters more than the fix.** G7 was
+patched on `TASK_BOTH` and `GVL_BOTH` had the identical defect for months, because the fix was
+applied to the instance rather than to the shape.
+`An_object_never_writes_two_files_the_import_would_both_apply` asserts against a **real
+export** that no object writes two files the import applies — real, because both defects were
+in what the exporter wrote and every unit test passed throughout. Removing `GvlNativeForm` from
+`IsExportOnly` turns it red, naming both files; that mutation was run rather than assumed.
+
+**It cost the two-file rule its subject, deliberately.** An export-only record neither votes
+nor vetoes in the delete planner, so a GVL now has exactly one importable file and `gone ≠
+importable` can no longer happen for anything. A GVL became an ordinary single-file object:
+deleting `Glob_Var.gvl.st` removes it, exactly as deleting `Simulation.st` has always removed
+the POU, and **the content check is what stands in front of it** — `ST_DECL` is verifiable, so
+a GVL edited in the IDE since the export is still kept. The rule is kept rather than deleted:
+an older mirror still records the XML as `NATIVE` and still reaches it, and a second vendor is
+under no obligation to adopt the one-importable-file shape. The integration test that asserted
+the old behaviour now asserts the new one, and says both were right at the time.
+
+**The three candidates, and why this one.** They were not equivalent:
+
+- **Give the XML half its own form**, as `TASK_NATIVE` did — **chosen.** Cleanest, and the
+  remedy sentence comes free because the exporter finds the sibling by GUID. Its cost is the
+  delete rule above, which on inspection makes a GVL *consistent* with every other object
+  rather than less safe.
 - **Apply textual after native**, which fixes every `BOTH` pair at once and re-orders a phase
   sequence whose current order is load-bearing for creates (`run()` says why).
 - **Rebuild the XML from the edited declaration before importing it**, which is the only option

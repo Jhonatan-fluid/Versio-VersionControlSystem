@@ -404,7 +404,8 @@ CPython.
 | `ST_FULL` | declaration + delimiter + implementation, one `.st` | `POU`, `INTERFACE`, `METHOD`, `METHOD_NORET` |
 | `ST_DECL` | declaration only, one `.st` | `DUT` |
 | `ST_IMPL` | implementation only (no declaration exists) | `ACTION`, `TRANSITION` |
-| `GVL_BOTH` | **two files** — `.gvl.xml` for structure, `.gvl.st` for a readable diff | `GVL`, `GVL_PERSISTENT` |
+| `GVL_BOTH` | **two files** — `.gvl.xml` for structure, `.gvl.st` for a readable diff **and for import**. The *decision* is `GVL_BOTH`; the two files are **recorded** `GVL_NATIVE` and `ST_DECL`, because only the `.st` is applied back | `GVL`, `GVL_PERSISTENT` |
+| `GVL_NATIVE` | **recorded, never decided.** The `.gvl.xml` half above, marked so the manifest says it is export-only. It carried plain `NATIVE` until 2026-08-16 — an *importable* form, so both halves were applied and the later phase won. That is G12; see the finding in [`STATUS.md`](STATUS.md) | — |
 | `NATIVE` | `obj.export_native(path, False)` | `EVC`, `VISUALISATION`, `TEXTLIST`, `GLOBAL_TEXTLIST`, `IMAGEPOOL`, `PROJECT_INFORMATION` |
 | `NATIVE_R` | `obj.export_native(path, True)` — owns children not walked separately | `PROPERTY` |
 | `NATIVE_WITH_CHILDREN` | the node natively **and** a subdirectory for its children | **no type maps to it** — only an *unmapped* type that has children |
