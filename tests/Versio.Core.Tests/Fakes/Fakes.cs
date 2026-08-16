@@ -79,6 +79,35 @@ public sealed class FakeFileSystem : IFileSystem
     public void DeleteFile(string path) => _files.Remove(path);
 
     public void CreateDirectory(string path) => _dirs.Add(path);
+
+    /// <summary>
+    /// Remove a directory and everything beneath it — the fake's only way to express a folder
+    /// that is <b>not there</b>, as opposed to one that is empty.
+    /// </summary>
+    /// <remarks>
+    /// <b>Not part of <see cref="IFileSystem"/>, and deliberately not.</b> Nothing in the
+    /// product deletes a directory through the abstraction; a person does it in a file
+    /// manager, and the code's job is only to notice. But until this existed the fake could
+    /// not represent that at all — deleting every file left <see cref="DirectoryExists"/>
+    /// answering true, which is correct for a real filesystem and meant the "the mirror is
+    /// gone" case had no way to be written down.
+    /// </remarks>
+    public void RemoveDirectory(string path)
+    {
+        var prefix = path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                     + Path.DirectorySeparatorChar;
+
+        foreach (var file in _files.Keys
+                     .Where(k => k.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                     .ToList())
+        {
+            _files.Remove(file);
+        }
+
+        _dirs.RemoveWhere(
+            d => d.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                 || string.Equals(d, path, StringComparison.OrdinalIgnoreCase));
+    }
 }
 
 /// <summary>Lock store backed by a field, so a "crash" is just dropping the orchestrator.</summary>

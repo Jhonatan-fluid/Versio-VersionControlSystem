@@ -608,9 +608,31 @@ from its name; that walk was the shared root cause of gaps G3–G6 and it is gon
 computed C#-side by `CodesysImportPlanner` — pure, from `_manifest.json` and a directory
 listing, before CODESYS starts — and arrives in the job file: per file, an action (`text`,
 `typed`, `native`, `create`, `skip`), the object's **verbatim name**, and a **resolve chain**
-of real decoded names from the project root. `LocalCodesysRunner` computes the plan when its
-caller has not, so every import is plan-driven whichever door it came through. Files the plan
-does not mention are warned about (`NOT_IN_PLAN`) and never touched.
+of real decoded names from the project root. Files the plan does not mention are warned about
+(`NOT_IN_PLAN`) and never touched.
+
+**Decided where it can be agreed to, since 2026-08-15.** `SyncViewModel` computes the plan
+*before* it asks the confirmation question and hands it on — `SyncJob.Plan` →
+`PlcProjectJob.Plan` → the CODESYS job → the job file — so the plan a person agreed to is the
+plan the script executes, rather than one recomputed after they clicked against a mirror that
+may have moved while the dialog was open. `LocalCodesysRunner` still computes one when its
+caller has not (the watcher's path, and a test driving the runner directly), so every import is
+plan-driven whichever door it came through.
+
+The walk itself is **`ImportPlanReader`** (`Versio.Core/Plc/`), on `IFileSystem` and shared by
+both callers: the manifest read, the directory listing, and text loaded for exactly the files
+`NeedsTextToPlan` names. One walk rather than two, because it has a convention inside it —
+**mirror-relative paths, never absolute** — that is completely silent when got wrong, and
+§9 counts four drifts from the same shape of duplication.
+
+> **A missing mirror is refused, and it took moving this walk to notice.** An empty plan is a
+> valid instruction meaning "touch no file", so an import of a mirror that is not there ran,
+> changed nothing and reported **success**. It had been caught by accident:
+> `Directory.EnumerateFiles` throws on a missing directory and the old walk called it straight,
+> while `IFileSystem.EnumerateFiles` answers `[]`. `ImportAsync` now refuses before the backup,
+> and the reader says so in the log. **An *emptied* mirror is a different case** — the folder
+> exists, the plan is empty, everything lands in `MissingFromMirror`, and that is Phase 2's
+> question rather than this one.
 
 ### 6.1 Two phases, with a save between them
 

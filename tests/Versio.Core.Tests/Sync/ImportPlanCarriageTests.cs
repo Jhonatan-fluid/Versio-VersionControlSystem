@@ -133,6 +133,54 @@ public class ImportPlanCarriageTests
     }
 
     [Fact]
+    public async Task An_import_of_a_mirror_that_is_not_there_is_refused_rather_than_reported_done()
+    {
+        // A MISSING mirror is not an empty one. An empty plan is a valid instruction meaning
+        // "touch no file", so without this the import runs, changes nothing, and comes back
+        // Completed — which a user reads as "my edits were applied".
+        //
+        // This was caught by accident until the plan walk moved onto IFileSystem:
+        // Directory.EnumerateFiles throws on a missing directory and the old walk called it
+        // straight, while IFileSystem.EnumerateFiles answers [] — so a throw became a silent
+        // success, and nothing in the suite noticed.
+        var h = new SyncOrchestratorTests.Harness();
+
+        // The scenario has to be reached honestly, and the first attempt at it was not: with a
+        // fresh binding the hash gate answers NoChange, because "never synced" and "the mirror
+        // is gone" both hash to nothing and the gate cannot tell them apart. That is the gate
+        // working — but it means the refusal below is reachable only once a real baseline
+        // exists, which is exactly the state a user is in.
+        //
+        // So: export (records a baseline, takes the lock), push (releases it), then delete.
+        await h.ProjectChanged();
+        await h.Orchestrator.ReleaseAfterPushAsync("abc1234", CancellationToken.None);
+
+        // The FOLDER, not just its contents — and that distinction cost a wrong test before it
+        // was noticed. Deleting every file leaves the directory behind on a real filesystem
+        // just as it does in the fake, so an emptied mirror still exists and takes the other
+        // path: a plan with no files, everything in MissingFromMirror, and a logged sentence
+        // saying deletes are not applied by this version. That is Phase 2's question.
+        //
+        // This is the case that regressed: the folder itself gone.
+        h.Fs.RemoveDirectory(Path.Combine(@"C:\repo", "plc", "A"));
+
+        var outcome = await h.Orchestrator.HandleChangeAsync(new SyncJob
+        {
+            BindingId = SyncOrchestratorTests.BindingId,
+            Source = ChangeSource.ExportedText,
+            Confirmed = true,
+            Synchronous = true,
+        }, CancellationToken.None);
+
+        Assert.Equal(SyncVerdict.Failed, outcome.Verdict);
+        Assert.Contains("nothing to import", outcome.Explanation, StringComparison.Ordinal);
+
+        // And no toolchain was asked to do it — refused before the launch, and before the
+        // project was copied aside for an import that cannot happen.
+        Assert.DoesNotContain(h.Codesys.Jobs, j => j.Operation == PlcOperation.Import);
+    }
+
+    [Fact]
     public async Task Planning_a_binding_nobody_tracks_answers_null_rather_than_throwing()
     {
         // Called speculatively, to fill in a dialog. A binding that went away with a

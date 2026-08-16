@@ -1568,6 +1568,38 @@ public sealed class SyncOrchestrator
     {
         var started = _clock.UtcNow;
 
+        // A MISSING mirror is not an empty one, and the difference is the whole outcome.
+        //
+        // An empty plan is a valid instruction meaning "touch no file", so an import of a
+        // mirror that is not there runs, changes nothing, and reports success — which reads
+        // as "your edits were applied". Until 2026-08-15 this was caught by accident:
+        // Directory.EnumerateFiles throws on a missing directory, and the plan walk called it
+        // straight. Moving that walk onto IFileSystem, whose EnumerateFiles answers [] for a
+        // root that is not there, turned the throw into a silent success.
+        //
+        // Refused before the backup, so a project is not copied aside for an import that
+        // cannot happen. Deleting a whole mirror is a real thing somebody does — and what it
+        // should MEAN is Phase 2's question, not something to answer by doing nothing quietly.
+        var mirror = Absolute(binding.ExportPath);
+        if (!_fs.DirectoryExists(mirror))
+        {
+            await ApplyAsync(binding.Id, SyncTrigger.ImportFailed, string.Empty, ct)
+                .ConfigureAwait(false);
+
+            var missing = $"the exported text at {binding.ExportPath} is not there, so there "
+                          + "is nothing to import; the project is unchanged";
+            _log.Error(LogCategory.Sync, $"{binding.Id}: {missing}");
+
+            return new SyncOutcome
+            {
+                Verdict = SyncVerdict.Failed,
+                BindingId = binding.Id,
+                Explanation = missing,
+                State = SyncDirection.Failed,
+                Duration = _clock.UtcNow - started,
+            };
+        }
+
         try
         {
             await BackUpProjectAsync(binding, ct).ConfigureAwait(false);

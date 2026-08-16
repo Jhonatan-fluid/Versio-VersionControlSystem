@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,423 unit + 479 UI + 203 integration, 0 skipped
+**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,424 unit + 479 UI + 203 integration, 0 skipped
 
 > **The import is plan-driven as of 2026-08-15 — Phase 1 of the import plan.** What an import
 > will do is decided C#-side by `CodesysImportPlanner`, pure, from `_manifest.json` and a
@@ -525,6 +525,28 @@ does not record them has to be run again.
   test asserts that shape specifically: a pattern matching nothing looks exactly like a pattern
   matching a file that is not there. **Deleting the fix leaves three tests red**, two of them
   pre-existing.
+- ~~**An import of a mirror that is not there reported success.**~~ — **found and fixed
+  2026-08-15, in a review of the change that caused it.** An empty plan is a valid instruction
+  meaning "touch no file", so an import whose mirror directory has gone ran, changed nothing,
+  and came back `Completed` — which a user reads as "my edits were applied".
+  - **It had been caught by accident, and the accident was removed.**
+    `Directory.EnumerateFiles` throws on a missing directory and the old plan walk called it
+    straight; moving that walk onto `IFileSystem`, whose `EnumerateFiles` answers `[]` for a
+    root that is not there, turned a throw into a silent success. **No test noticed**, because
+    none had ever pointed an import at a mirror that had gone.
+  - `ImportAsync` refuses before the backup now, so a project is not copied aside for an import
+    that cannot happen, and `ImportPlanReader` says in the log that the plan is empty *because
+    there is nothing there*.
+  - **Reaching it honestly took two corrections to the test**, both worth knowing. A fresh
+    binding answers `NoChange`, because "never synced" and "the mirror is gone" both hash to
+    nothing and the gate cannot tell them apart — correct, and it means the refusal is
+    reachable only once a real baseline exists. And deleting every *file* leaves the directory
+    behind, on a real filesystem as in the fake, so `FakeFileSystem` gained a `RemoveDirectory`
+    — until then the fake could not express "not there" at all, only "empty".
+  - **An emptied mirror is a different case and is still open**: the folder exists, the plan is
+    empty, everything lands in `MissingFromMirror`, and the run reports `Completed` having
+    applied nothing. That is Phase 2's question — it is at least logged, and the sentence names
+    the version limitation.
 - ~~**`Eventually.Press` did not wait for the command it pressed.**~~ — **fixed 2026-08-15,
   and what it was hiding is worse than the bug.** `AsyncCommand.Execute` is `async void`, so it
   returns to its caller at the **first `await`**, not at the end. `Press` called it and moved

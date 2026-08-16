@@ -60,6 +60,19 @@ public static class ImportPlanReader
     {
         var prefix = string.IsNullOrEmpty(label) ? string.Empty : label + ": ";
 
+        // Said out loud, because the plan cannot say it. An absent mirror and an empty one
+        // both produce a plan with no files, and a plan with no files is a valid instruction
+        // meaning "touch nothing" — so the difference has to be reported here or it is lost.
+        // Refusing on it belongs to the caller: SyncOrchestrator.ImportAsync does, and a
+        // caller that only wants to know what an import WOULD do is entitled to ask about a
+        // mirror that has gone.
+        if (!fs.DirectoryExists(root))
+        {
+            log.Warn(category,
+                $"{prefix}there is no exported text at {root}; the plan is empty because there "
+                + "is nothing there, not because there is nothing to do");
+        }
+
         var manifest = await ReadManifestAsync(fs, root, log, category, prefix, ct)
             .ConfigureAwait(false);
 
