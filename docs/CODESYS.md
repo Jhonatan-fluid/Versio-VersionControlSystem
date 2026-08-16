@@ -120,7 +120,10 @@ PHASE0-FINDINGS records that the SP22 behaviour matches the SP11 documentation.
 | `obj.create_pou/create_dut/create_gvl/create_interface` | import | Object creation |
 | `scriptengine.PouType`, `ImplementationLanguages`, `DutType` | import | Enum arguments to the factories |
 | `libman.references` (a `ScriptLibraryReference` collection) | libraries | **Indexed by id, not by position** — `refs[0]` raises on any project whose first reference has a non-zero id. It is iterated instead |
-| `obj.remove()` | delete-objects fixture helper | Test scaffolding only |
+| `obj.remove()` | import (delete phase) | **Removes a referenced object silently** — no exception, no cascade, no warning (P3). Every precondition around a deletion exists because of that |
+| `obj.rename(name)` | import (rename phase) | Preserves the GUID, measured in session and across a save and reopen |
+| `obj.move(parent, -1)` | import (rename phase) | **The index must be `-1`**: `move(dest, 0)` raises *"index must be -1 if the new parent node does not have sorted children"*, and one-argument `move(dest)` raises a `NullReferenceException`. **It returns nothing and declines silently** for a parent the toolchain rejects — a POU moved to `Plc Logic` stays where it is, no exception raised — so the outcome is re-checked afterwards. Into a **folder** it works, GUID intact, surviving a save and reopen |
+| `obj.create_folder(name)` | probe | **Returns `None`.** The folder is created regardless and has to be found by name afterwards — using the return value as a destination makes the next call a no-op against `None` |
 
 > `libman.get_libraries()` is deliberately **not** used: it returns a list of bare strings
 > (`"#Standard"`) with no version, company or flags. `libman.references` is the one that carries

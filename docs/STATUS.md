@@ -971,10 +971,14 @@ script's own `RENAME_NOT_APPLIED` verification could not catch it, because the o
 to move for the check to pass. **A verification that asks "is it where I expected" cannot notice
 that nothing was asked of it.**
 
-**The cheapest route to a real POU rename is not git**, which is worth recording before anyone
-reaches for `ShowAtHeadAsync`: compare the implementation exactly and the declaration with its
-name masked. Identical bodies plus a declaration differing only in the name is a rename with
-near-certainty, and `StDeclarationParser` and `split_st` already exist.
+**The first answer written here was also wrong, and is corrected rather than quietly dropped.**
+It said a real POU rename could be matched by comparing the implementation exactly and the
+declaration with its name masked, needing nothing but the manifest and the mirror. **It cannot**:
+the manifest records one `hash` per file and the old file is gone, so there is no old
+implementation to compare against. Every fuzzy match needs the departed content, and only two
+things have it — a hash recorded at export time (schema 6, `ihash` + `dhash`, the same shape as
+`nhash`), or `git show HEAD:<path>`. The first covers a pure rename cheaply; the second is the
+only route to a rename that also edits the body.
 
 ### `move()` accepted an instruction, did nothing, and reported success
 
@@ -995,12 +999,22 @@ empty, and the only way to find out was to export the project again and read the
 counter incremented next to an operation is not evidence the operation happened** — and this
 codebase now has three examples of exactly that.
 
-**The measurement is honest about what it does not cover.** `Application` → `Plc Logic` may
-simply be an illegal parent for a POU, in which case CODESYS declining is correct and only its
-silence is the defect. Whether a move into a *legal* destination completes is **unknown**: the
-fixture has no folder to try one with. P1/P2 measured that `move()` preserves the GUID, so it
-does something under some conditions, but this repository has never seen it finish. Adding a
-folder to the fixture is the measurement that would settle it, and it is not done.
+**✅ The open half of this is now settled, and `move()` is fine.** A folder was created under
+`Application` in a throwaway copy and `Simulation` moved into it: no exception, under the folder
+in session, still under it **after a save and reopen**, and the GUID `980a4bef…` unchanged
+throughout. So `Application` → `Plc Logic` was CODESYS **correctly refusing an illegal parent**
+for a POU — the operation is sound and the defect was only ever the silence.
+
+**The verification stays anyway**, and that is the point rather than a leftover: a refusal that
+says nothing is indistinguishable from a success no matter *why* it refused, and Versio cannot
+enumerate which parents a toolchain considers legal. Checking the outcome costs a walk of names
+already in memory.
+
+**`create_folder` returns `None`** — the folder is created regardless and must be found by name.
+That silently skipped the entire probe on its first run: the return value was used as the move
+destination, so the move never ran, and the result read as "move does not work". **The first
+run of a measurement nearly wrote down the opposite of the truth**, which is the same trap as
+the harness that proved the executing half and read as proof of the whole feature.
 
 **Rename in place is unaffected and works**: same GUID before and after, no warnings, verified
 against real CODESYS.

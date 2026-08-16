@@ -11,9 +11,9 @@ G4's resolution half and G5's recorded-object half. All three honesty fixes are 
 **Phase 3's step 1 is built and reaches less than its name suggests**: the executing half
 renames and moves objects with their GUIDs intact, measured, but the *detecting* half matches on
 exact content — and a POU's name lives inside its content, so a real POU rename is invisible to
-it. **Step 2 is what remains**, and the cheapest route to it is comparing the implementation
-exactly and the declaration with its name masked, which needs no git at all. Phases 5 and 6
-follow. One other item is open and not on the critical path: `TaskCatalog.cs`, so nothing
+it. **Step 2 is what remains**: it needs the departed file's content, which the manifest does
+not keep — so either an extra hash recorded at export time (schema 6) or `git show HEAD:<path>`.
+Phases 5 and 6 follow. One other item is open and not on the critical path: `TaskCatalog.cs`, so nothing
 outside python can read a `.tasks.yaml`.
 
 > **This header said "nothing in phases 1–6 is built" for the whole of the session that built
@@ -870,12 +870,25 @@ delete-plus-create.
 > verification could not catch, because the object never had to move for the check to pass.
 > Both sides are now withdrawn instead, with a warning naming the declaration as authoritative.
 >
-> **The cheapest route to a real POU rename is not git.** Compare the *implementation* exactly
-> and the *declaration* with its name masked: identical bodies plus a declaration differing only
-> in the name is a rename with near-certainty, it needs nothing but the manifest and the mirror,
-> and `StDeclarationParser` and `split_st` already exist. `git show HEAD:<path>` and a similarity
-> score would still be needed for a rename-and-genuinely-edit, but that is a much rarer thing
-> than renaming a POU.
+> **How to close it, and the first answer written here was wrong.** It said: compare the
+> implementation exactly and the declaration with its name masked, needing nothing but the
+> manifest and the mirror. **That cannot work.** The manifest records one `hash` per file and
+> nothing else, and the old file is *gone* — there is no old implementation to compare against.
+> Every fuzzy match needs the departed content, and the mirror does not have it.
+>
+> **So there are exactly two sources for it, and they are the same two Phase 2 faced:**
+>
+> 1. **Record more at export time** — an `ihash` over the implementation and a `dhash` over the
+>    declaration with its name masked, per textual record. A pure POU rename changes neither, so
+>    the pair matches while the whole-file hash does not. Additive, schema 6, the same shape as
+>    `nhash`; unavailable until the next export, and no help for a rename that also edits the
+>    body.
+> 2. **`git show HEAD:<path>`** — the real old bytes, so a similarity score becomes possible and
+>    rename-*and*-edit is reachable. Works only for a committed mirror.
+>
+> **These are not alternatives this time.** (1) is cheap and covers the common case; (2) is the
+> only thing that covers a rename with a genuine edit, which is the case a similarity pass
+> exists for. Phase 2 could pick one; Phase 3 wants (1) first and (2) after.
 
 > ### ⛔ `move()` can decline without saying so, and it is the other finding of Phase 3
 >
@@ -890,12 +903,25 @@ delete-plus-create.
 > `RENAME_NOT_APPLIED` when it is not there. Cheap — a walk of names already in memory — and it
 > is the only thing between "CODESYS declined" and "Versio said it worked".
 >
-> **What is NOT known**, and should not be assumed: whether a move into a *valid* destination
-> works. `Application` → `Plc Logic` may simply be an illegal parent for a POU, and the fixture
-> has no folder to try a legal one with. **P1/P2 measured that `move()` preserves the GUID, so
-> the operation does something under some conditions** — but this repository has never seen it
-> complete. Adding a folder to the fixture and moving an object into it is the measurement that
-> would settle it, and it is not done.
+> **✅ Settled 2026-08-15, and the answer is the reassuring one.** A folder was created under
+> `Application` in a throwaway copy of the fixture and `Simulation` moved into it:
+>
+> | | Result |
+> |---|---|
+> | `move()` raised | no |
+> | under the folder, in session | **yes** |
+> | under the folder, after save **and reopen** | **yes** |
+> | GUID | **`980a4bef…` unchanged throughout** |
+>
+> **So `move()` works, and `Application` → `Plc Logic` was CODESYS correctly refusing an illegal
+> parent for a POU.** The operation is sound; the defect was only ever the silence, which is
+> exactly what `RENAME_NOT_APPLIED` now covers. The verification stays — a refusal that says
+> nothing is indistinguishable from a success, whatever the reason for it.
+>
+> **`create_folder` returns `None`.** The folder is created regardless and has to be found by
+> name afterwards. This silently skipped the whole probe on its first run: the return value was
+> used as the destination, so the move never ran and the measurement looked like a failure to
+> move. Two runs, and the first one nearly wrote down the wrong conclusion.
 
 **Still open — step 2, rename-and-edit.** Its content matches nothing, so step 1 cannot see it
 and it falls back to delete-plus-create, losing the GUID in exactly the way this phase exists to
@@ -996,13 +1022,15 @@ SyncViewModel decides the plan ─► asks ─► SyncJob.Plan ─► PlcProject
    executing half is proven, GUID intact; what it cannot do is *see* the common case, because
    an `ST_FULL` file opens `PROGRAM Simulation` and any real rename therefore changes the
    content. Step 1 detects a rename only for a form whose content does not carry the name.
-   - **Do this with the declaration, not with git.** Compare the implementation exactly and the
-     declaration with its **name masked**: identical bodies plus a declaration differing only in
-     the name is a rename with near-certainty. `StDeclarationParser` and `split_st` already
-     exist, it needs nothing but the manifest and the mirror, and it is far less machinery than
-     a similarity score.
-   - **`git show HEAD:<path>` is for what is left after that** — a rename that also genuinely
-     edits the body — which is rarer than renaming a POU and should not set the design.
+   - **Whatever you do, it needs the departed file's content, and the manifest does not keep
+     it.** One `hash` per file, and the file is gone. Check that before designing anything:
+     the first plan written here assumed the old implementation was available and it is not.
+   - **Cheap half — record it at export time.** `ihash` over the implementation and `dhash`
+     over the declaration with its name masked, per textual record, schema 6. A pure POU rename
+     changes neither while the whole-file hash changes, so the pair is exactly the signal.
+     Additive and unavailable until the next export, like `nhash`.
+   - **`git show HEAD:<path>` is what covers the rest** — a rename that also genuinely edits the
+     body, which no recorded hash can reach.
    - **The shared-prerequisite argument for it is gone.** It used to be worth pairing with
      option (2) for the native content check; the check took option (1) instead, so
      `ShowAtHeadAsync` now has exactly one consumer. Do not adopt (2) to justify sharing.
