@@ -650,12 +650,38 @@ off the table, without naming a schema number at somebody who asked about their 
 event and must not walk a mirror to do it; the dialog runs once, when somebody has asked, which
 is the only moment the walk is worth paying for.
 
-> **Present tense, and that is the whole discipline of it.** Deletions are planned and executed
-> by nothing, so the dialog says the objects **will stay** — it does not promise removal.
-> Naming three objects as doomed and then leaving them there is the same class of lie as the
-> one this entire chain exists to prevent, pointed the other way. Two tests pin the wording,
-> one asserting `will stay` and one asserting the absence of *will be removed*; when the script
-> grows `remove()`, they are what say the wording changes with it.
+> ~~**Present tense, and that is the whole discipline of it.** Deletions are planned and
+> executed by nothing, so the dialog says the objects **will stay**. Two tests pin the wording;
+> when the script grows `remove()`, they are what say the wording changes with it.~~
+>
+> ⛔ **They did not, and this is the worst defect this plan has produced.** The script grew
+> `remove()` in the very next commit. The wording did not move, and **the whole suite stayed
+> green at 1,443 + 480**, because both pinning assertions were on the *old* sentence — an
+> assertion that a dialog says `will stay` cannot fail when the behaviour changes underneath
+> it, only when somebody fixes it. For one commit Versio named an object, said it would stay,
+> and then deleted it. Written up as a Finding in [`STATUS.md`](STATUS.md).
+>
+> **The lesson is about the shape of the tripwire, not the diligence of the author.** A test
+> written to catch a future change has to assert the property that will become false, and
+> "the dialog does not yet promise removal" is not that property. Both sides are asserted now.
+
+### ✅ The dialog tells the truth about two outcomes, landed 2026-08-15
+
+A deletion has two possible endings and the dialog has to name which one each object gets,
+because the script refuses any deletion it cannot check and **7 of the fixture's 13 objects are
+native**. Re-wording to *"will be removed"* would have swapped one lie for another.
+
+`PlannedDeletion.CannotVerify` is the planner's prediction of the script's own refusal — null
+when the object will really go, a sentence when it will really stay — and `ImportNarrative`
+emits one sentence per outcome, the second grouped by reason so *"export again"* is only
+suggested where it would help.
+
+> **The two sides now share an authority.** `CAN_VERIFY_FORMS` lives in `versio_types.py`, is
+> mirrored by `CodesysImportPlanner.WhyUnverifiable`, and the two are compared by output in
+> `PythonFileNameParityTests` — verified red by adding `FORM_NATIVE` to the python list. It is
+> in `versio_types` rather than `versio_import` for a reason worth keeping: the importer
+> imports `scriptengine` and therefore **cannot be loaded outside CODESYS at all**, so a rule
+> living there is a rule nothing can compare.
 
 ### ✅ The executing half, landed 2026-08-15 — Versio deletes things now
 

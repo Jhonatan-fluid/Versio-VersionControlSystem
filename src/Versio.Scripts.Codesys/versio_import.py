@@ -44,7 +44,7 @@ from versio_decl import (DUT_ALIAS, DUT_ENUM, DUT_STRUCT, DUT_UNION,  # noqa: E4
                          KIND_DUT, KIND_FUNCTION, KIND_FUNCTION_BLOCK,
                          KIND_INTERFACE, KIND_PROGRAM, parse_declaration)
 from versio_text import content_hash, join_st, normalize_decl_only, split_st  # noqa: E402
-from versio_types import is_versio_file  # noqa: E402
+from versio_types import can_verify, is_versio_file  # noqa: E402
 import versio_yaml  # noqa: E402
 
 
@@ -609,17 +609,15 @@ class Importer(object):
     def exported_text_of(self, obj, form):
         """Rebuild what the exporter would have written for this object, or None.
 
+        Only ever called for a form CAN_VERIFY_FORMS admits, so a None from here means the
+        live object did not yield its text - a different failure from "this form can never
+        be checked", and reported as a different code.
+
         The content check turns on this being EXACTLY what versio_export.py produces:
         join_st for a full ST body, normalize_decl_only for a declaration- or
         implementation-only one. If the two ever diverge the check stops meaning
         "unchanged" and starts meaning "exported by a different version", which would
         refuse every deletion for a reason that has nothing to do with the object.
-
-        Returns None for any form this cannot rebuild - which is every NATIVE form, and
-        deliberately. The manifest's hash is over the exported native bytes, and P7 measured
-        a re-export of an untouched native object changing on every cycle, so hashing a
-        fresh one proves nothing. Comparing through versio_native_equiv would need the OLD
-        bytes, and the file holding them is the one that was deleted.
         """
         if form == "ST_FULL":
             decl = safe(lambda: obj.textual_declaration.text, None)
@@ -706,14 +704,22 @@ class Importer(object):
             form = entry.get("form") or ""
             recorded = entry.get("hash") or ""
 
-            live = self.exported_text_of(obj, form)
-            if live is None:
-                # No way to rebuild what was exported, so no way to know whether the object
-                # changed since. Refused rather than assumed - this is the one operation
-                # where being wrong destroys work nothing else holds a copy of.
+            if not can_verify(form):
+                # The form itself can never be checked. Predictable without opening the
+                # project, which is why the planner says the same thing to the dialog.
                 return ("DELETE_UNVERIFIABLE",
                         "its %s file cannot be rebuilt from the live object, so whether it "
                         "changed since the export is unknowable" % (form or "recorded"))
+
+            live = self.exported_text_of(obj, form)
+            if live is None:
+                # A form that CAN be checked, on an object that would not give up its text.
+                # Reported apart from the line above because they are different problems: one
+                # is a limit of this version and the other is this object, right now, and
+                # merging them would have the log blame the form for something it did not do.
+                return ("DELETE_UNREADABLE",
+                        "its %s file should be rebuildable but the live object returned no "
+                        "text, so the deletion cannot be checked" % form)
 
             if content_hash(live) != recorded:
                 return ("DELETE_CONTENT_CHANGED",

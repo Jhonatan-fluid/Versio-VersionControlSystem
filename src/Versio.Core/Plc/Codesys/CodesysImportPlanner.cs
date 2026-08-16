@@ -25,11 +25,17 @@ namespace Versio.Core.Plc.Codesys;
 /// <see cref="ImportPlan"/> through <see cref="IPlcProjectFormat.PlanImport"/>.
 /// </para>
 /// <para>
-/// Plans updates, creates, skips and <b>deletions</b>. A deletion is a proposal and nothing
-/// executes it yet: the planner knows what the last export recorded and what the mirror holds
-/// now, so it can say which objects have lost every file — but not whether the project still
-/// has them, which is the executing side's question. Renames and moves are Phase 3 of
+/// Plans updates, creates, skips and <b>deletions</b>, and a deletion is executed: it crosses
+/// the wire and <c>versio_import.py</c> removes the object. The planner knows what the last
+/// export recorded and what the mirror holds now, so it can say which objects have lost every
+/// file — but not whether the project still has them, or whether they were edited in the IDE
+/// since, which are the executing side's questions. Renames and moves are Phase 3 of
 /// <c>docs/CODESYS-IMPORT-PLAN.md</c>.
+/// </para>
+/// <para>
+/// <see cref="PlannedDeletion.CannotVerify"/> is the planner's prediction of the executing
+/// side's refusal, and it exists for the dialog: somebody is asked to agree ~20 s before
+/// CODESYS is started, so the plan has to say which of these objects will actually go.
 /// </para>
 /// </remarks>
 public static class CodesysImportPlanner
@@ -273,6 +279,7 @@ public static class CodesysImportPlanner
                 Files = [.. gone
                     .OrderBy(o => o.Path, StringComparer.Ordinal)
                     .Select(o => new DeletedFile(o.Path, o.Hash, o.Form))],
+                CannotVerify = WhyUnverifiable(gone),
             });
         }
 
@@ -280,6 +287,59 @@ public static class CodesysImportPlanner
     }
 
     private static string Files(int n) => n == 1 ? "1 file" : $"{n} files";
+
+    /// <summary>
+    /// Why the script will refuse to remove this object, or null when it can check it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The planner's copy of a decision the script makes for itself</b>, and it exists
+    /// because the dialog is asked the question ~20 s before CODESYS is. The script re-derives
+    /// the same answer from the live object and its answer is the one that governs; this one
+    /// only has to agree, and <c>PythonFileNameParityTests</c> is what says it does.
+    /// </para>
+    /// <para>
+    /// <b>Every file, not any file.</b> A GVL is a <c>.gvl.st</c> and a <c>.gvl.xml</c> under
+    /// one GUID, and the script checks each in turn and refuses on the first it cannot rebuild.
+    /// One unverifiable file therefore keeps the whole object, so the predicate here has to be
+    /// the same shape or the dialog would promise removal for an object held back by its
+    /// second file.
+    /// </para>
+    /// </remarks>
+    private static string? WhyUnverifiable(List<ProjectObject> gone)
+    {
+        // Ordered, so the sentence a person reads is the same one on two readings of the same
+        // repository rather than whichever record the manifest happened to list first.
+        foreach (var file in gone.OrderBy(o => o.Path, StringComparer.Ordinal))
+        {
+            if (TextualForms.Contains(file.Form, StringComparer.Ordinal))
+            {
+                continue;
+            }
+
+            if (NativeForms.Contains(file.Form, StringComparer.Ordinal))
+            {
+                // The whole of Phase 2's open half, in one sentence. The manifest's hash is
+                // over the exported native bytes and a re-export of an untouched object does
+                // not reproduce them, so there is nothing here to compare a live object
+                // against — and the bytes that would settle it were in the file that was
+                // deleted.
+                return "The export recorded no hash that a native object can be compared "
+                    + "against, so whether it changed in the IDE since is unknowable and "
+                    + "Versio will not guess";
+            }
+
+            // TASK_BOTH is the only form left that reaches here, and its .tasks.yaml is
+            // rendered through the typed task API rather than read off the object. Refused
+            // rather than rebuilt: a task configuration is the one object in a project whose
+            // accidental removal takes every task with it.
+            return $"Versio cannot rebuild a {file.Form} file from the project, so whether it "
+                + "changed in the IDE since the last export is unknowable and Versio will not "
+                + "guess";
+        }
+
+        return null;
+    }
 
     /// <summary>
     /// True when every owner above this object is recorded, so its location is read rather

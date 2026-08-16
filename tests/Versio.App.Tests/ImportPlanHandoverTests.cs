@@ -150,9 +150,15 @@ public sealed class ImportPlanHandoverTests
         // And the object nobody could otherwise account for is named.
         Assert.Contains("Pump_Control", body, StringComparison.Ordinal);
 
-        // In the present tense. Deletions are planned and executed by nothing, so a dialog
-        // promising removal would be a fresh lie in the place this whole chain exists to make
-        // truthful. When the script grows remove(), this assertion is what has to change.
-        Assert.Contains("they will stay", body, StringComparison.Ordinal);
+        // And it says the object will GO, because it will: Pump_Control is ST_FULL, so the
+        // script can rebuild what was exported and check it, and an object that checks out is
+        // removed.
+        //
+        // This assertion read "they will stay" until 2026-08-15, and went on reading it for a
+        // commit after the script grew remove() — so this dialog, the last thing somebody sees
+        // before a project loses an object, promised the opposite of what happened. Both sides
+        // are asserted now: the sentence that must be there and the one that must not.
+        Assert.Contains("will be removed from the project", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("will stay", body, StringComparison.Ordinal);
     }
 }

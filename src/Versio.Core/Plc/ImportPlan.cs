@@ -147,6 +147,37 @@ public sealed record PlannedDeletion
     /// object, and acting on it would take the surviving half with it.
     /// </remarks>
     public required IReadOnlyList<DeletedFile> Files { get; init; }
+
+    /// <summary>
+    /// Null when the executing side can check this object before removing it; otherwise the
+    /// sentence saying why it cannot, and therefore why the object will be kept.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This is what makes the confirmation dialog able to tell the truth about two
+    /// different outcomes.</b> Every deletion here has lost every file it was exported to, but
+    /// that is not the same question as whether the object will actually go: the executing
+    /// side refuses any deletion it cannot check against the last export, because a missing
+    /// file says somebody deleted it and says nothing about whether it was edited in the IDE
+    /// since. A dialog that named both kinds together would be wrong about one of them
+    /// whichever tense it chose.
+    /// </para>
+    /// <para>
+    /// <b>A sentence rather than a code, and nullable rather than a bool beside a reason.</b>
+    /// The planner is the only place that knows what a form means and the narrative must not,
+    /// so the vendor knowledge is spent here and what crosses is prose. A bool and a string
+    /// would admit a state where the two disagree, and nothing would notice until it reached
+    /// somebody deciding whether to press Import.
+    /// </para>
+    /// <para>
+    /// <b>The planner's answer is a prediction, not the decision.</b> The script re-derives it
+    /// from the live object, because only it can see the project — see <c>why_not_delete</c>
+    /// in <c>versio_import.py</c>. The two are kept in step by
+    /// <c>PythonFileNameParityTests</c>: a planner that promised removal the script then
+    /// refused would put this dialog back to lying, which is the defect this field exists for.
+    /// </para>
+    /// </remarks>
+    public string? CannotVerify { get; init; }
 }
 
 /// <summary>
@@ -162,9 +193,20 @@ public sealed record PlannedDeletion
 /// 17–31 s too late to be agreed to.
 /// </para>
 /// <para>
-/// Updates, creates, skips and <see cref="Deletions"/>. A deletion is a <b>proposal</b>: no
-/// wire carries one yet and nothing executes one, so the plan is read C#-side — the log today,
-/// the confirmation dialog next. Renames and moves are Phase 3.
+/// Updates, creates, skips and <see cref="Deletions"/>. A deletion is a <b>proposal</b>, but
+/// no longer only that: it crosses the wire as the job's <c>deletions</c> key and
+/// <c>versio_import.py</c> executes it, so what this plan says about deletions is what a
+/// project loses. The executing side still confirms the object is there and still matches
+/// before removing anything. Renames and moves are Phase 3.
+/// </para>
+/// <para>
+/// <b>This paragraph said "no wire carries one yet and nothing executes one" for the whole of
+/// the session that shipped deleting.</b> It was not the only place: the confirmation dialog
+/// went on telling people their objects <i>will stay</i> while the script removed them, which
+/// is the one lie this entire chain of gates exists to prevent, and it survived a full green
+/// suite because the test pinning the wording asserted the old sentence — a tripwire that
+/// could only fire if somebody fixed it. When behaviour crosses the seam, the sentences on
+/// both sides of it move in the same commit.
 /// </para>
 /// </remarks>
 public sealed record ImportPlan

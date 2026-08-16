@@ -619,10 +619,13 @@ does not record them has to be run again.
   alongside how much will be applied, the planner's warnings, and whether structural changes
   are available at all. The log is not where anybody is looking at the moment they are
   deciding whether to press Import.
-  - **In the present tense**, because deletions are planned and executed by nothing: it says
-    the objects *will stay*. A dialog promising removal would be a fresh lie in the exact place
-    this chain exists to make truthful. Two tests pin it — one on `will stay`, one on the
-    absence of *will be removed* — so the wording cannot drift ahead of the script.
+  - ~~**In the present tense**, because deletions are planned and executed by nothing: it says
+    the objects *will stay*. Two tests pin it, so the wording cannot drift ahead of the
+    script.~~ — **this was true when written and false one commit later, and the tests did not
+    say so.** The script grew `remove()`; the wording did not move; the pinning assertions were
+    on the *old* sentence, so they could only have failed if somebody fixed it. The dialog
+    promised objects would stay and the import deleted them. **Fixed 2026-08-15**: the dialog
+    names what will really go and what will really stay, separately — see the Finding above.
 - ~~**Deletes do not propagate.**~~ — **closed 2026-08-15 for textual objects, and deliberately
   refused for native ones.** `versio_import.py` runs a delete phase **last**, after everything
   that adds, because `remove()` takes referenced objects with it silently (P3). Proven against
@@ -900,6 +903,65 @@ would have gone on passing while checking one fewer every time a panel moved out
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### The confirmation dialog told people their objects would stay, and then deleted them
+
+> **In one line:** `670642c` taught `versio_import.py` to run `obj.remove()` and did not touch
+> `ImportNarrative`, so for one commit the last thing anybody read before an import said *"This
+> version does not remove objects from the project, so they will stay"* — and then the import
+> removed them. **✅ CLOSED 2026-08-15**, by splitting the deletion set into what will really go
+> and what will really stay, and saying both.
+
+**This is the exact failure the whole import-confirmation chain exists to prevent, pointed the
+other way.** The chain is unusually well built: the plan is decided C#-side before CODESYS starts
+(Phase 1), carried to the dialog and back so the plan agreed to is the plan executed (Phase 2's
+seam step), and `RequireImportConfirmation` defaults to `true` so no watcher-triggered import can
+delete anything without somebody being asked. Every one of those gates worked. The sentence they
+delivered to the person was false.
+
+**What it cost a user.** Delete `FB_Motor.st`, commit, press Import. The dialog names `FB_Motor`,
+says it will stay, and suggests deleting it in the IDE if that is what you want. Press Import —
+the POU is gone from the project. There is no undo inside Versio, and the object's own file was
+deleted in the same change, so the mirror does not hold a copy either.
+
+**Why a green suite did not notice.** `ImportNarrativeTests` pinned the wording with
+`Contains("they will stay")` and `DoesNotContain("will be removed")`, under a comment reading
+*"When the script grows remove(), this test is what says the wording has to change with it."* It
+does not, and it cannot. **An assertion on the old sentence cannot fail when the behaviour moves
+— it can only fail when somebody fixes the sentence.** The tripwire was a lock. The same
+assertion sat in `ImportPlanHandoverTests`, and both stayed green across the commit that shipped
+deleting, at 1,443 and 480 tests.
+
+**The stale claims trailed it in four more places**, all of them written while they were true and
+none updated by the commit that falsified them: `ImportPlan`'s own remarks (*"no wire carries one
+yet and nothing executes one"*), `CodesysImportPlanner`'s (*"a deletion is a proposal and nothing
+executes it yet"*), this file's bullet recording the wording as correct-and-pinned — **directly
+above the bullet announcing that deletes now work** — and the import plan's Phase 2 section.
+
+**The fix is a split, not a re-word.** Flipping the sentence to *"will be removed"* would have
+been a fresh lie for native objects, which the script refuses (`DELETE_UNVERIFIABLE`) and which
+are **7 of the fixture's 13 objects**. So `PlannedDeletion.CannotVerify` carries the planner's
+prediction of the script's own refusal — null when the object will go, a sentence when it will
+stay — and the dialog says both things in two sentences, grouped by reason.
+
+**What is watching it now:**
+
+| Guard | Breaks when |
+|---|---|
+| `ImportNarrativeTests.Objects_the_import_will_remove_are_named_and_said_to_be_going` | the dialog stops promising removal, **or starts promising it falsely** — both sides asserted, which is what the original pair lacked |
+| `ImportNarrativeTests.A_mixed_plan_says_both_things_and_does_not_merge_them` | one sentence starts covering both outcomes again |
+| `PythonFileNameParityTests.The_planner_and_the_script_agree_about_which_deletions_can_be_checked` | the planner's prediction and `versio_types.can_verify` drift — verified red by adding `FORM_NATIVE` to the python list |
+
+**The parity test is the structural fix.** The planner and the script answer the same question
+~20 s apart and had no shared authority; `CAN_VERIFY_FORMS` now lives in `versio_types.py`, which
+is pure and therefore runnable under CPython, and the C# mirrors it. A rule living in
+`versio_import.py` is a rule nothing can compare, because that module cannot be imported outside
+CODESYS.
+
+**Measured end to end**, one import deleting one textual and one native object against real
+CODESYS 3.5.22.20: `Simulation` (`ST_FULL`) removed, `Diagnosis` (`NATIVE`) kept with
+`DELETE_UNVERIFIABLE`, and a re-export confirming the project afterwards holds the second and not
+the first.
 
 ### Closing G7 and G11 re-opened the gap `_coverage.md` was built to close
 

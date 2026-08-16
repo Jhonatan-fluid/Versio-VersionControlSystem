@@ -94,6 +94,33 @@ FORM_TASK_NATIVE = "TASK_NATIVE"
 # in the app, which is half a warning and worse than none.
 EXPORT_ONLY_FORMS = (FORM_LIBRARIES, FORM_TASK_NATIVE)
 
+# Forms whose exported file can be rebuilt from a live object, and therefore the only forms
+# whose DELETION can be checked before it happens.
+#
+# Here rather than in versio_import.py for two reasons, and the second is the load-bearing
+# one. This module is pure - no scriptengine - so the rule can be run under CPython and
+# compared against its C# mirror, CodesysImportPlanner.WhyUnverifiable, by
+# PythonFileNameParityTests. The importer cannot be imported outside CODESYS at all, so a
+# rule living there is a rule nothing can compare.
+#
+# The two sides have to agree because they answer the same question ~20 s apart: the planner
+# answers it for the confirmation dialog, before CODESYS is started, and the script answers it
+# for the object itself. A planner that promises a removal the script then refuses puts a lie
+# in front of somebody about to destroy work - which is exactly what shipped once, pointed the
+# other way, when the script grew remove() and the dialog went on saying objects would stay.
+#
+# Native forms are absent DELIBERATELY, and not for want of trying. The manifest's hash is
+# over the exported native bytes, and P7 measured a re-export of an untouched native object
+# changing every cycle, so hashing a fresh export proves nothing. Comparing through
+# versio_native_equiv needs the OLD bytes, and those were in the file that was deleted.
+CAN_VERIFY_FORMS = (FORM_ST_FULL, FORM_ST_DECL, FORM_ST_IMPL)
+
+
+def can_verify(form):
+    """Can a deletion of an object exported in this form be checked before it happens?"""
+    return form in CAN_VERIFY_FORMS
+
+
 # NATIVE_WITH_CHILDREN - export the node itself natively, non-recursively, AND descend into
 # a subdirectory for its children.
 #

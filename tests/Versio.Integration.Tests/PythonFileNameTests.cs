@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using Versio.Core.Plc.Codesys;
+using Versio.Core.Projects;
 using Versio.Core.Serialization;
 using Xunit;
 using Xunit.Abstractions;
@@ -834,6 +835,77 @@ public sealed class PythonFileNameParityTests(ITestOutputHelper output)
                 """B=<Single Name="Core2" Type="int">-2</Single>""",
             ],
             lines);
+    }
+
+    /// <summary>
+    /// The planner's prediction of a refusal and the script's actual refusal, per form.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The pair this repository paid for.</b> The confirmation dialog is shown ~20 s before
+    /// CODESYS starts, so the planner has to say which objects an import will really remove —
+    /// and if it says "will be removed" for a form the script then refuses, the dialog is
+    /// lying about a destructive operation. That exact lie shipped once already, pointed the
+    /// other way: the script grew <c>remove()</c> while the dialog went on saying objects
+    /// <i>will stay</i>, and a full green suite did not notice because nothing compared the
+    /// two sides.
+    /// </para>
+    /// <para>
+    /// Compared by <b>output over a corpus of forms</b> rather than by reading both rules,
+    /// for the reason the class remarks give: two implementations can agree in intention and
+    /// disagree on a case neither author thought about.
+    /// </para>
+    /// </remarks>
+    [SkippableFact]
+    public void The_planner_and_the_script_agree_about_which_deletions_can_be_checked()
+    {
+        Skip.If(!Directory.Exists(Scripts), "the scripts are not present");
+
+        // Every importable form the exporter can record. The two export-only forms are
+        // deliberately absent: PlanDeletions drops them before verifiability is asked, because
+        // a file rewritten by every export and applied by nothing is not evidence of anything.
+        string[] forms =
+        [
+            "ST_FULL", "ST_DECL", "ST_IMPL",
+            "NATIVE", "NATIVE_R", "NATIVE_WITH_CHILDREN",
+            "TASK_BOTH",
+        ];
+
+        var manifest = new ProjectManifest
+        {
+            Schema = ExportCoverage.CurrentSchema,
+            Objects = [.. forms.Select((f, i) => new ProjectObject
+            {
+                Guid = $"g{i}", Name = f, Type = "POU", Form = f,
+                Path = $"App/{f}.bin", Hash = "sha256:0",
+            })],
+        };
+
+        // An empty mirror: every recorded object has lost every file, so each one is a
+        // deletion candidate and each one's verifiability is answered.
+        var plan = CodesysImportPlanner.Plan(manifest, []);
+
+        var fromPlanner = plan.Deletions
+            .ToDictionary(d => d.Name, d => d.CannotVerify is null, StringComparer.Ordinal);
+
+        var csharp = forms.Select(f => $"{f}={fromPlanner[f]}").ToList();
+
+        var python = RunPython(JsonSerializer.Serialize(forms), """
+            import versio_types
+            out = ["%s=%s" % (f, versio_types.can_verify(f)) for f in payload]
+            """);
+
+        foreach (var line in csharp)
+        {
+            output.WriteLine(line);
+        }
+
+        Assert.Equal(csharp, python);
+
+        // And the corpus is not vacuous in either direction — a rule that answered the same
+        // way for everything would pass the comparison above while checking nothing.
+        Assert.Contains("ST_FULL=True", csharp);
+        Assert.Contains("NATIVE=False", csharp);
     }
 
     private static string Sha256(string text) =>

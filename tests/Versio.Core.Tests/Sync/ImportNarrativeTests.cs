@@ -17,11 +17,21 @@ public class ImportNarrativeTests
     private static PlannedFile Applied(string path) =>
         new() { Path = path, Action = PlannedAction.ApplyText };
 
+    /// <summary>An object the import will actually remove.</summary>
     private static PlannedDeletion Gone(string name) => new()
     {
         Guid = name, Name = name,
         Files = [new DeletedFile($"App/{name}.st", "sha256:0", "ST_FULL")],
     };
+
+    /// <summary>An object that has lost every file but that the script will refuse to remove.</summary>
+    private static PlannedDeletion Kept(string name, string why = "Versio cannot check it") =>
+        new()
+        {
+            Guid = name, Name = name,
+            Files = [new DeletedFile($"App/{name}.gvl.xml", "sha256:0", "NATIVE")],
+            CannotVerify = why,
+        };
 
     [Fact]
     public void An_ordinary_import_says_how_much_it_will_apply()
@@ -60,12 +70,21 @@ public class ImportNarrativeTests
     }
 
     [Fact]
-    public void Objects_with_no_exported_file_are_named_and_said_to_be_staying()
+    public void Objects_the_import_will_remove_are_named_and_said_to_be_going()
     {
-        // PRESENT TENSE, and this is the assertion that keeps it honest. Deletions are planned
-        // and executed by nothing, so a dialog promising removal would be the same lie as the
-        // one this whole chain exists to prevent, pointed the other way. When the script grows
-        // remove(), this test is what says the wording has to change with it.
+        // THIS TEST USED TO ASSERT THE OPPOSITE, and that is the whole point of it.
+        //
+        // It was written while deletions were planned and executed by nothing, so it pinned
+        // "they will stay" and the ABSENCE of "will be removed" — under a comment saying that
+        // when the script grew remove() this test was what would say the wording had to change
+        // with it. The script grew remove(). This stayed green, because an assertion on the
+        // old sentence cannot fail when the behaviour moves; it can only fail when somebody
+        // fixes the sentence. For one commit the confirmation dialog told people their POU
+        // would stay and then the import deleted it.
+        //
+        // So the pair below is deliberately two-sided: one assertion that the true sentence is
+        // there, one that the false one is gone. A tripwire that only points one way is how
+        // this got out.
         var text = ImportNarrative.Describe(new ImportPlan
         {
             Files = [Applied("App/A.st")],
@@ -73,9 +92,67 @@ public class ImportNarrativeTests
         });
 
         Assert.Contains("FB_Motor, Signals", text, StringComparison.Ordinal);
-        Assert.Contains("they will stay", text, StringComparison.Ordinal);
+        Assert.Contains("will be removed from the project", text, StringComparison.Ordinal);
+        Assert.Contains("cannot be undone", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("will stay", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_object_the_script_will_refuse_to_remove_is_said_to_be_staying()
+    {
+        var text = ImportNarrative.Describe(new ImportPlan
+        {
+            Files = [Applied("App/A.st")],
+            Deletions = [Kept("Glob_Var", "The export recorded no comparable hash")],
+        });
+
+        Assert.Contains("will stay in the project: Glob_Var", text, StringComparison.Ordinal);
+        Assert.Contains("The export recorded no comparable hash", text, StringComparison.Ordinal);
+
+        // The other half of the two-sided pair. A dialog naming an object as doomed and then
+        // leaving it there is the same lie pointed the other way, and it is the one the
+        // planner's own refusal makes reachable.
         Assert.DoesNotContain("will be removed", text, StringComparison.Ordinal);
-        Assert.DoesNotContain("will be deleted", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_mixed_plan_says_both_things_and_does_not_merge_them()
+    {
+        // The case that makes the split load-bearing rather than cosmetic. A GVL and a POU can
+        // lose their files in the same commit, and one of them will go while the other stays;
+        // a single sentence covering both would be wrong about one of them whichever tense it
+        // picked, and it would be wrong SILENTLY, because the dialog is the only place the
+        // difference is ever visible before CODESYS starts.
+        var text = ImportNarrative.Describe(new ImportPlan
+        {
+            Files = [Applied("App/A.st")],
+            Deletions = [Gone("FB_Motor"), Kept("Glob_Var", "It is native")],
+        });
+
+        Assert.Contains("will be removed from the project: FB_Motor", text, StringComparison.Ordinal);
+        Assert.Contains("will stay in the project: Glob_Var", text, StringComparison.Ordinal);
+
+        // Neither name appears in the other's sentence.
+        var removing = text[text.IndexOf("will be removed", StringComparison.Ordinal)..];
+        Assert.DoesNotContain("Glob_Var", removing[..removing.IndexOf("will stay", StringComparison.Ordinal)], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Two_different_reasons_for_keeping_get_two_different_sentences()
+    {
+        // Grouped by reason, because the reasons are not interchangeable: one is fixed by
+        // exporting again and the other is not fixed by anything the reader can do. Telling
+        // somebody to re-export when that will not help is its own small lie.
+        var text = ImportNarrative.Describe(new ImportPlan
+        {
+            Files = [],
+            Deletions = [Kept("Glob_Var", "No comparable hash"), Kept("Tasks", "Cannot rebuild it")],
+        });
+
+        Assert.Contains("No comparable hash", text, StringComparison.Ordinal);
+        Assert.Contains("Cannot rebuild it", text, StringComparison.Ordinal);
+        Assert.Contains("Glob_Var", text, StringComparison.Ordinal);
+        Assert.Contains("Tasks", text, StringComparison.Ordinal);
     }
 
     [Fact]

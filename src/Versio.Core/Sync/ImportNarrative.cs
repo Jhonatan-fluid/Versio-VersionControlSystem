@@ -58,16 +58,35 @@ public static class ImportNarrative
                 : $"{Files(applied)} will be applied.");
         }
 
-        if (plan.Deletions.Count > 0)
+        // Two sentences, because there are two outcomes and a dialog that merged them would be
+        // wrong about one of them. Named in the plan's own order — which is sorted, so two
+        // readings of the same repository list them the same way round.
+        var removing = plan.Deletions.Where(d => d.CannotVerify is null).ToList();
+        if (removing.Count > 0)
         {
-            // Named, and in the plan's own order — which is sorted, so two readings of the
-            // same repository list them the same way round.
-            var names = string.Join(", ", plan.Deletions.Select(d => d.Name));
-
             lines.Add(
-                $"{Objects(plan.Deletions.Count)} no longer {(plan.Deletions.Count == 1 ? "has" : "have")} "
-                + $"any exported file: {names}. This version does not remove objects from the "
-                + "project, so they will stay — delete them in the IDE if that is what you want.");
+                $"{Objects(removing.Count)} no longer {Has(removing.Count)} any exported file "
+                + "and will be removed from the project: "
+                + $"{string.Join(", ", removing.Select(d => d.Name))}. "
+                + "This cannot be undone from inside Versio. An object that has been edited in "
+                + "the IDE since the last export is kept instead, and the import says so.");
+        }
+
+        // Grouped by reason rather than lumped under one, because the reasons are not
+        // interchangeable: "the export recorded no comparable hash" is fixed by exporting
+        // again, and a form Versio cannot rebuild is not fixed by anything the reader can do.
+        // Telling somebody to re-export when that will not help is its own small lie.
+        foreach (var group in plan.Deletions
+                     .Where(d => d.CannotVerify is not null)
+                     .GroupBy(d => d.CannotVerify!, StringComparer.Ordinal)
+                     .OrderBy(g => g.Key, StringComparer.Ordinal))
+        {
+            var kept = group.ToList();
+            lines.Add(
+                $"{Objects(kept.Count)} no longer {Has(kept.Count)} any exported file but "
+                + $"will stay in the project: {string.Join(", ", kept.Select(d => d.Name))}. "
+                + $"{group.Key}. Delete {(kept.Count == 1 ? "it" : "them")} in the IDE if that "
+                + "is what you want.");
         }
 
         if (plan.StructuralChangesUnavailable is not null)
@@ -93,4 +112,6 @@ public static class ImportNarrative
     private static string Files(int n) => n == 1 ? "1 file" : $"{n} files";
 
     private static string Objects(int n) => n == 1 ? "1 object" : $"{n} objects";
+
+    private static string Has(int n) => n == 1 ? "has" : "have";
 }
