@@ -170,7 +170,7 @@ Versio.sln
 │                               native_equiv) import no scriptengine and run on
 │                               CPython too, which is what the parity tests use.
 ├─ tests/
-│  ├─ Versio.Core.Tests/        1,484 unit tests — pure, no IO, under a second
+│  ├─ Versio.Core.Tests/        1,485 unit tests — pure, no IO, under a second
 │  ├─ Versio.App.Tests/         480 tests that build the real windows and panels against
 │  │                            the real stylesheet on an STA thread — none is ever shown
 │  └─ Versio.Integration.Tests/ 228 tests against real CODESYS and real git, ~30 min

@@ -164,7 +164,7 @@ opens. That is `SAFEGUARDS.md` phases 1–8, and phase 9 is features rather than
 
 ```
   CODESYS pipeline    ████████████████████  proven on a real project
-  Domain core         ████████████████████  1,484 tests, under 400 ms
+  Domain core         ████████████████████  1,485 tests, under 400 ms
   Vendor seam         ████████████████████  enforced from assembly metadata
   Infrastructure      ████████████████████  drives real CODESYS + real git
   Desktop shell       ███████████████████░  full git surface, diff, and a UI audit applied
@@ -314,8 +314,9 @@ unless something changes.
 >
 > **This list is not the active work.** The import side has its own plan and its own queue —
 > [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md), whose *Handoff* section is the one to read
-> first. Phases 0–4 there are complete; **Phase 5 is next**, and its trap is written up rather
-> than left to be discovered.
+> first, and whose **feature checklist** is what says which of its 49 behaviours have been run
+> against a real project and which have not. Phases 0–4 there are complete and Phase 6 is part
+> done; **Phase 5 is next**, and its trap is written up rather than left to be discovered.
 
 > **The second queue — the code-shape work — is CLOSED, and three of its items were closed by
 > deciding not to do them.** It never had any bearing on what the product does. What was worth

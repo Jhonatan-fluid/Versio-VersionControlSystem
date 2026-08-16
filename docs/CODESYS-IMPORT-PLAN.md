@@ -1,9 +1,11 @@
 # Versio — closing the CODESYS import gaps
 
 **Date:** 2026-08-16 · **Phases 0, 4, 1, 2 and 3 are COMPLETE**, along with
-`versio_native_equiv.py`, the shared prerequisite Phase 5 also needs. **Phases 5 and 6 are what
-remain.** (Dates below read 2026-08-15 for work that ran past midnight into the 16th; the git
-log is the authority on when anything landed.)
+`versio_native_equiv.py`, the shared prerequisite Phase 5 also needs. **Phase 5 has not been
+started. Phase 6 is part done** — the codec parity test and the integration breadth landed on
+2026-08-16; **G8, G9 and the path-length guard are what is left of it.** (Dates below read
+2026-08-15 for work that ran past midnight into the 16th; the git log is the authority on when
+anything landed.)
 
 **Versio deletes objects — textual and native alike.** G1 is closed outright: delete a `.st` and
 the POU goes, delete a `.gvl.xml` and the GVL goes, and an object edited in the IDE since the
@@ -53,7 +55,7 @@ G12 had. **It cost a delete rule its subject** — see the checklist's C6.
 | | |
 |---|---|
 | Document | **The plan for making the import side a real bidirectional sync.** Deletes, renames, moves, typed task configuration, and a mirror that stops churning after every import |
-| Status | **Phases 0, 4, 1, 2 and 3 COMPLETE, with all three honesty fixes; phases 5 and 6 not started.** G1 and G2 both closed outright. Two gaps closed as unreachable, four API spellings corrected, six live defects fixed — G7 and G11 by Phase 4, G3 and G6 by Phase 1, **G1 by Phase 2 outright, textual and native**, with G4's resolution half and G5's recorded-object half beside them, and the confirmation dialog corrected after it spent a commit promising the opposite of what an import did. The import is **plan-driven end to end**: decided C#-side from the manifest, agreed to before CODESYS starts, refused without a plan, executed by a script that decides nothing — and it now **removes, renames and moves** objects as well as adding them, saying beforehand which ones will really go and which will really stay. **Every one of those behaviours has now been run against a real project one row at a time** — see the feature checklist — and **one failed: G12**, a GVL's declaration overwritten by its own XML, **closed the same day**, with an invariant behind it so the shape cannot recur |
+| Status | **Phases 0, 4, 1, 2 and 3 COMPLETE, with all three honesty fixes. Phase 5 not started; Phase 6 part done — G8 and G9 are what is left.** G1 and G2 both closed outright. Two gaps closed as unreachable, four API spellings corrected, six live defects fixed — G7 and G11 by Phase 4, G3 and G6 by Phase 1, **G1 by Phase 2 outright, textual and native**, with G4's resolution half and G5's recorded-object half beside them, and the confirmation dialog corrected after it spent a commit promising the opposite of what an import did. The import is **plan-driven end to end**: decided C#-side from the manifest, agreed to before CODESYS starts, refused without a plan, executed by a script that decides nothing — and it now **removes, renames and moves** objects as well as adding them, saying beforehand which ones will really go and which will really stay. **Every one of those behaviours has now been run against a real project one row at a time** — see the feature checklist — and **one failed: G12**, a GVL's declaration overwritten by its own XML, **closed the same day**, with an invariant behind it so the shape cannot recur |
 | Related | [`CODESYS.md`](CODESYS.md) — how CODESYS is driven today, and §12, the audit these gaps came from · [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) — what was measured · [`PLAN.md`](PLAN.md) — the architecture · [`SAFEGUARDS.md`](SAFEGUARDS.md) — what Versio refuses or waits for |
 
 > **These phase numbers are identifiers, not an order**, and they are **not** `PLAN.md`'s phases —
@@ -84,7 +86,7 @@ amount of reading, because it does not exist on the first cycle.
 | G2 | **Renames/moves duplicate** — rename in the mirror, a new object is created and the old one kept | ✅ **CLOSED 2026-08-15.** The planner pairs a departed file with an arrived one holding identical content and turns the pair into a rename on the object; the executing half is proven, GUID intact — the same `980a4bef…` before and after. **The common case took a second pass and manifest schema 6**: a POU's name lives in its declaration, so renaming it changes the whole file and no content hash matches — the *implementation* hash does, and that is what pairs it. The arrival is then applied rather than skipped, so the new declaration reaches the object. A rename that also edits the body is matched on content similarity against the departed file's bytes from HEAD, reached through a one-method probe rather than by giving the sync engine a git client. Renaming only the file is now recognised as changing nothing and says so, rather than reporting a rename it did not perform. A **move into a different container is verified after the fact** — CODESYS accepted one silently without performing it, so the script reports `RENAME_NOT_APPLIED` |
 | G3 | **New object named from the filename** — `create_textual` uses `parts[-1]` and throws away the parsed `info["name"]`, so `PROGRAM Foo` in `Bar.st` creates `Bar` | ✅ **CLOSED by Phase 1, 2026-08-15.** The plan carries the declaration's name and the script takes it; the disagreement is a warning naming both. **Proven live**: a `Bar.st` declaring `PROGRAM Foo` creates `Foo` against real CODESYS, in `ImportLoggingTests` |
 | G4 | **Encoded names unresolvable** — looks up the *encoded* stem against raw names, giving a duplicate named `weird%3Cname%3E` | ✅ **Resolution CLOSED by Phase 1, 2026-08-15**: chains are real decoded names from the manifest, built C#-side where `DecodeStem` lives and is parity-tested. What remains is the shortened-stem residue — a digest tail decodes to nothing, and such an object is reported as unresolvable rather than guessed at. Creation was already unreachable (P5) |
-| G5 | **A dot in a name breaks the owner split** — `My.Thing.st` looks for member `Thing` of parent `My` | **Unreachable by creation** (P5), and ✅ **the existing-object half CLOSED by Phase 1**: ownership comes from the manifest's parent-GUID chain, and for pre-schema-4 mirrors the recorded name disambiguates — a name equal to the whole stem is never split. Only a manifest-absent dotted *create* still splits, and P5 says CODESYS would refuse it anyway |
+| G5 | **A dot in a name breaks the owner split** — `My.Thing.st` looks for member `Thing` of parent `My` | **Unreachable by creation** (P5), and ✅ **the existing-object half CLOSED by Phase 1**: ownership comes from the manifest's parent-GUID chain, and for pre-schema-4 mirrors the recorded name disambiguates — a name equal to the whole stem is never split. Only a manifest-absent dotted *create* still splits, and P5 says CODESYS would refuse it anyway. **Proven against a real export on 2026-08-16**, where it had only ever been proven against hand-built manifests: `MachineWithMembers` exports an action as `FB_Pump.Stop.action.st`, and the planner resolves it through the recorded parent GUID rather than by splitting the dot |
 | G6 | **Stray files go to `import_native`** — a `README.md` in the mirror is handed to CODESYS as native XML | ✅ **CLOSED by Phase 1, 2026-08-15.** A file that is neither a recorded object, bookkeeping, nor a recognisable source is skipped with a warning and never handed to the toolchain — including unrecorded YAML, and files appearing between planning and execution (`NOT_IN_PLAN`). **Proven live** with a real `README.md` in `ImportLoggingTests` |
 | G7 | **Task Configuration mutated on every import** — `Core2` `-1`→`-2`; documented as "diff-only", which it never was | ✅ **CLOSED by Phase 4, 2026-08-15.** `Core2` reads `-2,-1` across four consecutive snapshots where it used to move on the first cycle, and `Task Configuration.xml` has dropped out of the churn set entirely. **`-2,-1` is `MainTask,VISU_TASK`, and only the second number was ever the defect** — the baseline capture has MainTask at `-2` already, so **VISU_TASK's `-1` is the one G7 destroyed** and the one an integration test now asserts. Worth knowing before reading a diff of this file: a run where both read `-2` is the bug, not a run where either does |
 | G8 | **Managed library references unproven** — every fixture reference is a placeholder, so the `managed_library` branch has never executed | **Half closed**: P9 produces a real managed reference in one call, so no hand-built fixture is needed. (This row used to say 34 references; the Library Manager reports **21**) |
@@ -1107,6 +1109,11 @@ the **existing bytes**.
   already written**: `A_task_priority_edited_in_the_mirror_…` adopts, exports, edits the mirror
   and imports against real CODESYS with sidecars, so the remaining cases extend it rather than
   starting over.
+  - ✅ **Done 2026-08-16, and considerably wider than this bullet asked for.** The feature
+    checklist runs 49 rows one at a time — delete, rename, move, and every refusal around them
+    — in `ImportFeatureAuditTests`, and the move row is the one worth reading: **CODESYS
+    declined the move silently** and Versio reported `RENAME_NOT_APPLIED` rather than claiming
+    it. GUID survival is asserted on three separate rename paths.
 - Docs: [`CODESYS.md`](CODESYS.md) §1.3 (the API this uncovered), §3.1 (job schema 2), §5.2
   (`TASK_BOTH`), §6 (plan-driven import), §7 (G10, and what "deterministic" now means), §12 D1–D6
   resolved rather than described. [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) gate 0.5b annotated:
@@ -1114,10 +1121,23 @@ the **existing bytes**.
 
 ---
 
-## Handoff — picking this up after Phase 3
+## Handoff — picking this up after the feature checklist
 
-**Where you are.** The import is plan-driven end to end, and Versio now **deletes, renames and
-moves** objects as well as applying text.
+**Where you are.** The import is plan-driven end to end, and Versio **deletes, renames and moves**
+objects as well as applying text. **Every one of those behaviours has been run against a real
+project one row at a time** — the [feature checklist](#the-import-feature-checklist-run-one-row-at-a-time--2026-08-16)
+is the list, the method and the verdicts, and it is the first thing to read after this paragraph.
+
+**Read the checklist's *"What this run found"* before starting anything.** Three of its four
+notes are about how to test this code rather than about the import itself, and each one cost a
+run to learn: a planner refusal never crosses the wire, half the rows are refusals and prove
+nothing without the rows that go the other way, and the corpus cannot reach two of them at all.
+
+**Two defects came out of it, both closed, and both were the same shape** — a rule stated in a
+comment that nothing enforced. G12: a GVL's declaration was applied and then overwritten by its
+own XML. The ST codecs: two languages' default `trim` disagreeing about four characters, on
+three surfaces. Each is now held by an invariant rather than by a sentence — one asserting no
+object writes two files the import applies, the other comparing the two trim sets directly.
 
 ```
 SyncViewModel decides the plan ─► asks ─► SyncJob.Plan ─► PlcProjectJob.Plan
@@ -1150,10 +1170,24 @@ additive, each is unavailable until the next export, and **absent never means "u
    round trips. **The trap is written up in Phase 5's own section and is not the one-line
    rule**: the substitution has to happen *before* the hash is taken, or `_manifest.json`
    disagrees with the bytes beside it and the hash gate reads the bytes.
-2. **Phase 6 — G8, G9, the remaining parity tests, integration breadth.** The
-   `StTextCodec` ↔ `versio_text` codec pair is the highest-consequence uncompared thing left:
-   a bug in `split_st` silently moves code between a declaration and an implementation.
-3. **Still open from Phase 4:** `TaskCatalog.cs`, the C# reader. **Land it with the panel
+2. **Phase 6 — what is left of it is G8 and G9.** The parity tests and the integration breadth
+   landed on 2026-08-16. **G9 is the one with a real-world failure behind it**: stems are
+   capped at 80 characters, the total path is not, and `.versio_staging` makes the longer of
+   the two 16 characters longer again — so a real machine project with a deep folder chain
+   reaches `MAX_PATH` and P8 confirmed CODESYS will not stop it. G8 is cheap since P9.
+
+3. **The two rows the corpus still cannot reach: E2 and E4.** Both need an object whose name
+   requires percent-encoding, and P5 measured that CODESYS refuses to *create* one — so no
+   fixture builder can produce it. It has to arrive from a library or an external-file
+   reference, and `README.md`'s own object list has a real example of the latter. Until one
+   exists, G4's resolution half is proven by unit tests and by nothing else.
+
+4. **Which moves actually work has never been established.** P2 measured that a move into a
+   folder preserves the GUID; the feature checklist measured that a move out of `Application`
+   into `Plc Logic` is **declined silently by CODESYS** and correctly reported. Those are two
+   data points either side of a line nobody has drawn. The header of this document says Versio
+   "renames and moves" objects, and that is true of renames and only partly true of moves.
+5. **Still open from Phase 4:** `TaskCatalog.cs`, the C# reader. **Land it with the panel
    change that consumes it**, not before — a reader with no production caller is a
    specification pretending to be code, which is exactly what `DecodeStem` and
    `StDeclarationParser` were until the planner became their first caller.
