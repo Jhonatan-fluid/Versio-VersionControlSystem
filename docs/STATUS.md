@@ -946,7 +946,8 @@ Written down with their evidence, because the reasoning is worth more than the f
 > still lists the old name**, because CODESYS stores a task's POU list by NAME and a scripted
 > `rename()` does not rewrite it. The claim was written into the README, the plan, `SAFEGUARDS`
 > and the **confirmation dialog** on the strength of GUID equality, never measured.
-> **✅ Corrected 2026-08-15**; the limitation itself is open.
+> **✅ Corrected AND fixed 2026-08-15**: the wording no longer over-promises, and the import
+> repoints the task so the claim it does make is true.
 
 **It was found by a question, not by a test.** Asked whether a real project had actually been
 renamed and imported, the honest answer was "yes, and the GUID was asserted" — which is evidence
@@ -977,10 +978,31 @@ the same two-sided discipline the deletion wording needed after it lied in the o
 The integration test pins the behaviour as it really is, so it will notice if a future CODESYS,
 or a fix here, starts updating the reference.
 
-**Still open, and deliberately not fixed in the same change**: whether Versio should rewrite a
-task's POU list when it renames the object it names. It is a second write to a second object on
-the strength of a pairing that is itself a judgement in the similarity case, and that deserves
-its own decision rather than riding along with the correction.
+**✅ And then fixed, the same day.** The import repoints the task itself: after a rename it walks
+every object carrying a POU list and rewrites entries matching the old name. Measured — `MainTask`
+now reads `[PLC_PRG, Renamed]`, with `PLC_PRG` untouched, so the retarget is per entry rather than
+a rewrite of the task.
+
+**The API took two probes and every spelling but one is a trap:**
+
+| Call | Result |
+|---|---|
+| `pous[i] = name` | raises — the list does not support item assignment |
+| `pous.remove(name)` | **reports success and does nothing** — a silent no-op, exactly like `move()` |
+| `pous.remove(index)` | raises *"not found in the specified Collection"* |
+| `pous.replace(name, name)` | raises *"expected int, got str"* |
+| **`pous.replace(index, name)`** | **works, and survives a save and reopen** |
+
+**The first probe nearly recorded the wrong answer**, again: it tried `remove` then `add`, saw
+both report success, and would have concluded the list was writable that way — while `remove`
+had changed nothing and `add` had left a third entry behind. Reading the *value back* after each
+call is what caught it. That is the third silent success measured in this API, after `move()`
+and `create_folder`.
+
+**The dialog says the narrower true thing.** It names tasks specifically rather than claiming
+"references" survive: a visualisation binding may refer to an object by name too, and that has
+not been measured. The vaguer word is exactly how the original false claim got in, so
+`ImportNarrativeTests` asserts the word *references* is **absent**.
 
 ### A rename that renames nothing was reported as a rename — and the test that found it was written to assert the opposite
 

@@ -633,6 +633,16 @@ public sealed class LocalCodesysRunner(
                             : $"renamed {evt.String("name")} to {evt.String("newName")}");
                     break;
 
+                case "task_pou_retargeted":
+                    // INFO, and it is the line that says the project was corrected rather than
+                    // merely changed. A task's POU list is stored by name and a rename does not
+                    // update it, so without this step the task would name a POU that no longer
+                    // exists — and without this line, the fix would happen silently.
+                    _log.Info(LogCategory.Codesys,
+                        $"{evt.String("task")} now runs {evt.String("to")} "
+                        + $"(was {evt.String("from")}, renamed by this import)");
+                    break;
+
                 case "already_gone":
                     // Not a failure and not a refusal: the mirror said delete it and the
                     // project no longer has it, so the two agree. Debug because the
@@ -750,6 +760,7 @@ public sealed class LocalCodesysRunner(
         // same reason REMOVED is near the front: a reader scanning this line for what happened
         // to their object should meet the structural changes before the arithmetic.
         Add("renamed/moved", "renamed");
+        Add("task reference(s) repointed", "retargeted");
 
         Add("kept (not deleted)", "kept");
         Add("unchanged", "unchanged");

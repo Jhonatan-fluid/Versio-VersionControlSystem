@@ -98,13 +98,17 @@ public class ImportNarrativeTests
         Assert.Contains("Old → New", text, StringComparison.Ordinal);
         Assert.Contains("the same object is kept", text, StringComparison.Ordinal);
 
-        // AND IT MUST NOT PROMISE WHAT WAS MEASURED FALSE. The sentence said "so their
-        // references and task assignments survive" until a test went looking: CODESYS stores a
-        // task's POU list by NAME, and a scripted rename does not rewrite it, so a renamed POU
-        // leaves its task pointing at a name nothing answers to. Asserted absent, not merely
-        // replaced — the same two-sided discipline the deletion wording needed.
-        Assert.DoesNotContain("task assignments survive", text, StringComparison.Ordinal);
-        Assert.Contains("still uses the old name", text, StringComparison.Ordinal);
+        // IT PROMISES THE TASK REPOINT, because that one is now made true rather than assumed.
+        // The sentence said "references and task assignments survive" on the strength of the
+        // GUID surviving, and a test went looking and found the opposite — a task's POU list
+        // is stored by name and rename() does not rewrite it. The import repoints those lists
+        // itself now, so the claim holds.
+        Assert.Contains("any task that ran it is repointed", text, StringComparison.Ordinal);
+
+        // AND IT STILL MUST NOT CLAIM "references" IN GENERAL. What else refers to an object
+        // by name — a visualisation binding, say — has not been measured, and the vaguer word
+        // is how the original false claim got in.
+        Assert.DoesNotContain("references", text, StringComparison.Ordinal);
 
         // And it must NOT read as a deletion, which is what it would have been without the
         // pairing — the whole point of Phase 3.

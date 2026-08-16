@@ -863,29 +863,31 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
         // THE WHOLE POINT: the same object under a new name, not a new object wearing it.
         Assert.Equal(original.Guid, renamed.Guid);
 
-        // ⛔ AND THE THING THE GUID WAS A PROXY FOR, WHICH DOES NOT HOLD.
+        // AND THE THING THE GUID IS A PROXY FOR, MEASURED RATHER THAN INFERRED.
         //
         // "References and task assignments survive" was written into the README, the plan and
-        // the confirmation dialog as the reason a rename beats a delete-plus-create. It was an
-        // INFERENCE from GUID equality, never a measurement, and this assertion was added to
-        // turn it into one. It measured the opposite.
+        // the confirmation dialog as the reason a rename beats a delete-plus-create — on the
+        // strength of GUID equality, never checked. This assertion was added to check it, and
+        // it FAILED: a task's POU list is stored BY NAME, rename() does not rewrite it, and
+        // MainTask went on listing Simulation, a POU that no longer existed.
         //
-        // MainTask lists Simulation among its POUs in this fixture. After the object is renamed
-        // — same GUID, so genuinely the same object — the task STILL SAYS Simulation, a POU
-        // that no longer exists. CODESYS stores a task's POU list by NAME, and the scripted
-        // rename() does not rewrite it. versio_import.py never writes `pous`, so this is the
-        // live project talking and not a stale file being echoed back.
+        // So the import repoints it. `pous.replace(index, newName)` is the one spelling that
+        // works — remove(name) reports success and does nothing, remove(index) raises, and
+        // replace(name, name) raises — all measured, all recorded in CODESYS.md.
         //
-        // Pinned as it actually behaves rather than deleted, because it is the only thing that
-        // will notice if a future CODESYS, or a fix on our side, starts updating the reference.
-        // The finding is written up in STATUS.md.
+        // THE PROJECT MUST NOT BE LEFT NAMING SOMETHING THAT IS NOT THERE, which is what makes
+        // this an assertion about correctness rather than tidiness.
         var tasks = await File.ReadAllTextAsync(Path.Combine(
             await ReExport(install, binding.Id, "verify-refs"),
             RelApp, "Task Configuration.tasks.yaml"));
 
         output.WriteLine(tasks);
-        Assert.Contains("- Simulation", tasks, StringComparison.Ordinal);
-        Assert.DoesNotContain("- Renamed", tasks, StringComparison.Ordinal);
+        Assert.Contains("- Renamed", tasks, StringComparison.Ordinal);
+        Assert.DoesNotContain("- Simulation", tasks, StringComparison.Ordinal);
+
+        // The rest of the list is untouched: retargeting is per entry, not a rewrite of the
+        // task, so a POU that had nothing to do with the rename is still there.
+        Assert.Contains("- PLC_PRG", tasks, StringComparison.Ordinal);
 
         // And the new declaration actually reached the object. The rename is followed by
         // APPLYING the file — skip that and the object wears its new name over its old

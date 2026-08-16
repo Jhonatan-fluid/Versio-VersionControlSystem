@@ -93,18 +93,21 @@ public static class ImportNarrative
 
             // WHAT THIS SENTENCE MAY AND MAY NOT PROMISE.
             //
-            // It said "so their references and task assignments survive" until 2026-08-15,
-            // which was an inference from the object keeping its GUID and was measured false:
-            // CODESYS stores a task's POU list by NAME, and a scripted rename does not rewrite
-            // it, so a renamed POU leaves its task pointing at a name nothing answers to. The
-            // object surviving is true and worth saying; what that buys the reader is not
-            // something this dialog knows.
+            // It said "so their references and task assignments survive" on the strength of the
+            // object keeping its GUID, and that was measured FALSE: CODESYS stores a task's POU
+            // list by name, and a rename does not rewrite it. The import repoints those lists
+            // itself now, so the claim is true again — but only because it was made true, and
+            // only for the references Versio actually corrects.
+            //
+            // TASKS ARE NAMED SPECIFICALLY rather than saying "references" in general. What
+            // else in a project refers to an object by name — a visualisation binding, say —
+            // has not been measured, and a dialog is the wrong place to be vague about which
+            // half of a claim was checked.
             lines.Add(
                 $"{Objects(plan.Renames.Count)} will be {Verb(plan.Renames.Count, moves)} in "
-                + "the project rather than removed and recreated, so the same object is kept: "
-                + $"{string.Join(", ", described)}. Anything that referred to "
-                + $"{(plan.Renames.Count == 1 ? "it" : "them")} by name — a task's POU list, for "
-                + "instance — still uses the old name and needs checking in the IDE.");
+                + "the project rather than removed and recreated, so the same object is kept "
+                + $"and any task that ran {(plan.Renames.Count == 1 ? "it" : "them")} is "
+                + $"repointed: {string.Join(", ", described)}.");
         }
 
         // Two sentences, because there are two outcomes and a dialog that merged them would be

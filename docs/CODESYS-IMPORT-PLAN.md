@@ -815,13 +815,16 @@ business raising a change event in it.
 measured, the same `980a4bef…` before and after — so the object survives rather than being
 destroyed and rebuilt.
 
-> ⛔ **What that does NOT buy, measured after the fact.** A reference held by **name** does not
-> follow the rename: `MainTask` lists `Simulation` among its POUs, and after renaming the object
-> to `Renamed` the task still says `Simulation` — a POU that no longer exists. CODESYS stores
-> the list by name and a scripted `rename()` does not rewrite it. This plan, the README,
-> `SAFEGUARDS` and the confirmation dialog all claimed otherwise on the strength of GUID
-> equality alone. Corrected; see the Finding in [`STATUS.md`](STATUS.md). Whether Versio should
-> rewrite the task is open and deliberately not decided here.
+> **What that does not buy on its own, and what was done about it.** A reference held by **name**
+> does not follow a rename: `MainTask` lists `Simulation` among its POUs, and renaming the object
+> left the task naming a POU that no longer existed. This plan, the README, `SAFEGUARDS` and the
+> confirmation dialog all claimed otherwise on the strength of GUID equality alone.
+>
+> **The import repoints the task itself now** — `pous.replace(index, name)`, the one spelling of
+> five that works — so `MainTask` reads `[PLC_PRG, Renamed]` afterwards, `PLC_PRG` untouched.
+> The dialog names tasks specifically rather than claiming "references" in general, because a
+> visualisation binding may refer by name too and that has not been measured. See the Finding in
+> [`STATUS.md`](STATUS.md).
 
 | Pass | Sees | Needs |
 |---|---|---|

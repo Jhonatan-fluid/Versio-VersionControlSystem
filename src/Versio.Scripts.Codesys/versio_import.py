@@ -231,6 +231,12 @@ class Importer(object):
         # without saving, and the object would come back under its old name. That is the
         # third time this project would have paid for the same omission.
         self.renamed = 0
+
+        # Task POU references repointed at a renamed object. Counted separately from
+        # `renamed` because it answers a different question: how much of the project had to
+        # be corrected BECAUSE of a rename, which is the number that would have been zero
+        # while Versio was claiming references looked after themselves.
+        self.retargeted = 0
         self.warnings = []
 
         # Why the last native re-export failed, so the ONE warning the caller emits can carry
@@ -762,6 +768,76 @@ class Importer(object):
                   "path": "/".join(chain), "newParent": "/".join(parent_chain),
                   "moved": bool(rename.get("isMove"))})
 
+            if old_name != new_name:
+                self.retarget_task_pous(old_name, new_name)
+
+    def retarget_task_pous(self, old_name, new_name):
+        """Point every task that ran `old_name` at `new_name`.
+
+        WHY THIS IS NOT OPTIONAL. A task's POU list is stored BY NAME, and rename() does not
+        rewrite it - measured: renaming Simulation to Renamed left MainTask listing
+        Simulation, a POU that no longer existed. The object survived with its GUID and the
+        thing that ran it did not follow, so the rename produced a project that was quietly
+        broken in a way nothing reported.
+
+        Versio claimed the opposite in its own confirmation dialog for a while, on the
+        strength of the GUID surviving. It is fixed here rather than only in the wording.
+
+        THE API, all of it measured because none of it is guessable:
+          - the list is a ScriptPouObjectList of plain str, not of objects;
+          - `remove(name)` REPORTS SUCCESS AND DOES NOTHING - a silent no-op of exactly the
+            kind move() turned out to be;
+          - `remove(index)` raises "not found in the specified Collection", so the argument
+            is an item and an int is not one;
+          - `replace(name, name)` raises "expected int, got str";
+          - `replace(index, name)` works, and survives a save and reopen.
+
+        BY NAME IS ALL THERE IS, so this is as exact as the toolchain allows: two objects
+        called Simulation in different folders are one entry in a task list, and nothing in
+        the list says which was meant. Renaming one retargets the entry either way - the same
+        ambiguity CODESYS itself has, not one added here.
+        """
+        for task in self.walk_tasks(self.proj):
+            pous = safe(lambda: list(task.pous), None)
+            if not pous:
+                continue
+
+            for index, name in enumerate(pous):
+                if name != old_name:
+                    continue
+                try:
+                    task.pous.replace(index, new_name)
+                except Exception as e:
+                    self.warn("TASK_POU_RETARGET_FAILED",
+                              safe(lambda: task.get_name(), ""), str(e))
+                    continue
+
+                self.retargeted += 1
+                emit({"t": "task_pou_retargeted",
+                      "task": safe(lambda: task.get_name(), ""),
+                      "from": old_name, "to": new_name})
+
+    def walk_tasks(self, node, depth=0):
+        """Every object in the project that carries a POU list.
+
+        Found by probing for the attribute rather than by looking for a TASK type GUID. The
+        type table is incomplete by nature - that is written down in versio_types - and a
+        task under an unmapped container would be missed by a type walk while still holding
+        a reference this has to fix.
+
+        Depth-capped for the same reason the export's walk is: a cycle in the object tree
+        would otherwise hang an import with no output.
+        """
+        if depth > 32:
+            return
+
+        for child in safe(lambda: node.get_children(), []) or []:
+            if safe(lambda: child.pous, None) is not None:
+                yield child
+
+            for found in self.walk_tasks(child, depth + 1):
+                yield found
+
     def delete_planned(self):
         """Remove objects the mirror no longer has any file for.
 
@@ -1053,7 +1129,7 @@ def main():
     # object would otherwise close without saving, putting the object back - an import that
     # reported success, removed something, and changed nothing.
     dirty = (imp.updated > 0 or imp.native > 0 or imp.partial > 0
-             or imp.removed > 0 or imp.renamed > 0)
+             or imp.removed > 0 or imp.renamed > 0 or imp.retargeted > 0)
     if job.get("save", True) and dirty:
         proj.save()
         emit({"t": "saved"})
@@ -1064,6 +1140,7 @@ def main():
           "native": imp.native, "created": imp.created,
           "missing": imp.missing, "failed": imp.failed,
           "partial": imp.partial, "removed": imp.removed, "renamed": imp.renamed,
+          "retargeted": imp.retargeted,
           "kept": imp.kept,
           "notImported": imp.one_way, "warnings": len(imp.warnings)})
 
