@@ -1,9 +1,10 @@
 # Versio — closing the CODESYS import gaps
 
-**Date:** 2026-08-16 · **Phases 0, 4, 1, 2, 3 and 5 are COMPLETE.** **Phase 6 is part
-done** — the codec parity test and the integration breadth landed on 2026-08-16; **G8 and G9
-are what is left of it, and G9 is the bigger of the two.** Its silence is closed: an export that
-loses an object used to report full coverage, and does not now. (Dates below read
+**Date:** 2026-08-16 · **Phases 0, 4, 1, 2, 3 and 5 are COMPLETE.** **Phase 6 is nearly
+done** — the codec parity test and the integration breadth landed on 2026-08-16, and **G9 is
+guarded**, in two halves because one of them cannot be machine-independent. **G8 is the only
+gap left**, and it is cheap. Everything else outstanding is a *decision* rather than a task —
+see [What is left, and what it costs](#what-is-left-and-what-it-costs). (Dates below read
 2026-08-15 for work that ran past midnight into the 16th; the git log is the authority on when
 anything landed.)
 
@@ -55,7 +56,7 @@ G12 had. **It cost a delete rule its subject** — see the checklist's C6.
 | | |
 |---|---|
 | Document | **The plan for making the import side a real bidirectional sync.** Deletes, renames, moves, typed task configuration, and a mirror that stops churning after every import |
-| Status | **Phases 0, 4, 1, 2, 3 and 5 COMPLETE, with all three honesty fixes. Phase 6 part done — G8 and G9 are what is left.** **G10 is closed**: an import and a re-export leave the mirror byte-identical, `P7: SETTLES`.** G1 and G2 both closed outright. Two gaps closed as unreachable, four API spellings corrected, six live defects fixed — G7 and G11 by Phase 4, G3 and G6 by Phase 1, **G1 by Phase 2 outright, textual and native**, with G4's resolution half and G5's recorded-object half beside them, and the confirmation dialog corrected after it spent a commit promising the opposite of what an import did. The import is **plan-driven end to end**: decided C#-side from the manifest, agreed to before CODESYS starts, refused without a plan, executed by a script that decides nothing — and it now **removes, renames and moves** objects as well as adding them, saying beforehand which ones will really go and which will really stay. **Every one of those behaviours has now been run against a real project one row at a time** — see the feature checklist — and **one failed: G12**, a GVL's declaration overwritten by its own XML, **closed the same day**, with an invariant behind it so the shape cannot recur |
+| Status | **Phases 0, 4, 1, 2, 3 and 5 COMPLETE, with all three honesty fixes. Phase 6 nearly done — G9 is guarded and G8 is the only gap left.** **An export that loses an object is reported** rather than passing as complete coverage: `ProjectManifest.Warnings` had no reader at all, so a failed write vanished from the mirror, the manifest and the panel while the run said `Completed`. **G10 is closed**: an import and a re-export leave the mirror byte-identical, `P7: SETTLES`.** G1 and G2 both closed outright. Two gaps closed as unreachable, four API spellings corrected, six live defects fixed — G7 and G11 by Phase 4, G3 and G6 by Phase 1, **G1 by Phase 2 outright, textual and native**, with G4's resolution half and G5's recorded-object half beside them, and the confirmation dialog corrected after it spent a commit promising the opposite of what an import did. The import is **plan-driven end to end**: decided C#-side from the manifest, agreed to before CODESYS starts, refused without a plan, executed by a script that decides nothing — and it now **removes, renames and moves** objects as well as adding them, saying beforehand which ones will really go and which will really stay. **Every one of those behaviours has now been run against a real project one row at a time** — see the feature checklist — and **one failed: G12**, a GVL's declaration overwritten by its own XML, **closed the same day**, with an invariant behind it so the shape cannot recur |
 | Related | [`CODESYS.md`](CODESYS.md) — how CODESYS is driven today, and §12, the audit these gaps came from · [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) — what was measured · [`PLAN.md`](PLAN.md) — the architecture · [`SAFEGUARDS.md`](SAFEGUARDS.md) — what Versio refuses or waits for |
 
 > **These phase numbers are identifiers, not an order**, and they are **not** `PLAN.md`'s phases —
@@ -252,9 +253,10 @@ already exists.**
 | ~~10th~~ | ✅ **The dialog corrected.** Landed 2026-08-15 | **Not planned — found by re-reading the executing half as if somebody else had written it.** The script grew `remove()` and no sentence moved, so the confirmation dialog told people their objects would stay and then deleted them. Same shape as the 2nd row: a live defect introduced by the commit that had just landed. See the finding in [`STATUS.md`](STATUS.md) |
 | ~~11th~~ | ✅ **The native content check — Phase 2's open half.** Landed 2026-08-15, manifest schema 5 | It went before Phase 3 because it makes deletion **whole** rather than a feature that works on 2 of the fixture's 13 objects, and because the alternative design would have dragged git into the script to serve a phase that had not been written yet. Verified four ways against real CODESYS, including a falsification case |
 | ~~12th~~ | ✅ **Phase 3 — renames and moves, all three passes.** Landed 2026-08-15 | Split from step 2 deliberately: exact-content matching needs nothing but the manifest and the mirror, covers most real renames, and does not drag git into the planner. It also turned up `move()` succeeding silently without moving anything — see the box in Phase 3 |
-| **NEXT** | **Phase 5 — a mirror that stops churning** | Its prerequisite is proven twice over: `versio_native_equiv` exists, and Phase 2 measured that normalisation is stable across round trips |
-| ~~**14th**~~ | ✅ **G12 — a GVL's `.gvl.st` edit reaching the project.** Landed 2026-08-16 | **Was a live silent-data-loss path**, found by the feature checklist on 2026-08-16 and the only open defect that destroys somebody's edit without saying so. Phase 5 changes when files are rewritten and touches the same export code, so fixing this first keeps the two reviews apart. Its three candidate fixes are not interchangeable and one of them stops the two-file rule protecting a GVL — the choice was made deliberately: the XML half became export-only, which leaves a GVL with one importable file and therefore **no two-file rule** — it is an ordinary single-file object now, protected by the content check like every other one |
-| **13th** | **Phase 6 — remaining gaps, tests, docs** | G8 and G9, the parity tests, the integration tests |
+| ~~**14th**~~ | ✅ **Phase 5 — a mirror that stops churning.** Landed 2026-08-16 | Its prerequisite was proven twice over: `versio_native_equiv` exists, and Phase 2 measured that normalisation is stable across round trips. `Measure-ImportStability.ps1` prints `P7: SETTLES` with the counter flat at 44 across all three cycles |
+| ~~**13th**~~ | ✅ **G12 — a GVL's `.gvl.st` edit reaching the project.** Landed 2026-08-16 | **Was a live silent-data-loss path**, found by the feature checklist on 2026-08-16 and the only open defect that destroys somebody's edit without saying so. Phase 5 changes when files are rewritten and touches the same export code, so fixing this first keeps the two reviews apart. Its three candidate fixes are not interchangeable and one of them stops the two-file rule protecting a GVL — the choice was made deliberately: the XML half became export-only, which leaves a GVL with one importable file and therefore **no two-file rule** — it is an ordinary single-file object now, protected by the content check like every other one |
+| ~~**15th**~~ | ✅ **The coverage blind spot, and G9's guard.** Landed 2026-08-16 | **Not planned as a step** — found by asking what G9 costs *today* before writing its guard. An export that could not write an object reported `Complete`, because `ExportCoverage` read the skips and nothing read `manifest.warnings`. Fixed first, because it is what makes every *other* export failure visible too; G9's guard went in behind it. See the two Findings in [`STATUS.md`](STATUS.md) |
+| **NEXT** | **Phase 6 — what is left is G8** | The parity tests and the integration breadth landed 2026-08-16; G9 is guarded. **G8 is the last gap**, and P9 made it cheap: `add_library("Standard, 3.5.17.0 (System)")` yields `is_managed: true` in one call |
 
 ### The three honesty fixes — all three done
 
@@ -1225,50 +1227,41 @@ the exporter: `nhash` (5) makes a native deletion checkable, `ihash` (6) makes a
 recognisable, `shash` (7) makes a renamed-and-edited one recognisable without git. Each is
 additive, each is unavailable until the next export, and **absent never means "unchanged"**.
 
-**Next, in order:**
+## What is left, and what it costs
 
-1. **Phase 6 — what is left of it is G8 and G9.** The parity tests and the integration breadth
-   landed on 2026-08-16. G8 is cheap since P9.
+**One gap, and four decisions.** G1, G2, G3, G6, G7, G9, G10, G11 and G12 are closed; G4 and G5
+are closed but for two rows no fixture can reach. Nothing below blocks anything else, and only
+the first is a task rather than a judgement call.
 
-   **G9, with its evidence corrected.** This document said three times that G9 "has a
-   real-world failure behind it", and **nothing in the repository supports that**. What
-   exists is P8 — a measurement of *CODESYS's* tolerance, ~420 characters without complaint —
-   and the path-like-name leak, which was found in a real mirror and is a different problem,
-   already closed by `Shortened()`. **Nobody has watched an export hit `MAX_PATH`.** It is the
-   "a story that fits, recorded as a fact" shape this file has caught itself in twice before,
-   propagated across two documents unchallenged.
+| | What | Effort | Why it is the size it is |
+|---|---|---|---|
+| **1** | **G8 — prove the `managed_library` branch** | **Half a day.** One fixture variant, one integration test, ~3 CODESYS launches | The last real gap. P9 already measured the call that produces one: `add_library("Standard, 3.5.17.0 (System)")`, **one argument, not two**, yielding `is_managed: true`. The branch has never executed, so it is untested rather than known-broken. **The plan's own escape hatch stands**: if it turns awkward, mark the branch unproven in `versio_libraries.py` and stop — an untested branch that says so is honest |
+| **2** | **Which moves actually work** | **Half a day**, mostly CODESYS wall-clock | Two data points either side of an undrawn line. P2: a move into a folder keeps the GUID. The feature checklist, D6: a move out of `Application` into `Plc Logic` is **declined silently by CODESYS** and correctly reported as `RENAME_NOT_APPLIED`. This document's header says Versio "renames and moves" objects, and that is true of renames and **partly** true of moves. A probe over a handful of container types settles it. Cheap, and it closes an honesty gap rather than adding a feature |
+| **3** | **G9's remaining half — the 190-character file name** | **A day to change; the cost is not the code** | Preventing rather than reporting means shrinking `MaxStem` or dropping the parent prefix, and **either renames every method, action, property and transition in every mirror already committed** — a git rename with no content change, in everybody's repository, on the next export. Written up rather than taken because it is the owner's call. `The_longest_legal_file_name_leaves_no_room_for_an_ordinary_checkout` derives the number, so whoever takes it on is told when they have succeeded |
+| **4** | **E2 and E4 — percent-encoded names** | **Unknown, and unbounded** | Not a coding task: it needs a *fixture that cannot be built*. P5 measured that CODESYS refuses to **create** such a name, so the object has to arrive from a library or an external-file reference. `README.md`'s own object list has a real example of the latter. Until one exists, **G4's resolution half is proven by unit tests and by nothing else** — say so rather than let the checklist imply otherwise |
+| **5** | **`TaskCatalog.cs`** | **Half a day, but not alone** | The C# reader for `.tasks.yaml`, so something outside python can read one. **Land it with the panel change that consumes it.** Note the precedent cuts both ways: `LibraryCatalog.cs` is already in `Versio.Core/Projects/` with tests and **no production caller**, so the rule "no reader without a consumer" has already been broken by its sibling. The real blocker for both is the panel |
 
-   **It is real anyway, and by worse arithmetic than the gap row assumed.** `MaxStem = 80`'s
-   own remarks say 80 was chosen so "a deep CODESYS folder chain plus this still clears
-   Windows' 260-character path limit". Two things make that false:
+**Roughly two to three days of work, plus one decision that is not work.** Items 1 and 2 are a
+day between them and finish Phase 6. Item 3 is a judgement about other people's repositories.
+Item 4 is a corpus problem that may never be solved and should be labelled instead of chased.
+Item 5 waits for the panel.
 
-   - the shortened branch returns `tail[..80] + "~" + digest6` — **87 characters, not 80**;
-   - `file_name_for` prefixes a member with its owner, so a METHOD, PROPERTY, ACTION or
-     TRANSITION file name is **two capped stems**: 87 + 1 + 87 + `.action` + `.st` = **185
-     characters**, every one of them legal under the cap.
+**Before any of it, run the gate.** The full integration suite is ~31 minutes and drives real
+CODESYS; the fast lane is `--filter "Toolchain!=Codesys"` and is 18 seconds. Both commands are
+in `CLAUDE.md`.
 
-   185 + `Device\Plc Logic\Application\` (29) + `\plc\<project>.versio_staging\` (~40) is
-   **254 below the repository root**, so `C:\GIT\Versio` reaches **267**. There is no
-   repository root short enough, and no deep folder chain is needed — which is what the gap
-   row assumed. **Measure before building**: P8's scratch project already exists, so export
-   into it and watch what today actually does before writing the guard. Fix `MaxStem`'s
-   remarks and the parent-prefixed doubling on **both** sides of the parity test while there.
+**Next, in order:** see [What is left, and what it costs](#what-is-left-and-what-it-costs)
+above. G8 first, then the moves probe; the other three are decisions rather than tasks.
 
-2. **The two rows the corpus still cannot reach: E2 and E4.** Both need an object whose name
-   requires percent-encoding, and P5 measured that CODESYS refuses to *create* one — so no
-   fixture builder can produce it. It has to arrive from a library or an external-file
-   reference, and `README.md`'s own object list has a real example of the latter. Until one
-   exists, G4's resolution half is proven by unit tests and by nothing else.
-
-3. **Which moves actually work has never been established.** P2 measured that a move into a
-   folder preserves the GUID; the feature checklist measured that a move out of `Application`
-   into `Plc Logic` is **declined silently by CODESYS** and correctly reported. Those are two
-   data points either side of a line nobody has drawn. The header of this document says Versio
-   "renames and moves" objects, and that is true of renames and only partly true of moves.
-4. **Still open from Phase 4:** `TaskCatalog.cs`, the C# reader. **Land it with the panel
-   change that consumes it**, not before — a reader with no production caller is a
-   specification pretending to be code, which is exactly what `DecodeStem` and
-   `StDeclarationParser` were until the planner became their first caller.
+**One lesson from G9 that outlives it**, kept because it is about how this document goes wrong
+rather than about paths. This file said **three times**, across two documents, that G9 "has a
+real-world failure behind it". **Nothing in the repository ever supported that.** What existed
+was P8 — a measurement of *CODESYS's* tolerance — and the path-like-name leak, a different
+problem found in a real mirror and closed long ago by `Shortened()`. Nobody had watched an
+export hit `MAX_PATH`. It is the "a story that fits, recorded as a fact" shape this file has
+now caught itself in three times, and the tell is the same every time: **a claim about evidence
+that names no evidence.** The gap was real; the sentence justifying it was not, and it had been
+copied forward unchallenged because it sounded like something somebody had measured.
 
 **What to be careful of, learned building Phase 3:**
 

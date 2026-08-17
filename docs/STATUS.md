@@ -315,11 +315,12 @@ unless something changes.
 > **This list is not the active work.** The import side has its own plan and its own queue —
 > [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md), whose *Handoff* section is the one to read
 > first, and whose **feature checklist** is what says which of its 49 behaviours have been run
-> against a real project and which have not. **Phases 0–5 there are complete and Phase 6 is part
-> done**; **G9 is guarded** as of 2026-08-16 and **G8 is what is left**. G9's remaining half
-> is deliberate and is somebody's decision rather than a task: the worst case is reported but
-> still producible, and preventing it renames committed files in every mirror. See the import
-> plan's G9 row and the two Findings below.
+> against a real project and which have not. **Phases 0–5 there are complete and Phase 6 is
+> nearly done**; **G9 is guarded** as of 2026-08-16 and **G8 is the only gap left**.
+> **[What is left, and what it costs](CODESYS-IMPORT-PLAN.md#what-is-left-and-what-it-costs)**
+> is the table to read: one gap of about half a day, and four items that are decisions rather
+> than tasks. G9's remaining half is one of them — the worst case is reported but still
+> producible, and preventing it renames committed files in every mirror already written.
 
 > **The second queue — the code-shape work — is CLOSED, and three of its items were closed by
 > deciding not to do them.** It never had any bearing on what the product does. What was worth

@@ -83,7 +83,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | **One project view** — the full CODESYS tree with changes marked, plus every other changed file | ✅ replaced the PLC panel and the changed-files list |
 | A project with a clean mirror is not listed | ✅ unless it needs attention — never exported, behind, locked, failed. The empty state says why rather than going blank |
 | **Lazy object rendering** — a row is built when something can reach it, not before | ✅ `TreeRow.Children` on first access; the tree survives a refresh without collapsing |
-| **Export coverage stated, not assumed** — `_coverage.md` + every skip in the manifest | ✅ a gap is distinguished from a deliberate omission; an old manifest reports "unknown", never "complete" |
+| **Export coverage stated, not assumed** — `_coverage.md` + every skip in the manifest | ✅ a gap is distinguished from a deliberate omission; an old manifest reports "unknown", never "complete"; and **an object the export could not write at all is reported rather than counted as covered** — it reaches neither the records nor the skips, so until 2026-08-16 a lost object left a verdict of "everything reaches the mirror" |
 | **Library references exported** (`<manager>.libraries.yaml`) | ✅ **the gap is closed.** One file per library manager, beside the object that owns it — 21 references on the fixture's application, 13 on its project. Hand-written YAML on both sides, no third-party dependency. Export-only: change libraries in the IDE |
 | Template generation | ⛔ needs a new operation and script — not assembly |
 | A second vendor (TwinCAT / Studio 5000 / TIA Portal) | ⛔ the seam is ready and unproven |
