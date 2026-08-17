@@ -49,6 +49,29 @@ public static class PlcFormats
         }
     }
 
+    /// <summary>Forget a vendor's format. True when one was registered.</summary>
+    /// <remarks>
+    /// <para>
+    /// The other half of <see cref="Register"/>, and it was missing. A host that can swap in its
+    /// own implementation of a vendor — the case <see cref="Register"/> exists for — can only do
+    /// so in one direction without this, so a registration was permanent for the life of the
+    /// process and there was no way back to a known state.
+    /// </para>
+    /// <para>
+    /// <b>Written because the first test ever to call <see cref="Register"/> could not clean up
+    /// after itself.</b> This registry is static and xunit runs test classes in parallel by
+    /// default, so a fake vendor left behind is not a tidiness problem — it is one class quietly
+    /// changing what every other class sees.
+    /// </para>
+    /// </remarks>
+    public static bool Unregister(PlcVendor vendor)
+    {
+        lock (Registered)
+        {
+            return Registered.RemoveAll(f => f.Vendor == vendor) > 0;
+        }
+    }
+
     /// <summary>
     /// The format that claims a path, or null when none does.
     /// </summary>

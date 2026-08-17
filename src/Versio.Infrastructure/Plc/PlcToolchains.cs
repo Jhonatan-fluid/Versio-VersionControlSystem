@@ -50,6 +50,21 @@ public static class PlcToolchains
         }
     }
 
+    /// <summary>Forget a vendor's toolchain. True when one was registered.</summary>
+    /// <remarks>
+    /// The counterpart to <see cref="Register"/>, for the same reason
+    /// <c>PlcFormats.Unregister</c> exists: without it a registration is permanent for the life
+    /// of the process, and a test that registers a stand-in vendor cannot put the registry back
+    /// the way it found it.
+    /// </remarks>
+    public static bool Unregister(PlcVendor vendor)
+    {
+        lock (Factories)
+        {
+            return Factories.Remove(vendor);
+        }
+    }
+
     /// <summary>
     /// The toolchain for a vendor, or null when Versio cannot drive that one.
     /// </summary>
