@@ -35,4 +35,49 @@ public partial class ProjectPanelView : UserControl
             shell.Sync.SelectedNode = row;
         }
     }
+
+    /// <summary>
+    /// The context menu's verbs, routed to the shell.
+    /// </summary>
+    /// <remarks>
+    /// Click handlers rather than commands, because the menu opens in its own popup tree:
+    /// a binding from a MenuItem cannot walk up to the panel's DataContext, and the
+    /// alternatives — a proxy resource per panel, or commands stapled onto every row — are
+    /// more machinery than four one-line handlers. The row arrives as the menu's
+    /// DataContext, inherited from the grid it was opened on.
+    /// </remarks>
+    private void OnStageNode(object sender, RoutedEventArgs e)
+    {
+        if (RowOf(sender) is { } row && DataContext is ShellViewModel shell)
+        {
+            _ = shell.StageNodeAsync(row);
+        }
+    }
+
+    private void OnDiscardNode(object sender, RoutedEventArgs e)
+    {
+        if (RowOf(sender) is { } row && DataContext is ShellViewModel shell)
+        {
+            _ = shell.DiscardNodeAsync(row);
+        }
+    }
+
+    private void OnRevealNode(object sender, RoutedEventArgs e)
+    {
+        if (RowOf(sender) is { } row && DataContext is ShellViewModel shell)
+        {
+            shell.RevealNode(row);
+        }
+    }
+
+    private void OnCopyNodePath(object sender, RoutedEventArgs e)
+    {
+        if (RowOf(sender) is { } row && DataContext is ShellViewModel shell)
+        {
+            shell.CopyNodePath(row);
+        }
+    }
+
+    private static TreeRow? RowOf(object sender) =>
+        (sender as FrameworkElement)?.DataContext as TreeRow;
 }

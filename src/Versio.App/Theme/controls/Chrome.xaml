@@ -84,6 +84,87 @@
         </Setter>
     </Style>
 
+    <!-- ============================================================ CONTEXT MENU -->
+    <!--
+        Implicit, for the ToolTip's reason one popup along: a ContextMenu is its own HWND,
+        reachable from no window's visual tree, so leaving it unstyled means Aero's
+        near-white slab opening over a dark application — the exact tell the first-pass
+        audit was about, on the one surface nothing in the tree can dress.
+
+        The MenuItem template is deliberately minimal: header text, hover fill, disabled
+        dimming. No glyph column, no gesture column, and NO submenu popup — the menus in
+        this application are flat lists of verbs, and a template that carried the machinery
+        for submenus nobody opens would be the usual price of copying WPF's default instead
+        of writing down what is needed. If a submenu is ever added, this style is the first
+        thing its author must revisit, which is why the limitation is stated here rather
+        than discovered as a menu that silently never opens.
+
+        The MenuItem and Separator styles live INSIDE the ContextMenu style's resources, so
+        a Separator in some future toolbar keeps its own look — the rule is "menus look like
+        this", not "separators do".
+    -->
+    <Style TargetType="ContextMenu">
+        <Style.Resources>
+            <Style TargetType="MenuItem">
+                <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
+                <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+                <Setter Property="FontFamily" Value="{DynamicResource Font.UI}" />
+                <Setter Property="FontSize" Value="{DynamicResource Font.Size.Caption}" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="MenuItem">
+                            <Border x:Name="Root" Padding="12,6" Margin="2,1"
+                                    CornerRadius="{DynamicResource Radius.Control}"
+                                    Background="Transparent">
+                                <ContentPresenter ContentSource="Header"
+                                                  RecognizesAccessKey="True"
+                                                  VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsHighlighted" Value="True">
+                                    <Setter TargetName="Root" Property="Background"
+                                            Value="{DynamicResource Brush.Surface.Hover}" />
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Opacity" Value="0.4" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+            <Style TargetType="Separator">
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Separator">
+                            <Border Height="1" Margin="8,4"
+                                    Background="{DynamicResource Brush.Border.Subtle}" />
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+        </Style.Resources>
+
+        <Setter Property="HasDropShadow" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ContextMenu">
+                    <Border Background="{DynamicResource Brush.Surface.Raised}"
+                            BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                            BorderThickness="1"
+                            CornerRadius="{DynamicResource Radius.Control}"
+                            Padding="4">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="12" ShadowDepth="2" Opacity="0.28"
+                                              Direction="270" />
+                        </Border.Effect>
+                        <ItemsPresenter />
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- =================================================================== CHIPS -->
     <!--
         A filter toggle that reads as on or off at a glance and in peripheral vision.

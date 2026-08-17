@@ -483,6 +483,10 @@ public sealed class SyncViewModel : ObservableObject
         _repositoryRoot = repositoryRoot;
         _git = git;
 
+        // Before the first tree build, because rows read their expansion at construction:
+        // a state restored after the build would apply to nothing until the next refresh.
+        LoadTreeExpansion();
+
         // Armed for this repository. Set before any of the loading below, so a second
         // AttachAsync - reopening the same repository, say - gets a fresh sweep.
         _caughtUp = false;
@@ -693,9 +697,17 @@ public sealed class SyncViewModel : ObservableObject
     /// <summary>Clear state when the repository closes, so a stale scan is never shown.</summary>
     public void Detach()
     {
-        // Before anything else: a FileSystemWatcher holds a handle on the directory, and
-        // leaking one keeps the folder locked against rename or delete for the life of the
-        // process - on a repository somebody is trying to move, a visible bug.
+        // First, because it needs _repositoryRoot and this method's whole job is to null
+        // that out. It sat lower once — beside the Clear() it protects against, which reads
+        // better — and wrote nothing, because the root was already gone; the persistence
+        // test caught the file not existing. Detach is the one funnel every way out of a
+        // repository goes through — switching, closing, disposing — so saving here covers
+        // all of them without any caller knowing the file exists.
+        SaveTreeExpansion();
+
+        // A FileSystemWatcher holds a handle on the directory, and leaking one keeps the
+        // folder locked against rename or delete for the life of the process - on a
+        // repository somebody is trying to move, a visible bug.
         StopWatching();
 
         // The orchestrator's events, before the reference to it is dropped. Without this the
@@ -738,7 +750,8 @@ public sealed class SyncViewModel : ObservableObject
 
         // The expanded set is keyed by repo-relative path, and two repositories share those
         // freely - "docs" is open in both. Carrying it across would open folders in the new
-        // repository because of a click in the old one.
+        // repository because of a click in the old one. Persisted at the top of this method,
+        // while the root still said where.
         _expansion.Clear();
         _treeSignature = string.Empty;
         _coverage.Clear();
@@ -1922,6 +1935,79 @@ public sealed class SyncViewModel : ObservableObject
         }
 
         return (libraries ?? [], tasks ?? []);
+    }
+
+    /// <summary>Where this repository's expansion state lives: machine-local, gitignored.</summary>
+    /// <remarks>
+    /// Beside the locks and the auto-stash record, because it is the same kind of thing —
+    /// true in this clone, on this machine, meaningless in any other.
+    /// </remarks>
+    private string? TreeExpansionPath =>
+        _repositoryRoot is null
+            ? null
+            : System.IO.Path.Combine(_repositoryRoot, ".versio", "local", "tree.json");
+
+    private static readonly System.Text.Json.JsonSerializerOptions TreeStateJson = new()
+    {
+        WriteIndented = true,
+        PropertyNameCaseInsensitive = true,
+        PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+    };
+
+    /// <summary>
+    /// Restore which rows a previous session had open. A missing or unreadable file is the
+    /// defaults, not an error — expansion state is the one kind of state that is always safe
+    /// to lose.
+    /// </summary>
+    private void LoadTreeExpansion()
+    {
+        if (TreeExpansionPath is not { } path || !File.Exists(path))
+        {
+            return;
+        }
+
+        try
+        {
+            var state = System.Text.Json.JsonSerializer.Deserialize<TreeExpansion.State>(
+                File.ReadAllText(path), TreeStateJson);
+
+            if (state is not null)
+            {
+                _expansion.Restore(state);
+                _logger.Debug(LogCategory.App,
+                    $"restored tree expansion ({state.Opened.Count} open, " +
+                    $"{state.Closed.Count} closed) from {path}");
+            }
+        }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or IOException
+                                      or UnauthorizedAccessException)
+        {
+            _logger.Warn(LogCategory.App,
+                $"the tree expansion state at {path} is unreadable and was ignored: {ex.Message}");
+        }
+    }
+
+    /// <summary>Persist the expansion state for the repository that is closing.</summary>
+    private void SaveTreeExpansion()
+    {
+        if (TreeExpansionPath is not { } path)
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
+            File.WriteAllText(path,
+                System.Text.Json.JsonSerializer.Serialize(_expansion.Snapshot(), TreeStateJson));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Worth a line, not a dialog: the cost of losing this file is a tree that opens
+            // to its defaults once.
+            _logger.Warn(LogCategory.App,
+                $"could not persist the tree expansion state to {path}: {ex.Message}");
+        }
     }
 
     /// <summary>Rebuild the tree, reading git's status first.</summary>

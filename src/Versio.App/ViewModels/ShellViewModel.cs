@@ -4177,25 +4177,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// Throw away the working-tree changes to the selected unstaged file.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// <b>The one button in this application that destroys work nothing else has a copy of.</b>
-    /// Not the index, not a stash, not a commit — the content is simply gone. So it is per-file
-    /// rather than per-list, it names the file in the confirmation, and it is unreachable
-    /// without a selection.
-    /// </para>
-    /// <para>
-    /// An <b>untracked</b> file is refused rather than attempted. <c>git restore --worktree</c>
-    /// has nothing to restore it from and fails with "pathspec did not match any file(s) known
-    /// to git", which reads like a bug in Versio rather than like the answer to the question
-    /// that was asked. Deleting it instead would be a different operation, more destructive
-    /// than the one on the button, and not one to perform because the wording happened to fit.
-    /// </para>
-    /// <para>
-    /// Discarding inside an export tree also <b>releases that binding's direction lock</b>
-    /// (plan §6.5). The lock exists because one side holds work the other has not seen; once
-    /// that work is thrown away there is nothing left to guard, and a lock left held would
-    /// block the next export for a reason nobody could find from the UI.
-    /// </para>
+    /// The git panel's entrance into <see cref="DiscardRowsAsync"/>, which carries the
+    /// reasoning — per-file, named in the confirmation, untracked refused, direction lock
+    /// released. Unreachable without a selection, which is part of that design.
     /// </remarks>
     private async Task DiscardAsync()
     {
@@ -4204,21 +4188,93 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
-        if (row.Kind == ChangeKind.Untracked)
+        await DiscardRowsAsync([row]).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Throw away the working-tree changes to the tree row's own files, after the same
+    /// confirmation the git panel's button asks for.
+    /// </summary>
+    /// <remarks>
+    /// The row's files are resolved against the unstaged list rather than trusted as
+    /// changed: an object's two layers can differ one-and-not-the-other, and handing git a
+    /// file with nothing to restore turns "discard the .st edit" into an error about the
+    /// .xml beside it.
+    /// </remarks>
+    public async Task DiscardNodeAsync(TreeRow row)
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        var files = row.Node.Files.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var rows = Unstaged.Where(r => files.Contains(r.Path)).ToList();
+
+        if (rows.Count == 0)
+        {
+            StatusSummary = $"No working-tree changes to discard for {row.Name}.";
+            return;
+        }
+
+        await DiscardRowsAsync(rows).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// The one flow in this application that destroys work nothing else has a copy of.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Not the index, not a stash, not a commit — the content is simply gone. So it acts on
+    /// named files rather than a list's worth, it names every file in the confirmation, and
+    /// both of its entrances require a deliberate selection.
+    /// </para>
+    /// <para>
+    /// An <b>untracked</b> file is refused rather than attempted. <c>git restore --worktree</c>
+    /// has nothing to restore it from and fails with "pathspec did not match any file(s) known
+    /// to git", which reads like a bug in Versio rather than like the answer to the question
+    /// that was asked. Deleting it instead would be a different operation, more destructive
+    /// than the one on the button, and not one to perform because the wording happened to fit.
+    /// A mixed selection discards the tracked files and says the untracked one was left.
+    /// </para>
+    /// <para>
+    /// Discarding inside an export tree also <b>releases that binding's direction lock</b>
+    /// (plan §6.5). The lock exists because one side holds work the other has not seen; once
+    /// that work is thrown away there is nothing left to guard, and a lock left held would
+    /// block the next export for a reason nobody could find from the UI. Only the bindings
+    /// that owned a discarded file — a discarded README has nothing to do with the direction
+    /// lock, and releasing every lock because one unrelated file was restored would be the
+    /// more damaging kind of over-reach.
+    /// </para>
+    /// </remarks>
+    private async Task DiscardRowsAsync(IReadOnlyList<ChangeRow> rows)
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        var tracked = rows.Where(r => r.Kind != ChangeKind.Untracked).Select(r => r.Path).ToList();
+        var untracked = rows.Where(r => r.Kind == ChangeKind.Untracked).Select(r => r.Path).ToList();
+
+        if (tracked.Count == 0)
         {
             // Said in the status bar rather than done. The file is not in git at all, so
             // there is no version to go back to.
+            var refused = untracked[0];
             _logger.Warn(LogCategory.Git,
-                $"discard refused for the untracked file {row.Path}: git has no copy to restore");
-            StatusSummary = $"{row.Path} is not tracked by git yet — there is nothing to restore. " +
+                $"discard refused for the untracked file {refused}: git has no copy to restore");
+            StatusSummary = $"{refused} is not tracked by git yet — there is nothing to restore. " +
                             "Delete it in Explorer if that is what you meant.";
             return;
         }
 
+        var named = string.Join("\n", tracked);
         using var asking = AskingSomething();
         var confirmed = Prompts.ConfirmDestructive(new DestructivePrompt(
-            "Discard changes to this file?",
-            $"{row.Path}\n\n" +
+            tracked.Count == 1 ? "Discard changes to this file?"
+                               : $"Discard changes to these {tracked.Count} files?",
+            $"{named}\n\n" +
             "The changes are thrown away and cannot be recovered — they are not in a commit " +
             "or in the index.\n\n" +
             "Commit them on a scratch branch if you might want them back.",
@@ -4226,14 +4282,16 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         if (!confirmed)
         {
-            _logger.Info(LogCategory.Git, $"discard cancelled for {row.Path}");
+            _logger.Info(LogCategory.Git, $"discard cancelled for {named.Replace('\n', ' ')}");
             return;
         }
 
         _logger.Click("Git.Discard");
-        using var busy = Busy.Begin(WorkKind.GitWrite, $"Discarding {row.Path}…");
+        using var busy = Busy.Begin(WorkKind.GitWrite,
+            tracked.Count == 1 ? $"Discarding {tracked[0]}…"
+                               : $"Discarding {tracked.Count} files…");
 
-        var result = await _git.DiscardAsync([row.Path], busy.Token)
+        var result = await _git.DiscardAsync(tracked, busy.Token)
             .ConfigureAwait(true);
 
         if (!result.Success)
@@ -4244,18 +4302,125 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
-        Notifications.Success($"Discarded the changes to {row.Path}.");
+        Notifications.Success(
+            (tracked.Count == 1 ? $"Discarded the changes to {tracked[0]}."
+                                : $"Discarded the changes to {tracked.Count} files.")
+            + (untracked.Count == 0 ? string.Empty
+                : $" {untracked.Count} untracked file(s) were left — git has no copy to restore."));
 
-        // Only when the file was part of a mirror. A discarded README has nothing to do with
-        // the direction lock, and releasing every lock because one unrelated file was
-        // restored would be the more damaging kind of over-reach.
-        if (Sync.BindingOwning(row.Path) is { } bindingId)
+        foreach (var bindingId in tracked
+                     .Select(Sync.BindingOwning)
+                     .OfType<string>()
+                     .Distinct(StringComparer.Ordinal))
         {
             await Sync.ReleaseAfterDiscardAsync(bindingId, busy.Token)
                 .ConfigureAwait(true);
         }
 
         await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Stage the tree row's own files, from the context menu.
+    /// </summary>
+    /// <remarks>
+    /// All of the row's files rather than only the changed ones: <c>git add</c> on an
+    /// unchanged path is a no-op, and filtering here would be a second answer to a question
+    /// git already answers. The commit gate still runs at commit time — staging early
+    /// changes when the mirror is recorded, not whether the gate sees it.
+    /// </remarks>
+    public async Task StageNodeAsync(TreeRow row)
+    {
+        if (_git is null || row.Node.Files.Count == 0)
+        {
+            return;
+        }
+
+        _logger.Click("Tree.Stage");
+        using var busy = Busy.Begin(WorkKind.GitWrite, $"Staging {row.Name}…");
+
+        var result = await _git.StageAsync(row.Node.Files, busy.Token).ConfigureAwait(true);
+
+        if (!result.Success)
+        {
+            _logger.Warn(LogCategory.Git, $"stage failed for {row.Name}: {result.FailureReason}");
+            Notifications.Failure("Could not stage.", result.FailureReason ?? string.Empty);
+        }
+
+        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Reveal the tree row's file in Explorer, from the context menu.
+    /// </summary>
+    /// <remarks>
+    /// The same launch shape as <see cref="OpenLogsFolder"/>, for the same reasons: explorer
+    /// by name so <c>/select,</c> works, the argument as one string because splitting it
+    /// makes Explorer open Documents, and failure put in the log and the status bar rather
+    /// than swallowed — a locked-down industrial machine really can refuse this.
+    /// </remarks>
+    public void RevealNode(TreeRow row)
+    {
+        if (RepositoryPath is not { } root)
+        {
+            return;
+        }
+
+        _logger.Click("Tree.Reveal");
+
+        var relative = (row.Node.Files.FirstOrDefault() ?? row.Node.Path)
+            .Replace('/', Path.DirectorySeparatorChar);
+        var absolute = Path.Combine(root, relative);
+
+        try
+        {
+            var argument = File.Exists(absolute)
+                ? "/select," + absolute
+                : Directory.Exists(absolute)
+                    ? absolute
+
+                    // A Deleted row's file is exactly the one that is not there; landing in
+                    // its folder is the honest nearest place.
+                    : Path.GetDirectoryName(absolute) ?? root;
+
+            Process.Start(new ProcessStartInfo("explorer.exe", argument)
+            {
+                UseShellExecute = true,
+            });
+
+            _logger.Info(LogCategory.App, $"revealed {relative} in Explorer");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                      or System.ComponentModel.Win32Exception)
+        {
+            _logger.Error(LogCategory.App, $"could not reveal {absolute}", ex);
+            StatusSummary = $"The file is at {absolute}";
+        }
+    }
+
+    /// <summary>
+    /// Put the tree row's repo-relative path on the clipboard, from the context menu.
+    /// </summary>
+    /// <remarks>
+    /// The mirror path rather than an absolute one, because it is the path that means the
+    /// same thing to every clone of the repository — a commit message, an issue, a chat
+    /// message. Clipboard access can be refused when another process holds it open; that is
+    /// worth a status-bar sentence, not a crash.
+    /// </remarks>
+    public void CopyNodePath(TreeRow row)
+    {
+        _logger.Click("Tree.CopyPath");
+
+        try
+        {
+            System.Windows.Clipboard.SetText(row.Node.Path);
+            StatusSummary = $"Copied {row.Node.Path}";
+        }
+        catch (System.Runtime.InteropServices.ExternalException ex)
+        {
+            _logger.Error(LogCategory.App, "could not reach the clipboard", ex);
+            StatusSummary = $"Could not reach the clipboard — the path is {row.Node.Path}";
+        }
     }
 
     /// <summary>

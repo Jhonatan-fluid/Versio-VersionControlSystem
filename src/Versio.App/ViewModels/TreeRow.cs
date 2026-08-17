@@ -195,6 +195,20 @@ public sealed class TreeRow : ObservableObject
         _ => TypeLabel,
     };
 
+    /// <summary>
+    /// Whether the context menu offers Stage and Discard for this row.
+    /// </summary>
+    /// <remarks>
+    /// Only for a row that stands for files of its own with changes of its own — an object
+    /// or a loose file. A library or task row shares its catalog's file, and staging "one
+    /// reference" would silently stage every change in the file beside it; the manager's
+    /// own row is where that operation honestly lives. Folders and projects group things,
+    /// and per-file is the discard rule everywhere else in the app.
+    /// </remarks>
+    public bool CanStageOrDiscard =>
+        Node.Kind is ProjectNodeKind.Object or ProjectNodeKind.File
+        && Node.Status != ChangeKind.Unmodified;
+
     public bool IsExpanded
     {
         get => _isExpanded;

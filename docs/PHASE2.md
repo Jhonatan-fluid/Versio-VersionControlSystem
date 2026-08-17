@@ -65,8 +65,19 @@ What the panel needs, from `STATUS.md` §4 (*Finish the project tree*):
   `ShowPathAsync` keeps the strip when the new diff is one of its layers and clears it for
   anything else, so every route into the pane behaves without knowing the strip exists.
   Proven by mutation: removing that reconcile turns exactly the two ownership tests red
-- Context menu; expansion state persisted per repository (it survives a refresh, not a window
-  close)
+- ~~Context menu; expansion state persisted per repository (it survives a refresh, not a window
+  close)~~ — **done, 2026-08-17, and item 1 closes with it.** The menu carries Stage, Discard,
+  Reveal in Explorer and Copy path — Stage and Discard only on rows with changed files of
+  their own, because a library or task row shares its catalog's file and "stage this
+  reference" would silently stage everything beside it. Discard reuses the git panel's own
+  confirmed flow, generalised to name every file it will touch and only the ones that
+  actually changed. History and Open-in-CODESYS from the original plan's menu are deliberately
+  not here: per-file history filtering and launching the vendor IDE are their own features,
+  not menu items. Expansion now survives the window via `.versio/local/tree.json`, written in
+  `Detach` — the one funnel switching, closing and disposing all pass through — and restored
+  before the first build, because rows take their expansion at construction. The menu needed
+  its own theme style: a ContextMenu is a popup with its own HWND, the ToolTip lesson one
+  control along, and Aero's white slab was what appeared until it got one
 
 ### 2. The git panel's last phase — GP-K/GP-L
 

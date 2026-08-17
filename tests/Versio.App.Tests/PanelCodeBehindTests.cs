@@ -117,6 +117,46 @@ public sealed class PanelCodeBehindTests
     }
 
     [Fact]
+    public void Every_tree_row_carries_the_context_menu_with_its_five_verbs()
+    {
+        // The menu lives in the item template, so nothing constructs it until a row
+        // renders — deleting it from the XAML would leave every test green and every
+        // right-click dead. A realized row is enough to prove the template still carries
+        // it; the handlers' bodies are the same DataContext seam the selection test above
+        // already crosses, and the XAML compiler refuses a Click name with no method.
+        StaHarness.Run(() =>
+        {
+            var (window, shell, content) = Build();
+
+            shell.Sync.Tree.Add(new TreeRow(
+                new ProjectTreeNode
+                {
+                    Name = "FB_Motor",
+                    Path = "plc/Machine/App/FB_Motor.st",
+                    Kind = ProjectNodeKind.Object,
+                    Status = ChangeKind.Modified,
+                },
+                depth: 0));
+            Lay(content);
+
+            var tree = TreeIn(Panel<ProjectPanelView>(window, "ProjectPanel"));
+            var item = Assert.IsType<TreeViewItem>(
+                tree.ItemContainerGenerator.ContainerFromIndex(0));
+
+            var menu = Descendants(item)
+                .OfType<FrameworkElement>()
+                .Select(e => e.ContextMenu)
+                .FirstOrDefault(m => m is not null);
+
+            Assert.NotNull(menu);
+            Assert.Equal(
+                ["Stage", "Discard changes…", "Reveal in Explorer", "Copy path"],
+                menu.Items.OfType<MenuItem>().Select(m => m.Header));
+            Assert.Single(menu.Items.OfType<Separator>());
+        });
+    }
+
+    [Fact]
     public void Selecting_a_commit_in_the_history_tree_reaches_the_history()
     {
         StaHarness.Run(() =>
