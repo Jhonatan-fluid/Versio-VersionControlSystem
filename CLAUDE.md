@@ -218,6 +218,7 @@ stays that way.
 |---|---|---|---|
 | `Versio.Core.Tests` | 1,295 | under a second | nothing |
 | `Versio.Integration.Tests` | 141 | ~10 s | real git |
+| `Versio.Arch.Tests` | 14 | instant | nothing — it reads assembly metadata, IL and the `.csproj` files |
 | `Versio.App.Tests` | 480 | ~50 s, STA, no window shown | nothing |
 | `Versio.Plc.Codesys.Tests` | 365 | **~31 min** | **real CODESYS** |
 
@@ -226,6 +227,7 @@ stays that way.
 ```
 C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Core.Tests
 C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Integration.Tests
+C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Arch.Tests
 ```
 
 Eleven seconds together, plus fifty for `Versio.App.Tests` when the UI is in play.
