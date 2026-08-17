@@ -17,6 +17,39 @@ produce a diff touching everything else.
 
 ---
 
+### The expansion default missed the correction the pruner already carried
+
+**Found 2026-08-17, building the library reference rows** — PHASE2's first queue item, and the
+first time a node that is not a folder acquired children whose *changes* mattered more than
+their existence.
+
+`TreeExpansion.DefaultFor` answered "open when there is a change under it" with
+`node.IsFolder && node.HasChanges`. That rule was written when only folders had children. Then
+manifest schema 4 nested members under their owners, and `PruneUnchanged` in the same builder
+was corrected for exactly that — its remark says so: *tested on `Children` rather than on
+`IsFolder`, because an object owns objects now*. The expansion default was the same rule in a
+second place, and it was not corrected. Consequence: **an edited method inside a function
+block, and now a bumped library version inside a manager, sat behind a closed chevron** with
+only the roll-up badge hinting that anything was there — while a folder in the identical
+situation opened itself.
+
+Two things worth keeping from it:
+
+- **When a correction lands, grep for the rule it corrects, not only the site it fixes.** The
+  folder-only assumption existed in two methods; the fix in the member-nesting work found one.
+  The same phrase — "an object owns objects now" — was already in the codebase naming the
+  trap, one file away from a second instance of it.
+- **The fallback and the default had quietly diverged.** `TreeRow`'s constructor falls back to
+  `ChangedDescendants > 0` when no `TreeExpansion` is supplied — the corrected shape — so the
+  behaviour differed depending on whether an expansion tracker happened to be attached, which
+  is the kind of difference nothing ever looks at.
+
+Fixed as `node.Children.Count > 0 && node.HasChanges`, with the reasoning moved into the
+remark, and proven by mutation: reverting to the folder-only rule turns
+`TreeRowLibraryTests.A_manager_with_a_bumped_library_opens_itself` red and nothing else.
+
+---
+
 ### `import_native` duplicates an external-file object instead of replacing it
 
 **Found 2026-08-17 by the first E2E run of E4** — the first time an `EXTERNAL_FILE` payload was

@@ -66,10 +66,16 @@ public sealed class TreeExpansion
     /// </summary>
     /// <remarks>
     /// A project opens, because it is what the panel is about and a closed one shows nothing.
-    /// A folder opens only when there is a change under it: with the full tree rendered rather
-    /// than the changed-only filter, opening everything would bury the four objects somebody
-    /// edited under the four thousand they did not.
+    /// Anything else with children opens only when there is a change under it: with the full
+    /// tree rendered rather than the changed-only filter, opening everything would bury the
+    /// four objects somebody edited under the four thousand they did not. Tested on
+    /// <see cref="ProjectTreeNode.Children"/> rather than <see cref="ProjectTreeNode.IsFolder"/>
+    /// — the same correction <c>PruneUnchanged</c> already carries — because an object owns
+    /// rows now: a function block owns its methods and a library manager its references, and
+    /// the folder-only rule left an edited method and a bumped library version behind a
+    /// closed chevron with only the badge to hint at them.
     /// </remarks>
     private static bool DefaultFor(ProjectTreeNode node) =>
-        node.Kind == ProjectNodeKind.Project || (node.IsFolder && node.HasChanges);
+        node.Kind == ProjectNodeKind.Project ||
+        (node.Children.Count > 0 && node.HasChanges);
 }

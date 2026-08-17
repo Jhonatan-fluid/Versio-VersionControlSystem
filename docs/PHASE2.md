@@ -44,8 +44,13 @@ rule, so build `TaskCatalog` *with* the panel change, not before it).
 
 What the panel needs, from `STATUS.md` §4 (*Finish the project tree*):
 
-- **One node per library**, under its manager — the data exists and parses; a version bump
-  should read as *that library*, not "the library manager changed"
+- ~~**One node per library**, under its manager — the data exists and parses; a version bump
+  should read as *that library*, not "the library manager changed"~~ — **done, 2026-08-17.**
+  One row per reference, chosen before system, version beside the name; the shell pairs a
+  changed catalog with HEAD's copy via `ShowAtHeadAsync`, so the mark lands on the reference
+  that moved — bumped `M`, added `A`, and a removed reference keeps a row marked `D` from the
+  baseline. Guarded end to end: Core builder tests, an integration test over the committed
+  fixture's two real catalogs, and an App flow test proven by deleting the shell's forwarding
 - One node per task, once `TaskCatalog.cs` exists
 - A **layer switcher** in the diff pane (`ST | native`) — objects already carry both layers
   and there is no way to see the other one

@@ -1835,6 +1835,72 @@ public sealed class SyncViewModel : ObservableObject
 
     private void AnnounceIgnoredPaths() => IgnoredPathsChanged?.Invoke(IgnoredPaths());
 
+    /// <summary>
+    /// Parse every library catalog the manifest names, paired with its HEAD copy when one
+    /// was fetched.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The manifest decides what is a catalog — <c>form == LIBRARIES</c> — rather than a
+    /// directory listing deciding by suffix, because the manifest is the authority on what
+    /// the export wrote and a stray YAML somebody dropped into the mirror must not grow
+    /// reference rows.
+    /// </para>
+    /// <para>
+    /// A file the manifest names but the disk lacks is skipped without a word here: the
+    /// coverage report already owns the job of saying what the mirror is missing, and a
+    /// second voice would say it twice. <see cref="LibraryCatalog.Parse"/> never throws on
+    /// a torn or half-written file, for the same reason the manifest parser does not — this
+    /// runs on every refresh, and an export mid-swap is a moment, not an error.
+    /// </para>
+    /// </remarks>
+    private IReadOnlyList<LibrarySnapshot> ReadLibraryCatalogs(
+        ProjectManifest? manifest,
+        string exportPath,
+        IReadOnlyDictionary<string, string> baselines)
+    {
+        if (manifest is null)
+        {
+            return [];
+        }
+
+        List<LibrarySnapshot>? found = null;
+        var root = exportPath.Replace('\\', '/').Trim('/');
+
+        foreach (var record in manifest.Objects)
+        {
+            if (!string.Equals(record.Form, ExportCoverage.LibrariesForm, StringComparison.Ordinal)
+                || record.Path.Length == 0)
+            {
+                continue;
+            }
+
+            var absolute = System.IO.Path.Combine(AbsolutePath(exportPath), record.Path);
+            if (!File.Exists(absolute))
+            {
+                continue;
+            }
+
+            var current = LibraryCatalog.Parse(File.ReadAllText(absolute));
+            if (!current.IsValid)
+            {
+                continue;
+            }
+
+            var repoPath = $"{root}/{record.Path.Replace('\\', '/')}";
+            (found ??= []).Add(new LibrarySnapshot
+            {
+                Path = repoPath,
+                Current = current,
+                Baseline = baselines.TryGetValue(repoPath, out var old) && old.Length > 0
+                    ? LibraryCatalog.Parse(old)
+                    : null,
+            });
+        }
+
+        return found ?? [];
+    }
+
     /// <summary>Rebuild the tree, reading git's status first.</summary>
     /// <remarks>
     /// For the callers inside this class, which have just changed the working tree and have no
@@ -1956,6 +2022,27 @@ public sealed class SyncViewModel : ObservableObject
 
         _treeSignature = signature;
 
+        // HEAD's copy of every changed library catalog, fetched here because it needs git
+        // and the build below deliberately does not. The pair is what lets the tree mark
+        // WHICH library moved instead of only that the manager's file did. Added and
+        // untracked files are skipped — HEAD has no copy, and asking would spawn a process
+        // to learn what the status already said. Sitting after the signature gate, so a
+        // refresh that rebuilds nothing fetches nothing.
+        var baselines = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (_git is not null)
+        {
+            foreach (var change in status.Changes)
+            {
+                var path = change.Path.Replace('\\', '/');
+                if (path.EndsWith(LibraryCatalog.FileSuffix, StringComparison.OrdinalIgnoreCase)
+                    && change.Effective is not (ChangeKind.Added or ChangeKind.Untracked))
+                {
+                    baselines[path] = await _git.ShowAtHeadAsync(path, CancellationToken.None)
+                        .ConfigureAwait(true);
+                }
+            }
+        }
+
         var built = await Task.Run(() =>
         {
             var coverage = new Dictionary<string, CoverageReport>(StringComparer.OrdinalIgnoreCase);
@@ -1990,6 +2077,7 @@ public sealed class SyncViewModel : ObservableObject
                     ProjectPath = source.ProjectPath,
                     ExportPath = source.ExportPath,
                     Manifest = manifest,
+                    Libraries = ReadLibraryCatalogs(manifest, source.ExportPath, baselines),
 
                     // A project with no manifest has never been exported. Git reports nothing
                     // about it, because there is nothing on disk to report on - and it is

@@ -1,15 +1,15 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,319 across seven
+**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,351 across seven
 projects, 0 skipped — re-derived by running each, not carried forward
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,296 | under a second | nothing |
-| `Versio.Integration.Tests` | 141 | ~10 s | real git |
-| `Versio.App.Tests` | 480 | ~50 s | nothing |
+| `Versio.Core.Tests` | 1,319 | under a second | nothing |
+| `Versio.Integration.Tests` | 142 | ~10 s | real git |
+| `Versio.App.Tests` | 487 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 14 | instant | nothing |
-| `Versio.Plc.Codesys.Pure.Tests` | 253 | under a second | nothing |
+| `Versio.Plc.Codesys.Pure.Tests` | 254 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 82 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
 | `Versio.Plc.Codesys.Tests` | 53 | **~30 min** | **real CODESYS** |
 
@@ -318,7 +318,7 @@ projects are reported as unsupported rather than silently ignored. Both registri
 | **Open in the IDE** | Export runs anyway, from a copy; import waits and names who has the project. Neither marks the binding failed, and the breaker is never fed |
 | **Adoption writes `.gitignore`** | Created when absent, appended when present, never overriding an existing decision. Covers `.versio/local/` — locks, backups, scratch copies — and the toolchain's `-AllUsers.opt` and `-<user>-<machine>.opt`, the second of which carries a username and machine name in its filename |
 | **Export coverage** | What the export does *not* carry, said out loud: `_coverage.md` in the tree, every skip in the manifest with a stable reason, and a sentence in the panel naming what cannot be relied on. A gap is distinguished from a deliberate omission, from a file that is exported one way, and an old manifest reports "unknown" rather than "complete" |
-| **Library references** | One `<manager>.libraries.yaml` per library manager, beside the object that owns it — what the project asks for, never how it resolved here. Hand-written YAML on both sides, no dependency added to either. **Export-only**, and stated where a reader will meet it: the file's own header, `_coverage.md`, the manifest's `form`, **and now the panel** — the changed-files row carries a lock glyph and a tooltip saying the edit does not reach the project. It went there rather than on the tree row (§9.3) because the row somebody is about to *stage* is where the warning has to be. `CoverageSummary` still speaks only when there are gaps, deliberately |
+| **Library references** | One `<manager>.libraries.yaml` per library manager, beside the object that owns it — what the project asks for, never how it resolved here. Hand-written YAML on both sides, no dependency added to either. **Export-only**, and stated where a reader will meet it: the file's own header, `_coverage.md`, the manifest's `form`, **and now the panel** — the changed-files row carries a lock glyph and a tooltip saying the edit does not reach the project. It went there rather than on the tree row (§9.3) because the row somebody is about to *stage* is where the warning has to be. `CoverageSummary` still speaks only when there are gaps, deliberately. **And the tree draws one row per reference** (2026-08-17): under its manager, version beside the name, chosen libraries before system ones — and against HEAD's copy of a changed catalog, the mark lands on the reference that moved, so a version bump reads as *that library* |
 | **Chrome** | One app-wide progress bar with a caption, maximized on open, log console collapsed, heartbeat during long runs. **The title bar follows the theme** — painted with `Color.Surface.Base` through DWM, on every window the app opens and again on every theme switch, so the caption and the top bar are one surface rather than two. Tooltips are themed too, by an implicit style, because there are dozens of them and not one named a style |
 | **Saying it is working** | A toolchain run announces itself the moment it passes the last gate, and three surfaces answer three different questions: the **bar** that the app is busy, the **row** which project it is busy with (`exporting…`, in the accent colour), and the **heartbeat** that it is still alive and how far along. A refused, coalesced or throttled save announces nothing, because it is not working |
 | **Log panel** | Level as four chips (click to drop, click to restore) and category as a multi-select dropdown carrying a live count each, because the counts are what say where the volume is. **Pause freezes the feed** rather than the scroll, says so in the header, and shows what is queued behind it. The controls appear with the list they filter: collapsed, the strip is a chevron, a count and the paused pill |
@@ -449,9 +449,13 @@ fixture: two library managers, **both exported now**, and `_coverage.md` reports
   `config/libraries.yaml` was reversed: a real project has two managers, see §5)
 - ~~A YAML writer by hand~~ — `versio_yaml.py` writes it, `LibraryCatalog` reads it, neither
   side has a dependency. About 350 lines for both halves, and the format is deliberately tiny
-- **Still open:** one tree node **per library**, so a version bump reads as *that library*
-  rather than as "the library manager changed". The data exists and parses now; this is a tree
-  feature rather than an exporter one
+- ~~**Still open:** one tree node **per library**, so a version bump reads as *that library*
+  rather than as "the library manager changed"~~ — **done, 2026-08-17, first item of PHASE2's
+  queue.** One row per reference under its manager, chosen libraries sorted before system
+  ones, and — because the shell fetches HEAD's copy of a changed catalog through
+  `ShowAtHeadAsync` — the mark lands on exactly the reference whose pin moved: bumped is `M`,
+  added is `A`, and a reference deleted from the catalog still gets a row, marked `D`, from
+  the baseline's copy of it
 
 ### 2. ~~Finish the git surface~~ — **done**
 
@@ -949,6 +953,7 @@ actually do.
 
 The full list, newest first:
 
+- [The expansion default missed the correction the pruner already carried](FINDINGS.md#the-expansion-default-missed-the-correction-the-pruner-already-carried)
 - [`import_native` duplicates an external-file object instead of replacing it](FINDINGS.md#import_native-duplicates-an-external-file-object-instead-of-replacing-it)
 - [The probe that caught two of its own lies was carrying a third, and three documents believed it](FINDINGS.md#the-probe-that-caught-two-of-its-own-lies-was-carrying-a-third-and-three-documents-believed-it)
 - [`move()` declines three moves of nine, raises for none, and the destination is not what decides](FINDINGS.md#move-declines-three-moves-of-nine-raises-for-none-and-the-destination-is-not-what-decides)
