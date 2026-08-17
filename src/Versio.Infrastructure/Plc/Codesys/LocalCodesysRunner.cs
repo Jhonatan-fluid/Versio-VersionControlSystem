@@ -531,6 +531,20 @@ public sealed class LocalCodesysRunner(
                         $"[{evt.String("type")}]");
                     break;
 
+                case "preserved":
+                    // G10. The freshly exported payload means the same thing as the bytes
+                    // already in the mirror, so the old ones were kept and the file does not
+                    // appear in the diff.
+                    //
+                    // DEBUG, and per file. On a settled mirror this is four lines an export
+                    // and they are the least interesting four; on the export after a real
+                    // change it is how somebody finds out WHY a file they expected to move
+                    // did not. The summary carries the count for the Info-level reader.
+                    _log.Debug(LogCategory.Codesys,
+                        $"kept the existing bytes for {evt.String("path")} — the new export " +
+                        "is equivalent to it");
+                    break;
+
                 case "libraries":
                     // Info, not Debug, and bounded: a project has one or two library
                     // managers, and this is the one export form whose entire point is
@@ -593,9 +607,17 @@ public sealed class LocalCodesysRunner(
                     _log.Info(LogCategory.Codesys, job.Operation switch
                     {
                         CodesysOperation.Import => ImportSummary(evt),
+                        // `preserved` is appended rather than always present: on a first
+                        // export, and on any export where every native file really changed,
+                        // it is zero and saying so would put a number nobody can act on into
+                        // every line. When it is not zero it is the explanation for a diff
+                        // that is smaller than somebody expected.
                         _ => $"walked {evt.Int("walked")}, wrote {evt.Int("written")}, " +
                              $"skipped {evt.Int("skipped")} (of which {evt.Int("gaps")} " +
-                             $"not implemented), {evt.Int("warnings")} warning(s)",
+                             $"not implemented), {evt.Int("warnings")} warning(s)" +
+                             (evt.Int("preserved") is > 0 and var kept
+                                 ? $", {kept} unchanged file(s) left as they were"
+                                 : string.Empty),
                     });
                     break;
 

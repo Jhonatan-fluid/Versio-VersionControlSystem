@@ -39,7 +39,7 @@ questions about "why is this like this" are already answered there.
 | `docs/PLAN.md` | The full architecture plan |
 | `docs/SAFEGUARDS.md` | What Versio refuses, asks about, or waits for |
 | `docs/CODESYS.md` | How CODESYS is driven end to end, and the audit of it |
-| `docs/CODESYS-IMPORT-PLAN.md` | **The active plan.** Eleven numbered import gaps, what each measurement closed, and the order to build the rest in — which is deliberately not 1, 2, 3 |
+| `docs/CODESYS-IMPORT-PLAN.md` | **The active plan.** Twelve numbered import gaps, what each measurement closed, the order to build the rest in — deliberately not 1, 2, 3 — and **the feature checklist**, which says which of the import’s 49 behaviours have been run against a real project and which have not |
 | `docs/GIT-PANEL-PLAN.md` | The git panel's functionality and UX |
 | `docs/PHASE0-FINDINGS.md` | What Phase 0 measured. **A record, not a live limitation list** — read its supersession notes |
 | `README.md` | Repository layout, vendor boundaries, the one architectural rule |
@@ -155,6 +155,13 @@ explicit `encoding='utf-8', newline='\n'`, or the editing tools.
 **Never edit source through a shell heredoc.** Python-in-bash eats backslashes and backticks
 silently. Write the script to a file and run it.
 
+**The python scripts are EMBEDDED in `Versio.Infrastructure.dll`.** Editing
+`src/Versio.Scripts.Codesys/*.py` and then running `dotnet test --no-build` tests the script
+that was embedded at the last build, not the one on disk. It looks exactly like a change that
+did nothing: a Phase 5 mutation check reported the acceptance test still passing with the
+feature disabled, which is the most misleading answer a mutation check can give. **Rebuild after
+touching python**, always.
+
 **The suite is the safety net, so keep it honest.** `Versio.App.Tests` shells own watchers,
 pollers, the log console and the repository lock — `using var shell = ...`, always, and never
 construct one inline as an argument, because then there is nothing to put `using` on. Fifty-six
@@ -198,9 +205,9 @@ stays that way.
 |---|---|---|
 | `Versio.Core.Tests` | 1,485 | under a second |
 | `Versio.App.Tests` | 480 | ~50 s, STA, no window shown |
-| `Versio.Integration.Tests` | 229 | ~30 min, real CODESYS and real git |
+| `Versio.Integration.Tests` | 230 | ~31 min, real CODESYS and real git |
 
-**Do not sit through the integration suite while you work.** 179 of its 229 tests finish in
+**Do not sit through the integration suite while you work.** 179 of its 230 tests finish in
 **16 seconds**; the other 50 are the half hour, because a CODESYS cold start is 17–31 s, every
 launch pays it in full, an import test needs three to five of them, and they cannot run in
 parallel. So:

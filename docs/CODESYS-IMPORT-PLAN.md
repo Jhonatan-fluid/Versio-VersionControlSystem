@@ -1,9 +1,8 @@
 # Versio — closing the CODESYS import gaps
 
-**Date:** 2026-08-16 · **Phases 0, 4, 1, 2 and 3 are COMPLETE**, along with
-`versio_native_equiv.py`, the shared prerequisite Phase 5 also needs. **Phase 5 has not been
-started. Phase 6 is part done** — the codec parity test and the integration breadth landed on
-2026-08-16; **G8, G9 and the path-length guard are what is left of it.** (Dates below read
+**Date:** 2026-08-16 · **Phases 0, 4, 1, 2, 3 and 5 are COMPLETE.** **Phase 6 is part
+done** — the codec parity test and the integration breadth landed on 2026-08-16; **G8 and G9
+are what is left of it, and G9 is the one with a real-world failure behind it.** (Dates below read
 2026-08-15 for work that ran past midnight into the 16th; the git log is the authority on when
 anything landed.)
 
@@ -55,7 +54,7 @@ G12 had. **It cost a delete rule its subject** — see the checklist's C6.
 | | |
 |---|---|
 | Document | **The plan for making the import side a real bidirectional sync.** Deletes, renames, moves, typed task configuration, and a mirror that stops churning after every import |
-| Status | **Phases 0, 4, 1, 2 and 3 COMPLETE, with all three honesty fixes. Phase 5 not started; Phase 6 part done — G8 and G9 are what is left.** G1 and G2 both closed outright. Two gaps closed as unreachable, four API spellings corrected, six live defects fixed — G7 and G11 by Phase 4, G3 and G6 by Phase 1, **G1 by Phase 2 outright, textual and native**, with G4's resolution half and G5's recorded-object half beside them, and the confirmation dialog corrected after it spent a commit promising the opposite of what an import did. The import is **plan-driven end to end**: decided C#-side from the manifest, agreed to before CODESYS starts, refused without a plan, executed by a script that decides nothing — and it now **removes, renames and moves** objects as well as adding them, saying beforehand which ones will really go and which will really stay. **Every one of those behaviours has now been run against a real project one row at a time** — see the feature checklist — and **one failed: G12**, a GVL's declaration overwritten by its own XML, **closed the same day**, with an invariant behind it so the shape cannot recur |
+| Status | **Phases 0, 4, 1, 2, 3 and 5 COMPLETE, with all three honesty fixes. Phase 6 part done — G8 and G9 are what is left.** **G10 is closed**: an import and a re-export leave the mirror byte-identical, `P7: SETTLES`.** G1 and G2 both closed outright. Two gaps closed as unreachable, four API spellings corrected, six live defects fixed — G7 and G11 by Phase 4, G3 and G6 by Phase 1, **G1 by Phase 2 outright, textual and native**, with G4's resolution half and G5's recorded-object half beside them, and the confirmation dialog corrected after it spent a commit promising the opposite of what an import did. The import is **plan-driven end to end**: decided C#-side from the manifest, agreed to before CODESYS starts, refused without a plan, executed by a script that decides nothing — and it now **removes, renames and moves** objects as well as adding them, saying beforehand which ones will really go and which will really stay. **Every one of those behaviours has now been run against a real project one row at a time** — see the feature checklist — and **one failed: G12**, a GVL's declaration overwritten by its own XML, **closed the same day**, with an invariant behind it so the shape cannot recur |
 | Related | [`CODESYS.md`](CODESYS.md) — how CODESYS is driven today, and §12, the audit these gaps came from · [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) — what was measured · [`PLAN.md`](PLAN.md) — the architecture · [`SAFEGUARDS.md`](SAFEGUARDS.md) — what Versio refuses or waits for |
 
 > **These phase numbers are identifiers, not an order**, and they are **not** `PLAN.md`'s phases —
@@ -91,7 +90,7 @@ amount of reading, because it does not exist on the first cycle.
 | G7 | **Task Configuration mutated on every import** — `Core2` `-1`→`-2`; documented as "diff-only", which it never was | ✅ **CLOSED by Phase 4, 2026-08-15.** `Core2` reads `-2,-1` across four consecutive snapshots where it used to move on the first cycle, and `Task Configuration.xml` has dropped out of the churn set entirely. **`-2,-1` is `MainTask,VISU_TASK`, and only the second number was ever the defect** — the baseline capture has MainTask at `-2` already, so **VISU_TASK's `-1` is the one G7 destroyed** and the one an integration test now asserts. Worth knowing before reading a diff of this file: a run where both read `-2` is the bug, not a run where either does |
 | G8 | **Managed library references unproven** — every fixture reference is a placeholder, so the `managed_library` branch has never executed | **Half closed**: P9 produces a real managed reference in one call, so no hand-built fixture is needed. (This row used to say 34 references; the Library Manager reports **21**) |
 | G9 | **Total path length unguarded** — stems capped at 80, the full path is not, and `.versio_staging` makes it 16 longer | Open, and **entirely ours**: P8 shows CODESYS imposes no limit of its own |
-| **G10** | **Import → export is not byte-stable.** `UniqueIdGenerator` **44 → 47 → 50 → 53**, +3 per cycle, never settling | Open, **measured**. Of the eight native files touched: three visualisations climb on the counter, `GlobalTextList.xml` churns with **no counter at all**, `Task Configuration.xml` moves once then settles, three are byte-stable. **Four of eight forever, from two causes** — not "every file", and not just the counter |
+| **G10** | **Import → export is not byte-stable.** `UniqueIdGenerator` **44 → 47 → 50 → 53**, +3 per cycle, never settling | ✅ **CLOSED by Phase 5, 2026-08-16.** `Measure-ImportStability.ps1` prints **`P7: SETTLES`** with zero differences on all three cycles and the counter flat at **44 → 44 → 44 → 44**. The export keeps the bytes already in the mirror when the fresh payload is `versio_native_equiv`-equivalent to them, and the substitution happens **before** `record()` hashes anything — which is why `_manifest.json` settles too. Was, before the fix: Of the eight native files touched: three visualisations climb on the counter, `GlobalTextList.xml` churns with **no counter at all**, `Task Configuration.xml` moves once then settles, three are byte-stable. **Four of eight forever, from two causes** — not "every file", and not just the counter |
 | **G11** | **Every import after the first fails on task configuration and reports success.** `import_native` throws `Collection was modified` at `Project.GetUniqueName` on `MainTask` and `VISU_TASK`; the summary still reads `failed: 0` | ✅ **CLOSED by Phase 4, 2026-08-15.** Three import→export cycles with the compile cache present: **zero warnings on every one**, where cycles 2 and 3 used to throw twice each. `native: 8 → 7`, the task XML skipped as `TYPED_SIBLING`. **Versio never deletes CODESYS's compile cache** — the trigger is simply never reached |
 | **G12** | **A GVL's declaration is applied and then overwritten by its own XML**, and the import reports `applied … (declaration)` either way | ✅ **CLOSED 2026-08-16, the same day it was found by the feature checklist rather than by reading anything.** The `.gvl.xml` is recorded `GVL_NATIVE`, which `ExportCoverage.IsExportOnly` names — so a GVL has exactly one importable file and the edit reaches the project. **The shape is now an invariant rather than a habit**: `An_object_never_writes_two_files_the_import_would_both_apply` asserts, against a real export, that no object writes two files the import applies, which is what neither G7 nor this had. `GVL_BOTH` writes a `.gvl.st` recorded `ST_DECL` and a `.gvl.xml` recorded plain `NATIVE`; the phases run textual before native, so the XML puts the old declaration back. **G7 in a different object** — `TASK_BOTH` escapes only because Phase 4 gave its XML half its own `TASK_NATIVE` form, and `ExportCoverage.IsExportOnly` names `LIBRARIES` and `TASK_NATIVE` and nothing else. Proven by a control run that skips the `.gvl.xml` and changes nothing else, after which the edit survives. The three candidate fixes and what each costs are in [`STATUS.md`](STATUS.md) |
 
@@ -1063,6 +1062,21 @@ the **existing bytes**.
   counter in it at all — a fix aimed at counters would leave a file diffing forever and look like
   it worked.
 
+> **✅ BUILT 2026-08-16, and the acceptance measurement says so**: `Measure-ImportStability.ps1`
+> prints `P7: SETTLES` with zero differences on all three cycles and `UniqueIdGenerator` flat at
+> 44 across every one, where it climbed 44 → 47 → 50 → 53 before. The regression test is
+> `An_import_and_a_re_export_leave_the_mirror_byte_identical`, and disabling the preservation
+> makes it name exactly the five files that used to move — the three visualisations,
+> `GlobalTextList.xml`, and **`_manifest.json`**, which is the trap below proving itself.
+>
+> **What masking costs, found by re-reading the change rather than by a test.** The comparison
+> masks GUIDs, so an object deleted and recreated with identical content keeps the old bytes and
+> the mirror carries ids the project no longer has, while the manifest records the new identity.
+> It is not destructive — importing that file puts the old ids back, which is what the mirror
+> already described — and it cannot be told from the ordinary case by looking at the payload,
+> because the ordinary case *is* a GUID that changed for no reason. `preserve_equivalent` records
+> the cheap fix if it ever matters.
+
 > **The trap, which is not in the one-line rule.** `record()` hashes the payload the exporter
 > *generated* — `h = content_hash(text)` — and `write_text` writes that same `text`. They agree by
 > construction today, and `write_text`'s docstring states the invariant outright: *"The exporter
@@ -1165,29 +1179,24 @@ additive, each is unavailable until the next export, and **absent never means "u
 
 **Next, in order:**
 
-1. **Phase 5 — a mirror that stops churning.** Its prerequisite is ready twice over:
-   `versio_native_equiv` exists, and Phase 2 measured that normalisation is stable across
-   round trips. **The trap is written up in Phase 5's own section and is not the one-line
-   rule**: the substitution has to happen *before* the hash is taken, or `_manifest.json`
-   disagrees with the bytes beside it and the hash gate reads the bytes.
-2. **Phase 6 — what is left of it is G8 and G9.** The parity tests and the integration breadth
+1. **Phase 6 — what is left of it is G8 and G9.** The parity tests and the integration breadth
    landed on 2026-08-16. **G9 is the one with a real-world failure behind it**: stems are
    capped at 80 characters, the total path is not, and `.versio_staging` makes the longer of
    the two 16 characters longer again — so a real machine project with a deep folder chain
    reaches `MAX_PATH` and P8 confirmed CODESYS will not stop it. G8 is cheap since P9.
 
-3. **The two rows the corpus still cannot reach: E2 and E4.** Both need an object whose name
+2. **The two rows the corpus still cannot reach: E2 and E4.** Both need an object whose name
    requires percent-encoding, and P5 measured that CODESYS refuses to *create* one — so no
    fixture builder can produce it. It has to arrive from a library or an external-file
    reference, and `README.md`'s own object list has a real example of the latter. Until one
    exists, G4's resolution half is proven by unit tests and by nothing else.
 
-4. **Which moves actually work has never been established.** P2 measured that a move into a
+3. **Which moves actually work has never been established.** P2 measured that a move into a
    folder preserves the GUID; the feature checklist measured that a move out of `Application`
    into `Plc Logic` is **declined silently by CODESYS** and correctly reported. Those are two
    data points either side of a line nobody has drawn. The header of this document says Versio
    "renames and moves" objects, and that is true of renames and only partly true of moves.
-5. **Still open from Phase 4:** `TaskCatalog.cs`, the C# reader. **Land it with the panel
+4. **Still open from Phase 4:** `TaskCatalog.cs`, the C# reader. **Land it with the panel
    change that consumes it**, not before — a reader with no production caller is a
    specification pretending to be code, which is exactly what `DecodeStem` and
    `StDeclarationParser` were until the planner became their first caller.
@@ -1449,7 +1458,7 @@ earlier test's leftovers could in principle have been doing the work.
 3. `tools\Test-RoundTrip.ps1 … -MutateFirst` — the per-layer verdict stays **PASS**, and
    `Task Configuration.xml` drops out of the native-differs list once Phase 4 lands.
 4. **The G10 acceptance test:** `tools\Measure-ImportStability.ps1` must print **`P7: SETTLES`**
-   **and report zero warnings.** Two halves, and only one is done. **The zero-warnings half passes
+   **and report zero warnings.** ✅ **Both halves pass as of 2026-08-16.** Historic note: **The zero-warnings half passes
    as of Phase 4** — all three cycles clean, where cycles 2 and 3 used to throw twice each. It
    still prints `P7: CHURNS`, and correctly: the four files left are the three visualisations and
    `GlobalTextList.xml`, which is G10 and Phase 5's job. A settled mirror with

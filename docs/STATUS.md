@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-16 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,485 unit + 480 UI + 229 integration, 0 skipped
+**Date:** 2026-08-16 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,485 unit + 480 UI + 230 integration, 0 skipped
 · *(integration now runs ~30 min, not the 10–16 it did before the import feature checklist added
 13 tests; run three times end to end on 2026-08-16 with no flake, plus every affected test
 individually — see the flake note in `CLAUDE.md`, which is about earlier runs)*
@@ -184,7 +184,7 @@ opens. That is `SAFEGUARDS.md` phases 1–8, and phase 9 is features rather than
 | Does an edited `.st` reach the project? | **Yes** — export, edit, import, verified byte-changed on the real fixture |
 | Can library references be read at all? | **Yes** — `libman.references`, iterated. Not `get_libraries()`, which returns names only, and not `references[i]`, which indexes by id and raises for a position |
 | Is a library reference's identity stable? | **No.** `ref.id` is re-minted on every open: 34 of 34 changed across two runs, with nothing else moving. Not recorded — the same trap as the `__VisualizationStyle` GUID, caught before it shipped this time |
-| Does an unedited mirror ever stop churning? | **No.** `UniqueIdGenerator` climbs +3 per import→export cycle and never settles; four of the eight native files differ forever, from **two** causes rather than one. Measured over three cycles and reproduced identically on a second run — see P7 |
+| Does an unedited mirror ever stop churning? | **It does now.** It did not: `UniqueIdGenerator` climbed +3 per import→export cycle and never settled, four of eight native files differing forever from **two** causes rather than one. Phase 5 keeps the existing bytes when the fresh export is equivalent to them, and `Measure-ImportStability.ps1` now prints **`P7: SETTLES`** with the counter flat across three cycles |
 | Is the mirror's churn *semantically* nothing? | **Yes** — all four churning files are `NativeXmlNormalizer`-equivalent, with symmetric mask counts on every one, which is what says they differ in the masked positions and nowhere else |
 | Does a fresh export still reproduce the committed mirror? | **Yes** — a P7 baseline export into a different directory, from a project with a different filename, was byte-identical to `fixtures/projects/RefrigeratorControl/` on every object file. The only differences were `bindingId` and `project` inside `_manifest.json`, which are the two fields that *should* differ. An incidental re-confirmation of determinism across a path change, which the fingerprint test does not cover |
 

@@ -473,6 +473,117 @@ public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) 
         Assert.DoesNotContain('\r', text);
     }
 
+    /// <summary>
+    /// An import and a re-export leave the mirror byte-identical — G10.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The churn this measures was measured first and fixed second.</b> P7 ran three
+    /// import→export cycles with nothing edited between them and watched
+    /// <c>UniqueIdGenerator</c> climb 44 → 47 → 50 → 53, +3 every cycle, never
+    /// settling. Four of the eight native files differed forever, from two causes: three
+    /// visualisations riding that counter, and <c>GlobalTextList.xml</c>, which churns with no
+    /// counter in it at all.
+    /// </para>
+    /// <para>
+    /// <b>That second file is why Phase 5 keys on equivalence and never on the counter.</b> A
+    /// fix aimed at <c>UniqueIdGenerator</c> would have settled three files, left the fourth
+    /// diffing forever, and looked like it worked.
+    /// </para>
+    /// <para>
+    /// <b>Why the export has to land in the SAME directory both times.</b> The preservation
+    /// only happens when there is a previous mirror to preserve from, so exporting into two
+    /// fresh directories cannot see this at all — that arrangement is the determinism gate
+    /// next door, and it deliberately still means what it always meant. This one exports, round
+    /// trips through a real import, and exports again over the top.
+    /// </para>
+    /// <para>
+    /// <b>The manifest is included in the comparison, not excluded from it.</b> It was the one
+    /// file still differing between two steady-state snapshots, and it settles only if the
+    /// recorded hash follows the bytes actually written — which is why the substitution
+    /// happens before <c>record()</c> hashes anything rather than at write time. Excluding it
+    /// here would hide exactly the mistake that trap describes.
+    /// </para>
+    /// </remarks>
+    [SkippableFact]
+    public async Task An_import_and_a_re_export_leave_the_mirror_byte_identical()
+    {
+        var install = new Versio.Infrastructure.Plc.Codesys.CodesysLocator()
+            .FindInstalls().FirstOrDefault(i => i.Profiles.Count > 0);
+        Skip.If(install is null, "no CODESYS installation with a profile");
+
+        var fixture = Core.Tests.TestPaths.Project("RefrigeratorControl.project");
+        Skip.If(!File.Exists(fixture), "fixture project missing");
+
+        var work = Path.Combine(_root, "g10");
+        Directory.CreateDirectory(work);
+
+        var project = Path.Combine(work, "RefrigeratorControl.project");
+        File.Copy(fixture, project);
+
+        var mirror = Path.Combine(work, "RefrigeratorControl");
+        var runner = new Versio.Infrastructure.Plc.Codesys.LocalCodesysRunner(
+            install!.ExecutablePath,
+            new Versio.Infrastructure.Plc.Codesys.ScriptExtractor(),
+            new TestLogger(output));
+
+        async Task RunAsync(Versio.Core.Plc.Codesys.CodesysOperation operation)
+        {
+            var job = new Versio.Core.Plc.Codesys.CodesysJob
+            {
+                Operation = operation,
+                Profile = install.Profiles[0],
+                Projects =
+                [
+                    new Versio.Core.Plc.Codesys.ProjectJob
+                    {
+                        BindingId = "g10", ProjectPath = project, Path = mirror,
+                    },
+                ],
+                Timeout = TimeSpan.FromMinutes(5),
+            };
+
+            var result = await runner.RunAsync(job, null, CancellationToken.None);
+            Assert.True(result.Succeeded, result.FailureReason ?? $"{operation} failed");
+        }
+
+        await RunAsync(Versio.Core.Plc.Codesys.CodesysOperation.Export);
+        var before = Fingerprint(mirror);
+
+        // The round trip. Nothing is edited: this is P7's measurement, which found the mirror
+        // moving anyway.
+        await RunAsync(Versio.Core.Plc.Codesys.CodesysOperation.Import);
+        await RunAsync(Versio.Core.Plc.Codesys.CodesysOperation.Export);
+
+        var after = Fingerprint(mirror);
+
+        Assert.Equal(before.Keys.OrderBy(k => k, StringComparer.Ordinal),
+                     after.Keys.OrderBy(k => k, StringComparer.Ordinal));
+
+        var differing = before.Where(kv => after[kv.Key] != kv.Value)
+            .Select(kv => kv.Key)
+            .OrderBy(k => k, StringComparer.Ordinal)
+            .ToList();
+
+        foreach (var path in differing)
+        {
+            output.WriteLine($"differs: {path}");
+        }
+
+        Assert.True(differing.Count == 0,
+            "these files changed across an import and a re-export with nothing edited, which "
+            + "is G10 - every one of them is a diff in somebody's commit that means nothing: "
+            + string.Join(", ", differing));
+
+        // NON-VACUOUS. All of the above passes on a mirror of no files at all, and the four
+        // that used to churn are native - so if the fixture ever stopped having native objects
+        // this test would go quietly green while measuring nothing.
+        Assert.True(before.Count >= 15, $"only {before.Count} files in the mirror");
+        Assert.Contains(before.Keys, k => k.EndsWith(".vis.xml", StringComparison.Ordinal));
+        Assert.Contains(before.Keys, k => k.EndsWith("GlobalTextList.xml", StringComparison.Ordinal));
+        Assert.Contains(before.Keys, k => k.EndsWith("_manifest.json", StringComparison.Ordinal));
+    }
+
     [SkippableFact]
     public async Task The_whole_export_is_byte_identical_when_the_same_project_is_exported_twice()
     {

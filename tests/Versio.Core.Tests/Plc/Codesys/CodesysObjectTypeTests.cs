@@ -189,6 +189,34 @@ public class TypeTableParityTests
         // The form the task XML used to carry. It is a real, importable form — a property's
         // recursive export — and the whole defect was that the two were indistinguishable.
         Assert.False(ExportCoverage.IsExportOnly("NATIVE_R"));
+
+        // ── THE THIRD HOME, which this test did not know about until it cost a run ──
+        //
+        // tools/New-ImportPlan.ps1 builds the plan for everything in tools/ — the round-trip
+        // harness and the P7 stability measurement — because those drive the scripts raw,
+        // without LocalCodesysRunner, so they need a plan from somewhere. It has its own copy
+        // of the export-only list, and it REFUSES a form it does not know rather than guessing.
+        //
+        // That refusal is right and the omission was not: adding GVL_NATIVE for G12 left this
+        // file behind, and every tool in that directory died on
+        // `form 'GVL_NATIVE' is not one this helper knows` the next time one was run. Nothing
+        // caught it, because nothing builds or tests PowerShell — so it is compared here, by
+        // reading the source, exactly as the python list above is.
+        var helper = File.ReadAllText(Path.Combine(
+            Core.Tests.TestPaths.Root, "tools", "New-ImportPlan.ps1"));
+
+        var branch = Regex.Match(helper, @"'\^\((?<forms>[A-Z_|]+)\)\$'\s*\{\s*\$action = 'skip'");
+        Assert.True(branch.Success,
+            "New-ImportPlan.ps1 has no export-only branch this test can read — if the switch " +
+            "was reshaped, reshape this pattern with it rather than deleting the check");
+
+        var helperForms = branch.Groups["forms"].Value
+            .Split('|')
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.Equal(
+            pythonForms.OrderBy(f => f, StringComparer.Ordinal),
+            helperForms.OrderBy(f => f, StringComparer.Ordinal));
     }
 
     [Fact]

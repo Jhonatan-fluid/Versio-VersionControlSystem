@@ -49,11 +49,18 @@ foreach ($obj in $manifest.objects) {
 
     # The same dispatch as CodesysImportPlanner.PlanKnown, minus everything a fresh
     # self-export cannot contain. An unknown form is refused there and here alike.
+    #
+    # AN EXPORT-ONLY FORM HAS THREE HOMES, NOT TWO, and this is the third:
+    # versio_types.EXPORT_ONLY_FORMS, ExportCoverage.IsExportOnly, and the line below.
+    # CodesysObjectTypeTests compares all three, which it did not until GVL_NATIVE was added
+    # for G12 and broke every tool in this directory - Measure-ImportStability.ps1 died on
+    # `form 'GVL_NATIVE' is not one this helper knows` the first time it was run afterwards.
+    # The refusal was correct; the omission was not.
     switch -Regex ($obj.form) {
         '^ST_'      { $action = 'text';   $skip = $null }
         '^TASK_BOTH$' { $action = 'typed'; $skip = $null }
         '^NATIVE'   { $action = 'native'; $skip = $null }
-        '^(LIBRARIES|TASK_NATIVE)$' { $action = 'skip'; $skip = 'exportOnly' }
+        '^(LIBRARIES|TASK_NATIVE|GVL_NATIVE)$' { $action = 'skip'; $skip = 'exportOnly' }
         default { throw "form '$($obj.form)' is not one this helper knows - use the runner" }
     }
 

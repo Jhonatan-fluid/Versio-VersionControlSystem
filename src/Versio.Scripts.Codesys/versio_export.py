@@ -31,7 +31,7 @@ from versio_types import (EXPORT_ONLY_FORMS, FORM_CONTAINER,  # noqa: E402
                           SKIP_EXPLANATION, SKIP_GAP, decide_form,
                           descends_into_children, file_name_for, skip_reason,
                           type_of)
-from versio_native_equiv import normalize  # noqa: E402
+from versio_native_equiv import are_equivalent, normalize  # noqa: E402
 import versio_libraries  # noqa: E402
 import versio_tasks  # noqa: E402
 import versio_yaml  # noqa: E402
@@ -123,8 +123,19 @@ class Exporter(object):
     native XML - is decided by versio_types.decide_form.
     """
 
-    def __init__(self, out_root, expected=0):
+    def __init__(self, out_root, expected=0, previous=None):
         self.out_root = out_root
+
+        # WHERE THE LAST EXPORT'S BYTES ARE, or None on the first export ever.
+        #
+        # out_root above is the STAGING directory - empty by construction, because
+        # main() creates it fresh and the three-rename swap happens afterwards. So the
+        # mirror somebody has committed is somewhere else entirely, and preserving a
+        # byte from it means being told where. That is what this is.
+        #
+        # Read BEFORE the swap, which is the only window in which both exist.
+        self.previous = previous
+        self.preserved = 0
         self.records = []
         self.warnings = []
         self.skips = []
@@ -282,8 +293,87 @@ class Exporter(object):
         raw = read_text(tmp)
         os.remove(tmp)
         scrubbed, n = scrub_native_xml(raw)
-        write_text(abs_path, scrubbed)
-        return scrubbed, n
+
+        # G10, AND THE ORDER HERE IS THE WHOLE FIX.
+        #
+        # The substitution happens BEFORE the caller hashes anything, because the
+        # caller hashes what this returns: record() does `h = content_hash(text)` on
+        # the value it is handed, and write_text's docstring states the invariant it
+        # depends on - "the exporter hashes what it writes". Swapping the bytes at
+        # write time instead would leave _manifest.json recording a hash of a payload
+        # that is not the one on disk beside it, and Versio's hash gate reads the
+        # disk. The manifest is the one file that still differed between two steady
+        # state snapshots, and it settles only if the recorded hash follows the bytes
+        # actually written.
+        payload = self.preserve_equivalent(abs_path, scrubbed)
+        write_text(abs_path, payload)
+        return payload, n
+
+    def preserve_equivalent(self, abs_path, scrubbed):
+        """The bytes already in the mirror when they mean the same thing, else the new
+        ones.
+
+        WHY THIS EXISTS. P7 ran three import/export cycles with nothing edited between
+        them and watched UniqueIdGenerator climb 44 -> 47 -> 50 -> 53, +3 every time,
+        never settling. Four of eight native files differed forever. Every one of those
+        differences is semantically nothing - measured, not assumed: all four are
+        NativeXmlNormalizer-equivalent with symmetric mask counts, which is what says
+        they differ in the masked positions and nowhere else.
+
+        KEYED ON EQUIVALENCE, NEVER ON THE COUNTER, and that is not a stylistic
+        preference. GlobalTextList.xml churns every cycle and contains no counter at
+        all; a fix aimed at UniqueIdGenerator would have left that file diffing forever
+        and looked like it worked on the three that do carry one.
+
+        THE DETERMINISM GATE STILL HOLDS. Two exports into two empty directories stay
+        byte-identical, because neither has a previous mirror to preserve from - the
+        branch below is simply not taken. Only export-into-an-existing-mirror behaves
+        differently, and that is the case this is for.
+
+        MASKED COMPARISON, deliberately. are_equivalent masks GUIDs by default and the
+        churn is exactly there: Phase 2 measured that GUIDs are stable across two
+        exports and NOT across a round trip. Keeping the old bytes therefore keeps the
+        old ids, which is what the mirror already held and what CODESYS already accepts
+        back - import_native replaces an existing object in place either way.
+
+        WHAT MASKING COSTS, written down rather than discovered. An object DELETED and
+        RECREATED with identical content has a new identity but an equivalent payload,
+        so this keeps the old bytes and the mirror's XML carries ids the project no
+        longer has - while the manifest, which reads obj.guid directly, records the new
+        one. The two then disagree.
+
+        Not fixed, and this is the reasoning rather than an oversight. The disagreement
+        is not destructive: importing that file replaces the object in place and the old
+        ids simply come back, which is the state the mirror already described. And it
+        cannot be told apart from the ordinary case by looking at the payload, because
+        the ordinary case IS a GUID that changed for no reason - that is the churn this
+        exists to remove. The cheap fix if it ever matters is to refuse preservation
+        when the last manifest's GUID for this path differs from the live object's,
+        which costs loading the old manifest here; nobody has seen it happen, so it is
+        recorded rather than built.
+        """
+        if not self.previous:
+            return scrubbed
+
+        rel_path = os.path.relpath(abs_path, self.out_root)
+        old_path = os.path.join(self.previous, rel_path)
+        if not os.path.isfile(old_path):
+            return scrubbed
+
+        old = safe(lambda: read_text(old_path), None)
+        if old is None or old == scrubbed:
+            # Already identical: there is nothing to preserve and nothing to say. Most
+            # files in most exports land here, which is why this is not reported.
+            return scrubbed
+
+        if not safe(lambda: are_equivalent(old, scrubbed), False):
+            # A real change. This is the ordinary reason a native file differs and the
+            # whole point of exporting it.
+            return scrubbed
+
+        self.preserved += 1
+        emit({"t": "preserved", "path": rel_path.replace("\\", "/")})
+        return old
 
     def export_libraries(self, obj, object_path, rel_path):
         """Render one library manager's references as neutral YAML.
@@ -709,7 +799,11 @@ def main():
     expected = sum(count_objects(child) for child in roots)
     emit({"t": "counted", "objects": expected})
 
-    ex = Exporter(staging, expected)
+    # PREVIOUS is the live mirror, not staging - and it is read here because this is the
+    # only moment both exist. main() has just created staging empty and the three-rename
+    # swap has not happened yet, so out_root still holds what the last export wrote.
+    ex = Exporter(staging, expected,
+                  previous=out_root if os.path.isdir(out_root) else None)
     for child in roots:
         ex.handle(child, "", None)
 
@@ -816,7 +910,8 @@ def main():
     close_project(proj)
     gaps = len([s for s in ex.skips if s["reason"] == SKIP_GAP])
     emit({"t": "summary", "walked": ex.total, "written": len(ex.records),
-          "skipped": ex.skipped, "gaps": gaps, "warnings": len(ex.warnings)})
+          "skipped": ex.skipped, "gaps": gaps, "warnings": len(ex.warnings),
+          "preserved": ex.preserved})
     emit({"t": "done"})
     return 0
 
