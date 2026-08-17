@@ -218,6 +218,7 @@ should be measured against.
 | P8 | Deep folder chain near 260 characters | ✅ **CODESYS is not the limit** — ten 40-char levels, ~420 characters, no complaint |
 | P11 | **Which moves are actually performed** | ⚠️ **three of nine are declined in silence, and the destination is not what decides.** Performed, each surviving a save/close/reopen with its GUID: a POU into a folder, into a folder inside that one, and back out into `Application`; a GVL to **the project root**; an **empty folder into `Plc Logic`**; an **empty folder into an ordinary folder**. Declined without raising: a POU into `Device`, a visualisation into `Plc Logic`, and **a folder holding a POU** into `Plc Logic`. **No call ever raised** — every one returned `None`, so the read-back is the only signal there is. **Run twice**: the first run's ninth step shared a folder with the eighth, never executed, and skipped the eighth's reopen check as superseded by it — see the probe finding in `FINDINGS.md` |
 | P9 | A fixed-version library reference | ✅ **one call**, yields `is_managed: true` — **and that was half the answer.** Re-run on 2026-08-17 to enumerate the type's members and walk the chain the exporter uses: `managed_library.version` answers **only for a library this machine has installed** and raises `NullReferenceException` otherwise. G8 was a defect, not a fixture |
+| P12 | **Can an encodable name exist at all** — the two doors P5 never tried | ⚠️ **One of them is open.** `rename()` refuses all four awkward names with `create_pou`'s own message — and **raises**, unlike `move()`, so that refusal at least is loud. But **`create_external_file_object(path)` works**, on the project root and on `Application` alike, and the resulting object's name is the README shape in the flesh: `00000000-…\|C:\…\versio_external.txt` — pipe, colon, backslashes. **E2 and E4's fixture is buildable**, with one measured caveat: the name embeds an **absolute path**, so a committed fixture would differ per machine — the fixture has to be designed (created at test time, or named relatively if the API allows), not merely created |
 
 **Phase 0 had two purposes and both paid off, in opposite directions.** Confirming the API saved
 a day of debugging inside Phases 3 and 4, because four of its spellings were wrong. Establishing
@@ -866,8 +867,10 @@ destroyed and rebuilt.
 > **The import repoints the task itself now** — `pous.replace(index, name)`, the one spelling of
 > five that works — so `MainTask` reads `[PLC_PRG, Renamed]` afterwards, `PLC_PRG` untouched.
 > The dialog names tasks specifically rather than claiming "references" in general, because a
-> visualisation binding may refer by name too and that has not been measured. See the Finding in
-> [`STATUS.md`](../../STATUS.md).
+> visualisation binding may refer by name too and that has not been measured — **and will not
+> be, by decision (2026-08-17): visualisations are not in use here.** The dialog's precise
+> wording is what keeps that decision safe — it promises exactly what was measured and nothing
+> more. See the Finding in [`STATUS.md`](../../STATUS.md).
 
 | Pass | Sees | Needs |
 |---|---|---|
@@ -901,9 +904,11 @@ both were silent successes.
 Same directory, different name → **Rename**. Same name, different directory → **Move**.
 
 **Execution:** `obj.rename(new_name)` and **`obj.move(new_parent, -1)`**. The GUID is preserved —
-**measured, in session and across a save and reopen** — so references, task assignments and
-visualisation bindings survive, which is the entire reason for doing this rather than
-delete-plus-create.
+**measured, in session and across a save and reopen** — so everything that refers to the object
+*by GUID* survives, which is the entire reason for doing this rather than delete-plus-create.
+**By name is another matter, and this sentence used to claim too much**: task assignments are
+stored by name and did *not* survive — the import repoints them — and a visualisation binding
+held by name is unmeasured, by decision (2026-08-17, visualisations not in use here).
 
 > **`-1` is not a stylistic choice.** `move(dest, 0)` raises `ValueError: index must be -1 if the
 > new parent node does not have sorted children`, and every parent in the fixture is unsorted. The
@@ -1305,16 +1310,18 @@ additive, each is unavailable until the next export, and **absent never means "u
 
 ## What is left, and what it costs
 
-**No gaps, one task, and three decisions.** G1, G2, G3, G6, G7, **G8**, G9, G10, G11 and G12
-are closed; G4 and G5 are closed but for two rows no fixture can reach. Nothing below blocks
-anything else, and only the first is a task rather than a judgement call.
+**No gaps, and the decisions are being taken rather than carried.** G1, G2, G3, G6, G7, **G8**,
+G9, G10, G11 and G12 are closed; G4 and G5 are closed but for two rows no fixture has reached —
+and whether one *can* is now a measurement in flight (P12) rather than an assumption. G9's
+remaining half was **decided** on 2026-08-17: report-only, permanently. Nothing below blocks
+anything else.
 
 | | What | Effort | Why it is the size it is |
 |---|---|---|---|
 | ~~**1**~~ | ~~**G8 — prove the `managed_library` branch**~~ | ~~Half a day~~ **Done 2026-08-17, in about that** | ✅ Closed, and **not the way this row said**. No fixture variant was built: a fixture proves the branch runs, and what needed asking was what it *records*. It recorded the exporting machine's installed version, or — for a library that machine did not have — nothing at all, silently. See the G8 row and the Finding. The estimate was right and the description of the work was wrong, which is the more useful half to notice |
 | ~~**1**~~ | ~~**Which moves actually work**~~ | ~~Half a day~~ **Done 2026-08-17, measured twice** | ✅ **P11 drew the line, and it is not where the first run of it appeared to be.** Nine ordered moves, each re-resolved afterwards. Performed, GUID intact, surviving a reopen: a POU into a folder, into a nested folder, back out into `Application`; a GVL to **the project root**; an **empty folder into `Plc Logic`**; an **empty folder into an ordinary folder**. Accepted and silently ignored: a POU into `Device`, a visualisation into `Plc Logic`, a **folder holding a POU** into `Plc Logic`. **Nothing ever raised.** So **the destination is not what decides** — what is being moved matters as much — and the seven-step version of this probe said otherwise for an hour. **The nine-step version then lied once more**: its ninth step never ran and a reopen claim was written unmeasured, caught in review and re-run — the probe finding in `FINDINGS.md` is the third method error in one day's work on one probe. `RENAME_NOT_APPLIED` now carries the measured cases |
-| **1** | **G9's remaining half — the 190-character file name** | **A day to change; the cost is not the code** | Preventing rather than reporting means shrinking `MaxStem` or dropping the parent prefix, and **either renames every method, action, property and transition in every mirror already committed** — a git rename with no content change, in everybody's repository, on the next export. Written up rather than taken because it is the owner's call. `The_longest_legal_file_name_leaves_no_room_for_an_ordinary_checkout` derives the number, so whoever takes it on is told when they have succeeded |
-| **2** | **E2 and E4 — percent-encoded names** | **Unknown, and unbounded** | Not a coding task: it needs a *fixture that cannot be built*. P5 measured that CODESYS refuses to **create** such a name, so the object has to arrive from a library or an external-file reference. `README.md`'s own object list has a real example of the latter. Until one exists, **G4's resolution half is proven by unit tests and by nothing else** — say so rather than let the checklist imply otherwise |
+| ~~**1**~~ | ~~**G9's remaining half — the 190-character file name**~~ | **Decided 2026-08-17: report-only is the permanent answer** | ✅ The owner chose to keep the two guards as the whole of the fix. Preventing rather than reporting means shrinking `MaxStem` or dropping the parent prefix, either of which renames member files in every committed mirror and makes every file name worse to protect against a case the warning already catches. Decided **now** rather than deferred, because the argument for deferring was itself the trap: the churn is cheapest while the only committed mirrors are in this repository, so "later" was quietly "never" with extra steps. `The_longest_legal_file_name_leaves_no_room_for_an_ordinary_checkout` stays, deriving the number, in case a future owner reopens this with more repositories at stake |
+| **2** | **E2 and E4 — percent-encoded names** | ~~**Unknown, and unbounded**~~ **Bounded on 2026-08-17: a fixture IS buildable** | ~~Not a coding task: it needs a *fixture that cannot be built*.~~ **P12 measured the two doors P5 never tried, and one is open**: `create_external_file_object` yields an object named `{GUID}\|C:\…\file.txt` by script, on this very version. What remains is a *design* task, not a mystery: the object's name embeds an absolute path, so the fixture must be created at test time rather than committed, or the export of it will differ per machine — the G9 machine-dependence trap through yet another door. Until that test exists, **G4's resolution half is proven by unit tests and by nothing else** — still true, but now by choice rather than by impossibility |
 | **3** | **`TaskCatalog.cs`** | **Half a day, but not alone** | The C# reader for `.tasks.yaml`, so something outside python can read one. **Land it with the panel change that consumes it.** Note the precedent cuts both ways: `LibraryCatalog.cs` is already in `Versio.Core/Projects/` with tests and **no production caller**, so the rule "no reader without a consumer" has already been broken by its sibling. The real blocker for both is the panel |
 
 **No tasks left in this plan — three decisions and a blocked reader.** Item 1 is a judgement
@@ -1338,9 +1345,10 @@ seconds together. Both commands are
 in `CLAUDE.md`.
 
 **Next, in order:** see [What is left, and what it costs](#what-is-left-and-what-it-costs)
-above. **There is no next task in this plan.** The three items left are decisions: whose
-repositories to churn for G9's remaining half, whether to chase a fixture nobody can build for
-E2 and E4, and when the panel arrives to consume `TaskCatalog.cs`.
+above. **One designed task and one blocked reader remain.** G9's remaining half is **decided**
+(report-only, 2026-08-17); E2 and E4 have a **buildable** fixture as of P12 — a test-time build,
+because the object's name embeds an absolute path — and `TaskCatalog.cs` still waits for the
+panel that consumes it.
 
 **One lesson from G9 that outlives it**, kept because it is about how this document goes wrong
 rather than about paths. This file said **three times**, across two documents, that G9 "has a
@@ -1378,7 +1386,8 @@ copied forward unchallenged because it sounded like something somebody had measu
   still lists the old *name*, because CODESYS stores that list by name. The dialog claimed
   otherwise for a while on the strength of the GUID alone. If a future change touches renames,
   ask what else refers to an object by name — visualisation bindings have **not** been
-  measured.
+  measured, and as of 2026-08-17 that is a **decision** rather than a backlog item:
+  visualisations are not in use here. A project that uses them inherits the question.
 - **Two similarity numbers are not comparable because both are called similarity.** The exact
   path scores shared lines over the larger side; the sketch estimates Jaccard, which counts
   every change twice. Their thresholds differ for that reason and neither is a "quality"
@@ -1544,9 +1553,9 @@ the guessed-chain rule but is not the same as an export having recorded one. E1 
 | # | What the import does | Measured | Verdict |
 |---|---|---|---|
 | E1 | Ownership from the manifest's **parent-GUID chain**, not from the file stem | PURE | ✅ on `MachineWithMembers`, against the bytes the real exporter wrote: `Device / Plc Logic / Application / Pumps / FB_Pump / Start` |
-| E2 | **Percent-encoded** names decoded before resolution (G4) | NOT REACHED | Needs an object whose name needs encoding. P5 measured that one cannot be *created*, so neither fixture can contain one; `README.md`'s own object list has a real example, an external-file reference named `{GUID}\|C:\Users\…` |
+| E2 | **Percent-encoded** names decoded before resolution (G4) | NOT REACHED | Needs an object whose name needs encoding. ~~P5 measured that one cannot be *created*, so neither fixture can contain one~~ **P12 (2026-08-17) opened the door P5 never tried: `create_external_file_object` produces one by script**, named `{GUID}\|C:\…\file.txt`. The fixture must be built at test time — the name embeds an absolute path, so a committed one would be machine-dependent. A designed task now, not an impossibility |
 | E3 | A **dotted name** is not split into owner and member (G5) | PURE + E2E | ✅ `FB_Pump.Stop.action.st` carries the dot in its stem and resolves through the recorded parent, and the import applies it without a `PARENT_NOT_FOUND` |
-| E4 | A **shortened stem** that decodes to nothing is reported unresolvable | NOT REACHED | Same |
+| E4 | A **shortened stem** that decodes to nothing is reported unresolvable | NOT REACHED | Same — and the same door opens it: an external-file object with a long enough absolute path overflows `MaxStem` naturally, which is precisely the digest-tail shape this row needs |
 
 ### F — The run as a whole
 
@@ -1590,9 +1599,11 @@ both about exactly this half of the importer, so the two gaps with the least evi
 them were the two nothing could reach.
 
 `MachineWithMembers` closed three of the five the same day. **The remaining two are E2 and E4**,
-and they need a name that needs percent-encoding — which P5 measured cannot be *created*, so
-no fixture builder can produce one. It has to arrive from a library or an external-file
-reference, and that is the next thing this corpus is missing.
+and they need a name that needs percent-encoding — which P5 measured cannot be *created* through
+`create_pou`. ~~So no fixture builder can produce one.~~ **P12 (2026-08-17) measured the doors P5
+did not: `rename()` refuses the same names loudly, and `create_external_file_object` produces
+exactly the object these rows need.** What the corpus is missing is now a test-time fixture
+build — test-time because the object's name embeds an absolute path — not a miracle.
 
 **3 — A planner refusal is invisible to anything watching the outcome.** The two-file rule, the
 orphan rule and the guessed chain are all `ImportPlan.Warnings`, which deliberately do not cross

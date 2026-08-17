@@ -23,7 +23,10 @@ integration project; it is a project boundary now.*
 > **Renaming is the safe half of that pair and is still worth knowing about**: a file renamed
 > in the mirror renames the *object*, keeping its GUID, and any task that ran it is repointed.
 > What Versio does **not** fix is a reference held by name that it does not know about — a
-> visualisation binding has never been measured.
+> visualisation binding has never been measured. **Decided 2026-08-17: not pursued** — the
+> owner does not use CODESYS visualisations, so the measurement is deliberately not taken.
+> The sentence stays because the risk does: anyone renaming POUs in a project that *does* use
+> visualisations should measure whether bindings hold by name before trusting a rename.
 >
 > **It is built as a set of refusals with one door**, because P3 measured that CODESYS's
 > `remove()` takes referenced objects with it silently — no exception, no cascade, no warning,

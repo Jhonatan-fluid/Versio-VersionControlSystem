@@ -857,6 +857,85 @@ def probe_move_matrix(proj, project_path):
     }
 
 
+# ============================================================================ P12
+def probe_encodable_name(proj, project_path):
+    """Can an object whose name needs percent-encoding EXIST?
+
+    E2 and E4 of the feature checklist need one, and the plan calls their fixture
+    unbuildable on the strength of P5 - which measured that create_pou REFUSES the four
+    awkward names. That is a fact about one door. Two others have never been tried, and
+    the cost of assuming they are shut is two rows proven by unit tests and nothing else:
+
+      1. rename(). Nobody has ever called it with a name create_pou refuses. A validator
+         that runs on create and not on rename is a shape every toolchain has shipped at
+         least once.
+      2. An external-file object. README.md's own object list carries a real one, named
+         {GUID}|C:\\Users\\...\\file.txt - so the IDE has the door. Is it scriptable?
+
+    Same method as every probe here: call the thing, re-resolve afterwards, report what
+    happened rather than what the call claimed.
+    """
+    app = find_at(proj, APP_PATH)
+    obj = find_at(proj, APP_PATH + ["Simulation"])
+    if app is None or obj is None:
+        return {"verdict": "NO_TARGET"}
+
+    # Door 1: the four names P5 measured create_pou refusing, attempted as renames of a
+    # real POU. Each attempt re-resolves at the wanted name; a success updates the handle
+    # so the next attempt renames from wherever the object now is.
+    out = {"rename": []}
+    current = u"Simulation"
+    for wanted in [u"My.Thing", u"weird<name>", u"Pump ", u"Pump."]:
+        call = describe(lambda o=obj, w=wanted: o.rename(w))
+        landed = find_at(proj, APP_PATH + [wanted])
+        out["rename"].append({
+            "wanted": wanted,
+            "call_ok": call.get("ok"),
+            "call_error": call.get("error"),
+            "call_message": call.get("message"),
+            "applied": landed is not None,
+        })
+        if landed is not None:
+            current = wanted
+            obj = landed
+
+    # Put the name back so door 2 measures against a sane tree. Reported, not assumed -
+    # a probe that silently repairs its own state is a probe whose rows cannot be read
+    # in order.
+    if current != u"Simulation":
+        out["rename_back"] = describe(lambda o=obj: o.rename(u"Simulation"))
+
+    # Door 2: an external-file object, from a real file written beside the scratch
+    # project. AttributeError in a row below means the member does not exist under that
+    # spelling; any other error means it exists and refused - the distinction P9's
+    # NullReferenceException taught this file to keep.
+    ext = project_path[:project_path.rfind("\\") + 1] + "versio_external.txt"
+    f = open(ext, "w")
+    f.write("external file fixture for P12\n")
+    f.close()
+
+    out["module_external_names"] = sorted(
+        [n for n in dir(scriptengine) if "xternal" in n])
+    for target_name, target in (("project", proj), ("application", app)):
+        row = {}
+        for meth in ("create_external_file_object", "add_external_file",
+                     "create_external_file", "import_external_file"):
+            row[meth] = describe(
+                lambda t=target, m=meth, p=ext: getattr(t, m)(p))
+        out["door2_" + target_name] = row
+
+    # What the tree actually holds afterwards, because a created external object's NAME
+    # is the whole point: if one exists, does it carry the path - the |, : and \ that
+    # need encoding - or something tamer?
+    def child_names(container):
+        return [_plain(safe(lambda c=c: c.get_name(), None))
+                for c in (safe(lambda: container.get_children(), []) or [])]
+
+    out["app_children_after"] = child_names(app)
+    out["root_children_after"] = child_names(proj)
+    return out
+
+
 # ============================================================================ P10
 def probe_task_shape(proj, project_path):
     """What a task configuration and its tasks actually expose, field by field.
@@ -910,6 +989,7 @@ PROBES = {
     "P9": ("fixed-version library reference", lambda proj, path: probe_library_reference(proj)),
     "P10": ("task configuration shape, for versio_tasks.py", probe_task_shape),
     "P11": ("which containers accept a move", probe_move_matrix),
+    "P12": ("can an encodable name exist", probe_encodable_name),
 }
 
 
