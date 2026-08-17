@@ -17,6 +17,37 @@ produce a diff touching everything else.
 
 ---
 
+### A `git mv` moves a test; it does not move what the test reads
+
+**Found 2026-08-17 by the Phase D gate, and only by the gate.** Splitting the suite into a fast
+project and a CODESYS one left five tests failing — and every one of them failed in the
+**32-minute** run rather than the eleven-second one, which is the worst place to learn it.
+
+Two separate breakages, same shape:
+
+- **`versio_types.py` and `versio_text.py` were copied to the output directory by an item in
+  `Versio.Core.Tests.csproj`.** `TypeTableParityTests` moved to `Versio.Plc.Codesys.Tests`; the
+  `<None Include … CopyToOutputDirectory>` did not. The tests looked for a file beside themselves
+  and there wasn't one.
+- **`New-ImportPlan.ps1` moved to `tools/codesys/`**, and the sweep that repointed every literal
+  reference to the seven moved tools missed this one because the path is *built* —
+  `Path.Combine(TestPaths.Root, "tools", "New-ImportPlan.ps1")` — rather than written as a
+  string. A textual sweep cannot see a path that does not exist textually.
+
+**The process failure is the interesting half.** After creating the new project I confirmed it
+*discovered* 365 tests with `--list-tests` and moved on, because running it meant half an hour.
+Discovery proves the project compiles and the classes are found. It proves nothing about whether
+they pass. **308 of those 365 need no CODESYS at all** and run in thirteen seconds — that filter
+existed the whole time and would have caught both breakages immediately.
+
+So the lesson is not "be careful when moving files". It is: **a new test project needs its fast
+subset run the moment it exists**, before anything else is built on top of it. Two more phases
+went in on top of an unverified split.
+
+**And the guard for the second one is the same class of thing that has now bitten three times
+this session** — F1's markdown anchors, D3's cross-document links, and this. A reference that is
+assembled rather than written down is invisible to every check that reads text.
+
 ### The architecture tests PLAN promised for months had never been written
 
 **Found 2026-08-16, built 2026-08-17.** `docs/PLAN.md` §12.2 is headed **"Dependency rules —

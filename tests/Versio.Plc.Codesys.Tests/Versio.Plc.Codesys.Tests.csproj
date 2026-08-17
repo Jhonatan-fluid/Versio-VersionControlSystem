@@ -33,4 +33,18 @@
     <ProjectReference Include="..\Versio.TestSupport\Versio.TestSupport.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The python type table and the text helpers, beside the tests that read them.
+
+         TypeTableParityTests compares versio_types.py against the C# enum so the two cannot
+         drift, and it reads the copy from AppContext.BaseDirectory rather than from source.
+
+         THESE ITEMS LIVED IN Versio.Core.Tests UNTIL THE TESTS MOVED OUT AND THEY DID NOT.
+         Five tests failed on a missing file, and only in the 32-minute suite, because the fast
+         projects had nothing left that read them. A `git mv` moves a test; it does not move the
+         data the test needs. -->
+    <None Include="..\..\src\Versio.Plc.Codesys.Infrastructure\Scripts\versio_types.py" Link="versio_types.py" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\Versio.Plc.Codesys.Infrastructure\Scripts\versio_text.py" Link="versio_text.py" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

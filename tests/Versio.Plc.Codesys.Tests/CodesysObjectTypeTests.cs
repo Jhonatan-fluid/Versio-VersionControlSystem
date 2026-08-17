@@ -203,8 +203,13 @@ public class TypeTableParityTests
         // `form 'GVL_NATIVE' is not one this helper knows` the next time one was run. Nothing
         // caught it, because nothing builds or tests PowerShell — so it is compared here, by
         // reading the source, exactly as the python list above is.
+        // tools/codesys/ since 2026-08-17, when the seven CODESYS probes moved out of tools/
+        // to sit beside the vendor's own projects. This path is BUILT rather than written as one
+        // string, so the sweep that repointed every literal reference to the moved files walked
+        // straight past it — and it broke in the 32-minute suite rather than in the eleven-second
+        // one, which is the worst place to learn it.
         var helper = File.ReadAllText(Path.Combine(
-            TestPaths.Root, "tools", "New-ImportPlan.ps1"));
+            TestPaths.Root, "tools", "codesys", "New-ImportPlan.ps1"));
 
         var branch = Regex.Match(helper, @"'\^\((?<forms>[A-Z_|]+)\)\$'\s*\{\s*\$action = 'skip'");
         Assert.True(branch.Success,
