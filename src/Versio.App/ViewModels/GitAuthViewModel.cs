@@ -31,7 +31,7 @@ namespace Versio.App.ViewModels;
 /// <b>NOTHING IN HERE MAY LOG WHAT IT SENDS OR RECEIVES.</b> <c>git credential</c> speaks
 /// key=value over stdin and one of those keys is <c>password</c>, which <c>Redact</c> does not
 /// catch. The results carry whether an operation worked and never the helper's stdout. Read
-/// <c>docs/GIT-PANEL-PLAN.md</c> §12c before changing a log line in this file.
+/// <c>docs/phase1/GIT-PANEL-PLAN.md</c> §12c before changing a log line in this file.
 /// </para>
 /// <para>
 /// <b>The four collaborators are passed in rather than reached for.</b> The busy tracker and the

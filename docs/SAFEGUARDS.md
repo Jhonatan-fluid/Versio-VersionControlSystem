@@ -6,7 +6,7 @@
 |---|---|
 | Document | **The interruption and destructive-action plan.** What Versio must refuse, ask about, or wait for — and why each answer is the one it is |
 | Status | **Phases 1–8 built and verified against real CODESYS** (§6) — the guard and its narrative, the cancellation plumbing, the dialog, the close guard, the context-switch guard, the repository reset, the conflict gate, the git-write window, the auto-stash in both directions, and the swap that can no longer leave a project with no mirror. **Phase 9 is what remains**, and it is features rather than guards: a real import confirmation (§5.C), a backup restore path (§5.E), a read-only second instance (§5.G). **§0 is the handover note.** Every "today" below is a reading of the code as it was when that section was written, with each phase's *"as built"* notes appended where it was planned |
-| Related | [`PLAN.md`](PLAN.md) — the architecture · [`STATUS.md`](STATUS.md) — where the project is · [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) — what was measured |
+| Related | [`phase1/PLAN.md`](phase1/PLAN.md) — the architecture · [`STATUS.md`](STATUS.md) — where the project is · [`phase1/PHASE0-FINDINGS.md`](phase1/PHASE0-FINDINGS.md) — what was measured |
 
 ---
 
@@ -42,7 +42,7 @@ disappearing while it is open, which nobody has costed.
 > called for.
 
 > **Work since, on the git panel, that touches this document.** Eleven phases of
-> [`GIT-PANEL-PLAN.md`](GIT-PANEL-PLAN.md) have landed and four of them interact with the
+> [`phase1/GIT-PANEL-PLAN.md`](phase1/GIT-PANEL-PLAN.md) have landed and four of them interact with the
 > safeguards here:
 >
 > - **A background remote watch** (GP-D) probes with `ls-remote` and fetches when the remote

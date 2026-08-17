@@ -6,7 +6,7 @@ using Xunit;
 namespace Versio.Arch.Tests;
 
 /// <summary>
-/// The five dependency rules <c>docs/PLAN.md</c> §12.2 has always said were enforced.
+/// The five dependency rules <c>docs/phase1/PLAN.md</c> §12.2 has always said were enforced.
 /// </summary>
 /// <remarks>
 /// <para>

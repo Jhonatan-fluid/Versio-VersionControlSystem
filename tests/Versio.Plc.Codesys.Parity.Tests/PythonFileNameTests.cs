@@ -588,6 +588,7 @@ public sealed class PythonFileNameParityTests(ITestOutputHelper output)
         ExportForm.Libraries => "LIBRARIES",
         ExportForm.NativeWithChildren => "NATIVE_WITH_CHILDREN",
         ExportForm.TaskBoth => "TASK_BOTH",
+        ExportForm.ExternalNative => "EXTERNAL_NATIVE",
         _ => throw new ArgumentOutOfRangeException(nameof(form), form, "unmapped export form"),
     };
 

@@ -170,6 +170,18 @@ public sealed class ScriptContractTests(ITestOutputHelper output)
             // that one is the failure. The first code this invariant forced somebody to
             // classify, which is what it was written for.
             "PATH_TOO_LONG",
+
+            // G8's two, and they are the "incomplete content" kind above rather than the
+            // losing kind: the reference is still written, with its name and its flags, and
+            // the library manager's file is still recorded. What is missing is the version,
+            // company and title of ONE reference — a gap inside a file that exists, which is
+            // why it is a warning at all and why it names the reference in its detail.
+            //
+            // The alternative was to keep silent, and that is the defect this replaced: a
+            // managed reference recorded without its version is indistinguishable in the YAML
+            // from a placeholder that never had one.
+            "LIBRARY_MANAGED_NAME_UNPARSED",
+            "LIBRARY_REFERENCE_UNCLASSIFIED",
         ];
 
         foreach (var code in codes)

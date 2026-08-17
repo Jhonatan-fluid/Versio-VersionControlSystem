@@ -1,0 +1,7 @@
+{
+    "scripts":  "C:\\GIT\\Versio\\src\\Versio.Plc.Codesys.Infrastructure\\Scripts",
+    "project":  "C:\\GIT\\Versio\\phase0\\ext\\P13\\probe.project",
+    "probes":  [
+                   "P13"
+               ]
+}

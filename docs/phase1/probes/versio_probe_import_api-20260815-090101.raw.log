@@ -1,0 +1,7 @@
+﻿@@VERSIO@@{"project": "C:\\GIT\\Versio\\phase0\\import-api\\P5\\probe.project", "probes": ["P5"], "t": "start"}
+@@VERSIO@@{"path": "C:\\GIT\\Versio\\phase0\\import-api\\P5\\probe.project", "t": "opened"}
+@@VERSIO@@{"title": "create awkward names, then find them", "id": "P5", "t": "probe_start"}
+@@VERSIO@@{"title": "create awkward names, then find them", "id": "P5", "t": "probe_result", "result": {"reading": "a refusal closes the matching gap as unreachable; an acceptance means the importer must handle it", "names": [{"label": "dotted", "requested": "My.Thing", "create": {"error": "StandardError", "ok": false, "message": "The name 'My.Thing' is not valid for this object."}}, {"label": "encoded", "requested": "weird<name>", "create": {"error": "StandardError", "ok": false, "message": "The name 'weird<name>' is not valid for this object."}}, {"label": "trailing_space", "requested": "Pump ", "create": {"error": "StandardError", "ok": false, "message": "The name 'Pump ' is not valid for this object."}}, {"label": "trailing_dot", "requested": "Pump.", "create": {"error": "StandardError", "ok": false, "message": "The name 'Pump.' is not valid for this object."}}], "verdict": "PROBED"}}
+@@VERSIO@@{"t": "done"}
+@@VERSIO@@{"rc": 0, "t": "exit"}
+

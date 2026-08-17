@@ -4,7 +4,7 @@
 
 .DESCRIPTION
   versio_import.py executes a plan and nothing else (job schema 2, Phase 1 of
-  docs/vendors/codesys/IMPORT-PLAN.md) - a planless job is refused before the project is opened.
+  docs/phase1/IMPORT-PLAN.md) - a planless job is refused before the project is opened.
   The tools in this directory drive the script raw, without LocalCodesysRunner, so they
   need a plan from somewhere, and this is it.
 
@@ -60,7 +60,7 @@ foreach ($obj in $manifest.objects) {
         '^ST_'      { $action = 'text';   $skip = $null }
         '^TASK_BOTH$' { $action = 'typed'; $skip = $null }
         '^NATIVE'   { $action = 'native'; $skip = $null }
-        '^(LIBRARIES|TASK_NATIVE|GVL_NATIVE)$' { $action = 'skip'; $skip = 'exportOnly' }
+        '^(LIBRARIES|TASK_NATIVE|GVL_NATIVE|EXTERNAL_NATIVE)$' { $action = 'skip'; $skip = 'exportOnly' }
         default { throw "form '$($obj.form)' is not one this helper knows - use the runner" }
     }
 

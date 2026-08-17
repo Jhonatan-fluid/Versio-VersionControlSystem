@@ -84,7 +84,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | A project with a clean mirror is not listed | ✅ unless it needs attention — never exported, behind, locked, failed. The empty state says why rather than going blank |
 | **Lazy object rendering** — a row is built when something can reach it, not before | ✅ `TreeRow.Children` on first access; the tree survives a refresh without collapsing |
 | **Export coverage stated, not assumed** — `_coverage.md` + every skip in the manifest | ✅ a gap is distinguished from a deliberate omission; an old manifest reports "unknown", never "complete"; and **an object the export could not write at all is reported rather than counted as covered** — it reaches neither the records nor the skips, so until 2026-08-16 a lost object left a verdict of "everything reaches the mirror" |
-| **Library references exported** (`<manager>.libraries.yaml`) | ✅ **the gap is closed.** One file per library manager, beside the object that owns it — 21 references on the fixture's application, 13 on its project. Hand-written YAML on both sides, no third-party dependency. Export-only: change libraries in the IDE |
+| **Library references exported** (`<manager>.libraries.yaml`) | ✅ **the gap is closed.** One file per library manager, beside the object that owns it — 21 references on the fixture's application, 13 on its project, **all 34 placeholders**. Hand-written YAML on both sides, no third-party dependency. Export-only: change libraries in the IDE. A **fixed-version** reference records its version, company and title parsed from its own name, which is project state — reading them off `managed_library` reports what the exporting machine has *installed*, and answers nothing at all for a library it does not have |
 | Template generation | ⛔ needs a new operation and script — not assembly |
 | A second vendor (TwinCAT / Studio 5000 / TIA Portal) | ⛔ the seam is ready and unproven |
 | **Git side panel** — staging, commit message, fetch/pull/push | ✅ one operation at a time across every button |
@@ -114,22 +114,22 @@ Both directions run automatically and deterministically. A per-project **directi
 the interruption guard, the auto-stash, and the ways this could lose work. Eight of its nine
 phases are built, and so is the ninth. What is left in its scenario list is §5.H, a repository
 that disappears while it is open.
-**[docs/GIT-PANEL-PLAN.md](docs/GIT-PANEL-PLAN.md)** is the git panel's functionality and UX.
+**[docs/phase1/GIT-PANEL-PLAN.md](docs/phase1/GIT-PANEL-PLAN.md)** is the git panel's functionality and UX.
 Eleven of its twelve phases are built; what is left is the ahead/behind previews and a list of
 smaller polish items.
 **[docs/vendors/codesys/DRIVING.md](docs/vendors/codesys/DRIVING.md)** is how CODESYS is actually driven — the ScriptEngine
 surface, the command line, both sides of the JSON-lines protocol, every script, and the export
 and import mechanics. Its §12 is a standing audit of that integration: what is broken, what is
 merely stale, and where the C# and the python have drifted apart.
-**[docs/PHASE0-FINDINGS.md](docs/PHASE0-FINDINGS.md)** records the measurements and the known
+**[docs/phase1/PHASE0-FINDINGS.md](docs/phase1/PHASE0-FINDINGS.md)** records the measurements and the known
 limitations — including the one real CODESYS mutation it found: `Core2`, a task's CPU core
 affinity, rewritten by `import_native` without being asked. **That one is fixed** — task
 configuration imports through the typed API now and is no longer diff-only — so read that
 document as a record of what was measured in Phase 0, not as a list of what is still true.
-**[docs/vendors/codesys/IMPORT-PLAN.md](docs/vendors/codesys/IMPORT-PLAN.md)** is where the import side is
+**[docs/phase1/IMPORT-PLAN.md](docs/phase1/IMPORT-PLAN.md)** is where the import side is
 being finished, and it is the active plan: eleven numbered gaps, what each measurement closed,
 and the order the evidence argues for building the rest in.
-**[docs/PLAN.md](docs/PLAN.md)** is the full architecture plan behind all of it.
+**[docs/phase1/PLAN.md](docs/phase1/PLAN.md)** is the full architecture plan behind all of it.
 
 ---
 
@@ -180,13 +180,17 @@ Versio.sln
 ├─ tests/
 │  ├─ Versio.TestSupport/       not a test project: the three helpers more than one suite
 │  │                            needs (TestPaths, TestLogger, VendorSeamScanner)
-│  ├─ Versio.Core.Tests/        1,295 unit tests — pure, no IO, under a second
+│  ├─ Versio.Core.Tests/        1,296 unit tests — pure, no IO, under a second
 │  ├─ Versio.Integration.Tests/ 141 tests against real git and the real filesystem, ~10 s.
 │  │                            NO CODESYS: that is a different project now, so this one
 │  │                            needs no filter and cannot accidentally cost half an hour
 │  ├─ Versio.App.Tests/         480 tests that build the real windows and panels against
 │  │                            the real stylesheet on an STA thread — none is ever shown
-│  └─ Versio.Plc.Codesys.Tests/ 365 tests against real CODESYS, ~31 min. The gate before a
+│  ├─ Versio.Plc.Codesys.Pure.Tests/ 253 pure vendor tests — the planner, the codecs, the
+│  │                            protocol — under a second, needing nothing
+│  ├─ Versio.Plc.Codesys.Parity.Tests/ 82 CPython parity tests over the vendor's python,
+│  │                            ~15 s, no CODESYS — python on PATH, skips cleanly without
+│  └─ Versio.Plc.Codesys.Tests/ 53 tests against real CODESYS, ~30 min. The gate before a
 │                               commit, and the only suite that needs a toolchain installed
 ├─ tools/                       PowerShell and python harnesses. Seven of the nine are
 │                               CODESYS-specific probes; New-VersioIcon.ps1 generates the
@@ -197,26 +201,28 @@ Versio.sln
 │                               committed export mirrors. The .project files are GIT LFS
 │                               POINTERS — a clone without git-lfs installed gets 130-byte
 │                               stubs and the integration suite fails confusingly
-├─ phase0/                      GITIGNORED scratch. Experiment output from tools/; it
-│                               reached 29 MB in one afternoon. It also holds 22 .project
-│                               files, which is why launching the app against this
-│                               repository adopts and exports all of them — see STATUS.md's
-│                               Known loose ends before doing that
+├─ phase0/                      GITIGNORED scratch, created on demand by the tools/ harnesses
+│                               and safe to delete whole — it reached 150 MB of scratch
+│                               project copies before it was cleaned out on 2026-08-17. The
+│                               probe logs worth keeping (the primary measurements behind
+│                               every P-numbered claim) were archived to docs/phase1/probes/
 ├─ .versio/                     Versio's own state for this repository, because it tracks
 │                               its own fixtures. repo.json is committed; local/ is not
 └─ docs/
-   ├─ PLAN.md                   the full architecture plan
-   ├─ STATUS.md                 where the project is and what remains
-   ├─ FINDINGS.md               99 defects with their evidence, newest first — the
+   ├─ PHASE2.md                 THE FORWARD QUEUE — what is left, in order, and the
+   │                            decisions already taken with their why
+   ├─ STATUS.md                 where the project is; audits and the findings index
+   ├─ FINDINGS.md               109 defects with their evidence, newest first — the
    │                            engineering log, split out of STATUS.md when it reached
    │                            77% of that file
    ├─ SAFEGUARDS.md             what Versio refuses, asks about, or waits for
-   ├─ GIT-PANEL-PLAN.md         the git panel's functionality and UX — eleven of twelve phases built
-   ├─ PHASE0-FINDINGS.md        measured results and known limitations
+   ├─ phase1/                   THE PHASE 1 ARCHIVE, closed 2026-08-17 — four completed
+   │                            plans (PLAN, IMPORT-PLAN, GIT-PANEL-PLAN,
+   │                            PHASE0-FINDINGS), each marked done, plus probes/ holding
+   │                            the raw measurements behind every P-numbered claim.
+   │                            Reasoning and evidence, never current state
    └─ vendors/codesys/          ONE VENDOR's documentation, beside its two projects
-      ├─ DRIVING.md             how CODESYS is driven end to end, and the audit of it
-      └─ IMPORT-PLAN.md         the active plan: the numbered import gaps and the
-                                feature checklist
+      └─ DRIVING.md             how CODESYS is driven end to end, and the audit of it
 ```
 
 `Versio.App` holds the WPF shell: `Theme/tokens/` for the design tokens, `Theme/controls/` for
@@ -328,18 +334,22 @@ dotnet test tests/Versio.Core.Tests
 > `%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe`, or set `DOTNET_ROOT` to it — the same install
 > layout that makes a framework-dependent `Versio.exe` fail to start, noted again below.
 
-**Five suites, and they need different things:**
+**Seven suites, and they need different things:**
 
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,295 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
+| `Versio.Core.Tests` | 1,296 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
 | `Versio.Integration.Tests` | 141 | a real `git.exe` and the real filesystem | ~10 s |
 | `Versio.Arch.Tests` | 14 | nothing — it reads assembly metadata, IL, and the project files | instant |
 | `Versio.App.Tests` | 480 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
-| `Versio.Plc.Codesys.Tests` | 365 | **a real CODESYS**, and **skips cleanly** without one | **~31 min** |
+| `Versio.Plc.Codesys.Pure.Tests` | 253 | nothing — the vendor's planner, codecs and protocol, pure | under a second |
+| `Versio.Plc.Codesys.Parity.Tests` | 82 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
+| `Versio.Plc.Codesys.Tests` | 53 | **a real CODESYS**, and **skips cleanly** without one | **~30 min** |
 
-The first four are the loop to work in. The last is the gate before a commit — and it is a
+The first six are the loop to work in. The last is the gate before a commit — and it is a
 separate project precisely so that running the loop cannot cost you half an hour by accident.
+Of the 386 tests that used to sit behind that half-hour wall, **334 needed no toolchain at
+all**; they surface in seconds now.
 
 ```bash
 dotnet test

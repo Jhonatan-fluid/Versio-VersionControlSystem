@@ -24,7 +24,7 @@ namespace Versio.Plc.Codesys.Tests;
 /// <para>
 /// <b>Written as an audit rather than as regression tests</b>, before Phase 5 was started and
 /// on the argument that a feature list nobody has run end to end is a list of intentions. Every
-/// row here is one line of the checklist in <c>docs/vendors/codesys/IMPORT-PLAN.md</c>; the rows already
+/// row here is one line of the checklist in <c>docs/phase1/IMPORT-PLAN.md</c>; the rows already
 /// covered by <see cref="AdoptAndExportTests"/> and <see cref="ImportLoggingTests"/> are not
 /// repeated, because running those files one test at a time was the other half of the same
 /// audit.
@@ -276,6 +276,87 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
         output.WriteLine(reExported);
 
         Assert.Contains("audit_marker", reExported, StringComparison.Ordinal);
+    }
+
+    // ── A8 and A9: the two create refusals ─────────────────────────────────────────────
+
+    /// <summary>
+    /// A garbled source is reported, not approximated; a create under a folder the project
+    /// does not have is reported, and nothing is created for either.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>These were the checklist's A8 and A9, and they sat NOT REACHED for a reason worth
+    /// recording: nobody tried.</b> Both rows said what would be needed — "a mirror file that
+    /// is textual by suffix and unparseable by content", "a create under a folder the project
+    /// does not have" — and both are one <c>WriteAsync</c> each, unlike E2 and E4, whose
+    /// fixture genuinely cannot be built. A row that names its own fixture and stays NOT
+    /// REACHED is a decision by default, and this list is supposed to contain decisions made
+    /// deliberately.
+    /// </para>
+    /// <para>
+    /// One run covers both because they refuse at different points of the same path:
+    /// <c>create_textual</c> resolves the owner <i>before</i> it reads the file, so the orphan
+    /// refuses on <c>PARENT_NOT_FOUND</c> without its (perfectly valid) declaration ever being
+    /// parsed, and the garbled file resolves its owner fine and then refuses on
+    /// <c>CANNOT_IDENTIFY_DECLARATION</c>. The planner plans a Create for both — it warns about
+    /// a name disagreement only when the declaration parses, and a missing folder is the
+    /// script's to discover, because only the project knows its own tree.
+    /// </para>
+    /// <para>
+    /// The re-export is the half that matters: a refusal message with a created object behind
+    /// it would be the import guessing while saying it did not — "creating the wrong kind of
+    /// object is worse than creating none" is the script's own comment, asserted here from
+    /// outside.
+    /// </para>
+    /// </remarks>
+    [SkippableFact]
+    public async Task A_garbled_source_and_a_create_under_a_missing_folder_are_reported_not_guessed()
+    {
+        var install = Install;
+        Skip.If(install is null, "no CODESYS installation with a profile");
+        Skip.If(!File.Exists(FixtureProject), "fixture project missing");
+
+        var (binding, orchestrator) = await AdoptAndExportAsync(install!);
+
+        var app = Path.Combine(_repo, "plc", "RefrigeratorControl",
+                               RelApp.Replace('/', Path.DirectorySeparatorChar));
+
+        // A8: textual by suffix, unparseable by content. No PROGRAM / FUNCTION_BLOCK /
+        // FUNCTION / INTERFACE / TYPE header anywhere in it.
+        await WriteAsync(Path.Combine(app, "Garbage.st"),
+                         "// somebody saved scratch notes with the wrong extension\n"
+                         + "these lines are not a declaration of anything\n");
+
+        // A9: a legal declaration under a folder the project does not have. The owner is
+        // resolved before the file is read (create_textual's own order), so this refusal
+        // never parses the declaration — a code fact, not one this test can distinguish:
+        // with valid content, PARENT_NOT_FOUND is the only refusal either order produces.
+        Directory.CreateDirectory(Path.Combine(app, "NoSuchFolder"));
+        await WriteAsync(Path.Combine(app, "NoSuchFolder", "Orphan.st"),
+                         "PROGRAM Orphan\nVAR\nEND_VAR\n\nEND_PROGRAM\n");
+
+        var outcome = await TextChanged(orchestrator, binding.Id);
+        output.WriteLine($"import — {outcome.Verdict}: {SyncNarrative.Describe(outcome)}");
+        foreach (var w in outcome.Warnings)
+        {
+            output.WriteLine($"warning: {w}");
+        }
+
+        Assert.Contains(outcome.Warnings, w =>
+            w.Contains("CANNOT_IDENTIFY_DECLARATION", StringComparison.Ordinal)
+            && w.Contains("Garbage.st", StringComparison.Ordinal));
+        Assert.Contains(outcome.Warnings, w =>
+            w.Contains("PARENT_NOT_FOUND", StringComparison.Ordinal)
+            && w.Contains("Orphan.st", StringComparison.Ordinal)
+            && w.Contains("NoSuchFolder", StringComparison.Ordinal));
+
+        // Neither refusal may have an object behind it. The re-export is a fresh read of the
+        // project off disk, so an object either of these quietly created would surface here.
+        var verify = await ReExport(install!, binding.Id, "verify-refused-creates");
+        Assert.Empty(Directory.GetFiles(verify, "Garbage*", SearchOption.AllDirectories));
+        Assert.Empty(Directory.GetFiles(verify, "Orphan*", SearchOption.AllDirectories));
+        Assert.Empty(Directory.GetDirectories(verify, "NoSuchFolder", SearchOption.AllDirectories));
     }
 
     // ── C6: what replaced the two-file rule ────────────────────────────────────────────────────────
@@ -563,6 +644,29 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
                 w => w.Contains("RENAME_NOT_APPLIED", StringComparison.Ordinal)
                      || w.Contains("MOVE_FAILED", StringComparison.Ordinal)
                      || w.Contains("RENAME_NO_PARENT", StringComparison.Ordinal));
+        }
+
+        // AND IF IT WAS DECLINED, THE SENTENCE HAS TO SAY SO IN A WAY SOMEBODY CAN ACT ON.
+        // Until P11 (2026-08-17) the refusal named the object and the path and left the reader
+        // nothing to do but try again. The probe ran nine ordered moves: a POU into a folder,
+        // into a nested folder and back out into Application, a GVL to the project root, and
+        // an EMPTY FOLDER into Plc Logic are all performed; a POU into Device, a visualisation
+        // into Plc Logic, and a folder holding a POU into Plc Logic are accepted and silently
+        // ignored. Nothing ever raised.
+        //
+        // Asserted on the warning that is actually there rather than on the script's source,
+        // because the sentence has to survive the trip through the script, the protocol, the
+        // runner and SyncOutcome — and F4 had to be written to prove a detail can cross that
+        // seam at all.
+        var declined = outcome.Warnings.FirstOrDefault(
+            w => w.Contains("RENAME_NOT_APPLIED", StringComparison.Ordinal));
+        if (declined is not null)
+        {
+            Assert.Contains("Plc Logic", declined, StringComparison.Ordinal);
+
+            // The actionable half. A refusal that explains the toolchain but not the next
+            // step is the state this replaced.
+            Assert.Contains("Move it in the IDE", declined, StringComparison.Ordinal);
         }
     }
 
@@ -1054,6 +1158,124 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
         // The owner chain is still recorded after an import, not just after the export that
         // built the fixture — three members, each pointing at FB_Pump.
         Assert.Equal(3, manifest.Objects.Count(o => !string.IsNullOrEmpty(o.Parent)));
+    }
+
+    // ── E4: the digest-tail stem, through a real round trip ─────────────────────────
+
+    /// <summary>
+    /// An external file whose name overflows the stem survives export, import and re-export,
+    /// resolved through the manifest the whole way.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The live half of E4</b>, over the two objects the member fixture gained on
+    /// 2026-08-17. One is named past <c>MaxStem</c>, so its file is
+    /// <c>Commissioning_Checklist_…~ce8286.xml</c> — a stem no resolution can decode, which
+    /// makes this round trip the proof that resolution never needs to: the recorded name
+    /// carries it. The pure half — the same file straying when its record is stripped — is
+    /// <c>CodesysImportPlannerTests</c>, where it costs milliseconds instead of launches.
+    /// </para>
+    /// <para>
+    /// <b>The first run of this test handed <c>import_native</c> an <c>EXTERNAL_FILE</c>
+    /// payload, and CODESYS duplicated the object</b> — same name, same parent, a re-minted
+    /// GUID, two manifest records on one mirror path. That is G13, found exactly the way G11
+    /// taught this repository to look: a type that exports losslessly and mutates on the way
+    /// back. The form is <c>EXTERNAL_NATIVE</c> now, export-only, so the import announces the
+    /// skip instead of feeding the duplicator — and the load-bearing assertion below is the
+    /// single-record check, which is this defect's regression test.
+    /// </para>
+    /// </remarks>
+    [SkippableFact]
+    public async Task An_external_file_with_a_digest_stem_survives_a_real_round_trip()
+    {
+        var install = Install;
+        Skip.If(install is null, "no CODESYS installation with a profile");
+
+        var fixture = TestPaths.Project("MachineWithMembers.project");
+        Skip.If(!File.Exists(fixture), "the member fixture is missing");
+
+        Directory.CreateDirectory(Path.Combine(_repo, "plc"));
+        var project = Path.Combine(_repo, "plc", "MachineWithMembers.project");
+        File.Copy(fixture, project);
+
+        var mirror = Path.Combine(_repo, "plc", "MachineWithMembers");
+        var runner = new LocalCodesysRunner(
+            install!.ExecutablePath, new ScriptExtractor(), new TestLogger(output));
+
+        CodesysJob Job(CodesysOperation operation, string path) => new()
+        {
+            Operation = operation,
+            Profile = install.Profiles[0],
+            Projects = [new ProjectJob
+            {
+                BindingId = "external", ProjectPath = project, Path = path,
+            }],
+            Timeout = TimeSpan.FromMinutes(5),
+        };
+
+        Assert.True((await runner.RunAsync(
+            Job(CodesysOperation.Export, mirror), null, CancellationToken.None)).Succeeded);
+
+        var app = Path.Combine(mirror, "Device", "Plc Logic", "Application");
+        var digestFile = Directory.GetFiles(app, "*~*.xml");
+        var digestName = Path.GetFileName(Assert.Single(digestFile));
+        output.WriteLine($"digest stem on disk: {digestName}");
+        var digestXml = await File.ReadAllTextAsync(digestFile[0]);
+
+        // An edit somewhere ordinary, so the import has work and the hash gate opens. The
+        // external files themselves are untouched — they travel as unchanged natives, which
+        // is exactly how every real import will meet them.
+        var pou = Path.Combine(app, "Pumps", "FB_Pump.st");
+        await WriteAsync(pou, (await File.ReadAllTextAsync(pou))
+            .Replace("END_VAR", "\t(* external_audit *)\nEND_VAR", StringComparison.Ordinal));
+
+        var import = await runner.RunAsync(
+            Job(CodesysOperation.Import, mirror), null, CancellationToken.None);
+
+        foreach (var w in import.Output.Warnings)
+        {
+            output.WriteLine($"warning: {w.String("code")} {w.String("path")} {w.String("detail")}");
+        }
+
+        Assert.True(import.Succeeded, import.FailureReason ?? "the import failed");
+
+        // No warning may mention either external object — and neither may reach CODESYS at
+        // all: the plan skips them as export-only, announced, which the summary's
+        // "not applied (export-only)" count carries.
+        Assert.DoesNotContain(import.Output.Warnings,
+            w => (w.String("path") ?? string.Empty).Contains("~", StringComparison.Ordinal)
+                 || (w.String("path") ?? string.Empty).Contains("Wiring", StringComparison.Ordinal));
+
+        // Read back out of the PROJECT. THE SINGLE-RECORD ASSERTIONS ARE G13'S REGRESSION
+        // TEST: the first run of this test imported these two files as plain NATIVE and
+        // CODESYS duplicated each object — two records, one path, a re-minted GUID. The
+        // export-only form is what stands between an import and that duplication, and this
+        // is the run that fails if anything puts the files back on the import path.
+        var verify = Path.Combine(_repo, "verify-external");
+        Assert.True((await runner.RunAsync(
+            Job(CodesysOperation.Export, verify), null, CancellationToken.None)).Succeeded);
+
+        var verifyApp = Path.Combine(verify, "Device", "Plc Logic", "Application");
+        var reDigest = Path.Combine(verifyApp, digestName);
+        Assert.True(File.Exists(reDigest), "the long-named external file left the project");
+
+        // Byte-identical, not merely equivalent: the import never touched the objects, so
+        // unlike a round-tripped native there is no re-minted GUID to mask.
+        Assert.Equal(digestXml, await File.ReadAllTextAsync(reDigest));
+        Assert.True(File.Exists(Path.Combine(verifyApp, "Wiring Notes.txt.xml")),
+            "the plain external file left the project");
+
+        var manifest = ProjectManifest.Parse(
+            await File.ReadAllTextAsync(Path.Combine(verify, "_manifest.json")));
+
+        var digestRecord = Assert.Single(
+            manifest.Objects, o => o.Path.Contains("~", StringComparison.Ordinal));
+        Assert.Equal("EXTERNAL_FILE", digestRecord.Type);
+        Assert.Equal("EXTERNAL_NATIVE", digestRecord.Form);
+        Assert.EndsWith("Final.txt", digestRecord.Name, StringComparison.Ordinal);
+
+        Assert.Single(manifest.Objects,
+            o => o.Name == "Wiring Notes.txt" && o.Type == "EXTERNAL_FILE");
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────────────

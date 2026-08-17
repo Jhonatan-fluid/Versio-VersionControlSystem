@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Phase 0 probe P7 of docs/vendors/codesys/IMPORT-PLAN.md: does an import -> export cycle on an
+  Phase 0 probe P7 of docs/phase1/IMPORT-PLAN.md: does an import -> export cycle on an
   UNCHANGED mirror ever settle, or does it churn forever?
 
 .DESCRIPTION
@@ -35,17 +35,17 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$Project = (Join-Path (Split-Path -Parent $PSScriptRoot) "fixtures\projects\RefrigeratorControl.project"),
+    [string]$Project = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) "fixtures\projects\RefrigeratorControl.project"),
     [string]$Profile = "CODESYS V3.5 SP22 Patch 2",
     [int]$Cycles = 3,
-    [string]$WorkRoot = (Join-Path (Split-Path -Parent $PSScriptRoot) "phase0\p7"),
+    [string]$WorkRoot = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) "phase0\p7"),
     [string]$Codesys = "C:\Program Files\CODESYS 3.5.22.20\CODESYS\Common\CODESYS.exe"
 )
 
 $ErrorActionPreference = "Stop"
-$repoRoot = Split-Path -Parent $PSScriptRoot
+$repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $tools    = $PSScriptRoot
-$scripts  = Join-Path $repoRoot "src\Versio.Scripts.Codesys"
+$scripts  = Join-Path $repoRoot "src\Versio.Plc.Codesys.Infrastructure\Scripts"
 
 if (-not (Test-Path $Project)) { throw "project not found: $Project" }
 
@@ -137,7 +137,7 @@ for ($n = 1; $n -le $Cycles; $n++) {
     $snaps  += Save-Snapshot $label
     $counters += ,(Get-Counters $snaps[$n])
 
-    $cmp = & "$tools\Compare-Exports.ps1" -A $snaps[$n - 1] -B $snaps[$n] -Quiet
+    $cmp = & "$repoRoot\tools\Compare-Exports.ps1" -A $snaps[$n - 1] -B $snaps[$n] -Quiet
     $byLayer = @{ textual = @(); "export-only" = @(); native = @(); bookkeeping = @() }
     foreach ($f in $cmp.Differing) { $byLayer[(Get-Layer $f)] += $f }
     $structural = @($cmp.OnlyA) + @($cmp.OnlyB)

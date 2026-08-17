@@ -180,6 +180,7 @@ public class TypeTableParityTests
                      ExportCoverage.LibrariesForm,
                      ExportCoverage.TaskNativeForm,
                      ExportCoverage.GvlNativeForm,
+                     ExportCoverage.ExternalNativeForm,
                  })
         {
             Assert.True(pythonForms.Contains(form),

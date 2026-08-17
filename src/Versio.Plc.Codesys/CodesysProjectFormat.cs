@@ -21,7 +21,7 @@ public sealed class CodesysProjectFormat : IPlcProjectFormat
 
     /// <remarks>
     /// Every capability here was measured against a real project rather than assumed —
-    /// see <c>docs/PHASE0-FINDINGS.md</c>. <see cref="PlcCapabilities.TypicalStartupCost"/>
+    /// see <c>docs/phase1/PHASE0-FINDINGS.md</c>. <see cref="PlcCapabilities.TypicalStartupCost"/>
     /// in particular is why export-on-save is not the default sync mode.
     /// </remarks>
     public PlcCapabilities Capabilities => new()

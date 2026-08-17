@@ -44,6 +44,16 @@ GUID_TYPE_MAPPING = {
     # because a project can rename the Application node.
     "40b404f9-e5dc-42c6-907f-c89f4a517386": "PLC_LOGIC",
     "639b491f-5557-464c-af91-1471bac9f549": "APPLICATION",
+    # [VERSIO] measured by P13 (2026-08-17) on CODESYS 3.5.22.20 with real
+    # create_external_file_object calls, then confirmed by a real export: the first is
+    # the external-file object under an application; the second is the companion node
+    # CODESYS puts at the PROJECT ROOT for a file created from an ABSOLUTE path, whose
+    # name embeds that path ({GUID}|C:\...\file.txt) - a relative creation gets no
+    # companion at all. Both exported natively and losslessly while still UNKNOWN; the
+    # mapping exists so a fixture carrying them does not warn on every export, because
+    # a warning that is always present is how a real one gets read past.
+    "a56744ff-693f-4597-95f9-0e1c529fffc2": "EXTERNAL_FILE",
+    "9001d745-b9c5-4d77-90b7-b29c3f77a23b": "EXTERNAL_FILE_SOURCE",
 }
 
 # How each type is written to disk.
@@ -91,6 +101,20 @@ FORM_SKIP = "SKIP"
 # nothing anywhere said so. Editing it looked exactly like editing a POU.
 FORM_TASK_NATIVE = "TASK_NATIVE"
 
+# EXTERNAL_NATIVE - an external-file object's one and only file, and export-only from the
+# day the type was first imported rather than corrected later, because the correction was
+# measured first: the initial E4 round-trip test handed one of these back to import_native
+# with NativeImportResolve.replace, and CODESYS DUPLICATED the object - same name, same
+# parent, a re-minted GUID, two manifest records colliding on one path. Replace-matching
+# evidently does not recognise this type, so every import would have added a copy: G7's
+# shape, an unasked-for mutation per cycle, on a new type. The payload is metadata (a
+# FileId and a download flag), so there is nothing an engineer could meaningfully edit in
+# the mirror anyway - change external files in the IDE.
+#
+# DECIDED, unlike TASK_NATIVE and GVL_NATIVE above: these objects have no importable
+# sibling, so the form comes straight from TYPE_FORM rather than from a two-file branch.
+FORM_EXTERNAL_NATIVE = "EXTERNAL_NATIVE"
+
 # GVL_NATIVE - the .xml half of a GVL_BOTH pair, and the same idea as FORM_TASK_NATIVE
 # above. RECORDED, NEVER DECIDED, for the same reasons and by the same mechanism.
 #
@@ -123,7 +147,8 @@ FORM_GVL_NATIVE = "GVL_NATIVE"
 # panel's lock glyph reads. The two are compared in TypeTableParityTests - a form added
 # here and not there means the file is announced in _coverage.md and still looks editable
 # in the app, which is half a warning and worse than none.
-EXPORT_ONLY_FORMS = (FORM_LIBRARIES, FORM_TASK_NATIVE, FORM_GVL_NATIVE)
+EXPORT_ONLY_FORMS = (FORM_LIBRARIES, FORM_TASK_NATIVE, FORM_GVL_NATIVE,
+                     FORM_EXTERNAL_NATIVE)
 
 # NATIVE_WITH_CHILDREN - export the node itself natively, non-recursively, AND descend into
 # a subdirectory for its children.
@@ -232,6 +257,12 @@ TYPE_FORM = {
     "GLOBAL_TEXTLIST": FORM_NATIVE,    # [VERSIO]
     "IMAGEPOOL": FORM_NATIVE,          # [VERSIO]
     "PROJECT_INFORMATION": FORM_NATIVE,  # [VERSIO]
+
+    # [VERSIO] Export-only, and the reason is a measurement, not a policy: see the
+    # comment on FORM_EXTERNAL_NATIVE. import_native duplicates these instead of
+    # replacing them.
+    "EXTERNAL_FILE": FORM_EXTERNAL_NATIVE,
+    "EXTERNAL_FILE_SOURCE": FORM_EXTERNAL_NATIVE,
 
     # [VERSIO] Was FORM_SKIP with the reason NOT_IMPLEMENTED - the gap that
     # _coverage.md was built to report. Native export is not an option here: the
@@ -365,6 +396,9 @@ SUFFIX = {
     FORM_NATIVE: ".xml",
     FORM_NATIVE_R: ".xml",
     FORM_NATIVE_WITH_CHILDREN: ".xml",
+    # Same suffix as plain NATIVE on purpose: the two external files already committed
+    # in the member fixture keep their names, so retyping the form renamed nothing.
+    FORM_EXTERNAL_NATIVE: ".xml",
     FORM_LIBRARIES: ".libraries.yaml",
     FORM_TASK_BOTH: ".tasks.yaml",
 }

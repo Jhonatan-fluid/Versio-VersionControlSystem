@@ -1,0 +1,7 @@
+﻿@@VERSIO@@{"project": "C:\\GIT\\Versio\\phase0\\import-api\\P2\\probe.project", "probes": ["P2"], "t": "start"}
+@@VERSIO@@{"path": "C:\\GIT\\Versio\\phase0\\import-api\\P2\\probe.project", "t": "opened"}
+@@VERSIO@@{"title": "move preserves identity", "id": "P2", "t": "probe_start"}
+@@VERSIO@@{"title": "move preserves identity", "id": "P2", "t": "probe_result", "result": {"two_arg": {"error": "ValueError", "ok": false, "message": "index must be -1 if the new parent node does not have sorted children."}, "one_arg": {"error": "SystemError", "ok": false, "message": "Object reference not set to an instance of an object."}, "before": {"parent": "MainTask", "index": 1, "name": "Simulation", "guid": "ea6451ed-e12e-400e-b89f-009781d7175a"}, "verdict": "MOVE_RAISED"}}
+@@VERSIO@@{"t": "done"}
+@@VERSIO@@{"rc": 0, "t": "exit"}
+

@@ -10,7 +10,7 @@
 #   RefrigeratorControl has thirteen records and not one member object - no method, no
 #   action, no property, no folder below Application. Its manifest therefore records no
 #   `parent` for anything, and every resolve chain the import has ever built came from
-#   directory names. The import feature checklist (docs/vendors/codesys/IMPORT-PLAN.md) marks five
+#   directory names. The import feature checklist (docs/phase1/IMPORT-PLAN.md) marks five
 #   rows NOT REACHED for that one reason, and two of them are G4 and G5 - the gaps with the
 #   least evidence behind them.
 #
@@ -18,10 +18,10 @@
 #   ST_IMPL, which nothing in this repository has ever imported, and PROPERTY exports as
 #   NATIVE_R, whose recursive shape is the one thing TASK_NATIVE was mistaken for.
 #
-# WHY IT LIVES IN tools/ AND NOT IN src/Versio.Scripts.Codesys/
+# WHY IT LIVES IN tools/ AND NOT IN src/Versio.Plc.Codesys.Infrastructure/Scripts/
 #
-#   Same reason as versio_probe_import_api.py: Versio.Infrastructure.csproj embeds
-#   src\Versio.Scripts.Codesys\*.py into the shipping assembly, and a script that creates
+#   Same reason as versio_probe_import_api.py: Versio.Plc.Codesys.Infrastructure.csproj
+#   embeds Scripts\*.py into the shipping assembly, and a script that creates
 #   and renames objects has no business travelling with the product. The cost is that this
 #   file cannot import versio_types as a sibling, so it depends on nothing but scriptengine
 #   and the standard library.
@@ -205,6 +205,30 @@ def build(proj):
         dut = find_child(app, "E_Mode")
     if dut is not None:
         declare(dut, u"TYPE E_Mode :\n(\n\tIdle := 0,\n\tRunning := 1\n);\nEND_TYPE", None)
+
+    # TWO EXTERNAL-FILE OBJECTS, added 2026-08-17 for E2/E4, and BOTH BY RELATIVE PATH -
+    # that is the load-bearing choice, measured by P13 before it was made. An external
+    # file created from an ABSOLUTE path gains a companion node at the project root
+    # whose name embeds that path ({GUID}|C:\...\file.txt), which would make this
+    # fixture differ per machine - the G9 machine-dependence trap. A relative creation
+    # gets no companion, a bare-filename name, and a payload whose FileId is relative
+    # too, so the fixture stays committable. The file need not exist on disk; P13
+    # created one from a name with no file behind it.
+    #
+    # The second name is past MaxStem = 80, so its mirror file takes the shortened
+    # digest-tail stem - the one shape (E4) no committed mirror had ever carried, and
+    # the reason resolution-by-manifest rather than by stem has never been proven
+    # against real exporter bytes.
+    attempt("create_external_file_object(Wiring Notes.txt)",
+            lambda: app.create_external_file_object("Wiring Notes.txt"))
+    emit({"t": "found", "what": "external file Wiring Notes.txt",
+          "found": find_child(app, "Wiring Notes.txt") is not None})
+
+    long_name = "Commissioning_Checklist_" + ("Section_" * 9) + "Final.txt"
+    attempt("create_external_file_object(<%d chars>)" % len(long_name),
+            lambda: app.create_external_file_object(long_name))
+    emit({"t": "found", "what": "external file with a %d-character name" % len(long_name),
+          "found": find_child(app, long_name) is not None})
 
     # THE TREE, read back rather than assumed. Every write in this API has to be re-read -
     # move() accepted an instruction and did nothing, create_folder returns None while

@@ -17,6 +17,302 @@ produce a diff touching everything else.
 
 ---
 
+### `import_native` duplicates an external-file object instead of replacing it
+
+**Found 2026-08-17 by the first E2E run of E4** — the first time an `EXTERNAL_FILE` payload was
+ever handed back to CODESYS — and G13 in the import plan's table. The type had existed in
+Versio's vocabulary for about two hours.
+
+The run exported the member fixture (which had just gained two external-file objects for
+E2/E4), edited an ordinary POU, imported, and re-exported. The re-export's manifest carried
+**two records for the long-named external file**: same name, same parent, the same normalized
+hash — and different GUIDs, colliding on one mirror path. `import_native` with
+`NativeImportResolve.replace`, which replaces every other native type in place (A5 measured
+`replaced` on all seven), had **pasted a copy** of this one. Every import would have added
+another: G7's shape — an unasked-for mutation per cycle — on a new type.
+
+**The first failure of the run was a decoy, and the order mattered.** The initial assertion
+compared bytes and failed; the "obvious" reading was P7's known GUID re-minting, so the
+assertion was weakened to normalizer-equivalence — the repository's own definition of "the
+same native thing". The second run then failed on `Assert.Single`, which is what actually
+looked at the *manifest* rather than the file: the equivalence weakening had been correct in
+general and about to paper over a duplication in particular, because two equivalent copies are
+each equivalent to the original. **A masked comparison can only say "same content"; it takes a
+count to say "same object".**
+
+**Closed the same day, before the type ever shipped importable**: the form is
+`EXTERNAL_NATIVE`, export-only — the third use of the shape this project invented for
+`TASK_NATIVE` and used again for `GVL_NATIVE`, with one difference worth recording: there is
+**no importable sibling**. An external-file object is IDE-managed entirely, its payload being
+metadata (a `FileId` and a download flag) that nothing in a mirror could meaningfully edit.
+The planner announces the skip with the verbatim recorded name and no sibling pointer; the
+single-record assertion in the E2E test is the regression guard.
+
+**The residual door, stated rather than hidden**: an *unrecorded* external-file `.xml` in a
+mirror still goes to `import_native` — the planner's deliberate rule for unrecorded natives,
+which cannot distinguish this type without reading payloads. That path requires a manifest
+that does not know the file, arrives with a warning-free plan only in the teammate's-new-file
+scenario, and duplicates at most once per unrecorded file rather than once per import. Closing
+it would mean the planner sniffing payload types, which is the filename-walk's cousin; the
+honest trade is recorded here instead.
+
+---
+
+### The probe that caught two of its own lies was carrying a third, and three documents believed it
+
+**Found 2026-08-17 by reviewing the P11 probe's own output against its step list** — the run
+whose results had gone into four documents the same morning. The finding below this one records two
+method errors the probe's author caught and fixed mid-session: a by-index pairing that reported
+a pass for a move that never happened, and an after-reopen check that reported a failure that
+never happened. The fixed probe had a third error of exactly the same class, and this time the
+output said so and nobody read that line.
+
+**The two isolating steps shared one folder.** Step 8 moved `VersioMoveEmpty` into `Plc Logic`
+and succeeded; step 9 then looked for the same folder at its *old* path under `Application` —
+and reported **`OBJECT_NOT_AT_SOURCE`**, right there in the raw log, no call ever made. A step
+whose source depends on an earlier step's *outcome* measures nothing when that outcome goes the
+other way. So "nine ordered moves" was eight, and "an empty folder into another folder" was
+never measured at all.
+
+**The supersession check then compounded it.** It matched later steps by object name alone, so
+step 8's after-reopen check was skipped as `SUPERSEDED` — in deference to a step that had run
+nothing. The consequence: **"an empty folder into `Plc Logic` survives a reopen" was claimed in
+the commit message, `DRIVING.md` and the plan's What-is-left row, and the probe had never
+measured it.** The finding below was quietly more honest: its table omits "survives a reopen"
+on exactly the two superseded rows, which is the tell that the writer had the raw output in
+front of them and the claims elsewhere were written from memory.
+
+**Fixed and re-run 2026-08-17**: step 9 gets its own folder (`VersioMoveEmpty2`), so neither
+isolating step's source depends on the other's outcome, and a step supersedes only if it
+actually **applied** — a declined or never-run step left the object where the earlier step put
+it, which is the position the reopen check exists to read. The re-run answers everything:
+
+- **Nine moves, nine calls, six performed, three declined** — the same three declined as before.
+- **An empty folder into `Plc Logic` survives a save/close/reopen, GUID stable** — the claim is
+  true; now it is also measured.
+- **An empty folder into an ordinary folder is performed and survives a reopen** — a new row,
+  and the corpus's first successful folder-into-folder move: until this run, every successful
+  folder move in the record had `Plc Logic` as its destination.
+
+**The lesson the first two errors taught was incomplete.** Both were found by re-reading the
+method; this one was sitting in the *results* — one row of JSON saying `OBJECT_NOT_AT_SOURCE` —
+and survived because the summary lists were read instead of the rows. A probe's verdict rows
+are the measurement; its summary is an index into them. **Read every row whose verdict is not
+the one the step was written to produce**, because a step that did not run looks exactly like a
+step that was not needed.
+
+---
+
+### `move()` declines three moves of nine, raises for none, and the destination is not what decides
+
+**Measured 2026-08-17 by P11**, the last open task in the import plan. Two results existed on
+either side of a line nobody had drawn: P2 moved a POU into a folder and the GUID survived a
+reopen; the feature checklist's D6 moved one out of `Application` into `Plc Logic` and CODESYS
+accepted the call, raised nothing, and left the object where it was. Both true, and together
+they said only that "Versio moves objects" was partly true.
+
+Nine ordered moves on one project, each re-resolved at its intended path afterwards. *(This
+table was corrected after the re-run the finding above records: the first run's ninth step
+never executed, and the two rows marked with a date gained their reopen evidence then.)*
+
+| What, and where to | Result |
+|---|---|
+| a POU into a folder under `Application` | **performed**, GUID intact |
+| a POU into a folder inside that folder | **performed**, GUID intact, survives a reopen |
+| a POU back out of a folder into `Application` | **performed**, GUID intact, survives a reopen |
+| a GVL to **the project root** | **performed**, GUID intact, survives a reopen |
+| an **empty folder** into `Plc Logic` | **performed**, GUID intact, survives a reopen *(measured on the re-run)* |
+| an **empty folder** into an ordinary folder | **performed**, GUID intact, survives a reopen *(measured on the re-run — the first run never reached it)* |
+| a visualisation into `Plc Logic` | accepted, **ignored** |
+| a POU into `Device` | accepted, **ignored** |
+| a folder **holding a POU** into `Plc Logic` | accepted, **ignored** |
+
+**Not one of the calls raised.** `move()` returns `None` whether it moved the object or ignored
+the instruction, so there is no return value to inspect and no exception to catch. The read-back
+the rename phase does is not defence in depth; it is the only signal that exists.
+
+**THE DESTINATION IS NOT WHAT DECIDES, and this document said it was for about an hour.** The
+first version of the probe ran seven steps, and every one of them agreed with a tidy rule:
+folders, `Application` and the project root work, `Plc Logic` and `Device` do not. That rule went
+into `versio_import.py`'s warning, into this file, into `DRIVING.md` and into the plan.
+
+**What broke it was a question about the probe rather than about CODESYS.** Re-reading the steps
+as if somebody else had written them: the folder moved into `Plc Logic` had children, so a
+refusal could have been about the destination *or* about what was inside. Two more steps isolated
+it — and an **empty** folder goes into `Plc Logic` perfectly well. So the same destination accepts
+one folder and refuses another, and what is being moved matters as much as where it is going. It
+reads like "the destination must be able to hold the whole subtree", but that is an inference
+from eight rows and nothing in the product relies on it.
+
+**The lesson is not about moves.** A measurement with one variable per row is a measurement; one
+where two things differ at once is a story that fits. Seven rows all agreed with a rule that was
+wrong, and no amount of re-reading the *results* would have shown it — only re-reading the
+*method*.
+
+**What changed in the product is one sentence.** The behaviour was already right —
+`RENAME_NOT_APPLIED`, named object, named path, nothing claimed. What it could not do was tell
+the person what to do next, so the warning now names the destinations that work and says to move
+it in the IDE otherwise. `A_POU_moved_to_another_container_is_moved_or_reported_not_claimed`
+asserts the sentence in the warning rather than in the script's source, because it has to survive
+the trip through the script, the protocol, the runner and `SyncOutcome` — and the mutation was
+run: suppressing the explanation turns that test red.
+
+**The first version of this probe reported a pass for a move that never happened.** It paired
+movers with destinations *by index*, and the third pair came out as `Glob_Var` into
+`Application` — already its parent. The read-back found the object at the destination and the row
+read `applied: true`. Nobody chose that pair; the loop did. **A test whose cases are generated by
+zipping two lists has cases nobody has read**, and the fix was to write the steps out as an
+ordered list and to ask `already_there` *before* the call rather than infer success after it.
+
+**And its second version reported a failure that never happened**, one line further on: the
+after-reopen check looked for `Simulation` in the folder step 1 had moved it into, and step 2 had
+moved it back out. `found_after_reopen: false` reads as "a move into a folder does not persist",
+which contradicts P2 and would have been a good half-hour. An absence has to be attributed before
+it is reported — the probe names the later step now and says `SUPERSEDED`.
+
+---
+
+### A managed library reference recorded whichever version this machine had installed
+
+**Found 2026-08-17 by calling the API rather than reading it** — G8, the last gap in the import
+plan, and the answer is not the one the plan expected.
+
+`versio_libraries.py` shapes each library reference into the mirror's YAML. Its managed
+(fixed-version) half had **never executed**: both fixtures are placeholders end to end, 13 in the
+project's manager and 21 in the application's, 34 in total. The branch was written from the API's
+description and said so in a comment, which is the honest version of untested — but the plan then
+reasoned from a probe that had measured the wrong half, and concluded G8 was half a day of
+fixture work.
+
+**What P9 had actually measured.** `add_library("Standard, 3.5.17.0 (System)")` works, takes one
+argument, and yields a reference reading `is_managed: true`. That is where the first run stopped.
+It never enumerated the managed type's members, and the exporter does not read the reference: it
+reads `ref.managed_library` and then `.version`, `.company` and `.title` off *that*. Four
+spellings in this API have already been wrong. This one had never been called.
+
+**Two runs, and the second is the one that mattered.**
+
+| Called on a `ScriptManagedLibraryReference` | 3.5.17.0 — **not installed here** | 3.5.22.0 — installed |
+|---|---|---|
+| `is_managed` | `True` | `True` |
+| `managed_library` | the object exists | the object exists |
+| `.version` | **`NullReferenceException`** | `"3.5.22.0"` |
+| `.company` / `.title` | **`NullReferenceException`** | `"System"` / `"Standard"` |
+
+So the branch had two faults, and the second is worse than the first.
+
+**It failed silently.** The fields were read through `safe()`, the exception-swallowing probe, so
+a reference to a library this machine does not have was written with **no version, no company and
+no title, and no warning** — indistinguishable in the YAML from a placeholder that never had one.
+The record was `{name, namespace, flags}` and the export said nothing.
+
+**And had it worked, it would have recorded the wrong thing.** `managed_library` describes the
+library as *installed on the exporting machine*. That is precisely what this file's own header
+refuses to record — it lists `effective_resolution` and the resolver as "not recorded, on
+purpose: that describes which libraries are installed here, not what the project asks for, so it
+would differ between two engineers who share this repository and neither would be wrong". The
+managed branch was breaking that rule three fields at a time, and it is **G9's defect through a
+third door**: a machine-dependent value written into a committed file churns the mirror for
+whoever is configured differently.
+
+**The fix takes the version from the project instead.** A managed reference's own `name` is
+`"Title, Version (Company)"` — measured byte-identical to `managed_library.displayname` — and it
+is project state, present whether or not anything is installed. `parse_managed_name` splits it,
+`is_managed` is the discriminator rather than "did some other property raise", and a name that is
+not that shape yields **nothing** plus `LIBRARY_MANAGED_NAME_UNPARSED` rather than a plausible
+guess. The asymmetry is the point: an absent version is a gap a reader can see, a wrong one is a
+diff somebody acts on.
+
+**Proven by running the shipping module inside CODESYS**, against a live reference, which is the
+one thing a fake cannot do:
+
+```
+product_record = {"name": "Standard, 3.5.22.0 (System)", "namespace": "Standard",
+                  "version": "3.5.22.0", "company": "System", "title": "Standard",
+                  "qualifiedOnly": true, "systemLibrary": false, ...}
+product_record_errors = []
+```
+
+with the placeholder beside it in the same run still producing `placeholder`,
+`defaultResolution` and `redirection` and no managed keys.
+
+**The regression half is 20 CPython tests** over the real module — `versio_libraries.py` imports
+no `scriptengine` and takes its objects and its `safe` probe as arguments, which is what makes
+that possible. The fakes are shaped from the probe's output, including which attributes are
+absent and which raise, so they assert a measurement rather than the test's own assumptions.
+
+**Five mutations were run rather than reasoned about, and one of them found a hole in the
+corpus.** Restoring the `managed_library` read, silencing the unparsed warning, letting a
+placeholder fall into the managed branch, and deleting the unclassified branch each turned
+exactly one test red. Loosening the version check — "nothing but digits and dots" — turned
+**nothing** red, because every refused name in the list failed the *other* rule too ("at least
+one digit"). `3.5.22.0-beta` and `1.0a` are in the corpus now, and they are the only two cases
+that watch that line.
+
+**The fifth mutation is worth its own sentence, because it nearly did not happen.** The first
+four were written down while the branch was being built; the unclassified path got none, on the
+unspoken grounds that nothing produces such a reference — which is exactly the argument that
+leaves a rule untested. It was mutated last and turned its test red, so it is watched. A
+mutation list assembled from "what I changed" misses the branch nobody expects to run, and that
+branch is always the one that will run first in front of a customer.
+
+**One thing this cost, worth keeping**: `hide_when_referenced_as_dependency` is documented here
+and in `DRIVING.md` as "raises on all 34 references... simply not readable on this version". It
+raises because **CODESYS misspells it**: the member is `hide_when_referenced_as_depencency`, one
+`d` short, and it reads `False` under that name. Still not recorded — it is a display hint — but
+recorded as a *choice* now, because "we could not read it" invites somebody to retry and "we
+chose not to" does not.
+
+---
+
+### Four tool scripts pointed one directory above where they now live
+
+**Found 2026-08-17 on the first attempt to run one**, immediately after the structure audit moved
+`tools\*.ps1` into `tools\codesys\`.
+
+Every one of them derived the repository root as `Split-Path -Parent $PSScriptRoot`, which was
+true while they lived in `tools\` and became `C:\GIT\Versio\tools` the moment they moved. Six
+default parameters across four files, so `Probe-ImportApi.ps1` threw `project not found:
+C:\GIT\Versio\tools\fixtures\projects\RefrigeratorControl.project` before doing anything.
+Two of them also still read the python out of `src\Versio.Scripts.Codesys`, which the same audit
+had renamed to `src\Versio.Plc.Codesys.Infrastructure\Scripts`.
+
+**The comment beside two of the six says "derived from the script's own location so the tools work
+from any clone path"** — the right idea, and exactly what broke: the location moved and the count
+of levels did not.
+
+**Nothing was watching, and the C# half shows why that is not inevitable.** The same move broke
+three test paths, and they were fixed by `TestPaths.Scripts` — one place, whose remarks say "three
+tests hardcoded `src/Versio.Scripts.Codesys`, and all three broke together when the scripts moved".
+The PowerShell has no `TestPaths`, no compiler and no suite; it is reached only by a person typing
+the command, and two of these four are named in the import plan's own Verification list as
+acceptance gates — `Measure-ImportStability.ps1` is how `P7: SETTLES` is checked at all.
+
+All six defaults now go up two levels and both script paths name the vendor pack.
+
+**And a second pass found a fifth breakage of a different shape**, which is the part worth
+keeping. `Compare-Exports.ps1` is vendor-**neutral** and correctly stayed in `tools\` while the
+CODESYS harnesses moved down into `tools\codesys\` — so `& "$tools\Compare-Exports.ps1"` in
+both of them now names a file that is not there. Grepping for `$PSScriptRoot` found the six
+defaults and could not have found this one: it is a *sibling* reference that stopped being a
+sibling. It is also the **last line of both scripts** — the one that prints the verdict — so
+each would have run its three CODESYS launches, spent about six minutes, and then failed with
+nothing to show for it.
+
+**The repair of that repair is its own small lesson.** Writing `"$repoRoot\tools\..."` through
+a python-in-bash heredoc delivered `"$repoRoot<TAB>ools\..."` — `CLAUDE.md` says not to do
+this, in those words, and the result is still valid PowerShell holding a path nobody could read
+in an error message. Written to a file and run, the way the rule says, it was right the first
+time.
+
+**Verified rather than assumed**: all four scripts parse, the derived repository root is
+`C:\GIT\Versio`, and every path each one builds from it — the fixture, `phase0\p7`,
+`phase0\logs`, `phase0\roundtrip`, the vendor pack's `Scripts`, `fixtures\equivalence` and
+`Compare-Exports.ps1` — exists. `Probe-ImportApi.ps1` then ran three times against real
+CODESYS, which is what closed G8.
+
+---
+
 ### The ignore list hid the projects and kept every one of their mirrors
 
 **Found 2026-08-17 by opening the app**, which is the only thing that could have found it.
@@ -1286,7 +1582,7 @@ only if you read the file.
 > mitigation was not needed and was not adopted. `Core2` stopped moving in the same change, which
 > closes G7 with it.
 
-Probe P7 of [`vendors/codesys/IMPORT-PLAN.md`](vendors/codesys/IMPORT-PLAN.md) ran the round trip three times
+Probe P7 of [`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md) ran the round trip three times
 instead of once, on a scratch copy, with the mirror held still between cycles. Cycle 1 is clean:
 `native: 8, failed: 0, warnings: 0`. **Cycles 2 and 3 each throw twice** — on `MainTask` and
 `VISU_TASK`, the two children of `Task Configuration`:
@@ -1497,7 +1793,7 @@ what those tests want is something to measure, not a particular container.
 lines. `ShellViewModel` goes **5,251 → 4,958**, under five thousand for the first time.
 
 **It is not what the queue said to do next, and the disagreement was already written down.**
-`GIT-PANEL-PLAN.md`'s GP-E log records that a `GitPanelViewModel` extraction — the staging seam —
+`phase1/GIT-PANEL-PLAN.md`'s GP-E log records that a `GitPanelViewModel` extraction — the staging seam —
 was measured and deliberately dropped: *"a move dressed as a decomposition"*, because
 `CommitAsync` alone reaches eight collaborators. It named the remote surface as the seam worth
 cutting instead. That document also states that where the plan and the phase log disagree, **the

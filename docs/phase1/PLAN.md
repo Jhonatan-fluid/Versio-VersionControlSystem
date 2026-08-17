@@ -1,12 +1,20 @@
 # Versio — Initial Plan
 
+> **ARCHIVED — PHASE 1, COMPLETE.** Moved to `docs/phase1/` on 2026-08-17. This is the
+> founding document — the research, the hard truths, and the architecture as first conceived.
+> Its successors took over long ago: what was built is in [`../STATUS.md`](../STATUS.md), what
+> the import became is in [`IMPORT-PLAN.md`](IMPORT-PLAN.md), and what remains is
+> [`../PHASE2.md`](../PHASE2.md). Sections still worth reading on their own: the CODESYS
+> scripting research (§2), the hard truths (§3), and the diff-view design PHASE2's queue
+> item 4 refers back to.
+
 **Git-native version control for CODESYS projects: automatic export to reviewable text, a complete project-tree diff, and verified bi-directional sync.**
 
 | | |
 |---|---|
 | Document | Architecture and implementation plan — **the design record** |
 | Status | **Rev 12.** Phase 0 complete, Phases 1-3 substantially complete. Implementation is under way and this document is kept in step with it |
-| Where things stand | **[`STATUS.md`](STATUS.md)** — read that first |
+| Where things stand | **[`STATUS.md`](../STATUS.md)** — read that first |
 | Measured findings | **[`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md)** — numbers, failures and dead ends |
 | Target platform | Windows 11 desktop. Windows only, by decision (§13.7) |
 | Repository | `C:\GIT\Versio` (nothing depends on this path — the tests and tools resolve it from their own location) |
@@ -16,7 +24,7 @@
 
 ## Start here — for anyone picking this up
 
-**Read in this order:** `README.md` (what it is, how to build) → [`STATUS.md`](STATUS.md) (where it is, what is next) → [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) (what was measured) → this document (why it is shaped this way).
+**Read in this order:** `README.md` (what it is, how to build) → [`STATUS.md`](../STATUS.md) (where it is, what is next) → [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) (what was measured) → this document (why it is shaped this way).
 
 **What this document is.** The design record and its reasoning. Every significant decision is here *with the argument that produced it*, including the ones that were later reversed — those are marked in place rather than deleted, because the reasoning that overturned them is usually more instructive than the conclusion.
 
@@ -2159,7 +2167,7 @@ Pure Python + a throwaway console app. **No UI, no architecture.** Every one of 
 >
 > **Phase 1 is largely complete.** `Versio.Core` (391 tests, 43 ms), `Versio.Infrastructure` driving real CODESYS and real `git.exe` (21 integration tests), the §9.0 design system, the §10 logging subsystem, and a shell that opens a repository and shows real git state. **R25 closed with a measurement**: 94.7 ms virtualized versus 10,635 ms at the WPF defaults.
 >
-> **Next milestone: wire the shell to `SyncOrchestrator`.** Everything beneath it exists, so this is assembly rather than invention. Current state and the full route to completion live in [`STATUS.md`](STATUS.md).
+> **Next milestone: wire the shell to `SyncOrchestrator`.** Everything beneath it exists, so this is assembly rather than invention. Current state and the full route to completion live in [`STATUS.md`](../STATUS.md).
 >
 > Three decisions were reversed by measurement, each recorded where it was originally made: `On git action` became the default sync mode (§7.4.6), LibGit2Sharp was dropped for `git.exe` throughout (§8.1), and macOS was cut so WPF could stay (§13.7).
 

@@ -2,13 +2,13 @@
 # REMEMBER: this runs in CODESYS ScriptEngine = IronPython 2.7. No f-strings, no dict
 # comprehensions with unpacking, and `except X as e` is the only spelling that works.
 #
-# Phase 0 probes P1-P6, P8 and P9 of docs/vendors/codesys/IMPORT-PLAN.md. Every one of them exists
+# Phase 0 probes P1-P6, P8 and P9 of docs/phase1/IMPORT-PLAN.md. Every one of them exists
 # because the plan asserts something about the ScriptEngine API that nobody has run.
 #
 # ---------------------------------------------------------------------------------------
-# WHY THIS LIVES IN tools/ AND NOT IN src/Versio.Scripts.Codesys/
+# WHY THIS LIVES IN tools/ AND NOT IN src/Versio.Plc.Codesys.Infrastructure/Scripts/
 #
-#   Versio.Infrastructure.csproj embeds src\Versio.Scripts.Codesys\*.py into the shipping
+#   Versio.Plc.Codesys.Infrastructure.csproj embeds Scripts\*.py into the shipping
 #   assembly. This script RENAMES, MOVES, REMOVES and CREATES objects. CODESYS.md B4
 #   already records the discomfort of versio_delete_objects.py sitting inside the product
 #   while never being part of it, and one script that can delete somebody's POUs shipping
@@ -22,7 +22,15 @@
 # EVERY PROBE MUTATES THE PROJECT. Run each group against its own scratch copy;
 # Probe-ImportApi.ps1 does that and is the intended entry point.
 #
-# job.json: { "project": "<abs path>", "probes": ["P1", "P2"] }
+# job.json: { "project": "<abs path>", "probes": ["P1", "P2"],
+#             "scripts": "<abs path to src\\Versio.Plc.Codesys.Infrastructure\\Scripts>" }
+#
+# `scripts` is optional and only P9 uses it. It is the ONE place this file reaches into
+# the product, and the direction is what makes it safe: the isolation rule above is about
+# a probe that renames, moves and removes objects never SHIPPING inside the product, not
+# about the probe being forbidden to read it. P9 has to answer "what does the exporter
+# record for a managed reference", and the only honest way to answer that is to call the
+# exporter's own function rather than a copy of it.
 
 import json
 import sys
@@ -497,7 +505,16 @@ def probe_path_length(proj):
 # ============================================================================ P9
 def probe_library_reference(proj):
     """G8. Every reference in the fixture is a placeholder, so the managed_library branch
-    of versio_libraries.py has never executed. Can a fixed-version one be added quickly?"""
+    of versio_libraries.py has never executed. Can a fixed-version one be added quickly --
+    and DOES THE BRANCH READ IT CORRECTLY once it exists?
+
+    The second half is the one that matters and the first run of this probe skipped it. It
+    reported that add_library works and that the result says is_managed: true, from which
+    the plan concluded G8 was cheap. It never printed the managed type's members, and the
+    exporter does not read the reference directly: it reads `ref.managed_library` and then
+    .version / .company / .title off that. That spelling had never been called until this
+    probe was extended on 2026-08-17. See
+    out["managed_library"] and the three field maps beside it."""
     libman = find_named(proj, "Library Manager")
     if libman is None:
         return {"verdict": "NO_TARGET", "detail": "Library Manager not found"}
@@ -544,6 +561,463 @@ def probe_library_reference(proj):
                           "system_library", "default_resolution", "resolution_info",
                           "version", "optional"):
                 out["added"][field] = describe(lambda f=field, a=added: getattr(a, f))
+
+            # THE HALF THE FIRST RUN OF THIS PROBE DID NOT MEASURE, and the whole reason
+            # G8 was still open a day later. `members()` above was called on refs[0], a
+            # PLACEHOLDER, so the managed type's member list has never been printed --
+            # and versio_libraries.py reads `ref.managed_library` and then .version,
+            # .company and .title off whatever that returns. Four spellings in this API
+            # have already been wrong (move, find, set_priority, add_library), and a
+            # `safe()` probe on a name that does not exist is indistinguishable from a
+            # reference that has no version: the exporter would write a managed reference
+            # as though it were a placeholder and warn about nothing.
+            out["added_members"] = members(added)
+
+            # Every field extract_reference() touches, on a managed reference, one at a
+            # time. The last four are written UNCONDITIONALLY with safe(..., False) --
+            # so if any of them raises here, the mirror has been recording a fabricated
+            # `false` rather than a measured one, which is worse than omitting the key.
+            out["added_record_fields"] = {}
+            for field in ("qualified_only", "publish_symbols_in_container", "optional",
+                          "system_library", "parameters", "is_redirected",
+                          "placeholder_name",
+                          # CODESYS's own typo. The CLR member list from the first run
+                          # of this probe spells it ...depencency, while versio_libraries.py
+                          # probed the correct spelling -- which is why its comment used to
+                          # say the field "is not readable on this version". Both spellings
+                          # are asked for here so the answer names which one works.
+                          "hide_when_referenced_as_dependency",
+                          "hide_when_referenced_as_depencency"):
+                out["added_record_fields"][field] = describe(
+                    lambda f=field, a=added: getattr(a, f))
+
+            # The chain the exporter walks. Reported as three separate answers because
+            # "no version came out" has three different causes and only one of them is a
+            # bug in this repository: managed_library absent, managed_library present but
+            # None, or present and missing the sub-fields.
+            out["managed_library"] = describe(lambda: added.managed_library)
+            managed = safe(lambda: added.managed_library, None)
+            out["managed_library_members"] = members(managed) if managed is not None else None
+            out["managed_library_fields"] = {}
+            if managed is not None:
+                for field in ("version", "company", "title", "default_namespace",
+                              "namespace", "name"):
+                    out["managed_library_fields"][field] = describe(
+                        lambda f=field, m=managed: getattr(m, f))
+
+            # And the same three fields off the REFERENCE, in case the shape is flat.
+            # Cheap, and it is the alternative spelling the fix would use.
+            out["added_flat_fields"] = {}
+            for field in ("version", "company", "title"):
+                out["added_flat_fields"][field] = describe(
+                    lambda f=field, a=added: getattr(a, f))
+
+            # A PLACEHOLDER's answer to the same call, which is the OTHER half of the
+            # branch: extract_reference() enters its managed block whenever
+            # `ref.managed_library` probes to something non-None, and a placeholder that
+            # answers with an object rather than raising would take every reference in
+            # the fixture down the managed path.
+            if refs:
+                out["placeholder_managed_library"] = describe(
+                    lambda s=refs[0]: s.managed_library)
+
+            # AND THE SAME MEASUREMENT WITH A LIBRARY THIS MACHINE ACTUALLY HAS.
+            #
+            # The run above added "Standard, 3.5.17.0 (System)" - the version the plan
+            # quotes - and every field off its managed_library threw
+            # NullReferenceException. That is one measurement with two possible readings:
+            # the exporter reads the wrong chain, or a reference to a library that is not
+            # INSTALLED carries no library information to read. Only the second run tells
+            # them apart, and the difference decides whether G8 is a defect or a gap.
+            #
+            # The version is taken from the placeholder's own effective_resolution rather
+            # than typed in, so this probe asks about whatever is installed on the machine
+            # running it instead of hard-coding one engineer's CODESYS.
+            installed = safe(lambda: _plain(refs[0].effective_resolution), None) if refs else None
+            out["installed_spelling"] = installed
+            if installed:
+                out["add_installed"] = describe(lambda: libman.add_library(installed))
+                refs_now = safe(lambda: list(libman.references), None)
+                if refs_now:
+                    inst = refs_now[-1]
+                    out["installed_kind"] = _plain(safe(lambda: inst.GetType().Name, None))
+                    out["installed_ref"] = {}
+                    for field in ("name", "namespace", "is_managed", "is_placeholder",
+                                  "system_library", "optional", "qualified_only",
+                                  "publish_symbols_in_container"):
+                        out["installed_ref"][field] = describe(
+                            lambda f=field, r=inst: getattr(r, f))
+
+                    # AND WHAT THE SHIPPING EXPORTER MAKES OF IT. Everything above is
+                    # this file's own reading of the API; this is versio_libraries.py's,
+                    # run against the same live object in the same process, and it is the
+                    # only line here that can fail because of a bug in the product rather
+                    # than a surprise in CODESYS.
+                    try:
+                        import versio_libraries
+                        errs = []
+                        out["product_record"] = versio_libraries.extract_reference(
+                            inst, safe,
+                            lambda code, detail: errs.append([code, detail]))
+                        out["product_record_errors"] = errs
+                        out["product_record_placeholder"] = versio_libraries.extract_reference(
+                            refs[0], safe, lambda code, detail: errs.append([code, detail]))
+                    except Exception as e:
+                        out["product_record"] = {"error": type(e).__name__,
+                                                 "message": str(e)}
+
+                    out["installed_managed_library"] = describe(lambda: inst.managed_library)
+                    mlib = safe(lambda: inst.managed_library, None)
+                    out["installed_managed_fields"] = {}
+                    if mlib is not None:
+                        # The three the exporter writes, plus the two beside them: if
+                        # `displayname` and `default_namespace` read while `title` does
+                        # not, the record is recording the wrong pair of fields.
+                        for field in ("version", "company", "title", "displayname",
+                                      "default_namespace", "categories"):
+                            out["installed_managed_fields"][field] = describe(
+                                lambda f=field, m=mlib: getattr(m, f))
+
+    return out
+
+
+# ============================================================================ P11
+def probe_move_matrix(proj, project_path):
+    """WHICH CONTAINERS ACCEPT A MOVE, one destination at a time.
+
+    The plan's last open task, and it exists because two measurements disagree without
+    contradicting each other. P2 moved a POU into a folder under Application: the GUID
+    survived a save, close and reopen. The feature checklist's D6 moved one OUT of
+    Application into Plc Logic: CODESYS accepted the call, raised nothing, and left the
+    object exactly where it was, which versio_import.py reports as RENAME_NOT_APPLIED
+    because it re-resolves afterwards rather than trusting the call.
+
+    So "Versio moves objects" is true of some destinations and false of others, and
+    nobody had drawn the line.
+
+    EVERY STEP RE-RESOLVES AT THE INTENDED PATH AFTERWARDS. That is the whole method:
+    this toolchain has now reported success for work it did not do four times - move(),
+    create_folder returning None, pous.remove(name), and a rename whose names were equal -
+    and every one was caught by reading the value back rather than by the call raising.
+    A step is `applied` only if the object is FOUND at its destination.
+
+    STEPS ARE AN ORDERED LIST, NOT A CROSS PRODUCT, and that is the correction the first
+    version needed: it paired movers with destinations by index and the third pair was
+    Glob_Var into Application, which was already its parent. It reported applied: true
+    having moved nothing, because find_at found the object where it had always been. A
+    destination an object is already in cannot answer anything, so each step below names
+    its object deliberately and `already_there` is checked before the call rather than
+    inferred from the result.
+    """
+    app = find_at(proj, APP_PATH)
+    if app is None:
+        return {"verdict": "NO_APPLICATION"}
+
+    # create_folder RETURNS None and creates the folder anyway (DRIVING.md), so every
+    # destination here is found by name rather than taken from a return value.
+    describe(lambda: app.create_folder("VersioMoveProbe"))
+    folder = find_at(proj, APP_PATH + ["VersioMoveProbe"])
+    if folder is not None:
+        describe(lambda: folder.create_folder("VersioMoveProbeInner"))
+
+    # Three more folders, and they exist to remove confounds rather than to test features.
+    # The folder step below moves one that HAS CHILDREN, so on its own it cannot tell "this
+    # destination refuses a folder" from "a folder with something in it cannot be moved".
+    # VersioMoveEmpty is empty; VersioMoveHost is somewhere legal to move something to.
+    #
+    # VersioMoveEmpty2 exists because the first run of this probe used ONE empty folder for
+    # both isolating steps: step 8 moved it into Plc Logic, succeeded, and step 9 then looked
+    # for it at its old path under Application - OBJECT_NOT_AT_SOURCE, no call ever made. A
+    # step whose source depends on an earlier step's OUTCOME measures nothing when that
+    # outcome goes the other way, which is the by-index pairing defect in its third costume.
+    describe(lambda: app.create_folder("VersioMoveEmpty"))
+    describe(lambda: app.create_folder("VersioMoveEmpty2"))
+    describe(lambda: app.create_folder("VersioMoveHost"))
+
+    PROBE_FOLDER = APP_PATH + ["VersioMoveProbe"]
+    INNER = PROBE_FOLDER + ["VersioMoveProbeInner"]
+    EMPTY = APP_PATH + ["VersioMoveEmpty"]
+    EMPTY2 = APP_PATH + ["VersioMoveEmpty2"]
+    HOST = APP_PATH + ["VersioMoveHost"]
+
+    # (label, object's current path, destination path). [] is the project root.
+    #
+    # The order matters twice: step 2 moves the object step 1 just moved, which is the
+    # only way to ask "does a move OUT of a folder work" - and step 6 moves the folder
+    # itself, which a mirror expresses by dragging a directory, so it is not exotic.
+    steps = [
+        ("into_folder_under_application", APP_PATH + ["Simulation"], PROBE_FOLDER),
+        ("out_of_folder_back_to_application", PROBE_FOLDER + ["Simulation"], APP_PATH),
+        ("into_nested_folder", APP_PATH + ["Diagnosis"], INNER),
+        ("out_of_application_into_plc_logic", APP_PATH + ["Visualization"],
+         ["Device", "Plc Logic"]),
+        ("out_of_application_into_device", APP_PATH + ["PLC_PRG"], ["Device"]),
+        ("out_of_application_into_project_root", APP_PATH + ["Glob_Var"], []),
+        ("a_folder_with_children_into_plc_logic", PROBE_FOLDER, ["Device", "Plc Logic"]),
+
+        # The two that isolate the variable. If the empty one is declined too, the
+        # destination is what refuses; if it is accepted, the earlier row was about the
+        # children and the finding would have been wrong. Each uses ITS OWN folder - see
+        # the creation comment above - so neither step's source depends on the other's
+        # outcome.
+        ("an_empty_folder_into_plc_logic", EMPTY, ["Device", "Plc Logic"]),
+        ("an_empty_folder_into_another_folder", EMPTY2, HOST),
+    ]
+
+    rows = []
+    for label, from_path, to_path in steps:
+        obj = find_at(proj, from_path)
+        dest = proj if not to_path else find_at(proj, to_path)
+        name = from_path[-1]
+
+        if obj is None:
+            rows.append({"step": label, "object": name, "verdict": "OBJECT_NOT_AT_SOURCE"})
+            continue
+        if dest is None:
+            rows.append({"step": label, "object": name, "verdict": "NO_DESTINATION"})
+            continue
+
+        # Asked BEFORE the call. A step whose object is already in the destination proves
+        # nothing, and the first version of this probe recorded exactly that as a pass.
+        already = find_at(proj, to_path + [name]) is not None
+        before = ident(obj)
+        call = describe(lambda o=obj, d=dest: o.move(d, -1))
+        found = find_at(proj, to_path + [name])
+
+        rows.append({
+            "step": label,
+            "object": name,
+            "from": "/".join(from_path[:-1]) or "<root>",
+            "to": "/".join(to_path) or "<root>",
+            "already_there_before": already,
+            "call_ok": call.get("ok"),
+            "call_error": call.get("error"),
+            "call_message": call.get("message"),
+            "applied": (found is not None) and not already,
+            "parent_after": _plain(safe(lambda o=obj: o.parent.get_name(), None)),
+            "guid_before": before["guid"],
+            "guid_stable": before["guid"] == _plain(safe(lambda o=obj: o.guid, None)),
+        })
+
+    # One save and one reopen for the whole matrix: an in-session move that does not
+    # survive being read off disk again would be the worst of the three outcomes, and
+    # nothing has ever looked for it.
+    proj.save()
+    close_project()
+    reopened = open_project(project_path)
+
+    after = []
+    for i, (row, (label, _from, to_path)) in enumerate(zip(rows, steps)):
+        if not row.get("applied"):
+            continue
+
+        # A LATER STEP MAY HAVE MOVED THE SAME OBJECT AGAIN, and then this step's
+        # destination is simply the wrong place to look. The first version of this loop
+        # did look there, found nothing, and reported found_after_reopen: false for
+        # `into_folder_under_application` - which reads as "a move into a folder does not
+        # survive a reopen", contradicts P2, and is an artefact of step 2 moving the same
+        # POU back out. An absence has to be attributed before it is reported.
+        #
+        # AND ONLY A STEP THAT ACTUALLY MOVED THE OBJECT CAN SUPERSEDE. The first run
+        # matched later steps by NAME alone, and step 8's reopen check was skipped in
+        # deference to a step 9 that had reported OBJECT_NOT_AT_SOURCE and called nothing -
+        # so "an empty folder into Plc Logic survives a reopen" went unmeasured while three
+        # documents claimed it. A declined or never-run step left the object exactly where
+        # this step put it, which is the position this check exists to read.
+        superseded = [rows[j]["step"] for j in range(i + 1, len(rows))
+                      if rows[j].get("object") == row["object"] and rows[j].get("applied")]
+        if superseded:
+            after.append({"step": label, "object": row["object"],
+                          "verdict": "SUPERSEDED",
+                          "by": superseded,
+                          "detail": "a later step moved this object again, so its "
+                                    "position on disk belongs to that step"})
+            continue
+
+        found = find_at(reopened, to_path + [row["object"]])
+        after.append({
+            "step": label,
+            "object": row["object"],
+            "found_after_reopen": found is not None,
+            "guid_stable_after_reopen": (found is not None and row["guid_before"]
+                                         == _plain(safe(lambda f=found: f.guid, None))),
+        })
+
+    return {
+        "rows": rows,
+        "after_reopen": after,
+        "summary": {
+            "applied": [r["step"] for r in rows if r.get("applied")],
+            "accepted_silently_and_not_applied": [
+                r["step"] for r in rows
+                if r.get("applied") is False and r.get("call_ok") and not r.get("already_there_before")],
+            "raised": [r["step"] for r in rows if r.get("call_ok") is False],
+            "vacuous": [r["step"] for r in rows if r.get("already_there_before")],
+        },
+    }
+
+
+# ============================================================================ P12
+def probe_encodable_name(proj, project_path):
+    """Can an object whose name needs percent-encoding EXIST?
+
+    E2 and E4 of the feature checklist need one, and the plan calls their fixture
+    unbuildable on the strength of P5 - which measured that create_pou REFUSES the four
+    awkward names. That is a fact about one door. Two others have never been tried, and
+    the cost of assuming they are shut is two rows proven by unit tests and nothing else:
+
+      1. rename(). Nobody has ever called it with a name create_pou refuses. A validator
+         that runs on create and not on rename is a shape every toolchain has shipped at
+         least once.
+      2. An external-file object. README.md's own object list carries a real one, named
+         {GUID}|C:\\Users\\...\\file.txt - so the IDE has the door. Is it scriptable?
+
+    Same method as every probe here: call the thing, re-resolve afterwards, report what
+    happened rather than what the call claimed.
+    """
+    app = find_at(proj, APP_PATH)
+    obj = find_at(proj, APP_PATH + ["Simulation"])
+    if app is None or obj is None:
+        return {"verdict": "NO_TARGET"}
+
+    # Door 1: the four names P5 measured create_pou refusing, attempted as renames of a
+    # real POU. Each attempt re-resolves at the wanted name; a success updates the handle
+    # so the next attempt renames from wherever the object now is.
+    out = {"rename": []}
+    current = u"Simulation"
+    for wanted in [u"My.Thing", u"weird<name>", u"Pump ", u"Pump."]:
+        call = describe(lambda o=obj, w=wanted: o.rename(w))
+        landed = find_at(proj, APP_PATH + [wanted])
+        out["rename"].append({
+            "wanted": wanted,
+            "call_ok": call.get("ok"),
+            "call_error": call.get("error"),
+            "call_message": call.get("message"),
+            "applied": landed is not None,
+        })
+        if landed is not None:
+            current = wanted
+            obj = landed
+
+    # Put the name back so door 2 measures against a sane tree. Reported, not assumed -
+    # a probe that silently repairs its own state is a probe whose rows cannot be read
+    # in order.
+    if current != u"Simulation":
+        out["rename_back"] = describe(lambda o=obj: o.rename(u"Simulation"))
+
+    # Door 2: an external-file object, from a real file written beside the scratch
+    # project. AttributeError in a row below means the member does not exist under that
+    # spelling; any other error means it exists and refused - the distinction P9's
+    # NullReferenceException taught this file to keep.
+    ext = project_path[:project_path.rfind("\\") + 1] + "versio_external.txt"
+    f = open(ext, "w")
+    f.write("external file fixture for P12\n")
+    f.close()
+
+    out["module_external_names"] = sorted(
+        [n for n in dir(scriptengine) if "xternal" in n])
+    for target_name, target in (("project", proj), ("application", app)):
+        row = {}
+        for meth in ("create_external_file_object", "add_external_file",
+                     "create_external_file", "import_external_file"):
+            row[meth] = describe(
+                lambda t=target, m=meth, p=ext: getattr(t, m)(p))
+        out["door2_" + target_name] = row
+
+    # What the tree actually holds afterwards, because a created external object's NAME
+    # is the whole point: if one exists, does it carry the path - the |, : and \ that
+    # need encoding - or something tamer?
+    def child_names(container):
+        return [_plain(safe(lambda c=c: c.get_name(), None))
+                for c in (safe(lambda: container.get_children(), []) or [])]
+
+    out["app_children_after"] = child_names(app)
+    out["root_children_after"] = child_names(proj)
+    return out
+
+
+# ============================================================================ P13
+def probe_external_file_shapes(proj, project_path):
+    """What NAME does an external-file object actually carry - and therefore which of
+    E2 and E4 its mirror stem exercises?
+
+    P12 proved create_external_file_object works and left a puzzle in its own output:
+    the object created on Application listed as plain `versio_external.txt` while the
+    project root listing showed a `{GUID}|C:\\...\\versio_external.txt` entry beside a
+    plain one. If get_name() is the bare filename, then E2/E4's fixture is
+    machine-INDEPENDENT after all - the absolute-path caveat written into the plan
+    would be about a listing artefact, not the name - and a filename can be chosen to
+    need percent-encoding (E2: `%` and spaces) or shortening (E4: past MaxStem = 80).
+
+    Four creations, each answered separately, then a save/close/reopen to see which
+    names persist. The exporter's side of the question - stem, manifest record, form,
+    UNKNOWN_TYPE_GUID - is deliberately NOT probed here: the real versio_export.py is
+    run against the saved project afterwards, because the exporter's own reading is
+    the only one that counts (the P9 lesson).
+    """
+    app = find_at(proj, APP_PATH)
+    if app is None:
+        return {"verdict": "NO_APPLICATION"}
+
+    base = project_path[:project_path.rfind("\\") + 1]
+
+    # (label, filename on disk, why it is in the list)
+    cases = [
+        ("plain", "versio_ext_plain.txt",
+         "the control: no encoding, no shortening"),
+        ("needs_encoding", "versio 50% ext.txt",
+         "space and percent - legal in a Windows filename, encoded by EncodeStem"),
+        ("needs_shortening",
+         "versio_ext_long_" + ("x" * 80) + ".txt",
+         "past MaxStem=80, so the stem takes the digest tail - E4's shape"),
+    ]
+
+    out = {"created": []}
+    for label, fname, why in cases:
+        path = base + fname
+        f = open(path, "w")
+        f.write("external file fixture for P13: " + label + "\n")
+        f.close()
+
+        call = describe(lambda a=app, p=path: a.create_external_file_object(p))
+        # The name is read off the CHILD LIST rather than off the return value,
+        # because create_folder taught this file that a return value can be None
+        # while the object exists.
+        found = None
+        for child in safe(lambda: app.get_children(), []) or []:
+            cname = safe(lambda c=child: c.get_name(), None)
+            if cname is not None and fname in _plain(cname):
+                found = child
+                break
+
+        row = {"case": label, "file": fname, "why": why,
+               "call_ok": call.get("ok"), "call_error": call.get("error"),
+               "call_message": call.get("message")}
+        if found is not None:
+            row["name"] = _plain(safe(lambda o=found: o.get_name(), None))
+            row["guid"] = _plain(safe(lambda o=found: o.guid, None))
+            # The type GUID decides which branch of versio_export.py this object
+            # takes: a mapped type gets its form, an unmapped one gets
+            # UNKNOWN_TYPE_GUID and a native export attempt.
+            row["type_guid"] = _plain(safe(lambda o=found: o.type, None))
+            row["embeds_full_path"] = base.lower() in (row["name"] or u"").lower()
+        else:
+            row["name"] = None
+        out["created"].append(row)
+
+    # A relative spelling, because if it works the fixture never touches an
+    # absolute path at all. Reported either way; the cwd inside CODESYS is nobody's
+    # to rely on, so this is a measurement rather than a plan.
+    rel = describe(lambda: app.create_external_file_object("versio_ext_relative.txt"))
+    out["relative_attempt"] = rel
+
+    proj.save()
+    close_project()
+    reopened = open_project(project_path)
+    app2 = find_at(reopened, APP_PATH)
+    out["app_children_after_reopen"] = [
+        _plain(safe(lambda c=c: c.get_name(), None))
+        for c in (safe(lambda: app2.get_children(), []) or [])] if app2 is not None else None
 
     return out
 
@@ -600,6 +1074,9 @@ PROBES = {
     "P8": ("deep folder chain", lambda proj, path: probe_path_length(proj)),
     "P9": ("fixed-version library reference", lambda proj, path: probe_library_reference(proj)),
     "P10": ("task configuration shape, for versio_tasks.py", probe_task_shape),
+    "P11": ("which containers accept a move", probe_move_matrix),
+    "P12": ("can an encodable name exist", probe_encodable_name),
+    "P13": ("what name an external-file object carries", probe_external_file_shapes),
 }
 
 
@@ -617,6 +1094,13 @@ def main():
 
     wanted = job.get("probes") or ["P0"]
     project_path = job["project"]
+
+    # versio_libraries.py imports no scriptengine and takes its objects and its `safe` probe
+    # as arguments, so it loads here exactly as it loads under CPython in the parity tests.
+    # That is the whole reason it was written that way.
+    scripts_dir = job.get("scripts")
+    if scripts_dir:
+        sys.path.insert(0, scripts_dir)
 
     emit({"t": "start", "project": project_path, "probes": wanted})
     proj = open_project(project_path)

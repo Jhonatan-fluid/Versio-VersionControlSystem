@@ -6,7 +6,7 @@
     <UseWPF>true</UseWPF>
     <IsPackable>false</IsPackable>
     <RootNamespace>Versio.Arch.Tests</RootNamespace>
-    <!-- The project docs/PLAN.md section 12.2 has promised since it was written, under the
+    <!-- The project docs/phase1/PLAN.md section 12.2 has promised since it was written, under the
          heading "Dependency rules — enforced, not documented". It listed five rules and said
          this project "fails the build if any of these are violated".
 

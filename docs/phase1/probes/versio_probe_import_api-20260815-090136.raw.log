@@ -1,0 +1,7 @@
+﻿@@VERSIO@@{"project": "C:\\GIT\\Versio\\phase0\\import-api\\P8\\probe.project", "probes": ["P8"], "t": "start"}
+@@VERSIO@@{"path": "C:\\GIT\\Versio\\phase0\\import-api\\P8\\probe.project", "t": "opened"}
+@@VERSIO@@{"title": "deep folder chain", "id": "P8", "t": "probe_start"}
+@@VERSIO@@{"title": "deep folder chain", "id": "P8", "t": "probe_result", "result": {"reading": "CODESYS imposes no obvious limit; the 260-character ceiling is Windows' and therefore the exporter's to guard", "segment_len": 40, "chain": [{"create": {"value": null, "ok": true}, "depth": 1, "nominal_path_len": 42}, {"create": {"value": null, "ok": true}, "depth": 2, "nominal_path_len": 84}, {"create": {"value": null, "ok": true}, "depth": 3, "nominal_path_len": 126}, {"create": {"value": null, "ok": true}, "depth": 4, "nominal_path_len": 168}, {"create": {"value": null, "ok": true}, "depth": 5, "nominal_path_len": 210}, {"create": {"value": null, "ok": true}, "depth": 6, "nominal_path_len": 252}, {"create": {"value": null, "ok": true}, "depth": 7, "nominal_path_len": 294}, {"create": {"value": null, "ok": true}, "depth": 8, "nominal_path_len": 336}, {"create": {"value": null, "ok": true}, "depth": 9, "nominal_path_len": 378}, {"create": {"value": null, "ok": true}, "depth": 10, "nominal_path_len": 420}], "verdict": "TEN_LEVELS_OK"}}
+@@VERSIO@@{"t": "done"}
+@@VERSIO@@{"rc": 0, "t": "exit"}
+

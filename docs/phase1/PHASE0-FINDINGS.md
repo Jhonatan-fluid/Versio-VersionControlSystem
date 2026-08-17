@@ -1,5 +1,10 @@
 # Phase 0 — Findings
 
+> **ARCHIVED — PHASE 1, COMPLETE.** Moved to `docs/phase1/` on 2026-08-17. This was always a
+> record rather than a live limitation list — its supersession notes say which measurements
+> later work overturned. The live queue is [`../PHASE2.md`](../PHASE2.md); the raw probe
+> outputs are in [`probes/`](probes/).
+
 **Date:** 2026-08-11
 **Fixture:** `RefrigeratorControl.project` (383 KB, 25 objects)
 **Environment:** CODESYS 3.5.22.20, profile `CODESYS V3.5 SP22 Patch 2`, .NET SDK 9.0.317
@@ -21,7 +26,7 @@
 | **0.5** | **Round-trip losslessness — textual path** | ✅ **proven with a real mutation** (see below) |
 | 0.5b | Round-trip — native XML path | ⚠️ **not yet tested** — 8 of 10 files skipped by the importer |
 | P7 | Import → export churn over 3 cycles | ⚠️ **climbs +3 per cycle, never settles** — and every import after the first fails. See below |
-| P0–P9 | The import API, called rather than reflected on | ⚠️ **four of seven documented spellings were wrong**, two gaps closed as unreachable, and `remove()` dangles silently. See below |
+| P0–P11 | The import API, called rather than reflected on | ⚠️ **four of seven documented spellings were wrong**, two gaps closed as unreachable, `remove()` dangles silently, and **`move()` declines three moves of nine without raising, with the destination not what decides** (P11, 2026-08-17). See below |
 
 ---
 
@@ -176,7 +181,7 @@ That is a task's **CPU core affinity**, and `import_native` changed it without b
 
 > **Superseded on 2026-08-15 by P7 below.** Diff-only is not a safe resting place: the very
 > next import of a mirror this deviation produced **fails**, and the failure is silent in the
-> summary. The recommendation now is Phase 4 of [`vendors/codesys/IMPORT-PLAN.md`](vendors/codesys/IMPORT-PLAN.md)
+> summary. The recommendation now is Phase 4 of [`vendors/codesys/IMPORT-PLAN.md`](IMPORT-PLAN.md)
 > — typed task configuration, so `import_native` never sees this file again.
 >
 > **✅ And that is now built, on the same day.** Task configuration exports as `TASK_BOTH` and
@@ -216,7 +221,7 @@ member exists, not what it accepts, and four of the seven rows were wrong about 
 | P5 | Can awkward names be created? | **No** — all four refused by name validation |
 | P6 | Is the typed task path sufficient? | **Yes**, including `core_binding`; setters are property assignment |
 | P8 | Where does path length break? | **Not in CODESYS** — ten 40-char levels, ~420 characters, no complaint |
-| P9 | Can a fixed-version library reference be made? | **Yes, one call.** Produces `is_managed: true` |
+| P9 | Can a fixed-version library reference be made? | **Yes, one call.** Produces `is_managed: true`. **Superseded 2026-08-17** — the question was the wrong one. Making one was never the obstacle; what the exporter *records* for it was, and reading that took a second run of this probe. See G8 in [`vendors/codesys/IMPORT-PLAN.md`](IMPORT-PLAN.md) |
 
 ### The three that changed something
 
@@ -270,7 +275,7 @@ Three consecutive import → export cycles over **one** mirror directory, re-exp
 **nothing edited between cycles**. Every difference below is therefore produced by the round
 trip and by nothing else, which is the whole reason for holding the mirror still.
 
-This is probe P7 of [`vendors/codesys/IMPORT-PLAN.md`](vendors/codesys/IMPORT-PLAN.md), and it exists to decide
+This is probe P7 of [`vendors/codesys/IMPORT-PLAN.md`](IMPORT-PLAN.md), and it exists to decide
 one thing: whether the counter climbs forever or settles the way `Core2` does. Until now that
 was an argument.
 
@@ -357,7 +362,7 @@ So Phase 5's keep-existing-bytes rule is **sufficient for everything P7 found ch
 was previously an inference from gate 0.5b rather than a measurement. It also surfaced a trap in
 how that phase must be built — the manifest records the hash of the payload the exporter
 generated, so substituting bytes at write time would leave the manifest disagreeing with the file
-beside it. See [`vendors/codesys/IMPORT-PLAN.md`](vendors/codesys/IMPORT-PLAN.md) Phase 5.
+beside it. See [`vendors/codesys/IMPORT-PLAN.md`](IMPORT-PLAN.md) Phase 5.
 
 ### ⚠️ Every import after the first fails, and says it succeeded
 
@@ -449,7 +454,7 @@ path is ever unavailable, and because the measurement cost real time to get.
 > `.tasks.yaml` authoritative made `Task Configuration.xml` a file the export writes and the
 > import discards, with nothing recording it: the manifest still said `NATIVE_R`, so
 > `_coverage.md` skipped it and the panel drew it as editable. **Closed the same day** by
-> recording it `TASK_NATIVE`; see the finding in [`STATUS.md`](STATUS.md). The general form is
+> recording it `TASK_NATIVE`; see the finding in [`STATUS.md`](../STATUS.md). The general form is
 > worth carrying into Phases 1–3: *a measurement aimed at the defect will not see what the fix
 > changed about anything else.*
 

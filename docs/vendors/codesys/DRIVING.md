@@ -6,7 +6,7 @@
 |---|---|
 | Document | **The CODESYS integration, end to end.** Which CODESYS interface Versio uses, how the process is launched, what crosses the boundary in each direction, what every script does, and where the seams and the gaps are |
 | Audience | An engineer who has to change the export, the import, the runner or the scripts — or add a second vendor beside them |
-| Related | [`PLAN.md`](../../PLAN.md) — the architecture · [`PHASE0-FINDINGS.md`](../../PHASE0-FINDINGS.md) — what was measured against real CODESYS · [`STATUS.md`](../../STATUS.md) — where the project is · [`SAFEGUARDS.md`](../../SAFEGUARDS.md) — what Versio refuses or waits for |
+| Related | [`PLAN.md`](../../phase1/PLAN.md) — the architecture · [`PHASE0-FINDINGS.md`](../../phase1/PHASE0-FINDINGS.md) — what was measured against real CODESYS · [`STATUS.md`](../../STATUS.md) — where the project is · [`SAFEGUARDS.md`](../../SAFEGUARDS.md) — what Versio refuses or waits for |
 | Audit | §12 is a standing audit of this integration. Every finding it raised is fixed; each entry is kept, with what changed and why. The rest of the document describes the system as it actually behaves, not as it is meant to |
 
 ---
@@ -74,7 +74,7 @@ Consequences that shape everything else in this document:
 |---|---|
 | The interpreter is **IronPython 2.7** | The scripts are Python 2 source. `unicode`, `unichr`, `io.open` and `u""` literals are load-bearing, not legacy. Plain `open()` in Python 2 encodes unicode as ASCII and dies on the accented characters that appear in real PLC comments |
 | `pip` is not available | **No third-party Python dependencies at all.** The YAML emitter and the JSON-lines protocol are hand-written (`versio_yaml.py`), and the C# side that reads them is hand-written too |
-| The interpreter runs **inside CODESYS** | Running a script means paying CODESYS's cold start — measured **17–31 s** ([PHASE0-FINDINGS §4](../../PHASE0-FINDINGS.md)) — on every invocation |
+| The interpreter runs **inside CODESYS** | Running a script means paying CODESYS's cold start — measured **17–31 s** ([PHASE0-FINDINGS §4](../../phase1/PHASE0-FINDINGS.md)) — on every invocation |
 | CODESYS is a desktop IDE, not a server | Two concurrent headless instances on one profile are not safe. The runner serialises them behind a machine-wide mutex |
 
 ### 1.2 The command-line surface
@@ -122,7 +122,7 @@ PHASE0-FINDINGS records that the SP22 behaviour matches the SP11 documentation.
 | `libman.references` (a `ScriptLibraryReference` collection) | libraries | **Indexed by id, not by position** — `refs[0]` raises on any project whose first reference has a non-zero id. It is iterated instead |
 | `obj.remove()` | import (delete phase) | **Removes a referenced object silently** — no exception, no cascade, no warning (P3). Every precondition around a deletion exists because of that |
 | `obj.rename(name)` | import (rename phase) | Preserves the GUID, measured in session and across a save and reopen |
-| `obj.move(parent, -1)` | import (rename phase) | **The index must be `-1`**: `move(dest, 0)` raises *"index must be -1 if the new parent node does not have sorted children"*, and one-argument `move(dest)` raises a `NullReferenceException`. **It returns nothing and declines silently** for a parent the toolchain rejects — a POU moved to `Plc Logic` stays where it is, no exception raised — so the outcome is re-checked afterwards. Into a **folder** it works, GUID intact, surviving a save and reopen |
+| `obj.move(parent, -1)` | import (rename phase) | **The index must be `-1`**: `move(dest, 0)` raises *"index must be -1 if the new parent node does not have sorted children"*, and one-argument `move(dest)` raises a `NullReferenceException`. **Which moves it performs was measured on 2026-08-17** (P11), nine ordered moves each re-resolved afterwards — and measured *twice*, because the first run's ninth step never executed and its absence went unread; see the probe finding in `FINDINGS.md`. Performed, GUID intact, surviving a reopen: a POU into a folder under `Application`, into a folder inside that one, and back out into `Application`; a GVL to **the project root**; an **empty folder into `Plc Logic`**; an **empty folder into an ordinary folder**. Accepted and ignored: a POU into `Device`, a visualisation into `Plc Logic`, a **folder holding a POU** into `Plc Logic`. **Not one of the nine raised** — it returns `None` either way, so the outcome is re-checked afterwards and that check is the whole signal. **The destination is not what decides**: an empty folder goes where a POU cannot, and the same folder stops going there once a POU is inside it, so this cannot be a table of sensible destinations written from outside |
 | `task.pous` | export, import | A `ScriptPouObjectList` of plain **str**, not of objects, and **stored by name** — which is why renaming a POU leaves its task naming something that no longer exists unless the list is rewritten. Every spelling but one is a trap: `pous[i] = name` raises, **`remove(name)` reports success and does nothing**, `remove(index)` raises *"not found in the specified Collection"*, `replace(name, name)` raises *"expected int, got str"*. **`replace(index, name)` works** and survives a save and reopen |
 | `obj.create_folder(name)` | probe | **Returns `None`.** The folder is created regardless and has to be found by name afterwards — using the return value as a destination makes the next call a no-op against `None` |
 | `fb.create_method(name, "BOOL")` | fixture | **The second argument is a RETURN TYPE, not a language**, which is not what `create_pou` and `create_action` beside it take. Passing `ImplementationLanguages.st` raises `TypeError: expected str, got Guid`. The one-argument form works too |
@@ -410,6 +410,7 @@ CPython.
 | `ST_IMPL` | implementation only (no declaration exists) | `ACTION`, `TRANSITION` |
 | `GVL_BOTH` | **two files** — `.gvl.xml` for structure, `.gvl.st` for a readable diff **and for import**. The *decision* is `GVL_BOTH`; the two files are **recorded** `GVL_NATIVE` and `ST_DECL`, because only the `.st` is applied back | `GVL`, `GVL_PERSISTENT` |
 | `GVL_NATIVE` | **recorded, never decided.** The `.gvl.xml` half above, marked so the manifest says it is export-only. It carried plain `NATIVE` until 2026-08-16 — an *importable* form, so both halves were applied and the later phase won. That is G12; see the finding in [`STATUS.md`](../../STATUS.md) | — |
+| `EXTERNAL_NATIVE` | **decided, and export-only from birth.** An external-file object's one and only file — no importable sibling exists, so the object is IDE-managed entirely. Export-only because the first E4 round trip measured `import_native` **duplicating** the object instead of replacing it (G13, 2026-08-17): same name, same parent, a re-minted GUID, one more copy per import. The payload is metadata — a `FileId` and a download flag — so a mirror edit had nothing to say anyway | `EXTERNAL_FILE`, `EXTERNAL_FILE_SOURCE` |
 | `NATIVE` | `obj.export_native(path, False)` | `EVC`, `VISUALISATION`, `TEXTLIST`, `GLOBAL_TEXTLIST`, `IMAGEPOOL`, `PROJECT_INFORMATION` |
 | `NATIVE_R` | `obj.export_native(path, True)` — owns children not walked separately | `PROPERTY` |
 | `NATIVE_WITH_CHILDREN` | the node natively **and** a subdirectory for its children | **no type maps to it** — only an *unmapped* type that has children |
@@ -616,10 +617,28 @@ would put a diff in every commit or make the mirror machine-specific:
 |---|---|
 | `ref.id` | Re-minted on every open. Two consecutive runs over an untouched project differed in 68 lines and **every one was an id** |
 | Effective resolution / resolution info / resolver | Describes which libraries are installed *here*, not what the project asks for. Two engineers sharing a repository would produce different bytes and neither would be wrong |
-| `hide_when_referenced_as_dependency` | Raises on all 34 references on this CODESYS version. Probed, not assumed |
+| `hide_when_referenced_as_depencency` | A display hint rather than something a diff needs. **The spelling is CODESYS's own typo**, one `d` short — this table said the correctly spelled property "raises on all 34 references on this CODESYS version", which was the wrong conclusion from a true observation: it raises because it does not exist under that name. It reads `False`. Corrected 2026-08-17, and it is now a choice rather than a limitation |
+| `managed_library.version` / `.company` / `.title` | **Describes the library as INSTALLED here**, so it belongs in the row above rather than in the export. The exporter read these until 2026-08-17 — see below |
 
 A `redirection` **is** recorded: a placeholder pinned to a fixed version is a choice stored in
 the project, so it belongs in the mirror.
+
+**A managed reference records its version, and not from where you would expect.** A
+fixed-version reference — `is_managed`, as against `is_placeholder` — carries `version`,
+`company` and `title`, and they are **parsed from the reference's own `name`**, which CODESYS
+spells `"Title, Version (Company)"`. The obvious source is `ref.managed_library`, and it is the
+wrong one twice over: it answers only on a machine that has that library installed (on one that
+does not, `is_managed` still reads `True` and every field raises `NullReferenceException`), and
+what it answers is installation state, which is the second row of the table above. The name is
+project state and is the same everywhere. Measured both ways on 3.5.22.20 — see G8 in
+[`IMPORT-PLAN.md`](../../phase1/IMPORT-PLAN.md) and the Finding.
+
+The parse is strict: last `" ("`, last `", "`, closing bracket required, version must be digits
+and dots. A name that is not that shape yields **no version at all** plus
+`LIBRARY_MANAGED_NAME_UNPARSED`, rather than a plausible guess — an absent version is a gap a
+reader can see, a wrong one is a diff somebody acts on. A reference answering `False` to both
+discriminators raises `LIBRARY_REFERENCE_UNCLASSIFIED`; nothing in this version produces one,
+which is why it is worth a code.
 
 The file is **export-only** (§6.5). `versio_yaml.py` is a hand-written emitter covering exactly
 one document shape — mappings of scalars, and a list of mappings — with key order supplied by
@@ -1052,23 +1071,23 @@ failed on all four rows above.
 
 ## 10. Script inventory
 
-All twelve `.py` files are embedded into `Versio.Infrastructure` by a glob
-(`<EmbeddedResource Include="..\Versio.Scripts.Codesys\*.py" />`) and extracted at run time by
+All twelve `.py` files are embedded into `Versio.Plc.Codesys.Infrastructure` by a glob
+(`<EmbeddedResource Include="Scripts\*.py" LinkBase="Scripts" />`) and extracted at run time by
 `ScriptExtractor` into `%TEMP%\Versio\scripts\<content-stamp>\`. The directory is **versioned by
 content hash**, so an upgrade cannot pick up old scripts and a downgrade cannot pick up new ones
 — a stale copy on disk would produce failures that look like CODESYS bugs.
 
 | Script | Lines | `scriptengine`? | Role |
 |---|---|---|---|
-| `versio_export.py` | 753 | yes | The exporter. Invoked by `CodesysOperation.Export` |
-| `versio_import.py` | 735 | yes | The importer. Invoked by `CodesysOperation.Import`, and since Phase 1 it **executes a plan and decides nothing** — which is most of why it doubled |
+| `versio_export.py` | 1029 | yes | The exporter. Invoked by `CodesysOperation.Export` |
+| `versio_import.py` | 1166 | yes | The importer. Invoked by `CodesysOperation.Import`, and since Phase 1 it **executes a plan and decides nothing** — which is most of why it doubled |
 | `versio_probe.py` | 149 | yes | Phase 0 tree probe; writes a `report.json`. Invoked by `CodesysOperation.Probe` (see finding A3) |
 | `versio_probe_native_import.py` | 194 | yes | One-off probe that answered "does `import_native` replace in place?". Never invoked by the app |
 | `versio_delete_objects.py` | 79 | yes | Test fixture helper — deletes named objects so the importer must recreate them. **Never part of the product**, but is embedded in it (finding B4) |
-| `versio_types.py` | 349 | **no** | The GUID table, the form decision, the suffix/infix tables, the skip reasons, the export-only rules |
-| `versio_text.py` | 196 | **no** | `join_st` / `split_st`, the timestamp scrub, `content_hash`, `safe_file_stem` |
+| `versio_types.py` | 442 | **no** | The GUID table, the form decision, the suffix/infix tables, the skip reasons, the export-only rules |
+| `versio_text.py` | 432 | **no** | `join_st` / `split_st`, the timestamp scrub, `content_hash`, `safe_file_stem` |
 | `versio_decl.py` | 186 | **no** | ST declaration-header parser for object creation |
-| `versio_libraries.py` | 213 | **no** | Shapes `ScriptLibraryReference` objects into neutral records |
+| `versio_libraries.py` | 312 | **no** | Shapes `ScriptLibraryReference` objects into neutral records |
 | `versio_tasks.py` | 212 | **no** | Shapes `ScriptTaskObject`s into neutral records, and applies a `.tasks.yaml` back through typed property assignment (Phase 4) |
 | `versio_yaml.py` | 358 | **no** | Hand-written YAML emitter for one fixed document shape, and — since Phase 4 — the reader for it |
 | `versio_native_equiv.py` | 192 | **no** | The python half of `NativeXmlNormalizer`: is this native payload semantically the same as that one? **No caller yet**; Phases 2 and 5 are what it was written for |
@@ -1081,11 +1100,14 @@ it is absent.
 
 > **This table said "ten files" and "five pure modules" until 2026-08-15**, having missed
 > `versio_tasks.py` and `versio_yaml.py`'s reader when Phase 4 landed — and every line count in
-> it was stale, two of them by more than 60%. Re-derive it rather than editing the number you
-> think changed:
+> it was stale, two of them by more than 60%. **It went stale again by 2026-08-17**, and further:
+> five of the twelve had moved, `versio_export.py` by 276 lines and `versio_import.py` by 431,
+> and the paragraph above still named a project and a glob that the structure audit had
+> replaced. Re-derive the whole table rather than editing the number you think changed — the
+> one row somebody edits by hand is the row that was already right:
 >
 > ```
-> cd src/Versio.Scripts.Codesys && for f in *.py; do printf "%-32s %s\n" "$f" "$(grep -c '' "$f")"; done
+> cd src/Versio.Plc.Codesys.Infrastructure/Scripts && for f in *.py; do printf "%-32s %s\n" "$f" "$(grep -c '' "$f")"; done
 > ```
 
 ### The PowerShell harnesses
@@ -1099,7 +1121,7 @@ poke at CODESYS directly.
 | `Compare-Exports.ps1` | Byte-compares two export trees — the determinism gate, where a byte comparison is exactly right. `-Quiet` returns the result without the banner, for a caller presenting its own verdict |
 | `Test-RoundTrip.ps1` | export → copy → import → export → compare, **judged one layer at a time** (§6.6). **Use `-MutateFirst`** — without a deliberate change the comparison can pass while the import did nothing, and a green result that cannot fail is worse than a red one. `-UpdateEquivalenceFixtures` refreshes the inputs `RealRoundTripEquivalenceTests` reads |
 | `Probe-ImportApi.ps1` | Runs the Phase 0 import-API probes, **one scratch copy per probe** because every one of them mutates and P3 removes a referenced object. Answers what `rename`, `move`, `remove`, `find`, the task fields and `add_library` actually accept -- four of which the plan had wrong. `-Probes P5` runs one |
-| `Measure-ImportStability.ps1` | Runs the round trip **N times over one mirror**, re-exporting into it, and reports what differs per cycle plus every `UniqueIdGenerator` as a series. `Test-RoundTrip.ps1` answers "is one round trip lossless"; this answers "does it ever *stop*", which is a different question and the one that found G11. Prints `P7: SETTLES` or `P7: CHURNS`; **it settles, as of Phase 5 on 2026-08-16** — it churned from the day it was written until then, and the record of what it churned is in [`PHASE0-FINDINGS.md`](../../PHASE0-FINDINGS.md). **A clean byte verdict is not enough on its own — check the warning count too**, or a failing import hides under a settled mirror |
+| `Measure-ImportStability.ps1` | Runs the round trip **N times over one mirror**, re-exporting into it, and reports what differs per cycle plus every `UniqueIdGenerator` as a series. `Test-RoundTrip.ps1` answers "is one round trip lossless"; this answers "does it ever *stop*", which is a different question and the one that found G11. Prints `P7: SETTLES` or `P7: CHURNS`; **it settles, as of Phase 5 on 2026-08-16** — it churned from the day it was written until then, and the record of what it churned is in [`PHASE0-FINDINGS.md`](../../phase1/PHASE0-FINDINGS.md). **A clean byte verdict is not enough on its own — check the warning count too**, or a failing import hides under a settled mirror |
 
 > **⚠️ These harnesses do not take the machine-wide mutex.** `LocalCodesysRunner` serialises
 > every CODESYS launch behind `Global\Versio.Codesys.SingleInstance`; `Run-Codesys.ps1` starts
@@ -1378,12 +1400,12 @@ listed here because only one of them is currently written down anywhere.
 
 | # | Limitation | Consequence |
 |---|---|---|
-| D1 | ~~**Deletions do not propagate.**~~ — **closed outright 2026-08-15, textual and native.** The *decision* exists: `CodesysImportPlanner` proposes `ImportPlan.Deletions` from the manifest, behind five preconditions (a trusted manifest, every file for the GUID gone, export-only records neither voting nor vetoing, nothing surviving inside it at any depth, an owner chain recorded rather than guessed). The execution exists too: `deletions` crosses the wire and `versio_import.py` runs a delete phase **last**, after everything that adds. A textual file is rebuilt and compared byte for byte; **a native one is re-exported, normalised, and compared against the manifest's `nhash`** (schema 5), which is what a re-export can be compared against when the raw bytes churn | Removing a `.st` from the mirror removes the POU from the project, and removing both of a GVL's files removes the GVL — proven against real CODESYS. An object edited in the IDE since the export is kept (`DELETE_CONTENT_CHANGED`): a missing file is not permission to destroy work that exists nowhere else. A native object on a pre-schema-5 mirror is refused (`DELETE_UNVERIFIABLE`) until the next export. See G1 in [`vendors/codesys/IMPORT-PLAN.md`](IMPORT-PLAN.md) |
+| D1 | ~~**Deletions do not propagate.**~~ — **closed outright 2026-08-15, textual and native.** The *decision* exists: `CodesysImportPlanner` proposes `ImportPlan.Deletions` from the manifest, behind five preconditions (a trusted manifest, every file for the GUID gone, export-only records neither voting nor vetoing, nothing surviving inside it at any depth, an owner chain recorded rather than guessed). The execution exists too: `deletions` crosses the wire and `versio_import.py` runs a delete phase **last**, after everything that adds. A textual file is rebuilt and compared byte for byte; **a native one is re-exported, normalised, and compared against the manifest's `nhash`** (schema 5), which is what a re-export can be compared against when the raw bytes churn | Removing a `.st` from the mirror removes the POU from the project, and removing both of a GVL's files removes the GVL — proven against real CODESYS. An object edited in the IDE since the export is kept (`DELETE_CONTENT_CHANGED`): a missing file is not permission to destroy work that exists nowhere else. A native object on a pre-schema-5 mirror is refused (`DELETE_UNVERIFIABLE`) until the next export. See G1 in [`vendors/codesys/IMPORT-PLAN.md`](../../phase1/IMPORT-PLAN.md) |
 | D2 | ~~**Filenames are never decoded.**~~ — **closed 2026-08-15 by the plan-driven import.** Resolution chains are built C#-side by `CodesysImportPlanner` from the manifest's verbatim names, with directory segments decoded through `PathMapper.DecodeStem` — which gained its first production caller in the process. The script compares real names against real names | An object or folder whose name needed encoding resolves now. A *shortened* stem (digest tail) still cannot be recovered from the path alone — the object it names simply does not resolve, and the script reports it rather than guessing |
 | D3 | ~~**A dot in an object name breaks the owner split.**~~ — **closed 2026-08-15 for recorded objects**: the manifest's `parent` GUID chain decides ownership, and for pre-schema-4 mirrors the recorded *name* disambiguates the split — a name equal to the whole stem is not split, however many dots the filename carries. **Still true for a manifest-absent create**, where only the filename exists; P5 measured that such names cannot be created, so that residue is unreachable by the only door left | `My.Thing.xml` recorded as `My.Thing` resolves as one object. A brand-new dotted file with no manifest record would still be read as owner and member — and CODESYS would refuse to create it anyway |
 | D4 | ~~**Any stray non-`.st` file in the mirror is handed to `import_native`.**~~ — **closed 2026-08-15.** The planner classifies from the manifest, and a file that is neither a recorded object, bookkeeping, nor a recognisable source is **skipped with a warning, never handed to the toolchain** — including a YAML the manifest does not record, and including files that appear between planning and execution (`NOT_IN_PLAN`) | Proven live: a `README.md` dropped into the mirror is warned about and never imported, in the same run that catches a corrupt native file — see `ImportLoggingTests` |
 | D5 | **`*.libraries.yaml` is export-only** | Editing it changes nothing. Stated in the file's own header, in `_coverage.md`, in the manifest and by a lock glyph in the UI |
-| D6 | ~~**Task Configuration is diff-only**~~ — **closed 2026-08-15**, both halves of it | This row carried two defects. `import_native` mutated `Core2` (§7); and — *not* the same defect, though this row said so for an afternoon — every import run with a `<project>_project.precompilecache` beside the project threw on `MainTask` and `VISU_TASK` while reporting `failed: 0`. **Phase 4 removed both by removing the shared cause**: task configuration exports as `TASK_BOTH` and imports through typed property assignment, so `import_native` is never handed the object. Measured over three cycles with the cache present: **zero warnings**, where cycles 2 and 3 used to throw twice each. Versio deletes nothing of CODESYS's. See G7 and G11 in [`vendors/codesys/IMPORT-PLAN.md`](IMPORT-PLAN.md) and the findings in [`STATUS.md`](../../STATUS.md). **What replaces it, and it is smaller:** the `.xml` half is export-only, a task named in the YAML but absent from the project is warned about rather than created, and a task deleted from the YAML is left alone until Phase 2 |
+| D6 | ~~**Task Configuration is diff-only**~~ — **closed 2026-08-15**, both halves of it | This row carried two defects. `import_native` mutated `Core2` (§7); and — *not* the same defect, though this row said so for an afternoon — every import run with a `<project>_project.precompilecache` beside the project threw on `MainTask` and `VISU_TASK` while reporting `failed: 0`. **Phase 4 removed both by removing the shared cause**: task configuration exports as `TASK_BOTH` and imports through typed property assignment, so `import_native` is never handed the object. Measured over three cycles with the cache present: **zero warnings**, where cycles 2 and 3 used to throw twice each. Versio deletes nothing of CODESYS's. See G7 and G11 in [`vendors/codesys/IMPORT-PLAN.md`](../../phase1/IMPORT-PLAN.md) and the findings in [`STATUS.md`](../../STATUS.md). **What replaces it, and it is smaller:** the `.xml` half is export-only, a task named in the YAML but absent from the project is warned about rather than created, and a task deleted from the YAML is left alone until Phase 2 |
 
 ### E. Smaller observations
 
@@ -1451,8 +1473,8 @@ asks: what is it, which version, and did anybody pin it.
 |---|---|
 | **CODESYS ScriptEngine** | The scripting plug-in shipped with CODESYS 3.5. Its API reference is installed with the product and published in the CODESYS Online Help under *Scripting*. Everything Versio uses is listed in §1.3, and every member was confirmed against 3.5.22.20 |
 | **greenforge-labs/codescribe** (Apache-2.0) | `https://github.com/greenforge-labs/codescribe` — source of the object-type GUID table (`src/object_type.py`), the visualisation-manager skip, and the "do not rewrite Ids" warning. Where Versio departs from it, §5–§6 say so and why |
-| [`docs/PHASE0-FINDINGS.md`](../../PHASE0-FINDINGS.md) | The measurements: determinism, cold start, the native-import probe, the `Core2` deviation, the two bugs that only appear against a real process |
-| [`docs/PLAN.md`](../../PLAN.md) | The architecture, the tier model (§3.10), the vendor seam |
+| [`docs/PHASE0-FINDINGS.md`](../../phase1/PHASE0-FINDINGS.md) | The measurements: determinism, cold start, the native-import probe, the `Core2` deviation, the two bugs that only appear against a real process |
+| [`docs/PLAN.md`](../../phase1/PLAN.md) | The architecture, the tier model (§3.10), the vendor seam |
 | [`docs/SAFEGUARDS.md`](../../SAFEGUARDS.md) | The interruption guard, the staging swap, and what Versio refuses |
 | `fixtures/projects/RefrigeratorControl.project` | 383 KB, 25 objects. The project the whole suite runs against, with its committed mirror beside it |
 

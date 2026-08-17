@@ -31,8 +31,19 @@
 #   __VisualizationStyle's guid is not: a value that changes when you look at it is
 #   not an identity, and recording one puts a spurious diff in every commit.
 #
-#   ref.hide_when_referenced_as_dependency raises on all 34 references here. Probed,
-#   not assumed; it is simply not readable on this version, so it is not recorded.
+#   ref.hide_when_referenced_as_depencency is the READABLE spelling - one 'd' short,
+#   and the typo is CODESYS's own. This file used to say the correctly spelled property
+#   "raises on all 34 references here... it is simply not readable on this version",
+#   which was the wrong conclusion from a true observation: it raises because under that
+#   name it does not exist. Reflection over a reference lists the misspelling, and it
+#   reads False. Still NOT recorded - it is a display hint rather than something a diff
+#   needs - but recorded as a CHOICE now, because "we could not read it" invites the
+#   next person to retry and "we chose not to" does not.
+#
+#   managed_library.version / .company / .title belong in this list too, and that is
+#   the whole of G8: they describe the library as INSTALLED on the exporting machine,
+#   and for a library it does not have they raise while is_managed still reads True.
+#   See parse_managed_name.
 # ---------------------------------------------------------------------------------
 
 # Bump when the document's SHAPE changes, not when a value does. The C# reader keys
@@ -53,8 +64,8 @@ REF_KEYS = [
     "placeholder",       # placeholder name without the leading '#', when it is one
     "defaultResolution",
     "redirection",       # placeholder pinned to a fixed version IN THE PROJECT
-    "version",           # managed references only
-    "company",
+    "version",           # managed references only, PARSED FROM `name` - see
+    "company",           # parse_managed_name for why not from managed_library
     "title",
     "systemLibrary",     # added implicitly by a plug-in rather than by a person
     "optional",
@@ -82,13 +93,78 @@ NOT recorded here, on purpose:
     this repository and neither would be wrong"""
 
 
-def extract_reference(ref, safe):
+def parse_managed_name(name):
+    """Split a managed reference's own name into title, version and company.
+
+    Returns a dict, or None when the name is not that shape.
+
+    MEASURED TWICE ON REAL CODESYS 3.5.22.20, and the second run is the one that decided
+    this function exists. A managed reference carries version, company and title only
+    through `ref.managed_library`, and the fields on that object throw
+    NullReferenceException for a library this machine does not have INSTALLED:
+
+        add_library("Standard, 3.5.17.0 (System)")   not installed here
+            is_managed              -> True
+            managed_library.version -> SystemError: Object reference not set
+            .company, .title, .default_namespace -> the same
+
+        add_library("Standard, 3.5.22.0 (System)")   installed here
+            managed_library.version -> "3.5.22.0"
+            .company -> "System"    .title -> "Standard"
+
+    So managed_library reports INSTALLATION state, which is the one thing this file's
+    header says it refuses to record: two engineers exporting the same project would
+    produce different files and neither would be wrong, and the mirror would churn on
+    every export by whoever has the library. That is G9's machine-dependent warning
+    arriving through a third door, and the first two arrived because nobody asked where
+    a value came from.
+
+    The reference's own `name` is project state - it is what the project asks for,
+    installed or not - and it carries the same three values: measured byte-identical to
+    managed_library.displayname, "Standard, 3.5.22.0 (System)".
+
+    THE PARSE IS DELIBERATELY STRICT. It splits on the LAST " (" and the LAST ", ",
+    requires the closing bracket, and requires the version to be digits and dots and to
+    contain at least one digit. A title carrying a comma or a bracket therefore yields
+    None - no version at all - rather than a plausible wrong one. That asymmetry is the
+    point: an absent version is a gap somebody can see in the file, and a wrong version
+    is a diff somebody acts on.
+    """
+    if not name or not name.endswith(u")"):
+        return None
+
+    head, bracket, company = name[:-1].rpartition(u" (")
+    if not bracket or not company or not head:
+        return None
+
+    title, comma, version = head.rpartition(u", ")
+    if not comma or not title or not version:
+        return None
+
+    # Explicit digit set rather than isdigit(): on a unicode string isdigit() is true for
+    # Arabic-Indic and other numerals, and a version made of those would parse here and
+    # then not match anything a person typed.
+    if [c for c in version if c not in u"0123456789."]:
+        return None
+    if not [c for c in version if c in u"0123456789"]:
+        return None
+
+    return {"title": title, "version": version, "company": company}
+
+
+def extract_reference(ref, safe, on_error=None):
     """Shape one ScriptLibraryReference into the neutral record.
 
     `safe` is the caller's exception-swallowing probe. The ScriptEngine raises for
     properties that do not apply to a given kind of reference - a managed library has
     no placeholder name, a placeholder has no managed library - so probing is normal
     control flow here rather than error handling.
+
+    `on_error` is the same channel read_references uses, and it is here because a
+    reference this function cannot classify used to be recorded as though it were an
+    ordinary one, minus the fields it could not read. Silence is the wrong answer to
+    "I do not know what this is": a managed reference written without its version looks
+    exactly like a placeholder that never had one.
 
     Absent fields are left OUT of the dict rather than set to None, so the emitter
     omits them entirely: a placeholder reference with an empty `version:` line invites
@@ -103,7 +179,15 @@ def extract_reference(ref, safe):
     put("name", safe(lambda: _text(ref.name)))
     put("namespace", safe(lambda: _text(ref.namespace)))
 
+    # is_placeholder and is_managed are the API's OWN discriminators and both are
+    # readable on both types, which is why the branch turns on them rather than on
+    # whether some other property happened to raise. It used to enter the managed half
+    # whenever `ref.managed_library` probed to something non-None - a test of a spelling,
+    # not of a kind, and one that answers "not managed" for a managed reference whose
+    # library is not installed.
     is_placeholder = bool(safe(lambda: ref.is_placeholder, False))
+    is_managed = bool(safe(lambda: ref.is_managed, False))
+
     if is_placeholder:
         put("placeholder", safe(lambda: _text(ref.placeholder_name)))
         put("defaultResolution", safe(lambda: _text(ref.default_resolution)))
@@ -114,15 +198,30 @@ def extract_reference(ref, safe):
         if bool(safe(lambda: ref.is_redirected, False)):
             put("redirection", safe(lambda: _text(ref.get_redirection())))
 
-    # Managed (fixed-version) references. NOT EXERCISED BY THE FIXTURE - all 34 of its
-    # references are placeholders - so this path is written from the API's own
-    # description and is unproven against a real project. Recorded as a limitation
-    # rather than presented as tested.
-    managed = safe(lambda: ref.managed_library)
-    if managed is not None:
-        put("version", safe(lambda: _text(managed.version)))
-        put("company", safe(lambda: _text(managed.company)))
-        put("title", safe(lambda: _text(managed.title)))
+    elif is_managed:
+        # Fixed-version reference. Parsed from `name`, NOT read off managed_library:
+        # see parse_managed_name, where the measurement is. The name is the only
+        # description of this reference that is the same on every machine.
+        parsed = parse_managed_name(rec.get("name"))
+        if parsed is None:
+            # Not a guess and not a silence. The reference is still recorded - its name
+            # and flags are real project state and worth diffing - but the three fields
+            # that describe WHICH library it is are left out and said out loud, because
+            # a managed reference silently missing its version is indistinguishable in
+            # the file from a placeholder that has none.
+            if on_error is not None:
+                on_error("LIBRARY_MANAGED_NAME_UNPARSED", rec.get("name"))
+        else:
+            put("version", parsed["version"])
+            put("company", parsed["company"])
+            put("title", parsed["title"])
+
+    elif on_error is not None:
+        # Neither kind. Nothing in this CODESYS version produces one, and that is
+        # exactly why it is reported: the two discriminators above are what the API
+        # offers, so a reference answering False to both is a shape nobody has seen and
+        # the record for it carries no version, no placeholder and no explanation.
+        on_error("LIBRARY_REFERENCE_UNCLASSIFIED", rec.get("name"))
 
     rec["systemLibrary"] = bool(safe(lambda: ref.system_library, False))
     rec["optional"] = bool(safe(lambda: ref.optional, False))
@@ -176,7 +275,7 @@ def read_references(libman, safe, on_error=None):
     out = []
     try:
         for ref in refs:
-            out.append(extract_reference(ref, safe))
+            out.append(extract_reference(ref, safe, on_error))
     except Exception as e:
         # Report a partial read rather than pretending the shorter list is the truth.
         # A library list that silently loses its tail is worse than one that says it

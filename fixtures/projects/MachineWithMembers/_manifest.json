@@ -1,7 +1,16 @@
 {
   "bindingId": "9a1c47f0b2de", 
-  "objectCount": 18, 
+  "objectCount": 20, 
   "objects": [
+    {
+      "bytes": 2119, 
+      "form": "EXTERNAL_NATIVE", 
+      "guid": "e8fef405-4c75-48f2-9f53-bd053a02f60f", 
+      "hash": "sha256:88b092b5ef31771b47bf1be5e99a64af9ab18dc938aebdea1d7cfe5fe10580f7", 
+      "name": "Commissioning_Checklist_Section_Section_Section_Section_Section_Section_Section_Section_Section_Final.txt", 
+      "path": "Device/Plc Logic/Application/Commissioning_Checklist_Section_Section_Section_Section_Section_Section_Section_~ce8286.xml", 
+      "type": "EXTERNAL_FILE"
+    }, 
     {
       "bytes": 217759, 
       "form": "NATIVE", 
@@ -162,6 +171,15 @@
       "type": "VISUALISATION"
     }, 
     {
+      "bytes": 1941, 
+      "form": "EXTERNAL_NATIVE", 
+      "guid": "2a0ed8d5-1a6d-442d-b2d0-9bc61c3488ea", 
+      "hash": "sha256:63819efe955d5ac001046da51e6464038a187cfda509a0f2fb61f09eb5528580", 
+      "name": "Wiring Notes.txt", 
+      "path": "Device/Plc Logic/Application/Wiring Notes.txt.xml", 
+      "type": "EXTERNAL_FILE"
+    }, 
+    {
       "bytes": 7440, 
       "form": "NATIVE", 
       "guid": "b5430773-3042-47d6-a6d3-28650a6ce532", 
@@ -182,7 +200,7 @@
     }
   ], 
   "project": "MachineWithMembers.project", 
-  "schema": 7, 
+  "schema": 8, 
   "skipped": [
     {
       "name": "Visualization Manager", 
@@ -209,5 +227,6 @@
       "type": "VISUALISATION_STYLE"
     }
   ], 
+  "vendor": "Codesys", 
   "warnings": []
 }

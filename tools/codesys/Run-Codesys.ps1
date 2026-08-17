@@ -17,7 +17,7 @@ param(
     [string]$Profile,
     [int]$TimeoutSec = 600,
     # Derived from the script's own location so the tools work from any clone path.
-    [string]$LogDir = (Join-Path (Split-Path -Parent $PSScriptRoot) "phase0\logs")
+    [string]$LogDir = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) "phase0\logs")
 )
 
 $ErrorActionPreference = "Stop"

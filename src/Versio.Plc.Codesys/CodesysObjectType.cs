@@ -52,6 +52,18 @@ public enum CodesysObjectType
     /// <summary>[VERSIO] The "Application" node. codescribe locates this by name, which
     /// breaks if a project renames it; the type GUID does not.</summary>
     Application,
+
+    /// <summary>[VERSIO] An external-file object under an application — a file the project
+    /// carries. Measured by P13 (2026-08-17): its name is the bare file name, and its native
+    /// export round-trips losslessly.</summary>
+    ExternalFile,
+
+    /// <summary>[VERSIO] The companion node CODESYS creates at the <b>project root</b> for an
+    /// external file added from an absolute path. Its name embeds that path
+    /// (<c>{GUID}|C:\…\file.txt</c>) — the shape README's object list records — so it is
+    /// machine-dependent by construction; a file added by a relative path gets no companion
+    /// at all.</summary>
+    ExternalFileSource,
 }
 
 /// <summary>
@@ -97,6 +109,8 @@ public static class CodesysObjectTypes
             ["8e687a04-7ca7-42d3-be06-fcbda676c5ef"] = CodesysObjectType.VisualisationStyle,
             ["40b404f9-e5dc-42c6-907f-c89f4a517386"] = CodesysObjectType.PlcLogic,
             ["639b491f-5557-464c-af91-1471bac9f549"] = CodesysObjectType.Application,
+            ["a56744ff-693f-4597-95f9-0e1c529fffc2"] = CodesysObjectType.ExternalFile,
+            ["9001d745-b9c5-4d77-90b7-b29c3f77a23b"] = CodesysObjectType.ExternalFileSource,
         };
 
     private static readonly Dictionary<CodesysObjectType, string> ByType =

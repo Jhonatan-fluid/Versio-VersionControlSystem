@@ -223,6 +223,28 @@ public static class ExportCoverage
     public const string GvlNativeForm = "GVL_NATIVE";
 
     /// <summary>
+    /// The manifest's <c>form</c> for an external-file object — its one and only file.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The fourth export-only form, and the first declared export-only <b>before</b> its type
+    /// ever shipped as importable, because the correction was measured first: the round-trip
+    /// test written to prove the type handed its file back to the toolchain's native import,
+    /// and the import <b>duplicated</b> the object instead of replacing it — same name, same
+    /// parent, a re-minted identity, two manifest records colliding on one mirror path, one
+    /// more copy per import.
+    /// </para>
+    /// <para>
+    /// Unlike <see cref="TaskNativeForm"/> and <see cref="GvlNativeForm"/>, there is no
+    /// importable sibling: the object is managed in the vendor's IDE entirely, and its payload
+    /// is metadata a mirror edit could not meaningfully change. The vendor-side measurement
+    /// and its regression test live with the vendor pack; the finding is in
+    /// <c>docs/FINDINGS.md</c>.
+    /// </para>
+    /// </remarks>
+    public const string ExternalNativeForm = "EXTERNAL_NATIVE";
+
+    /// <summary>
     /// True for a manifest <c>form</c> whose file is written for review and never applied back.
     /// </summary>
     /// <remarks>
@@ -244,7 +266,8 @@ public static class ExportCoverage
     public static bool IsExportOnly(string? form) =>
         string.Equals(form, LibrariesForm, StringComparison.Ordinal)
         || string.Equals(form, TaskNativeForm, StringComparison.Ordinal)
-        || string.Equals(form, GvlNativeForm, StringComparison.Ordinal);
+        || string.Equals(form, GvlNativeForm, StringComparison.Ordinal)
+        || string.Equals(form, ExternalNativeForm, StringComparison.Ordinal);
 
     /// <summary>What an export covers, from its manifest alone.</summary>
     public static CoverageReport Of(ProjectManifest? manifest)

@@ -46,14 +46,12 @@ questions about "why is this like this" are already answered there.
 
 | File | What it holds |
 |---|---|
+| `docs/PHASE2.md` | **The forward queue** — what is left, in order, and the decisions already taken with their why. Start here for "what next" |
 | `docs/STATUS.md` | Where the project is, and **Known loose ends** — an audit of the repository |
-| `docs/FINDINGS.md` | **Every defect written up with its evidence**, newest first. 99 of them. Search it rather than reading it; `STATUS.md` carries the index |
-| `docs/PLAN.md` | The full architecture plan |
+| `docs/FINDINGS.md` | **Every defect written up with its evidence**, newest first. 109 of them. Search it rather than reading it; `STATUS.md` carries the index |
 | `docs/SAFEGUARDS.md` | What Versio refuses, asks about, or waits for |
 | `docs/vendors/codesys/DRIVING.md` | **One vendor's docs**, beside its two projects. How CODESYS is driven end to end, and the audit of it |
-| `docs/vendors/codesys/IMPORT-PLAN.md` | **The active plan.** Twelve numbered import gaps, what each measurement closed, the order to build the rest in — deliberately not 1, 2, 3 — and **the feature checklist**, which says which of the import’s 49 behaviours have been run against a real project and which have not |
-| `docs/GIT-PANEL-PLAN.md` | The git panel's functionality and UX |
-| `docs/PHASE0-FINDINGS.md` | What Phase 0 measured. **A record, not a live limitation list** — read its supersession notes |
+| `docs/phase1/` | **The Phase 1 archive** — four completed plans, marked done, kept for reasoning and evidence: `PLAN.md` (the founding architecture), `IMPORT-PLAN.md` (thirteen gaps, the feature checklist, and the measurements — its raw probe logs are in `probes/`), `GIT-PANEL-PLAN.md`, `PHASE0-FINDINGS.md`. Read them for why, never for state |
 | `README.md` | Repository layout, vendor boundaries, the one architectural rule |
 
 **This is a rule because ignoring it has already cost.** An audit was asked for and re-derived
@@ -168,9 +166,9 @@ explicit `encoding='utf-8', newline='\n'`, or the editing tools.
 **Never edit source through a shell heredoc.** Python-in-bash eats backslashes and backticks
 silently. Write the script to a file and run it.
 
-**The python scripts are EMBEDDED in `Versio.Infrastructure.dll`.** Editing
-`src/Versio.Scripts.Codesys/*.py` and then running `dotnet test --no-build` tests the script
-that was embedded at the last build, not the one on disk. It looks exactly like a change that
+**The python scripts are EMBEDDED in `Versio.Plc.Codesys.Infrastructure.dll`.** Editing
+`src/Versio.Plc.Codesys.Infrastructure/Scripts/*.py` and then running `dotnet test --no-build`
+tests the script that was embedded at the last build, not the one on disk. It looks exactly like a change that
 did nothing: a Phase 5 mutation check reported the acceptance test still passing with the
 feature disabled, which is the most misleading answer a mutation check can give. **Rebuild after
 touching python**, always.
@@ -216,11 +214,13 @@ stays that way.
 
 | Suite | Count | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,295 | under a second | nothing |
+| `Versio.Core.Tests` | 1,296 | under a second | nothing |
 | `Versio.Integration.Tests` | 141 | ~10 s | real git |
 | `Versio.Arch.Tests` | 14 | instant | nothing — it reads assembly metadata, IL and the `.csproj` files |
 | `Versio.App.Tests` | 480 | ~50 s, STA, no window shown | nothing |
-| `Versio.Plc.Codesys.Tests` | 365 | **~31 min** | **real CODESYS** |
+| `Versio.Plc.Codesys.Pure.Tests` | 253 | under a second | nothing — the planner, the codecs, the protocol |
+| `Versio.Plc.Codesys.Parity.Tests` | 82 | ~15 s | `python` on PATH — **skips cleanly without it, so check the count, not the colour** |
+| `Versio.Plc.Codesys.Tests` | 53 | **~30 min** | **real CODESYS** — every test launches it, which is the whole cost |
 
 **The loop to work in is everything except the last one:**
 
@@ -228,10 +228,13 @@ stays that way.
 C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Core.Tests
 C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Integration.Tests
 C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Arch.Tests
+C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Plc.Codesys.Pure.Tests
+C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Plc.Codesys.Parity.Tests
 ```
 
-Eleven seconds together, plus fifty for `Versio.App.Tests` when the UI is in play.
-`Versio.Plc.Codesys.Tests` is the gate before a commit.
+About thirty seconds together, plus fifty for `Versio.App.Tests` when the UI is in play.
+`Versio.Plc.Codesys.Tests` is the gate before a commit — and any change to the python touches
+the parity project's subject, so run it before believing a script edit.
 
 **That split used to be a `--filter "Toolchain!=Codesys"` expression** over one integration
 project, policed by a `FastLaneTests` whose whole job was checking the tag had been applied in

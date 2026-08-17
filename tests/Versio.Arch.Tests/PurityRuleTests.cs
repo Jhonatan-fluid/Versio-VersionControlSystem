@@ -9,7 +9,7 @@ namespace Versio.Arch.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <c>docs/PLAN.md</c> §12.2 forbids <c>File</c>, <c>Directory</c>, <c>Process</c>,
+/// <c>docs/phase1/PLAN.md</c> §12.2 forbids <c>File</c>, <c>Directory</c>, <c>Process</c>,
 /// <c>DateTime.Now</c> and <c>Guid.NewGuid</c> in <c>Versio.Core</c>, because "all are behind
 /// abstractions, which is what makes time, filesystem and identity controllable in tests". It is
 /// the rule that makes the lock model, the loop defences and the state machine testable in
