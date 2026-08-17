@@ -17,6 +17,54 @@ produce a diff touching everything else.
 
 ---
 
+### Four tool scripts pointed one directory above where they now live
+
+**Found 2026-08-17 on the first attempt to run one**, immediately after the structure audit moved
+`tools\*.ps1` into `tools\codesys\`.
+
+Every one of them derived the repository root as `Split-Path -Parent $PSScriptRoot`, which was
+true while they lived in `tools\` and became `C:\GIT\Versio\tools` the moment they moved. Six
+default parameters across four files, so `Probe-ImportApi.ps1` threw `project not found:
+C:\GIT\Versio\tools\fixtures\projects\RefrigeratorControl.project` before doing anything.
+Two of them also still read the python out of `src\Versio.Scripts.Codesys`, which the same audit
+had renamed to `src\Versio.Plc.Codesys.Infrastructure\Scripts`.
+
+**The comment beside two of the six says "derived from the script's own location so the tools work
+from any clone path"** — the right idea, and exactly what broke: the location moved and the count
+of levels did not.
+
+**Nothing was watching, and the C# half shows why that is not inevitable.** The same move broke
+three test paths, and they were fixed by `TestPaths.Scripts` — one place, whose remarks say "three
+tests hardcoded `src/Versio.Scripts.Codesys`, and all three broke together when the scripts moved".
+The PowerShell has no `TestPaths`, no compiler and no suite; it is reached only by a person typing
+the command, and two of these four are named in the import plan's own Verification list as
+acceptance gates — `Measure-ImportStability.ps1` is how `P7: SETTLES` is checked at all.
+
+All six defaults now go up two levels and both script paths name the vendor pack.
+
+**And a second pass found a fifth breakage of a different shape**, which is the part worth
+keeping. `Compare-Exports.ps1` is vendor-**neutral** and correctly stayed in `tools\` while the
+CODESYS harnesses moved down into `tools\codesys\` — so `& "$tools\Compare-Exports.ps1"` in
+both of them now names a file that is not there. Grepping for `$PSScriptRoot` found the six
+defaults and could not have found this one: it is a *sibling* reference that stopped being a
+sibling. It is also the **last line of both scripts** — the one that prints the verdict — so
+each would have run its three CODESYS launches, spent about six minutes, and then failed with
+nothing to show for it.
+
+**The repair of that repair is its own small lesson.** Writing `"$repoRoot\tools\..."` through
+a python-in-bash heredoc delivered `"$repoRoot<TAB>ools\..."` — `CLAUDE.md` says not to do
+this, in those words, and the result is still valid PowerShell holding a path nobody could read
+in an error message. Written to a file and run, the way the rule says, it was right the first
+time.
+
+**Verified rather than assumed**: all four scripts parse, the derived repository root is
+`C:\GIT\Versio`, and every path each one builds from it — the fixture, `phase0\p7`,
+`phase0\logs`, `phase0\roundtrip`, the vendor pack's `Scripts`, `fixtures\equivalence` and
+`Compare-Exports.ps1` — exists. `Probe-ImportApi.ps1` then ran three times against real
+CODESYS, which is what closed G8.
+
+---
+
 ### The ignore list hid the projects and kept every one of their mirrors
 
 **Found 2026-08-17 by opening the app**, which is the only thing that could have found it.

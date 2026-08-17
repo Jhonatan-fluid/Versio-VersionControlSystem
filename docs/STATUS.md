@@ -987,7 +987,10 @@ would have gone on passing while checking one fewer every time a panel moved out
 ## Findings
 
 Every defect worth understanding, written down with its evidence, lives in
-**[`FINDINGS.md`](FINDINGS.md)** — 99 of them, newest first.
+**[`FINDINGS.md`](FINDINGS.md)** — 105 of them, newest first. (Said 99
+until 2026-08-17, when it was re-derived rather than incremented: the number had gone
+stale during the split itself, which is the one edit that could not have been an
+oversight.)
 
 It moved out on 2026-08-17. It was 3,681 lines of this document's 4,782, so the file that
 answers *where is the project now* was 77% engineering log, and `CLAUDE.md`'s opening
@@ -996,6 +999,7 @@ actually do.
 
 The full list, newest first:
 
+- [Four tool scripts pointed one directory above where they now live](FINDINGS.md#four-tool-scripts-pointed-one-directory-above-where-they-now-live)
 - [The ignore list hid the projects and kept every one of their mirrors](FINDINGS.md#the-ignore-list-hid-the-projects-and-kept-every-one-of-their-mirrors)
 - [The guard I wrote for the seam was weaker than the claim I made for it](FINDINGS.md#the-guard-i-wrote-for-the-seam-was-weaker-than-the-claim-i-made-for-it)
 - [A `git mv` moves a test; it does not move what the test reads](FINDINGS.md#a-git-mv-moves-a-test-it-does-not-move-what-the-test-reads)

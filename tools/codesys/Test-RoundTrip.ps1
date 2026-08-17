@@ -65,15 +65,15 @@ param(
     [Parameter(Mandatory)][string]$Project,
     [Parameter(Mandatory)][string]$Profile,
     # Derived from the script's own location so the tools work from any clone path.
-    [string]$WorkRoot = (Join-Path (Split-Path -Parent $PSScriptRoot) "phase0\roundtrip"),
+    [string]$WorkRoot = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) "phase0\roundtrip"),
     [switch]$MutateFirst,
     [switch]$UpdateEquivalenceFixtures
 )
 
 $ErrorActionPreference = "Stop"
 $tools = Split-Path -Parent $PSCommandPath
-$repoRoot = Split-Path -Parent $tools
-$scripts = Join-Path $repoRoot "src\Versio.Scripts.Codesys"
+$repoRoot = Split-Path -Parent (Split-Path -Parent $tools)
+$scripts = Join-Path $repoRoot "src\Versio.Plc.Codesys.Infrastructure\Scripts"
 
 if ($UpdateEquivalenceFixtures -and $MutateFirst) {
     throw ("-UpdateEquivalenceFixtures cannot be combined with -MutateFirst: the probe " +
@@ -141,7 +141,7 @@ Write-Host "`n[5/5] comparing baseline against round-trip, per layer" -Foregroun
 # first. It is classified as derived bookkeeping below and reported rather than dropped.
 # -Quiet: its banner is a byte verdict, and a red "DIFFERING : 9" printed above a
 # considered per-layer answer just reintroduces the alarm that answer exists to remove.
-$cmp = & "$tools\Compare-Exports.ps1" -A $baselineOut -B $roundtripOut -Quiet
+$cmp = & "$repoRoot\tools\Compare-Exports.ps1" -A $baselineOut -B $roundtripOut -Quiet
 
 function Get-Layer([string]$relativePath) {
     $leaf = [System.IO.Path]::GetFileName($relativePath)

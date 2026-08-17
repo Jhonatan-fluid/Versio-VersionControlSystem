@@ -29,10 +29,10 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$Project = (Join-Path (Split-Path -Parent $PSScriptRoot) "fixtures\projects\RefrigeratorControl.project"),
+    [string]$Project = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) "fixtures\projects\RefrigeratorControl.project"),
     [string]$Profile = "CODESYS V3.5 SP22 Patch 2",
     [string[]]$Probes = @("P0", "P1", "P2", "P3", "P5", "P6", "P8", "P9"),
-    [string]$WorkRoot = (Join-Path (Split-Path -Parent $PSScriptRoot) "phase0\import-api"),
+    [string]$WorkRoot = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) "phase0\import-api"),
     [string]$Codesys = "C:\Program Files\CODESYS 3.5.22.20\CODESYS\Common\CODESYS.exe"
 )
 
