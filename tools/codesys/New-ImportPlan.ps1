@@ -60,7 +60,7 @@ foreach ($obj in $manifest.objects) {
         '^ST_'      { $action = 'text';   $skip = $null }
         '^TASK_BOTH$' { $action = 'typed'; $skip = $null }
         '^NATIVE'   { $action = 'native'; $skip = $null }
-        '^(LIBRARIES|TASK_NATIVE|GVL_NATIVE)$' { $action = 'skip'; $skip = 'exportOnly' }
+        '^(LIBRARIES|TASK_NATIVE|GVL_NATIVE|EXTERNAL_NATIVE)$' { $action = 'skip'; $skip = 'exportOnly' }
         default { throw "form '$($obj.form)' is not one this helper knows - use the runner" }
     }
 

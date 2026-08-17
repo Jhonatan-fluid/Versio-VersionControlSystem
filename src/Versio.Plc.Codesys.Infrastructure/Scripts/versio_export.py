@@ -25,13 +25,13 @@ from versio_text import (content_hash, join_st, normalize_decl_only,  # noqa: E4
                          scrub_native_xml, split_st, too_long_for_any_machine,
                          too_long_for_this_machine)
 from versio_types import (EXPORT_ONLY_FORMS, FORM_CONTAINER,  # noqa: E402
-                          FORM_GVL_BOTH, FORM_GVL_NATIVE, FORM_LIBRARIES,
-                          FORM_NATIVE, FORM_NATIVE_R, FORM_NATIVE_WITH_CHILDREN,
-                          FORM_SKIP, FORM_ST_DECL, FORM_ST_FULL, FORM_ST_IMPL,
-                          FORM_TASK_BOTH, FORM_TASK_NATIVE, NATIVE_FORMS,
-                          SKIP_EXPLANATION, SKIP_GAP, decide_form,
-                          descends_into_children, file_name_for, skip_reason,
-                          type_of)
+                          FORM_EXTERNAL_NATIVE, FORM_GVL_BOTH, FORM_GVL_NATIVE,
+                          FORM_LIBRARIES, FORM_NATIVE, FORM_NATIVE_R,
+                          FORM_NATIVE_WITH_CHILDREN, FORM_SKIP, FORM_ST_DECL,
+                          FORM_ST_FULL, FORM_ST_IMPL, FORM_TASK_BOTH,
+                          FORM_TASK_NATIVE, NATIVE_FORMS, SKIP_EXPLANATION,
+                          SKIP_GAP, decide_form, descends_into_children,
+                          file_name_for, skip_reason, type_of)
 from versio_native_equiv import are_equivalent, normalize  # noqa: E402
 import versio_libraries  # noqa: E402
 import versio_tasks  # noqa: E402
@@ -644,9 +644,13 @@ class Exporter(object):
                 write_text(abs_path, text)
                 self.record(obj, obj_type, form, rel_path, text, parent_guid)
 
-            elif form in (FORM_NATIVE, FORM_NATIVE_R, FORM_NATIVE_WITH_CHILDREN):
+            elif form in (FORM_NATIVE, FORM_NATIVE_R, FORM_NATIVE_WITH_CHILDREN,
+                          FORM_EXTERNAL_NATIVE):
                 # Only NATIVE_R exports its subtree into its own file. NATIVE_WITH_CHILDREN
                 # writes just the node, because its children are walked separately below.
+                # EXTERNAL_NATIVE is the same bytes as NATIVE; the form is what tells the
+                # importer never to hand them back - import_native duplicates this type
+                # instead of replacing it (see versio_types.FORM_EXTERNAL_NATIVE).
                 text, _ = self.export_native(obj, abs_path, form == FORM_NATIVE_R)
                 self.record(obj, obj_type, form, rel_path, text, parent_guid)
         except Exception as e:

@@ -17,6 +17,47 @@ produce a diff touching everything else.
 
 ---
 
+### `import_native` duplicates an external-file object instead of replacing it
+
+**Found 2026-08-17 by the first E2E run of E4** — the first time an `EXTERNAL_FILE` payload was
+ever handed back to CODESYS — and G13 in the import plan's table. The type had existed in
+Versio's vocabulary for about two hours.
+
+The run exported the member fixture (which had just gained two external-file objects for
+E2/E4), edited an ordinary POU, imported, and re-exported. The re-export's manifest carried
+**two records for the long-named external file**: same name, same parent, the same normalized
+hash — and different GUIDs, colliding on one mirror path. `import_native` with
+`NativeImportResolve.replace`, which replaces every other native type in place (A5 measured
+`replaced` on all seven), had **pasted a copy** of this one. Every import would have added
+another: G7's shape — an unasked-for mutation per cycle — on a new type.
+
+**The first failure of the run was a decoy, and the order mattered.** The initial assertion
+compared bytes and failed; the "obvious" reading was P7's known GUID re-minting, so the
+assertion was weakened to normalizer-equivalence — the repository's own definition of "the
+same native thing". The second run then failed on `Assert.Single`, which is what actually
+looked at the *manifest* rather than the file: the equivalence weakening had been correct in
+general and about to paper over a duplication in particular, because two equivalent copies are
+each equivalent to the original. **A masked comparison can only say "same content"; it takes a
+count to say "same object".**
+
+**Closed the same day, before the type ever shipped importable**: the form is
+`EXTERNAL_NATIVE`, export-only — the third use of the shape this project invented for
+`TASK_NATIVE` and used again for `GVL_NATIVE`, with one difference worth recording: there is
+**no importable sibling**. An external-file object is IDE-managed entirely, its payload being
+metadata (a `FileId` and a download flag) that nothing in a mirror could meaningfully edit.
+The planner announces the skip with the verbatim recorded name and no sibling pointer; the
+single-record assertion in the E2E test is the regression guard.
+
+**The residual door, stated rather than hidden**: an *unrecorded* external-file `.xml` in a
+mirror still goes to `import_native` — the planner's deliberate rule for unrecorded natives,
+which cannot distinguish this type without reading payloads. That path requires a manifest
+that does not know the file, arrives with a warning-free plan only in the teammate's-new-file
+scenario, and duplicates at most once per unrecorded file rather than once per import. Closing
+it would mean the planner sniffing payload types, which is the filename-walk's cousin; the
+honest trade is recorded here instead.
+
+---
+
 ### The probe that caught two of its own lies was carrying a third, and three documents believed it
 
 **Found 2026-08-17 by reviewing the P11 probe's own output against its step list** — the run

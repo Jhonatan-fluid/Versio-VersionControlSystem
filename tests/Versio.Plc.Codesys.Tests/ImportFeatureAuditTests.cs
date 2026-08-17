@@ -1160,6 +1160,124 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
         Assert.Equal(3, manifest.Objects.Count(o => !string.IsNullOrEmpty(o.Parent)));
     }
 
+    // ── E4: the digest-tail stem, through a real round trip ─────────────────────────
+
+    /// <summary>
+    /// An external file whose name overflows the stem survives export, import and re-export,
+    /// resolved through the manifest the whole way.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The live half of E4</b>, over the two objects the member fixture gained on
+    /// 2026-08-17. One is named past <c>MaxStem</c>, so its file is
+    /// <c>Commissioning_Checklist_…~ce8286.xml</c> — a stem no resolution can decode, which
+    /// makes this round trip the proof that resolution never needs to: the recorded name
+    /// carries it. The pure half — the same file straying when its record is stripped — is
+    /// <c>CodesysImportPlannerTests</c>, where it costs milliseconds instead of launches.
+    /// </para>
+    /// <para>
+    /// <b>The first run of this test handed <c>import_native</c> an <c>EXTERNAL_FILE</c>
+    /// payload, and CODESYS duplicated the object</b> — same name, same parent, a re-minted
+    /// GUID, two manifest records on one mirror path. That is G13, found exactly the way G11
+    /// taught this repository to look: a type that exports losslessly and mutates on the way
+    /// back. The form is <c>EXTERNAL_NATIVE</c> now, export-only, so the import announces the
+    /// skip instead of feeding the duplicator — and the load-bearing assertion below is the
+    /// single-record check, which is this defect's regression test.
+    /// </para>
+    /// </remarks>
+    [SkippableFact]
+    public async Task An_external_file_with_a_digest_stem_survives_a_real_round_trip()
+    {
+        var install = Install;
+        Skip.If(install is null, "no CODESYS installation with a profile");
+
+        var fixture = TestPaths.Project("MachineWithMembers.project");
+        Skip.If(!File.Exists(fixture), "the member fixture is missing");
+
+        Directory.CreateDirectory(Path.Combine(_repo, "plc"));
+        var project = Path.Combine(_repo, "plc", "MachineWithMembers.project");
+        File.Copy(fixture, project);
+
+        var mirror = Path.Combine(_repo, "plc", "MachineWithMembers");
+        var runner = new LocalCodesysRunner(
+            install!.ExecutablePath, new ScriptExtractor(), new TestLogger(output));
+
+        CodesysJob Job(CodesysOperation operation, string path) => new()
+        {
+            Operation = operation,
+            Profile = install.Profiles[0],
+            Projects = [new ProjectJob
+            {
+                BindingId = "external", ProjectPath = project, Path = path,
+            }],
+            Timeout = TimeSpan.FromMinutes(5),
+        };
+
+        Assert.True((await runner.RunAsync(
+            Job(CodesysOperation.Export, mirror), null, CancellationToken.None)).Succeeded);
+
+        var app = Path.Combine(mirror, "Device", "Plc Logic", "Application");
+        var digestFile = Directory.GetFiles(app, "*~*.xml");
+        var digestName = Path.GetFileName(Assert.Single(digestFile));
+        output.WriteLine($"digest stem on disk: {digestName}");
+        var digestXml = await File.ReadAllTextAsync(digestFile[0]);
+
+        // An edit somewhere ordinary, so the import has work and the hash gate opens. The
+        // external files themselves are untouched — they travel as unchanged natives, which
+        // is exactly how every real import will meet them.
+        var pou = Path.Combine(app, "Pumps", "FB_Pump.st");
+        await WriteAsync(pou, (await File.ReadAllTextAsync(pou))
+            .Replace("END_VAR", "\t(* external_audit *)\nEND_VAR", StringComparison.Ordinal));
+
+        var import = await runner.RunAsync(
+            Job(CodesysOperation.Import, mirror), null, CancellationToken.None);
+
+        foreach (var w in import.Output.Warnings)
+        {
+            output.WriteLine($"warning: {w.String("code")} {w.String("path")} {w.String("detail")}");
+        }
+
+        Assert.True(import.Succeeded, import.FailureReason ?? "the import failed");
+
+        // No warning may mention either external object — and neither may reach CODESYS at
+        // all: the plan skips them as export-only, announced, which the summary's
+        // "not applied (export-only)" count carries.
+        Assert.DoesNotContain(import.Output.Warnings,
+            w => (w.String("path") ?? string.Empty).Contains("~", StringComparison.Ordinal)
+                 || (w.String("path") ?? string.Empty).Contains("Wiring", StringComparison.Ordinal));
+
+        // Read back out of the PROJECT. THE SINGLE-RECORD ASSERTIONS ARE G13'S REGRESSION
+        // TEST: the first run of this test imported these two files as plain NATIVE and
+        // CODESYS duplicated each object — two records, one path, a re-minted GUID. The
+        // export-only form is what stands between an import and that duplication, and this
+        // is the run that fails if anything puts the files back on the import path.
+        var verify = Path.Combine(_repo, "verify-external");
+        Assert.True((await runner.RunAsync(
+            Job(CodesysOperation.Export, verify), null, CancellationToken.None)).Succeeded);
+
+        var verifyApp = Path.Combine(verify, "Device", "Plc Logic", "Application");
+        var reDigest = Path.Combine(verifyApp, digestName);
+        Assert.True(File.Exists(reDigest), "the long-named external file left the project");
+
+        // Byte-identical, not merely equivalent: the import never touched the objects, so
+        // unlike a round-tripped native there is no re-minted GUID to mask.
+        Assert.Equal(digestXml, await File.ReadAllTextAsync(reDigest));
+        Assert.True(File.Exists(Path.Combine(verifyApp, "Wiring Notes.txt.xml")),
+            "the plain external file left the project");
+
+        var manifest = ProjectManifest.Parse(
+            await File.ReadAllTextAsync(Path.Combine(verify, "_manifest.json")));
+
+        var digestRecord = Assert.Single(
+            manifest.Objects, o => o.Path.Contains("~", StringComparison.Ordinal));
+        Assert.Equal("EXTERNAL_FILE", digestRecord.Type);
+        Assert.Equal("EXTERNAL_NATIVE", digestRecord.Form);
+        Assert.EndsWith("Final.txt", digestRecord.Name, StringComparison.Ordinal);
+
+        Assert.Single(manifest.Objects,
+            o => o.Name == "Wiring Notes.txt" && o.Type == "EXTERNAL_FILE");
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────────────
 
     private static CodesysJob Job(

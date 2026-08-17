@@ -47,11 +47,11 @@ questions about "why is this like this" are already answered there.
 | File | What it holds |
 |---|---|
 | `docs/STATUS.md` | Where the project is, and **Known loose ends** — an audit of the repository |
-| `docs/FINDINGS.md` | **Every defect written up with its evidence**, newest first. 99 of them. Search it rather than reading it; `STATUS.md` carries the index |
+| `docs/FINDINGS.md` | **Every defect written up with its evidence**, newest first. 109 of them. Search it rather than reading it; `STATUS.md` carries the index |
 | `docs/PLAN.md` | The full architecture plan |
 | `docs/SAFEGUARDS.md` | What Versio refuses, asks about, or waits for |
 | `docs/vendors/codesys/DRIVING.md` | **One vendor's docs**, beside its two projects. How CODESYS is driven end to end, and the audit of it |
-| `docs/vendors/codesys/IMPORT-PLAN.md` | **The active plan.** Twelve numbered import gaps, what each measurement closed, the order to build the rest in — deliberately not 1, 2, 3 — and **the feature checklist**, which says which of the import’s 49 behaviours have been run against a real project and which have not |
+| `docs/vendors/codesys/IMPORT-PLAN.md` | **The plan that closed.** Thirteen numbered import gaps, what each measurement closed, the order it was built in — deliberately not 1, 2, 3 — and **the feature checklist**, which says which of the import’s behaviours have been run against a real project and which have not. Every gap is closed, guarded or decided; C5 is the one row no fixture has reached |
 | `docs/GIT-PANEL-PLAN.md` | The git panel's functionality and UX |
 | `docs/PHASE0-FINDINGS.md` | What Phase 0 measured. **A record, not a live limitation list** — read its supersession notes |
 | `README.md` | Repository layout, vendor boundaries, the one architectural rule |
@@ -220,9 +220,9 @@ stays that way.
 | `Versio.Integration.Tests` | 141 | ~10 s | real git |
 | `Versio.Arch.Tests` | 14 | instant | nothing — it reads assembly metadata, IL and the `.csproj` files |
 | `Versio.App.Tests` | 480 | ~50 s, STA, no window shown | nothing |
-| `Versio.Plc.Codesys.Pure.Tests` | 252 | under a second | nothing — the planner, the codecs, the protocol |
+| `Versio.Plc.Codesys.Pure.Tests` | 253 | under a second | nothing — the planner, the codecs, the protocol |
 | `Versio.Plc.Codesys.Parity.Tests` | 82 | ~15 s | `python` on PATH — **skips cleanly without it, so check the count, not the colour** |
-| `Versio.Plc.Codesys.Tests` | 52 | **~30 min** | **real CODESYS** — every test launches it, which is the whole cost |
+| `Versio.Plc.Codesys.Tests` | 53 | **~30 min** | **real CODESYS** — every test launches it, which is the whole cost |
 
 **The loop to work in is everything except the last one:**
 

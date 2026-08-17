@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,317 across seven
+**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,319 across seven
 projects, 0 skipped — re-derived by running each, not carried forward
 
 | Project | Tests | Time | Needs |
@@ -9,9 +9,9 @@ projects, 0 skipped — re-derived by running each, not carried forward
 | `Versio.Integration.Tests` | 141 | ~10 s | real git |
 | `Versio.App.Tests` | 480 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 14 | instant | nothing |
-| `Versio.Plc.Codesys.Pure.Tests` | 252 | under a second | nothing |
+| `Versio.Plc.Codesys.Pure.Tests` | 253 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 82 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
-| `Versio.Plc.Codesys.Tests` | 52 | **~30 min** | **real CODESYS** |
+| `Versio.Plc.Codesys.Tests` | 53 | **~30 min** | **real CODESYS** |
 
 *The first six are the loop to work in — about thirty seconds plus the UI suite. The last is
 the gate before a commit. Until 2026-08-17 the fast/slow split was a `--filter` expression over
@@ -1027,6 +1027,7 @@ actually do.
 
 The full list, newest first:
 
+- [`import_native` duplicates an external-file object instead of replacing it](FINDINGS.md#import_native-duplicates-an-external-file-object-instead-of-replacing-it)
 - [The probe that caught two of its own lies was carrying a third, and three documents believed it](FINDINGS.md#the-probe-that-caught-two-of-its-own-lies-was-carrying-a-third-and-three-documents-believed-it)
 - [`move()` declines three moves of nine, raises for none, and the destination is not what decides](FINDINGS.md#move-declines-three-moves-of-nine-raises-for-none-and-the-destination-is-not-what-decides)
 - [A managed library reference recorded whichever version this machine had installed](FINDINGS.md#a-managed-library-reference-recorded-whichever-version-this-machine-had-installed)

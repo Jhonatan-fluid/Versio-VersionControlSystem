@@ -936,6 +936,92 @@ def probe_encodable_name(proj, project_path):
     return out
 
 
+# ============================================================================ P13
+def probe_external_file_shapes(proj, project_path):
+    """What NAME does an external-file object actually carry - and therefore which of
+    E2 and E4 its mirror stem exercises?
+
+    P12 proved create_external_file_object works and left a puzzle in its own output:
+    the object created on Application listed as plain `versio_external.txt` while the
+    project root listing showed a `{GUID}|C:\\...\\versio_external.txt` entry beside a
+    plain one. If get_name() is the bare filename, then E2/E4's fixture is
+    machine-INDEPENDENT after all - the absolute-path caveat written into the plan
+    would be about a listing artefact, not the name - and a filename can be chosen to
+    need percent-encoding (E2: `%` and spaces) or shortening (E4: past MaxStem = 80).
+
+    Four creations, each answered separately, then a save/close/reopen to see which
+    names persist. The exporter's side of the question - stem, manifest record, form,
+    UNKNOWN_TYPE_GUID - is deliberately NOT probed here: the real versio_export.py is
+    run against the saved project afterwards, because the exporter's own reading is
+    the only one that counts (the P9 lesson).
+    """
+    app = find_at(proj, APP_PATH)
+    if app is None:
+        return {"verdict": "NO_APPLICATION"}
+
+    base = project_path[:project_path.rfind("\\") + 1]
+
+    # (label, filename on disk, why it is in the list)
+    cases = [
+        ("plain", "versio_ext_plain.txt",
+         "the control: no encoding, no shortening"),
+        ("needs_encoding", "versio 50% ext.txt",
+         "space and percent - legal in a Windows filename, encoded by EncodeStem"),
+        ("needs_shortening",
+         "versio_ext_long_" + ("x" * 80) + ".txt",
+         "past MaxStem=80, so the stem takes the digest tail - E4's shape"),
+    ]
+
+    out = {"created": []}
+    for label, fname, why in cases:
+        path = base + fname
+        f = open(path, "w")
+        f.write("external file fixture for P13: " + label + "\n")
+        f.close()
+
+        call = describe(lambda a=app, p=path: a.create_external_file_object(p))
+        # The name is read off the CHILD LIST rather than off the return value,
+        # because create_folder taught this file that a return value can be None
+        # while the object exists.
+        found = None
+        for child in safe(lambda: app.get_children(), []) or []:
+            cname = safe(lambda c=child: c.get_name(), None)
+            if cname is not None and fname in _plain(cname):
+                found = child
+                break
+
+        row = {"case": label, "file": fname, "why": why,
+               "call_ok": call.get("ok"), "call_error": call.get("error"),
+               "call_message": call.get("message")}
+        if found is not None:
+            row["name"] = _plain(safe(lambda o=found: o.get_name(), None))
+            row["guid"] = _plain(safe(lambda o=found: o.guid, None))
+            # The type GUID decides which branch of versio_export.py this object
+            # takes: a mapped type gets its form, an unmapped one gets
+            # UNKNOWN_TYPE_GUID and a native export attempt.
+            row["type_guid"] = _plain(safe(lambda o=found: o.type, None))
+            row["embeds_full_path"] = base.lower() in (row["name"] or u"").lower()
+        else:
+            row["name"] = None
+        out["created"].append(row)
+
+    # A relative spelling, because if it works the fixture never touches an
+    # absolute path at all. Reported either way; the cwd inside CODESYS is nobody's
+    # to rely on, so this is a measurement rather than a plan.
+    rel = describe(lambda: app.create_external_file_object("versio_ext_relative.txt"))
+    out["relative_attempt"] = rel
+
+    proj.save()
+    close_project()
+    reopened = open_project(project_path)
+    app2 = find_at(reopened, APP_PATH)
+    out["app_children_after_reopen"] = [
+        _plain(safe(lambda c=c: c.get_name(), None))
+        for c in (safe(lambda: app2.get_children(), []) or [])] if app2 is not None else None
+
+    return out
+
+
 # ============================================================================ P10
 def probe_task_shape(proj, project_path):
     """What a task configuration and its tasks actually expose, field by field.
@@ -990,6 +1076,7 @@ PROBES = {
     "P10": ("task configuration shape, for versio_tasks.py", probe_task_shape),
     "P11": ("which containers accept a move", probe_move_matrix),
     "P12": ("can an encodable name exist", probe_encodable_name),
+    "P13": ("what name an external-file object carries", probe_external_file_shapes),
 }
 
 

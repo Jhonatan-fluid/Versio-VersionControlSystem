@@ -70,6 +70,8 @@ public static class CodesysObjectTypeNames
             ["VISUALISATION_STYLE"] = new("Visualisation style", "visualisation style", "visualisation styles"),
             ["PLC_LOGIC"] = new("PLC logic", "PLC logic", "PLC logic"),
             ["APPLICATION"] = new("Application", "application", "applications"),
+            ["EXTERNAL_FILE"] = new("External file", "external file", "external files"),
+            ["EXTERNAL_FILE_SOURCE"] = new("External file source", "external file source", "external file sources"),
         };
 
     /// <summary>How this type is written, or null when CODESYS does not name it.</summary>

@@ -1195,6 +1195,106 @@ public class CodesysImportPlannerTests
         Assert.Equal(["Device", "Plc Logic", "Application", "E_Mode"], dut.Resolve);
     }
 
+    /// <summary>
+    /// E4: a digest-tail stem is never decoded — the recorded name carries the identity, and
+    /// without a record the payload does.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The first committed mirror ever to carry the shortened stem.</b> The member fixture
+    /// gained two external-file objects on 2026-08-17 (P13 measured the door; the fixture
+    /// builder walks through it with relative paths, which is what keeps the fixture
+    /// machine-independent). One has a 105-character name, so its file on disk is
+    /// <c>Commissioning_Checklist_…~ce8286.xml</c> — a stem that decodes to nothing, which is
+    /// exactly why identity must come from the manifest and never from the file name.
+    /// </para>
+    /// <para>
+    /// <b>Both of this test's first two runs corrected a claim, which is why its assertions
+    /// look nothing like E4's original row.</b> The row said a stem that decodes to nothing
+    /// would be "reported unresolvable"; run one expected a Stray and met the planner's
+    /// deliberate rule that every unrecorded native is ApplyNative, because a native payload
+    /// carries its own name and GUID. Run two — the E2E — then measured <c>import_native</c>
+    /// <b>duplicating</b> an external-file object instead of replacing it, so the form became
+    /// export-only (<c>EXTERNAL_NATIVE</c>) before the type ever shipped importable. What
+    /// stands: <b>no path decodes a digest stem</b>. A recorded external file is an announced
+    /// export-only skip carrying the verbatim name; an unrecorded native resolves by its
+    /// payload; an unrecorded textual by its declaration (G3). The stem is a label, never an
+    /// identity.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void A_digest_stem_resolves_through_the_manifest_and_strays_without_it()
+    {
+        var root = Path.Combine(TestPaths.Fixtures, "projects", "MachineWithMembers");
+        var manifest = ProjectManifest.Parse(
+            System.IO.File.ReadAllText(Path.Combine(root, "_manifest.json")));
+
+        var mirror = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+            .Select(p => Path.GetRelativePath(root, p).Replace('\\', '/'))
+            .Select(rel => new MirrorFile
+            {
+                Path = rel,
+                Text = CodesysImportPlanner.NeedsText(rel)
+                    ? System.IO.File.ReadAllText(Path.Combine(root, rel))
+                    : null,
+            })
+            .ToList();
+
+        // The fixture has to still BE the fixture: two external files, one of them past
+        // MaxStem so its path took the digest tail. If a regeneration loses these, everything
+        // below passes for the uninteresting reason.
+        var externals = manifest.Objects.Where(o => o.Type == "EXTERNAL_FILE").ToList();
+        Assert.Equal(2, externals.Count);
+        var longRecord = Assert.Single(externals, o => o.Path.Contains('~', StringComparison.Ordinal));
+        Assert.True(longRecord.Name.Length > 80, "the long name no longer overflows MaxStem");
+        Assert.DoesNotContain(longRecord.Name, longRecord.Path, StringComparison.Ordinal);
+
+        var plan = CodesysImportPlanner.Plan(manifest, mirror);
+
+        // The stem cannot say "Commissioning_Checklist_…Final.txt"; only the manifest can —
+        // and what the manifest says now is EXPORT-ONLY, because the first E2E run of this
+        // row measured import_native DUPLICATING an external-file object instead of
+        // replacing it. The skip still carries the verbatim recorded name, which is the
+        // whole of E4's resolution claim: the digest stem was never the identity.
+        Assert.Equal("EXTERNAL_NATIVE", longRecord.Form);
+        var planned = One(plan, longRecord.Path);
+        Assert.Equal(PlannedAction.Skip, planned.Action);
+        Assert.Equal(PlannedSkip.ExportOnly, planned.Skip);
+        Assert.Equal(longRecord.Name, planned.Name);
+
+        // No importable sibling, unlike TASK_NATIVE and GVL_NATIVE: the object is entirely
+        // IDE-managed, and a sibling pointer here would send somebody to a file that does
+        // not exist.
+        Assert.Null(planned.ImportableSibling);
+
+        // The plain external file beside it: a name full of dots that is recorded verbatim
+        // and never split into owner and member — the same rule E3 proves for members.
+        var wiring = One(plan, "Device/Plc Logic/Application/Wiring Notes.txt.xml");
+        Assert.Equal(PlannedAction.Skip, wiring.Action);
+        Assert.Equal(PlannedSkip.ExportOnly, wiring.Skip);
+        Assert.Equal("Wiring Notes.txt", wiring.Name);
+
+        // WITHOUT ITS RECORD the digest file is still an unrecorded NATIVE, and the planner's
+        // deliberate rule for those is ApplyNative — the payload carries its own name and
+        // GUID, so import_native resolves it without the stem ever being read as a name.
+        // What must NOT happen is a decode: the terminal label stays the raw tilde stem, not
+        // a guessed reconstruction of the long name the digest destroyed, and no create is
+        // planned for it — the stem is a label here, never an identity.
+        var without = manifest with
+        {
+            Objects = [.. manifest.Objects.Where(o => o.Path != longRecord.Path)],
+        };
+
+        var replanned = CodesysImportPlanner.Plan(without, mirror);
+        var unrecorded = One(replanned, longRecord.Path);
+        Assert.Equal(PlannedAction.ApplyNative, unrecorded.Action);
+        Assert.Equal("Commissioning_Checklist_Section_Section_Section_Section_Section_Section_"
+                     + "Section_~ce8286", unrecorded.Resolve[^1]);
+        Assert.NotEqual(longRecord.Name, unrecorded.Resolve[^1]);
+        Assert.DoesNotContain(replanned.Files,
+            f => f.Path == longRecord.Path && f.Action == PlannedAction.Create);
+    }
+
     [Fact]
     public void The_committed_fixture_plans_cleanly_with_nothing_stray_and_nothing_unknown()
     {

@@ -86,6 +86,20 @@ public enum ExportForm
     /// </para>
     /// </remarks>
     TaskBoth,
+
+    /// <summary>
+    /// An external-file object's native export — its one and only file, export-only.
+    /// </summary>
+    /// <remarks>
+    /// Export-only from the day the type first existed, because the correction was measured
+    /// before the type ever shipped importable: the first E4 round trip handed one of these
+    /// to <c>import_native</c> and CODESYS <b>duplicated</b> the object instead of replacing
+    /// it (G13). Unlike <see cref="TaskBoth"/> and <see cref="GvlBoth"/> there is no
+    /// importable sibling — external files are IDE-managed entirely, and the payload is
+    /// metadata (a file id and a download flag) a mirror edit could not meaningfully change.
+    /// Recorded as <see cref="Versio.Core.Projects.ExportCoverage.ExternalNativeForm"/>.
+    /// </remarks>
+    ExternalNative,
 }
 
 /// <summary>
@@ -119,6 +133,11 @@ public static class ExportFormRules
         [CodesysObjectType.GlobalTextList] = ExportForm.Native,
         [CodesysObjectType.ImagePool] = ExportForm.Native,
         [CodesysObjectType.ProjectInformation] = ExportForm.Native,
+
+        // Export-only by measurement, not policy: import_native duplicates these instead of
+        // replacing them (G13). See ExportForm.ExternalNative.
+        [CodesysObjectType.ExternalFile] = ExportForm.ExternalNative,
+        [CodesysObjectType.ExternalFileSource] = ExportForm.ExternalNative,
 
         // Was Skip, reported as the NOT_IMPLEMENTED gap that _coverage.md exists to name:
         // adding a library or bumping a version changed nothing in the mirror. Its

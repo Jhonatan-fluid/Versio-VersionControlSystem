@@ -12,24 +12,23 @@ namespace Versio.Integration.Tests;
 /// <remarks>
 /// <para>
 /// <c>ProjectManifestTests</c> proves the rules against hand-written JSON, which proves the
-/// parser and nothing about the files. These two fixtures are real exporter output, and between
-/// them they happen to cover both sides of the schema 8 boundary:
-/// </para>
-/// <list type="bullet">
-/// <item><c>RefrigeratorControl</c> was regenerated when the field was added, so it is schema 8
-/// and names its vendor.</item>
-/// <item><c>MachineWithMembers</c> was not, so it is still schema 7 with no vendor at all —
-/// which makes it the only committed artifact in the repository that exercises the
-/// backward-compatible reading against a file nobody wrote for the purpose.</item>
-/// </list>
-/// <para>
-/// <b>That second one is kept at schema 7 deliberately.</b> Nothing asserts its schema, so
-/// regenerating it would have been free and would have quietly destroyed the only real
-/// pre-schema-8 evidence in the tree. A fixture that is old on purpose is worth more than one
-/// that is old by accident — but only if something says so, which is what this file is for.
+/// parser and nothing about the files. Everything read here is real exporter output, covering
+/// both sides of the schema 8 boundary.
 /// </para>
 /// <para>
-/// No CODESYS: both manifests are committed. Milliseconds.
+/// <b>The pre-schema-8 evidence is a preserved file now, not a live mirror.</b> Until
+/// 2026-08-17 it was <c>MachineWithMembers</c>'s own manifest, kept at schema 7 deliberately,
+/// and this file's test tripped — by design — when E2/E4 needed that fixture regenerated with
+/// external-file objects. The choice the red test forced: the evidence is the <i>bytes</i>, not
+/// the mirror, so the old manifest moved byte-identically to
+/// <c>fixtures/manifests/MachineWithMembers-schema7-manifest.json</c> before the regeneration,
+/// and the backward-compatible reading is still exercised against a file the exporter really
+/// wrote before the vendor field existed. A fixture that is old on purpose is worth more than
+/// one that is old by accident — but only if something says so, which is what this file is for,
+/// and on 2026-08-17 it worked.
+/// </para>
+/// <para>
+/// No CODESYS: everything here is committed. Milliseconds.
 /// </para>
 /// </remarks>
 [Trait("Category", "Integration")]
@@ -51,16 +50,18 @@ public sealed class CommittedManifestVendorTests
     }
 
     [Fact]
-    public void A_mirror_committed_before_schema_8_still_reads_as_CODESYS()
+    public void A_manifest_written_before_schema_8_still_reads_as_CODESYS()
     {
         // Real evidence rather than a string in a test: this file was written by the exporter
-        // before the field existed, and it has to keep meaning what it meant. If somebody
-        // regenerates it, this test goes red and the loss is a decision rather than a side
-        // effect - which is exactly what happened to the assertion in
-        // WorkspaceTreeFromCommittedExportTests when its own mirror went stale.
-        var manifest = Read("MachineWithMembers");
+        // before the vendor field existed, and it has to keep meaning what it meant. It lived
+        // as MachineWithMembers' own manifest until 2026-08-17, when E2/E4 needed that fixture
+        // regenerated - the schema<8 assertion below went red on the regeneration, exactly as
+        // its comment promised, and the bytes moved here instead of being lost.
+        var manifest = ProjectManifest.Parse(File.ReadAllText(Path.Combine(
+            TestPaths.Root, "fixtures", "manifests", "MachineWithMembers-schema7-manifest.json")));
 
-        Assert.True(manifest.Schema < 8, "the fixture was regenerated; it was the last pre-8 one");
+        Assert.True(manifest.Schema < 8, "this preserved file must never be rewritten by a "
+            + "newer exporter - it exists to be old");
         Assert.Equal(PlcVendor.Codesys, manifest.Vendor);
     }
 }
