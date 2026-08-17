@@ -993,6 +993,7 @@ actually do.
 
 The full list, newest first:
 
+- [The architecture tests PLAN promised for months had never been written](FINDINGS.md#the-architecture-tests-plan-promised-for-months-had-never-been-written)
 - [The tag that split the suite was doing a project boundary's job](FINDINGS.md#the-tag-that-split-the-suite-was-doing-a-project-boundarys-job)
 - [The engine reached for a global registry, and no seam test could see it](FINDINGS.md#the-engine-reached-for-a-global-registry-and-no-seam-test-could-see-it)
 - [The vendor seam is a project boundary now, not a namespace and a reflection test](FINDINGS.md#the-vendor-seam-is-a-project-boundary-now-not-a-namespace-and-a-reflection-test)

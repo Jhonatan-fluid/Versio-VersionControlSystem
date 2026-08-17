@@ -17,6 +17,47 @@ produce a diff touching everything else.
 
 ---
 
+### The architecture tests PLAN promised for months had never been written
+
+**Found 2026-08-16, built 2026-08-17.** `docs/PLAN.md` §12.2 is headed **"Dependency rules —
+enforced, not documented"** and says `Versio.Arch.Tests` "fails the build if any of these are
+violated". It lists five rules. **The project had never existed.** Its only trace anywhere in the
+repository was a comment in `Versio.Core.csproj` citing it by name.
+
+| Rule | Was it true? | Now |
+|---|---|---|
+| 1. Core references no UI, no Infrastructure | yes, by the csproj | enforced, plus vendor packs |
+| 2. No `File`/`Directory`/`Process`/`DateTime.Now`/`Guid.NewGuid` in Core | **four yes, one no** | enforced, with one named exemption |
+| 3. `App.Views` must not reference Infrastructure | yes | enforced |
+| 4. No literal colour or margin in `Views/` | untested | **not enforced, and now says so** |
+| 5. Every `public async` in Core takes a `CancellationToken` | yes | enforced |
+
+**Four rules held by discipline alone**, which is the thing worth noticing: the codebase was
+obeying an unenforced rule for months, and the one place it slipped is the one nobody could see.
+
+**`Guid.NewGuid` is exempted rather than fixed, and the exemption is pinned.** It produces the
+default operation id that correlates a run's log lines, and every one of those is an `init`
+property a caller can set — so identity *is* controllable exactly as the rule intends, without an
+`IIdentityProvider` nobody would inject anywhere else. The two permitted call sites are named, and
+a third appearing fails the build. The alternative was to leave the document saying one thing and
+the code doing another, which is how this section came to claim enforcement that did not exist.
+
+**Rule 4 is recorded as unenforced rather than quietly dropped.** It is a lint over markup rather
+than a dependency rule over metadata, and `StockControlStyleTests` and `FocusVisualTests` already
+catch the failure it exists to prevent — by rendering the controls and reading the result, which
+is stronger than a source scan. Worth building only if that stops being true.
+
+**Read from IL, with a positive control.** Rule 2 walks the assembly's own `call` and `callvirt`
+sites, because a forbidden call appears in no signature. Every assertion in the file is "this set
+is empty", which a scanner that reads nothing satisfies perfectly — so one test asserts the scan
+finds something, and adding a `File.Exists` and a `DateTimeOffset.Now` to `Versio.Core` takes two
+of them red.
+
+**The same failure shape as the rolling file sink**, which is why it is written up rather than
+just fixed: every part of the mechanism present except the one that makes it visible. A rule
+nothing checks has already drifted. A rule nothing checks that a document *claims* is checked
+also spends the reader's trust.
+
 ### The tag that split the suite was doing a project boundary's job
 
 **Changed 2026-08-17.** One integration project held both a 19-second suite and a half-hour one,
