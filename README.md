@@ -297,7 +297,7 @@ start and was not true:
 
 **`Versio.Core` never touches the outside world.** No `System.IO`, no `Process`, no `DateTimeOffset.Now`, no UI framework. Everything external sits behind an interface in `Abstractions/`, and `Versio.Infrastructure` is the only project that implements them.
 
-That is not tidiness for its own sake — it is what makes the risky parts (the lock model, the loop defences, the state machine) testable without CODESYS, without git, without sleeping, and without a UI. It is also why the test suite is roughly 1:1 with source by line count and still runs in a tenth of a second.
+That is not tidiness for its own sake — it is what makes the risky parts (the lock model, the loop defences, the state machine) testable without CODESYS, without git, without sleeping, and without a UI. It is also why the unit suite is roughly 1:1 with source by line count and still runs in under a second.
 
 ---
 
@@ -312,7 +312,7 @@ That is not tidiness for its own sake — it is what makes the risky parts (the 
   everything, so a machine without it starts and says so rather than working. Nothing is
   vendored: that is what makes Git Credential Manager, SSH agents, 2FA and corporate proxies
   behave exactly as they do in your own terminal. |
-| CODESYS | 3.5 SP22 — **integration tests only**, unit tests need none |
+| CODESYS | 3.5 SP22 — **`Versio.Plc.Codesys.Tests` only**; the other four suites need none |
 
 ```bash
 dotnet build
@@ -328,13 +328,18 @@ dotnet test tests/Versio.Core.Tests
 > `%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe`, or set `DOTNET_ROOT` to it — the same install
 > layout that makes a framework-dependent `Versio.exe` fail to start, noted again below.
 
-**Three suites, and they need different things:**
+**Five suites, and they need different things:**
 
-| Suite | Needs | Runs in |
-|---|---|---|
-| `Versio.Core.Tests` | nothing — pure, no IO, no clock, no UI | ~0.3 s |
-| `Versio.App.Tests` | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~0.4 s |
-| `Versio.Integration.Tests` | a real CODESYS and a real `git.exe`, and **skips cleanly** when either is absent | ~10 min |
+| Suite | Tests | Needs | Runs in |
+|---|---|---|---|
+| `Versio.Core.Tests` | 1,295 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
+| `Versio.Integration.Tests` | 141 | a real `git.exe` and the real filesystem | ~10 s |
+| `Versio.Arch.Tests` | 9 | nothing — it reads assembly metadata and IL | instant |
+| `Versio.App.Tests` | 480 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
+| `Versio.Plc.Codesys.Tests` | 365 | **a real CODESYS**, and **skips cleanly** without one | **~31 min** |
+
+The first four are the loop to work in. The last is the gate before a commit — and it is a
+separate project precisely so that running the loop cannot cost you half an hour by accident.
 
 ```bash
 dotnet test

@@ -1537,16 +1537,15 @@ earlier test's leftovers could in principle have been doing the work.
    three halves as one claim**: a refusal test that never lets anything through and a delete
    test that never refuses are each satisfied by a broken implementation.
 7. **The Phase 4 acceptance test**, and it is the cheapest of these to run:
-   `dotnet test tests\Versio.Integration.Tests --filter A_task_priority_edited_in_the_mirror` —
+   `dotnet test tests\Versio.Plc.Codesys.Tests --filter A_task_priority_edited_in_the_mirror` —
    four CODESYS launches, 72–78 s, and it is the only thing in the repository that fails if the
    typed write stops reaching the project.
-8. **The full integration suite, and it is the gate before a commit** — 243 tests, of which
-   **the fast projects finish in eleven seconds** (`Versio.Core.Tests` and
-   `Versio.Integration.Tests`, the loop to work in) and the rest is
-   `Versio.Plc.Codesys.Tests` — about half an hour, which is the sort of number that
-   makes somebody kill a run they should have waited out. That used to be one project
-   split by a trait and policed by a `FastLaneTests`; it is a project boundary now, so
-   there is no filter to remember and no tag to forget.
+8. **`Versio.Plc.Codesys.Tests` is the gate before a commit** — 365 tests, about half an hour,
+   which is the sort of number that makes somebody kill a run they should have waited out. The
+   loop to work in is `Versio.Core.Tests` and `Versio.Integration.Tests`: 1,436 tests in eleven
+   seconds, needing no toolchain. That used to be one integration project split by a trait and
+   policed by a `FastLaneTests`; it is a project boundary now, so there is no filter to remember
+   and no tag to forget.
 
 Build with `& "$env:LOCALAPPDATA\Microsoft\dotnet\dotnet.exe"` — `dotnet` on PATH is runtime-only.
 Close Versio.exe first; it locks its own DLLs.

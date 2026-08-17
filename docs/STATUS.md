@@ -1,9 +1,19 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-16 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,494 unit + 480 UI + 243 integration, 0 skipped
-· *(integration now runs ~30 min, not the 10–16 it did before the import feature checklist added
-13 tests; run three times end to end on 2026-08-16 with no flake, plus every affected test
-individually — see the flake note in `CLAUDE.md`, which is about earlier runs)*
+**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,290 across five
+projects, 0 skipped — re-derived by running each, not carried forward
+
+| Project | Tests | Time | Needs |
+|---|---|---|---|
+| `Versio.Core.Tests` | 1,295 | under a second | nothing |
+| `Versio.Integration.Tests` | 141 | ~10 s | real git |
+| `Versio.App.Tests` | 480 | ~50 s | nothing |
+| `Versio.Arch.Tests` | 9 | instant | nothing |
+| `Versio.Plc.Codesys.Tests` | 365 | **~31 min** | **real CODESYS** |
+
+*The first four are eleven seconds plus the UI suite, and are the loop to work in. The last is
+the gate before a commit. Until 2026-08-17 the split was a `--filter` expression over one
+integration project; it is a project boundary now.*
 
 > **⚠️ Versio removes, renames and moves objects in projects — Phases 2 and 3 of the import
 > plan, and the first things it does that destroy work.** Delete a `.st` from the mirror,
@@ -164,8 +174,8 @@ opens. That is `SAFEGUARDS.md` phases 1–8, and phase 9 is features rather than
 
 ```
   CODESYS pipeline    ████████████████████  proven on a real project
-  Domain core         ████████████████████  1,494 tests, under 400 ms
-  Vendor seam         ████████████████████  enforced from assembly metadata
+  Domain core         ████████████████████  1,295 tests, under 400 ms
+  Vendor seam         ████████████████████  enforced by the project graph + metadata
   Infrastructure      ████████████████████  drives real CODESYS + real git
   Desktop shell       ███████████████████░  full git surface, diff, and a UI audit applied
   Packaging           ██░░░░░░░░░░░░░░░░░░  icon and publish profile only
