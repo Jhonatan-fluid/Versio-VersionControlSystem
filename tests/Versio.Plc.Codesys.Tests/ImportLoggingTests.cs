@@ -7,7 +7,7 @@ using Versio.TestSupport;
 using Xunit.Abstractions;
 using Xunit;
 
-namespace Versio.Integration.Tests;
+namespace Versio.Plc.Codesys.Tests;
 
 /// <summary>
 /// What an import writes to the log, asserted against a real one.

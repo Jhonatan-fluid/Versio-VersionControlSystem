@@ -1,0 +1,36 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Versio.Plc.Codesys.Tests</RootNamespace>
+    <!-- EVERY TEST THAT LAUNCHES CODESYS, and nothing else.
+
+         This used to be a [Trait("Toolchain", "Codesys")] tag inside Versio.Integration.Tests,
+         policed by FastLaneTests, because the split it expresses is real and expensive: measured
+         2026-08-17, the tests that stayed behind run in 19 seconds and the ones in here take
+         half an hour. A cold CODESYS start is 17-31 s, every launch pays it in full, an import
+         test needs three to five of them, and they cannot run in parallel.
+
+         A tag was the wrong shape for that. It made "run the fast ones" a filter expression
+         somebody has to remember, it put the slow suite's dependencies on the fast suite's
+         project, and it needed a test whose whole job was to check the tag had been applied.
+         A project boundary needs none of those: `dotnet test tests\Versio.Integration.Tests`
+         is the loop, and this is the gate. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="Xunit.SkippableFact" Version="1.5.23" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Versio.Core\Versio.Core.csproj" />
+    <ProjectReference Include="..\..\src\Versio.Infrastructure\Versio.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Versio.Plc.Codesys\Versio.Plc.Codesys.csproj" />
+    <ProjectReference Include="..\..\src\Versio.Plc.Codesys.Infrastructure\Versio.Plc.Codesys.Infrastructure.csproj" />
+    <ProjectReference Include="..\Versio.TestSupport\Versio.TestSupport.csproj" />
+  </ItemGroup>
+
+</Project>

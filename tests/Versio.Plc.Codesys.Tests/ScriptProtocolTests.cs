@@ -1,7 +1,7 @@
 using Versio.Plc.Codesys;
 using Xunit;
 
-namespace Versio.Core.Tests.Plc.Codesys;
+namespace Versio.Plc.Codesys.Tests;
 
 /// <summary>
 /// Parsing must be total: a script that dies mid-write still has to yield everything it

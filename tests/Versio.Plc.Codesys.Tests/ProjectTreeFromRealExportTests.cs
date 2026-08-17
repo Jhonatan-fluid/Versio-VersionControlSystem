@@ -4,7 +4,7 @@ using Versio.TestSupport;
 using Xunit.Abstractions;
 using Xunit;
 
-namespace Versio.Integration.Tests;
+namespace Versio.Plc.Codesys.Tests;
 
 /// <summary>
 /// The tree builder against a manifest CODESYS actually produced.

@@ -3,7 +3,7 @@ using Versio.Plc.Codesys.Infrastructure;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Versio.Integration.Tests;
+namespace Versio.Plc.Codesys.Tests;
 
 /// <summary>
 /// The stable machine strings C# reads out of a manifest, checked against the script that
@@ -34,7 +34,7 @@ namespace Versio.Integration.Tests;
 /// </para>
 /// <para>
 /// No CODESYS and no python: it reads text. It stays in the fast lane and out of
-/// <see cref="CodesysCollection"/>, which <see cref="FastLaneTests"/> asserts from metadata.
+/// <see cref="CodesysCollection"/>, so it cannot run beside another CODESYS launch.
 /// </para>
 /// </remarks>
 [Trait("Category", "Integration")]

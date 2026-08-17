@@ -3,7 +3,7 @@ using Versio.TestSupport;
 using Xunit.Abstractions;
 using Xunit;
 
-namespace Versio.Integration.Tests;
+namespace Versio.Plc.Codesys.Tests;
 
 /// <summary>
 /// The coverage report, produced by a real CODESYS export.

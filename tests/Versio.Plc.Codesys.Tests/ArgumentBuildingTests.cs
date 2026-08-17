@@ -1,7 +1,7 @@
 using Versio.Plc.Codesys.Infrastructure;
 using Xunit;
 
-namespace Versio.Integration.Tests;
+namespace Versio.Plc.Codesys.Tests;
 
 /// <summary>
 /// Regression cover for the command line CODESYS actually accepts.

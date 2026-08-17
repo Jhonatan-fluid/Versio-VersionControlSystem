@@ -1,6 +1,6 @@
 using Xunit;
 
-namespace Versio.Integration.Tests;
+namespace Versio.Plc.Codesys.Tests;
 
 /// <summary>
 /// Every test class that launches a real CODESYS, serialised.

@@ -4,7 +4,7 @@ using Versio.TestSupport;
 using Xunit.Abstractions;
 using Xunit;
 
-namespace Versio.Integration.Tests;
+namespace Versio.Plc.Codesys.Tests;
 
 /// <summary>
 /// Drives a real CODESYS installation through the C# runner.

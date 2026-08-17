@@ -1,7 +1,7 @@
 using Versio.Plc.Codesys;
 using Xunit;
 
-namespace Versio.Core.Tests.Plc.Codesys;
+namespace Versio.Plc.Codesys.Tests;
 
 /// <summary>
 /// Every case here is taken from a real measured difference between an export and its

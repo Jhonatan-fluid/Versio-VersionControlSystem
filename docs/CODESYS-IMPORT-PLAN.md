@@ -1247,7 +1247,8 @@ Item 4 is a corpus problem that may never be solved and should be labelled inste
 Item 5 waits for the panel.
 
 **Before any of it, run the gate.** The full integration suite is ~31 minutes and drives real
-CODESYS; the fast lane is `--filter "Toolchain!=Codesys"` and is 18 seconds. Both commands are
+CODESYS; the fast projects are `Versio.Core.Tests` and `Versio.Integration.Tests`, eleven
+seconds together. Both commands are
 in `CLAUDE.md`.
 
 **Next, in order:** see [What is left, and what it costs](#what-is-left-and-what-it-costs)
@@ -1540,18 +1541,12 @@ earlier test's leftovers could in principle have been doing the work.
    four CODESYS launches, 72–78 s, and it is the only thing in the repository that fails if the
    typed write stops reaching the project.
 8. **The full integration suite, and it is the gate before a commit** — 243 tests, of which
-   **192 finish in 18 seconds** (`--filter "Toolchain!=Codesys"`, the loop to work in) and the
-   other **51 take ~31 minutes**, because a CODESYS cold start is 17–31 s and every launch pays
-   it in full. **This line said "~10 min" until 2026-08-16**, which is a third of the truth and
-   the sort of number that makes somebody kill a run they should have waited out. `FastLaneTests`
-   asserts from assembly metadata, both directions, that the filter cannot quietly stop
-   excluding things.
-9. **The warning invariant**, and it is the cheapest gate here at ~15 ms:
-   `dotnet test tests\Versio.Integration.Tests --filter ScriptContractTests` — no CODESYS, no
-   python. It fails when `versio_export.py` grows a warning code that `ExportCoverage` neither
-   treats as losing an object nor the test lists as harmless, and when a file the export writes
-   has no path-length check. **Both of those have already caught a real omission**, one of them
-   in the change that added it.
+   **the fast projects finish in eleven seconds** (`Versio.Core.Tests` and
+   `Versio.Integration.Tests`, the loop to work in) and the rest is
+   `Versio.Plc.Codesys.Tests` — about half an hour, which is the sort of number that
+   makes somebody kill a run they should have waited out. That used to be one project
+   split by a trait and policed by a `FastLaneTests`; it is a project boundary now, so
+   there is no filter to remember and no tag to forget.
 
 Build with `& "$env:LOCALAPPDATA\Microsoft\dotnet\dotnet.exe"` — `dotnet` on PATH is runtime-only.
 Close Versio.exe first; it locks its own DLLs.

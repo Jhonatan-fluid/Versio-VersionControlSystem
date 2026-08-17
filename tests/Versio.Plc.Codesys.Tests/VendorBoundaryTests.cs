@@ -2,7 +2,7 @@ using Versio.Core.Plc;
 using Versio.Plc.Codesys.Infrastructure;
 using Xunit;
 
-namespace Versio.Integration.Tests;
+namespace Versio.Plc.Codesys.Tests;
 
 /// <summary>
 /// The translation from a neutral job into CODESYS's own terms, asserted without starting

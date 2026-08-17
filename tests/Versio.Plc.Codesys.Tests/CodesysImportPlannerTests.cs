@@ -5,7 +5,7 @@ using Versio.Plc.Codesys;
 using Versio.TestSupport;
 using Xunit;
 
-namespace Versio.Core.Tests.Plc.Codesys;
+namespace Versio.Plc.Codesys.Tests;
 
 /// <summary>
 /// The import planner, exercised the way <c>versio_import.py</c> can never be: in

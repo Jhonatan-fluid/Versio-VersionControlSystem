@@ -20,8 +20,8 @@ namespace Versio.Integration.Tests;
 /// <b>In this project rather than <c>Versio.Core.Tests</c></b> for the same reason
 /// <c>VendorBoundaryTests</c> is: <c>Versio.Infrastructure</c> is where the code lives, and
 /// <c>Versio.Core.Tests</c> deliberately does not reference it and should not start. It needs no
-/// CODESYS, no python and no git, and runs in milliseconds — so it belongs in the fast lane, and
-/// <c>FastLaneTests</c> asserts that by refusing to let it carry the toolchain tag.
+/// CODESYS, no python and no git, and runs in milliseconds — so it belongs in this project
+/// rather than in <c>Versio.Plc.Codesys.Tests</c>, which is the half-hour one.
 /// </para>
 /// <para>
 /// The scanner lives in <c>Versio.TestSupport</c> rather than being copied here. Two copies of

@@ -17,6 +17,38 @@ produce a diff touching everything else.
 
 ---
 
+### The tag that split the suite was doing a project boundary's job
+
+**Changed 2026-08-17.** One integration project held both a 19-second suite and a half-hour one,
+separated by `[Trait("Toolchain", "Codesys")]` and a `--filter "Toolchain!=Codesys"` expression
+every reader had to remember. `FastLaneTests` existed solely to assert — in both directions —
+that the tag had been applied, because *"a filter that silently stops excluding things is worse
+than no filter"*.
+
+That reasoning was right and the mechanism was wrong. A tag cannot stop somebody typing
+`dotnet test tests\Versio.Integration.Tests` and waiting half an hour, it puts the slow suite's
+dependencies on the fast suite's project, and it needs a test whose entire job is guarding the
+tag.
+
+| | Before | After |
+|---|---|---|
+| Fast, no toolchain | 192 of 243, behind a filter | `Versio.Integration.Tests`, **141 in 10 s**, no filter |
+| Needs real CODESYS | 51, same project | `Versio.Plc.Codesys.Tests`, **365**, ~31 min |
+| Guard | `FastLaneTests` | the project graph |
+
+**`FastLaneTests` is deleted, and its argument moved into the new project's own file header**
+rather than being lost — the rule it protected still matters, it is just enforced by something
+that cannot be forgotten.
+
+**The CODESYS unit tests went with it.** Nine fast classes under `Versio.Core.Tests/Plc/Codesys/`
+were the last thing keeping the neutral unit suite aware of a vendor; `Versio.Core.Tests` drops
+from 1,534 to 1,295. A vendor's tests now arrive and leave with the vendor, which is the same
+property C1 gave its production code.
+
+**And the whole suite is faster to work in.** The loop is `Versio.Core.Tests` plus
+`Versio.Integration.Tests` — **eleven seconds together**, against eighteen before, with nothing
+to remember and nothing to type wrong.
+
 ### The engine reached for a global registry, and no seam test could see it
 
 **Fixed 2026-08-17.** `SyncOrchestrator` — the file the whole vendor rule exists to protect —

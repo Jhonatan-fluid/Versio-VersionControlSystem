@@ -1,7 +1,7 @@
 using Versio.Core.Serialization;
 using Xunit;
 
-namespace Versio.Core.Tests.Plc.Codesys;
+namespace Versio.Plc.Codesys.Tests;
 
 /// <summary>
 /// The determinism guarantee. Verified against real CODESYS 3.5.22.20 output: two

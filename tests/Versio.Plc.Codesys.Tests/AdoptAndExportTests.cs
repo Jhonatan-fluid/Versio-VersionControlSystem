@@ -12,7 +12,7 @@ using Versio.TestSupport;
 using Xunit.Abstractions;
 using Xunit;
 
-namespace Versio.Integration.Tests;
+namespace Versio.Plc.Codesys.Tests;
 
 /// <summary>
 /// The milestone path: adopt a real project in a real repository, then export it.

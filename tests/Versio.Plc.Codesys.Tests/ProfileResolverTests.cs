@@ -1,7 +1,7 @@
 using Versio.Plc.Codesys;
 using Xunit;
 
-namespace Versio.Core.Tests.Plc.Codesys;
+namespace Versio.Plc.Codesys.Tests;
 
 /// <summary>
 /// Profile resolution is a hard precondition, not a convenience: CODESYS exits 1 in

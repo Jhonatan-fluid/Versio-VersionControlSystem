@@ -214,25 +214,30 @@ C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test Versio.sln
 `TreatWarningsAsErrors` and `EnforceCodeStyleInBuild` are on: the build is warning-free and
 stays that way.
 
-| Suite | Count | Time |
-|---|---|---|
-| `Versio.Core.Tests` | 1,494 | under a second |
-| `Versio.App.Tests` | 480 | ~50 s, STA, no window shown |
-| `Versio.Integration.Tests` | 243 | ~31 min, real CODESYS and real git |
+| Suite | Count | Time | Needs |
+|---|---|---|---|
+| `Versio.Core.Tests` | 1,295 | under a second | nothing |
+| `Versio.Integration.Tests` | 141 | ~10 s | real git |
+| `Versio.App.Tests` | 480 | ~50 s, STA, no window shown | nothing |
+| `Versio.Plc.Codesys.Tests` | 365 | **~31 min** | **real CODESYS** |
 
-**Do not sit through the integration suite while you work.** 192 of its 243 tests finish in
-**18 seconds**; the other 50 are the half hour, because a CODESYS cold start is 17–31 s, every
-launch pays it in full, an import test needs three to five of them, and they cannot run in
-parallel. So:
+**The loop to work in is everything except the last one:**
 
 ```
-C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Integration.Tests --filter "Toolchain!=Codesys"
+C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Core.Tests
+C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Integration.Tests
 ```
 
-is the loop to work in, and the full run is the gate before a commit. `FastLaneTests` asserts —
-from assembly metadata, both directions — that every class in the CODESYS collection carries the
-tag and nothing else does, so the filter cannot quietly stop excluding things or quietly hide
-half an hour of coverage behind a flag nobody runs.
+Eleven seconds together, plus fifty for `Versio.App.Tests` when the UI is in play.
+`Versio.Plc.Codesys.Tests` is the gate before a commit.
 
-A red integration run is worth re-running a project at a time before reading it as a
-regression — it drives real CODESYS with real timeouts.
+**That split used to be a `--filter "Toolchain!=Codesys"` expression** over one integration
+project, policed by a `FastLaneTests` whose whole job was checking the tag had been applied in
+both directions. It is a project boundary now, so the filter, the tag and the test guarding them
+are all gone: you cannot accidentally run half an hour of CODESYS, and you cannot accidentally
+hide coverage behind a flag nobody runs. The cost is real and worth restating — a CODESYS cold
+start is 17–31 s, every launch pays it in full, an import test needs three to five of them, and
+they cannot run in parallel.
+
+A red `Versio.Plc.Codesys.Tests` run is worth re-running a project at a time before reading it
+as a regression — it drives real CODESYS with real timeouts.

@@ -178,10 +178,16 @@ Versio.sln
 │                               scriptengine and run on CPython too, which is what the
 │                               parity tests use.
 ├─ tests/
-│  ├─ Versio.Core.Tests/        1,494 unit tests — pure, no IO, under a second
+│  ├─ Versio.TestSupport/       not a test project: the three helpers more than one suite
+│  │                            needs (TestPaths, TestLogger, VendorSeamScanner)
+│  ├─ Versio.Core.Tests/        1,295 unit tests — pure, no IO, under a second
+│  ├─ Versio.Integration.Tests/ 141 tests against real git and the real filesystem, ~10 s.
+│  │                            NO CODESYS: that is a different project now, so this one
+│  │                            needs no filter and cannot accidentally cost half an hour
 │  ├─ Versio.App.Tests/         480 tests that build the real windows and panels against
 │  │                            the real stylesheet on an STA thread — none is ever shown
-│  └─ Versio.Integration.Tests/ 243 tests against real CODESYS and real git, ~31 min (192 of them in 18 s without CODESYS — see CLAUDE.md)
+│  └─ Versio.Plc.Codesys.Tests/ 365 tests against real CODESYS, ~31 min. The gate before a
+│                               commit, and the only suite that needs a toolchain installed
 ├─ tools/                       PowerShell and python harnesses. Seven of the nine are
 │                               CODESYS-specific probes; New-VersioIcon.ps1 generates the
 │                               app icon and Compare-Exports.ps1 diffs any two export trees

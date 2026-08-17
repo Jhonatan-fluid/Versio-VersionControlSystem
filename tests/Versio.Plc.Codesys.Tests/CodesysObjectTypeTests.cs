@@ -4,7 +4,7 @@ using Versio.Plc.Codesys;
 using Versio.TestSupport;
 using Xunit;
 
-namespace Versio.Core.Tests.Plc.Codesys;
+namespace Versio.Plc.Codesys.Tests;
 
 public class ObjectTypeTests
 {

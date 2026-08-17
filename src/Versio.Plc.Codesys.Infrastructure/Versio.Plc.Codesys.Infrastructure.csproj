@@ -15,7 +15,7 @@
   <ItemGroup>
     <!-- Command-line construction is internal but must be regression-tested: the quoting
          CODESYS accepts is not what .NET's ArgumentList produces. -->
-    <InternalsVisibleTo Include="Versio.Integration.Tests" />
+    <InternalsVisibleTo Include="Versio.Plc.Codesys.Tests" />
   </ItemGroup>
 
   <ItemGroup>
