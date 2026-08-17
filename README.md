@@ -170,10 +170,10 @@ Versio.sln
 │                               native_equiv) import no scriptengine and run on
 │                               CPython too, which is what the parity tests use.
 ├─ tests/
-│  ├─ Versio.Core.Tests/        1,493 unit tests — pure, no IO, under a second
+│  ├─ Versio.Core.Tests/        1,494 unit tests — pure, no IO, under a second
 │  ├─ Versio.App.Tests/         480 tests that build the real windows and panels against
 │  │                            the real stylesheet on an STA thread — none is ever shown
-│  └─ Versio.Integration.Tests/ 237 tests against real CODESYS and real git, ~31 min (186 of them in 17 s without CODESYS — see CLAUDE.md)
+│  └─ Versio.Integration.Tests/ 242 tests against real CODESYS and real git, ~31 min (191 of them in 18 s without CODESYS — see CLAUDE.md)
 ├─ tools/                       PowerShell harnesses used during Phase 0, plus
 │                               New-VersioIcon.ps1 which generates the app icon
 ├─ assets/                      versio.svg (reference drawing) and versio.ico

@@ -114,6 +114,101 @@ public sealed class PythonFileNameTests(ITestOutputHelper output)
                      ObjectPath("Device\\Plc Logic", "Application"));
     }
 
+    /// <summary>Run one of the two G9 path guards and return what it said.</summary>
+    private string Guard(string function, string path)
+    {
+        var input = Path.GetTempFileName();
+        var result = Path.GetTempFileName();
+        var script = Path.GetTempFileName() + ".py";
+
+        try
+        {
+            File.WriteAllText(input, path, new System.Text.UTF8Encoding(false));
+            File.WriteAllText(script, $"""
+                import io, sys
+                sys.path.insert(0, r"{Scripts}")
+                import versio_text
+                path = io.open(r"{input}", encoding="utf-8").read()
+                out = versio_text.{function}(path) or u""
+                io.open(r"{result}", "w", encoding="utf-8").write(out)
+                """);
+
+            using var python = Process.Start(new ProcessStartInfo
+            {
+                FileName = "python",
+                Arguments = $"\"{script}\"",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                StandardOutputEncoding = System.Text.Encoding.UTF8,
+            });
+
+            var stderr = python!.StandardError.ReadToEnd();
+            python.WaitForExit();
+            Assert.True(python.ExitCode == 0, stderr);
+
+            return File.ReadAllText(result, new System.Text.UTF8Encoding(false));
+        }
+        finally
+        {
+            File.Delete(input);
+            File.Delete(result);
+            File.Delete(script);
+        }
+    }
+
+    [SkippableFact]
+    public void An_ordinary_mirror_path_passes_both_guards_without_a_word()
+    {
+        // THE HALF THAT MATTERS MOST, because a guard that fires on normal work is worse
+        // than no guard: it teaches people to read past the line that eventually matters.
+        // This is a real path from the committed fixture.
+        Skip.IfNot(PythonIsAvailable(), "python is not on PATH");
+
+        const string ordinary = "Device/Plc Logic/Application/Library Manager.libraries.yaml";
+
+        Assert.Equal(string.Empty, Guard("too_long_for_any_machine", ordinary));
+        Assert.Equal(string.Empty,
+                     Guard("too_long_for_this_machine", @"C:\GIT\Versio\plc\Machine\" + ordinary));
+    }
+
+    [SkippableFact]
+    public void A_mirror_path_no_machine_could_check_out_is_named_as_such()
+    {
+        Skip.IfNot(PythonIsAvailable(), "python is not on PATH");
+
+        // Boundary, both sides: 200 is allowed and 201 is not. A guard tested only far past
+        // its threshold cannot tell a correct comparison from an off-by-one.
+        Assert.Equal(string.Empty, Guard("too_long_for_any_machine", new string('x', 200)));
+
+        var said = Guard("too_long_for_any_machine", new string('x', 201));
+
+        Assert.Contains("201", said, StringComparison.Ordinal);
+
+        // Says what follows from it rather than reporting a number. "201 characters" is a
+        // fact nobody can act on; "cannot be checked out on any machine" is the reason this
+        // is worth interrupting somebody for.
+        Assert.Contains("any machine", said, StringComparison.Ordinal);
+    }
+
+    [SkippableFact]
+    public void A_checkout_that_is_too_deep_blames_the_checkout_and_not_the_object()
+    {
+        Skip.IfNot(PythonIsAvailable(), "python is not on PATH");
+
+        Assert.Equal(string.Empty, Guard("too_long_for_this_machine", new string('x', 260)));
+
+        var said = Guard("too_long_for_this_machine", new string('x', 261));
+
+        Assert.Contains("261", said, StringComparison.Ordinal);
+
+        // The remedy is the point. This guard fires on paths the object itself is not
+        // responsible for, so a message about the object would send somebody to rename a
+        // POU that is not the problem.
+        Assert.Contains("repository", said, StringComparison.Ordinal);
+    }
+
     [SkippableFact]
     public void An_object_whose_name_could_not_be_read_is_spelled_the_same_way()
     {

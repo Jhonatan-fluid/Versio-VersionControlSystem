@@ -90,7 +90,7 @@ amount of reading, because it does not exist on the first cycle.
 | G6 | **Stray files go to `import_native`** — a `README.md` in the mirror is handed to CODESYS as native XML | ✅ **CLOSED by Phase 1, 2026-08-15.** A file that is neither a recorded object, bookkeeping, nor a recognisable source is skipped with a warning and never handed to the toolchain — including unrecorded YAML, and files appearing between planning and execution (`NOT_IN_PLAN`). **Proven live** with a real `README.md` in `ImportLoggingTests` |
 | G7 | **Task Configuration mutated on every import** — `Core2` `-1`→`-2`; documented as "diff-only", which it never was | ✅ **CLOSED by Phase 4, 2026-08-15.** `Core2` reads `-2,-1` across four consecutive snapshots where it used to move on the first cycle, and `Task Configuration.xml` has dropped out of the churn set entirely. **`-2,-1` is `MainTask,VISU_TASK`, and only the second number was ever the defect** — the baseline capture has MainTask at `-2` already, so **VISU_TASK's `-1` is the one G7 destroyed** and the one an integration test now asserts. Worth knowing before reading a diff of this file: a run where both read `-2` is the bug, not a run where either does |
 | G8 | **Managed library references unproven** — every fixture reference is a placeholder, so the `managed_library` branch has never executed | **Half closed**: P9 produces a real managed reference in one call, so no hand-built fixture is needed. (This row used to say 34 references; the Library Manager reports **21**) |
-| G9 | **Total path length unguarded** — stems capped at 80, the full path is not, and `.versio_staging` makes it 16 longer | Open, and **entirely ours**: P8 shows CODESYS imposes no limit of its own. **Reachable by arithmetic; not observed in the field** — see the correction below. **Its silence is closed** (2026-08-16): an object the export cannot write is now reported instead of vanishing behind a `Complete` verdict |
+| G9 | **Total path length unguarded** — stems capped at 80, the full path is not, and `.versio_staging` makes it 16 longer | ✅ **GUARDED 2026-08-16**, in two halves, because one of them cannot be machine-independent. `too_long_for_any_machine` measures the **mirror-relative** path against 200 and warns through the manifest; `too_long_for_this_machine` measures the **staging** path against 260 and warns through the log only — recording it would make `_manifest.json` differ between two developers and churn the mirror, which is Phase 5's defect through a new door. **Neither shortens**, and that is a decision: see *Why nothing shortens*. **Measured, and worse than this row assumed** — a legal file name reaches **190** characters, which leaves **19** for the repository root with no deep chain at all. **Not closed outright**: the arithmetic that produces 190 is still reachable, and shrinking it renames committed files |
 | **G10** | **Import → export is not byte-stable.** `UniqueIdGenerator` **44 → 47 → 50 → 53**, +3 per cycle, never settling | ✅ **CLOSED by Phase 5, 2026-08-16.** `Measure-ImportStability.ps1` prints **`P7: SETTLES`** with zero differences on all three cycles and the counter flat at **44 → 44 → 44 → 44**. The export keeps the bytes already in the mirror when the fresh payload is `versio_native_equiv`-equivalent to them, and the substitution happens **before** `record()` hashes anything — which is why `_manifest.json` settles too. Was, before the fix: Of the eight native files touched: three visualisations climb on the counter, `GlobalTextList.xml` churns with **no counter at all**, `Task Configuration.xml` moves once then settles, three are byte-stable. **Four of eight forever, from two causes** — not "every file", and not just the counter |
 | **G11** | **Every import after the first fails on task configuration and reports success.** `import_native` throws `Collection was modified` at `Project.GetUniqueName` on `MainTask` and `VISU_TASK`; the summary still reads `failed: 0` | ✅ **CLOSED by Phase 4, 2026-08-15.** Three import→export cycles with the compile cache present: **zero warnings on every one**, where cycles 2 and 3 used to throw twice each. `native: 8 → 7`, the task XML skipped as `TYPED_SIBLING`. **Versio never deletes CODESYS's compile cache** — the trigger is simply never reached |
 | **G12** | **A GVL's declaration is applied and then overwritten by its own XML**, and the import reports `applied … (declaration)` either way | ✅ **CLOSED 2026-08-16, the same day it was found by the feature checklist rather than by reading anything.** The `.gvl.xml` is recorded `GVL_NATIVE`, which `ExportCoverage.IsExportOnly` names — so a GVL has exactly one importable file and the edit reaches the project. **The shape is now an invariant rather than a habit**: `An_object_never_writes_two_files_the_import_would_both_apply` asserts, against a real export, that no object writes two files the import applies, which is what neither G7 nor this had. `GVL_BOTH` writes a `.gvl.st` recorded `ST_DECL` and a `.gvl.xml` recorded plain `NATIVE`; the phases run textual before native, so the XML puts the old declaration back. **G7 in a different object** — `TASK_BOTH` escapes only because Phase 4 gave its XML half its own `TASK_NATIVE` form, and `ExportCoverage.IsExportOnly` names `LIBRARIES` and `TASK_NATIVE` and nothing else. Proven by a control run that skips the `.gvl.xml` and changes nothing else, after which the edit survives. The three candidate fixes and what each costs are in [`STATUS.md`](STATUS.md) |
@@ -1110,10 +1110,45 @@ the **existing bytes**.
   script and fails when the exporter grows one nothing classifies. It generalises past path
   length: every export exception was invisible, and the guard fixes one cause. See the Finding
   in [`STATUS.md`](STATUS.md).
-- **G9** — guard the **total** path in the exporter, measured against the staging path since it is
-  the longer of the two. **P8 confirms nothing upstream will help**: CODESYS accepted ten nested
-  40-character folders, ~420 characters, without complaint. Shorten deeper segments or adopt
-  `\\?\`; warn rather than fail silently.
+- ✅ **G9 — guarded 2026-08-16**, and the shape of the fix is not what this bullet asked for.
+
+  **The measurement first, which is what changed it** — and it is derived by a test rather
+  than counted, because the hand count was wrong twice: 189 by hand, then 201 from a version
+  that enumerated type/form pairs the exporter cannot produce. `safe_file_stem` returns up to
+  **87** characters, not the 80 `_MAX_STEM` advertises — the shortened branch appends `~` and
+  six hex — and `file_name_for` prefixes a member with its owner, so one **file name** is two
+  of those: **190**, a `TRANSITION` exported as native XML. With the
+  `Device/Plc Logic/Application` chain every project has and a **one-character** project name,
+  that leaves **19 characters for the repository root**. `C:\GIT\Versio` is 13 and fits by six;
+  anything under a user profile does not. **G9 needs no deep folder chain**, which is what this
+  row assumed for its whole life.
+
+  **Why nothing shortens.** Shortening keyed on a total path makes the file name depend on
+  where the repository is checked out, so two developers produce different names for one
+  object and git sees renames that are not renames. The mirror must be a function of the
+  project alone. Shortening that *is* safe already exists in `safe_file_stem`, which keys on
+  the object's own name — and that is the only kind a per-name rule can honestly do.
+
+  **Why `\\?\` was not adopted.** It lifts `MAX_PATH` for the caller's own file APIs and for
+  nobody else: git, CODESYS and the engineer's editor still cannot open the file. A path only
+  Versio can write is not a fix.
+
+  **So: two guards, two channels.** `too_long_for_any_machine` is machine-independent and
+  goes through `warn()` into `_manifest.json` — the same answer for every developer, which is
+  what makes it safe to record. `too_long_for_this_machine` goes through `emit()` to the log
+  and no further, because its answer depends on the repository root and a machine-dependent
+  sentence in the manifest would churn the mirror on every export by whoever is checked out
+  deeper. `The_machine_dependent_path_warning_never_reaches_the_manifest` asserts the
+  difference, because it is one word at the call site.
+
+  **What is deliberately still open.** The 190-character worst case is still *producible* —
+  the guards report it, they do not prevent it. Closing that means shrinking `MaxStem` or
+  dropping the parent prefix, and **either renames files in every mirror already committed**:
+  every method, action, property and transition in every repository, on the next export, as a
+  git rename with no content change. That is a much larger change than this gap was scoped as
+  and it is somebody's decision rather than a consequence of guarding a path.
+  `The_longest_legal_file_name_overflows_MAX_PATH_before_any_folder_chain` derives the number
+  rather than asserting it, so whoever takes that on gets told when they have succeeded.
 - `ImportPlannerTests` — pure and exhaustive: delete, rename, move, rename-and-edit, GVL two-file
   GUID, stale manifest, missing manifest, object-added-in-IDE, encoded names, dotted names.
 - ~~Extend `PythonFileNameParityTests` with an **`StTextCodec` ↔ `versio_text` codec parity

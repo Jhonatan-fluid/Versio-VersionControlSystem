@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-16 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,493 unit + 480 UI + 237 integration, 0 skipped
+**Date:** 2026-08-16 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,494 unit + 480 UI + 242 integration, 0 skipped
 · *(integration now runs ~30 min, not the 10–16 it did before the import feature checklist added
 13 tests; run three times end to end on 2026-08-16 with no flake, plus every affected test
 individually — see the flake note in `CLAUDE.md`, which is about earlier runs)*
@@ -164,7 +164,7 @@ opens. That is `SAFEGUARDS.md` phases 1–8, and phase 9 is features rather than
 
 ```
   CODESYS pipeline    ████████████████████  proven on a real project
-  Domain core         ████████████████████  1,493 tests, under 400 ms
+  Domain core         ████████████████████  1,494 tests, under 400 ms
   Vendor seam         ████████████████████  enforced from assembly metadata
   Infrastructure      ████████████████████  drives real CODESYS + real git
   Desktop shell       ███████████████████░  full git surface, diff, and a UI audit applied
@@ -316,9 +316,10 @@ unless something changes.
 > [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md), whose *Handoff* section is the one to read
 > first, and whose **feature checklist** is what says which of its 49 behaviours have been run
 > against a real project and which have not. **Phases 0–5 there are complete and Phase 6 is part
-> done**; what is left of it is **G8 and G9**, and G9 is the bigger of the two. **It is
-> reachable by arithmetic, not by a field report** — see the correction in the import plan's G9
-> row, and the Finding below on what an export that loses an object used to report.
+> done**; **G9 is guarded** as of 2026-08-16 and **G8 is what is left**. G9's remaining half
+> is deliberate and is somebody's decision rather than a task: the worst case is reported but
+> still producible, and preventing it renames committed files in every mirror. See the import
+> plan's G9 row and the two Findings below.
 
 > **The second queue — the code-shape work — is CLOSED, and three of its items were closed by
 > deciding not to do them.** It never had any bearing on what the product does. What was worth
@@ -965,6 +966,74 @@ would have gone on passing while checking one fewer every time a panel moved out
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### The cap that said it bounded the path bounded one segment, and was off by seven
+
+**Found 2026-08-16 by measuring G9 before building its guard**, with the pure functions that
+actually run rather than by counting characters in a comment.
+
+`_MAX_STEM = 80` carried this justification, in both languages: *"short enough that a deep
+CODESYS folder chain plus this still clears Windows' 260-character path limit."* Two things
+make it false, and the second is the one that matters:
+
+```
+safe_file_stem("A" * 300)                 ->  87 chars   the shortened branch adds "~" + 6 hex
+file_name_for(child, TRANSITION, NATIVE, parent)
+                                          -> 190 chars   TWO shortened stems in one name
+```
+
+`file_name_for` prefixes a member with its owner — method, action, property, transition — so a
+single **file name** is two capped stems plus an infix plus a suffix. With
+`Device/Plc Logic/Application`, the chain every CODESYS project has, and a **one-character**
+project name, that leaves **19 characters for the repository root**. `C:\GIT\Versio` is 13 and
+fits by six; `C:\Users\m.lamp\Documents\GitHub\MachineControl` is 47 and does not.
+
+**No deep folder chain is needed**, which the gap row had assumed for its whole life.
+
+**And the number was wrong twice before it was derived.** 189 by hand, in the first write-up
+of this. Then **201**, from a test that enumerated `CodesysObjectType` against `ExportForm` and
+found `Transition/Libraries` — a combination the exporter cannot produce, because
+`.libraries.yaml` belongs to a library manager and a library manager is not parent-prefixed.
+Asking `ExportFormRules.Decide` which forms a type can actually take gives **190**. **A worst
+case built from impossible inputs is not a worst case**, and this one was inflated by eleven
+characters until the rule was asked instead of the enum.
+
+**The test that should have caught it asserted `< 100`.** `A_name_nobody_could_open_is_shortened_rather_than_written`
+passed at 87 and would have passed at 99. It pins 87 now — a loose bound on a number whose
+exact value is the whole point is a test that measures nothing.
+
+**The design trap, which is why this took a shape the plan did not ask for.** The plan said
+"shorten deeper segments or adopt `\\?\`". Both are wrong here:
+
+- **Shortening keyed on the total path makes the export machine-dependent.** The total includes
+  the repository root, which differs per developer — so two people cloning one repository would
+  produce *different file names for the same object*, and git would see renames that are not
+  renames. The mirror has to be a function of the project alone.
+- **`\\?\` only helps the writer.** It lifts the limit for Versio's own file APIs and leaves
+  git, CODESYS and the engineer's editor unable to open the file.
+
+So it is **two guards on two channels**, and the channel is the load-bearing part.
+`too_long_for_any_machine` reads only the mirror-relative path, gives every developer the same
+answer, and is recorded in `_manifest.json`. `too_long_for_this_machine` reads the staging path
+and goes to `emit()` and the log **only** — routing it through `warn()` would put it in the
+manifest, where a machine-dependent sentence makes two developers' manifests differ and the
+mirror churns on every export by whoever is checked out deeper. **That is Phase 5's defect
+arriving through a door Phase 5 could not have known about**, and the difference between the two
+spellings is one word at the call site, which is why a test asserts it rather than a comment.
+
+**What is not closed, deliberately.** The guards report the 190-character case; they do not
+prevent it. Preventing it means shrinking `MaxStem` or dropping the parent prefix, and either
+**renames every method, action, property and transition in every mirror already committed** —
+a git rename with no content change, in everybody's repository, on the next export. That is a
+decision rather than a consequence, so it is written up with its cost instead of taken.
+`The_longest_legal_file_name_overflows_MAX_PATH_before_any_folder_chain` **derives** the number
+instead of asserting it, so whoever takes it on is told when they have succeeded rather than
+having to re-measure.
+
+**`PATH_TOO_LONG` is not a coverage gap and is not treated as one.** The object *is* in the
+mirror on the machine that wrote it; what is wrong is every other machine. It is
+`recordedAnyway` in the warning invariant — and it is the first code that invariant forced
+somebody to classify, which is what it was built for.
 
 ### An export that lost an object reported full coverage, and `Warnings` had no reader
 

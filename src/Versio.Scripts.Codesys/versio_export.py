@@ -22,7 +22,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from versio_text import (content_hash, join_st, normalize_decl_only,  # noqa: E402
                          line_sketch, object_path, safe_file_stem,
-                         scrub_native_xml, split_st)
+                         scrub_native_xml, split_st, too_long_for_any_machine,
+                         too_long_for_this_machine)
 from versio_types import (EXPORT_ONLY_FORMS, FORM_CONTAINER,  # noqa: E402
                           FORM_GVL_BOTH, FORM_GVL_NATIVE, FORM_LIBRARIES,
                           FORM_NATIVE, FORM_NATIVE_R, FORM_NATIVE_WITH_CHILDREN,
@@ -510,6 +511,36 @@ class Exporter(object):
         fname = file_name_for(stem_name, obj_type, form, parent_stem)
         rel_path = os.path.join(rel_dir, fname)
         abs_path = os.path.join(self.out_root, rel_path)
+
+        # G9, and it is TWO questions rather than one threshold.
+        #
+        # Said BEFORE the write rather than left to fail: Windows raises an IOError
+        # that names the path and not the reason, and one of these two answers is not
+        # a failure on this machine at all. If a write does then throw, EXPORT_FAILED
+        # still fires beside these and carries the interpreter's own message - the
+        # object is reported either way, which is what the coverage change landed
+        # first to guarantee.
+        #
+        # Neither shortens anything. Shortening keyed on a total path would make a
+        # file name depend on where the repository is checked out, so two developers
+        # would produce different names for one object and git would see renames that
+        # are not renames. See too_long_for_any_machine.
+        detail = too_long_for_any_machine(rel_path.replace("\\", "/"))
+        if detail:
+            self.warn("PATH_TOO_LONG", object_path(rel_dir, name), detail)
+
+        detail = too_long_for_this_machine(abs_path)
+        if detail:
+            # emit, NOT warn, and this is the whole reason the two are separate
+            # functions. warn() appends to self.warnings, which is written into
+            # _manifest.json - so a sentence whose answer depends on the repository
+            # root would make the manifest differ between two developers exporting
+            # the same project, and the mirror would churn on every export by
+            # whoever is checked out deeper. That is the churn Phase 5 closed,
+            # arriving through a new door. PROJECT_CLOSE_FAILED goes this way for
+            # the same reason: a protocol event, not a coverage fact.
+            emit({"t": "warning", "code": "PATH_TOO_LONG_HERE",
+                  "path": object_path(rel_dir, name), "detail": detail})
 
         try:
             if form == FORM_ST_FULL:

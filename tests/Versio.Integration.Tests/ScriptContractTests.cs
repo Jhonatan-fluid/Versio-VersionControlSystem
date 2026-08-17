@@ -162,6 +162,14 @@ public sealed class ScriptContractTests(ITestOutputHelper output)
             "LIBRARY_REFERENCES_PARTIAL",
             "TASK_CHILDREN_UNAVAILABLE",
             "TASK_LIST_PARTIAL",
+
+            // G9's machine-independent guard. It fires BEFORE the write and does not stop
+            // it, so on a machine where the path still fits the object is written and
+            // recorded — the warning is about every OTHER machine, where this mirror cannot
+            // be checked out. If the write does then fail, EXPORT_FAILED fires beside it and
+            // that one is the failure. The first code this invariant forced somebody to
+            // classify, which is what it was written for.
+            "PATH_TOO_LONG",
         ];
 
         foreach (var code in codes)
@@ -194,6 +202,37 @@ public sealed class ScriptContractTests(ITestOutputHelper output)
         // what it was when it was not "every".
         Assert.Contains("TASK_LIST_PARTIAL", codes, StringComparer.Ordinal);
         Assert.Contains("LIBRARY_REFERENCES_PARTIAL", codes, StringComparer.Ordinal);
+    }
+
+    [Fact]
+    public void The_machine_dependent_path_warning_never_reaches_the_manifest()
+    {
+        // THE ONE RULE THIS PAIR OF GUARDS TURNS ON, and nothing else can enforce it.
+        //
+        // PATH_TOO_LONG_HERE answers "is this repository checked out too deep", which is a
+        // different answer on every machine. Exporter.warn appends to self.warnings and that
+        // list is written into _manifest.json — so routing this through warn() would make the
+        // manifest differ between two developers exporting the same project, and the mirror
+        // would churn on every export by whoever is checked out deeper. That is exactly the
+        // churn Phase 5 closed, arriving through a door Phase 5 could not have known about.
+        //
+        // So it goes to emit() and no further, the way PROJECT_CLOSE_FAILED does. Asserted
+        // rather than commented, because the difference between the two spellings is one
+        // word at the call site and the consequence is a mirror that never settles.
+        var source = WithoutComments(Exporter());
+
+        Assert.False(source.Contains("self.warn(\"PATH_TOO_LONG_HERE\"", StringComparison.Ordinal),
+            "PATH_TOO_LONG_HERE is going through warn(), so it will be written into "
+            + "_manifest.json. Its answer depends on the repository root, so the manifest "
+            + "would differ between developers and the mirror would churn on every export — "
+            + "Phase 5's defect, through a new door. Use emit() directly.");
+
+        // Non-vacuous: the code really is raised, and really is raised the other way.
+        Assert.Contains("\"code\": \"PATH_TOO_LONG_HERE\"", source, StringComparison.Ordinal);
+
+        // And its machine-INDEPENDENT sibling really does go through warn(), or the manifest
+        // records nothing about paths at all and this test is guarding an empty room.
+        Assert.Contains("self.warn(\"PATH_TOO_LONG\"", source, StringComparison.Ordinal);
     }
 
     [Fact]
