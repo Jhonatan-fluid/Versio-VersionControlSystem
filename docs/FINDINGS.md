@@ -20,7 +20,7 @@ produce a diff touching everything else.
 ### The probe that caught two of its own lies was carrying a third, and three documents believed it
 
 **Found 2026-08-17 by reviewing the P11 probe's own output against its step list** — the run
-whose results went into four documents an hour earlier. The finding below this one records two
+whose results had gone into four documents the same morning. The finding below this one records two
 method errors the probe's author caught and fixed mid-session: a by-index pairing that reported
 a pass for a move that never happened, and an after-reopen check that reported a failure that
 never happened. The fixed probe had a third error of exactly the same class, and this time the

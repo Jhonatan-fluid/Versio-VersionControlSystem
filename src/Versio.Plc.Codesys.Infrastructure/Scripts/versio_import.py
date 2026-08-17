@@ -759,11 +759,12 @@ class Importer(object):
             # between "CODESYS declined" and "Versio said it worked".
             #
             # WHAT IS DECLINED IS NOW MEASURED - P11, nine ordered moves on one project,
-            # each re-resolved afterwards:
+            # each re-resolved afterwards (and run twice: the first run's ninth step never
+            # executed, which three documents missed - the probe finding in FINDINGS.md):
             #
             #   performed   a POU into a folder, into a folder inside that folder, and back
             #               out into Application; a GVL to the PROJECT ROOT; an EMPTY FOLDER
-            #               into Plc Logic
+            #               into Plc Logic, and into an ordinary folder
             #   declined    a POU into Device; a visualisation into Plc Logic; a folder
             #               HOLDING A POU into Plc Logic
             #   raised      nothing, ever - every call returned None
@@ -772,7 +773,7 @@ class Importer(object):
             # it was. An empty folder goes into Plc Logic quite happily while a POU does not,
             # and a folder stops being movable there once a POU is inside it - so what is
             # being moved matters as much as where. It reads like "the destination must be
-            # able to hold the whole subtree", but that is an inference from six rows and it
+            # able to hold the whole subtree", but that is an inference from nine rows and it
             # is not what this code relies on.
             #
             # What this code relies on is that every refusal is SILENT. The read-back below

@@ -6,9 +6,9 @@
 # because the plan asserts something about the ScriptEngine API that nobody has run.
 #
 # ---------------------------------------------------------------------------------------
-# WHY THIS LIVES IN tools/ AND NOT IN src/Versio.Scripts.Codesys/
+# WHY THIS LIVES IN tools/ AND NOT IN src/Versio.Plc.Codesys.Infrastructure/Scripts/
 #
-#   Versio.Infrastructure.csproj embeds src\Versio.Scripts.Codesys\*.py into the shipping
+#   Versio.Plc.Codesys.Infrastructure.csproj embeds Scripts\*.py into the shipping
 #   assembly. This script RENAMES, MOVES, REMOVES and CREATES objects. CODESYS.md B4
 #   already records the discomfort of versio_delete_objects.py sitting inside the product
 #   while never being part of it, and one script that can delete somebody's POUs shipping

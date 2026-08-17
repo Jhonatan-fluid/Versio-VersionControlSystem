@@ -168,9 +168,9 @@ explicit `encoding='utf-8', newline='\n'`, or the editing tools.
 **Never edit source through a shell heredoc.** Python-in-bash eats backslashes and backticks
 silently. Write the script to a file and run it.
 
-**The python scripts are EMBEDDED in `Versio.Infrastructure.dll`.** Editing
-`src/Versio.Scripts.Codesys/*.py` and then running `dotnet test --no-build` tests the script
-that was embedded at the last build, not the one on disk. It looks exactly like a change that
+**The python scripts are EMBEDDED in `Versio.Plc.Codesys.Infrastructure.dll`.** Editing
+`src/Versio.Plc.Codesys.Infrastructure/Scripts/*.py` and then running `dotnet test --no-build`
+tests the script that was embedded at the last build, not the one on disk. It looks exactly like a change that
 did nothing: a Phase 5 mutation check reported the acceptance test still passing with the
 feature disabled, which is the most misleading answer a mutation check can give. **Rebuild after
 touching python**, always.
