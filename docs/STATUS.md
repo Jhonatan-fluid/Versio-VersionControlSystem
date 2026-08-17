@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,290 across five
+**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,295 across five
 projects, 0 skipped — re-derived by running each, not carried forward
 
 | Project | Tests | Time | Needs |
@@ -8,7 +8,7 @@ projects, 0 skipped — re-derived by running each, not carried forward
 | `Versio.Core.Tests` | 1,295 | under a second | nothing |
 | `Versio.Integration.Tests` | 141 | ~10 s | real git |
 | `Versio.App.Tests` | 480 | ~50 s | nothing |
-| `Versio.Arch.Tests` | 9 | instant | nothing |
+| `Versio.Arch.Tests` | 14 | instant | nothing |
 | `Versio.Plc.Codesys.Tests` | 365 | **~31 min** | **real CODESYS** |
 
 *The first four are eleven seconds plus the UI suite, and are the loop to work in. The last is
@@ -1003,6 +1003,7 @@ actually do.
 
 The full list, newest first:
 
+- [The guard I wrote for the seam was weaker than the claim I made for it](FINDINGS.md#the-guard-i-wrote-for-the-seam-was-weaker-than-the-claim-i-made-for-it)
 - [A `git mv` moves a test; it does not move what the test reads](FINDINGS.md#a-git-mv-moves-a-test-it-does-not-move-what-the-test-reads)
 - [The architecture tests PLAN promised for months had never been written](FINDINGS.md#the-architecture-tests-plan-promised-for-months-had-never-been-written)
 - [The tag that split the suite was doing a project boundary's job](FINDINGS.md#the-tag-that-split-the-suite-was-doing-a-project-boundarys-job)

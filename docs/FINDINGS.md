@@ -17,6 +17,42 @@ produce a diff touching everything else.
 
 ---
 
+### The guard I wrote for the seam was weaker than the claim I made for it
+
+**Found 2026-08-17, in a second pass over this session's own work, by mutation.**
+`DependencyRuleTests` asserted that `Versio.Core` and `Versio.Infrastructure` reference no vendor
+pack, using `Assembly.GetReferencedAssemblies()`. Adding
+`<ProjectReference Include="Versio.Plc.Codesys">` to `Versio.Infrastructure` and rebuilding left
+**every one of those assertions green**.
+
+**The C# compiler drops assembly references the code does not use.** So
+`GetReferencedAssemblies()` reports what the compiler *kept*, not what the project *declares* —
+which means the test answers "does this assembly actually depend on that one", and the commit
+message claimed it answered "is there a project reference". Those are different questions, and
+the weaker one is satisfied by a door that is open but not yet walked through.
+
+`ProjectReferenceTests` reads the `.csproj` files and asserts the declarations directly. Both
+checks stay, because both questions are worth asking: metadata catches real coupling, the project
+files catch the door being opened — which is what somebody does immediately before writing the
+code that would use it.
+
+**Reading source is normally the wrong instrument here** and it is worth saying why this is the
+exception. The vendor seam scanner deliberately reads IL rather than source, so that a brand in a
+comment is not a leak. A project file is different: it *is* the declaration, there is nothing to
+interpret, and no compiler step stands between what it says and what it means.
+
+**Two things about how this was found.** It was found by mutation and by nothing else — the suite
+was green, the claim was wrong, and only deliberately breaking the thing revealed the gap. And it
+was found in a pass over work from the same session, which is the argument for that pass: the
+three commits that built and used this guard all read as correct, and one of them was overselling
+what it had.
+
+**Also removed in the same pass: `CodesysPack.Unregister()`, which had zero callers.** It was
+written with a docstring inventing a user for it — "exists so a test can return to a known state"
+— on the same branch whose opening finding was that `PlcFormats.Register` had no callers while
+three documents described registration as the architecture. Writing that defect twice in one
+week, once while documenting it, is worth recording rather than quietly deleting.
+
 ### A `git mv` moves a test; it does not move what the test reads
 
 **Found 2026-08-17 by the Phase D gate, and only by the gate.** Splitting the suite into a fast

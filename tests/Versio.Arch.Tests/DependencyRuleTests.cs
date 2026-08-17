@@ -49,10 +49,19 @@ public sealed class DependencyRuleTests
     {
         // Not in PLAN's original five, because when they were written the vendor lived INSIDE
         // Versio.Core and the rule could not have been stated. It is the same rule.
-        var referenced = Core.GetReferencedAssemblies().Select(a => a.Name!).ToList();
+        var core = Core.GetReferencedAssemblies().Select(a => a.Name!).ToList();
 
-        Assert.DoesNotContain("Versio.Plc.Codesys", referenced);
-        Assert.DoesNotContain("Versio.Plc.Codesys.Infrastructure", referenced);
+        Assert.DoesNotContain("Versio.Plc.Codesys", core);
+        Assert.DoesNotContain("Versio.Plc.Codesys.Infrastructure", core);
+
+        // Versio.Infrastructure too, which the first version of this test forgot. It holds the
+        // git client, the watchers, the filesystem and PlcToolchains — and PlcToolchains is
+        // exactly where a vendor factory used to be hardcoded, so it is the assembly most
+        // likely to grow the reference back.
+        var infrastructure = Infrastructure.GetReferencedAssemblies().Select(a => a.Name!).ToList();
+
+        Assert.DoesNotContain("Versio.Plc.Codesys", infrastructure);
+        Assert.DoesNotContain("Versio.Plc.Codesys.Infrastructure", infrastructure);
     }
 
     [Fact]

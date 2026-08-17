@@ -44,10 +44,16 @@ public static class CodesysPack
         PlcToolchains.Register(PlcVendor.Codesys, log => new CodesysToolchain(log));
     }
 
-    /// <summary>Undo <see cref="Register"/>. Exists so a test can return to a known state.</summary>
-    public static void Unregister()
-    {
-        PlcFormats.Unregister(PlcVendor.Codesys);
-        PlcToolchains.Unregister(PlcVendor.Codesys);
-    }
+    // NO Unregister() COUNTERPART, deliberately, and the absence is the interesting part.
+    //
+    // One was written here — "exists so a test can return to a known state" — and then had zero
+    // callers, which is exactly the defect this session opened by writing up: PlcFormats.Register
+    // and PlcToolchains.Register had no callers at all while three documents described
+    // registration as the architecture. Adding unused API on the same branch that found that,
+    // with a docstring inventing a user for it, is not a mistake worth repeating twice.
+    //
+    // PlcFormats.Unregister and PlcToolchains.Unregister DO exist and ARE used: a test that
+    // registers a stand-in vendor undoes exactly what it did. Nothing has yet needed to undo the
+    // whole pack, and when something does, it is two lines at the call site or four here — by
+    // which time whoever writes it will know which.
 }
