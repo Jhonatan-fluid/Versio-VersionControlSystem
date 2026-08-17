@@ -2,7 +2,6 @@ using Versio.Core.Bindings;
 using Versio.Core.Locking;
 using Versio.Core.Logging;
 using Versio.Core.Plc;
-using Versio.Plc.Codesys;
 using Versio.Core.Projects;
 using Versio.Core.Sync;
 using Versio.Infrastructure.Bindings;
@@ -10,8 +9,10 @@ using Versio.Infrastructure.FileSystem;
 using Versio.Infrastructure.Git;
 using Versio.Infrastructure.Platform;
 using Versio.Plc.Codesys.Infrastructure;
-using Xunit;
+using Versio.Plc.Codesys;
+using Versio.TestSupport;
 using Xunit.Abstractions;
+using Xunit;
 
 namespace Versio.Integration.Tests;
 
@@ -110,7 +111,7 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
         new CodesysLocator().FindInstalls().FirstOrDefault(i => i.Profiles.Count > 0);
 
     private static string FixtureProject =>
-        Core.Tests.TestPaths.Project("RefrigeratorControl.project");
+        TestPaths.Project("RefrigeratorControl.project");
 
     public void Dispose()
     {
@@ -960,7 +961,7 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
         var install = Install;
         Skip.If(install is null, "no CODESYS installation with a profile");
 
-        var fixture = Core.Tests.TestPaths.Project("MachineWithMembers.project");
+        var fixture = TestPaths.Project("MachineWithMembers.project");
         Skip.If(!File.Exists(fixture), "the member fixture is missing");
 
         Directory.CreateDirectory(Path.Combine(_repo, "plc"));

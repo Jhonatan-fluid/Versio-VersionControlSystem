@@ -1,4 +1,4 @@
-namespace Versio.Core.Tests;
+namespace Versio.TestSupport;
 
 /// <summary>
 /// Locates the repository root from the test assembly's own location.

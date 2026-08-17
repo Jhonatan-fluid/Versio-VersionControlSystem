@@ -2,11 +2,12 @@ using System.Diagnostics;
 using System.Text.Json;
 using Versio.Core.Diff;
 using Versio.Core.Iec;
-using Versio.Plc.Codesys;
 using Versio.Core.Projects;
 using Versio.Core.Serialization;
-using Xunit;
+using Versio.Plc.Codesys;
+using Versio.TestSupport;
 using Xunit.Abstractions;
+using Xunit;
 
 namespace Versio.Integration.Tests;
 
@@ -37,7 +38,7 @@ namespace Versio.Integration.Tests;
 [Trait("Category", "Integration")]
 public sealed class PythonFileNameTests(ITestOutputHelper output)
 {
-    private static readonly string Scripts = Core.Tests.TestPaths.Scripts;
+    private static readonly string Scripts = TestPaths.Scripts;
 
     /// <summary>Run <c>object_path</c> over one directory and name.</summary>
     /// <remarks>
@@ -431,7 +432,7 @@ public sealed class PythonFileNameTests(ITestOutputHelper output)
 [Trait("Category", "Integration")]
 public sealed class PythonFileNameParityTests(ITestOutputHelper output)
 {
-    private static readonly string Scripts = Core.Tests.TestPaths.Scripts;
+    private static readonly string Scripts = TestPaths.Scripts;
 
     /// <summary>
     /// Names chosen to hit every branch on both sides.
@@ -706,7 +707,7 @@ public sealed class PythonFileNameParityTests(ITestOutputHelper output)
         // It could not exist until 2026-08-15, because the committed mirror had no
         // .tasks.yaml: the fixture was left unregenerated when Phase 4 landed.
         var path = Path.Combine(
-            Core.Tests.TestPaths.Root, "fixtures", "projects", "RefrigeratorControl",
+            TestPaths.Root, "fixtures", "projects", "RefrigeratorControl",
             "Device", "Plc Logic", "Application", "Task Configuration.tasks.yaml");
 
         Skip.If(!File.Exists(path), "the fixture's export is not committed");
@@ -908,12 +909,12 @@ public sealed class PythonFileNameParityTests(ITestOutputHelper output)
         // different hashes is a substitution, unequal counts names which masking diverged.
         string[] files =
         [
-            Core.Tests.TestPaths.Equivalence("baseline", "GlobalTextList.xml"),
-            Core.Tests.TestPaths.Equivalence("baseline", "Task Configuration.xml"),
-            Core.Tests.TestPaths.Equivalence("roundtrip", "GlobalTextList.xml"),
-            Core.Tests.TestPaths.Equivalence("roundtrip", "Task Configuration.xml"),
+            TestPaths.Equivalence("baseline", "GlobalTextList.xml"),
+            TestPaths.Equivalence("baseline", "Task Configuration.xml"),
+            TestPaths.Equivalence("roundtrip", "GlobalTextList.xml"),
+            TestPaths.Equivalence("roundtrip", "Task Configuration.xml"),
             .. Directory.EnumerateFiles(
-                    Core.Tests.TestPaths.Project("RefrigeratorControl"),
+                    TestPaths.Project("RefrigeratorControl"),
                     "*.xml", SearchOption.AllDirectories)
                 .OrderBy(p => p, StringComparer.Ordinal),
         ];
@@ -974,10 +975,10 @@ public sealed class PythonFileNameParityTests(ITestOutputHelper output)
         // live state had genuinely changed.
         var files = new[]
         {
-            Core.Tests.TestPaths.Equivalence("baseline", "GlobalTextList.xml"),
-            Core.Tests.TestPaths.Equivalence("roundtrip", "GlobalTextList.xml"),
-            Core.Tests.TestPaths.Equivalence("baseline", "Task Configuration.xml"),
-            Core.Tests.TestPaths.Equivalence("roundtrip", "Task Configuration.xml"),
+            TestPaths.Equivalence("baseline", "GlobalTextList.xml"),
+            TestPaths.Equivalence("roundtrip", "GlobalTextList.xml"),
+            TestPaths.Equivalence("baseline", "Task Configuration.xml"),
+            TestPaths.Equivalence("roundtrip", "Task Configuration.xml"),
         };
 
         Skip.If(files.Any(f => !File.Exists(f)), "the equivalence captures are not committed");
@@ -1454,7 +1455,7 @@ public sealed class PythonFileNameParityTests(ITestOutputHelper output)
                  })
         {
             var path = Path.Combine(
-                Core.Tests.TestPaths.Fixtures, "projects",
+                TestPaths.Fixtures, "projects",
                 relative.Replace('/', Path.DirectorySeparatorChar));
 
             if (!File.Exists(path))

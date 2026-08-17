@@ -1,10 +1,11 @@
 using Versio.Core.Logging;
-using Versio.Plc.Codesys;
 using Versio.Infrastructure.Logging;
 using Versio.Infrastructure.Platform;
 using Versio.Plc.Codesys.Infrastructure;
-using Xunit;
+using Versio.Plc.Codesys;
+using Versio.TestSupport;
 using Xunit.Abstractions;
+using Xunit;
 
 namespace Versio.Integration.Tests;
 
@@ -67,7 +68,7 @@ public sealed class ImportLoggingTests(ITestOutputHelper output) : IDisposable
         var install = new CodesysLocator().FindInstalls().FirstOrDefault(i => i.Profiles.Count > 0);
         Skip.If(install is null, "no CODESYS installation with a profile");
 
-        var fixture = Core.Tests.TestPaths.Project("RefrigeratorControl.project");
+        var fixture = TestPaths.Project("RefrigeratorControl.project");
         Skip.If(!File.Exists(fixture), "fixture project missing");
 
         Directory.CreateDirectory(_root);
@@ -191,7 +192,7 @@ public sealed class ImportLoggingTests(ITestOutputHelper output) : IDisposable
         var install = new CodesysLocator().FindInstalls().FirstOrDefault(i => i.Profiles.Count > 0);
         Skip.If(install is null, "no CODESYS installation with a profile");
 
-        var fixture = Core.Tests.TestPaths.Project("RefrigeratorControl.project");
+        var fixture = TestPaths.Project("RefrigeratorControl.project");
         Skip.If(!File.Exists(fixture), "fixture project missing");
 
         Directory.CreateDirectory(_root);

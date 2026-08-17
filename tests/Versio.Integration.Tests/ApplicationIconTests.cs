@@ -1,5 +1,5 @@
 using System.Buffers.Binary;
-using Versio.Core.Tests;
+using Versio.TestSupport;
 using Xunit;
 
 namespace Versio.Integration.Tests;

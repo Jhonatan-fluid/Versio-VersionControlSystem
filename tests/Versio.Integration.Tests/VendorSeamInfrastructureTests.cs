@@ -1,5 +1,5 @@
 using System.Reflection;
-using Versio.Core.Tests.Plc;
+using Versio.TestSupport;
 using Versio.Infrastructure.Git;
 using Xunit;
 
@@ -24,9 +24,10 @@ namespace Versio.Integration.Tests;
 /// <c>FastLaneTests</c> asserts that by refusing to let it carry the toolchain tag.
 /// </para>
 /// <para>
-/// The scanner itself is linked from <c>Versio.Core.Tests</c> rather than copied, the same
-/// arrangement <c>TestPaths</c> already has. Two copies of a rule is how the two copies start
-/// disagreeing.
+/// The scanner lives in <c>Versio.TestSupport</c> rather than being copied here. Two copies of
+/// a rule is how the two copies start disagreeing — and it was shared by
+/// <c>&lt;Compile Include Link&gt;</c> until the fourth test project made that arrangement
+/// untenable.
 /// </para>
 /// </remarks>
 [Trait("Category", "Integration")]

@@ -1,6 +1,5 @@
 using Versio.Core.Bindings;
 using Versio.Core.Locking;
-using Versio.Plc.Codesys;
 using Versio.Core.Sync;
 using Versio.Infrastructure.Bindings;
 using Versio.Infrastructure.FileSystem;
@@ -8,8 +7,10 @@ using Versio.Infrastructure.Git;
 using Versio.Infrastructure.Platform;
 using Versio.Infrastructure.Plc;
 using Versio.Plc.Codesys.Infrastructure;
-using Xunit;
+using Versio.Plc.Codesys;
+using Versio.TestSupport;
 using Xunit.Abstractions;
+using Xunit;
 
 namespace Versio.Integration.Tests;
 
@@ -1351,7 +1352,7 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
     }
 
     private static string FixtureProject =>
-        Core.Tests.TestPaths.Project("RefrigeratorControl.project");
+        TestPaths.Project("RefrigeratorControl.project");
 
     /// <param name="git">
     /// Supplied only by the test that needs a departed file's content from HEAD. Everything

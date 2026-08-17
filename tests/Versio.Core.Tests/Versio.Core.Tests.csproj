@@ -14,6 +14,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Versio.Core\Versio.Core.csproj" />
+    <ProjectReference Include="..\Versio.TestSupport\Versio.TestSupport.csproj" />
 
     <!-- The vendor pack, because this project still holds the CODESYS unit tests and registers
          the format so the rest of the suite sees a populated registry. Versio.Core itself does

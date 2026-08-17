@@ -1,7 +1,7 @@
 using Versio.Core.Logging;
 using Xunit.Abstractions;
 
-namespace Versio.Integration.Tests;
+namespace Versio.TestSupport;
 
 /// <summary>
 /// An <see cref="IVersioLogger"/> that writes into xunit's per-test output.

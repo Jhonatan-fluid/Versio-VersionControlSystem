@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Versio.Core.Bindings;
+using Versio.TestSupport;
 using Xunit;
 
 namespace Versio.Core.Tests.Bindings;

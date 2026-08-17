@@ -1,5 +1,6 @@
 using System.Reflection;
 using Versio.Core.Plc;
+using Versio.TestSupport;
 using Xunit;
 
 namespace Versio.Core.Tests.Plc;

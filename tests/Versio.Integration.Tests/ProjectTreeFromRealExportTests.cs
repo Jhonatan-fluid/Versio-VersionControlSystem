@@ -1,7 +1,8 @@
 using Versio.Core.Git;
 using Versio.Core.Projects;
-using Xunit;
+using Versio.TestSupport;
 using Xunit.Abstractions;
+using Xunit;
 
 namespace Versio.Integration.Tests;
 
@@ -49,7 +50,7 @@ public sealed class ProjectTreeFromRealExportTests(ITestOutputHelper output) : I
             .FindInstalls().FirstOrDefault(i => i.Profiles.Count > 0);
         Skip.If(install is null, "no CODESYS installation with a profile");
 
-        var fixture = Core.Tests.TestPaths.Project("RefrigeratorControl.project");
+        var fixture = TestPaths.Project("RefrigeratorControl.project");
         Skip.If(!File.Exists(fixture), "fixture project missing");
 
         Directory.CreateDirectory(Path.Combine(_repo, "plc"));

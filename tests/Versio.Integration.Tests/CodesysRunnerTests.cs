@@ -1,7 +1,8 @@
-using Versio.Plc.Codesys;
 using Versio.Plc.Codesys.Infrastructure;
-using Xunit;
+using Versio.Plc.Codesys;
+using Versio.TestSupport;
 using Xunit.Abstractions;
+using Xunit;
 
 namespace Versio.Integration.Tests;
 
@@ -21,7 +22,7 @@ public class CodesysRunnerTests(ITestOutputHelper output)
     /// <summary>Resolved from the assembly's own location, never hardcoded — the suite has
     /// to run from any clone path and in CI.</summary>
     private static string FixtureProject =>
-        Core.Tests.TestPaths.Project("RefrigeratorControl.project");
+        TestPaths.Project("RefrigeratorControl.project");
 
     private static CodesysLocator Locator => new();
 

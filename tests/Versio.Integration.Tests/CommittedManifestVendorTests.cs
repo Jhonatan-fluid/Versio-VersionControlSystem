@@ -1,6 +1,7 @@
 using Versio.Core.Bindings;
 using Versio.Core.Plc;
 using Versio.Core.Projects;
+using Versio.TestSupport;
 using Xunit;
 
 namespace Versio.Integration.Tests;
@@ -36,7 +37,7 @@ public sealed class CommittedManifestVendorTests
 {
     private static ProjectManifest Read(string exportDirectory) =>
         ProjectManifest.Parse(File.ReadAllText(Path.Combine(
-            Core.Tests.TestPaths.Root,
+            TestPaths.Root,
             "fixtures", "projects", exportDirectory,
             BindingConventions.ManifestFileName)));
 

@@ -1,6 +1,7 @@
 using Versio.Core.Projects;
-using Xunit;
+using Versio.TestSupport;
 using Xunit.Abstractions;
+using Xunit;
 
 namespace Versio.Integration.Tests;
 
@@ -90,7 +91,7 @@ public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) 
             .FindInstalls().FirstOrDefault(i => i.Profiles.Count > 0);
         Skip.If(install is null, "no CODESYS installation with a profile");
 
-        var fixture = Core.Tests.TestPaths.Project("RefrigeratorControl.project");
+        var fixture = TestPaths.Project("RefrigeratorControl.project");
         Skip.If(!File.Exists(fixture), "fixture project missing");
 
         var work = Path.Combine(_root, label);
@@ -512,7 +513,7 @@ public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) 
             .FindInstalls().FirstOrDefault(i => i.Profiles.Count > 0);
         Skip.If(install is null, "no CODESYS installation with a profile");
 
-        var fixture = Core.Tests.TestPaths.Project("RefrigeratorControl.project");
+        var fixture = TestPaths.Project("RefrigeratorControl.project");
         Skip.If(!File.Exists(fixture), "fixture project missing");
 
         var work = Path.Combine(_root, "g10");
@@ -633,7 +634,7 @@ public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) 
     /// <summary>Put a copy of the fixture project somewhere it can be exported from.</summary>
     private async Task<string> ProjectCopyAsync(string label)
     {
-        var fixture = Core.Tests.TestPaths.Project("RefrigeratorControl.project");
+        var fixture = TestPaths.Project("RefrigeratorControl.project");
         Skip.If(!File.Exists(fixture), "fixture project missing");
 
         var work = Path.Combine(_root, label);

@@ -1,6 +1,6 @@
 using System.Reflection;
 
-namespace Versio.Core.Tests.Plc;
+namespace Versio.TestSupport;
 
 /// <summary>
 /// Reads an assembly's own metadata for vendor knowledge that has leaked into a namespace which
@@ -22,7 +22,7 @@ namespace Versio.Core.Tests.Plc;
 /// notice them at all, and a leaked sentence is the one a person actually reads.
 /// </para>
 /// </remarks>
-internal static class VendorSeamScanner
+public static class VendorSeamScanner
 {
     /// <summary>Every brand name that must not appear outside its own corner.</summary>
     /// <remarks>

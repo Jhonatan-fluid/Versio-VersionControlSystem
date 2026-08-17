@@ -2,15 +2,16 @@ using System.Diagnostics;
 using Versio.Core.Bindings;
 using Versio.Core.Locking;
 using Versio.Core.Plc;
-using Versio.Plc.Codesys;
 using Versio.Core.Sync;
 using Versio.Infrastructure.Bindings;
 using Versio.Infrastructure.FileSystem;
 using Versio.Infrastructure.Git;
 using Versio.Infrastructure.Platform;
 using Versio.Plc.Codesys.Infrastructure;
-using Xunit;
+using Versio.Plc.Codesys;
+using Versio.TestSupport;
 using Xunit.Abstractions;
+using Xunit;
 
 namespace Versio.Integration.Tests;
 
@@ -135,7 +136,7 @@ public sealed class OpenProjectTests(ITestOutputHelper output) : IDisposable
         var install = Install;
         Skip.If(install is null, "no CODESYS installation with a profile");
 
-        var fixture = Core.Tests.TestPaths.Project("RefrigeratorControl.project");
+        var fixture = TestPaths.Project("RefrigeratorControl.project");
         Skip.If(!File.Exists(fixture), "fixture project missing");
 
         Directory.CreateDirectory(Path.Combine(_repo, "plc"));
@@ -211,7 +212,7 @@ public sealed class OpenProjectTests(ITestOutputHelper output) : IDisposable
         var install = Install;
         Skip.If(install is null, "no CODESYS installation with a profile");
 
-        var fixture = Core.Tests.TestPaths.Project("RefrigeratorControl.project");
+        var fixture = TestPaths.Project("RefrigeratorControl.project");
         Skip.If(!File.Exists(fixture), "fixture project missing");
 
         await InitRepoAsync();
