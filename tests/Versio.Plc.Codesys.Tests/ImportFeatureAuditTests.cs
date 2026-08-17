@@ -278,6 +278,87 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
         Assert.Contains("audit_marker", reExported, StringComparison.Ordinal);
     }
 
+    // ── A8 and A9: the two create refusals ─────────────────────────────────────────────
+
+    /// <summary>
+    /// A garbled source is reported, not approximated; a create under a folder the project
+    /// does not have is reported, and nothing is created for either.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>These were the checklist's A8 and A9, and they sat NOT REACHED for a reason worth
+    /// recording: nobody tried.</b> Both rows said what would be needed — "a mirror file that
+    /// is textual by suffix and unparseable by content", "a create under a folder the project
+    /// does not have" — and both are one <c>WriteAsync</c> each, unlike E2 and E4, whose
+    /// fixture genuinely cannot be built. A row that names its own fixture and stays NOT
+    /// REACHED is a decision by default, and this list is supposed to contain decisions made
+    /// deliberately.
+    /// </para>
+    /// <para>
+    /// One run covers both because they refuse at different points of the same path:
+    /// <c>create_textual</c> resolves the owner <i>before</i> it reads the file, so the orphan
+    /// refuses on <c>PARENT_NOT_FOUND</c> without its (perfectly valid) declaration ever being
+    /// parsed, and the garbled file resolves its owner fine and then refuses on
+    /// <c>CANNOT_IDENTIFY_DECLARATION</c>. The planner plans a Create for both — it warns about
+    /// a name disagreement only when the declaration parses, and a missing folder is the
+    /// script's to discover, because only the project knows its own tree.
+    /// </para>
+    /// <para>
+    /// The re-export is the half that matters: a refusal message with a created object behind
+    /// it would be the import guessing while saying it did not — "creating the wrong kind of
+    /// object is worse than creating none" is the script's own comment, asserted here from
+    /// outside.
+    /// </para>
+    /// </remarks>
+    [SkippableFact]
+    public async Task A_garbled_source_and_a_create_under_a_missing_folder_are_reported_not_guessed()
+    {
+        var install = Install;
+        Skip.If(install is null, "no CODESYS installation with a profile");
+        Skip.If(!File.Exists(FixtureProject), "fixture project missing");
+
+        var (binding, orchestrator) = await AdoptAndExportAsync(install!);
+
+        var app = Path.Combine(_repo, "plc", "RefrigeratorControl",
+                               RelApp.Replace('/', Path.DirectorySeparatorChar));
+
+        // A8: textual by suffix, unparseable by content. No PROGRAM / FUNCTION_BLOCK /
+        // FUNCTION / INTERFACE / TYPE header anywhere in it.
+        await WriteAsync(Path.Combine(app, "Garbage.st"),
+                         "// somebody saved scratch notes with the wrong extension\n"
+                         + "these lines are not a declaration of anything\n");
+
+        // A9: a legal declaration under a folder the project does not have. The owner is
+        // resolved before the file is read (create_textual's own order), so this refusal
+        // never parses the declaration — a code fact, not one this test can distinguish:
+        // with valid content, PARENT_NOT_FOUND is the only refusal either order produces.
+        Directory.CreateDirectory(Path.Combine(app, "NoSuchFolder"));
+        await WriteAsync(Path.Combine(app, "NoSuchFolder", "Orphan.st"),
+                         "PROGRAM Orphan\nVAR\nEND_VAR\n\nEND_PROGRAM\n");
+
+        var outcome = await TextChanged(orchestrator, binding.Id);
+        output.WriteLine($"import — {outcome.Verdict}: {SyncNarrative.Describe(outcome)}");
+        foreach (var w in outcome.Warnings)
+        {
+            output.WriteLine($"warning: {w}");
+        }
+
+        Assert.Contains(outcome.Warnings, w =>
+            w.Contains("CANNOT_IDENTIFY_DECLARATION", StringComparison.Ordinal)
+            && w.Contains("Garbage.st", StringComparison.Ordinal));
+        Assert.Contains(outcome.Warnings, w =>
+            w.Contains("PARENT_NOT_FOUND", StringComparison.Ordinal)
+            && w.Contains("Orphan.st", StringComparison.Ordinal)
+            && w.Contains("NoSuchFolder", StringComparison.Ordinal));
+
+        // Neither refusal may have an object behind it. The re-export is a fresh read of the
+        // project off disk, so an object either of these quietly created would surface here.
+        var verify = await ReExport(install!, binding.Id, "verify-refused-creates");
+        Assert.Empty(Directory.GetFiles(verify, "Garbage*", SearchOption.AllDirectories));
+        Assert.Empty(Directory.GetFiles(verify, "Orphan*", SearchOption.AllDirectories));
+        Assert.Empty(Directory.GetDirectories(verify, "NoSuchFolder", SearchOption.AllDirectories));
+    }
+
     // ── C6: what replaced the two-file rule ────────────────────────────────────────────────────────
 
     /// <summary>

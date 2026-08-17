@@ -1323,6 +1323,15 @@ should be labelled instead of chased. Item 3 waits for the panel. Nothing here i
 can simply be told to do, which is a different state from "nearly finished" and worth saying
 plainly.
 
+**Two acknowledged blind spots sit outside this table, on purpose, and a summary that says
+"three decisions" without them is overclaiming.** The `native_partial` branch is uncovered and
+its test says so — it needs CODESYS to report a per-object exception through the progress
+callback and carry on, and the only observed trigger was G11, which Phase 4 removed. And the
+phase-split save is still skipped for a native-only import — the exact shape its docstring
+names — with one lead from a Phase 4 mutation and no direct test. Both are recorded at their
+own rows (the first honesty fix, and the "fourth" below it); they are listed here because a
+handoff that only reads this table would not know they exist.
+
 **Before any of it, run the gate.** The full integration suite is ~31 minutes and drives real
 CODESYS; the fast projects are `Versio.Core.Tests` and `Versio.Integration.Tests`, eleven
 seconds together. Both commands are
@@ -1467,8 +1476,8 @@ suite, so a green result belongs to the row beside it.
 | A5 | **Native XML** replaced in place through `import_native` | E2E | ✅ `native: 7` on every import here, each reported `replaced` rather than created, and the re-export holds one object per file |
 | A6 | **`TASK_BOTH`** — task fields written through the typed API | E2E | ✅ `priority` 1 → 5 and → 7 read back out of the project |
 | A7 | An unrecorded file **creates** an object, named from its **declaration** and never from its file stem (G3) | E2E | ✅ `Bar.st` declaring `PROGRAM Foo` creates `Foo`, and the log names both |
-| A8 | A declaration with no recognisable header is reported, not approximated (`CANNOT_IDENTIFY_DECLARATION`) | NOT REACHED | Needs a mirror file that is textual by suffix and unparseable by content |
-| A9 | A create whose owner is not in the project is reported (`PARENT_NOT_FOUND`) and nothing is created | NOT REACHED | Needs a create under a folder the project does not have |
+| A8 | A declaration with no recognisable header is reported, not approximated (`CANNOT_IDENTIFY_DECLARATION`) | E2E | ✅ **2026-08-17** — a `.st` of scratch notes is warned about by name and the re-export carries no object for it. *This row and A9 sat NOT REACHED for a day while naming their own one-line fixtures; unlike E2/E4, nothing was missing but the attempt* |
+| A9 | A create whose owner is not in the project is reported (`PARENT_NOT_FOUND`) and nothing is created | E2E | ✅ **2026-08-17** — a legal `PROGRAM` under a folder the project lacks refuses on the owner, naming file and chain, before its declaration is ever parsed; the re-export has neither the object nor the folder. One run covers both rows because they refuse at different points of the same path |
 
 ### B — Deliberately not applying
 
@@ -1633,7 +1642,7 @@ earlier test's leftovers could in principle have been doing the work.
    `dotnet test tests\Versio.Plc.Codesys.Tests --filter A_task_priority_edited_in_the_mirror` —
    four CODESYS launches, 72–78 s, and it is the only thing in the repository that fails if the
    typed write stops reaching the project.
-8. **`Versio.Plc.Codesys.Tests` is the gate before a commit** — 385 tests, about half an
+8. **`Versio.Plc.Codesys.Tests` is the gate before a commit** — 386 tests, about half an
    hour, which is the sort of number that makes somebody kill a run they should have waited out.
    The loop to work in is `Versio.Core.Tests` and `Versio.Integration.Tests`: 1,437 tests in
    fifteen seconds, needing no toolchain. That used to be one integration project split by a trait and

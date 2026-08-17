@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,316 across five
+**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,317 across five
 projects, 0 skipped — re-derived by running each, not carried forward
 
 | Project | Tests | Time | Needs |
@@ -9,7 +9,7 @@ projects, 0 skipped — re-derived by running each, not carried forward
 | `Versio.Integration.Tests` | 141 | ~10 s | real git |
 | `Versio.App.Tests` | 480 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 14 | instant | nothing |
-| `Versio.Plc.Codesys.Tests` | 385 | **~31 min** | **real CODESYS** |
+| `Versio.Plc.Codesys.Tests` | 386 | **~31 min** | **real CODESYS** |
 
 *The first four are eleven seconds plus the UI suite, and are the loop to work in. The last is
 the gate before a commit. Until 2026-08-17 the split was a `--filter` expression over one

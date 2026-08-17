@@ -186,7 +186,7 @@ Versio.sln
 │  │                            needs no filter and cannot accidentally cost half an hour
 │  ├─ Versio.App.Tests/         480 tests that build the real windows and panels against
 │  │                            the real stylesheet on an STA thread — none is ever shown
-│  └─ Versio.Plc.Codesys.Tests/ 385 tests against real CODESYS, ~31 min. The gate before a
+│  └─ Versio.Plc.Codesys.Tests/ 386 tests against real CODESYS, ~31 min. The gate before a
 │                               commit, and the only suite that needs a toolchain installed
 ├─ tools/                       PowerShell and python harnesses. Seven of the nine are
 │                               CODESYS-specific probes; New-VersioIcon.ps1 generates the
@@ -336,7 +336,7 @@ dotnet test tests/Versio.Core.Tests
 | `Versio.Integration.Tests` | 141 | a real `git.exe` and the real filesystem | ~10 s |
 | `Versio.Arch.Tests` | 14 | nothing — it reads assembly metadata, IL, and the project files | instant |
 | `Versio.App.Tests` | 480 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
-| `Versio.Plc.Codesys.Tests` | 385 | **a real CODESYS**, and **skips cleanly** without one | **~31 min** |
+| `Versio.Plc.Codesys.Tests` | 386 | **a real CODESYS**, and **skips cleanly** without one | **~31 min** |
 
 The first four are the loop to work in. The last is the gate before a commit — and it is a
 separate project precisely so that running the loop cannot cost you half an hour by accident.

@@ -220,7 +220,7 @@ stays that way.
 | `Versio.Integration.Tests` | 141 | ~10 s | real git |
 | `Versio.Arch.Tests` | 14 | instant | nothing — it reads assembly metadata, IL and the `.csproj` files |
 | `Versio.App.Tests` | 480 | ~50 s, STA, no window shown | nothing |
-| `Versio.Plc.Codesys.Tests` | 385 | **~31 min** | **real CODESYS** |
+| `Versio.Plc.Codesys.Tests` | 386 | **~31 min** | **real CODESYS** |
 
 **The loop to work in is everything except the last one:**
 
