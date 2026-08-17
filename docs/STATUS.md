@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-16 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,485 unit + 480 UI + 228 integration, 0 skipped
+**Date:** 2026-08-16 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,485 unit + 480 UI + 229 integration, 0 skipped
 · *(integration now runs ~30 min, not the 10–16 it did before the import feature checklist added
 13 tests; run three times end to end on 2026-08-16 with no flake, plus every affected test
 individually — see the flake note in `CLAUDE.md`, which is about earlier runs)*

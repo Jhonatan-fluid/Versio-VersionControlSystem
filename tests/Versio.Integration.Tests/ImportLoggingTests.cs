@@ -34,6 +34,7 @@ namespace Versio.Integration.Tests;
 /// </para>
 /// </remarks>
 [Trait("Category", "Integration")]
+[Trait("Toolchain", "Codesys")]
 [Collection(CodesysCollection.Name)]
 public sealed class ImportLoggingTests(ITestOutputHelper output) : IDisposable
 {

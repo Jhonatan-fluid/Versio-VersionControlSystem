@@ -198,7 +198,21 @@ stays that way.
 |---|---|---|
 | `Versio.Core.Tests` | 1,485 | under a second |
 | `Versio.App.Tests` | 480 | ~50 s, STA, no window shown |
-| `Versio.Integration.Tests` | 228 | ~30 min, real CODESYS and real git |
+| `Versio.Integration.Tests` | 229 | ~30 min, real CODESYS and real git |
+
+**Do not sit through the integration suite while you work.** 179 of its 229 tests finish in
+**16 seconds**; the other 50 are the half hour, because a CODESYS cold start is 17–31 s, every
+launch pays it in full, an import test needs three to five of them, and they cannot run in
+parallel. So:
+
+```
+C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Integration.Tests --filter "Toolchain!=Codesys"
+```
+
+is the loop to work in, and the full run is the gate before a commit. `FastLaneTests` asserts —
+from assembly metadata, both directions — that every class in the CODESYS collection carries the
+tag and nothing else does, so the filter cannot quietly stop excluding things or quietly hide
+half an hour of coverage behind a flag nobody runs.
 
 A red integration run is worth re-running a project at a time before reading it as a
 regression — it drives real CODESYS with real timeouts.
