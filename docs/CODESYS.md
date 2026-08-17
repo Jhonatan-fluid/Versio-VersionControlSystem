@@ -846,7 +846,15 @@ spurious diff and the mirror stops being reviewable. Three rules produce that:
 Verified: three consecutive exports byte-identical across all files (2.9 MB), 9 `Timestamp`
 fields zeroed.
 
-### The one direction that is *not* byte-stable
+### The one direction that was *not* byte-stable
+
+> **✅ It is now, as of Phase 5 on 2026-08-16.** `Measure-ImportStability.ps1` prints
+> `P7: SETTLES` and `UniqueIdGenerator` reads flat across three cycles. The rest of this section
+> describes what the round trip does to the bytes, which is unchanged and is still what a reader
+> needs — what changed is that the **export no longer writes them**: when a fresh native payload
+> is `versio_native_equiv`-equivalent to the file already in the mirror, the existing bytes are
+> kept, so the three classes below stop reaching the diff. The masking described here is
+> therefore load-bearing in two places now: the comparison, and the decision not to rewrite.
 
 `export → import → export` is **semantically lossless but not byte-stable for native objects**.
 Re-exporting after a native import produced 5 of 10 files differing at *identical byte lengths*,
@@ -1063,7 +1071,7 @@ poke at CODESYS directly.
 | `Compare-Exports.ps1` | Byte-compares two export trees — the determinism gate, where a byte comparison is exactly right. `-Quiet` returns the result without the banner, for a caller presenting its own verdict |
 | `Test-RoundTrip.ps1` | export → copy → import → export → compare, **judged one layer at a time** (§6.6). **Use `-MutateFirst`** — without a deliberate change the comparison can pass while the import did nothing, and a green result that cannot fail is worse than a red one. `-UpdateEquivalenceFixtures` refreshes the inputs `RealRoundTripEquivalenceTests` reads |
 | `Probe-ImportApi.ps1` | Runs the Phase 0 import-API probes, **one scratch copy per probe** because every one of them mutates and P3 removes a referenced object. Answers what `rename`, `move`, `remove`, `find`, the task fields and `add_library` actually accept -- four of which the plan had wrong. `-Probes P5` runs one |
-| `Measure-ImportStability.ps1` | Runs the round trip **N times over one mirror**, re-exporting into it, and reports what differs per cycle plus every `UniqueIdGenerator` as a series. `Test-RoundTrip.ps1` answers "is one round trip lossless"; this answers "does it ever *stop*", which is a different question and the one that found G11. Prints `P7: SETTLES` or `P7: CHURNS`; today it churns. **A clean byte verdict is not enough on its own — check the warning count too**, or a failing import hides under a settled mirror |
+| `Measure-ImportStability.ps1` | Runs the round trip **N times over one mirror**, re-exporting into it, and reports what differs per cycle plus every `UniqueIdGenerator` as a series. `Test-RoundTrip.ps1` answers "is one round trip lossless"; this answers "does it ever *stop*", which is a different question and the one that found G11. Prints `P7: SETTLES` or `P7: CHURNS`; **it settles, as of Phase 5 on 2026-08-16** — it churned from the day it was written until then, and the record of what it churned is in [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md). **A clean byte verdict is not enough on its own — check the warning count too**, or a failing import hides under a settled mirror |
 
 > **⚠️ These harnesses do not take the machine-wide mutex.** `LocalCodesysRunner` serialises
 > every CODESYS launch behind `Global\Versio.Codesys.SingleInstance`; `Run-Codesys.ps1` starts

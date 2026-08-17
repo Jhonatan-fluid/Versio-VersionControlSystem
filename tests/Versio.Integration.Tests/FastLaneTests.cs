@@ -39,21 +39,34 @@ public sealed class FastLaneTests(ITestOutputHelper output)
         // CustomAttributeData, not GetCustomAttributes<T>(): xunit's CollectionAttribute and
         // TraitAttribute keep their values in constructor arguments and expose no properties
         // for them, so the instances are useless and the metadata is what carries the answer.
-        static IReadOnlyList<string> Args(Type type, string attribute) =>
-        [.. CustomAttributeData.GetCustomAttributes(type)
-            .Where(a => a.AttributeType.Name == attribute)
-            .SelectMany(a => a.ConstructorArguments)
-            .Select(a => a.Value as string ?? string.Empty)];
+        static IEnumerable<IList<CustomAttributeTypedArgument>> ArgsOf(
+            Type type, string attribute) =>
+            CustomAttributeData.GetCustomAttributes(type)
+                .Where(a => a.AttributeType.Name == attribute)
+                .Select(a => a.ConstructorArguments);
+
+        // MATCHED AS A PAIR, not by flattening every argument into one list. The flattened
+        // version read `args.Contains("Toolchain")`, which is satisfied just as well by a
+        // [Trait("Something", "Toolchain")] somewhere — a trait whose VALUE happens to be the
+        // key this is looking for. Nothing in this assembly has one, which is exactly why the
+        // sloppy version would have gone on passing.
+        static bool HasTrait(Type type, string name, string value) =>
+            ArgsOf(type, nameof(TraitAttribute)).Any(
+                a => a.Count == 2
+                     && (a[0].Value as string) == name
+                     && (a[1].Value as string) == value);
+
+        static bool InCollection(Type type, string name) =>
+            ArgsOf(type, nameof(CollectionAttribute)).Any(
+                a => a.Count == 1 && (a[0].Value as string) == name);
 
         var classes = typeof(FastLaneTests).Assembly.GetTypes()
             .Where(t => t.IsClass && !t.IsAbstract)
             .Select(t => new
             {
                 Type = t,
-                Serialised = Args(t, nameof(CollectionAttribute))
-                    .Contains(CodesysCollection.Name, StringComparer.Ordinal),
-                Tagged = Args(t, nameof(TraitAttribute))
-                    .Contains("Toolchain", StringComparer.Ordinal),
+                Serialised = InCollection(t, CodesysCollection.Name),
+                Tagged = HasTrait(t, "Toolchain", "Codesys"),
             })
             .Where(x => x.Serialised || x.Tagged)
             .OrderBy(x => x.Type.Name, StringComparer.Ordinal)

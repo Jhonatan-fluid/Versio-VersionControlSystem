@@ -254,6 +254,17 @@ one door; names also arrive from the IDE, from libraries and device descriptions
 
 ## P7 — the churn does not settle, and it is narrower than G10 assumed
 
+> **Superseded on 2026-08-16 by Phase 5, and kept because it is what justified it.** Everything
+> below is a true record of the behaviour *before* the fix. The same tool now prints
+> **`P7: SETTLES`** — zero differences on all three cycles, `UniqueIdGenerator` flat at 44 across
+> every one — because the export keeps the bytes already in the mirror when the fresh payload is
+> normaliser-equivalent to them.
+>
+> **The narrowing recorded below is what made the fix correct**, and is the reason to read this
+> rather than skip it: `GlobalTextList.xml` churns with no counter in it at all, so a fix aimed
+> at `UniqueIdGenerator` would have settled three files, left the fourth diffing forever, and
+> looked like it worked.
+
 **Measured 2026-08-15**, `tools/Measure-ImportStability.ps1`, on a scratch copy of the fixture.
 Three consecutive import → export cycles over **one** mirror directory, re-exported into,
 **nothing edited between cycles**. Every difference below is therefore produced by the round

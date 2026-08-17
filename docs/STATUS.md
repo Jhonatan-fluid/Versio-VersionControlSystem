@@ -315,8 +315,9 @@ unless something changes.
 > **This list is not the active work.** The import side has its own plan and its own queue —
 > [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md), whose *Handoff* section is the one to read
 > first, and whose **feature checklist** is what says which of its 49 behaviours have been run
-> against a real project and which have not. Phases 0–4 there are complete and Phase 6 is part
-> done; **Phase 5 is next**, and its trap is written up rather than left to be discovered.
+> against a real project and which have not. **Phases 0–5 there are complete and Phase 6 is part
+> done**; what is left of it is **G8 and G9**, and G9 is the one with a real-world failure behind
+> it rather than tidy-up.
 
 > **The second queue — the code-shape work — is CLOSED, and three of its items were closed by
 > deciding not to do them.** It never had any bearing on what the product does. What was worth

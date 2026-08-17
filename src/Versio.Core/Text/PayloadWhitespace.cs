@@ -36,6 +36,18 @@ namespace Versio.Core.Text;
 /// </description></item>
 /// </list>
 /// <para>
+/// <b>There is a fourth pair that trims and is deliberately NOT here, checked rather than
+/// assumed.</b> <see cref="Iec.StDeclarationParser"/> and <c>versio_decl.parse_declaration</c>
+/// both parse a declaration and both trim, and they use their own language's default. They can
+/// diverge without breaking anything, because <b>nothing compares one against the other</b>:
+/// the planner takes the C# side's <i>name</i> and puts it in the plan, the script takes its own
+/// side's <i>kind</i> and picks a <c>create_*</c> call with it, and the two answers are
+/// different questions. The worst a disagreement can do is have python decline a declaration C#
+/// accepted, which is <b>reported</b> as <c>CANNOT_IDENTIFY_DECLARATION</c> rather than applied
+/// silently. That is the whole distinction: the three above feed a hash or an equality test, and
+/// this one feeds a person.
+/// </para>
+/// <para>
 /// <b>The set is python's</b>, because the exporter is the writer and every hash in every
 /// committed manifest came from it. No text file in either committed mirror contains any of the
 /// four, so adopting it changed no committed byte — verified by re-exporting both fixtures
