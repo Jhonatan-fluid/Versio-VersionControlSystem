@@ -19,7 +19,7 @@ namespace Versio.Plc.Codesys.Tests;
 /// </para>
 /// <para>
 /// <b>What the probe measured</b> (P9, twice, on real CODESYS 3.5.22.20 — see
-/// <c>docs/vendors/codesys/IMPORT-PLAN.md</c>). <c>add_library("Standard, 3.5.17.0 (System)")</c>
+/// <c>docs/phase1/IMPORT-PLAN.md</c>). <c>add_library("Standard, 3.5.17.0 (System)")</c>
 /// yields a <c>ScriptManagedLibraryReference</c> reading <c>is_managed: true</c>, whose
 /// <c>managed_library</c> exists and whose every field — <c>version</c>, <c>company</c>,
 /// <c>title</c>, <c>default_namespace</c> — throws <c>NullReferenceException</c>, because that

@@ -1,0 +1,7 @@
+﻿@@VERSIO@@{"project": "C:\\GIT\\Versio\\phase0\\import-api\\P2\\probe.project", "probes": ["P2"], "t": "start"}
+@@VERSIO@@{"path": "C:\\GIT\\Versio\\phase0\\import-api\\P2\\probe.project", "t": "opened"}
+@@VERSIO@@{"title": "move preserves identity", "id": "P2", "t": "probe_start"}
+@@VERSIO@@{"title": "move preserves identity", "id": "P2", "t": "probe_result", "result": {"parent_changed": true, "guid_stable_after_reopen": true, "after_reopen": {"parent": "VersioProbeFolder", "index": -1, "name": "Simulation", "guid": "980a4bef-b0b7-4f16-816b-1f41192a0ee0"}, "before": {"parent": "Application", "index": -1, "name": "Simulation", "guid": "980a4bef-b0b7-4f16-816b-1f41192a0ee0"}, "guid_stable_in_session": true, "after_in_session": {"parent": "VersioProbeFolder", "index": -1, "name": "Simulation", "guid": "980a4bef-b0b7-4f16-816b-1f41192a0ee0"}, "verdict": "MOVED"}}
+@@VERSIO@@{"t": "done"}
+@@VERSIO@@{"rc": 0, "t": "exit"}
+

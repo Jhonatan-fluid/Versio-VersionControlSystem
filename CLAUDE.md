@@ -46,14 +46,12 @@ questions about "why is this like this" are already answered there.
 
 | File | What it holds |
 |---|---|
+| `docs/PHASE2.md` | **The forward queue** — what is left, in order, and the decisions already taken with their why. Start here for "what next" |
 | `docs/STATUS.md` | Where the project is, and **Known loose ends** — an audit of the repository |
 | `docs/FINDINGS.md` | **Every defect written up with its evidence**, newest first. 109 of them. Search it rather than reading it; `STATUS.md` carries the index |
-| `docs/PLAN.md` | The full architecture plan |
 | `docs/SAFEGUARDS.md` | What Versio refuses, asks about, or waits for |
 | `docs/vendors/codesys/DRIVING.md` | **One vendor's docs**, beside its two projects. How CODESYS is driven end to end, and the audit of it |
-| `docs/vendors/codesys/IMPORT-PLAN.md` | **The plan that closed.** Thirteen numbered import gaps, what each measurement closed, the order it was built in — deliberately not 1, 2, 3 — and **the feature checklist**, which says which of the import’s behaviours have been run against a real project and which have not. Every gap is closed, guarded or decided; C5 is the one row no fixture has reached |
-| `docs/GIT-PANEL-PLAN.md` | The git panel's functionality and UX |
-| `docs/PHASE0-FINDINGS.md` | What Phase 0 measured. **A record, not a live limitation list** — read its supersession notes |
+| `docs/phase1/` | **The Phase 1 archive** — four completed plans, marked done, kept for reasoning and evidence: `PLAN.md` (the founding architecture), `IMPORT-PLAN.md` (thirteen gaps, the feature checklist, and the measurements — its raw probe logs are in `probes/`), `GIT-PANEL-PLAN.md`, `PHASE0-FINDINGS.md`. Read them for why, never for state |
 | `README.md` | Repository layout, vendor boundaries, the one architectural rule |
 
 **This is a rule because ignoring it has already cost.** An audit was asked for and re-derived

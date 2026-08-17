@@ -1,0 +1,7 @@
+﻿@@VERSIO@@{"project": "C:\\GIT\\Versio\\phase0\\import-api\\P3\\probe.project", "probes": ["P3"], "t": "start"}
+@@VERSIO@@{"path": "C:\\GIT\\Versio\\phase0\\import-api\\P3\\probe.project", "t": "opened"}
+@@VERSIO@@{"title": "remove a referenced object", "id": "P3", "t": "probe_start"}
+@@VERSIO@@{"title": "remove a referenced object", "id": "P3", "t": "probe_result", "result": {"before": {"parent": "Application", "index": -1, "name": "Glob_Var", "guid": "f8ccf7f9-314d-4201-b460-0f935fbcbf7d"}, "gone_after_reopen": true, "save": {"value": null, "ok": true}, "objects_before": 25, "verdict": "REMOVED", "gone_in_session": true, "objects_after_reopen": 24, "reading": "removed without complaint - the references are now dangling and nothing warned, which is the case Phase 2's content check has to catch", "objects_after": 24}}
+@@VERSIO@@{"t": "done"}
+@@VERSIO@@{"rc": 0, "t": "exit"}
+

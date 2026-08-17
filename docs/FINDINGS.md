@@ -1582,7 +1582,7 @@ only if you read the file.
 > mitigation was not needed and was not adopted. `Core2` stopped moving in the same change, which
 > closes G7 with it.
 
-Probe P7 of [`vendors/codesys/IMPORT-PLAN.md`](vendors/codesys/IMPORT-PLAN.md) ran the round trip three times
+Probe P7 of [`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md) ran the round trip three times
 instead of once, on a scratch copy, with the mirror held still between cycles. Cycle 1 is clean:
 `native: 8, failed: 0, warnings: 0`. **Cycles 2 and 3 each throw twice** — on `MainTask` and
 `VISU_TASK`, the two children of `Task Configuration`:
@@ -1793,7 +1793,7 @@ what those tests want is something to measure, not a particular container.
 lines. `ShellViewModel` goes **5,251 → 4,958**, under five thousand for the first time.
 
 **It is not what the queue said to do next, and the disagreement was already written down.**
-`GIT-PANEL-PLAN.md`'s GP-E log records that a `GitPanelViewModel` extraction — the staging seam —
+`phase1/GIT-PANEL-PLAN.md`'s GP-E log records that a `GitPanelViewModel` extraction — the staging seam —
 was measured and deliberately dropped: *"a move dressed as a decomposition"*, because
 `CommitAsync` alone reaches eight collaborators. It named the remote surface as the seam worth
 cutting instead. That document also states that where the plan and the phase log disagree, **the

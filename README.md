@@ -114,22 +114,22 @@ Both directions run automatically and deterministically. A per-project **directi
 the interruption guard, the auto-stash, and the ways this could lose work. Eight of its nine
 phases are built, and so is the ninth. What is left in its scenario list is §5.H, a repository
 that disappears while it is open.
-**[docs/GIT-PANEL-PLAN.md](docs/GIT-PANEL-PLAN.md)** is the git panel's functionality and UX.
+**[docs/phase1/GIT-PANEL-PLAN.md](docs/phase1/GIT-PANEL-PLAN.md)** is the git panel's functionality and UX.
 Eleven of its twelve phases are built; what is left is the ahead/behind previews and a list of
 smaller polish items.
 **[docs/vendors/codesys/DRIVING.md](docs/vendors/codesys/DRIVING.md)** is how CODESYS is actually driven — the ScriptEngine
 surface, the command line, both sides of the JSON-lines protocol, every script, and the export
 and import mechanics. Its §12 is a standing audit of that integration: what is broken, what is
 merely stale, and where the C# and the python have drifted apart.
-**[docs/PHASE0-FINDINGS.md](docs/PHASE0-FINDINGS.md)** records the measurements and the known
+**[docs/phase1/PHASE0-FINDINGS.md](docs/phase1/PHASE0-FINDINGS.md)** records the measurements and the known
 limitations — including the one real CODESYS mutation it found: `Core2`, a task's CPU core
 affinity, rewritten by `import_native` without being asked. **That one is fixed** — task
 configuration imports through the typed API now and is no longer diff-only — so read that
 document as a record of what was measured in Phase 0, not as a list of what is still true.
-**[docs/vendors/codesys/IMPORT-PLAN.md](docs/vendors/codesys/IMPORT-PLAN.md)** is where the import side is
+**[docs/phase1/IMPORT-PLAN.md](docs/phase1/IMPORT-PLAN.md)** is where the import side is
 being finished, and it is the active plan: eleven numbered gaps, what each measurement closed,
 and the order the evidence argues for building the rest in.
-**[docs/PLAN.md](docs/PLAN.md)** is the full architecture plan behind all of it.
+**[docs/phase1/PLAN.md](docs/phase1/PLAN.md)** is the full architecture plan behind all of it.
 
 ---
 
@@ -201,26 +201,28 @@ Versio.sln
 │                               committed export mirrors. The .project files are GIT LFS
 │                               POINTERS — a clone without git-lfs installed gets 130-byte
 │                               stubs and the integration suite fails confusingly
-├─ phase0/                      GITIGNORED scratch. Experiment output from tools/; it
-│                               reached 29 MB in one afternoon. It also holds 22 .project
-│                               files, which is why launching the app against this
-│                               repository adopts and exports all of them — see STATUS.md's
-│                               Known loose ends before doing that
+├─ phase0/                      GITIGNORED scratch, created on demand by the tools/ harnesses
+│                               and safe to delete whole — it reached 150 MB of scratch
+│                               project copies before it was cleaned out on 2026-08-17. The
+│                               probe logs worth keeping (the primary measurements behind
+│                               every P-numbered claim) were archived to docs/phase1/probes/
 ├─ .versio/                     Versio's own state for this repository, because it tracks
 │                               its own fixtures. repo.json is committed; local/ is not
 └─ docs/
-   ├─ PLAN.md                   the full architecture plan
-   ├─ STATUS.md                 where the project is and what remains
-   ├─ FINDINGS.md               99 defects with their evidence, newest first — the
+   ├─ PHASE2.md                 THE FORWARD QUEUE — what is left, in order, and the
+   │                            decisions already taken with their why
+   ├─ STATUS.md                 where the project is; audits and the findings index
+   ├─ FINDINGS.md               109 defects with their evidence, newest first — the
    │                            engineering log, split out of STATUS.md when it reached
    │                            77% of that file
    ├─ SAFEGUARDS.md             what Versio refuses, asks about, or waits for
-   ├─ GIT-PANEL-PLAN.md         the git panel's functionality and UX — eleven of twelve phases built
-   ├─ PHASE0-FINDINGS.md        measured results and known limitations
+   ├─ phase1/                   THE PHASE 1 ARCHIVE, closed 2026-08-17 — four completed
+   │                            plans (PLAN, IMPORT-PLAN, GIT-PANEL-PLAN,
+   │                            PHASE0-FINDINGS), each marked done, plus probes/ holding
+   │                            the raw measurements behind every P-numbered claim.
+   │                            Reasoning and evidence, never current state
    └─ vendors/codesys/          ONE VENDOR's documentation, beside its two projects
-      ├─ DRIVING.md             how CODESYS is driven end to end, and the audit of it
-      └─ IMPORT-PLAN.md         the active plan: the numbered import gaps and the
-                                feature checklist
+      └─ DRIVING.md             how CODESYS is driven end to end, and the audit of it
 ```
 
 `Versio.App` holds the WPF shell: `Theme/tokens/` for the design tokens, `Theme/controls/` for

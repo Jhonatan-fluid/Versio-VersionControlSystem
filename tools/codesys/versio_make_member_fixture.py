@@ -10,7 +10,7 @@
 #   RefrigeratorControl has thirteen records and not one member object - no method, no
 #   action, no property, no folder below Application. Its manifest therefore records no
 #   `parent` for anything, and every resolve chain the import has ever built came from
-#   directory names. The import feature checklist (docs/vendors/codesys/IMPORT-PLAN.md) marks five
+#   directory names. The import feature checklist (docs/phase1/IMPORT-PLAN.md) marks five
 #   rows NOT REACHED for that one reason, and two of them are G4 and G5 - the gaps with the
 #   least evidence behind them.
 #

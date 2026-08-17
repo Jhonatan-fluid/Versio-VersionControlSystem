@@ -1,0 +1,7 @@
+﻿@@VERSIO@@{"project": "C:\\GIT\\Versio\\phase0\\import-api\\P1\\probe.project", "probes": ["P1"], "t": "start"}
+@@VERSIO@@{"path": "C:\\GIT\\Versio\\phase0\\import-api\\P1\\probe.project", "t": "opened"}
+@@VERSIO@@{"title": "rename preserves identity", "id": "P1", "t": "probe_start"}
+@@VERSIO@@{"title": "rename preserves identity", "id": "P1", "t": "probe_result", "result": {"guid_stable_after_reopen": false, "after_reopen": {"parent": "MainTask", "index": 1, "name": "Simulation_VersioProbe", "guid": "a141c7f1-6482-4579-bd90-bf830b9aeecb"}, "before": {"parent": "MainTask", "index": 1, "name": "Simulation", "guid": "9c0d2e59-c64e-4e32-9ac1-618f414601e4"}, "old_name_still_present": true, "guid_stable_in_session": true, "after_in_session": {"parent": "MainTask", "index": 1, "name": "Simulation_VersioProbe", "guid": "9c0d2e59-c64e-4e32-9ac1-618f414601e4"}, "verdict": "RENAMED"}}
+@@VERSIO@@{"t": "done"}
+@@VERSIO@@{"rc": 0, "t": "exit"}
+

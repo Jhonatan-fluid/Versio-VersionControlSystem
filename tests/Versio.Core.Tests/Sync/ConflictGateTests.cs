@@ -86,7 +86,7 @@ public sealed class ConflictGateTests
         var (harness, conflicts) = Build();
 
         conflicts.Unmerged.Add("README.md");
-        conflicts.Unmerged.Add("docs/PLAN.md");
+        conflicts.Unmerged.Add("docs/phase1/PLAN.md");
         harness.SetProject("v2");
 
         var outcome = await harness.Orchestrator.HandleChangeAsync(

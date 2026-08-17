@@ -24,7 +24,7 @@ namespace Versio.Plc.Codesys.Tests;
 /// <para>
 /// <b>Written as an audit rather than as regression tests</b>, before Phase 5 was started and
 /// on the argument that a feature list nobody has run end to end is a list of intentions. Every
-/// row here is one line of the checklist in <c>docs/vendors/codesys/IMPORT-PLAN.md</c>; the rows already
+/// row here is one line of the checklist in <c>docs/phase1/IMPORT-PLAN.md</c>; the rows already
 /// covered by <see cref="AdoptAndExportTests"/> and <see cref="ImportLoggingTests"/> are not
 /// repeated, because running those files one test at a time was the other half of the same
 /// audit.

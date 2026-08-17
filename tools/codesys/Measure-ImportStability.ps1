@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Phase 0 probe P7 of docs/vendors/codesys/IMPORT-PLAN.md: does an import -> export cycle on an
+  Phase 0 probe P7 of docs/phase1/IMPORT-PLAN.md: does an import -> export cycle on an
   UNCHANGED mirror ever settle, or does it churn forever?
 
 .DESCRIPTION

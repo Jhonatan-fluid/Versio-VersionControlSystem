@@ -1,0 +1,7 @@
+﻿@@VERSIO@@{"project": "C:\\GIT\\Versio\\phase0\\import-api\\P0\\probe.project", "probes": ["P0"], "t": "start"}
+@@VERSIO@@{"path": "C:\\GIT\\Versio\\phase0\\import-api\\P0\\probe.project", "t": "opened"}
+@@VERSIO@@{"title": "API surface", "id": "P0", "t": "probe_start"}
+@@VERSIO@@{"title": "API surface", "id": "P0", "t": "probe_result", "result": {"Task Configuration": [], "project": [], "MainTask": [], "Library Manager": [], "scriptengine": ["DutType", "KindOfTask", "NativeExportReporter", "NativeImportFilter", "NativeImportHandler", "NativeImportResolve", "NativeImportResult", "PouType", "SpecialPouType"], "object": []}}
+@@VERSIO@@{"t": "done"}
+@@VERSIO@@{"rc": 0, "t": "exit"}
+

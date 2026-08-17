@@ -70,7 +70,7 @@ the whole cost.*
 > serialize, so there is no door back to it. G3 and G6 are closed and **proven against real
 > CODESYS**: `PROGRAM Foo` in `Bar.st` creates `Foo`, and a `README.md` in the mirror is
 > warned about instead of being handed to CODESYS as native XML. See
-> [`vendors/codesys/IMPORT-PLAN.md`](vendors/codesys/IMPORT-PLAN.md).
+> [`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md).
 
 > **Also 2026-08-15, on branch `GitImportPlan`: Phase 0 of the import plan started, and its
 > first probe found a defect that reaches users.** P7 measured what an import → export cycle does
@@ -82,7 +82,7 @@ the whole cost.*
 > configuration to `import_native` at all, so the mitigation was never needed and Versio deletes
 > nothing of CODESYS's.** All three suites re-run green
 > afterwards — **1,385 + 478 + 192, 0 skipped**, integration 6m57s against real CODESYS. See the
-> findings, and [`vendors/codesys/IMPORT-PLAN.md`](vendors/codesys/IMPORT-PLAN.md) for what P7 changed in the
+> findings, and [`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md) for what P7 changed in the
 > plan itself.
 >
 > **Phase 4 of the import plan landed the same day, and it is the first product change this
@@ -184,7 +184,7 @@ opens. That is `SAFEGUARDS.md` phases 1–8, and phase 9 is features rather than
 guarded and both of its remaining tasks are done — G8, where a managed library reference was
 recording the exporting machine's installed version or nothing at all, and P11, which measured
 which moves CODESYS actually performs and disproved the tidy rule its own first run produced.
-What is left in [`vendors/codesys/IMPORT-PLAN.md`](vendors/codesys/IMPORT-PLAN.md) is three
+What is left in [`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md) is three
 decisions and no work. **So the next thing to build is item 4 below — the project tree panel**,
 which is also what `TaskCatalog.cs` and `LibraryCatalog.cs` are waiting for.
 
@@ -249,7 +249,7 @@ which is also what `TaskCatalog.cs` and `LibraryCatalog.cs` are waiting for.
   half is export-only (`TASK_NATIVE`), a task named in the YAML but absent from the project is
   **warned about, never created**, and a task deleted from the YAML is **left alone** — removing
   one is a deletion, and deletions are Phase 2. See G7 and G11 in
-  [`vendors/codesys/IMPORT-PLAN.md`](vendors/codesys/IMPORT-PLAN.md).
+  [`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md).
 - **Graphical POUs export as native XML**, so their diffs will never read as well as ST.
   Inherent to the format.
 - **Interfaces, text lists, image pools** have export rules written and unit tested but never
@@ -309,7 +309,7 @@ projects are reported as unsupported rather than silently ignored. Both registri
 | | |
 |---|---|
 | **Project view** | **One panel.** Every project *with something to review* — a change, a mirror behind, a lock held, a failure, or never exported — carrying its full CODESYS-shaped object tree, with every other changed file beside them. A project whose mirror is clean is not listed, and the empty state says so rather than going blank. Search still reaches into a clean project, because the box searches the project and not the diff |
-| **Git panel** | **Per-file staging** — a checkbox on every row, tri-state headers, and labels that say what will happen (`Stage 3`, `Stage all`); both panes scroll and a splitter divides them. **One commit button with three behaviours** — it stages what you ticked, or everything, or nothing at all when you have staged deliberately, and the caption says which before you press. Commit message with a 50/72 guide and Ctrl+Enter. **Where the branch stands, in words** rather than two arrows — eleven states covering unborn, detached, no remote, never published, ahead, behind and diverged, each naming its remedy. **Publish** for a branch with no upstream, which a plain push cannot do. Fetch / pull / push / discard. **Branches show where they live** — local only, remote only, or both — and remote-only ones are listed at all for the first time. A delete dialog removes them from this machine and optionally the remote, naming what is not merged and reporting per branch when one refuses. **Conflicts get their own section** with keep-mine / keep-theirs and an abandon, and a diverged branch is offered a rebase or a merge by name — before this, the badge said "pull first" and a fast-forward-only pull refuses a diverged branch, so the only way out was a terminal. **Notifications** that survive the status refresh, with failures sticky until dismissed and git's own words on them. **Credentials**: detected at open, handed off to the engineer's own helper, never stored — and a *forget credential* for the expired token no git GUI lets you clear. **The remote is watched in the background**, by `ls-remote` rather than by fetching, so a colleague's push shows up without a click. **Git's own health**: a launch probe that names PATH when git is missing, and an identity preflight so a commit is refused before a 17–31 s export rather than after it. One operation at a time across every button — a shared counted flag. **Changed files are named as objects** — `FB_Motor` with a `POU` chip and the path beneath, resolved through the export manifest, with a lock glyph on a file whose edits cannot reach the project; a file the manifest does not describe stays a path and is never guessed at. **A change summary and a drafted commit subject** — *"1 GVL and 1 POU changed in RefrigeratorControl"*, and a **Draft** button that writes `Modify FB_Motor, Glob_Var`, both counting objects rather than files and both describing exactly what the commit button will record. **A merge-request button** for GitHub, GitLab, Azure DevOps, Bitbucket and Gitea: it opens the forge's own page pre-filled and submits nothing, upgrades itself to *Go to* when the forge's hidden refs say one already exists — no API token, nothing stored — and shows **nothing at all** for a host it cannot identify. **No stash controls**: removed pending a different design; the auto-stash drives the client operations. See [`GIT-PANEL-PLAN.md`](GIT-PANEL-PLAN.md) |
+| **Git panel** | **Per-file staging** — a checkbox on every row, tri-state headers, and labels that say what will happen (`Stage 3`, `Stage all`); both panes scroll and a splitter divides them. **One commit button with three behaviours** — it stages what you ticked, or everything, or nothing at all when you have staged deliberately, and the caption says which before you press. Commit message with a 50/72 guide and Ctrl+Enter. **Where the branch stands, in words** rather than two arrows — eleven states covering unborn, detached, no remote, never published, ahead, behind and diverged, each naming its remedy. **Publish** for a branch with no upstream, which a plain push cannot do. Fetch / pull / push / discard. **Branches show where they live** — local only, remote only, or both — and remote-only ones are listed at all for the first time. A delete dialog removes them from this machine and optionally the remote, naming what is not merged and reporting per branch when one refuses. **Conflicts get their own section** with keep-mine / keep-theirs and an abandon, and a diverged branch is offered a rebase or a merge by name — before this, the badge said "pull first" and a fast-forward-only pull refuses a diverged branch, so the only way out was a terminal. **Notifications** that survive the status refresh, with failures sticky until dismissed and git's own words on them. **Credentials**: detected at open, handed off to the engineer's own helper, never stored — and a *forget credential* for the expired token no git GUI lets you clear. **The remote is watched in the background**, by `ls-remote` rather than by fetching, so a colleague's push shows up without a click. **Git's own health**: a launch probe that names PATH when git is missing, and an identity preflight so a commit is refused before a 17–31 s export rather than after it. One operation at a time across every button — a shared counted flag. **Changed files are named as objects** — `FB_Motor` with a `POU` chip and the path beneath, resolved through the export manifest, with a lock glyph on a file whose edits cannot reach the project; a file the manifest does not describe stays a path and is never guessed at. **A change summary and a drafted commit subject** — *"1 GVL and 1 POU changed in RefrigeratorControl"*, and a **Draft** button that writes `Modify FB_Motor, Glob_Var`, both counting objects rather than files and both describing exactly what the commit button will record. **A merge-request button** for GitHub, GitLab, Azure DevOps, Bitbucket and Gitea: it opens the forge's own page pre-filled and submits nothing, upgrades itself to *Go to* when the forge's hidden refs say one already exists — no API token, nothing stored — and shows **nothing at all** for a host it cannot identify. **No stash controls**: removed pending a different design; the auto-stash drives the client operations. See [`phase1/GIT-PANEL-PLAN.md`](phase1/GIT-PANEL-PLAN.md) |
 | **History panel** | **Its own rail button**, not a strip inside the git panel. Every commit with its hash, local date and time, author and subject; expand one for the files it touched; click a file for what that commit did to it, in the shared diff pane. Lazy at four levels — the log is not walked until the panel is first shown, then one page of 50 at a time; a commit's files are read when it is expanded and cached for the session, because a commit's contents cannot change; a patch is read only when a file is clicked, and never cached. A merge says so rather than showing an empty list |
 | **PLC state** | **No card, and no buttons.** Toolchain, version and profile were environment rather than repository state and moved to Settings → Help → System information. "Export now" is gone because a stale mirror needs no decision — it is exported when the repository opens. "Acknowledge failure" is gone as a panel-wide control: a failure belongs to one project, so it is reported on that project's row with the reason and a *Try again* beside it. What is left in the panel is transient and hides itself: the coverage warning and the live heartbeat |
 | **Branch and clone** | Create a branch from HEAD and switch to it, with the name checked against git's rules while it is typed; clone a repository after verifying the remote, then open it. Both are modal dialogs built from the one stylesheet, and both are covered by tests that construct them against the real theme |
@@ -347,32 +347,15 @@ unless something changes.
 
 ---
 
-## What remains, in dependency order
+## What remains — moved to PHASE2.md
 
-> **Picking this up?** Items 1 and 2 are done and kept for their reasoning. Items 3–8 are
-> untouched: **item 3 is the smallest**, item 4 is the largest piece of user-visible value, and
-> nothing below depends on anything above it except where it says so.
->
-> **This list is not the active work.** The import side has its own plan and its own queue —
-> [`vendors/codesys/IMPORT-PLAN.md`](vendors/codesys/IMPORT-PLAN.md), whose *Handoff* section is the one to read
-> first, and whose **feature checklist** is what says which of its 49 behaviours have been run
-> against a real project and which have not. **Every phase there is complete** — Phase 6 closed
-> on 2026-08-17 with G8, the last gap, and **G9 is guarded** as of 2026-08-16.
-> **[What is left, and what it costs](vendors/codesys/IMPORT-PLAN.md#what-is-left-and-what-it-costs)**
-> is the table to read, and **there is no task left in it**: three items that are decisions
-> rather than work. G9's remaining half is one of them — the worst case is reported but still
-> producible, and preventing it renames committed files in every mirror already written.
->
-> **Which moves CODESYS performs is now measured** rather than known from one example — and the
-> answer is that **the destination is not what decides**. An empty folder moves into `Plc Logic`;
-> a POU does not; the same folder stops moving there once a POU is inside it; a GVL moves to the
-> project root. **No call ever raises**, so the import's read-back is the only signal there is.
-> It already reported the refusal; it now names the measured cases and says to move it in the IDE.
->
-> **G8 is worth reading rather than ticking.** It was carried as "untested branch, needs a
-> fixture" and turned out to be a live defect with a silent failure in it — a managed library
-> reference recorded whichever version the *exporting machine* had installed, or, for one it did
-> not have, nothing at all and no warning.
+> **The forward queue lives in [`PHASE2.md`](PHASE2.md) as of 2026-08-17**, when Phase 1
+> closed and its four planning documents were archived to [`phase1/`](phase1/). Items 1 and 2
+> below are kept as records of work done; the old items 3–8 were superseded by PHASE2's queue
+> and removed here rather than left to drift — one queue, one place, because a claim in two
+> places is the defect this file's own history keeps demonstrating. The blocks below about the
+> code-shape queue, `SAFEGUARDS.md` and `GIT-PANEL-PLAN.md` stay as dated records; their open
+> remainders are PHASE2 queue items too.
 
 > **The second queue — the code-shape work — is CLOSED, and three of its items were closed by
 > deciding not to do them.** It never had any bearing on what the product does. What was worth
@@ -387,7 +370,7 @@ unless something changes.
 >
 > **Not doing, and this is a decision rather than a backlog:**
 >
-> - **Staging.** `GIT-PANEL-PLAN.md`'s GP-E log measured this seam and rejected it — *"a move
+> - **Staging.** `phase1/GIT-PANEL-PLAN.md`'s GP-E log measured this seam and rejected it — *"a move
 >   dressed as a decomposition"* — and re-measuring agreed: it makes **four** calls into the PLC
 >   engine including `EvaluateGateAsync`/`SatisfyGateAsync`, so the seam runs straight through
 >   the junction where git meets the toolchain. That is the most safety-critical path in the
@@ -437,7 +420,7 @@ unless something changes.
 > **Phase 9 is complete**; what is left in §5 is §5.H, the repository vanishing while it is
 > open, which nobody has costed. §0 is the handover note.
 >
-> **[`GIT-PANEL-PLAN.md`](GIT-PANEL-PLAN.md)** — the git panel's functionality and UX.
+> **[`phase1/GIT-PANEL-PLAN.md`](phase1/GIT-PANEL-PLAN.md)** — the git panel's functionality and UX.
 > **Eleven of its twelve phases are built**: the git presence probe and identity preflight,
 > notifications, the remote state machine and publish, credentials, background remote polling,
 > per-file staging, the one commit button, conflicts and the way out of a divergence, branches
@@ -495,70 +478,9 @@ fixture: two library managers, **both exported now**, and `_coverage.md` reports
   is held (plan §9.2 asks for that, with a tooltip saying why). Git refuses a dirty-tree
   checkout on its own, which covers the dangerous case but not the explanation
 
-### 3. Retry automatically when the IDE closes — **deferred, not critical path**
-
-Export and import both handle an open project now. The one piece left is the trigger: the
-vendor's lock file disappearing is a filesystem event the watcher could see, which would make
-closing CODESYS the retry and need no button at all.
-
-Today the next save retries, and reopening the repository retries — the catch-up export runs on
-open. What is missing is the case in between: the IDE is closed while Versio stays open, and
-nothing notices until the next save. The panel says so rather than going quiet, which is what
-`StalenessSummary` is for.
-
-**Deferred deliberately on 2026-08-15.** It is the smallest item here and it remains the obvious
-next one, but nothing is broken while it waits: every path already recovers, just later than it
-could. It buys convenience, not correctness.
-
-### 4. Finish the project tree
-
-- ~~**Methods and properties under the object that owns them**~~ — **done.** Manifest schema 4
-  records each member's owner GUID and the tree nests by it; see the finding. A mirror
-  exported before this stays flat until its project is next exported
-- **One node per library**, under its manager, parsed from the exported YAML. `LibraryCatalog`
-  already reads the file; what is missing is the tree builder taking a catalog and the shell
-  handing it one. This is the first piece of the plan's "config nodes parsed from YAML", and
-  the only one whose data now exists
-- A layer switcher in the diff pane (`ST | native`) — objects already carry several layers and
-  there is no way to see the other one
-- Context menu, and expansion state persisted per repository. It already survives a refresh;
-  it does not yet survive the window closing
-
-### 5. Diff view — **deferred, not critical path**
-
-Side-by-side mode, and word-level intra-line diff.
-
-**Deferred on 2026-08-15**, and it is the one on this list with the strongest case for being
-picked up first when the deferrals are revisited: the colours already exist and are
-contrast-checked, and the diffs being read are generated XML and ST where a long line often
-differs by one identifier. It is a readability improvement to something that already works
-correctly, which is what puts it off the critical path rather than low value.
-
-### 6. A second vendor
-
-The seam is ready and unproven. The first real implementation is the only thing that will show
-whether `PlcJob` and `PlcResult` are the right shape — TwinCAT is the cheapest test of that,
-being CODESYS-derived, and Studio 5000 the harshest.
-
-### 7. Packaging
-
-- ~~Application icon~~ — **done.** `assets/versio.ico`, 8 sizes, generated by
-  `tools/New-VersioIcon.ps1` and embedded via `<ApplicationIcon>`
-- `third_party/` vendoring with SHA-256 pinning, offline restore
-- Velopack: `Setup.exe`, MSI for managed sites, delta updates
-- Code signing — **procurement lead time, not engineering time; start early**
-
-### 8. Corpus breadth
-
-More fixture projects. Every field bug becomes a fixture before it is fixed.
-
-**A second one landed 2026-08-16**: `MachineWithMembers`, built against real CODESYS by
-`tools\versio_make_member_fixture.py` because the import feature checklist found five rows that
-`RefrigeratorControl` cannot reach — it has no member object of any kind, so it produces no
-`ST_IMPL`, no `NATIVE_R` and no recorded `parent`. The new one has a folder, a function block
-inside it, and a method, an action and a property inside that. **It closed A3, E1 and E3.** What
-is still uncovered is a name needing percent-encoding, which P5 measured cannot be created —
-it has to arrive from a library or an external-file reference.
+*(Items 3–8 lived here until 2026-08-17; their live versions, reordered by the owner and with
+the second vendor and packaging deliberately last, are [`PHASE2.md`](PHASE2.md)'s queue. The
+old text is in git history.)*
 
 ---
 
@@ -1255,5 +1177,5 @@ and "no file" is otherwise indistinguishable from "no listener attached".
 reviewed and tested by eye — and never instantiated, so nothing reached disk while the log
 panel made it look as though logging worked.
 
-**Findings are written down with their evidence.** `docs/PHASE0-FINDINGS.md` records the
+**Findings are written down with their evidence.** `docs/phase1/PHASE0-FINDINGS.md` records the
 numbers, the failures and the dead ends — including the ones that reversed a plan decision.
