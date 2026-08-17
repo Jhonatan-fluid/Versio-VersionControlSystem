@@ -84,7 +84,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | A project with a clean mirror is not listed | ✅ unless it needs attention — never exported, behind, locked, failed. The empty state says why rather than going blank |
 | **Lazy object rendering** — a row is built when something can reach it, not before | ✅ `TreeRow.Children` on first access; the tree survives a refresh without collapsing |
 | **Export coverage stated, not assumed** — `_coverage.md` + every skip in the manifest | ✅ a gap is distinguished from a deliberate omission; an old manifest reports "unknown", never "complete"; and **an object the export could not write at all is reported rather than counted as covered** — it reaches neither the records nor the skips, so until 2026-08-16 a lost object left a verdict of "everything reaches the mirror" |
-| **Library references exported** (`<manager>.libraries.yaml`) | ✅ **the gap is closed.** One file per library manager, beside the object that owns it — 21 references on the fixture's application, 13 on its project. Hand-written YAML on both sides, no third-party dependency. Export-only: change libraries in the IDE |
+| **Library references exported** (`<manager>.libraries.yaml`) | ✅ **the gap is closed.** One file per library manager, beside the object that owns it — 21 references on the fixture's application, 13 on its project, **all 34 placeholders**. Hand-written YAML on both sides, no third-party dependency. Export-only: change libraries in the IDE. A **fixed-version** reference records its version, company and title parsed from its own name, which is project state — reading them off `managed_library` reports what the exporting machine has *installed*, and answers nothing at all for a library it does not have |
 | Template generation | ⛔ needs a new operation and script — not assembly |
 | A second vendor (TwinCAT / Studio 5000 / TIA Portal) | ⛔ the seam is ready and unproven |
 | **Git side panel** — staging, commit message, fetch/pull/push | ✅ one operation at a time across every button |
@@ -180,13 +180,13 @@ Versio.sln
 ├─ tests/
 │  ├─ Versio.TestSupport/       not a test project: the three helpers more than one suite
 │  │                            needs (TestPaths, TestLogger, VendorSeamScanner)
-│  ├─ Versio.Core.Tests/        1,295 unit tests — pure, no IO, under a second
+│  ├─ Versio.Core.Tests/        1,296 unit tests — pure, no IO, under a second
 │  ├─ Versio.Integration.Tests/ 141 tests against real git and the real filesystem, ~10 s.
 │  │                            NO CODESYS: that is a different project now, so this one
 │  │                            needs no filter and cannot accidentally cost half an hour
 │  ├─ Versio.App.Tests/         480 tests that build the real windows and panels against
 │  │                            the real stylesheet on an STA thread — none is ever shown
-│  └─ Versio.Plc.Codesys.Tests/ 365 tests against real CODESYS, ~31 min. The gate before a
+│  └─ Versio.Plc.Codesys.Tests/ 385 tests against real CODESYS, ~31 min. The gate before a
 │                               commit, and the only suite that needs a toolchain installed
 ├─ tools/                       PowerShell and python harnesses. Seven of the nine are
 │                               CODESYS-specific probes; New-VersioIcon.ps1 generates the
@@ -332,11 +332,11 @@ dotnet test tests/Versio.Core.Tests
 
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,295 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
+| `Versio.Core.Tests` | 1,296 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
 | `Versio.Integration.Tests` | 141 | a real `git.exe` and the real filesystem | ~10 s |
 | `Versio.Arch.Tests` | 14 | nothing — it reads assembly metadata, IL, and the project files | instant |
 | `Versio.App.Tests` | 480 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
-| `Versio.Plc.Codesys.Tests` | 365 | **a real CODESYS**, and **skips cleanly** without one | **~31 min** |
+| `Versio.Plc.Codesys.Tests` | 385 | **a real CODESYS**, and **skips cleanly** without one | **~31 min** |
 
 The first four are the loop to work in. The last is the gate before a commit — and it is a
 separate project precisely so that running the loop cannot cost you half an hour by accident.

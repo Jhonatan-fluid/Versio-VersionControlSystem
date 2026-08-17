@@ -216,7 +216,7 @@ member exists, not what it accepts, and four of the seven rows were wrong about 
 | P5 | Can awkward names be created? | **No** — all four refused by name validation |
 | P6 | Is the typed task path sufficient? | **Yes**, including `core_binding`; setters are property assignment |
 | P8 | Where does path length break? | **Not in CODESYS** — ten 40-char levels, ~420 characters, no complaint |
-| P9 | Can a fixed-version library reference be made? | **Yes, one call.** Produces `is_managed: true` |
+| P9 | Can a fixed-version library reference be made? | **Yes, one call.** Produces `is_managed: true`. **Superseded 2026-08-17** — the question was the wrong one. Making one was never the obstacle; what the exporter *records* for it was, and reading that took a second run of this probe. See G8 in [`vendors/codesys/IMPORT-PLAN.md`](vendors/codesys/IMPORT-PLAN.md) |
 
 ### The three that changed something
 

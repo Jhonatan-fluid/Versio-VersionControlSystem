@@ -1,12 +1,21 @@
 # Versio — closing the CODESYS import gaps
 
-**Date:** 2026-08-16 · **Phases 0, 4, 1, 2, 3 and 5 are COMPLETE.** **Phase 6 is nearly
-done** — the codec parity test and the integration breadth landed on 2026-08-16, and **G9 is
-guarded**, in two halves because one of them cannot be machine-independent. **G8 is the only
-gap left**, and it is cheap. Everything else outstanding is a *decision* rather than a task —
-see [What is left, and what it costs](#what-is-left-and-what-it-costs). (Dates below read
+**Date:** 2026-08-17 · **Phases 0, 4, 1, 2, 3, 5 and 6 are COMPLETE.** The codec parity
+test and the integration breadth landed on 2026-08-16, **G9 is guarded** in two halves because
+one of them cannot be machine-independent, and **G8 closed on 2026-08-17** — the last gap.
+**Every one of the twelve is now closed or guarded**, with the two rows of G4 and G5 that no
+fixture can reach still labelled rather than claimed. Everything outstanding besides them is a
+*decision* rather than a task, save one probe — see
+[What is left, and what it costs](#what-is-left-and-what-it-costs). (Dates below read
 2026-08-15 for work that ran past midnight into the 16th; the git log is the authority on when
 anything landed.)
+
+**G8 did not close the way this document said it would**, and that is the useful part. The plan
+called it "half a day, one fixture variant" on the strength of a probe that had measured the
+wrong half of the API. What the branch actually did was record **whichever version of the
+library the exporting machine had installed** — and, for one it did not have, record nothing at
+all and warn about nothing. The version comes from the reference's own name now, which is
+project state. See the Finding in [`FINDINGS.md`](../../FINDINGS.md).
 
 **Versio deletes objects — textual and native alike.** G1 is closed outright: delete a `.st` and
 the POU goes, delete a `.gvl.xml` and the GVL goes, and an object edited in the IDE since the
@@ -56,7 +65,7 @@ G12 had. **It cost a delete rule its subject** — see the checklist's C6.
 | | |
 |---|---|
 | Document | **The plan for making the import side a real bidirectional sync.** Deletes, renames, moves, typed task configuration, and a mirror that stops churning after every import |
-| Status | **Phases 0, 4, 1, 2, 3 and 5 COMPLETE, with all three honesty fixes. Phase 6 nearly done — G9 is guarded and G8 is the only gap left.** **An export that loses an object is reported** rather than passing as complete coverage: `ProjectManifest.Warnings` had no reader at all, so a failed write vanished from the mirror, the manifest and the panel while the run said `Completed`. **G10 is closed**: an import and a re-export leave the mirror byte-identical, `P7: SETTLES`.** G1 and G2 both closed outright. Two gaps closed as unreachable, four API spellings corrected, six live defects fixed — G7 and G11 by Phase 4, G3 and G6 by Phase 1, **G1 by Phase 2 outright, textual and native**, with G4's resolution half and G5's recorded-object half beside them, and the confirmation dialog corrected after it spent a commit promising the opposite of what an import did. The import is **plan-driven end to end**: decided C#-side from the manifest, agreed to before CODESYS starts, refused without a plan, executed by a script that decides nothing — and it now **removes, renames and moves** objects as well as adding them, saying beforehand which ones will really go and which will really stay. **Every one of those behaviours has now been run against a real project one row at a time** — see the feature checklist — and **one failed: G12**, a GVL's declaration overwritten by its own XML, **closed the same day**, with an invariant behind it so the shape cannot recur |
+| Status | **Phases 0, 4, 1, 2, 3, 5 and 6 COMPLETE, with all three honesty fixes. G9 is guarded; G8 closed 2026-08-17, and it was a live defect rather than the missing fixture this document predicted — a managed library reference recorded installation state, or nothing at all, silently.** **An export that loses an object is reported** rather than passing as complete coverage: `ProjectManifest.Warnings` had no reader at all, so a failed write vanished from the mirror, the manifest and the panel while the run said `Completed`. **G10 is closed**: an import and a re-export leave the mirror byte-identical, `P7: SETTLES`.** G1 and G2 both closed outright. Two gaps closed as unreachable, four API spellings corrected, six live defects fixed — G7 and G11 by Phase 4, G3 and G6 by Phase 1, **G1 by Phase 2 outright, textual and native**, with G4's resolution half and G5's recorded-object half beside them, and the confirmation dialog corrected after it spent a commit promising the opposite of what an import did. The import is **plan-driven end to end**: decided C#-side from the manifest, agreed to before CODESYS starts, refused without a plan, executed by a script that decides nothing — and it now **removes, renames and moves** objects as well as adding them, saying beforehand which ones will really go and which will really stay. **Every one of those behaviours has now been run against a real project one row at a time** — see the feature checklist — and **one failed: G12**, a GVL's declaration overwritten by its own XML, **closed the same day**, with an invariant behind it so the shape cannot recur |
 | Related | [`CODESYS.md`](DRIVING.md) — how CODESYS is driven today, and §12, the audit these gaps came from · [`PHASE0-FINDINGS.md`](../../PHASE0-FINDINGS.md) — what was measured · [`PLAN.md`](../../PLAN.md) — the architecture · [`SAFEGUARDS.md`](../../SAFEGUARDS.md) — what Versio refuses or waits for |
 
 > **These phase numbers are identifiers, not an order**, and they are **not** `PLAN.md`'s phases —
@@ -90,7 +99,7 @@ amount of reading, because it does not exist on the first cycle.
 | G5 | **A dot in a name breaks the owner split** — `My.Thing.st` looks for member `Thing` of parent `My` | **Unreachable by creation** (P5), and ✅ **the existing-object half CLOSED by Phase 1**: ownership comes from the manifest's parent-GUID chain, and for pre-schema-4 mirrors the recorded name disambiguates — a name equal to the whole stem is never split. Only a manifest-absent dotted *create* still splits, and P5 says CODESYS would refuse it anyway. **Proven against a real export on 2026-08-16**, where it had only ever been proven against hand-built manifests: `MachineWithMembers` exports an action as `FB_Pump.Stop.action.st`, and the planner resolves it through the recorded parent GUID rather than by splitting the dot |
 | G6 | **Stray files go to `import_native`** — a `README.md` in the mirror is handed to CODESYS as native XML | ✅ **CLOSED by Phase 1, 2026-08-15.** A file that is neither a recorded object, bookkeeping, nor a recognisable source is skipped with a warning and never handed to the toolchain — including unrecorded YAML, and files appearing between planning and execution (`NOT_IN_PLAN`). **Proven live** with a real `README.md` in `ImportLoggingTests` |
 | G7 | **Task Configuration mutated on every import** — `Core2` `-1`→`-2`; documented as "diff-only", which it never was | ✅ **CLOSED by Phase 4, 2026-08-15.** `Core2` reads `-2,-1` across four consecutive snapshots where it used to move on the first cycle, and `Task Configuration.xml` has dropped out of the churn set entirely. **`-2,-1` is `MainTask,VISU_TASK`, and only the second number was ever the defect** — the baseline capture has MainTask at `-2` already, so **VISU_TASK's `-1` is the one G7 destroyed** and the one an integration test now asserts. Worth knowing before reading a diff of this file: a run where both read `-2` is the bug, not a run where either does |
-| G8 | **Managed library references unproven** — every fixture reference is a placeholder, so the `managed_library` branch has never executed | **Half closed**: P9 produces a real managed reference in one call, so no hand-built fixture is needed. (This row used to say 34 references; the Library Manager reports **21**) |
+| G8 | **Managed library references unproven** — every fixture reference is a placeholder, so the `managed_library` branch has never executed | ✅ **CLOSED 2026-08-17, and it was a defect rather than a gap.** The branch read `version`, `company` and `title` off `ref.managed_library`, which describes the library **as installed on the exporting machine** — the one thing this file's header refuses to record — and which throws `NullReferenceException` for a library that is *not* installed, so such a reference was written with none of the three and no warning. Both halves measured on real CODESYS: `3.5.17.0` (absent here) raises on every field while `is_managed` still reads `True`; `3.5.22.0` (present) answers `3.5.22.0` / `System` / `Standard`. The three fields are now parsed from the reference's own `name` — `"Title, Version (Company)"`, project state, byte-identical to `managed_library.displayname` — with `is_managed` as the discriminator and `LIBRARY_MANAGED_NAME_UNPARSED` when a name is not that shape. **Proven by running `versio_libraries.extract_reference` itself inside CODESYS** against a live managed reference, plus 20 CPython tests and five mutations. (This row said 34 references, then "the Library Manager reports **21**" — **34 was right**: there are two managers, 13 in the project's and 21 in the application's, and all 34 are placeholders) |
 | G9 | **Total path length unguarded** — stems capped at 80, the full path is not, and `.versio_staging` makes it 16 longer | ✅ **GUARDED 2026-08-16**, in two halves, because one of them cannot be machine-independent. `too_long_for_any_machine` measures the **mirror-relative** path against 200 and warns through the manifest; `too_long_for_this_machine` measures the **staging** path against 260 and warns through the log only — recording it would make `_manifest.json` differ between two developers and churn the mirror, which is Phase 5's defect through a new door. **Neither shortens**, and that is a decision: see *Why nothing shortens*. **Measured, and worse than this row assumed** — a legal file name reaches **190** characters, which leaves **19** for the repository root with no deep chain at all. **Not closed outright**: the arithmetic that produces 190 is still reachable, and shrinking it renames committed files |
 | **G10** | **Import → export is not byte-stable.** `UniqueIdGenerator` **44 → 47 → 50 → 53**, +3 per cycle, never settling | ✅ **CLOSED by Phase 5, 2026-08-16.** `Measure-ImportStability.ps1` prints **`P7: SETTLES`** with zero differences on all three cycles and the counter flat at **44 → 44 → 44 → 44**. The export keeps the bytes already in the mirror when the fresh payload is `versio_native_equiv`-equivalent to them, and the substitution happens **before** `record()` hashes anything — which is why `_manifest.json` settles too. Was, before the fix: Of the eight native files touched: three visualisations climb on the counter, `GlobalTextList.xml` churns with **no counter at all**, `Task Configuration.xml` moves once then settles, three are byte-stable. **Four of eight forever, from two causes** — not "every file", and not just the counter |
 | **G11** | **Every import after the first fails on task configuration and reports success.** `import_native` throws `Collection was modified` at `Project.GetUniqueName` on `MainTask` and `VISU_TASK`; the summary still reads `failed: 0` | ✅ **CLOSED by Phase 4, 2026-08-15.** Three import→export cycles with the compile cache present: **zero warnings on every one**, where cycles 2 and 3 used to throw twice each. `native: 8 → 7`, the task XML skipped as `TYPED_SIBLING`. **Versio never deletes CODESYS's compile cache** — the trigger is simply never reached |
@@ -121,6 +130,8 @@ member exists; it does not say what the member accepts, and that is where every 
 | `parent`, `index`, `guid` properties | G1–G2 bookkeeping | ✅ all three read |
 | ~~`ScriptTaskObject`: `set_core_binding`, `set_priority`, …~~ → **plain property assignment** | **G7 at the root** | ✅ all seven fields read. **`set_priority()` does not exist** (`AttributeError`). Assignment works, and **the types differ per field**: `priority` wants a **`str`** (`"2"`; an int raises `TypeError: expected str, got int`), `core_binding` wants an **`int`**. Both persist across a reopen |
 | ~~`ScriptLibManObject`: `add_library(name, version)`~~ → **`add_library("Name, 1.2.3.4 (System)")`** | G8 | ✅ **one argument, not two.** Yields a `ScriptManagedLibraryReference` with `is_managed: true` — the branch that had never executed. It has **no** `effective_resolution`; `is_managed` / `is_placeholder` are the discriminators |
+| `ScriptManagedLibraryReference.managed_library` → `ManagedLib.version` / `.company` / `.title` | **G8, and this row is why it closed differently** | ⚠️ **exists, and answers only for a library this machine has INSTALLED.** For one it does not, `is_managed` still reads `True` and every field off `managed_library` raises `NullReferenceException`. So it reports installation state, not project state, and the exporter no longer reads it — see the G8 row. The reference's own `name` carries the same three values and is the same on every machine |
+| `hide_when_referenced_as_depencency` | — | ⚠️ **CODESYS's own typo**, one `d` short. The correctly spelled property raises, which this repository recorded for months as "not readable on this version". It reads `False`. Still not recorded, now as a choice |
 
 > **Method note, now three deep.** A string search of the binary reported that `move` did not
 > exist; reflection said it does. **Reflection beats a string search, and calling beats
@@ -182,7 +193,7 @@ specification.
 
 ## Phase 0 — done
 
-**One scratch copy per probe**, through `tools\Probe-ImportApi.ps1` (P0–P9 except P7) and
+**One scratch copy per probe**, through `tools\codesys\Probe-ImportApi.ps1` (P0–P9 except P7) and
 `tools\Measure-ImportStability.ps1` (P7). One copy each rather than one shared, because every probe
 mutates and P3 removes a referenced object — what it leaves behind is not a project anything else
 should be measured against.
@@ -198,7 +209,7 @@ should be measured against.
 | P6 | Typed task fields, read and write | ✅ **sufficient**, `core_binding` included; both writes persisted |
 | P7 | Three import→export cycles, unchanged mirror | ⚠️ **climbs +3 per cycle, forever**; found G11 |
 | P8 | Deep folder chain near 260 characters | ✅ **CODESYS is not the limit** — ten 40-char levels, ~420 characters, no complaint |
-| P9 | A fixed-version library reference | ✅ **one call**, yields `is_managed: true` |
+| P9 | A fixed-version library reference | ✅ **one call**, yields `is_managed: true` — **and that was half the answer.** Re-run on 2026-08-17 to enumerate the type's members and walk the chain the exporter uses: `managed_library.version` answers **only for a library this machine has installed** and raises `NullReferenceException` otherwise. G8 was a defect, not a fixture |
 
 **Phase 0 had two purposes and both paid off, in opposite directions.** Confirming the API saved
 a day of debugging inside Phases 3 and 4, because four of its spellings were wrong. Establishing
@@ -256,7 +267,8 @@ already exists.**
 | ~~**14th**~~ | ✅ **Phase 5 — a mirror that stops churning.** Landed 2026-08-16 | Its prerequisite was proven twice over: `versio_native_equiv` exists, and Phase 2 measured that normalisation is stable across round trips. `Measure-ImportStability.ps1` prints `P7: SETTLES` with the counter flat at 44 across all three cycles |
 | ~~**13th**~~ | ✅ **G12 — a GVL's `.gvl.st` edit reaching the project.** Landed 2026-08-16 | **Was a live silent-data-loss path**, found by the feature checklist on 2026-08-16 and the only open defect that destroys somebody's edit without saying so. Phase 5 changes when files are rewritten and touches the same export code, so fixing this first keeps the two reviews apart. Its three candidate fixes are not interchangeable and one of them stops the two-file rule protecting a GVL — the choice was made deliberately: the XML half became export-only, which leaves a GVL with one importable file and therefore **no two-file rule** — it is an ordinary single-file object now, protected by the content check like every other one |
 | ~~**15th**~~ | ✅ **The coverage blind spot, and G9's guard.** Landed 2026-08-16 | **Not planned as a step** — found by asking what G9 costs *today* before writing its guard. An export that could not write an object reported `Complete`, because `ExportCoverage` read the skips and nothing read `manifest.warnings`. Fixed first, because it is what makes every *other* export failure visible too; G9's guard went in behind it. See the two Findings in [`STATUS.md`](../../STATUS.md) |
-| **NEXT** | **Phase 6 — what is left is G8** | The parity tests and the integration breadth landed 2026-08-16; G9 is guarded. **G8 is the last gap**, and P9 made it cheap: `add_library("Standard, 3.5.17.0 (System)")` yields `is_managed: true` in one call |
+| ✅ 7th | **Phase 6 — G8, and it was not a fixture** | The parity tests and the integration breadth landed 2026-08-16; G9 is guarded; **G8 closed 2026-08-17**. P9's `add_library("Standard, 3.5.17.0 (System)")` did make the reference cheap to produce — and producing one is not what was missing. The branch read the version off `managed_library`, which answers only on a machine that has the library installed, so the last gap turned out to be a live defect with a silent failure in it |
+| **NEXT** | **Nothing in this plan.** The moves probe and three decisions | Every G is closed or guarded. What remains is in [What is left, and what it costs](#what-is-left-and-what-it-costs), and only the first row of it is a task |
 
 ### The three honesty fixes — all three done
 
@@ -1091,15 +1103,40 @@ the **existing bytes**.
 
 ---
 
-## Phase 6 — Remaining gaps, tests and docs · **G8 is all that is left**
+## Phase 6 — Remaining gaps, tests and docs · ✅ **COMPLETE 2026-08-17**
 
-- **G8** — a fixture variant carrying at least one fixed-version reference, asserting the
-  `managed_library` branch. **P9 makes this cheap**: `add_library("Standard, 3.5.17.0 (System)")`
-  produces a `ScriptManagedLibraryReference` with `is_managed: true`. Note the managed type has
-  **no** `effective_resolution` — the two reference types carry different fields, and
-  `is_managed` / `is_placeholder` are how they are told apart. **If it still turns out awkward,
-  mark the branch unproven in `versio_libraries.py` and stop** — an untested branch that says so
-  is honest; one that is quietly assumed to work is the thing this gap already was.
+- ✅ **G8 — closed 2026-08-17, and no fixture variant was built.** This bullet asked for one
+  and it would have been the wrong instrument: a fixture proves the branch *runs*, and the
+  question worth asking was what it *records*.
+
+  **The measurement, which is the whole finding.** P9 was extended to enumerate the managed
+  type's members — the first run never had, which is how the plan came to call this cheap. The
+  exporter reads `ref.managed_library` and then `.version` / `.company` / `.title` off it, and
+  that chain had never been called by anything. It exists. It answers **only for a library the
+  exporting machine has installed**: `add_library("Standard, 3.5.17.0 (System)")` on a machine
+  with 3.5.22.0 yields `is_managed: True` and then `NullReferenceException` on every one of the
+  three, while adding the version that *is* installed answers `3.5.22.0` / `System` /
+  `Standard`.
+
+  **So the branch was wrong twice.** It swallowed those exceptions through `safe()`, writing a
+  managed reference with no version and no warning — indistinguishable in the YAML from a
+  placeholder that never had one. And when it did work it recorded **installation state**, which
+  this module's header lists among the things it refuses to record, for the reason G9 already
+  had to be split in two for: a value that differs between two engineers churns the mirror.
+
+  **The fix reads the reference's own `name`** — `"Title, Version (Company)"`, project state,
+  measured byte-identical to `managed_library.displayname` — with `is_managed` as the
+  discriminator rather than "did another property raise", and a strict parse that yields
+  *nothing* plus `LIBRARY_MANAGED_NAME_UNPARSED` rather than a plausible guess. A reference
+  answering `False` to both discriminators raises `LIBRARY_REFERENCE_UNCLASSIFIED`; nothing in
+  3.5.22.20 produces one, which is exactly why it is worth a code.
+
+  **Proven three ways**: `versio_libraries.extract_reference` run *inside CODESYS* against a
+  live managed reference — the shipping function, not a copy — returning the full record with
+  no warnings; 20 CPython tests over the same module in `PythonLibraryRecordTests`; and five
+  mutations, of which one turned nothing red and cost the corpus two new rows. **The escape
+  hatch was not needed and is worth keeping in mind anyway**: had the API not answered, marking
+  the branch unproven and stopping was the honest end.
 - ✅ **G9's silence, closed 2026-08-16 — the half that had to go first.** Traced before the
   guard was written: when the exporter cannot write an object it warns and returns *before*
   `record()`, so the object is in neither `objects` nor `skipped`, and `ExportCoverage.Of` read
@@ -1203,6 +1240,15 @@ own XML. The ST codecs: two languages' default `trim` disagreeing about four cha
 three surfaces. Each is now held by an invariant rather than by a sentence — one asserting no
 object writes two files the import applies, the other comparing the two trim sets directly.
 
+**And a third came out of G8, which is the one worth reading if you are about to trust a
+comment that says a branch is untested.** `versio_libraries.py` said its managed-library half
+was "written from the API's own description and unproven", which is the honest form of the
+warning — and the branch under it was not merely unproven, it was wrong in a way that could
+only be seen by calling the API twice: once for a library the machine has, once for one it does
+not. **An untested branch is not a neutral risk. It is a claim nobody has checked**, and this
+one had been carried for months in a file whose header is otherwise unusually careful about
+where each value comes from.
+
 ```
 SyncViewModel decides the plan ─► asks ─► SyncJob.Plan ─► PlcProjectJob.Plan
    ─► ToNative ─► ProjectJob.Plan ─► job file (schema 2) ─► versio_import.py
@@ -1229,22 +1275,22 @@ additive, each is unavailable until the next export, and **absent never means "u
 
 ## What is left, and what it costs
 
-**One gap, and four decisions.** G1, G2, G3, G6, G7, G9, G10, G11 and G12 are closed; G4 and G5
-are closed but for two rows no fixture can reach. Nothing below blocks anything else, and only
-the first is a task rather than a judgement call.
+**No gaps, one task, and three decisions.** G1, G2, G3, G6, G7, **G8**, G9, G10, G11 and G12
+are closed; G4 and G5 are closed but for two rows no fixture can reach. Nothing below blocks
+anything else, and only the first is a task rather than a judgement call.
 
 | | What | Effort | Why it is the size it is |
 |---|---|---|---|
-| **1** | **G8 — prove the `managed_library` branch** | **Half a day.** One fixture variant, one integration test, ~3 CODESYS launches | The last real gap. P9 already measured the call that produces one: `add_library("Standard, 3.5.17.0 (System)")`, **one argument, not two**, yielding `is_managed: true`. The branch has never executed, so it is untested rather than known-broken. **The plan's own escape hatch stands**: if it turns awkward, mark the branch unproven in `versio_libraries.py` and stop — an untested branch that says so is honest |
-| **2** | **Which moves actually work** | **Half a day**, mostly CODESYS wall-clock | Two data points either side of an undrawn line. P2: a move into a folder keeps the GUID. The feature checklist, D6: a move out of `Application` into `Plc Logic` is **declined silently by CODESYS** and correctly reported as `RENAME_NOT_APPLIED`. This document's header says Versio "renames and moves" objects, and that is true of renames and **partly** true of moves. A probe over a handful of container types settles it. Cheap, and it closes an honesty gap rather than adding a feature |
-| **3** | **G9's remaining half — the 190-character file name** | **A day to change; the cost is not the code** | Preventing rather than reporting means shrinking `MaxStem` or dropping the parent prefix, and **either renames every method, action, property and transition in every mirror already committed** — a git rename with no content change, in everybody's repository, on the next export. Written up rather than taken because it is the owner's call. `The_longest_legal_file_name_leaves_no_room_for_an_ordinary_checkout` derives the number, so whoever takes it on is told when they have succeeded |
-| **4** | **E2 and E4 — percent-encoded names** | **Unknown, and unbounded** | Not a coding task: it needs a *fixture that cannot be built*. P5 measured that CODESYS refuses to **create** such a name, so the object has to arrive from a library or an external-file reference. `README.md`'s own object list has a real example of the latter. Until one exists, **G4's resolution half is proven by unit tests and by nothing else** — say so rather than let the checklist imply otherwise |
-| **5** | **`TaskCatalog.cs`** | **Half a day, but not alone** | The C# reader for `.tasks.yaml`, so something outside python can read one. **Land it with the panel change that consumes it.** Note the precedent cuts both ways: `LibraryCatalog.cs` is already in `Versio.Core/Projects/` with tests and **no production caller**, so the rule "no reader without a consumer" has already been broken by its sibling. The real blocker for both is the panel |
+| ~~**1**~~ | ~~**G8 — prove the `managed_library` branch**~~ | ~~Half a day~~ **Done 2026-08-17, in about that** | ✅ Closed, and **not the way this row said**. No fixture variant was built: a fixture proves the branch runs, and what needed asking was what it *records*. It recorded the exporting machine's installed version, or — for a library that machine did not have — nothing at all, silently. See the G8 row and the Finding. The estimate was right and the description of the work was wrong, which is the more useful half to notice |
+| **1** | **Which moves actually work** | **Half a day**, mostly CODESYS wall-clock | Two data points either side of an undrawn line. P2: a move into a folder keeps the GUID. The feature checklist, D6: a move out of `Application` into `Plc Logic` is **declined silently by CODESYS** and correctly reported as `RENAME_NOT_APPLIED`. This document's header says Versio "renames and moves" objects, and that is true of renames and **partly** true of moves. A probe over a handful of container types settles it. Cheap, and it closes an honesty gap rather than adding a feature |
+| **2** | **G9's remaining half — the 190-character file name** | **A day to change; the cost is not the code** | Preventing rather than reporting means shrinking `MaxStem` or dropping the parent prefix, and **either renames every method, action, property and transition in every mirror already committed** — a git rename with no content change, in everybody's repository, on the next export. Written up rather than taken because it is the owner's call. `The_longest_legal_file_name_leaves_no_room_for_an_ordinary_checkout` derives the number, so whoever takes it on is told when they have succeeded |
+| **3** | **E2 and E4 — percent-encoded names** | **Unknown, and unbounded** | Not a coding task: it needs a *fixture that cannot be built*. P5 measured that CODESYS refuses to **create** such a name, so the object has to arrive from a library or an external-file reference. `README.md`'s own object list has a real example of the latter. Until one exists, **G4's resolution half is proven by unit tests and by nothing else** — say so rather than let the checklist imply otherwise |
+| **4** | **`TaskCatalog.cs`** | **Half a day, but not alone** | The C# reader for `.tasks.yaml`, so something outside python can read one. **Land it with the panel change that consumes it.** Note the precedent cuts both ways: `LibraryCatalog.cs` is already in `Versio.Core/Projects/` with tests and **no production caller**, so the rule "no reader without a consumer" has already been broken by its sibling. The real blocker for both is the panel |
 
-**Roughly two to three days of work, plus one decision that is not work.** Items 1 and 2 are a
-day between them and finish Phase 6. Item 3 is a judgement about other people's repositories.
-Item 4 is a corpus problem that may never be solved and should be labelled instead of chased.
-Item 5 waits for the panel.
+**Half a day of work, plus three decisions that are not work.** Item 1 is the only task left
+in this plan, and it closes an honesty gap rather than adding a feature. Item 2 is a judgement
+about other people's repositories. Item 3 is a corpus problem that may never be solved and
+should be labelled instead of chased. Item 4 waits for the panel.
 
 **Before any of it, run the gate.** The full integration suite is ~31 minutes and drives real
 CODESYS; the fast projects are `Versio.Core.Tests` and `Versio.Integration.Tests`, eleven
@@ -1252,7 +1298,10 @@ seconds together. Both commands are
 in `CLAUDE.md`.
 
 **Next, in order:** see [What is left, and what it costs](#what-is-left-and-what-it-costs)
-above. G8 first, then the moves probe; the other three are decisions rather than tasks.
+above. **The moves probe is the only task**; the other three are decisions rather than tasks.
+Read D6 in the feature checklist before starting it — CODESYS declined a move silently and the
+script reported `RENAME_NOT_APPLIED`, which is one data point on the far side of a line nobody
+has drawn.
 
 **One lesson from G9 that outlives it**, kept because it is about how this document goes wrong
 rather than about paths. This file said **three times**, across two documents, that G9 "has a
@@ -1515,13 +1564,19 @@ earlier test's leftovers could in principle have been doing the work.
 ## Verification
 
 1. `dotnet test tests\Versio.Core.Tests` — pure, ~0.3 s. Carries the bulk of the new coverage.
-2. `dotnet test tests\Versio.Integration.Tests --filter PythonFileName` — parity, **62 tests**.
+2. `dotnet test tests\Versio.Plc.Codesys.Tests --filter PythonFileName` — parity, **62 tests**,
+   ~16 s and **no CODESYS**, despite the project it now lives in.
    Needs `python` on PATH and skips cleanly without it, so **a green run on a machine with no
-   python has verified nothing** — check the count, not the colour. (Said 51 until 2026-08-16,
-   which is the same staleness this list warns about one line down.)
-3. `tools\Test-RoundTrip.ps1 … -MutateFirst` — the per-layer verdict stays **PASS**, and
+   python has verified nothing** — check the count, not the colour. (Said 51 until 2026-08-16;
+   and named `Versio.Integration.Tests` until 2026-08-17, a year of muscle memory pointing at a
+   project these tests had left. Same staleness this list warns about one line down, arriving
+   through the structure move rather than through a count.)
+2b. `dotnet test tests\Versio.Plc.Codesys.Tests --filter PythonLibraryRecord` — **20 tests**,
+   ~4 s, no CODESYS. G8's regression half: the managed-library branch, its strict name parse and
+   the two codes it raises. Same python skip, same warning — check the count.
+3. `tools\codesys\Test-RoundTrip.ps1 … -MutateFirst` — the per-layer verdict stays **PASS**, and
    `Task Configuration.xml` dropped out of the native-differs list when Phase 4 landed.
-4. **The G10 acceptance test:** `tools\Measure-ImportStability.ps1` must print **`P7: SETTLES`**
+4. **The G10 acceptance test:** `tools\codesys\Measure-ImportStability.ps1` must print **`P7: SETTLES`**
    **and report zero warnings.** ✅ **Both halves pass as of 2026-08-16.** Historic note: **The zero-warnings half passes
    as of Phase 4** — all three cycles clean, where cycles 2 and 3 used to throw twice each. It
    still prints `P7: CHURNS`, and correctly: the four files left are the three visualisations and
@@ -1531,7 +1586,7 @@ earlier test's leftovers could in principle have been doing the work.
 5. **Regression gate:** a normal export stays byte-identical to the committed mirror for every file
    Phase 4 does not deliberately change.
 6. **The Phase 2 acceptance test**, and it is the one that matters most now:
-   `dotnet test tests\Versio.Integration.Tests --filter An_object_whose_file_is_deleted` —
+   `dotnet test tests\Versio.Plc.Codesys.Tests --filter An_object_whose_file_is_deleted` —
    five CODESYS launches, ~2 min. It is the only thing in the repository that fails if Versio
    starts deleting objects it should keep, or stops deleting ones it should not. **Read the
    three halves as one claim**: a refusal test that never lets anything through and a delete
@@ -1540,12 +1595,16 @@ earlier test's leftovers could in principle have been doing the work.
    `dotnet test tests\Versio.Plc.Codesys.Tests --filter A_task_priority_edited_in_the_mirror` —
    four CODESYS launches, 72–78 s, and it is the only thing in the repository that fails if the
    typed write stops reaching the project.
-8. **`Versio.Plc.Codesys.Tests` is the gate before a commit** — 365 tests, about half an hour,
-   which is the sort of number that makes somebody kill a run they should have waited out. The
-   loop to work in is `Versio.Core.Tests` and `Versio.Integration.Tests`: 1,436 tests in eleven
-   seconds, needing no toolchain. That used to be one integration project split by a trait and
+8. **`Versio.Plc.Codesys.Tests` is the gate before a commit** — 385 tests, about half an
+   hour, which is the sort of number that makes somebody kill a run they should have waited out.
+   The loop to work in is `Versio.Core.Tests` and `Versio.Integration.Tests`: 1,437 tests in
+   fifteen seconds, needing no toolchain. That used to be one integration project split by a trait and
    policed by a `FastLaneTests`; it is a project boundary now, so there is no filter to remember
    and no tag to forget.
+
+**Every path in this list was re-run on 2026-08-17 rather than read**, which is how four of
+them were found pointing at a project or a folder that no longer holds what they name. A
+verification list nobody executes is a list of intentions, and this one had been one for a day.
 
 Build with `& "$env:LOCALAPPDATA\Microsoft\dotnet\dotnet.exe"` — `dotnet` on PATH is runtime-only.
 Close Versio.exe first; it locks its own DLLs.

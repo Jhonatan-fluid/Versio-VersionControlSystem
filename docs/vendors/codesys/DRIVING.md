@@ -616,10 +616,28 @@ would put a diff in every commit or make the mirror machine-specific:
 |---|---|
 | `ref.id` | Re-minted on every open. Two consecutive runs over an untouched project differed in 68 lines and **every one was an id** |
 | Effective resolution / resolution info / resolver | Describes which libraries are installed *here*, not what the project asks for. Two engineers sharing a repository would produce different bytes and neither would be wrong |
-| `hide_when_referenced_as_dependency` | Raises on all 34 references on this CODESYS version. Probed, not assumed |
+| `hide_when_referenced_as_depencency` | A display hint rather than something a diff needs. **The spelling is CODESYS's own typo**, one `d` short — this table said the correctly spelled property "raises on all 34 references on this CODESYS version", which was the wrong conclusion from a true observation: it raises because it does not exist under that name. It reads `False`. Corrected 2026-08-17, and it is now a choice rather than a limitation |
+| `managed_library.version` / `.company` / `.title` | **Describes the library as INSTALLED here**, so it belongs in the row above rather than in the export. The exporter read these until 2026-08-17 — see below |
 
 A `redirection` **is** recorded: a placeholder pinned to a fixed version is a choice stored in
 the project, so it belongs in the mirror.
+
+**A managed reference records its version, and not from where you would expect.** A
+fixed-version reference — `is_managed`, as against `is_placeholder` — carries `version`,
+`company` and `title`, and they are **parsed from the reference's own `name`**, which CODESYS
+spells `"Title, Version (Company)"`. The obvious source is `ref.managed_library`, and it is the
+wrong one twice over: it answers only on a machine that has that library installed (on one that
+does not, `is_managed` still reads `True` and every field raises `NullReferenceException`), and
+what it answers is installation state, which is the second row of the table above. The name is
+project state and is the same everywhere. Measured both ways on 3.5.22.20 — see G8 in
+[`IMPORT-PLAN.md`](IMPORT-PLAN.md) and the Finding.
+
+The parse is strict: last `" ("`, last `", "`, closing bracket required, version must be digits
+and dots. A name that is not that shape yields **no version at all** plus
+`LIBRARY_MANAGED_NAME_UNPARSED`, rather than a plausible guess — an absent version is a gap a
+reader can see, a wrong one is a diff somebody acts on. A reference answering `False` to both
+discriminators raises `LIBRARY_REFERENCE_UNCLASSIFIED`; nothing in this version produces one,
+which is why it is worth a code.
 
 The file is **export-only** (§6.5). `versio_yaml.py` is a hand-written emitter covering exactly
 one document shape — mappings of scalars, and a list of mappings — with key order supplied by
@@ -1052,23 +1070,23 @@ failed on all four rows above.
 
 ## 10. Script inventory
 
-All twelve `.py` files are embedded into `Versio.Infrastructure` by a glob
-(`<EmbeddedResource Include="..\Versio.Scripts.Codesys\*.py" />`) and extracted at run time by
+All twelve `.py` files are embedded into `Versio.Plc.Codesys.Infrastructure` by a glob
+(`<EmbeddedResource Include="Scripts\*.py" LinkBase="Scripts" />`) and extracted at run time by
 `ScriptExtractor` into `%TEMP%\Versio\scripts\<content-stamp>\`. The directory is **versioned by
 content hash**, so an upgrade cannot pick up old scripts and a downgrade cannot pick up new ones
 — a stale copy on disk would produce failures that look like CODESYS bugs.
 
 | Script | Lines | `scriptengine`? | Role |
 |---|---|---|---|
-| `versio_export.py` | 753 | yes | The exporter. Invoked by `CodesysOperation.Export` |
-| `versio_import.py` | 735 | yes | The importer. Invoked by `CodesysOperation.Import`, and since Phase 1 it **executes a plan and decides nothing** — which is most of why it doubled |
+| `versio_export.py` | 1029 | yes | The exporter. Invoked by `CodesysOperation.Export` |
+| `versio_import.py` | 1166 | yes | The importer. Invoked by `CodesysOperation.Import`, and since Phase 1 it **executes a plan and decides nothing** — which is most of why it doubled |
 | `versio_probe.py` | 149 | yes | Phase 0 tree probe; writes a `report.json`. Invoked by `CodesysOperation.Probe` (see finding A3) |
 | `versio_probe_native_import.py` | 194 | yes | One-off probe that answered "does `import_native` replace in place?". Never invoked by the app |
 | `versio_delete_objects.py` | 79 | yes | Test fixture helper — deletes named objects so the importer must recreate them. **Never part of the product**, but is embedded in it (finding B4) |
-| `versio_types.py` | 349 | **no** | The GUID table, the form decision, the suffix/infix tables, the skip reasons, the export-only rules |
-| `versio_text.py` | 196 | **no** | `join_st` / `split_st`, the timestamp scrub, `content_hash`, `safe_file_stem` |
+| `versio_types.py` | 442 | **no** | The GUID table, the form decision, the suffix/infix tables, the skip reasons, the export-only rules |
+| `versio_text.py` | 432 | **no** | `join_st` / `split_st`, the timestamp scrub, `content_hash`, `safe_file_stem` |
 | `versio_decl.py` | 186 | **no** | ST declaration-header parser for object creation |
-| `versio_libraries.py` | 213 | **no** | Shapes `ScriptLibraryReference` objects into neutral records |
+| `versio_libraries.py` | 312 | **no** | Shapes `ScriptLibraryReference` objects into neutral records |
 | `versio_tasks.py` | 212 | **no** | Shapes `ScriptTaskObject`s into neutral records, and applies a `.tasks.yaml` back through typed property assignment (Phase 4) |
 | `versio_yaml.py` | 358 | **no** | Hand-written YAML emitter for one fixed document shape, and — since Phase 4 — the reader for it |
 | `versio_native_equiv.py` | 192 | **no** | The python half of `NativeXmlNormalizer`: is this native payload semantically the same as that one? **No caller yet**; Phases 2 and 5 are what it was written for |
@@ -1081,11 +1099,14 @@ it is absent.
 
 > **This table said "ten files" and "five pure modules" until 2026-08-15**, having missed
 > `versio_tasks.py` and `versio_yaml.py`'s reader when Phase 4 landed — and every line count in
-> it was stale, two of them by more than 60%. Re-derive it rather than editing the number you
-> think changed:
+> it was stale, two of them by more than 60%. **It went stale again by 2026-08-17**, and further:
+> five of the twelve had moved, `versio_export.py` by 276 lines and `versio_import.py` by 431,
+> and the paragraph above still named a project and a glob that the structure audit had
+> replaced. Re-derive the whole table rather than editing the number you think changed — the
+> one row somebody edits by hand is the row that was already right:
 >
 > ```
-> cd src/Versio.Scripts.Codesys && for f in *.py; do printf "%-32s %s\n" "$f" "$(grep -c '' "$f")"; done
+> cd src/Versio.Plc.Codesys.Infrastructure/Scripts && for f in *.py; do printf "%-32s %s\n" "$f" "$(grep -c '' "$f")"; done
 > ```
 
 ### The PowerShell harnesses

@@ -22,7 +22,15 @@
 # EVERY PROBE MUTATES THE PROJECT. Run each group against its own scratch copy;
 # Probe-ImportApi.ps1 does that and is the intended entry point.
 #
-# job.json: { "project": "<abs path>", "probes": ["P1", "P2"] }
+# job.json: { "project": "<abs path>", "probes": ["P1", "P2"],
+#             "scripts": "<abs path to src\\Versio.Plc.Codesys.Infrastructure\\Scripts>" }
+#
+# `scripts` is optional and only P9 uses it. It is the ONE place this file reaches into
+# the product, and the direction is what makes it safe: the isolation rule above is about
+# a probe that renames, moves and removes objects never SHIPPING inside the product, not
+# about the probe being forbidden to read it. P9 has to answer "what does the exporter
+# record for a managed reference", and the only honest way to answer that is to call the
+# exporter's own function rather than a copy of it.
 
 import json
 import sys
@@ -497,7 +505,16 @@ def probe_path_length(proj):
 # ============================================================================ P9
 def probe_library_reference(proj):
     """G8. Every reference in the fixture is a placeholder, so the managed_library branch
-    of versio_libraries.py has never executed. Can a fixed-version one be added quickly?"""
+    of versio_libraries.py has never executed. Can a fixed-version one be added quickly --
+    and DOES THE BRANCH READ IT CORRECTLY once it exists?
+
+    The second half is the one that matters and the first run of this probe skipped it. It
+    reported that add_library works and that the result says is_managed: true, from which
+    the plan concluded G8 was cheap. It never printed the managed type's members, and the
+    exporter does not read the reference directly: it reads `ref.managed_library` and then
+    .version / .company / .title off that. That spelling had never been called until this
+    probe was extended on 2026-08-17. See
+    out["managed_library"] and the three field maps beside it."""
     libman = find_named(proj, "Library Manager")
     if libman is None:
         return {"verdict": "NO_TARGET", "detail": "Library Manager not found"}
@@ -544,6 +561,122 @@ def probe_library_reference(proj):
                           "system_library", "default_resolution", "resolution_info",
                           "version", "optional"):
                 out["added"][field] = describe(lambda f=field, a=added: getattr(a, f))
+
+            # THE HALF THE FIRST RUN OF THIS PROBE DID NOT MEASURE, and the whole reason
+            # G8 was still open a day later. `members()` above was called on refs[0], a
+            # PLACEHOLDER, so the managed type's member list has never been printed --
+            # and versio_libraries.py reads `ref.managed_library` and then .version,
+            # .company and .title off whatever that returns. Four spellings in this API
+            # have already been wrong (move, find, set_priority, add_library), and a
+            # `safe()` probe on a name that does not exist is indistinguishable from a
+            # reference that has no version: the exporter would write a managed reference
+            # as though it were a placeholder and warn about nothing.
+            out["added_members"] = members(added)
+
+            # Every field extract_reference() touches, on a managed reference, one at a
+            # time. The last four are written UNCONDITIONALLY with safe(..., False) --
+            # so if any of them raises here, the mirror has been recording a fabricated
+            # `false` rather than a measured one, which is worse than omitting the key.
+            out["added_record_fields"] = {}
+            for field in ("qualified_only", "publish_symbols_in_container", "optional",
+                          "system_library", "parameters", "is_redirected",
+                          "placeholder_name",
+                          # CODESYS's own typo. The CLR member list from the first run
+                          # of this probe spells it ...depencency, while versio_libraries.py
+                          # probed the correct spelling -- which is why its comment used to
+                          # say the field "is not readable on this version". Both spellings
+                          # are asked for here so the answer names which one works.
+                          "hide_when_referenced_as_dependency",
+                          "hide_when_referenced_as_depencency"):
+                out["added_record_fields"][field] = describe(
+                    lambda f=field, a=added: getattr(a, f))
+
+            # The chain the exporter walks. Reported as three separate answers because
+            # "no version came out" has three different causes and only one of them is a
+            # bug in this repository: managed_library absent, managed_library present but
+            # None, or present and missing the sub-fields.
+            out["managed_library"] = describe(lambda: added.managed_library)
+            managed = safe(lambda: added.managed_library, None)
+            out["managed_library_members"] = members(managed) if managed is not None else None
+            out["managed_library_fields"] = {}
+            if managed is not None:
+                for field in ("version", "company", "title", "default_namespace",
+                              "namespace", "name"):
+                    out["managed_library_fields"][field] = describe(
+                        lambda f=field, m=managed: getattr(m, f))
+
+            # And the same three fields off the REFERENCE, in case the shape is flat.
+            # Cheap, and it is the alternative spelling the fix would use.
+            out["added_flat_fields"] = {}
+            for field in ("version", "company", "title"):
+                out["added_flat_fields"][field] = describe(
+                    lambda f=field, a=added: getattr(a, f))
+
+            # A PLACEHOLDER's answer to the same call, which is the OTHER half of the
+            # branch: extract_reference() enters its managed block whenever
+            # `ref.managed_library` probes to something non-None, and a placeholder that
+            # answers with an object rather than raising would take every reference in
+            # the fixture down the managed path.
+            if refs:
+                out["placeholder_managed_library"] = describe(
+                    lambda s=refs[0]: s.managed_library)
+
+            # AND THE SAME MEASUREMENT WITH A LIBRARY THIS MACHINE ACTUALLY HAS.
+            #
+            # The run above added "Standard, 3.5.17.0 (System)" - the version the plan
+            # quotes - and every field off its managed_library threw
+            # NullReferenceException. That is one measurement with two possible readings:
+            # the exporter reads the wrong chain, or a reference to a library that is not
+            # INSTALLED carries no library information to read. Only the second run tells
+            # them apart, and the difference decides whether G8 is a defect or a gap.
+            #
+            # The version is taken from the placeholder's own effective_resolution rather
+            # than typed in, so this probe asks about whatever is installed on the machine
+            # running it instead of hard-coding one engineer's CODESYS.
+            installed = safe(lambda: _plain(refs[0].effective_resolution), None) if refs else None
+            out["installed_spelling"] = installed
+            if installed:
+                out["add_installed"] = describe(lambda: libman.add_library(installed))
+                refs_now = safe(lambda: list(libman.references), None)
+                if refs_now:
+                    inst = refs_now[-1]
+                    out["installed_kind"] = _plain(safe(lambda: inst.GetType().Name, None))
+                    out["installed_ref"] = {}
+                    for field in ("name", "namespace", "is_managed", "is_placeholder",
+                                  "system_library", "optional", "qualified_only",
+                                  "publish_symbols_in_container"):
+                        out["installed_ref"][field] = describe(
+                            lambda f=field, r=inst: getattr(r, f))
+
+                    # AND WHAT THE SHIPPING EXPORTER MAKES OF IT. Everything above is
+                    # this file's own reading of the API; this is versio_libraries.py's,
+                    # run against the same live object in the same process, and it is the
+                    # only line here that can fail because of a bug in the product rather
+                    # than a surprise in CODESYS.
+                    try:
+                        import versio_libraries
+                        errs = []
+                        out["product_record"] = versio_libraries.extract_reference(
+                            inst, safe,
+                            lambda code, detail: errs.append([code, detail]))
+                        out["product_record_errors"] = errs
+                        out["product_record_placeholder"] = versio_libraries.extract_reference(
+                            refs[0], safe, lambda code, detail: errs.append([code, detail]))
+                    except Exception as e:
+                        out["product_record"] = {"error": type(e).__name__,
+                                                 "message": str(e)}
+
+                    out["installed_managed_library"] = describe(lambda: inst.managed_library)
+                    mlib = safe(lambda: inst.managed_library, None)
+                    out["installed_managed_fields"] = {}
+                    if mlib is not None:
+                        # The three the exporter writes, plus the two beside them: if
+                        # `displayname` and `default_namespace` read while `title` does
+                        # not, the record is recording the wrong pair of fields.
+                        for field in ("version", "company", "title", "displayname",
+                                      "default_namespace", "categories"):
+                            out["installed_managed_fields"][field] = describe(
+                                lambda f=field, m=mlib: getattr(m, f))
 
     return out
 
@@ -617,6 +750,13 @@ def main():
 
     wanted = job.get("probes") or ["P0"]
     project_path = job["project"]
+
+    # versio_libraries.py imports no scriptengine and takes its objects and its `safe` probe
+    # as arguments, so it loads here exactly as it loads under CPython in the parity tests.
+    # That is the whole reason it was written that way.
+    scripts_dir = job.get("scripts")
+    if scripts_dir:
+        sys.path.insert(0, scripts_dir)
 
     emit({"t": "start", "project": project_path, "probes": wanted})
     proj = open_project(project_path)

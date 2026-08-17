@@ -17,6 +17,99 @@ produce a diff touching everything else.
 
 ---
 
+### A managed library reference recorded whichever version this machine had installed
+
+**Found 2026-08-17 by calling the API rather than reading it** — G8, the last gap in the import
+plan, and the answer is not the one the plan expected.
+
+`versio_libraries.py` shapes each library reference into the mirror's YAML. Its managed
+(fixed-version) half had **never executed**: both fixtures are placeholders end to end, 13 in the
+project's manager and 21 in the application's, 34 in total. The branch was written from the API's
+description and said so in a comment, which is the honest version of untested — but the plan then
+reasoned from a probe that had measured the wrong half, and concluded G8 was half a day of
+fixture work.
+
+**What P9 had actually measured.** `add_library("Standard, 3.5.17.0 (System)")` works, takes one
+argument, and yields a reference reading `is_managed: true`. That is where the first run stopped.
+It never enumerated the managed type's members, and the exporter does not read the reference: it
+reads `ref.managed_library` and then `.version`, `.company` and `.title` off *that*. Four
+spellings in this API have already been wrong. This one had never been called.
+
+**Two runs, and the second is the one that mattered.**
+
+| Called on a `ScriptManagedLibraryReference` | 3.5.17.0 — **not installed here** | 3.5.22.0 — installed |
+|---|---|---|
+| `is_managed` | `True` | `True` |
+| `managed_library` | the object exists | the object exists |
+| `.version` | **`NullReferenceException`** | `"3.5.22.0"` |
+| `.company` / `.title` | **`NullReferenceException`** | `"System"` / `"Standard"` |
+
+So the branch had two faults, and the second is worse than the first.
+
+**It failed silently.** The fields were read through `safe()`, the exception-swallowing probe, so
+a reference to a library this machine does not have was written with **no version, no company and
+no title, and no warning** — indistinguishable in the YAML from a placeholder that never had one.
+The record was `{name, namespace, flags}` and the export said nothing.
+
+**And had it worked, it would have recorded the wrong thing.** `managed_library` describes the
+library as *installed on the exporting machine*. That is precisely what this file's own header
+refuses to record — it lists `effective_resolution` and the resolver as "not recorded, on
+purpose: that describes which libraries are installed here, not what the project asks for, so it
+would differ between two engineers who share this repository and neither would be wrong". The
+managed branch was breaking that rule three fields at a time, and it is **G9's defect through a
+third door**: a machine-dependent value written into a committed file churns the mirror for
+whoever is configured differently.
+
+**The fix takes the version from the project instead.** A managed reference's own `name` is
+`"Title, Version (Company)"` — measured byte-identical to `managed_library.displayname` — and it
+is project state, present whether or not anything is installed. `parse_managed_name` splits it,
+`is_managed` is the discriminator rather than "did some other property raise", and a name that is
+not that shape yields **nothing** plus `LIBRARY_MANAGED_NAME_UNPARSED` rather than a plausible
+guess. The asymmetry is the point: an absent version is a gap a reader can see, a wrong one is a
+diff somebody acts on.
+
+**Proven by running the shipping module inside CODESYS**, against a live reference, which is the
+one thing a fake cannot do:
+
+```
+product_record = {"name": "Standard, 3.5.22.0 (System)", "namespace": "Standard",
+                  "version": "3.5.22.0", "company": "System", "title": "Standard",
+                  "qualifiedOnly": true, "systemLibrary": false, ...}
+product_record_errors = []
+```
+
+with the placeholder beside it in the same run still producing `placeholder`,
+`defaultResolution` and `redirection` and no managed keys.
+
+**The regression half is 20 CPython tests** over the real module — `versio_libraries.py` imports
+no `scriptengine` and takes its objects and its `safe` probe as arguments, which is what makes
+that possible. The fakes are shaped from the probe's output, including which attributes are
+absent and which raise, so they assert a measurement rather than the test's own assumptions.
+
+**Five mutations were run rather than reasoned about, and one of them found a hole in the
+corpus.** Restoring the `managed_library` read, silencing the unparsed warning, letting a
+placeholder fall into the managed branch, and deleting the unclassified branch each turned
+exactly one test red. Loosening the version check — "nothing but digits and dots" — turned
+**nothing** red, because every refused name in the list failed the *other* rule too ("at least
+one digit"). `3.5.22.0-beta` and `1.0a` are in the corpus now, and they are the only two cases
+that watch that line.
+
+**The fifth mutation is worth its own sentence, because it nearly did not happen.** The first
+four were written down while the branch was being built; the unclassified path got none, on the
+unspoken grounds that nothing produces such a reference — which is exactly the argument that
+leaves a rule untested. It was mutated last and turned its test red, so it is watched. A
+mutation list assembled from "what I changed" misses the branch nobody expects to run, and that
+branch is always the one that will run first in front of a customer.
+
+**One thing this cost, worth keeping**: `hide_when_referenced_as_dependency` is documented here
+and in `DRIVING.md` as "raises on all 34 references... simply not readable on this version". It
+raises because **CODESYS misspells it**: the member is `hide_when_referenced_as_depencency`, one
+`d` short, and it reads `False` under that name. Still not recorded — it is a display hint — but
+recorded as a *choice* now, because "we could not read it" invites somebody to retry and "we
+chose not to" does not.
+
+---
+
 ### Four tool scripts pointed one directory above where they now live
 
 **Found 2026-08-17 on the first attempt to run one**, immediately after the structure audit moved

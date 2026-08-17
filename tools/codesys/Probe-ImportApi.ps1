@@ -38,7 +38,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 $tools  = $PSScriptRoot
+$repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $script = Join-Path $tools "versio_probe_import_api.py"
+# P9 calls versio_libraries.extract_reference on a live managed reference, because a
+# probe's own reading of an API is not evidence about what the exporter records.
+$scripts = Join-Path $repoRoot "src\Versio.Plc.Codesys.Infrastructure\Scripts"
 
 if (-not (Test-Path $Project)) { throw "project not found: $Project" }
 if (-not (Test-Path $script))  { throw "probe script not found: $script" }
@@ -56,7 +60,7 @@ foreach ($p in $Probes) {
 
     Write-Host "`n=== $p ===" -ForegroundColor Cyan
     $r = & "$tools\Run-Codesys.ps1" -Script $script `
-        -Job @{ project = $copy; probes = @($p) } -Profile $Profile -Codesys $Codesys
+        -Job @{ project = $copy; probes = @($p); scripts = $scripts } -Profile $Profile -Codesys $Codesys
 
     $done    = @($r.Events | Where-Object t -eq 'probe_result')
     $failed  = @($r.Events | Where-Object t -eq 'probe_failed')

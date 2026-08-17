@@ -338,12 +338,18 @@ unless something changes.
 > **This list is not the active work.** The import side has its own plan and its own queue —
 > [`vendors/codesys/IMPORT-PLAN.md`](vendors/codesys/IMPORT-PLAN.md), whose *Handoff* section is the one to read
 > first, and whose **feature checklist** is what says which of its 49 behaviours have been run
-> against a real project and which have not. **Phases 0–5 there are complete and Phase 6 is
-> nearly done**; **G9 is guarded** as of 2026-08-16 and **G8 is the only gap left**.
+> against a real project and which have not. **Every phase there is complete** — Phase 6 closed
+> on 2026-08-17 with G8, the last gap, and **G9 is guarded** as of 2026-08-16.
 > **[What is left, and what it costs](vendors/codesys/IMPORT-PLAN.md#what-is-left-and-what-it-costs)**
-> is the table to read: one gap of about half a day, and four items that are decisions rather
-> than tasks. G9's remaining half is one of them — the worst case is reported but still
-> producible, and preventing it renames committed files in every mirror already written.
+> is the table to read: **one task of about half a day** — which moves CODESYS actually performs,
+> since it declined one silently — and three items that are decisions rather than tasks. G9's
+> remaining half is one of them: the worst case is reported but still producible, and preventing
+> it renames committed files in every mirror already written.
+>
+> **G8 is worth reading rather than ticking.** It was carried as "untested branch, needs a
+> fixture" and turned out to be a live defect with a silent failure in it — a managed library
+> reference recorded whichever version the *exporting machine* had installed, or, for one it did
+> not have, nothing at all and no warning.
 
 > **The second queue — the code-shape work — is CLOSED, and three of its items were closed by
 > deciding not to do them.** It never had any bearing on what the product does. What was worth
@@ -987,10 +993,9 @@ would have gone on passing while checking one fewer every time a panel moved out
 ## Findings
 
 Every defect worth understanding, written down with its evidence, lives in
-**[`FINDINGS.md`](FINDINGS.md)** — 105 of them, newest first. (Said 99
-until 2026-08-17, when it was re-derived rather than incremented: the number had gone
-stale during the split itself, which is the one edit that could not have been an
-oversight.)
+**[`FINDINGS.md`](FINDINGS.md)** — 106 of them, newest first. (Said 99 until 2026-08-17,
+when it was re-derived rather than incremented: the number had gone stale during the split
+itself, which is the one edit that could not have been an oversight.)
 
 It moved out on 2026-08-17. It was 3,681 lines of this document's 4,782, so the file that
 answers *where is the project now* was 77% engineering log, and `CLAUDE.md`'s opening
@@ -999,6 +1004,7 @@ actually do.
 
 The full list, newest first:
 
+- [A managed library reference recorded whichever version this machine had installed](FINDINGS.md#a-managed-library-reference-recorded-whichever-version-this-machine-had-installed)
 - [Four tool scripts pointed one directory above where they now live](FINDINGS.md#four-tool-scripts-pointed-one-directory-above-where-they-now-live)
 - [The ignore list hid the projects and kept every one of their mirrors](FINDINGS.md#the-ignore-list-hid-the-projects-and-kept-every-one-of-their-mirrors)
 - [The guard I wrote for the seam was weaker than the claim I made for it](FINDINGS.md#the-guard-i-wrote-for-the-seam-was-weaker-than-the-claim-i-made-for-it)
