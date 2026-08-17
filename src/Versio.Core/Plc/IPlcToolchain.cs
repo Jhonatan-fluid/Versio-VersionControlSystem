@@ -1,31 +1,5 @@
 namespace Versio.Core.Plc;
 
-/// <summary>
-/// A PLC engineering tool Versio can drive.
-/// </summary>
-/// <remarks>
-/// Versio started CODESYS-only, but nothing above this line is CODESYS-shaped: git, the
-/// diff, the direction lock, change detection and the commit gate all work the same way
-/// whichever tool produced the project. This enum is the seam where vendor knowledge
-/// begins.
-/// </remarks>
-public enum PlcVendor
-{
-    /// <summary>CODESYS 3.5 and the many OEM rebrands built on it.</summary>
-    Codesys,
-
-    /// <summary>Siemens TIA Portal. Not implemented — listed so the shape of the
-    /// abstraction is judged against a real second vendor rather than a hypothetical one.</summary>
-    TiaPortal,
-
-    /// <summary>Rockwell Studio 5000. Not implemented.</summary>
-    Studio5000,
-
-    /// <summary>Beckhoff TwinCAT. Not implemented. Note it is CODESYS-derived but has
-    /// diverged enough to need its own handling.</summary>
-    TwinCat,
-}
-
 /// <summary>What a vendor's toolchain can actually do.</summary>
 /// <remarks>
 /// Capabilities are declared rather than assumed because they differ sharply. CODESYS can

@@ -981,6 +981,57 @@ would have gone on passing while checking one fewer every time a panel moved out
 
 Written down with their evidence, because the reasoning is worth more than the fix.
 
+### `PlcVendor` was a closed enum, so you could not name what you were told to register
+
+**Found 2026-08-16, and it is the one that made the architectural rule literally false.** The
+README, `CLAUDE.md` and both registries all say the same thing: adding a vendor means
+implementing `IPlcRunner`, `IPlcProjectFormat` and `IPlcToolchain` and registering them, and
+**nothing in `Sync/`, `Git/`, `Locking/`, `Watching/`, `Projects/` or `Diff/` may change**.
+
+`PlcVendor` was an `enum` declared in `Versio.Core`. Both registries are keyed by it,
+`ProjectBinding` records it, and every format returns one. So a vendor that was not already in
+the list could not be *named* — and you cannot register what you cannot name. Adding a fifth
+vendor meant editing `Versio.Core`, the one assembly the rule exists to keep untouched.
+
+**It bites the fifth vendor, not the second**, because the enum already declared TwinCAT, TIA
+Portal and Studio 5000 for exactly this reason. That is why the audit's prediction that
+`SecondVendorTests` would fail to compile was wrong, and why this stayed invisible: the escape
+hatch for the next two vendors was already cut, so nothing was going to notice until somebody
+brought a toolchain nobody had thought of.
+
+**Now a `readonly struct` wrapping a name**, with the four well-known vendors kept as statics —
+`VendorSeamTests` still asserts they are all present, so nobody tidies the list down to the one
+that works — and `PlcVendor.Known` as the shipped list rather than a limit.
+
+Three properties had to hold at once for that to be safe, and each is pinned:
+
+- **The bytes do not move.** Every committed `repo.json` in every clone holds
+  `"vendor": "Codesys"`, written when this was an enum with `JsonStringEnumConverter`. A struct
+  serialises as an object with a `Name` field unless something says otherwise, which would have
+  rewritten every binding into a shape older versions cannot read. A `JsonConverter` on the type
+  — not bolted onto one serializer's options, so every future reader gets it too.
+- **Comparison is case-insensitive.** The name round-trips through a committed, hand-editable
+  file, and a binding that stopped matching its toolchain over the case of one letter is a very
+  confusing way to lose an export.
+- **`default` no longer claims a vendor.** As an enum, `default` was ordinal 0, which was
+  `Codesys` — an uninitialised field silently asserted a brand. It is now empty, with
+  `IsUnknown` to ask. The *backward-compatibility* promise is carried by `ProjectBinding.Vendor`'s
+  initialiser instead, which is the right place for it: a binding written before the field
+  existed genuinely was CODESYS.
+
+**A hazard was removed rather than mitigated.** `RepoConfigStore` carried a comment arguing
+against ordinal serialisation because "inserting a vendor into `PlcVendor` — alphabetically, say
+— would silently repoint every existing binding at a different toolchain, and the first sign
+would be an export driven by the wrong tool". There is no ordinal left to shift.
+
+**And the guard for all of this was behind a 42-minute gate.** The only test asserting
+`"vendor": "Codesys"` in written bytes lives in `AdoptAndExportTests`, which drives real CODESYS.
+The property has nothing to do with CODESYS — it is that a committed file keeps meaning what it
+meant — so `RepoConfigVendorTests` now covers it in the fast lane in milliseconds, including a
+`repo.json` written before vendors existed and one naming a vendor this build has never heard of.
+
+Mutation-checked by deleting the converter attribute: four tests across two assemblies went red.
+
 ### The seam test passed for a year because a string is not a signature
 
 **Found 2026-08-16, in a structural audit of the repository.** `VendorSeamTests` was written
@@ -1071,7 +1122,8 @@ entirely and that dance goes with it.
 would not compile, because `PlcVendor` is a closed enum in `Versio.Core`. It compiles fine — the
 enum already declares TwinCAT, TIA Portal and Studio 5000, precisely so the abstraction is judged
 against real second vendors rather than a hypothetical one. **The closed-enum limitation is real
-but it bites the fifth vendor, not the second**, and nothing in this test demonstrates it.
+but it bites the fifth vendor, not the second**, and nothing in this test demonstrates it. —
+**Closed the same day** by the finding above; `PlcVendor` is an identity rather than a menu.
 
 ### The cap that said it bounded the path bounded one segment, and was off by seven
 
@@ -4356,7 +4408,9 @@ two things made it churn:
 - **Enums by ordinal.** Without a converter, `vendor` would have serialised as `0`. A reviewer
   reading that in a diff learns nothing, and inserting a vendor into `PlcVendor` —
   alphabetically, say — would have silently repointed every existing binding at a different
-  toolchain, first noticed as an export driven by the wrong tool.
+  toolchain, first noticed as an export driven by the wrong tool. ~~The second hazard is now
+  gone rather than mitigated: `PlcVendor` stopped being an enum on 2026-08-16, so there is no
+  ordinal left to shift.~~
 
 Both fixed and pinned by a test that reads the bytes back.
 

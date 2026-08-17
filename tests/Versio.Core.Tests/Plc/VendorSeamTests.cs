@@ -127,14 +127,30 @@ public sealed class VendorSeamTests
     [Fact]
     public void Every_declared_vendor_is_either_implemented_or_honestly_absent()
     {
-        // PlcVendor lists brands that do not exist yet on purpose - the abstraction is judged
-        // against real second vendors rather than a hypothetical one. This asserts the list is
-        // still there, so nobody "tidies" it down to the one that works.
-        var vendors = Enum.GetNames<PlcVendor>();
+        // PlcVendor.Known lists brands that do not exist yet on purpose - the abstraction is
+        // judged against real second vendors rather than a hypothetical one. This asserts the
+        // list is still there, so nobody "tidies" it down to the one that works.
+        //
+        // Known is a well-known list, NOT a limit: PlcVendor stopped being an enum so that a
+        // vendor nobody has heard of can still be named and registered without editing
+        // Versio.Core. That is asserted separately, below.
+        var vendors = PlcVendor.Known.Select(v => v.Name).ToList();
 
         Assert.Contains("Codesys", vendors);
         Assert.Contains("TiaPortal", vendors);
         Assert.Contains("Studio5000", vendors);
         Assert.Contains("TwinCat", vendors);
+    }
+
+    [Fact]
+    public void A_vendor_outside_the_known_list_can_still_be_named()
+    {
+        // The half that matters to the architectural rule, and the half a closed enum could not
+        // do. Adding a vendor must not require editing Versio.Core, and naming one is the first
+        // thing adding one requires - PlcFormats and PlcToolchains are both keyed by this.
+        var exotic = new PlcVendor("Mitsubishi GX Works3");
+
+        Assert.False(exotic.IsUnknown);
+        Assert.DoesNotContain(exotic, PlcVendor.Known);
     }
 }
