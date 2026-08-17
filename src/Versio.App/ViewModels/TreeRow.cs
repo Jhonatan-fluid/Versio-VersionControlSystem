@@ -183,14 +183,15 @@ public sealed class TreeRow : ObservableObject
     /// The one phrase shown to the right of the name.
     /// </summary>
     /// <remarks>
-    /// A project reports its export state; a library its version, which is the fact a
-    /// reviewer opens the manager to check; an object reports its CODESYS type, so a POU and
-    /// a visualisation with the same name are told apart. One property rather than three
-    /// columns competing for the same space, since no row ever has more than one.
+    /// A project reports its export state; a library its version and a task its schedule,
+    /// which are the facts a reviewer opens the catalog to check; an object reports its
+    /// CODESYS type, so a POU and a visualisation with the same name are told apart. One
+    /// property rather than several columns competing for the same space, since no row ever
+    /// has more than one.
     /// </remarks>
     public string Annotation => Node.Kind switch
     {
-        ProjectNodeKind.Project or ProjectNodeKind.Library => Detail,
+        ProjectNodeKind.Project or ProjectNodeKind.Library or ProjectNodeKind.Task => Detail,
         _ => TypeLabel,
     };
 

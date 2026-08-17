@@ -35,12 +35,12 @@ complete.
 
 ### 1. The project tree panel — the next piece of work, and the largest user-visible value
 
-Two finished readers are idling with no consumer: `LibraryCatalog.Parse` has parsed the
-exported `.libraries.yaml` for weeks, and the import plan's last blocked item —
-`TaskCatalog.cs`, the C# reader for `.tasks.yaml` — is deliberately **not built until this
-panel exists to consume it** ([`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md), *What is left*,
-item 3; note its warning that `LibraryCatalog` already broke the "no reader without a consumer"
-rule, so build `TaskCatalog` *with* the panel change, not before it).
+~~Two finished readers are idling with no consumer~~ — **both consumed as of 2026-08-17**:
+`LibraryCatalog.Parse` feeds one row per reference, and `TaskCatalog.cs` — the import plan's
+last blocked item, deliberately not built until the panel existed to consume it
+([`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md), *What is left*, item 3) — was built *with*
+its rows in one change, honouring that document's warning that `LibraryCatalog` had already
+broken the "no reader without a consumer" rule.
 
 What the panel needs, from `STATUS.md` §4 (*Finish the project tree*):
 
@@ -51,7 +51,13 @@ What the panel needs, from `STATUS.md` §4 (*Finish the project tree*):
   that moved — bumped `M`, added `A`, and a removed reference keeps a row marked `D` from the
   baseline. Guarded end to end: Core builder tests, an integration test over the committed
   fixture's two real catalogs, and an App flow test proven by deleting the shell's forwarding
-- One node per task, once `TaskCatalog.cs` exists
+- ~~One node per task, once `TaskCatalog.cs` exists~~ — **done, 2026-08-17, and the reader
+  landed WITH its consumer**, as the warning above demanded. `TaskCatalog.cs` parses the
+  emitter's one shape `LibraryCatalog` cannot — a nested scalar list, where a naive walk
+  would read one task per POU — and the tree hangs one row per task under the two-file
+  configuration leaf, in the catalog's own order, marked against HEAD the same way libraries
+  are. A task deleted from the YAML keeps a `D` row deliberately: the import leaves the live
+  task alone, so the reviewer needs to know the project still runs it
 - A **layer switcher** in the diff pane (`ST | native`) — objects already carry both layers
   and there is no way to see the other one
 - Context menu; expansion state persisted per repository (it survives a refresh, not a window

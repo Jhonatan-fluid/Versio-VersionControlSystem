@@ -180,6 +180,19 @@ public static class ExportCoverage
     public const string LibrariesForm = "LIBRARIES";
 
     /// <summary>
+    /// The manifest's <c>form</c> for the importable <c>.tasks.yaml</c> half of a task
+    /// configuration.
+    /// </summary>
+    /// <remarks>
+    /// The name is the pair's: the object exports as "both" — this YAML plus the
+    /// <see cref="TaskNativeForm"/> XML beside it — and this record is the half a typed
+    /// import applies. The vendor's planner carries the same string privately; this constant
+    /// exists so the neutral side (the shell finding catalogs to parse) never has to know a
+    /// vendor to recognise one.
+    /// </remarks>
+    public const string TaskBothForm = "TASK_BOTH";
+
+    /// <summary>
     /// The manifest's <c>form</c> for the native <c>.xml</c> half of a task configuration.
     /// </summary>
     /// <remarks>

@@ -342,6 +342,59 @@ public sealed class WorkspaceTreeFromCommittedExportTests(ITestOutputHelper outp
     }
 
     [SkippableFact]
+    public void The_committed_task_catalog_hangs_its_tasks_under_the_configuration()
+    {
+        // The two halves of one file format never meet in the same process — versio_tasks.py
+        // writes, TaskCatalog reads — and the committed export is where they are checked
+        // against each other for free. The configuration is also the tree's one two-file
+        // leaf, so this is the join proven against the real pair rather than a manifest a
+        // test wrote.
+        Skip.If(!File.Exists(ManifestPath), "the fixture's export is not committed");
+
+        var manifest = ProjectManifest.Parse(File.ReadAllText(ManifestPath));
+        var record = manifest.Objects.Single(o => o.Form == ExportCoverage.TaskBothForm);
+
+        var catalog = TaskCatalog.Parse(File.ReadAllText(Path.Combine(
+            TestPaths.Root,
+            ExportPath.Replace('/', Path.DirectorySeparatorChar),
+            record.Path.Replace('/', Path.DirectorySeparatorChar))));
+
+        Assert.True(catalog.IsValid);
+        Assert.Equal("codesys", catalog.Vendor);
+
+        var roots = WorkspaceTreeBuilder.Build(
+            [Fixture() with
+            {
+                Tasks =
+                [
+                    new TaskSnapshot
+                    {
+                        Path = $"{ExportPath}/{record.Path}",
+                        Current = catalog,
+                    },
+                ],
+            }],
+            [], KeepClean);
+
+        var configuration = Flatten(Assert.Single(roots))
+            .First(n => n.Name == "Task Configuration");
+
+        foreach (var task in configuration.Children)
+        {
+            output.WriteLine($"{task.Name}  [{task.Detail}]");
+        }
+
+        // Two files, one node, and the catalog's tasks beneath it — the fixture's two
+        // real tasks with their real verbatim schedules.
+        Assert.Equal(2, configuration.Files.Count);
+        Assert.Equal(catalog.Tasks.Count, configuration.Children.Count);
+        Assert.Contains(configuration.Children,
+            t => t.Name == "MainTask" && t.Detail == "t#20ms · prio 1");
+        Assert.Contains(configuration.Children,
+            t => t.Name == "VISU_TASK" && t.Detail == "100 ms · prio 31");
+    }
+
+    [SkippableFact]
     public void The_coverage_report_is_committed_beside_the_manifest()
     {
         // It is a markdown file in the repository on purpose: a coverage regression then

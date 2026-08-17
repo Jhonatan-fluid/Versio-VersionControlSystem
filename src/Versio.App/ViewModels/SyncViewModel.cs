@@ -1836,41 +1836,47 @@ public sealed class SyncViewModel : ObservableObject
     private void AnnounceIgnoredPaths() => IgnoredPathsChanged?.Invoke(IgnoredPaths());
 
     /// <summary>
-    /// Parse every library catalog the manifest names, paired with its HEAD copy when one
-    /// was fetched.
+    /// Parse every catalog the manifest names — library and task — each paired with its
+    /// HEAD copy when one was fetched.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The manifest decides what is a catalog — <c>form == LIBRARIES</c> — rather than a
-    /// directory listing deciding by suffix, because the manifest is the authority on what
-    /// the export wrote and a stray YAML somebody dropped into the mirror must not grow
-    /// reference rows.
+    /// The manifest decides what is a catalog — <c>form == LIBRARIES</c> or
+    /// <c>TASK_BOTH</c> — rather than a directory listing deciding by suffix, because the
+    /// manifest is the authority on what the export wrote and a stray YAML somebody dropped
+    /// into the mirror must not grow rows.
     /// </para>
     /// <para>
     /// A file the manifest names but the disk lacks is skipped without a word here: the
     /// coverage report already owns the job of saying what the mirror is missing, and a
-    /// second voice would say it twice. <see cref="LibraryCatalog.Parse"/> never throws on
-    /// a torn or half-written file, for the same reason the manifest parser does not — this
-    /// runs on every refresh, and an export mid-swap is a moment, not an error.
+    /// second voice would say it twice. Neither parser throws on a torn or half-written
+    /// file, for the same reason the manifest parser does not — this runs on every refresh,
+    /// and an export mid-swap is a moment, not an error.
     /// </para>
     /// </remarks>
-    private IReadOnlyList<LibrarySnapshot> ReadLibraryCatalogs(
-        ProjectManifest? manifest,
-        string exportPath,
-        IReadOnlyDictionary<string, string> baselines)
+    private (IReadOnlyList<LibrarySnapshot> Libraries, IReadOnlyList<TaskSnapshot> Tasks)
+        ReadCatalogs(
+            ProjectManifest? manifest,
+            string exportPath,
+            IReadOnlyDictionary<string, string> baselines)
     {
         if (manifest is null)
         {
-            return [];
+            return ([], []);
         }
 
-        List<LibrarySnapshot>? found = null;
+        List<LibrarySnapshot>? libraries = null;
+        List<TaskSnapshot>? tasks = null;
         var root = exportPath.Replace('\\', '/').Trim('/');
 
         foreach (var record in manifest.Objects)
         {
-            if (!string.Equals(record.Form, ExportCoverage.LibrariesForm, StringComparison.Ordinal)
-                || record.Path.Length == 0)
+            var isLibraries = string.Equals(
+                record.Form, ExportCoverage.LibrariesForm, StringComparison.Ordinal);
+            var isTasks = string.Equals(
+                record.Form, ExportCoverage.TaskBothForm, StringComparison.Ordinal);
+
+            if ((!isLibraries && !isTasks) || record.Path.Length == 0)
             {
                 continue;
             }
@@ -1881,24 +1887,41 @@ public sealed class SyncViewModel : ObservableObject
                 continue;
             }
 
-            var current = LibraryCatalog.Parse(File.ReadAllText(absolute));
-            if (!current.IsValid)
-            {
-                continue;
-            }
-
+            var text = File.ReadAllText(absolute);
             var repoPath = $"{root}/{record.Path.Replace('\\', '/')}";
-            (found ??= []).Add(new LibrarySnapshot
+            var old = baselines.TryGetValue(repoPath, out var head) && head.Length > 0
+                ? head
+                : null;
+
+            if (isLibraries)
             {
-                Path = repoPath,
-                Current = current,
-                Baseline = baselines.TryGetValue(repoPath, out var old) && old.Length > 0
-                    ? LibraryCatalog.Parse(old)
-                    : null,
-            });
+                var current = LibraryCatalog.Parse(text);
+                if (current.IsValid)
+                {
+                    (libraries ??= []).Add(new LibrarySnapshot
+                    {
+                        Path = repoPath,
+                        Current = current,
+                        Baseline = old is null ? null : LibraryCatalog.Parse(old),
+                    });
+                }
+            }
+            else
+            {
+                var current = TaskCatalog.Parse(text);
+                if (current.IsValid)
+                {
+                    (tasks ??= []).Add(new TaskSnapshot
+                    {
+                        Path = repoPath,
+                        Current = current,
+                        Baseline = old is null ? null : TaskCatalog.Parse(old),
+                    });
+                }
+            }
         }
 
-        return found ?? [];
+        return (libraries ?? [], tasks ?? []);
     }
 
     /// <summary>Rebuild the tree, reading git's status first.</summary>
@@ -2022,19 +2045,22 @@ public sealed class SyncViewModel : ObservableObject
 
         _treeSignature = signature;
 
-        // HEAD's copy of every changed library catalog, fetched here because it needs git
-        // and the build below deliberately does not. The pair is what lets the tree mark
-        // WHICH library moved instead of only that the manager's file did. Added and
-        // untracked files are skipped — HEAD has no copy, and asking would spawn a process
-        // to learn what the status already said. Sitting after the signature gate, so a
-        // refresh that rebuilds nothing fetches nothing.
+        // HEAD's copy of every changed catalog — library or task — fetched here because it
+        // needs git and the build below deliberately does not. The pair is what lets the
+        // tree mark WHICH library or task moved instead of only that the catalog's file
+        // did. Added and untracked files are skipped — HEAD has no copy, and asking would
+        // spawn a process to learn what the status already said. Sitting after the
+        // signature gate, so a refresh that rebuilds nothing fetches nothing.
         var baselines = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (_git is not null)
         {
             foreach (var change in status.Changes)
             {
                 var path = change.Path.Replace('\\', '/');
-                if (path.EndsWith(LibraryCatalog.FileSuffix, StringComparison.OrdinalIgnoreCase)
+                var isCatalog =
+                    path.EndsWith(LibraryCatalog.FileSuffix, StringComparison.OrdinalIgnoreCase)
+                    || path.EndsWith(TaskCatalog.FileSuffix, StringComparison.OrdinalIgnoreCase);
+                if (isCatalog
                     && change.Effective is not (ChangeKind.Added or ChangeKind.Untracked))
                 {
                     baselines[path] = await _git.ShowAtHeadAsync(path, CancellationToken.None)
@@ -2072,12 +2098,15 @@ public sealed class SyncViewModel : ObservableObject
                 var report = ExportCoverage.Of(manifest);
                 coverage[source.ProjectPath] = report;
 
+                var catalogs = ReadCatalogs(manifest, source.ExportPath, baselines);
+
                 projects.Add(new WorkspaceProject
                 {
                     ProjectPath = source.ProjectPath,
                     ExportPath = source.ExportPath,
                     Manifest = manifest,
-                    Libraries = ReadLibraryCatalogs(manifest, source.ExportPath, baselines),
+                    Libraries = catalogs.Libraries,
+                    Tasks = catalogs.Tasks,
 
                     // A project with no manifest has never been exported. Git reports nothing
                     // about it, because there is nothing on disk to report on - and it is

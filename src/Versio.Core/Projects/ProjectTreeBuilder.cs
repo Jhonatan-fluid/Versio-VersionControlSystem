@@ -39,6 +39,17 @@ public enum ProjectNodeKind
     /// library manager changed".
     /// </remarks>
     Library,
+
+    /// <summary>
+    /// One task, read from an exported task catalog and drawn under its configuration.
+    /// </summary>
+    /// <remarks>
+    /// Same construction as <see cref="Library"/>, one file over: the facts live in the
+    /// configuration's <c>.tasks.yaml</c> — which, unlike a library catalog, is the
+    /// importable half, so the row a reviewer reads here is exactly what the next import
+    /// applies.
+    /// </remarks>
+    Task,
 }
 
 /// <summary>One node of the project as the engineer thinks about it.</summary>
@@ -145,6 +156,27 @@ public sealed record LibrarySnapshot
     public LibraryCatalog? Baseline { get; init; }
 }
 
+/// <summary>
+/// One exported task catalog, with the copy to compare it against.
+/// </summary>
+/// <remarks>
+/// <see cref="LibrarySnapshot"/>'s twin, with the same contract throughout: parsed by the
+/// caller because this assembly does no IO, joined to its configuration by the YAML file's
+/// repo-relative path, and a null <see cref="Baseline"/> means "mark nothing", never
+/// "everything is new".
+/// </remarks>
+public sealed record TaskSnapshot
+{
+    /// <summary>Repo-relative path of the catalog's YAML file, forward slashes.</summary>
+    public required string Path { get; init; }
+
+    /// <summary>The catalog as the working tree has it.</summary>
+    public required TaskCatalog Current { get; init; }
+
+    /// <summary>The catalog as HEAD has it, or null when there is nothing to compare.</summary>
+    public TaskCatalog? Baseline { get; init; }
+}
+
 /// <summary>What to include when building the tree.</summary>
 public sealed record ProjectTreeOptions
 {
@@ -205,12 +237,14 @@ public static class ProjectTreeBuilder
     /// <param name="libraries">Parsed library catalogs, one per manager, keyed by their file's
     /// repo-relative path. Empty is the ordinary state of a project whose catalogs have not
     /// been read, not an error.</param>
+    /// <param name="tasks">Parsed task catalogs, same contract.</param>
     public static ProjectTreeNode Build(
         ProjectManifest manifest,
         string exportPath,
         IReadOnlyList<FileChange> changes,
         ProjectTreeOptions? options = null,
-        IReadOnlyList<LibrarySnapshot>? libraries = null)
+        IReadOnlyList<LibrarySnapshot>? libraries = null,
+        IReadOnlyList<TaskSnapshot>? tasks = null)
     {
         var opts = options ?? new ProjectTreeOptions();
         var root = exportPath.Replace('\\', '/').Trim('/');
@@ -230,6 +264,7 @@ public static class ProjectTreeBuilder
             .ToList();
 
         objects = AttachLibraries(objects, libraries);
+        objects = AttachTasks(objects, tasks);
 
         // Members hung off their owner before anything is placed in a folder, because a
         // method's folder is its owner's folder — the export writes clsLight.Light.xml beside
@@ -524,6 +559,116 @@ public static class ProjectTreeBuilder
             : reference.SystemLibrary
                 ? "system"
                 : reference.DisplayVersion;
+
+    /// <summary>Hang each task catalog's tasks under the configuration that owns them.</summary>
+    /// <remarks>
+    /// The same join as <see cref="AttachLibraries"/> — the YAML's path against the leaf's —
+    /// with one wrinkle inherited from the export: a task configuration is TWO files sharing
+    /// one GUID, so its leaf's <see cref="ProjectTreeNode.Path"/> is whichever file sorts
+    /// first. That is the <c>.tasks.yaml</c> today by ordinal accident of the suffixes, so
+    /// the match is made against every file of the leaf rather than its path — the accident
+    /// is not load-bearing.
+    /// </remarks>
+    private static List<Leaf> AttachTasks(
+        List<Leaf> leaves, IReadOnlyList<TaskSnapshot>? tasks)
+    {
+        if (tasks is null || tasks.Count == 0)
+        {
+            return leaves;
+        }
+
+        var byPath = new Dictionary<string, TaskSnapshot>(StringComparer.OrdinalIgnoreCase);
+        foreach (var snapshot in tasks)
+        {
+            byPath[snapshot.Path.Replace('\\', '/').Trim('/')] = snapshot;
+        }
+
+        return leaves
+            .Select(l =>
+                l.Node.Files.Select(f => byPath.TryGetValue(f, out var s) ? s : null)
+                        .FirstOrDefault(s => s is not null) is { } snapshot &&
+                snapshot.Current.IsValid &&
+                TaskNodes(l.Node, snapshot) is { Count: > 0 } children
+                    ? l with { Node = WithChildren(l.Node, children) }
+                    : l)
+            .ToList();
+    }
+
+    /// <summary>One row per task, marked against the baseline when there is one.</summary>
+    /// <remarks>
+    /// The marking rules are <see cref="LibraryNodes"/>'s — a null or unreadable baseline
+    /// marks nothing, a task deleted from the catalog still gets a row from the baseline's
+    /// copy — but the order is not: tasks keep the catalog's order, which is the
+    /// configuration's own, because that is how the IDE shows them and two tasks have no
+    /// alphabet a reviewer would expect. Removed tasks are appended at the end, where a row
+    /// that no longer exists reads as an afterthought rather than as the schedule.
+    /// </remarks>
+    private static List<ProjectTreeNode> TaskNodes(
+        ProjectTreeNode configuration, TaskSnapshot snapshot)
+    {
+        var baseline = snapshot.Baseline is { IsValid: true } b
+            ? b.Tasks
+                .GroupBy(t => t.Name, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal)
+            : null;
+
+        var rows = new List<(TaskRecord Task, ChangeKind Status)>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var task in snapshot.Current.Tasks)
+        {
+            if (!seen.Add(task.Name))
+            {
+                continue;
+            }
+
+            var status =
+                baseline is null ? ChangeKind.Unmodified
+                : !baseline.TryGetValue(task.Name, out var old) ? ChangeKind.Added
+                : task.ContentEquals(old) ? ChangeKind.Unmodified
+                : ChangeKind.Modified;
+
+            rows.Add((task, status));
+        }
+
+        if (baseline is not null)
+        {
+            rows.AddRange(baseline.Values
+                .Where(old => !seen.Contains(old.Name))
+                .OrderBy(old => old.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(old => (old, ChangeKind.Deleted)));
+        }
+
+        return rows
+            .Select(r => new ProjectTreeNode
+            {
+                Name = r.Task.Name,
+                Path = $"{configuration.Path}::{r.Task.Name}",
+                Kind = ProjectNodeKind.Task,
+                Detail = Describe(r.Task),
+                Files = configuration.Files,
+                Status = r.Status,
+            })
+            .ToList();
+    }
+
+    /// <summary>The schedule phrase beside the task's name.</summary>
+    /// <remarks>
+    /// Interval and priority, because they are the two numbers a reviewer checks a schedule
+    /// for. The watchdog and the core binding stay in the YAML the row opens — a row phrase
+    /// that carried four facts would carry none of them legibly.
+    /// </remarks>
+    private static string Describe(TaskRecord task)
+    {
+        var schedule = task.DisplaySchedule;
+        return schedule.Length > 0 && task.Priority.Length > 0
+            ? $"{schedule} · prio {task.Priority}"
+            : schedule.Length > 0
+                ? schedule
+                : task.Priority.Length > 0
+                    ? $"prio {task.Priority}"
+                    : string.Empty;
+    }
 
     /// <summary>Hang every leaf off its folder chain, then roll the badges up.</summary>
     private static ProjectTreeNode Assemble(IReadOnlyList<Leaf> leaves, string name, string path)
