@@ -148,4 +148,14 @@ public sealed class SecondVendorTests
         // succeeded in making it.
         Assert.False(PlcFormats.Unregister(PlcVendor.Studio5000));
     }
+
+    [Fact]
+    public void The_CODESYS_log_category_still_reads_the_way_it_always_did()
+    {
+        // Pinned as a LITERAL, not against the constant, because comparing a constant to itself
+        // proves nothing. The category moved out of LogCategory and into the vendor's own
+        // namespace; the word it writes did not, and that is what keeps log files written by
+        // older versions readable and the filter's saved toggles meaningful.
+        Assert.Equal("Codesys", CodesysLog.Category);
+    }
 }

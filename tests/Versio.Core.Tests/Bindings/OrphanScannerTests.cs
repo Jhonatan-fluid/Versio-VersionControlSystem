@@ -73,6 +73,13 @@ public class OrphanScannerTests
         var f = Assert.Single(findings);
         Assert.Equal(BindingHealth.OrphanedProject, f.Health);
         Assert.Equal("plc/New.project", f.Path);
+
+        // The sentence, which nothing asserted until 2026-08-16 — so it read "untracked CODESYS
+        // project" for as long as it liked, in a namespace forbidden to name a vendor, and could
+        // have drifted in any direction without a test noticing. Scan works from a snapshot and
+        // is handed no format, so "PLC" is the most it can honestly say.
+        Assert.Contains("untracked PLC project", f.Explanation);
+        Assert.DoesNotContain("CODESYS", f.Explanation);
     }
 
     [Fact]

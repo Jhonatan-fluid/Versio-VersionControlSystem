@@ -263,6 +263,19 @@ may change.
 proven able to fail. A binding records its own vendor; the scanner scans for every registered
 format; `.gitattributes` covers every registered vendor's extensions.
 
+**Widened 2026-08-16, because it was checking a third of what it claimed.** It read signatures
+only, so three leaks living as strings sat under it untouched; and it read `Versio.Core` only,
+so `Versio.Infrastructure` was never examined at all. It now reads constants and compiled string
+literals as well, unwraps generic and array arguments, and `VendorSeamInfrastructureTests` covers
+the second assembly. See the Findings.
+
+**And the registration mechanism has now actually run.** `PlcFormats.Register` and
+`PlcToolchains.Register` had zero callers repository-wide until `SecondVendorTests` and
+`SecondVendorToolchainTests`, which stand up a second vendor, prove it is recognised beside
+CODESYS, and cover the case both docstrings promise: a format registered with no toolchain, whose
+projects are reported as unsupported rather than silently ignored. Both registries gained the
+`Unregister` they had always lacked.
+
 ### The shell
 
 | | |
@@ -967,6 +980,98 @@ would have gone on passing while checking one fewer every time a panel moved out
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### The seam test passed for a year because a string is not a signature
+
+**Found 2026-08-16, in a structural audit of the repository.** `VendorSeamTests` was written
+because the central architectural rule — nothing outside `*.Plc.Codesys` may know about
+CODESYS — had been stated from the start and was not true. It reads assembly metadata so the
+next leak fails a build. It was green. Three leaks were in the tree the whole time.
+
+| Where | What |
+|---|---|
+| `CommitGate` | "no CODESYS projects are tracked in this repository" |
+| `OrphanScanner` | "untracked CODESYS project — track it to start exporting" |
+| `LogCategory` | `Codesys = "Codesys"`, in a table serving every vendor |
+
+**They survived because the test read fields, properties, parameters and returns.** By the time
+it was written every leak of *that* kind had been fixed, so what remained had settled where it
+does not look. And two of the three are worse than a leaked type, not better: the compiler
+cannot notice them at all, and the commit gate would tell somebody whose repository holds only
+TwinCAT projects that no CODESYS projects are tracked — the application confidently describing a
+situation that is not the one they are in.
+
+**The constant is the one worth staring at.** It sat directly beneath a paragraph explaining
+that `LogCategory.Plc` must be vendor-neutral, *because* "a log filter that said Codesys would
+stop finding the interesting lines the moment a repository holds a TwinCAT project" — and
+directly above a second `<summary>` tag left behind when that paragraph was written. Three
+things wrong in nine lines, in a file somebody had deliberately thought about.
+
+**What changed.** The scanner now reads compile-time constants by reflection (exact) and string
+literals out of IL by walking for `ldstr` — which reaches strings built inside lambdas,
+iterators and async methods, because those compile into generated nested types carrying the
+enclosing namespace. Reading source was rejected: it needs the repository beside the test binary
+and re-implements a comment parser badly. IL carries only what was compiled, so a brand inside a
+comment stays invisible, which is right — a comment is often the clearest place to explain the
+rule.
+
+**A fourth hole, found while widening the third.** `Referenced` yielded field, property and
+parameter types without unwrapping them, so the namespace of `IReadOnlyList<CodesysProjectFormat>`
+read as `System.Collections.Generic` and the check waved it through. A vendor type travelling in
+a collection is a *more* likely leak than a bare one. Arrays hid a type the same way.
+
+**And `Versio.Infrastructure` was never examined at all.** The test reads
+`typeof(PlcJob).Assembly` and stops, so the git client, the watchers, the filesystem and the
+toolchain registry sat outside the rule that the README, `CLAUDE.md` and the test's own docstring
+all claim covers them. That assembly is clean today. Nothing was keeping it that way, and "it was
+clean when somebody last looked" is precisely the state the seam test exists to end.
+
+**Fixed:** the two sentences say "PLC"; the constant moved to `CodesysLog.Category`, where the
+vendor declares its own label. The logged word is unchanged, so log files still parse and the
+filter still offers the same toggle — the entire change is which assembly writes the word down.
+Folding it into `LogCategory.Plc` was rejected: the toolchain's line-by-line chatter is worth
+filtering on its own without losing the orchestration decisions above it, the same argument that
+already keeps `Watch` apart from `Fs`.
+
+**Only one of the two sentences was watched by anything.** `CommitGateTests` pinned the CODESYS
+wording and went red, which is how it should be. `OrphanScanner`'s sentence had no assertion
+anywhere and could have drifted in any direction without a single test noticing.
+
+Mutation-checked on all three mechanisms separately, because green was the problem here: a
+literal, a literal inside a lambda, and a vendor-named constant were each added to a neutral
+namespace, and each failed the build. All reverted.
+
+### `Register` had no callers, and no way back
+
+**Found the same day, and it is the load-bearing one.** `PlcFormats.Register` and
+`PlcToolchains.Register` had **zero callers** repository-wide — not production, not a test, not a
+sample. The README, `CLAUDE.md` and both registries' own docstrings all say that adding a vendor
+means implementing the contracts and registering with them. The mechanism the whole architecture
+rests on had never once been executed. The real composition is a hardcoded array holding one
+format and a hardcoded dictionary holding one factory.
+
+`SecondVendorTests` and `SecondVendorToolchainTests` run it, and cover the case the docstrings
+promise and nothing asserted: **a format registered with no toolchain behind it**, whose projects
+must be detected, listed and explained as unsupported rather than silently ignored — "which is
+how somebody concludes the tool is broken".
+
+**`Register` had no counterpart, and that is the finding rather than an inconvenience.** A
+registration was permanent for the life of the process, so a host swapping in its own
+implementation of a vendor — the case `Register` exists for — could only ever do so in one
+direction. The first test to call it could not put the registry back. `Unregister` on both
+registries is new.
+
+**It matters more than it looks, because these registries are static and xunit runs test classes
+in parallel by default.** A stand-in vendor left registered is not untidiness; it is one class
+quietly changing what every other class sees. The stand-in claims `.tcproj`, which collides with
+no real format, and every test restores in a `finally`. Phase C removes the ambient static
+entirely and that dance goes with it.
+
+**A prediction that was wrong, recorded rather than dropped.** The audit predicted this test
+would not compile, because `PlcVendor` is a closed enum in `Versio.Core`. It compiles fine — the
+enum already declares TwinCAT, TIA Portal and Studio 5000, precisely so the abstraction is judged
+against real second vendors rather than a hypothetical one. **The closed-enum limitation is real
+but it bites the fifth vendor, not the second**, and nothing in this test demonstrates it.
 
 ### The cap that said it bounded the path bounded one segment, and was off by seven
 
@@ -4283,8 +4388,7 @@ Two instruments, covering different halves of the problem.
 **`Versio.App.Tests` constructs the real windows against the real stylesheet.** A WPF test
 project on an STA thread with `Theme.xaml` loaded by pack URI from the app assembly, so a style
 renamed in the stylesheet and not in a dialog fails the build rather than the first click. It
-covers what the tracer cannot: a modal nobody has opened has never been parsed. 441 tests across
-48 classes; a deliberately broken style reference fails the dialog tests outright.
+covers what the tracer cannot: a modal nobody has opened has never been parsed. 480 tests; a deliberately broken style reference fails the dialog tests outright.
 
 **Applied and MEASURED, not looked up — that distinction has now earned itself twice.** A style
 key can hold a template that resolves fine and throws the first time something renders it, which
@@ -4360,10 +4464,13 @@ state machine are tested in milliseconds rather than by causing real crashes.
 
 **Vendor knowledge stops at the seam.** Enforced by a test that reads assembly metadata, not by
 a paragraph in a README — because it was a paragraph in a README, and it had already stopped
-being true.
+being true. The test itself then had to be widened for the same reason: it read signatures and
+one assembly, and was green while three brands sat in neutral namespaces as strings.
 
-**Green results are distrusted until they can fail.** Fifteen vacuous passes have been caught
-this way — most recently an empty `--trace-bindings` file read as a clean UI while the window was
+**Green results are distrusted until they can fail.** Sixteen vacuous passes have been caught
+this way — most recently the vendor seam test itself, which read signatures and was green while
+`CommitGate`, `OrphanScanner` and `LogCategory` each named CODESYS in a namespace forbidden to,
+and before that an empty `--trace-bindings` file read as a clean UI while the window was
 failing to construct at all, and a style-instantiation test that passed with the style deleted,
 because a missing resource casts to a null `Style` and assigning null is legal — counting the determinism test that compared the one file with no GUIDs in it, and
 the two the library reader gave up when it was broken on purpose: a parameters test that could
