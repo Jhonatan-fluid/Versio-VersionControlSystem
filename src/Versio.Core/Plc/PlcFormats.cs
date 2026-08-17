@@ -19,8 +19,17 @@ namespace Versio.Core.Plc;
 /// </remarks>
 public static class PlcFormats
 {
-    private static readonly List<IPlcProjectFormat> Registered =
-        [Codesys.CodesysProjectFormat.Instance];
+    /// <summary>
+    /// Empty until somebody registers. <b>Deliberately.</b>
+    /// </summary>
+    /// <remarks>
+    /// This held <c>[CodesysProjectFormat.Instance]</c>, which meant <c>Versio.Core</c> — the
+    /// assembly the architectural rule exists to keep free of vendor knowledge — named a vendor
+    /// in a field initialiser, and the "registry" was a constant with a mutator bolted on.
+    /// Registration is now the only way a vendor gets in, which is what the README, CLAUDE.md
+    /// and this file's own remarks have always said it was.
+    /// </remarks>
+    private static readonly List<IPlcProjectFormat> Registered = [];
 
     /// <summary>Formats in registration order.</summary>
     public static IReadOnlyList<IPlcProjectFormat> All

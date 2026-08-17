@@ -579,10 +579,14 @@ does not record them has to be run again.
   `.gitattributes`, 21 into `.gitignore`, and 21 bindings into `.versio/repo.json`.
   - **Not a defect — it is adoption working exactly as specified** on a repository that happens
     to contain 22 tracked `.project` files because Phase 0 committed its probe corpus.
-  - **It matters anyway, twice.** It takes the machine-wide CODESYS lock, so it will fight a
-    running `Versio.Integration.Tests` and make both look slow; and the adoption files it
-    writes are unrelated working-tree changes that are easy to commit by accident. `git
-    checkout -- .gitattributes .gitignore .versio/repo.json` afterwards.
+  - **It matters anyway, three times.** It takes the machine-wide CODESYS lock, so it will fight
+    a running `Versio.Integration.Tests` and make both look slow; the adoption files it writes
+    are unrelated working-tree changes that are easy to commit by accident; and **it exports,
+    which rewrites committed fixture mirrors.** On 2026-08-17 a twelve-second launch regenerated
+    `fixtures/projects/MachineWithMembers/_manifest.json`, the file kept at schema 7 on purpose
+    as the only committed pre-schema-8 artifact in the repository — a deliberate decision undone
+    by a diagnostic step, silently. `git checkout -- .gitattributes .gitignore .versio/repo.json
+    fixtures/` afterwards, and check `fixtures/` specifically.
   - **The launch itself is clean**: zero `ERR` lines, so the window constructed, the panels
     realised and the bindings resolved. That is what the step is for; the rest is noise from
     the corpus.
@@ -980,6 +984,45 @@ would have gone on passing while checking one fewer every time a panel moved out
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### The registries were constants with a mutator bolted on
+
+**Found 2026-08-16, fixed 2026-08-17.** `PlcFormats` held
+`[CodesysProjectFormat.Instance]` in a field initialiser and `PlcToolchains` held
+`[PlcVendor.Codesys] = log => new CodesysToolchain(log)` in another. So `Versio.Core` — the
+assembly the architectural rule exists to keep free of vendor knowledge — **named a vendor in
+its own source**, and "adding a vendor means registering it" described something nothing did.
+
+**This is what was blocking the assembly split, and the discovery reordered the plan.** While
+`PlcFormats` referenced `CodesysProjectFormat`, moving that type into its own project would have
+made `Versio.Core` depend on a project that depends on `Versio.Core`. The reference had to go
+*before* the code could move — so C2 runs before C1, not after it as planned.
+
+Both registries start empty. `CodesysPack.Register()` puts CODESYS in, and **the application's
+startup is the one line in the whole build that names a toolchain**:
+
+```
+00:34:10.813 INF [App] vendors registered: CODESYS 3.5
+```
+
+**Explicit rather than a module initialiser, in production.** A module initialiser runs when the
+runtime happens to load the assembly, which is lazy and not guaranteed to happen before
+something reads `PlcFormats.All` — so the set of vendors would depend on load order, the least
+debuggable kind of dependency. In the *test* assemblies it is exactly right, because the test
+host loads them to find the tests, and each of the three declares its own.
+
+**Proven load-bearing rather than assumed.** Disabling the registration in `Versio.Core.Tests`
+takes **13 tests red**. Registration is now the only route in.
+
+**And running the app cost the fixture that had been preserved an hour earlier.** Launching
+`Versio.exe` reopened this repository from its recent list, adopted the 22 `phase0/` scratch
+projects — the hazard already logged under *Known loose ends* — and began exporting them. It
+rewrote `.gitattributes`, `.gitignore`, `.versio/repo.json`, and
+`fixtures/projects/MachineWithMembers/_manifest.json`, which B2 had **deliberately** left at
+schema 7 as the only committed pre-schema-8 artifact in the repository. All four reverted.
+The loose end is now sharp enough to be worth closing: the next person to follow `CLAUDE.md`'s
+"run the app" step against this repository will destroy that fixture without noticing, and
+nothing will say so.
 
 ### One table held two vocabularies, and the next vendor would have inherited both
 
