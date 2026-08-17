@@ -46,7 +46,8 @@ questions about "why is this like this" are already answered there.
 
 | File | What it holds |
 |---|---|
-| `docs/STATUS.md` | Where the project is, **Known loose ends** (an audit of the repository), and **Findings** — every defect written up with its evidence |
+| `docs/STATUS.md` | Where the project is, and **Known loose ends** — an audit of the repository |
+| `docs/FINDINGS.md` | **Every defect written up with its evidence**, newest first. 99 of them. Search it rather than reading it; `STATUS.md` carries the index |
 | `docs/PLAN.md` | The full architecture plan |
 | `docs/SAFEGUARDS.md` | What Versio refuses, asks about, or waits for |
 | `docs/CODESYS.md` | How CODESYS is driven end to end, and the audit of it |
@@ -126,7 +127,8 @@ If a refactor turns up an unrelated defect, fix it in its own commit.
 Any change that alters what the docs claim updates the docs in the same session.
 
 - Test counts in `README.md` and `docs/STATUS.md` go stale silently — re-derive, never trust.
-- A defect worth understanding gets a **Finding** in `STATUS.md`, with its evidence.
+- A defect worth understanding gets a **Finding** in `docs/FINDINGS.md`, at the TOP — newest
+  first — with its evidence, and a line in `STATUS.md`'s index.
 - A structural change gets whatever a future reader needs before editing that file.
 - A loose end that is closed gets struck through, not deleted, with what actually happened.
 

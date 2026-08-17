@@ -190,6 +190,11 @@ Versio.sln
 └─ docs/
    ├─ PLAN.md                   the full architecture plan
    ├─ STATUS.md                 where the project is and what remains
+   ├─ FINDINGS.md               99 defects with their evidence, newest first — the
+   │                            engineering log, split out of STATUS.md when it reached
+   │                            77% of that file
+   ├─ CODESYS-IMPORT-PLAN.md    the active plan: the numbered import gaps and the
+   │                            feature checklist
    ├─ SAFEGUARDS.md             what Versio refuses, asks about, or waits for
    ├─ GIT-PANEL-PLAN.md         the git panel's functionality and UX — eleven of twelve phases built
    ├─ CODESYS.md                how CODESYS is driven end to end, and the audit of it
