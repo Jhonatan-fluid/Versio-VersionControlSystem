@@ -527,6 +527,33 @@
                              without reaching the label. -->
                         <StackPanel Grid.Column="1" Orientation="Horizontal"
                                     Margin="12,0,0,0" HorizontalAlignment="Right">
+                            <!-- The object's layers, when it has more than one: ST | native.
+                                 The tree folds a GVL's .gvl.st and .gvl.xml into one row on
+                                 purpose, which left the second layer reachable by nothing —
+                                 this strip is the way in. It follows the SHOWN path, not the
+                                 tree selection, so it disappears the moment the pane shows
+                                 anything that is not one of these files. -->
+                            <ItemsControl ItemsSource="{Binding DiffLayers}"
+                                          VerticalAlignment="Center" Margin="0,0,14,0"
+                                          Visibility="{Binding HasDiffLayers,
+                                              Converter={StaticResource BoolToVisibility}}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <ToggleButton Style="{StaticResource FilterChip}"
+                                                      Content="{Binding Label}"
+                                                      IsChecked="{Binding IsActive, Mode=OneWay}"
+                                                      Command="{Binding ShowCommand}"
+                                                      Foreground="{DynamicResource Brush.Text.Secondary}"
+                                                      AutomationProperties.Name="{Binding Label}"
+                                                      ToolTip="{Binding Path}" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                             <!-- Three lines of context is enough for a typo and not enough
                                  for a POU, where whether an edit is safe depends on
                                  declarations well above it. Still a diff either way: the

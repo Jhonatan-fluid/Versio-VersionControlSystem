@@ -58,8 +58,13 @@ What the panel needs, from `STATUS.md` §4 (*Finish the project tree*):
   configuration leaf, in the catalog's own order, marked against HEAD the same way libraries
   are. A task deleted from the YAML keeps a `D` row deliberately: the import leaves the live
   task alone, so the reviewer needs to know the project still runs it
-- A **layer switcher** in the diff pane (`ST | native`) — objects already carry both layers
-  and there is no way to see the other one
+- ~~A **layer switcher** in the diff pane (`ST | native`) — objects already carry both layers
+  and there is no way to see the other one~~ — **done, 2026-08-17.** Chips in the pane's
+  header, one per layer of the shown object, labelled by what the file is (`ST`, `native`,
+  `tasks`, `libraries`). Owned by the *shown path* rather than the tree selection —
+  `ShowPathAsync` keeps the strip when the new diff is one of its layers and clears it for
+  anything else, so every route into the pane behaves without knowing the strip exists.
+  Proven by mutation: removing that reconcile turns exactly the two ownership tests red
 - Context menu; expansion state persisted per repository (it survives a refresh, not a window
   close)
 

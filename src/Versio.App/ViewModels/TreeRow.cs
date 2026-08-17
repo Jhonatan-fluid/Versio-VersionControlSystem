@@ -241,8 +241,9 @@ public sealed class TreeRow : ObservableObject
     /// <para>
     /// The readable layer wins. An object exporting to both <c>.st</c> and <c>.xml</c> opens
     /// the Structured Text, because that is the one somebody can review; the native XML is
-    /// there for completeness and reads like a machine wrote it, which it did. A proper layer
-    /// switcher belongs in the diff pane and is not built yet.
+    /// there for completeness and reads like a machine wrote it, which it did. This is only
+    /// the <i>default</i>: the diff pane's header offers the other layers as chips
+    /// (<see cref="DiffLayerChoice"/>), so the native half stopped being unreachable.
     /// </para>
     /// <para>
     /// Null for a project row. A <c>.project</c> is a binary compound document - git can store

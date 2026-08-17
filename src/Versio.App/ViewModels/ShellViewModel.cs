@@ -1014,6 +1014,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         _shownCommit = null;
         _selectedDiffStaged = false;
         ShowFullFile = false;
+        DiffLayers = [];
 
         // Handed back if this repository has one waiting. Empty otherwise, which is the point:
         // a message typed for one project must not be sitting in another project's box next to
@@ -3872,6 +3873,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         SelectedDiffPath = caption;
         _shownCommit = (commitId, shortId, caption, null);
         _selectedDiffStaged = false;
+        DiffLayers = [];
 
         // A commit is history: it is already staged, already committed, and there is nothing
         // to move in or out of the index. Offering to stage a hunk of it would be offering
@@ -3907,6 +3909,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         _shownCommit = (commitId, shortId, SelectedDiffPath, path);
         _selectedDiffStaged = false;
         CanStageHunks = false;
+        DiffLayers = [];
 
         var patch = await _git
             .CommitFileDiffAsync(commitId, path, CancellationToken.None, DiffContext)
@@ -4718,6 +4721,62 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref _selectedDiffPath, value);
     }
 
+    private IReadOnlyList<DiffLayerChoice> _diffLayers = [];
+
+    /// <summary>
+    /// The layers of the object the pane is showing — <c>ST | native</c> — when it has more
+    /// than one. Empty otherwise, and the strip hides itself.
+    /// </summary>
+    /// <remarks>
+    /// Owned by the shown path, not by the tree selection: <see cref="ShowPathAsync"/>
+    /// reconciles it on every diff it opens, keeping the strip when the new path is one of
+    /// the current layers and clearing it for anything else. That one rule covers every
+    /// route into the pane — a changed-files row, a history file, a refresh — without each
+    /// of those callers having to remember the strip exists, which is exactly how the old
+    /// header showed the wrong file's name.
+    /// </remarks>
+    public IReadOnlyList<DiffLayerChoice> DiffLayers
+    {
+        get => _diffLayers;
+        private set
+        {
+            if (SetProperty(ref _diffLayers, value))
+            {
+                OnPropertyChanged(nameof(HasDiffLayers));
+            }
+        }
+    }
+
+    public bool HasDiffLayers => _diffLayers.Count > 1;
+
+    /// <summary>Offer one chip per layer, with <paramref name="shown"/> marked active.</summary>
+    private void OfferDiffLayers(IReadOnlyList<string> files, string shown) =>
+        DiffLayers = files.Count > 1
+            ? files
+                .Select(f => new DiffLayerChoice(
+                    f,
+                    isActive: string.Equals(f, shown, StringComparison.OrdinalIgnoreCase),
+                    show: () => _ = ShowPathAsync(f, staged: null)))
+                .ToList()
+            : [];
+
+    /// <summary>Keep the strip when the new path is one of its layers; clear it otherwise.</summary>
+    private void ReconcileDiffLayers(string path)
+    {
+        if (_diffLayers.Count == 0)
+        {
+            return;
+        }
+
+        if (!_diffLayers.Any(l => string.Equals(l.Path, path, StringComparison.OrdinalIgnoreCase)))
+        {
+            DiffLayers = [];
+            return;
+        }
+
+        OfferDiffLayers(_diffLayers.Select(l => l.Path).ToList(), path);
+    }
+
     private bool _canStageHunks;
 
     /// <summary>
@@ -4803,6 +4862,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             _shownCommit = null;
             _selectedDiffStaged = false;
             CanStageHunks = false;
+            DiffLayers = [];
 
             var coverage = Sync.CoverageFor(row.Node.Path);
 
@@ -4834,6 +4894,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         if (row.PrimaryFile is { } path)
         {
+            // Offered here because only the tree knows an object's sibling layers;
+            // ShowPathAsync then keeps or clears the strip on every later navigation.
+            OfferDiffLayers(row.Node.Files, path);
             _ = ShowPathAsync(path, staged: null);
         }
     }
@@ -4853,6 +4916,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
+        ReconcileDiffLayers(path);
         SelectedDiffPath = path;
         _shownCommit = null;
 
