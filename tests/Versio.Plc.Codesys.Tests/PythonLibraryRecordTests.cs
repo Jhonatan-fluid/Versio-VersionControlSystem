@@ -99,7 +99,7 @@ public sealed class PythonLibraryRecordTests(ITestOutputHelper output)
     {
         Skip.IfNot(PythonIsAvailable(), "python is not on PATH");
 
-        var got = Run($$"""
+        var got = Run("""
             import versio_libraries as L
             p = L.parse_managed_name(payload["name"])
             out = "" if p is None else "|".join([p["title"], p["version"], p["company"]])
@@ -163,8 +163,7 @@ public sealed class PythonLibraryRecordTests(ITestOutputHelper output)
             rec = L.extract_reference(Ref(), safe,
                                       lambda code, detail: errors.append(code))
             out = json.dumps({"rec": rec, "errors": errors}, sort_keys=True)
-            """,
-            new { });
+            """);
 
         output.WriteLine(record);
         using var doc = JsonDocument.Parse(record);
@@ -213,8 +212,7 @@ public sealed class PythonLibraryRecordTests(ITestOutputHelper output)
             rec = L.extract_reference(Ref(), safe,
                                       lambda code, detail: errors.append([code, detail]))
             out = json.dumps({"rec": rec, "errors": errors}, sort_keys=True)
-            """,
-            new { });
+            """);
 
         output.WriteLine(record);
         using var doc = JsonDocument.Parse(record);
@@ -271,8 +269,7 @@ public sealed class PythonLibraryRecordTests(ITestOutputHelper output)
             rec = L.extract_reference(Ref(), safe,
                                       lambda code, detail: errors.append(code))
             out = json.dumps({"rec": rec, "errors": errors}, sort_keys=True)
-            """,
-            new { });
+            """);
 
         output.WriteLine(record);
         using var doc = JsonDocument.Parse(record);
@@ -323,8 +320,7 @@ public sealed class PythonLibraryRecordTests(ITestOutputHelper output)
             rec = L.extract_reference(Ref(), safe,
                                       lambda code, detail: errors.append(code))
             out = json.dumps({"rec": rec, "errors": errors}, sort_keys=True)
-            """,
-            new { });
+            """);
 
         output.WriteLine(record);
         using var doc = JsonDocument.Parse(record);
@@ -333,7 +329,7 @@ public sealed class PythonLibraryRecordTests(ITestOutputHelper output)
             Assert.Single(doc.RootElement.GetProperty("errors").EnumerateArray()).GetString());
     }
 
-    private static string Run(string body, object payload)
+    private static string Run(string body, object? payload = null)
     {
         // Same shape as PythonFileNameParityTests' runner and deliberately not shared with it:
         // that one deserialises into List<string> for a corpus of names, this one returns the
@@ -346,7 +342,7 @@ public sealed class PythonLibraryRecordTests(ITestOutputHelper output)
 
         try
         {
-            File.WriteAllText(input, JsonSerializer.Serialize(payload), utf8);
+            File.WriteAllText(input, JsonSerializer.Serialize(payload ?? new { }), utf8);
             File.WriteAllText(script,
                 "# -*- coding: utf-8 -*-\n" +
                 "import io, json, sys\n" +
@@ -367,9 +363,15 @@ public sealed class PythonLibraryRecordTests(ITestOutputHelper output)
                 StandardOutputEncoding = System.Text.Encoding.UTF8,
             });
 
-            var stderr = python!.StandardError.ReadToEnd();
+            // BOTH streams are drained before WaitForExit, and that is not tidiness. A
+            // redirected stream nobody reads fills its pipe buffer and the child blocks
+            // writing to it while the parent blocks waiting for the child — a deadlock that
+            // appears the first time a snippet prints more than a few KB, which is exactly
+            // the day somebody adds a print() to debug one of these.
+            var stdout = python!.StandardOutput.ReadToEndAsync();
+            var stderr = python.StandardError.ReadToEnd();
             python.WaitForExit();
-            Assert.True(python.ExitCode == 0, stderr);
+            Assert.True(python.ExitCode == 0, stderr + stdout.Result);
 
             return File.ReadAllText(result, utf8);
         }

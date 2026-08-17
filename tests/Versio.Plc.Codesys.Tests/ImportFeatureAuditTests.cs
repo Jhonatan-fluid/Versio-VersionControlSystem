@@ -564,6 +564,29 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
                      || w.Contains("MOVE_FAILED", StringComparison.Ordinal)
                      || w.Contains("RENAME_NO_PARENT", StringComparison.Ordinal));
         }
+
+        // AND IF IT WAS DECLINED, THE SENTENCE HAS TO SAY SO IN A WAY SOMEBODY CAN ACT ON.
+        // Until P11 (2026-08-17) the refusal named the object and the path and left the reader
+        // nothing to do but try again. The probe ran nine ordered moves: a POU into a folder,
+        // into a nested folder and back out into Application, a GVL to the project root, and
+        // an EMPTY FOLDER into Plc Logic are all performed; a POU into Device, a visualisation
+        // into Plc Logic, and a folder holding a POU into Plc Logic are accepted and silently
+        // ignored. Nothing ever raised.
+        //
+        // Asserted on the warning that is actually there rather than on the script's source,
+        // because the sentence has to survive the trip through the script, the protocol, the
+        // runner and SyncOutcome — and F4 had to be written to prove a detail can cross that
+        // seam at all.
+        var declined = outcome.Warnings.FirstOrDefault(
+            w => w.Contains("RENAME_NOT_APPLIED", StringComparison.Ordinal));
+        if (declined is not null)
+        {
+            Assert.Contains("Plc Logic", declined, StringComparison.Ordinal);
+
+            // The actionable half. A refusal that explains the toolchain but not the next
+            // step is the state this replaced.
+            Assert.Contains("Move it in the IDE", declined, StringComparison.Ordinal);
+        }
     }
 
     // ── C10: an object already gone from the project ─────────────────────────────────

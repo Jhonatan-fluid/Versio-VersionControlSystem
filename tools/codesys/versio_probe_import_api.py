@@ -681,6 +681,164 @@ def probe_library_reference(proj):
     return out
 
 
+# ============================================================================ P11
+def probe_move_matrix(proj, project_path):
+    """WHICH CONTAINERS ACCEPT A MOVE, one destination at a time.
+
+    The plan's last open task, and it exists because two measurements disagree without
+    contradicting each other. P2 moved a POU into a folder under Application: the GUID
+    survived a save, close and reopen. The feature checklist's D6 moved one OUT of
+    Application into Plc Logic: CODESYS accepted the call, raised nothing, and left the
+    object exactly where it was, which versio_import.py reports as RENAME_NOT_APPLIED
+    because it re-resolves afterwards rather than trusting the call.
+
+    So "Versio moves objects" is true of some destinations and false of others, and
+    nobody had drawn the line.
+
+    EVERY STEP RE-RESOLVES AT THE INTENDED PATH AFTERWARDS. That is the whole method:
+    this toolchain has now reported success for work it did not do four times - move(),
+    create_folder returning None, pous.remove(name), and a rename whose names were equal -
+    and every one was caught by reading the value back rather than by the call raising.
+    A step is `applied` only if the object is FOUND at its destination.
+
+    STEPS ARE AN ORDERED LIST, NOT A CROSS PRODUCT, and that is the correction the first
+    version needed: it paired movers with destinations by index and the third pair was
+    Glob_Var into Application, which was already its parent. It reported applied: true
+    having moved nothing, because find_at found the object where it had always been. A
+    destination an object is already in cannot answer anything, so each step below names
+    its object deliberately and `already_there` is checked before the call rather than
+    inferred from the result.
+    """
+    app = find_at(proj, APP_PATH)
+    if app is None:
+        return {"verdict": "NO_APPLICATION"}
+
+    # create_folder RETURNS None and creates the folder anyway (DRIVING.md), so every
+    # destination here is found by name rather than taken from a return value.
+    describe(lambda: app.create_folder("VersioMoveProbe"))
+    folder = find_at(proj, APP_PATH + ["VersioMoveProbe"])
+    if folder is not None:
+        describe(lambda: folder.create_folder("VersioMoveProbeInner"))
+
+    # Two more folders, and they exist to remove a confound rather than to test a feature.
+    # The folder step below moves one that HAS CHILDREN, so on its own it cannot tell "this
+    # destination refuses a folder" from "a folder with something in it cannot be moved".
+    # VersioMoveEmpty is empty; VersioMoveHost is somewhere legal to move it to.
+    describe(lambda: app.create_folder("VersioMoveEmpty"))
+    describe(lambda: app.create_folder("VersioMoveHost"))
+
+    PROBE_FOLDER = APP_PATH + ["VersioMoveProbe"]
+    INNER = PROBE_FOLDER + ["VersioMoveProbeInner"]
+    EMPTY = APP_PATH + ["VersioMoveEmpty"]
+    HOST = APP_PATH + ["VersioMoveHost"]
+
+    # (label, object's current path, destination path). [] is the project root.
+    #
+    # The order matters twice: step 2 moves the object step 1 just moved, which is the
+    # only way to ask "does a move OUT of a folder work" - and step 6 moves the folder
+    # itself, which a mirror expresses by dragging a directory, so it is not exotic.
+    steps = [
+        ("into_folder_under_application", APP_PATH + ["Simulation"], PROBE_FOLDER),
+        ("out_of_folder_back_to_application", PROBE_FOLDER + ["Simulation"], APP_PATH),
+        ("into_nested_folder", APP_PATH + ["Diagnosis"], INNER),
+        ("out_of_application_into_plc_logic", APP_PATH + ["Visualization"],
+         ["Device", "Plc Logic"]),
+        ("out_of_application_into_device", APP_PATH + ["PLC_PRG"], ["Device"]),
+        ("out_of_application_into_project_root", APP_PATH + ["Glob_Var"], []),
+        ("a_folder_with_children_into_plc_logic", PROBE_FOLDER, ["Device", "Plc Logic"]),
+
+        # The two that isolate the variable. If the empty one is declined too, the
+        # destination is what refuses; if it is accepted, the earlier row was about the
+        # children and the finding would have been wrong.
+        ("an_empty_folder_into_plc_logic", EMPTY, ["Device", "Plc Logic"]),
+        ("an_empty_folder_into_another_folder", EMPTY, HOST),
+    ]
+
+    rows = []
+    for label, from_path, to_path in steps:
+        obj = find_at(proj, from_path)
+        dest = proj if not to_path else find_at(proj, to_path)
+        name = from_path[-1]
+
+        if obj is None:
+            rows.append({"step": label, "object": name, "verdict": "OBJECT_NOT_AT_SOURCE"})
+            continue
+        if dest is None:
+            rows.append({"step": label, "object": name, "verdict": "NO_DESTINATION"})
+            continue
+
+        # Asked BEFORE the call. A step whose object is already in the destination proves
+        # nothing, and the first version of this probe recorded exactly that as a pass.
+        already = find_at(proj, to_path + [name]) is not None
+        before = ident(obj)
+        call = describe(lambda o=obj, d=dest: o.move(d, -1))
+        found = find_at(proj, to_path + [name])
+
+        rows.append({
+            "step": label,
+            "object": name,
+            "from": "/".join(from_path[:-1]) or "<root>",
+            "to": "/".join(to_path) or "<root>",
+            "already_there_before": already,
+            "call_ok": call.get("ok"),
+            "call_error": call.get("error"),
+            "call_message": call.get("message"),
+            "applied": (found is not None) and not already,
+            "parent_after": _plain(safe(lambda o=obj: o.parent.get_name(), None)),
+            "guid_before": before["guid"],
+            "guid_stable": before["guid"] == _plain(safe(lambda o=obj: o.guid, None)),
+        })
+
+    # One save and one reopen for the whole matrix: an in-session move that does not
+    # survive being read off disk again would be the worst of the three outcomes, and
+    # nothing has ever looked for it.
+    proj.save()
+    close_project()
+    reopened = open_project(project_path)
+
+    after = []
+    for i, (row, (label, _from, to_path)) in enumerate(zip(rows, steps)):
+        if not row.get("applied"):
+            continue
+
+        # A LATER STEP MAY HAVE MOVED THE SAME OBJECT AGAIN, and then this step's
+        # destination is simply the wrong place to look. The first version of this loop
+        # did look there, found nothing, and reported found_after_reopen: false for
+        # `into_folder_under_application` - which reads as "a move into a folder does not
+        # survive a reopen", contradicts P2, and is an artefact of step 2 moving the same
+        # POU back out. An absence has to be attributed before it is reported.
+        superseded = [s[0] for s in steps[i + 1:] if s[1][-1] == row["object"]]
+        if superseded:
+            after.append({"step": label, "object": row["object"],
+                          "verdict": "SUPERSEDED",
+                          "by": superseded,
+                          "detail": "a later step moved this object again, so its "
+                                    "position on disk belongs to that step"})
+            continue
+
+        found = find_at(reopened, to_path + [row["object"]])
+        after.append({
+            "step": label,
+            "object": row["object"],
+            "found_after_reopen": found is not None,
+            "guid_stable_after_reopen": (found is not None and row["guid_before"]
+                                         == _plain(safe(lambda f=found: f.guid, None))),
+        })
+
+    return {
+        "rows": rows,
+        "after_reopen": after,
+        "summary": {
+            "applied": [r["step"] for r in rows if r.get("applied")],
+            "accepted_silently_and_not_applied": [
+                r["step"] for r in rows
+                if r.get("applied") is False and r.get("call_ok") and not r.get("already_there_before")],
+            "raised": [r["step"] for r in rows if r.get("call_ok") is False],
+            "vacuous": [r["step"] for r in rows if r.get("already_there_before")],
+        },
+    }
+
+
 # ============================================================================ P10
 def probe_task_shape(proj, project_path):
     """What a task configuration and its tasks actually expose, field by field.
@@ -733,6 +891,7 @@ PROBES = {
     "P8": ("deep folder chain", lambda proj, path: probe_path_length(proj)),
     "P9": ("fixed-version library reference", lambda proj, path: probe_library_reference(proj)),
     "P10": ("task configuration shape, for versio_tasks.py", probe_task_shape),
+    "P11": ("which containers accept a move", probe_move_matrix),
 }
 
 

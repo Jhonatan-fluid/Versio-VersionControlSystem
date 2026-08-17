@@ -22,7 +22,14 @@ the POU goes, delete a `.gvl.xml` and the GVL goes, and an object edited in the 
 export is kept either way. Proven against real CODESYS four ways, including one that makes a
 real edit and demands the deletion be refused.
 
-**Versio renames and moves them, and G2 is closed.** A rename keeps the object's GUID through
+**Versio renames and moves them, and G2 is closed** — with one measured qualification on
+the word *moves*, added 2026-08-17: **CODESYS silently declines some moves, and which ones
+depends on what is being moved as well as where.** An empty folder goes into `Plc Logic`; a POU
+does not; a folder stops going there once a POU is inside it; a GVL goes to the project root.
+Versio reports the refusal rather than claiming the move, because it re-resolves the object
+afterwards. See P11.
+
+ A rename keeps the object's GUID through
 three detection passes — exact content, the implementation hash (schema 6, because a POU's name
 lives inside its own declaration), and content similarity for a rename that edited the body too,
 scored against HEAD's bytes or against a fingerprint the export recorded (schema 7) when the
@@ -124,7 +131,7 @@ member exists; it does not say what the member accepts, and that is where every 
 | Member (`IScriptObject` unless noted) | Closes | Measured |
 |---|---|---|
 | `rename(stNewName)` | **G2** | ✅ works, and **the GUID survives a save/close/reopen** |
-| ~~`move(new_parent, new_index)`~~ → **`move(new_parent, -1)`** | **G2** | ✅ GUID survives. **`new_index` must be `-1`** unless the parent has sorted children — `0` raises `ValueError: index must be -1 if the new parent node does not have sorted children`, and the one-argument form raises a `NullReferenceException` |
+| ~~`move(new_parent, new_index)`~~ → **`move(new_parent, -1)`** | **G2** | ✅ GUID survives. **`new_index` must be `-1`** unless the parent has sorted children — `0` raises `ValueError: index must be -1 if the new parent node does not have sorted children`, and the one-argument form raises a `NullReferenceException`. **And it works for some moves only** — P11: what is moved matters as much as where. An empty folder goes into `Plc Logic`; a POU does not; a folder stops going there once a POU is inside it. A `move` that returns `None` means nothing either way |
 | `remove()` | **G1** | ✅ works — **and removes a referenced object silently.** See P3 |
 | ~~`find(String[] namePath)`~~ → **`find("a", "b", "c")` varargs** | G4, G5 | ✅ varargs resolves a full path, spaces included. **A python list raises `TypeError: expected Array[str], got list`.** `find(name, True)` is recursive; `find(name)` alone returns an empty list |
 | `parent`, `index`, `guid` properties | G1–G2 bookkeeping | ✅ all three read |
@@ -209,6 +216,7 @@ should be measured against.
 | P6 | Typed task fields, read and write | ✅ **sufficient**, `core_binding` included; both writes persisted |
 | P7 | Three import→export cycles, unchanged mirror | ⚠️ **climbs +3 per cycle, forever**; found G11 |
 | P8 | Deep folder chain near 260 characters | ✅ **CODESYS is not the limit** — ten 40-char levels, ~420 characters, no complaint |
+| P11 | **Which moves are actually performed** | ⚠️ **three of nine are declined in silence, and the destination is not what decides.** Performed: a POU into a folder, into a folder inside that one, and back out into `Application`; a GVL to **the project root**; an **empty folder into `Plc Logic`**. Declined without raising: a POU into `Device`, a visualisation into `Plc Logic`, and **a folder holding a POU** into `Plc Logic`. **No call ever raised** — every one returned `None`, so the read-back is the only signal there is |
 | P9 | A fixed-version library reference | ✅ **one call**, yields `is_managed: true` — **and that was half the answer.** Re-run on 2026-08-17 to enumerate the type's members and walk the chain the exporter uses: `managed_library.version` answers **only for a library this machine has installed** and raises `NullReferenceException` otherwise. G8 was a defect, not a fixture |
 
 **Phase 0 had two purposes and both paid off, in opposite directions.** Confirming the API saved
@@ -1282,15 +1290,16 @@ anything else, and only the first is a task rather than a judgement call.
 | | What | Effort | Why it is the size it is |
 |---|---|---|---|
 | ~~**1**~~ | ~~**G8 — prove the `managed_library` branch**~~ | ~~Half a day~~ **Done 2026-08-17, in about that** | ✅ Closed, and **not the way this row said**. No fixture variant was built: a fixture proves the branch runs, and what needed asking was what it *records*. It recorded the exporting machine's installed version, or — for a library that machine did not have — nothing at all, silently. See the G8 row and the Finding. The estimate was right and the description of the work was wrong, which is the more useful half to notice |
-| **1** | **Which moves actually work** | **Half a day**, mostly CODESYS wall-clock | Two data points either side of an undrawn line. P2: a move into a folder keeps the GUID. The feature checklist, D6: a move out of `Application` into `Plc Logic` is **declined silently by CODESYS** and correctly reported as `RENAME_NOT_APPLIED`. This document's header says Versio "renames and moves" objects, and that is true of renames and **partly** true of moves. A probe over a handful of container types settles it. Cheap, and it closes an honesty gap rather than adding a feature |
-| **2** | **G9's remaining half — the 190-character file name** | **A day to change; the cost is not the code** | Preventing rather than reporting means shrinking `MaxStem` or dropping the parent prefix, and **either renames every method, action, property and transition in every mirror already committed** — a git rename with no content change, in everybody's repository, on the next export. Written up rather than taken because it is the owner's call. `The_longest_legal_file_name_leaves_no_room_for_an_ordinary_checkout` derives the number, so whoever takes it on is told when they have succeeded |
-| **3** | **E2 and E4 — percent-encoded names** | **Unknown, and unbounded** | Not a coding task: it needs a *fixture that cannot be built*. P5 measured that CODESYS refuses to **create** such a name, so the object has to arrive from a library or an external-file reference. `README.md`'s own object list has a real example of the latter. Until one exists, **G4's resolution half is proven by unit tests and by nothing else** — say so rather than let the checklist imply otherwise |
-| **4** | **`TaskCatalog.cs`** | **Half a day, but not alone** | The C# reader for `.tasks.yaml`, so something outside python can read one. **Land it with the panel change that consumes it.** Note the precedent cuts both ways: `LibraryCatalog.cs` is already in `Versio.Core/Projects/` with tests and **no production caller**, so the rule "no reader without a consumer" has already been broken by its sibling. The real blocker for both is the panel |
+| ~~**1**~~ | ~~**Which moves actually work**~~ | ~~Half a day~~ **Done 2026-08-17** | ✅ **P11 drew the line, and it is not where the first run of it appeared to be.** Nine ordered moves, each re-resolved afterwards. Performed, GUID intact, surviving a reopen: a POU into a folder, into a nested folder, back out into `Application`; a GVL to **the project root**; an **empty folder into `Plc Logic`**. Accepted and silently ignored: a POU into `Device`, a visualisation into `Plc Logic`, a **folder holding a POU** into `Plc Logic`. **Nothing ever raised.** So **the destination is not what decides** — what is being moved matters as much — and the seven-step version of this probe said otherwise for an hour. `RENAME_NOT_APPLIED` now carries the measured cases |
+| **1** | **G9's remaining half — the 190-character file name** | **A day to change; the cost is not the code** | Preventing rather than reporting means shrinking `MaxStem` or dropping the parent prefix, and **either renames every method, action, property and transition in every mirror already committed** — a git rename with no content change, in everybody's repository, on the next export. Written up rather than taken because it is the owner's call. `The_longest_legal_file_name_leaves_no_room_for_an_ordinary_checkout` derives the number, so whoever takes it on is told when they have succeeded |
+| **2** | **E2 and E4 — percent-encoded names** | **Unknown, and unbounded** | Not a coding task: it needs a *fixture that cannot be built*. P5 measured that CODESYS refuses to **create** such a name, so the object has to arrive from a library or an external-file reference. `README.md`'s own object list has a real example of the latter. Until one exists, **G4's resolution half is proven by unit tests and by nothing else** — say so rather than let the checklist imply otherwise |
+| **3** | **`TaskCatalog.cs`** | **Half a day, but not alone** | The C# reader for `.tasks.yaml`, so something outside python can read one. **Land it with the panel change that consumes it.** Note the precedent cuts both ways: `LibraryCatalog.cs` is already in `Versio.Core/Projects/` with tests and **no production caller**, so the rule "no reader without a consumer" has already been broken by its sibling. The real blocker for both is the panel |
 
-**Half a day of work, plus three decisions that are not work.** Item 1 is the only task left
-in this plan, and it closes an honesty gap rather than adding a feature. Item 2 is a judgement
-about other people's repositories. Item 3 is a corpus problem that may never be solved and
-should be labelled instead of chased. Item 4 waits for the panel.
+**No tasks left in this plan — three decisions and a blocked reader.** Item 1 is a judgement
+about other people's repositories. Item 2 is a corpus problem that may never be solved and
+should be labelled instead of chased. Item 3 waits for the panel. Nothing here is work somebody
+can simply be told to do, which is a different state from "nearly finished" and worth saying
+plainly.
 
 **Before any of it, run the gate.** The full integration suite is ~31 minutes and drives real
 CODESYS; the fast projects are `Versio.Core.Tests` and `Versio.Integration.Tests`, eleven
@@ -1298,10 +1307,9 @@ seconds together. Both commands are
 in `CLAUDE.md`.
 
 **Next, in order:** see [What is left, and what it costs](#what-is-left-and-what-it-costs)
-above. **The moves probe is the only task**; the other three are decisions rather than tasks.
-Read D6 in the feature checklist before starting it — CODESYS declined a move silently and the
-script reported `RENAME_NOT_APPLIED`, which is one data point on the far side of a line nobody
-has drawn.
+above. **There is no next task in this plan.** The three items left are decisions: whose
+repositories to churn for G9's remaining half, whether to chase a fixture nobody can build for
+E2 and E4, and when the panel arrives to consume `TaskCatalog.cs`.
 
 **One lesson from G9 that outlives it**, kept because it is about how this document goes wrong
 rather than about paths. This file said **three times**, across two documents, that G9 "has a
@@ -1321,6 +1329,14 @@ copied forward unchallenged because it sounded like something somebody had measu
   None raised. **Read the value back after every write** — the rename phase re-resolves the
   object at its intended location for exactly this reason, and that check is what turns a
   silent refusal into a reported one.
+  - **P11 measured how wide the first of those goes**, on 2026-08-17: of nine moves, three
+    are declined and **not one call raised**. `move()` returns `None` whether it moved the
+    object or ignored you, so there is no return value to check and no exception to catch —
+    the read-back is not defence in depth, it is the entire signal.
+  - **And the rule is about the pair, not the place.** An empty folder moves into `Plc Logic`;
+    a POU does not; the same folder stops moving there once a POU is inside it. Any future
+    attempt to predict a refusal C#-side has to model the object and the destination together,
+    which is a good reason to go on reporting after the fact instead.
 - **A counter incremented next to an operation is not evidence the operation happened.** That
   is the shape of all three, and of the rename whose old and new names were equal: the script
   performed neither call, found the object where it had left it, and counted a rename.
@@ -1470,7 +1486,7 @@ suite, so a green result belongs to the row beside it.
 | D3 | **Pass 3, similarity against HEAD** — renamed *and* edited, matched against the committed bytes | E2E | ✅ same GUID, with the mirror committed first so HEAD has the old file |
 | D4 | **Pass 3b, the line sketch** (schema 7) — the same on a mirror that was never committed | E2E | ✅ same GUID, with **no commit and no history probe** — the sketch is the only description of the old file that exists |
 | D5 | Renaming **only the file** changes nothing, is withdrawn, and says so | E2E | ✅ no rename reported, object untouched |
-| D6 | A **move into another container**, verified after the fact | E2E | ✅ **and CODESYS still declines one silently.** `RENAME_NOT_APPLIED: … the toolchain accepted the move without error but the object is not at Device/Plc Logic/Simulation`. The object stayed where it was and the run said so |
+| D6 | A **move into another container**, verified after the fact | E2E | ✅ **and CODESYS still declines one silently.** `RENAME_NOT_APPLIED: … the toolchain accepted the move without error but the object is not at Device/Plc Logic/Simulation`. The object stayed where it was and the run said so. **Since 2026-08-17 the warning also names the measured cases and says to move it in the IDE** — the test asserts the sentence rather than only the code, because a refusal nobody can act on is half a report |
 | D7 | The **task that ran the object is repointed** at its new name | E2E | ✅ `- Renamed` in the task list, `- Simulation` gone, `- PLC_PRG` untouched |
 | D8 | An **ambiguous** pairing is refused rather than guessed | E2E | ✅ refused by **both** passes: `2 new files hold it, so which is the rename cannot be told`, then `94% and 88%` inside the margin |
 | D9 | **The GUID survives** a rename | E2E | ✅ identical GUID before and after, read out of two manifests |

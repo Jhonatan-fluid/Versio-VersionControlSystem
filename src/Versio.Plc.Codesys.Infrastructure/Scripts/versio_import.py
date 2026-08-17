@@ -757,14 +757,43 @@ class Importer(object):
             # So the object is re-resolved at the location it was supposed to end up. This is
             # cheap - a walk of names already in memory - and it is the only thing standing
             # between "CODESYS declined" and "Versio said it worked".
+            #
+            # WHAT IS DECLINED IS NOW MEASURED - P11, nine ordered moves on one project,
+            # each re-resolved afterwards:
+            #
+            #   performed   a POU into a folder, into a folder inside that folder, and back
+            #               out into Application; a GVL to the PROJECT ROOT; an EMPTY FOLDER
+            #               into Plc Logic
+            #   declined    a POU into Device; a visualisation into Plc Logic; a folder
+            #               HOLDING A POU into Plc Logic
+            #   raised      nothing, ever - every call returned None
+            #
+            # THE DESTINATION IS NOT WHAT DECIDES, and the first version of this comment said
+            # it was. An empty folder goes into Plc Logic quite happily while a POU does not,
+            # and a folder stops being movable there once a POU is inside it - so what is
+            # being moved matters as much as where. It reads like "the destination must be
+            # able to hold the whole subtree", but that is an inference from six rows and it
+            # is not what this code relies on.
+            #
+            # What this code relies on is that every refusal is SILENT. The read-back below
+            # is not belt-and-braces; it is the only signal that exists.
             landed = find_by_path(self.proj, list(parent_chain) + [new_name])
             if landed is None:
                 self.failed += 1
-                self.warn("RENAME_NOT_APPLIED", old_name,
-                          "the toolchain accepted the %s without error but the object is not "
+                # The sentence names what was measured rather than advising in general,
+                # because the rule is one version's and the person reading it has to decide
+                # whether their destination is one of the two kinds.
+                detail = ("the toolchain accepted the %s without error but the object is not "
                           "at %s - it has been left where it was"
                           % ("move" if rename.get("isMove") else "rename",
                              "/".join(list(parent_chain) + [new_name])))
+                if rename.get("isMove"):
+                    detail += (". Measured on 3.5.22.20: CODESYS declines a move in silence "
+                               "when the destination cannot hold what is being moved - a POU "
+                               "into Device, a visualisation into Plc Logic, a folder with a "
+                               "POU in it into Plc Logic - while moves within the application "
+                               "are performed. Move it in the IDE if that is what you meant")
+                self.warn("RENAME_NOT_APPLIED", old_name, detail)
                 continue
 
             self.renamed += 1

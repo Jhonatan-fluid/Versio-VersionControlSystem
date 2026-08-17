@@ -341,10 +341,15 @@ unless something changes.
 > against a real project and which have not. **Every phase there is complete** — Phase 6 closed
 > on 2026-08-17 with G8, the last gap, and **G9 is guarded** as of 2026-08-16.
 > **[What is left, and what it costs](vendors/codesys/IMPORT-PLAN.md#what-is-left-and-what-it-costs)**
-> is the table to read: **one task of about half a day** — which moves CODESYS actually performs,
-> since it declined one silently — and three items that are decisions rather than tasks. G9's
-> remaining half is one of them: the worst case is reported but still producible, and preventing
-> it renames committed files in every mirror already written.
+> is the table to read, and **there is no task left in it**: three items that are decisions
+> rather than work. G9's remaining half is one of them — the worst case is reported but still
+> producible, and preventing it renames committed files in every mirror already written.
+>
+> **Which moves CODESYS performs is now measured** rather than known from one example — and the
+> answer is that **the destination is not what decides**. An empty folder moves into `Plc Logic`;
+> a POU does not; the same folder stops moving there once a POU is inside it; a GVL moves to the
+> project root. **No call ever raises**, so the import's read-back is the only signal there is.
+> It already reported the refusal; it now names the measured cases and says to move it in the IDE.
 >
 > **G8 is worth reading rather than ticking.** It was carried as "untested branch, needs a
 > fixture" and turned out to be a live defect with a silent failure in it — a managed library
@@ -993,7 +998,7 @@ would have gone on passing while checking one fewer every time a panel moved out
 ## Findings
 
 Every defect worth understanding, written down with its evidence, lives in
-**[`FINDINGS.md`](FINDINGS.md)** — 106 of them, newest first. (Said 99 until 2026-08-17,
+**[`FINDINGS.md`](FINDINGS.md)** — 107 of them, newest first. (Said 99 until 2026-08-17,
 when it was re-derived rather than incremented: the number had gone stale during the split
 itself, which is the one edit that could not have been an oversight.)
 
@@ -1004,6 +1009,7 @@ actually do.
 
 The full list, newest first:
 
+- [`move()` declines three moves of nine, raises for none, and the destination is not what decides](FINDINGS.md#move-declines-three-moves-of-nine-raises-for-none-and-the-destination-is-not-what-decides)
 - [A managed library reference recorded whichever version this machine had installed](FINDINGS.md#a-managed-library-reference-recorded-whichever-version-this-machine-had-installed)
 - [Four tool scripts pointed one directory above where they now live](FINDINGS.md#four-tool-scripts-pointed-one-directory-above-where-they-now-live)
 - [The ignore list hid the projects and kept every one of their mirrors](FINDINGS.md#the-ignore-list-hid-the-projects-and-kept-every-one-of-their-mirrors)

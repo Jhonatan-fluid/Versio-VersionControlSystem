@@ -21,7 +21,7 @@
 | **0.5** | **Round-trip losslessness — textual path** | ✅ **proven with a real mutation** (see below) |
 | 0.5b | Round-trip — native XML path | ⚠️ **not yet tested** — 8 of 10 files skipped by the importer |
 | P7 | Import → export churn over 3 cycles | ⚠️ **climbs +3 per cycle, never settles** — and every import after the first fails. See below |
-| P0–P9 | The import API, called rather than reflected on | ⚠️ **four of seven documented spellings were wrong**, two gaps closed as unreachable, and `remove()` dangles silently. See below |
+| P0–P11 | The import API, called rather than reflected on | ⚠️ **four of seven documented spellings were wrong**, two gaps closed as unreachable, `remove()` dangles silently, and **`move()` declines three moves of nine without raising, with the destination not what decides** (P11, 2026-08-17). See below |
 
 ---
 
