@@ -1,4 +1,5 @@
 using Versio.Core.Git;
+using Versio.Core.Plc;
 using Versio.Core.Projects;
 using Xunit;
 
@@ -229,7 +230,7 @@ public sealed class ObjectIndexTests
     [InlineData("LIBRARY_MANAGER", "Library manager")]
     [InlineData("METHOD_NORET", "Method")]
     public void A_known_type_is_written_the_way_engineers_write_it(string type, string chip) =>
-        Assert.Equal(chip, ObjectTypeNames.Chip(type));
+        Assert.Equal(chip, ObjectTypeNames.Chip(PlcVendor.Codesys, type));
 
     [Theory]
     [InlineData("POU", 1, "1 POU")]
@@ -238,7 +239,53 @@ public sealed class ObjectIndexTests
     [InlineData("VISUALISATION", 2, "2 visualisations")]
     [InlineData("LIBRARY_MANAGER", 2, "2 library managers")]
     public void A_counted_type_reads_as_a_sentence(string type, int count, string expected) =>
-        Assert.Equal(expected, ObjectTypeNames.Counted(type, count));
+        Assert.Equal(expected, ObjectTypeNames.Counted(PlcVendor.Codesys, type, count));
+
+    [Fact]
+    public void An_indexed_object_is_labelled_in_its_own_manifests_vocabulary()
+    {
+        // Everything else in this file uses a CODESYS manifest, and PlcVendor.Codesys is the
+        // default - so if ObjectIndex stopped copying the vendor across from the manifest,
+        // every other assertion here would go on passing. This is the only one that would not.
+        //
+        // The same near-vacuous shape schema 8 hit: a default that happens to be right makes
+        // the wiring invisible. Deleting `Vendor = manifest.Vendor` from ObjectIndex.Of must
+        // fail something, and this is that something.
+        // A vendor NO OTHER TEST REGISTERS, and that is not fussiness. This was written with
+        // PlcVendor.TwinCat and it passed alone and failed in company - the tell this codebase
+        // already documents twice. SecondVendorTests registers a fake TwinCAT format into the
+        // static PlcFormats registry, xunit runs test classes in parallel by default, and for
+        // the moment that registration exists every other class sees it: the label came back as
+        // the stand-in's "Runtime" instead of the raw string.
+        //
+        // Phase C removes the ambient static and this stops being possible. Until then, a test
+        // that reads the registry has to pick a vendor nobody else is writing.
+        var vendor = new PlcVendor("Aoraki Systems");
+
+        var project = new WorkspaceProject
+        {
+            ProjectPath = "plc/M.aor",
+            ExportPath = "plc/M",
+            Manifest = new ProjectManifest
+            {
+                Schema = 8,
+                Vendor = vendor,
+                Project = "M.aor",
+                Objects = [Obj("App/Logic.st", "Logic", "PLC_LOGIC", "g1")],
+            },
+        };
+
+        var found = ObjectIndex.Of([project]).Lookup("plc/M/App/Logic.st");
+
+        Assert.NotNull(found);
+        Assert.Equal(vendor, found.Vendor);
+
+        // No format is registered for TwinCAT here, so the label falls through to IEC and then
+        // to the raw string. That is the honest answer and it still proves the vendor crossed:
+        // CODESYS names PLC_LOGIC "PLC logic", so a leaked default would read differently.
+        Assert.Equal("PLC_LOGIC", found.TypeLabel);
+        Assert.NotEqual(ObjectTypeNames.Chip(PlcVendor.Codesys, "PLC_LOGIC"), found.TypeLabel);
+    }
 
     /// <summary>
     /// The fixture's own manifest, so the index is proven against bytes CODESYS produced rather

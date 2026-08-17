@@ -981,6 +981,57 @@ would have gone on passing while checking one fewer every time a panel moved out
 
 Written down with their evidence, because the reasoning is worth more than the fix.
 
+### One table held two vocabularies, and the next vendor would have inherited both
+
+**Found 2026-08-16.** `ObjectTypeNames` was thirty entries in `Versio.Core.Projects` — a neutral
+namespace — and read as one domain vocabulary. It is two. About a quarter is IEC 61131-3:
+`POU`, `ACTION`, `TRANSITION`, `METHOD`, `PROPERTY`, `INTERFACE`, `TASK`. The rest is one
+vendor's model of its own project tree: `PLC_LOGIC`, `APPLICATION`, `CALL_TO_POU`,
+`LIBRARY_MANAGER`, `TASK_CONFIGURATION`, and four kinds of visualisation.
+
+**The seam test could never have caught it, and that is the point.** No CODESYS type appears in
+a signature; no brand appears in a string literal — `WEB_VISUALISATION` names no vendor. The leak
+is that a *neutral* namespace declares one toolchain's words as though they were everybody's, and
+the only thing that detects that is somebody reading the table and asking whose words these are.
+
+**Split three ways, asked in order:** the vendor that wrote the manifest, then
+`IecObjectTypeNames`, then the raw string. Falling through to IEC rather than straight to raw is
+deliberate — the standard's words are the ones a second vendor is most likely to share, so a
+vendor implementing `DisplayNameFor` as `return null` renders `POU` and `TRANSITION` correctly
+for free.
+
+**Asked of `IPlcProjectFormat` rather than of a second registry.** The format object is already
+what a vendor registers and already carries knowledge of this kind — the export-path convention,
+the template rule, which files a plan needs text for. One registry, asked a new question.
+
+**Two entries are worth arguing with, and they went to the vendor side on purpose.** `DUT` and
+`GVL` read as universal PLC vocabulary and are not: IEC 61131-3 says "derived data type" and
+`VAR_GLOBAL`, and both abbreviations are CODESYS's. Anything genuinely ambiguous went the same
+way, because a term wrongly called standard is one the next vendor inherits and cannot get out
+of — the more expensive of the two mistakes.
+
+**The collision is now survivable and tested.** The stand-in vendor claims `PLC_LOGIC` too, with
+a different word, and both render correctly. Before the split the second vendor to arrive had to
+accept the first one's word or overwrite it for everybody.
+
+**And a race this same session predicted, then walked into.** `An_indexed_object_is_labelled_in_its_own_manifests_vocabulary`
+was written using `PlcVendor.TwinCat`. It **passed alone and failed in company** — the tell this
+document already records twice — because `SecondVendorTests` registers a fake TwinCAT format into
+the *static* `PlcFormats` and xunit runs test classes in parallel, so for the moment that
+registration exists every other class sees it. The label came back as the stand-in's word instead
+of the raw string. A3's own commit message had named this hazard a few hours earlier.
+
+- **Fixed by naming a vendor nobody else registers**, with the reason written where the next
+  person will hit it. Phase C removes the ambient static and the whole class of problem with it.
+- **It is the third sighting of the same tell in this repository.** A test that passes alone and
+  fails in company is not being slow; something alongside it is still running — or, here, still
+  registered.
+
+**A near-vacuous pass in the same shape as schema 8's.** `ObjectIndex` copies the vendor from the
+manifest onto each object, and `PlcVendor.Codesys` is the default — so had that copy been
+deleted, every other assertion in `ObjectIndexTests` would have gone on passing. One test fails,
+and it is the only proof the wiring exists.
+
 ### The manifest could not say who wrote it, and its vocabulary belongs to somebody
 
 **Found 2026-08-16.** `_manifest.json` was schema-versioned seven times over and carried no

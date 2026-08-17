@@ -44,8 +44,19 @@ public sealed record NamedObject
     /// </remarks>
     public bool IsExportOnly { get; init; }
 
+    /// <summary>
+    /// Which vendor's vocabulary <see cref="Type"/> is written in.
+    /// </summary>
+    /// <remarks>
+    /// Carried per object rather than looked up, because one repository can hold projects from
+    /// two toolchains and the type string alone does not say whose word it is. Defaults to
+    /// CODESYS for a manifest written before schema 8 recorded it, which is a fact about those
+    /// files rather than a guess.
+    /// </remarks>
+    public Plc.PlcVendor Vendor { get; init; } = Plc.PlcVendor.Codesys;
+
     /// <summary>The type as it is written beside the name.</summary>
-    public string TypeLabel => ObjectTypeNames.Chip(Type);
+    public string TypeLabel => ObjectTypeNames.Chip(Vendor, Type);
 }
 
 /// <summary>
@@ -124,6 +135,7 @@ public sealed class ObjectIndex
                         Name = string.IsNullOrEmpty(obj.Name) ? FileName(obj.Path) : obj.Name,
                         Type = obj.Type,
                         Guid = obj.Guid,
+                        Vendor = manifest.Vendor,
                         Project = name,
                         IsExportOnly = ExportCoverage.IsExportOnly(obj.Form),
                     });

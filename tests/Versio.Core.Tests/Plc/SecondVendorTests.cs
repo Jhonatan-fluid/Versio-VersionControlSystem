@@ -1,5 +1,6 @@
 using Versio.Core.Plc;
 using Versio.Core.Plc.Codesys;
+using Versio.Core.Projects;
 using Xunit;
 
 namespace Versio.Core.Tests.Plc;
@@ -78,6 +79,20 @@ public sealed class SecondVendorTests
             Versio.Core.Projects.ProjectManifest? manifest,
             IReadOnlyList<MirrorFile> mirror,
             IReadOnlyDictionary<string, string> departed) => new() { Files = [] };
+
+        /// <summary>
+        /// A different word for a type string CODESYS also uses, and nothing for the rest.
+        /// </summary>
+        /// <remarks>
+        /// <c>PLC_LOGIC</c> is chosen because CODESYS names it too, so this is the collision the
+        /// split exists to make survivable: one manifest key, two vendors, two right answers.
+        /// Returning null for everything else is what a real vendor mostly does — the standard
+        /// already names <c>POU</c>, and repeating it here would rebuild the single table.
+        /// </remarks>
+        public Versio.Core.Projects.ObjectTypeName? DisplayNameFor(string type) =>
+            string.Equals(type, "PLC_LOGIC", StringComparison.OrdinalIgnoreCase)
+                ? new Versio.Core.Projects.ObjectTypeName("Runtime", "runtime", "runtimes")
+                : null;
     }
 
     [Fact]
@@ -147,6 +162,68 @@ public sealed class SecondVendorTests
         // A host tearing down its own registration should not have to remember whether it
         // succeeded in making it.
         Assert.False(PlcFormats.Unregister(PlcVendor.Studio5000));
+    }
+
+    [Fact]
+    public void One_type_string_renders_in_whichever_vendors_vocabulary_wrote_it()
+    {
+        // The collision the split exists to survive. PLC_LOGIC is a real CODESYS type and the
+        // stand-in claims it too, with a different word - which is exactly what a second vendor
+        // organising the same machine differently would do. Before the split there was one
+        // table, so the second vendor to arrive would have had to accept the first one's word
+        // or overwrite it for everybody.
+        try
+        {
+            PlcFormats.Register(new FakeTwinCatFormat());
+
+            Assert.Equal("PLC logic", ObjectTypeNames.Chip(PlcVendor.Codesys, "PLC_LOGIC"));
+            Assert.Equal("Runtime", ObjectTypeNames.Chip(PlcVendor.TwinCat, "PLC_LOGIC"));
+        }
+        finally
+        {
+            PlcFormats.Unregister(PlcVendor.TwinCat);
+        }
+    }
+
+    [Fact]
+    public void A_vendor_that_names_nothing_still_gets_the_standards_words()
+    {
+        // The fall-through, and the reason it goes to IEC rather than straight to raw: POU,
+        // ACTION and TRANSITION are the words a second vendor is most likely to share, so a
+        // vendor implementing DisplayNameFor as "return null" renders them correctly for free.
+        try
+        {
+            PlcFormats.Register(new FakeTwinCatFormat());
+
+            Assert.Equal("POU", ObjectTypeNames.Chip(PlcVendor.TwinCat, "POU"));
+            Assert.Equal("3 transitions", ObjectTypeNames.Counted(PlcVendor.TwinCat, "TRANSITION", 3));
+        }
+        finally
+        {
+            PlcFormats.Unregister(PlcVendor.TwinCat);
+        }
+    }
+
+    [Fact]
+    public void A_type_nobody_names_is_shown_exactly_as_the_exporter_wrote_it()
+    {
+        // Never fabricate. A build that met a type added after it shipped would otherwise
+        // invent an English word for something it has never seen.
+        Assert.Equal("QUANTUM_POU", ObjectTypeNames.Chip(PlcVendor.Codesys, "QUANTUM_POU"));
+        Assert.Equal("1 QUANTUM_POU", ObjectTypeNames.Counted(PlcVendor.Codesys, "QUANTUM_POU", 1));
+    }
+
+    [Fact]
+    public void The_two_halves_of_the_old_table_do_not_overlap()
+    {
+        // One key in both tables would make the rendering depend on lookup order, which is the
+        // single-table problem wearing a different hat. METHOD is the near miss worth knowing
+        // about: IEC names it, and CODESYS names METHOD_NORET separately.
+        var shared = Versio.Core.Iec.IecObjectTypeNames.Known
+            .Intersect(CodesysObjectTypeNames.Known, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        Assert.Empty(shared);
     }
 
     [Fact]

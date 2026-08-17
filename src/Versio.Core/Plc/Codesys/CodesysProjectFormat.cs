@@ -174,4 +174,14 @@ public sealed class CodesysProjectFormat : IPlcProjectFormat
 
     private static string Field(string[] lines, int index) =>
         index < lines.Length ? lines[index] : string.Empty;
+    /// <summary>CODESYS's own words for its own tree. Null for anything IEC 61131-3 names.</summary>
+    /// <remarks>
+    /// Returning null for <c>POU</c> and <c>ACTION</c> is deliberate rather than an omission:
+    /// those belong to the standard, <see cref="Projects.ObjectTypeNames"/> falls through to it,
+    /// and a vendor repeating them here would be the first step back towards one table nobody
+    /// can partition.
+    /// </remarks>
+    public Projects.ObjectTypeName? DisplayNameFor(string type) =>
+        CodesysObjectTypeNames.TryFor(type);
+
 }

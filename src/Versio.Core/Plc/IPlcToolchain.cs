@@ -123,6 +123,27 @@ public interface IPlcProjectFormat
         Projects.ProjectManifest? manifest,
         IReadOnlyList<MirrorFile> mirror,
         IReadOnlyDictionary<string, string> departed);
+
+    /// <summary>
+    /// How this vendor writes one of its own object types on screen, or null if it does not
+    /// name that type.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The type strings in a manifest belong to whoever wrote it. <c>PLC_LOGIC</c>,
+    /// <c>CALL_TO_POU</c> and <c>LIBRARY_MANAGER</c> describe how one vendor organises a
+    /// project, and a second vendor organising the same machine differently needs its own
+    /// answers rather than inherited ones.
+    /// </para>
+    /// <para>
+    /// <b>Null for anything the standard already names.</b>
+    /// <see cref="Projects.ObjectTypeNames"/> falls through to
+    /// <see cref="Iec.IecObjectTypeNames"/>, so a vendor implements only the words that are its
+    /// own — and a vendor that adds nothing to IEC 61131-3 can return null throughout and still
+    /// render correctly.
+    /// </para>
+    /// </remarks>
+    Projects.ObjectTypeName? DisplayNameFor(string type);
 }
 
 /// <summary>

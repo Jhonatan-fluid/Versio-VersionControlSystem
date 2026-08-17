@@ -107,12 +107,17 @@ public static class ChangeSummary
             return string.Empty;
         }
 
+        // Grouped by type alone, and the vendor comes from the group's first object. A
+        // repository holding two toolchains that spell one type string the same way renders it
+        // in the first group member's vocabulary - which is a rendering choice rather than a
+        // correctness one, and the alternative is worse: grouping by (vendor, type) would split
+        // "3 POUs" into "2 POUs" and "1 POU" for a reader who does not care whose POU it is.
         var byType = objects
             .GroupBy(o => o.Object.Type, StringComparer.OrdinalIgnoreCase)
-            .Select(g => (Type: g.Key, Count: g.Count()))
+            .Select(g => (Type: g.Key, Count: g.Count(), g.First().Object.Vendor))
             .OrderByDescending(g => g.Count)
-            .ThenBy(g => ObjectTypeNames.Chip(g.Type), StringComparer.OrdinalIgnoreCase)
-            .Select(g => ObjectTypeNames.Counted(g.Type, g.Count));
+            .ThenBy(g => ObjectTypeNames.Chip(g.Vendor, g.Type), StringComparer.OrdinalIgnoreCase)
+            .Select(g => ObjectTypeNames.Counted(g.Vendor, g.Type, g.Count));
 
         var projects = objects
             .Select(o => o.Object.Project)

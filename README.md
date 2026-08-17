@@ -144,13 +144,14 @@ Versio.sln
 │  │  ├─ Diff/                  unified-diff parser and the syntax tokenizer
 │  │  ├─ Git/                   porcelain v2 parser, progress parser, .gitattributes planner
 │  │  ├─ Hashing/               content and export-tree hashing
-│  │  ├─ Iec/                   IEC 61131-3, shared by every vendor: ST codec, declarations
+│  │  ├─ Iec/                   IEC 61131-3, shared by every vendor: ST codec, declarations,
+│  │  │                         the standard's object-type names
 │  │  ├─ Locking/               lock records, reboot-survival recovery policy
 │  │  ├─ Logging/               ring buffer, correlation ids, heartbeat
 │  │  ├─ Plc/                   the vendor seam: IPlcRunner, PlcJob, PlcResult, PlcFormats
 │  │  │  └─ Codesys/            one vendor: GUID table, XML shape, profiles, wire protocol
 │  │  ├─ Projects/              the manifest, the export-coverage report, the library
-│  │  │                         catalog, and the CODESYS-shaped project tree
+│  │  │                         catalog, the object-type dispatch and the project tree
 │  │  ├─ Sync/                  state machine, hash gate, suppressor, breaker, commit gate
 │  │  └─ Watching/              debounce, coalescing, and when the shell re-reads git
 │  │
