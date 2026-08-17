@@ -182,11 +182,22 @@ Versio.sln
 │  ├─ Versio.App.Tests/         480 tests that build the real windows and panels against
 │  │                            the real stylesheet on an STA thread — none is ever shown
 │  └─ Versio.Integration.Tests/ 243 tests against real CODESYS and real git, ~31 min (192 of them in 18 s without CODESYS — see CLAUDE.md)
-├─ tools/                       PowerShell harnesses used during Phase 0, plus
-│                               New-VersioIcon.ps1 which generates the app icon
+├─ tools/                       PowerShell and python harnesses. Seven of the nine are
+│                               CODESYS-specific probes; New-VersioIcon.ps1 generates the
+│                               app icon and Compare-Exports.ps1 diffs any two export trees
 ├─ assets/                      versio.svg (reference drawing) and versio.ico
 │                               (the build input — generated, never hand-edited)
-├─ fixtures/projects/           the CODESYS project the suite runs against
+├─ fixtures/projects/           the CODESYS projects the suite runs against, plus their
+│                               committed export mirrors. The .project files are GIT LFS
+│                               POINTERS — a clone without git-lfs installed gets 130-byte
+│                               stubs and the integration suite fails confusingly
+├─ phase0/                      GITIGNORED scratch. Experiment output from tools/; it
+│                               reached 29 MB in one afternoon. It also holds 22 .project
+│                               files, which is why launching the app against this
+│                               repository adopts and exports all of them — see STATUS.md's
+│                               Known loose ends before doing that
+├─ .versio/                     Versio's own state for this repository, because it tracks
+│                               its own fixtures. repo.json is committed; local/ is not
 └─ docs/
    ├─ PLAN.md                   the full architecture plan
    ├─ STATUS.md                 where the project is and what remains
@@ -363,6 +374,11 @@ Deliberately few. Every one is a thing that can break a build or a publish.
 | Xunit.SkippableFact | tests | integration tests skip cleanly without CODESYS |
 
 **`Versio.Core` and `Versio.Infrastructure` have no third-party dependencies at all.**
+
+**One tool is a prerequisite rather than a package: `git-lfs`.** The `.project` fixtures are
+stored in LFS, so a clone on a machine without it gets 130-byte pointer files instead. Nothing
+fails at build time — the integration suite fails later, complaining that a CODESYS project it
+was handed is not a project, which is a long way from the cause.
 
 Two absences are decisions, not omissions:
 
