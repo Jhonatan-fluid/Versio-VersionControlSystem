@@ -60,11 +60,70 @@ FORM_ST_FULL = "ST_FULL"
 FORM_ST_DECL = "ST_DECL"
 FORM_ST_IMPL = "ST_IMPL"
 FORM_GVL_BOTH = "GVL_BOTH"
+# Native .xml for fidelity plus .tasks.yaml for review AND for import. Follows
+# GVL_BOTH exactly: one object, two files, one GUID in the manifest. The difference
+# is which half is authoritative - a GVL imports from its .st, and a task
+# configuration imports from its .tasks.yaml, because handing the .xml to
+# import_native is what rewrites Core2 (G7) and throws on the task objects (G11).
+#
+# "A GVL imports from its .st" WAS NOT TRUE WHEN THIS WAS WRITTEN, and stayed untrue for
+# months: the .gvl.xml was recorded plain NATIVE, so both halves were applied and the
+# native phase overwrote the textual one. This paragraph was the specification and
+# FORM_GVL_NATIVE is what finally enforces it - see G12. A sentence describing a sibling
+# form is not a test of it, and this one is why the invariant now has one.
+FORM_TASK_BOTH = "TASK_BOTH"
 FORM_NATIVE = "NATIVE"
 FORM_NATIVE_R = "NATIVE_R"
 FORM_CONTAINER = "CONTAINER"
 FORM_LIBRARIES = "LIBRARIES"
 FORM_SKIP = "SKIP"
+
+# TASK_NATIVE - the .xml half of a TASK_BOTH pair. RECORDED, NEVER DECIDED: decide_form
+# does not return it, TYPE_FORM does not contain it, and it never reaches file_name_for,
+# because the TASK_BOTH branch of the exporter builds that path itself. It exists for one
+# reason - so the manifest SAYS the file is export-only instead of leaving a reader to
+# infer it.
+#
+# It was recorded as NATIVE_R until 2026-08-15, which made it indistinguishable from a
+# PROPERTY's recursive export - an importable file. That is how Phase 4 re-opened the gap
+# _coverage.md was built to close: the moment the .tasks.yaml became the importable half,
+# the .xml beside it became a file the export writes and the import silently ignores, and
+# nothing anywhere said so. Editing it looked exactly like editing a POU.
+FORM_TASK_NATIVE = "TASK_NATIVE"
+
+# GVL_NATIVE - the .xml half of a GVL_BOTH pair, and the same idea as FORM_TASK_NATIVE
+# above. RECORDED, NEVER DECIDED, for the same reasons and by the same mechanism.
+#
+# It was recorded as plain NATIVE until 2026-08-16, and that is G12. Both halves of a GVL
+# were therefore importable, and versio_import.py runs textual before native - so an edit
+# to the .gvl.st was applied to the object and then overwritten by the .gvl.xml's copy of
+# the declaration as it stood at export time, seconds later, with the log reporting
+# `applied ... (declaration)` on the way past. The comment on FORM_TASK_BOTH said "a GVL
+# imports from its .st" throughout; nothing enforced it, and _coverage.md's silence about
+# the file promised the opposite.
+#
+# WHAT THIS CHANGES BESIDES THE OVERWRITE, because it is not only a label. An export-only
+# record neither votes nor vetoes in the delete planner, so a GVL now has exactly ONE
+# importable file and stops being a two-file object: deleting `Glob_Var.gvl.st` alone
+# removes the GVL, where before the two-file rule kept it. That is deliberate. A GVL now
+# behaves like every other single-file object - deleting Simulation.st has always removed
+# the POU - and the deletion still has to pass the content check, because ST_DECL is
+# verifiable. The .gvl.xml is left in the mirror until the next export tidies it.
+#
+# AN OLDER MIRROR STILL CARRIES `NATIVE` HERE, and therefore still has the defect until it
+# is re-exported. There is no way to tell a pre-fix record from a genuine native object by
+# reading it, which is the same limitation every manifest addition has: absent never means
+# unchanged.
+FORM_GVL_NATIVE = "GVL_NATIVE"
+
+# Forms whose file is written for review and never applied back.
+#
+# ONE list, because the rule has to be in one place: it is read by the coverage report
+# here and mirrored by ExportCoverage.IsExportOnly on the C# side, which is what the
+# panel's lock glyph reads. The two are compared in TypeTableParityTests - a form added
+# here and not there means the file is announced in _coverage.md and still looks editable
+# in the app, which is half a warning and worse than none.
+EXPORT_ONLY_FORMS = (FORM_LIBRARIES, FORM_TASK_NATIVE, FORM_GVL_NATIVE)
 
 # NATIVE_WITH_CHILDREN - export the node itself natively, non-recursively, AND descend into
 # a subdirectory for its children.
@@ -83,6 +142,68 @@ FORM_SKIP = "SKIP"
 # prevent. Adding the two probed GUIDs to the table hid it rather than fixed it: the next
 # unmapped container would have flattened just the same.
 FORM_NATIVE_WITH_CHILDREN = "NATIVE_WITH_CHILDREN"
+
+
+# Forms whose exported file can be rebuilt from a live object, and therefore the only forms
+# whose DELETION can be checked before it happens.
+#
+# Here rather than in versio_import.py for two reasons, and the second is the load-bearing
+# one. This module is pure - no scriptengine - so the rule can be run under CPython and
+# compared against its C# mirror, CodesysImportPlanner.WhyUnverifiable, by
+# PythonFileNameParityTests. The importer cannot be imported outside CODESYS at all, so a
+# rule living there is a rule nothing can compare.
+#
+# The two sides have to agree because they answer the same question ~20 s apart: the planner
+# answers it for the confirmation dialog, before CODESYS is started, and the script answers it
+# for the object itself. A planner that promises a removal the script then refuses puts a lie
+# in front of somebody about to destroy work - which is exactly what shipped once, pointed the
+# other way, when the script grew remove() and the dialog went on saying objects would stay.
+#
+# A textual form is checked by rebuilding the file byte for byte - P7 measured zero .st
+# differences across three round trips, so the comparison means what it says.
+CAN_VERIFY_FORMS = (FORM_ST_FULL, FORM_ST_DECL, FORM_ST_IMPL)
+
+# Native forms are checked through the NORMALISED hash the export recorded beside the raw one,
+# and only when the manifest carries it - schema 5 and later.
+#
+# The raw hash cannot be used and that is measured, not assumed. It is taken over the exported
+# native bytes, and those churn: across three export/import round trips of the fixture with
+# nothing edited, 4 native files came back byte-different every time. Hashing a fresh export
+# against the recorded raw hash would refuse every native deletion forever, for a reason with
+# nothing to do with the object.
+#
+# So the export records content_hash(normalize(text)) as well, and a delete check re-exports
+# the live object, normalises it the same way, and compares. What normalisation removes is
+# exactly the churn: counter values, and the ordering of unordered containers.
+#
+# MASKED GUIDS, and this is the subtle one. versio_native_equiv.normalize says masking must be
+# OFF when comparing two exports of the same project, because GUIDs are stable across exports -
+# and M1 confirms that, two exports into two empty directories are byte-identical. But this is
+# not that comparison. The recorded hash and the fresh export are separated by however many
+# round trips have happened since, and ACROSS A ROUND TRIP CODESYS re-mints GUIDs: measured on
+# GlobalTextList.xml, 3 lines of 117 differ and all three are System.Guid values (GuidInit,
+# GuidReInit, GuidExitX). That is the round-trip case the docstring says masking is required
+# for.
+#
+# What it costs: an edit that changes GUID VALUES and nothing else would read as unchanged.
+# Masking is positional - each GUID becomes <masked-guid>, so an added or removed one still
+# shows - and no realistic IDE edit changes only the value of an existing GUID. It is stated
+# here rather than glossed because it is the one way this check can be wrong, and being wrong
+# here destroys work nothing else holds a copy of.
+NATIVE_FORMS = (FORM_NATIVE, FORM_NATIVE_R, FORM_NATIVE_WITH_CHILDREN)
+
+
+def can_verify(form, normalized_hash=None):
+    """Can a deletion of an object exported in this form be checked before it happens?
+
+    `normalized_hash` is the manifest's `nhash` for the file, absent on a pre-schema-5
+    mirror. A native object exported before Versio recorded one stays unverifiable until
+    the project is exported again - the same "unavailable until the next export" shape the
+    planner already uses for a manifest below the reporting schema.
+    """
+    if form in CAN_VERIFY_FORMS:
+        return True
+    return form in NATIVE_FORMS and bool(normalized_hash)
 
 TYPE_FORM = {
     "FOLDER": FORM_CONTAINER,
@@ -103,7 +224,10 @@ TYPE_FORM = {
     "TRANSITION": FORM_ST_IMPL,
 
     "VISUALISATION": FORM_NATIVE,
-    "TASK_CONFIGURATION": FORM_NATIVE_R,
+    # Was FORM_NATIVE_R, which round-tripped through import_native and cost two
+    # defects: G7 (Core2 rewritten unasked) and G11 (every import after the first
+    # throws on MainTask and VISU_TASK while reporting failed: 0).
+    "TASK_CONFIGURATION": FORM_TASK_BOTH,
     "TEXTLIST": FORM_NATIVE,           # [VERSIO] gap closed vs codescribe
     "GLOBAL_TEXTLIST": FORM_NATIVE,    # [VERSIO]
     "IMAGEPOOL": FORM_NATIVE,          # [VERSIO]
@@ -145,33 +269,22 @@ def is_versio_file(file_name):
     return file_name in VERSIO_FILES
 
 
-# Files that are part of the PROJECT but travel one way only: exported for review,
-# never applied back.
-#
-# The export tree turns out to hold THREE kinds of file, not two:
+# The export tree holds THREE kinds of file, not two:
 #
 #   1. objects           - .st and .xml, exported and imported
 #   2. bookkeeping       - VERSIO_FILES, about the export rather than in it
 #   3. export-only       - real project state, written for the diff, but with no
-#                          import path that can be trusted
+#                          import path that can be trusted (EXPORT_ONLY_FORMS above:
+#                          library references, and the native half of a task pair)
 #
-# Library references are the first of the third kind. Handing this file to
-# import_native would be the _coverage.md defect again - CODESYS would be asked to
-# parse YAML as native XML and every import would carry a failure warning that is
-# always present and therefore always read past. Adding a library through the
-# scripting API is a different operation from importing an object, and doing it
-# wrongly rewires what the machine compiles against, so it is not attempted here:
-# the file is diff-only, and both the coverage report and the manifest say so.
-EXPORT_ONLY_SUFFIXES = (".libraries.yaml",)
-
-
-def is_export_only(file_name):
-    """True for a file the export writes that the import must not feed to the toolchain."""
-    lowered = file_name.lower()
-    for suffix in EXPORT_ONLY_SUFFIXES:
-        if lowered.endswith(suffix):
-            return True
-    return False
+# The import side used to re-derive the third kind from file suffixes here -
+# is_export_only, is_typed_form, and typed_sibling_candidates, whose docstring promised
+# "once the importer is plan-driven, the plan says which files are importable and this
+# rule goes". The importer is plan-driven now (job schema 2), the plan is computed
+# C#-side from the manifest's per-file `form`, and those three functions went with the
+# walk that called them. What remains authoritative on this side is EXPORT_ONLY_FORMS -
+# the coverage report reads it, and TypeTableParityTests holds it equal to
+# ExportCoverage.IsExportOnly so the two languages cannot drift.
 
 
 # Why a type is skipped, and whether that is a decision or a gap.
@@ -253,6 +366,7 @@ SUFFIX = {
     FORM_NATIVE_R: ".xml",
     FORM_NATIVE_WITH_CHILDREN: ".xml",
     FORM_LIBRARIES: ".libraries.yaml",
+    FORM_TASK_BOTH: ".tasks.yaml",
 }
 
 # Types whose file name gets an infix to avoid colliding with a same-named sibling
@@ -313,7 +427,10 @@ def descends_into_children(obj_type):
       anything else  walked, including an unmapped type, which is why the default is True
     """
     form = TYPE_FORM.get(obj_type)
-    return form not in (FORM_SKIP, FORM_NATIVE_R)
+    # TASK_BOTH joins NATIVE_R: its .xml is a recursive export that already contains
+    # the tasks, and its .tasks.yaml lists them too. Walking them again would write a
+    # third copy of each task as a file of its own.
+    return form not in (FORM_SKIP, FORM_NATIVE_R, FORM_TASK_BOTH)
 
 
 def file_name_for(name, obj_type, form, parent_name=None):

@@ -14,6 +14,7 @@ namespace Versio.Integration.Tests;
 /// deliberately separated from the unit project.
 /// </remarks>
 [Trait("Category", "Integration")]
+[Trait("Toolchain", "Codesys")]
 [Collection(CodesysCollection.Name)]
 public class CodesysRunnerTests(ITestOutputHelper output)
 {

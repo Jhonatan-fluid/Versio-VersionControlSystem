@@ -23,13 +23,25 @@ public sealed class ExportCoverageTests
             Reason = reason,
         };
 
+    private static ExportWarning Warning(string code, string path) =>
+        new() { Code = code, Path = path, Detail = "detail the script sent" };
+
+    /// <summary>An <c>EXPORT_FAILED</c> warning, which is all a failed object leaves behind.</summary>
+    private static ExportWarning Failure(string path) =>
+        Warning(ExportCoverage.FailureCode, path);
+
     private static ProjectManifest Manifest(params SkippedObject[] skipped) =>
+        Manifest([], skipped);
+
+    private static ProjectManifest Manifest(
+        ExportWarning[] warnings, params SkippedObject[] skipped) =>
         new()
         {
             Schema = ExportCoverage.ReportingSchema,
             Project = "Machine.project",
             Objects = [new ProjectObject { Path = "App/Main.st", Guid = "g1" }],
             Skipped = skipped,
+            Warnings = warnings,
         };
 
     [Fact]
@@ -134,7 +146,7 @@ public sealed class ExportCoverageTests
                 new ProjectObject
                 {
                     Path = "App/Library Manager.libraries.yaml",
-                    Form = ExportCoverage.ExportOnlyForm,
+                    Form = ExportCoverage.LibrariesForm,
                     Type = "LIBRARY_MANAGER",
                     Guid = "g2",
                 },
@@ -151,7 +163,14 @@ public sealed class ExportCoverageTests
         Assert.Contains("Everything in this project reaches the mirror", sentence,
                         StringComparison.Ordinal);
         Assert.Contains("not applied back", sentence, StringComparison.Ordinal);
-        Assert.Contains("change those in the IDE", sentence, StringComparison.Ordinal);
+
+        // It points at _coverage.md rather than naming a remedy. The sentence used to say
+        // "library references … change those in the IDE", which was true only while libraries
+        // were the sole one-way form: a task configuration's XML is fixed by editing the
+        // .tasks.yaml beside it, and the remedy is per file. Stating it here as well would be
+        // a second copy of a rule that already has a home, and the copy is what goes stale.
+        Assert.Contains("_coverage.md", sentence, StringComparison.Ordinal);
+        Assert.DoesNotContain("change those in the IDE", sentence, StringComparison.Ordinal);
 
         // Still no badge: this is a property of the format, not a problem with the export.
         // A row that said something on every project with a library manager — which is every
@@ -218,6 +237,165 @@ public sealed class ExportCoverageTests
             Skip("A_TYPE", ExportCoverage.GapReason, "Device/aaa")));
 
         Assert.Equal(["Device/aaa", "Device/zzz"], report.Gaps.Select(g => g.Path));
+    }
+
+    [Fact]
+    public void An_object_the_export_could_not_write_is_a_gap_and_names_itself()
+    {
+        // THE CASE THIS HALF EXISTS FOR, and it read Complete until 2026-08-16.
+        //
+        // versio_export.py warns and returns BEFORE record(), so a failed object is in
+        // neither `objects` nor `skipped` - it is in `warnings` and nowhere else, and
+        // nothing read `warnings` at all. So the panel said everything reached the mirror
+        // while an object was missing from it, and the commit gate offered that mirror.
+        var report = ExportCoverage.Of(Manifest(
+            [Failure("Device/Plc Logic/Application/Deep/Thing")]));
+
+        Assert.Equal(CoverageVerdict.HasGaps, report.Verdict);
+        Assert.True(report.HasGaps);
+        Assert.Empty(report.Gaps);
+        Assert.Equal("Device/Plc Logic/Application/Deep/Thing",
+                     Assert.Single(report.Failures).Path);
+        Assert.Equal("1 object not exported", report.Label);
+
+        var sentence = report.Describe();
+
+        // The PATH, because a path is the identity of a failure the way a type is the
+        // identity of a gap - and it is the only handle anybody has on an object that
+        // reached neither the mirror nor the manifest.
+        Assert.Contains("Device/Plc Logic/Application/Deep/Thing", sentence,
+                        StringComparison.Ordinal);
+
+        // Stronger than the gap wording, and the difference is the object itself: an
+        // unsupported type is in the project and its CHANGES do not reach the mirror; this
+        // object does not reach it at all.
+        Assert.Contains("neither it nor any change to it", sentence, StringComparison.Ordinal);
+        Assert.Contains("_coverage.md", sentence, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_warning_that_is_not_a_failure_does_not_touch_the_verdict()
+    {
+        // The over-reporting guard, and it is not hypothetical: UNKNOWN_TYPE_GUID fires on
+        // any object type this build has not been taught, which is a normal thing to meet in
+        // a project and is already reported as a skip when it loses something. Counting every
+        // warning as a missing object would put a red line on exports that are fine, and a
+        // warning nobody believes is worse than no warning.
+        var report = ExportCoverage.Of(Manifest(
+            [Warning("UNKNOWN_TYPE_GUID", "Device/Plc Logic/Odd")]));
+
+        Assert.Equal(CoverageVerdict.Complete, report.Verdict);
+        Assert.False(report.HasGaps);
+        Assert.Empty(report.Failures);
+        Assert.Equal(string.Empty, report.Label);
+    }
+
+    [Fact]
+    public void A_gap_and_a_failure_are_counted_together_and_explained_apart()
+    {
+        var report = ExportCoverage.Of(
+            Manifest([Failure("Device/Plc Logic/Application/Thing")],
+                     Skip("LIBRARY_MANAGER", ExportCoverage.GapReason)));
+
+        // One number in the row. The reader's question is how much of their project is
+        // missing, and that does not divide by the reason it is missing.
+        Assert.Equal("2 objects not exported", report.Label);
+
+        var sentence = report.Describe();
+
+        // Two remedies, so two sentences. A gap is closed by somebody writing an exporter
+        // for a type; a failure may be closed by moving the repository somewhere shallower,
+        // or by nothing at all. Folding them into one line would make whichever remedy
+        // was printed wrong for the other half.
+        Assert.Contains("LIBRARY_MANAGER", sentence, StringComparison.Ordinal);
+        Assert.Contains("will not appear in the mirror", sentence, StringComparison.Ordinal);
+        Assert.Contains("Device/Plc Logic/Application/Thing", sentence, StringComparison.Ordinal);
+        Assert.Contains("failed to export", sentence, StringComparison.Ordinal);
+
+        // And the closing claim survives both, once.
+        Assert.Equal(1, Occurrences(sentence, "Everything else in this project is covered."));
+    }
+
+    [Fact]
+    public void Several_failures_name_the_first_and_count_the_rest()
+    {
+        var report = ExportCoverage.Of(Manifest(
+            [Failure("Device/bbb"), Failure("Device/aaa"), Failure("Device/ccc")]));
+
+        Assert.Equal("3 objects not exported", report.Label);
+
+        var sentence = report.Describe();
+
+        Assert.Contains("3 objects failed to export", sentence, StringComparison.Ordinal);
+
+        // The first by path, not the first the script happened to emit - see the ordering
+        // test below for why that is asserted separately.
+        Assert.Contains("the first is Device/aaa", sentence, StringComparison.Ordinal);
+        Assert.DoesNotContain("Device/ccc", sentence, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_failures_are_ordered_by_path_whatever_order_they_arrived_in()
+    {
+        // Same rule as the gaps, and for the same reason: the script emits in walk order,
+        // which changes when an object is added anywhere above it. A list that reshuffles
+        // between two exports of the same project is a list nobody can diff.
+        var report = ExportCoverage.Of(Manifest(
+            [Failure("Device/zzz"), Failure("Device/aaa")]));
+
+        Assert.Equal(["Device/aaa", "Device/zzz"], report.Failures.Select(f => f.Path));
+    }
+
+    [Fact]
+    public void A_failure_with_no_path_still_reads_as_a_sentence()
+    {
+        // record() is never reached for a failure, so path is the only identity there is -
+        // and warn() is called with whatever the walk had at the time. An empty one must not
+        // leave the panel showing a sentence with a hole where a name should be.
+        var report = ExportCoverage.Of(Manifest([Failure(string.Empty)]));
+
+        Assert.Equal(CoverageVerdict.HasGaps, report.Verdict);
+        Assert.Contains("an object the export could not name", report.Describe(),
+                        StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_object_whose_name_could_not_be_read_is_lost_the_same_way()
+    {
+        // The second door, and it is one step earlier than EXPORT_FAILED: get_name() raises,
+        // the walk warns and returns before `total` is even incremented, so the object is in
+        // `warnings` and in nothing else — not the records, not the skips, not the count of
+        // objects the export believes it walked.
+        //
+        // Here as its own case rather than folded into the failure test because it arrives
+        // with a DIRECTORY and no name: the name is the thing that could not be read. A
+        // report that could only describe a failure by naming it would have nothing to say
+        // about exactly the failure that has no name.
+        var report = ExportCoverage.Of(Manifest(
+            [Warning(ExportCoverage.UnnamedCode, "Device/Plc Logic/Application")]));
+
+        Assert.Equal(CoverageVerdict.HasGaps, report.Verdict);
+        Assert.Equal("1 object not exported", report.Label);
+        Assert.Contains("Device/Plc Logic/Application", report.Describe(),
+                        StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_manifest_too_old_to_judge_claims_nothing_about_failures_either()
+    {
+        // The schema gate covers both lists, and that is safe rather than convenient:
+        // `warnings` predates schema 2 in the exporter, so an empty one on a manifest this
+        // class is willing to judge really does mean nothing failed. Below the gate no claim
+        // is made at all, which is the honest answer for a manifest that may not have been
+        // counting.
+        var report = ExportCoverage.Of(new ProjectManifest
+        {
+            Schema = ExportCoverage.ReportingSchema - 1,
+            Warnings = [Failure("Device/Thing")],
+        });
+
+        Assert.Equal(CoverageVerdict.Unknown, report.Verdict);
+        Assert.Empty(report.Failures);
     }
 
     private static int Occurrences(string haystack, string needle)

@@ -59,28 +59,45 @@ public sealed class LocalCodesysRunner(
     /// CODESYS warning code looks like.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// The translation itself, as a function — neutral job in, CODESYS job out.
+    /// </summary>
+    /// <remarks>
+    /// <b>Public and static so it can be asserted without launching CODESYS.</b> It was inline
+    /// in <see cref="RunAsync(PlcJob, IProgress{PlcProgress}, CancellationToken)"/>, which
+    /// meant the only way to check that a field survives the boundary was a 17–31 s run — so
+    /// in practice nothing checked. That mattered the moment the job grew a field whose loss
+    /// is silent: drop <c>Plan</c> here and every import still works, still runs from a plan,
+    /// and runs from a <i>different</i> one than the person was shown.
+    /// </remarks>
+    public static CodesysJob ToNative(PlcJob job) => new()
+    {
+        Operation = job.Operation switch
+        {
+            PlcOperation.Export => CodesysOperation.Export,
+            PlcOperation.Import => CodesysOperation.Import,
+            _ => CodesysOperation.Probe,
+        },
+        Profile = job.Profile,
+        Projects = [.. job.Projects.Select(p => new ProjectJob
+        {
+            BindingId = p.BindingId,
+            ProjectPath = p.ProjectPath,
+            Path = p.Path,
+
+            // Carried across, never recomputed. See the remarks above for why losing this
+            // line is the kind of defect that leaves nothing on fire to point at.
+            Plan = p.Plan,
+        })],
+        OperationId = job.OperationId,
+        Save = job.Save,
+        Timeout = job.Timeout,
+    };
+
     public async Task<PlcResult> RunAsync(
         PlcJob job, IProgress<PlcProgress>? progress, CancellationToken cancellationToken)
     {
-        var native = new CodesysJob
-        {
-            Operation = job.Operation switch
-            {
-                PlcOperation.Export => CodesysOperation.Export,
-                PlcOperation.Import => CodesysOperation.Import,
-                _ => CodesysOperation.Probe,
-            },
-            Profile = job.Profile,
-            Projects = [.. job.Projects.Select(p => new ProjectJob
-            {
-                BindingId = p.BindingId,
-                ProjectPath = p.ProjectPath,
-                Path = p.Path,
-            })],
-            OperationId = job.OperationId,
-            Save = job.Save,
-            Timeout = job.Timeout,
-        };
+        var native = ToNative(job);
 
         // Progress crosses the boundary too, so the heartbeat above never sees a Codesys type.
         var relay = progress is null
@@ -103,9 +120,28 @@ public sealed class LocalCodesysRunner(
                     .Where(p => !string.IsNullOrEmpty(p))
                     .Select(p => p!),
             ],
+            // Code, subject, and THE REASON — which used to be dropped here.
+            //
+            // The scripts have always emitted a `detail` explaining the warning, and this
+            // projection took only the code and the path, so the log and the UI both read
+            // "DELETE_UNVERIFIABLE: Diagnosis" and the sentence saying why went nowhere. That
+            // is a silent failure of the kind that is worse than a missing log line: the
+            // warning is present, looks complete, and answers nothing. It mattered least when
+            // warnings meant "an object was skipped" and most now that they mean "Versio
+            // declined to delete this, and here is what would change that".
+            //
+            // Turned into a sentence HERE rather than upstream because this is the adapter:
+            // SyncOrchestrator.LogWarnings documents that nothing above it knows what a
+            // CODESYS warning code looks like, and that stays true.
             Warnings =
             [
-                .. result.Output.Warnings.Select(w => $"{w.String("code")}: {w.String("path")}"),
+                .. result.Output.Warnings.Select(w =>
+                {
+                    var head = $"{w.String("code")}: {w.String("path")}";
+                    return w.String("detail") is { Length: > 0 } detail
+                        ? $"{head} — {detail}"
+                        : head;
+                }),
             ],
         };
     }
@@ -121,6 +157,27 @@ public sealed class LocalCodesysRunner(
         // back or stamps it on a protocol line, so every event is attributed by virtue of
         // being parsed inside this scope rather than by carrying the id itself.
         using var scope = _log.BeginOperation(job.OperationId);
+
+        // An import runs from a plan, decided before CODESYS starts — the script executes
+        // exactly what the plan says and derives nothing from file names (Phase 1 of
+        // docs/CODESYS-IMPORT-PLAN.md). A caller that computed its own plan keeps it; one
+        // that did not gets it computed here, so every import is plan-driven whichever door
+        // it came through, including a test driving the runner directly.
+        if (job.Operation == CodesysOperation.Import
+            && job.Projects.Count == 1 && job.Projects[0].Plan is null)
+        {
+            job = job with
+            {
+                Projects =
+                [
+                    job.Projects[0] with
+                    {
+                        Plan = await PlanImportAsync(job.Projects[0].Path, cancellationToken)
+                            .ConfigureAwait(false),
+                    },
+                ],
+            };
+        }
 
         var script = ScriptFor(job.Operation);
         var scriptPath = scripts.PathFor(script);
@@ -359,7 +416,7 @@ public sealed class LocalCodesysRunner(
         // a single count - "events=24" - which said that something happened and nothing about
         // what. The export deletes an entire directory and writes a new one in its place; a
         // log that cannot show that step is not a log of the export.
-        LogScriptEvents(output);
+        LogScriptEvents(job, output);
 
         // CODESYS's own output, kept at Debug. It is verbose and mostly uninteresting until
         // an export fails for a reason our protocol did not model, at which point it is the
@@ -431,7 +488,7 @@ public sealed class LocalCodesysRunner(
     /// actually asks afterwards.
     /// </para>
     /// </remarks>
-    private void LogScriptEvents(ScriptOutput output)
+    private void LogScriptEvents(CodesysJob job, ScriptOutput output)
     {
         foreach (var evt in output.Events)
         {
@@ -474,6 +531,20 @@ public sealed class LocalCodesysRunner(
                         $"[{evt.String("type")}]");
                     break;
 
+                case "preserved":
+                    // G10. The freshly exported payload means the same thing as the bytes
+                    // already in the mirror, so the old ones were kept and the file does not
+                    // appear in the diff.
+                    //
+                    // DEBUG, and per file. On a settled mirror this is four lines an export
+                    // and they are the least interesting four; on the export after a real
+                    // change it is how somebody finds out WHY a file they expected to move
+                    // did not. The summary carries the count for the Info-level reader.
+                    _log.Debug(LogCategory.Codesys,
+                        $"kept the existing bytes for {evt.String("path")} — the new export " +
+                        "is equivalent to it");
+                    break;
+
                 case "libraries":
                     // Info, not Debug, and bounded: a project has one or two library
                     // managers, and this is the one export form whose entire point is
@@ -489,9 +560,18 @@ public sealed class LocalCodesysRunner(
                     // warned: it happens on every import of every project that has a
                     // library manager, and a warning that is always present is how a
                     // real one gets read past.
+                    //
+                    // The advice was hard-coded to "change this in the IDE", which was right
+                    // while a library file was the only thing that reached here. A task
+                    // configuration's XML has its importable half sitting beside it, and the
+                    // script already says which file that is — so the line said the one thing
+                    // guaranteed to send the reader past it.
                     _log.Info(LogCategory.Codesys,
                         $"not applied to the project ({evt.String("reason")}): " +
-                        $"{evt.String("path")} — change this in the IDE");
+                        $"{evt.String("path")} — " +
+                        (evt.String("sibling") is { Length: > 0 } sibling
+                            ? $"edit {sibling} instead"
+                            : "change this in the IDE"));
                     break;
 
                 case "counted":
@@ -512,10 +592,33 @@ public sealed class LocalCodesysRunner(
                     break;
 
                 case "summary":
-                    _log.Info(LogCategory.Codesys,
-                        $"walked {evt.Int("walked")}, wrote {evt.Int("written")}, " +
-                        $"skipped {evt.Int("skipped")} (of which {evt.Int("gaps")} " +
-                        $"not implemented), {evt.Int("warnings")} warning(s)");
+                    // TWO SCRIPTS, TWO SETS OF FIELDS, and this used to read only the
+                    // exporter's. An import reports updated / unchanged / native / created /
+                    // missing / failed / partial / notImported, and `ScriptEvent.Int` returns
+                    // null for a key that is not there - so every import in the application's
+                    // history logged "walked , wrote , skipped  (of which  not implemented),
+                    // 0 warning(s)". Four blanks and one number, and the number was the only
+                    // true thing on the line because `warnings` happens to be common to both.
+                    //
+                    // Keyed on the JOB rather than on which keys are present. Sniffing the
+                    // payload would have worked today and would silently pick a branch the
+                    // day a third script grows a summary; a switch on the operation makes
+                    // that a compiler error instead.
+                    _log.Info(LogCategory.Codesys, job.Operation switch
+                    {
+                        CodesysOperation.Import => ImportSummary(evt),
+                        // `preserved` is appended rather than always present: on a first
+                        // export, and on any export where every native file really changed,
+                        // it is zero and saying so would put a number nobody can act on into
+                        // every line. When it is not zero it is the explanation for a diff
+                        // that is smaller than somebody expected.
+                        _ => $"walked {evt.Int("walked")}, wrote {evt.Int("written")}, " +
+                             $"skipped {evt.Int("skipped")} (of which {evt.Int("gaps")} " +
+                             $"not implemented), {evt.Int("warnings")} warning(s)" +
+                             (evt.Int("preserved") is > 0 and var kept
+                                 ? $", {kept} unchanged file(s) left as they were"
+                                 : string.Empty),
+                    });
                     break;
 
                 case "fatal":
@@ -528,6 +631,102 @@ public sealed class LocalCodesysRunner(
                         $"in {evt.String("into")}");
                     break;
 
+                case "removed":
+                    // Info, and the only line in an import that records work leaving the
+                    // project. Everything else here either adds or replaces; this is the one
+                    // that cannot be undone from the mirror, so it names the object and where
+                    // it lived rather than a count somebody has to go and expand.
+                    _log.Info(LogCategory.Codesys,
+                        $"removed {evt.String("name")} from {evt.String("path")}");
+                    break;
+
+                case "renamed":
+                    // Info, and it names both ends. A rename is the one structural change that
+                    // is REASSURING rather than destructive — the object survived an edit that
+                    // would otherwise have destroyed and rebuilt it — so it is worth a line
+                    // somebody can find when they go looking for their object's old name.
+                    //
+                    // A handler at all, because four import events once had none and one of
+                    // them logged as the literal string "· task_set".
+                    _log.Info(LogCategory.Codesys,
+                        evt.Bool("moved") == true
+                            ? $"moved {evt.String("name")} to {evt.String("newParent")}"
+                              + $"/{evt.String("newName")}"
+                            : $"renamed {evt.String("name")} to {evt.String("newName")}");
+                    break;
+
+                case "task_pou_retargeted":
+                    // INFO, and it is the line that says the project was corrected rather than
+                    // merely changed. A task's POU list is stored by name and a rename does not
+                    // update it, so without this step the task would name a POU that no longer
+                    // exists — and without this line, the fix would happen silently.
+                    _log.Info(LogCategory.Codesys,
+                        $"{evt.String("task")} now runs {evt.String("to")} "
+                        + $"(was {evt.String("from")}, renamed by this import)");
+                    break;
+
+                case "already_gone":
+                    // Not a failure and not a refusal: the mirror said delete it and the
+                    // project no longer has it, so the two agree. Debug because the
+                    // interesting case is the one where something WAS removed.
+                    _log.Debug(LogCategory.Codesys,
+                        $"{evt.String("name")} is already gone from the project");
+                    break;
+
+                case "updated":
+                    // One per file the import changed, so Debug for the same reason "object"
+                    // is: bounded by what was edited today, but there is no ceiling on that.
+                    _log.Debug(LogCategory.Codesys,
+                        $"applied {evt.String("path")} ({evt.String("part")})");
+                    break;
+
+                case "native_imported":
+                    _log.Debug(LogCategory.Codesys,
+                        $"imported {evt.String("path")} as native XML into " +
+                        $"{evt.String("into")}");
+                    break;
+
+                case "native_partial":
+                    // WARN, and the only event in this switch that is. CODESYS does not raise
+                    // when an individual object inside a native import fails - it hands the
+                    // exception to a callback and carries on - so this is the difference
+                    // between a file that was applied and one that was half applied, on a run
+                    // that otherwise looks entirely successful.
+                    _log.Warn(LogCategory.Codesys,
+                        $"{evt.String("path")} was only partly applied: " +
+                        $"{evt.Int("pasted")} object(s) imported, {evt.Int("errors")} failed, " +
+                        $"{evt.Int("refused")} refused by CODESYS — the project has some of " +
+                        "this file's objects and not others");
+                    break;
+
+                case "task_set":
+                    // INFO, deliberately, where its neighbours are Debug. There are a handful
+                    // of tasks in a project, so the volume argument that puts one-per-object
+                    // lines at Debug does not apply - and this is Versio changing what the
+                    // machine runs: a priority, an interval, or the CPU core a task is bound
+                    // to. It logged as "· task_set" with no detail at all until 2026-08-15,
+                    // which is a poor way to record the one write this whole path exists for.
+                    _log.Info(LogCategory.Codesys,
+                        $"set {evt.String("task")}.{evt.String("field")} = " +
+                        $"{evt.String("value")} ({evt.String("path")})");
+                    break;
+
+                case "phase_saved":
+                    _log.Debug(LogCategory.Codesys,
+                        $"saved after the {evt.String("after")} phase");
+                    break;
+
+                case "saved":
+                    _log.Info(LogCategory.Codesys, "project saved");
+                    break;
+
+                case "nothing_to_save":
+                    // Info, because "I edited the mirror and nothing happened" is a question
+                    // somebody asks, and this is the line that answers it.
+                    _log.Info(LogCategory.Codesys,
+                        "the project was not modified, so nothing was saved");
+                    break;
+
                 case "object":
                     _log.Debug(LogCategory.Codesys,
                         $"wrote {evt.String("path")} [{evt.String("form")}]");
@@ -538,6 +737,63 @@ public sealed class LocalCodesysRunner(
                     break;
             }
         }
+    }
+
+    /// <summary>The import script's own summary fields, in its own words.</summary>
+    /// <remarks>
+    /// <para>
+    /// Built as a list and joined rather than as one interpolated sentence, because the
+    /// interesting half of an import summary is usually zero. "0 failed" on every line is the
+    /// noise that made the original blank line survive unnoticed for as long as it did, so the
+    /// counts that are zero are simply absent, and a completely uneventful import says so in
+    /// three words instead of eight numbers.
+    /// </para>
+    /// <para>
+    /// <c>failed</c> and <c>partial</c> are always shown when non-zero and never merged.
+    /// A partly-applied file is counted in both — <c>failed</c> is the file count and
+    /// <c>partial</c> says how many of those still changed the project — and collapsing them
+    /// would recreate the exact ambiguity this fix exists to remove.
+    /// </para>
+    /// </remarks>
+    private static string ImportSummary(ScriptEvent evt)
+    {
+        List<string> parts = [];
+
+        void Add(string label, string key)
+        {
+            var value = evt.Int(key);
+            if (value is > 0)
+            {
+                parts.Add($"{value} {label}");
+            }
+        }
+
+        Add("updated", "updated");
+        Add("created", "created");
+        Add("native", "native");
+
+        // REMOVED goes with the writes, not with the warnings, and it is deliberately not
+        // last: an import that took objects out of a project is the single most consequential
+        // thing this line can report, and a reader scanning the front of a sentence must not
+        // have to reach the end to find it.
+        Add("REMOVED", "removed");
+
+        // Beside REMOVED because both are structural, and before the "kept" counters for the
+        // same reason REMOVED is near the front: a reader scanning this line for what happened
+        // to their object should meet the structural changes before the arithmetic.
+        Add("renamed/moved", "renamed");
+        Add("task reference(s) repointed", "retargeted");
+
+        Add("kept (not deleted)", "kept");
+        Add("unchanged", "unchanged");
+        Add("not applied (export-only)", "notImported");
+        Add("missing", "missing");
+        Add("FAILED", "failed");
+        Add("partly applied", "partial");
+
+        var warnings = evt.Int("warnings") ?? 0;
+        return (parts.Count == 0 ? "import applied nothing" : "import: " + string.Join(", ", parts))
+               + $" — {warnings} warning(s)";
     }
 
     /// <summary>
@@ -570,6 +826,41 @@ public sealed class LocalCodesysRunner(
         CodesysOperation.Probe => "versio_probe.py",
         _ => throw new ArgumentOutOfRangeException(nameof(operation)),
     };
+
+    /// <summary>
+    /// Read the mirror and decide what importing it would do, for a caller that did not.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The walk itself is not here.</b> It is <see cref="Versio.Core.Plc.ImportPlanReader"/>,
+    /// shared with the orchestrator, which needs the same plan earlier and for a different
+    /// reason: a confirmation dialog cannot name what an import will delete if the plan is not
+    /// decided until CODESYS is already running. Two copies of that walk was the obvious shape
+    /// and the wrong one — it is the arrangement CODESYS.md section 9 counts four drifts in,
+    /// and this walk has a convention inside it (mirror-relative paths, never absolute) that
+    /// is completely silent when got wrong.
+    /// </para>
+    /// <para>
+    /// This entry point survives because a job can still arrive without a plan — a test
+    /// driving the runner directly, or any caller below the orchestrator — and an import must
+    /// be plan-driven whichever door it came through. The walk that inferred everything from
+    /// file names is deleted, not bypassed.
+    /// </para>
+    /// </remarks>
+    private Task<Versio.Core.Plc.ImportPlan> PlanImportAsync(
+        string mirrorRoot, CancellationToken ct) =>
+        Versio.Core.Plc.ImportPlanReader.ReadAsync(
+            new FileSystem.WindowsFileSystem(),
+            CodesysProjectFormat.Instance,
+            mirrorRoot,
+            _log,
+            LogCategory.Codesys,
+
+            // No binding id down here: this runner is handed paths, not bindings. The
+            // orchestrator's call supplies one, which is why the reader takes a label rather
+            // than assuming there is always something to name.
+            label: string.Empty,
+            ct);
 
     private static string WriteJobFile(CodesysJob job)
     {

@@ -31,6 +31,7 @@ namespace Versio.Integration.Tests;
 /// </para>
 /// </remarks>
 [Trait("Category", "Integration")]
+[Trait("Toolchain", "Codesys")]
 [Collection(CodesysCollection.Name)]
 public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
 {
@@ -324,6 +325,214 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
         Assert.NotEqual(before, await File.ReadAllBytesAsync(projectPath));
     }
 
+    [SkippableFact]
+    public async Task A_task_priority_edited_in_the_mirror_reaches_the_project_and_survives_a_second_import()
+    {
+        // THE TEST PHASE 4 SHIPPED WITHOUT, and the two axes G11 hid behind, in one run.
+        //
+        // Phase 4 stopped handing Task Configuration to import_native and started setting the
+        // fields through typed properties instead. That closed G7 - CODESYS rewriting a task's
+        // CPU core affinity on every import, unasked - and G11 - every import after the first
+        // throwing on MainTask and VISU_TASK while the summary read `failed: 0`.
+        //
+        // Everything around the write was covered: the emitter, the reader, the committed
+        // bytes, the TYPED_SIBLING skip. `setattr(obj, prop, wanted)` was covered by one
+        // hand-run mutation and nothing else - the single step the whole G7/G11 argument rests
+        // on. That is the same shape of gap that let G11 live for months, so it is closed here
+        // rather than left in Phase 6.
+        //
+        // Four CODESYS launches, measured at 72-78 s. That is the price of the only assertion
+        // that can distinguish "the importer applied the file" from "the importer read it",
+        // and it is the most expensive single test in the suite. It earns it: deleting either
+        // half of Phase 4 turns it red, verified both ways rather than assumed - see the note
+        // above the re-export below.
+        var install = Install;
+        Skip.If(install is null, "no CODESYS installation with a profile");
+        Skip.If(!File.Exists(FixtureProject), "fixture project missing");
+
+        await InitRepoAsync();
+        var git = new GitCliClient(_repo, logger: new TestLogger(output));
+        var setup = new RepoSetup(_repo, CodesysProjectFormat.Instance);
+
+        var adopted = await setup.AdoptAsync(
+            ProjectRelativePath, git, install!.Profiles[0], CancellationToken.None);
+        var binding = adopted.Config.Bindings[0];
+        var orchestrator = BuildOrchestrator(adopted.Config, install);
+
+        Assert.Equal(SyncVerdict.Completed, (await Export(orchestrator, binding.Id)).Verdict);
+        await orchestrator.ReleaseAfterPushAsync("c1", CancellationToken.None);
+
+        var tasksFile = Path.Combine(
+            _repo, "plc", "RefrigeratorControl", "Device", "Plc Logic", "Application",
+            "Task Configuration.tasks.yaml");
+        Assert.True(File.Exists(tasksFile), $"the export wrote no {Path.GetFileName(tasksFile)}");
+
+        // The starting values, asserted rather than assumed. If the fixture ever changes so
+        // that MainTask already has the priority written below, the test would set a field to
+        // what it already held and pass while proving nothing.
+        var exported = await File.ReadAllTextAsync(tasksFile);
+        Assert.Equal("1", FieldOf(exported, "MainTask", "priority"));
+        Assert.Equal("-1", FieldOf(exported, "VISU_TASK", "coreBinding"));
+
+        // LF and no BOM: adoption writes `<mirror>/** text eol=lf`, and Versio's hash gate
+        // reads the bytes on disk rather than asking git.
+        await File.WriteAllTextAsync(
+            tasksFile, WithField(exported, "MainTask", "priority", "\"9\""),
+            new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+
+        // WHAT IS BESIDE THE PROJECT AT EACH IMPORT, both recorded, because "the first import
+        // creates the cache" had never been checked from a test, and an EXPORT has already run
+        // by this point - which opens the project too, so it was a fair suspect.
+        //
+        // Measured, and the two lines together say which tool writes which sidecar:
+        //
+        //   before import 1   the .opt pair, and NO cache   <- the export wrote the .opt files
+        //   before import 2   the .opt pair AND the cache   <- the import wrote the cache
+        //
+        // So the finding's claim holds, and it is now measured here rather than inherited from
+        // Measure-ImportStability.ps1. It also explains why copying the committed .opt files in
+        // was watching nothing: the export had already produced them.
+        output.WriteLine($"beside the project before import 1: {string.Join(", ", Sidecars())}");
+
+        // Import once. This is the cycle that always worked; the second one below is the one
+        // that used to fail.
+        var first = await TextChanged(orchestrator, binding.Id);
+        output.WriteLine($"import 1 — {first.Verdict}: {SyncNarrative.Describe(first)}");
+        Assert.Equal(SyncVerdict.Completed, first.Verdict);
+
+        // A SECOND, DIFFERENT edit, and it is not padding. Re-running the same import is
+        // refused as NoChange - correctly, by the hash gate, because the mirror has not moved
+        // since the last one - so a second import needs something new to carry. That is not a
+        // workaround: G11's trigger was the compile cache and the measurement recorded that the
+        // mirror's bytes are irrelevant, so any second import with the cache present reproduces
+        // the condition.
+        //
+        // It also makes the final assertion sharper than a repeat would have been. The value
+        // ends at 7 only if the SECOND import applied - the cycle that used to throw on
+        // MainTask while reporting failed: 0. A test that imported 9 twice would read 9 at the
+        // end whether the second cycle worked or did nothing at all.
+        await File.WriteAllTextAsync(
+            tasksFile,
+            WithField(await File.ReadAllTextAsync(tasksFile), "MainTask", "priority", "\"7\""),
+            new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+
+        // WHICH STATE THE SECOND IMPORT IS ABOUT TO RUN IN, asserted rather than assumed.
+        // G11's trigger was a `<project>_project.precompilecache` beside the project, and this
+        // is the point at which one exists - see the two measurements above.
+        //
+        // NEITHER SIDECAR IS COPIED IN, and that was worth finding out. This test originally
+        // copied the committed `.opt` files beside the project; deleting that copy left every
+        // assertion here green, because the export writes its own pair. So the copy was
+        // watching nothing and is gone - see InitRepoAsync.
+        //
+        // ASSERTED rather than merely printed, because the whole G11 axis rests on it. If a
+        // future CODESYS stops writing a cache on a headless import, this test would quietly
+        // decay into "imports twice" - still useful, but no longer covering the condition it
+        // was written for, and nothing would say so. This is what says so.
+        var sidecars = Sidecars();
+        output.WriteLine($"beside the project before import 2: {string.Join(", ", sidecars)}");
+        Assert.Contains(sidecars,
+                        f => f.EndsWith(".precompilecache", StringComparison.Ordinal));
+        Assert.Contains(sidecars, f => f.EndsWith(".opt", StringComparison.Ordinal));
+
+        // Import again, with whatever the first one left behind. THIS is the cycle that used
+        // to throw twice and report failed: 0. Asserting on the warnings rather than on the
+        // verdict is the whole point: the verdict was Completed while it was broken.
+        var second = await TextChanged(orchestrator, binding.Id);
+        output.WriteLine($"import 2 — {second.Verdict}: {SyncNarrative.Describe(second)}");
+        Assert.Equal(SyncVerdict.Completed, second.Verdict);
+
+        foreach (var outcome in new[] { first, second })
+        {
+            Assert.DoesNotContain(outcome.Warnings,
+                                  w => w.StartsWith("NATIVE_IMPORT_ERROR", StringComparison.Ordinal));
+            Assert.DoesNotContain(outcome.Warnings,
+                                  w => w.StartsWith("TASK_", StringComparison.Ordinal));
+        }
+
+        // WHAT THESE TWO ASSERTIONS ARE AND ARE NOT WATCHING, because it was measured rather
+        // than assumed. Reverting Phase 4 - making typed_sibling_for return None, so the task
+        // XML goes back to import_native - turns this test red, but at the priority assertion
+        // below and NOT here: the native import re-applies the whole configuration from the
+        // XML and silently overwrites the typed write, without throwing. G11's exception did
+        // not reappear.
+        //
+        // The likely reason is worth the next reader's time: G11 was measured on cycles with
+        // `created: 0, updated: 0`, where versio_import's phase-split save - the guard written
+        // for that exact exception - is skipped by its own `if`. This test edits a task field,
+        // so `updated > 0` and the save runs. That is a lead, not a conclusion; the mutation
+        // changed two things at once and nobody has varied them separately. The open loose end
+        // in STATUS.md asks whether running that guard would have helped, and this is the first
+        // evidence either way.
+        //
+        // So: the priority assertion is what guards Phase 4. These two guard the summary being
+        // honest, and they would have caught the original G11 - a run that warned twice while
+        // reporting failed: 0.
+
+        // Re-export and read the value back out of the PROJECT. Nothing short of this can tell
+        // the difference between a field that was applied and a file that was merely parsed:
+        // every cheaper assertion is satisfied by an importer that reads the YAML and drops it.
+        //
+        // Straight through the runner into a scratch directory, NOT back through the
+        // orchestrator. Asking the orchestrator to export here returns NoChange, and it is
+        // right to: it recorded the project's hash when the import wrote it, so from its point
+        // of view nothing has happened since. That gate is correct and is not what this test is
+        // about - going around it asks the only question that is, which is what the project on
+        // disk now contains. It also means the assertion below cannot be satisfied by anything
+        // Versio cached; the bytes come out of CODESYS.
+        var verify = Path.Combine(_repo, ".versio", "local", "verify");
+        var runner = new LocalCodesysRunner(
+            install.ExecutablePath, new ScriptExtractor(), new TestLogger(output));
+
+        var reread = await runner.RunAsync(new CodesysJob
+        {
+            Operation = CodesysOperation.Export,
+            Profile = install.Profiles[0],
+            Projects =
+            [
+                new ProjectJob
+                {
+                    BindingId = binding.Id,
+                    ProjectPath = Path.Combine(_repo, "plc", "RefrigeratorControl.project"),
+                    Path = verify,
+                },
+            ],
+            Timeout = TimeSpan.FromMinutes(5),
+        }, null, CancellationToken.None);
+
+        Assert.True(reread.Succeeded, reread.FailureReason ?? "the verification export failed");
+
+        var reExported = await File.ReadAllTextAsync(Path.Combine(
+            verify, "Device", "Plc Logic", "Application", "Task Configuration.tasks.yaml"));
+        output.WriteLine(reExported);
+
+        Assert.Equal("7", FieldOf(reExported, "MainTask", "priority"));
+
+        // And G7, free on the same file. `Core2` is a task's CPU core affinity, and
+        // import_native moved it from -1 to -2 on every import without being asked.
+        //
+        // THE TWO ASSERTIONS ARE NOT INTERCHANGEABLE, and reading the equivalence fixtures is
+        // what shows which is which. In fixtures/equivalence/baseline/Task Configuration.xml -
+        // captured BEFORE an import - MainTask already holds Core2 = -2 and VISU_TASK holds
+        // -1; in the roundtrip capture, taken after, both read -2.
+        //
+        //   VISU_TASK = -1  is the canary. It is the value G7 destroyed, so this is the line
+        //                   that goes red if the typed path ever stops being the one that
+        //                   writes task configuration.
+        //   MainTask  = -2  is the control. It was -2 to begin with, which is exactly why it
+        //                   is worth asserting: a change that set every core binding to -2
+        //                   would satisfy the canary's neighbour and this pair still catches
+        //                   nothing - but a change that moved MainTask off its own value would
+        //                   be caught here and nowhere else.
+        //
+        // Asserting the invariant, not a mutation result: the Phase-4-reverted run above never
+        // reached these lines, because it failed on the priority two lines up. So it is
+        // unobserved whether a regression trips these or only that one, and this says so
+        // rather than claiming a coverage it has not been shown to have.
+        Assert.Equal("-1", FieldOf(reExported, "VISU_TASK", "coreBinding"));
+        Assert.Equal("-2", FieldOf(reExported, "MainTask", "coreBinding"));
+    }
+
     private LockOwner Owner()
     {
         var machine = new MachineIdentity();
@@ -335,6 +544,509 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
             ProcessId = machine.CurrentProcessId,
             BootId = machine.BootId,
         };
+    }
+
+    [SkippableFact]
+    [Trait("Category", "Integration")]
+    public async Task An_object_whose_file_is_deleted_leaves_the_project_and_an_edited_one_does_not()
+    {
+        // THE FIRST TEST OF VERSIO DESTROYING SOMETHING, and it is written as two halves in
+        // one run because the halves are only meaningful against each other: a delete path
+        // that never refuses is indistinguishable from one that always deletes, and a refusal
+        // that never lets anything through is indistinguishable from a delete path that does
+        // not work.
+        //
+        // P3 measured what remove() does to an object others reference: it removes it, saves
+        // cleanly, and warns about nothing. There is no toolchain backstop. So the planner's
+        // preconditions and the script's content check are the entire safety story, and the
+        // content check is the half that no unit test can reach - versio_import.py imports
+        // scriptengine at module level, so it cannot be loaded under CPython at all.
+        var install = Install;
+        Skip.If(install is null, "no CODESYS installation with a profile");
+        Skip.If(!File.Exists(FixtureProject), "fixture project missing");
+
+        await InitRepoAsync();
+        var git = new GitCliClient(_repo, logger: new TestLogger(output));
+        var setup = new RepoSetup(_repo, CodesysProjectFormat.Instance);
+
+        var adopted = await setup.AdoptAsync(
+            ProjectRelativePath, git, install!.Profiles[0], CancellationToken.None);
+        var binding = adopted.Config.Bindings[0];
+        var orchestrator = BuildOrchestrator(adopted.Config, install);
+
+        Assert.Equal(SyncVerdict.Completed, (await Export(orchestrator, binding.Id)).Verdict);
+        await orchestrator.ReleaseAfterPushAsync("c1", CancellationToken.None);
+
+        var app = Path.Combine(
+            _repo, "plc", "RefrigeratorControl", "Device", "Plc Logic", "Application");
+
+        var doomed = Path.Combine(app, "Simulation.st");
+        var gvl = Path.Combine(app, "Glob_Var.gvl.st");
+
+        Assert.True(File.Exists(doomed), "the export wrote no Simulation.st");
+        Assert.True(File.Exists(gvl), "the export wrote no Glob_Var.gvl.st");
+
+        var manifestPath = Path.Combine(_repo, "plc", "RefrigeratorControl", "_manifest.json");
+        var honest = await File.ReadAllTextAsync(manifestPath);
+
+        // ── one: an object edited since the export is KEPT ───────────────────────────
+        //
+        // Simulation.st is deleted from the mirror and the manifest's recorded hash for it is
+        // falsified. That is exactly the state an engineer creates by editing the object in
+        // the IDE after the last export: the project no longer matches what was exported, so
+        // the missing file is not permission to destroy that work.
+        //
+        // Falsifying the hash rather than driving the IDE is what makes this affordable, and
+        // it is not a weaker test — comparing the live object against the recorded hash is
+        // the WHOLE of the script's check, so it cannot tell the two apart.
+        //
+        // THE SAME OBJECT IS DELETED SUCCESSFULLY BELOW, with only the hash different. That
+        // is the point of ordering it this way: a refusal test using a different object could
+        // pass because that object was undeletable for some unrelated reason.
+        File.Delete(doomed);
+
+        await File.WriteAllTextAsync(manifestPath, PoisonHashFor(honest, "Simulation.st"),
+            new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+
+        var refused = await TextChanged(orchestrator, binding.Id);
+        output.WriteLine($"import 1 — {refused.Verdict}: {SyncNarrative.Describe(refused)}");
+
+        // The import SUCCEEDS. A refused deletion is a refusal, not a failure — marking the
+        // binding failed would stop all syncing over Versio declining to destroy something.
+        Assert.Equal(SyncVerdict.Completed, refused.Verdict);
+        Assert.Contains(refused.Warnings,
+            w => w.Contains("DELETE_CONTENT_CHANGED", StringComparison.Ordinal));
+
+        // AND THE REASON SURVIVES THE SEAM. The scripts have always emitted a `detail`
+        // explaining a warning, and the CODESYS adapter used to project only the code and the
+        // path — so the log and the UI read "DELETE_CONTENT_CHANGED: Simulation" and the
+        // sentence saying why went nowhere. A warning that is present, looks complete and
+        // answers nothing is worse than a missing one, and it matters most for exactly these
+        // codes: they are Versio declining to destroy something, and the detail is what tells
+        // somebody how to proceed. Asserted here because this is the only test that runs the
+        // real script through the real adapter.
+        Assert.Contains(refused.Warnings,
+            w => w.Contains("has been edited since", StringComparison.Ordinal));
+
+        // Read back out of the PROJECT, and STRAIGHT THROUGH THE RUNNER rather than back
+        // through the orchestrator. Asking the orchestrator to export here returns NoChange
+        // and is right to: it recorded the project's hash when the import ran, so from its
+        // point of view nothing has happened since. Going around that gate asks the only
+        // question this test is about — what the project on disk now contains.
+        var afterRefusal = await ReExport(install, binding.Id, "verify-kept");
+
+        Assert.True(File.Exists(Path.Combine(afterRefusal, RelApp, "Simulation.st")),
+            "Simulation was deleted despite no longer matching what was exported");
+
+        // ── two: with an honest hash, the same object goes ───────────────────────────
+        //
+        // Nothing changes but the manifest. If this fails while the refusal above passed, the
+        // delete path does not work; if it passed while the refusal failed, the check does
+        // not. Only both together say the script is deciding rather than defaulting.
+        await File.WriteAllTextAsync(manifestPath, honest,
+            new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+
+        var deleted = await TextChanged(orchestrator, binding.Id);
+        output.WriteLine($"import 2 — {deleted.Verdict}: {SyncNarrative.Describe(deleted)}");
+        Assert.Equal(SyncVerdict.Completed, deleted.Verdict);
+
+        var afterDelete = await ReExport(install, binding.Id, "verify-delete");
+
+        Assert.False(File.Exists(Path.Combine(afterDelete, RelApp, "Simulation.st")),
+            "Simulation came back, so the object is still in the project");
+
+        // And nothing else went with it. remove() dangles referenced objects silently (P3),
+        // so "the right object left" and "only the right object left" are two claims.
+        Assert.True(File.Exists(Path.Combine(afterDelete, RelApp, "PLC_PRG.xml")),
+            "PLC_PRG went missing — the deletion took more than it was asked to");
+        Assert.True(File.Exists(Path.Combine(afterDelete, RelApp, "Glob_Var.gvl.st")),
+            "Glob_Var went missing — the deletion took more than it was asked to");
+
+        // ── three: a two-file object goes only when BOTH halves check out ────────────
+        //
+        // A GVL is two files under one GUID — a declaration and its native XML — so this is
+        // the case where the textual and the native checks have to agree before anything is
+        // destroyed. The .gvl.st is rebuilt and compared byte for byte; the .gvl.xml is
+        // re-exported, normalised and compared against the manifest's nhash.
+        //
+        // THIS ASSERTED THE OPPOSITE UNTIL 2026-08-15, and it was right to. The manifest's
+        // raw hash for a native file is over bytes that churn — P7 measured a re-export of an
+        // untouched native object changing every cycle — and the bytes that would have
+        // settled it were in the file just deleted, so the answer was unknowable and
+        // unknowable meant kept. Schema 5 records the NORMALISED hash at export time, which
+        // is what breaks that circle: the old side now lives in the manifest rather than in
+        // the deleted file.
+        //
+        // The assertion is inverted rather than deleted, because what it guards is the same
+        // thing pointed the other way — that this object's fate is decided by a check and not
+        // by a guess.
+        File.Delete(gvl);
+        File.Delete(Path.Combine(app, "Glob_Var.gvl.xml"));
+
+        var native = await TextChanged(orchestrator, binding.Id);
+        output.WriteLine($"import 3 — {native.Verdict}: {SyncNarrative.Describe(native)}");
+
+        Assert.Equal(SyncVerdict.Completed, native.Verdict);
+        Assert.DoesNotContain(native.Warnings,
+            w => w.Contains("DELETE_UNVERIFIABLE", StringComparison.Ordinal));
+
+        var afterNative = await ReExport(install, binding.Id, "verify-native");
+
+        Assert.False(File.Exists(Path.Combine(afterNative, RelApp, "Glob_Var.gvl.st")),
+            "the GVL's declaration survived a deletion that both its halves passed");
+        Assert.False(File.Exists(Path.Combine(afterNative, RelApp, "Glob_Var.gvl.xml")),
+            "the GVL's native half survived a deletion that both its halves passed");
+    }
+
+    /// <summary>
+    /// Renaming a POU's file and nothing else changes nothing, and says why.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This test was written to assert the opposite, and the opposite was wrong.</b> It
+    /// expected the object to be renamed and its GUID preserved. What it found is that an
+    /// <c>ST_FULL</c> file opens <c>PROGRAM Simulation</c> — <b>the object's name lives in the
+    /// content</b> — so renaming the file alone leaves the declaration naming the object what
+    /// it always was, and there is nothing to rename it to.
+    /// </para>
+    /// <para>
+    /// <b>It caught a real defect doing so.</b> The planner paired the files and emitted a
+    /// rename whose old and new names were equal; the script performed neither operation,
+    /// found the object exactly where it had left it, and counted a success. A fourth silent
+    /// false success in this path, and the one the rename phase's own verification could not
+    /// catch — the object never had to move for the check to pass.
+    /// </para>
+    /// <para>
+    /// <b>What this means for Phase 3's step 1</b>, stated because it is easy to miss: exact
+    /// content matching can only detect a rename for a form whose content does <i>not</i>
+    /// carry the object's name. That is actions and transitions (<c>ST_IMPL</c>), and the
+    /// fixture has none. A genuine POU rename edits the declaration too, so its content
+    /// changes and it is a <b>rename-and-edit</b> — step 2, not built.
+    /// </para>
+    /// </remarks>
+    [SkippableFact]
+    public async Task Renaming_only_a_POUs_file_leaves_the_object_alone_and_explains_itself()
+    {
+        var install = Install;
+        Skip.If(install is null, "no CODESYS installation with a profile");
+        Skip.If(!File.Exists(FixtureProject), "fixture project missing");
+
+        await InitRepoAsync();
+        var git = new GitCliClient(_repo, logger: new TestLogger(output));
+        var setup = new RepoSetup(_repo, CodesysProjectFormat.Instance);
+
+        var adopted = await setup.AdoptAsync(
+            ProjectRelativePath, git, install!.Profiles[0], CancellationToken.None);
+        var binding = adopted.Config.Bindings[0];
+        var orchestrator = BuildOrchestrator(adopted.Config, install);
+
+        Assert.Equal(SyncVerdict.Completed, (await Export(orchestrator, binding.Id)).Verdict);
+        await orchestrator.ReleaseAfterPushAsync("c1", CancellationToken.None);
+
+        var mirror = Path.Combine(_repo, "plc", "RefrigeratorControl");
+        var app = Path.Combine(mirror, RelApp);
+        var before = Versio.Core.Projects.ProjectManifest.Parse(
+            await File.ReadAllTextAsync(Path.Combine(mirror, "_manifest.json")));
+
+        var original = Assert.Single(
+            before.Objects, o => o.Path.EndsWith("Simulation.st", StringComparison.Ordinal));
+        output.WriteLine($"before: {original.Path} guid={original.Guid}");
+
+        // The rename, exactly as somebody would do it: move the file, change nothing in it.
+        // The declaration still says PROGRAM Simulation, and that is deliberate — the object's
+        // new name comes from the file this time, because the DECLARATION is what the create
+        // path reads and a rename target's name is the one thing a stem legitimately decides.
+        File.Move(Path.Combine(app, "Simulation.st"), Path.Combine(app, "Renamed.st"));
+
+        var outcome = await TextChanged(orchestrator, binding.Id);
+        output.WriteLine($"import — {outcome.Verdict}: {SyncNarrative.Describe(outcome)}");
+        Assert.Equal(SyncVerdict.Completed, outcome.Verdict);
+
+        // No FORM_NOT_UNDERSTOOD: the rename target is a skip kind the script has to
+        // recognise, and it did not until real CODESYS said so.
+        Assert.DoesNotContain(outcome.Warnings,
+            w => w.Contains("FORM_NOT_UNDERSTOOD", StringComparison.Ordinal));
+
+        var after = Versio.Core.Projects.ProjectManifest.Parse(await File.ReadAllTextAsync(
+            Path.Combine(await ReExport(install, binding.Id, "verify-rename"), "_manifest.json")));
+
+        // THE OBJECT IS UNTOUCHED — same path, same GUID. Not renamed, and just as importantly
+        // not DELETED: pairing the departed file with the arrived one is what withdraws the
+        // deletion, so the object survives a file rename that says nothing about its name.
+        var still = Assert.Single(
+            after.Objects, o => o.Path.EndsWith("Simulation.st", StringComparison.Ordinal));
+        output.WriteLine($"after:  {still.Path} guid={still.Guid}");
+        Assert.Equal(original.Guid, still.Guid);
+
+        // And no duplicate was built from the arrived file, which is what a plain
+        // delete-plus-create would have produced.
+        Assert.DoesNotContain(after.Objects,
+            o => o.Path.EndsWith("Renamed.st", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// A POU renamed properly — file <i>and</i> declaration — is renamed, not rebuilt.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The case step 1 could not see, and the common one.</b> Renaming a POU rewrites
+    /// <c>PROGRAM Simulation</c> to <c>PROGRAM Renamed</c>, so the whole-file hash matches
+    /// nothing. The implementation is untouched, and manifest schema 6 records it — that is the
+    /// signal this pairs on.
+    /// </para>
+    /// <para>
+    /// <b>The GUID is the assertion.</b> A delete-plus-create would also leave a project
+    /// containing an object called <c>Renamed</c> — with a new identity, and with every
+    /// reference, task assignment and visualisation binding that pointed at the old one left
+    /// pointing at nothing. A test checking only the name would pass against the exact behaviour
+    /// this exists to replace.
+    /// </para>
+    /// </remarks>
+    [SkippableFact]
+    public async Task A_POU_renamed_in_the_mirror_keeps_its_identity_rather_than_being_rebuilt()
+    {
+        var install = Install;
+        Skip.If(install is null, "no CODESYS installation with a profile");
+        Skip.If(!File.Exists(FixtureProject), "fixture project missing");
+
+        await InitRepoAsync();
+        var git = new GitCliClient(_repo, logger: new TestLogger(output));
+        var setup = new RepoSetup(_repo, CodesysProjectFormat.Instance);
+
+        var adopted = await setup.AdoptAsync(
+            ProjectRelativePath, git, install!.Profiles[0], CancellationToken.None);
+        var binding = adopted.Config.Bindings[0];
+        var orchestrator = BuildOrchestrator(adopted.Config, install);
+
+        Assert.Equal(SyncVerdict.Completed, (await Export(orchestrator, binding.Id)).Verdict);
+        await orchestrator.ReleaseAfterPushAsync("c1", CancellationToken.None);
+
+        var mirror = Path.Combine(_repo, "plc", "RefrigeratorControl");
+        var app = Path.Combine(mirror, RelApp);
+        var before = Versio.Core.Projects.ProjectManifest.Parse(
+            await File.ReadAllTextAsync(Path.Combine(mirror, "_manifest.json")));
+
+        var original = Assert.Single(
+            before.Objects, o => o.Path.EndsWith("Simulation.st", StringComparison.Ordinal));
+        output.WriteLine($"before: {original.Path} guid={original.Guid}");
+
+        // Schema 6 is what makes this reachable at all: without a recorded implementation hash
+        // there is nothing to pair the departed file with.
+        Assert.NotEqual(string.Empty, original.ImplementationHash);
+
+        // A REAL rename: the file moves AND the declaration is rewritten, exactly as renaming
+        // the object in the IDE and re-exporting would leave the mirror.
+        var source = Path.Combine(app, "Simulation.st");
+        var body = await File.ReadAllTextAsync(source);
+        File.Delete(source);
+        await File.WriteAllTextAsync(
+            Path.Combine(app, "Renamed.st"),
+            body.Replace("PROGRAM Simulation", "PROGRAM Renamed", StringComparison.Ordinal),
+            new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+
+        var outcome = await TextChanged(orchestrator, binding.Id);
+        output.WriteLine($"import — {outcome.Verdict}: {SyncNarrative.Describe(outcome)}");
+        Assert.Equal(SyncVerdict.Completed, outcome.Verdict);
+        Assert.DoesNotContain(outcome.Warnings,
+            w => w.Contains("RENAME_NOT_APPLIED", StringComparison.Ordinal));
+
+        var after = Versio.Core.Projects.ProjectManifest.Parse(await File.ReadAllTextAsync(
+            Path.Combine(await ReExport(install, binding.Id, "verify-pou-rename"),
+                         "_manifest.json")));
+
+        Assert.DoesNotContain(after.Objects,
+            o => o.Path.EndsWith("Simulation.st", StringComparison.Ordinal));
+
+        var renamed = Assert.Single(
+            after.Objects, o => o.Path.EndsWith("Renamed.st", StringComparison.Ordinal));
+        output.WriteLine($"after:  {renamed.Path} guid={renamed.Guid}");
+
+        // THE WHOLE POINT: the same object under a new name, not a new object wearing it.
+        Assert.Equal(original.Guid, renamed.Guid);
+
+        // AND THE THING THE GUID IS A PROXY FOR, MEASURED RATHER THAN INFERRED.
+        //
+        // "References and task assignments survive" was written into the README, the plan and
+        // the confirmation dialog as the reason a rename beats a delete-plus-create — on the
+        // strength of GUID equality, never checked. This assertion was added to check it, and
+        // it FAILED: a task's POU list is stored BY NAME, rename() does not rewrite it, and
+        // MainTask went on listing Simulation, a POU that no longer existed.
+        //
+        // So the import repoints it. `pous.replace(index, newName)` is the one spelling that
+        // works — remove(name) reports success and does nothing, remove(index) raises, and
+        // replace(name, name) raises — all measured, all recorded in CODESYS.md.
+        //
+        // THE PROJECT MUST NOT BE LEFT NAMING SOMETHING THAT IS NOT THERE, which is what makes
+        // this an assertion about correctness rather than tidiness.
+        var tasks = await File.ReadAllTextAsync(Path.Combine(
+            await ReExport(install, binding.Id, "verify-refs"),
+            RelApp, "Task Configuration.tasks.yaml"));
+
+        output.WriteLine(tasks);
+        Assert.Contains("- Renamed", tasks, StringComparison.Ordinal);
+        Assert.DoesNotContain("- Simulation", tasks, StringComparison.Ordinal);
+
+        // The rest of the list is untouched: retargeting is per entry, not a rewrite of the
+        // task, so a POU that had nothing to do with the rename is still there.
+        Assert.Contains("- PLC_PRG", tasks, StringComparison.Ordinal);
+
+        // And the new declaration actually reached the object. The rename is followed by
+        // APPLYING the file — skip that and the object wears its new name over its old
+        // declaration, which re-exports as `PROGRAM Simulation` in a file called Renamed.st.
+        var reExported = await File.ReadAllTextAsync(
+            Path.Combine(await ReExport(install, binding.Id, "verify-pou-decl"),
+                         RelApp, "Renamed.st"));
+        Assert.Contains("PROGRAM Renamed", reExported, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A POU renamed <i>and</i> edited is still recognised, from its content at HEAD.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The last case Phase 3 could not see, and the only one needing git.</b> Both the name
+    /// and the body changed, so neither the whole-file hash nor the implementation hash matches
+    /// anything — the manifest records hashes, and a hash cannot be compared for similarity.
+    /// The departed file's actual bytes exist in exactly one place: the last commit.
+    /// </para>
+    /// <para>
+    /// <b>This is what makes the git plumbing load-bearing rather than speculative.</b> The
+    /// mirror is committed first on purpose; without a commit there is no old copy and the
+    /// import correctly falls back to a delete and a create.
+    /// </para>
+    /// </remarks>
+    [SkippableFact]
+    public async Task A_POU_renamed_and_edited_together_is_recognised_from_its_content_at_HEAD()
+    {
+        var install = Install;
+        Skip.If(install is null, "no CODESYS installation with a profile");
+        Skip.If(!File.Exists(FixtureProject), "fixture project missing");
+
+        await InitRepoAsync();
+        var git = new GitCliClient(_repo, logger: new TestLogger(output));
+        var setup = new RepoSetup(_repo, CodesysProjectFormat.Instance);
+
+        var adopted = await setup.AdoptAsync(
+            ProjectRelativePath, git, install!.Profiles[0], CancellationToken.None);
+        var binding = adopted.Config.Bindings[0];
+        var orchestrator = BuildOrchestrator(adopted.Config, install, git);
+
+        Assert.Equal(SyncVerdict.Completed, (await Export(orchestrator, binding.Id)).Verdict);
+        await orchestrator.ReleaseAfterPushAsync("c1", CancellationToken.None);
+
+        var mirror = Path.Combine(_repo, "plc", "RefrigeratorControl");
+        var app = Path.Combine(mirror, RelApp);
+        var before = Versio.Core.Projects.ProjectManifest.Parse(
+            await File.ReadAllTextAsync(Path.Combine(mirror, "_manifest.json")));
+        var original = Assert.Single(
+            before.Objects, o => o.Path.EndsWith("Simulation.st", StringComparison.Ordinal));
+
+        // COMMIT THE MIRROR. Everything below turns on HEAD having the departed file, and
+        // without this the test would pass for the wrong reason — by falling back.
+        await git.StageAsync(["."], CancellationToken.None);
+        await git.CommitAsync("mirror", CancellationToken.None);
+
+        // Renamed AND edited: the declaration's name changes and a line is added to the body,
+        // so the implementation hash cannot pair them either.
+        var source = Path.Combine(app, "Simulation.st");
+        var body = await File.ReadAllTextAsync(source);
+        File.Delete(source);
+        await File.WriteAllTextAsync(
+            Path.Combine(app, "Renamed.st"),
+            body.Replace("PROGRAM Simulation", "PROGRAM Renamed", StringComparison.Ordinal)
+                + "\n(* one more line *)\n",
+            new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+
+        var outcome = await TextChanged(orchestrator, binding.Id);
+        output.WriteLine($"import — {outcome.Verdict}: {SyncNarrative.Describe(outcome)}");
+        Assert.Equal(SyncVerdict.Completed, outcome.Verdict);
+
+        var after = Versio.Core.Projects.ProjectManifest.Parse(await File.ReadAllTextAsync(
+            Path.Combine(await ReExport(install, binding.Id, "verify-similar"),
+                         "_manifest.json")));
+
+        var renamed = Assert.Single(
+            after.Objects, o => o.Path.EndsWith("Renamed.st", StringComparison.Ordinal));
+        output.WriteLine($"after: {renamed.Path} guid={renamed.Guid}");
+
+        // Same object, despite nothing hashing the same on either side.
+        Assert.Equal(original.Guid, renamed.Guid);
+        Assert.DoesNotContain(after.Objects,
+            o => o.Path.EndsWith("Simulation.st", StringComparison.Ordinal));
+    }
+
+    /// <summary>Where the fixture's objects live, relative to a mirror root.</summary>
+    private static string RelApp => Path.Combine("Device", "Plc Logic", "Application");
+
+    /// <summary>
+    /// Export the project into a scratch directory, through the runner.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not through the orchestrator: it recorded the project's hash when the
+    /// import wrote it, so it answers <c>NoChange</c> — correctly. This asks CODESYS what the
+    /// project contains now, which is the only thing that can tell an applied change from a
+    /// parsed one.
+    /// </remarks>
+    private async Task<string> ReExport(CodesysInstall install, string bindingId, string into)
+    {
+        var target = Path.Combine(_repo, ".versio", "local", into);
+
+        var result = await new LocalCodesysRunner(
+                install.ExecutablePath, new ScriptExtractor(), new TestLogger(output))
+            .RunAsync(new CodesysJob
+            {
+                Operation = CodesysOperation.Export,
+                Profile = install.Profiles[0],
+                Projects =
+                [
+                    new ProjectJob
+                    {
+                        BindingId = bindingId,
+                        ProjectPath = Path.Combine(_repo, "plc", "RefrigeratorControl.project"),
+                        Path = target,
+                    },
+                ],
+                Timeout = TimeSpan.FromMinutes(5),
+            }, null, CancellationToken.None);
+
+        Assert.True(result.Succeeded, $"the verification export failed: {result.FailureReason}");
+        return target;
+    }
+
+    /// <summary>
+    /// Rewrite one object's recorded hash so the live object cannot match it.
+    /// </summary>
+    /// <remarks>
+    /// Stands in for "somebody edited this in the IDE since the last export", which is the
+    /// only state the script's content check is looking for — and which it cannot tell apart
+    /// from this, because comparing the live object against the recorded hash is the whole of
+    /// the check.
+    /// </remarks>
+    private static string PoisonHashFor(string manifest, string fileName)
+    {
+        const string key = "\"hash\": \"";
+
+        var at = manifest.IndexOf(fileName, StringComparison.Ordinal);
+        Assert.True(at > 0, $"{fileName} is not in the manifest");
+
+        // BACKWARDS from the path, not forwards. The manifest is written with sort_keys, so
+        // an object's members are alphabetical and `hash` comes BEFORE `path` — searching
+        // forward finds the NEXT object's hash and poisons a record this test never touches.
+        // It did exactly that first time round: the deletion went ahead, the assertion failed
+        // on an empty warning list, and nothing about the code under test was wrong.
+        var hashAt = manifest.LastIndexOf(key, at, StringComparison.Ordinal);
+        Assert.True(hashAt > 0, $"no hash recorded before {fileName}");
+
+        // And prove it belongs to the same record: no object boundary may sit between them.
+        Assert.DoesNotContain("}", manifest[hashAt..at], StringComparison.Ordinal);
+
+        var valueAt = hashAt + key.Length;
+        var end = manifest.IndexOf('"', valueAt);
+        Assert.True(end > valueAt, "the recorded hash is not a string");
+
+        return manifest[..valueAt]
+               + "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+               + manifest[end..];
     }
 
     private static Task<SyncOutcome> Export(SyncOrchestrator orchestrator, string bindingId) =>
@@ -641,8 +1353,14 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
     private static string FixtureProject =>
         Core.Tests.TestPaths.Project("RefrigeratorControl.project");
 
+    /// <param name="git">
+    /// Supplied only by the test that needs a departed file's content from HEAD. Everything
+    /// else leaves it null and the orchestrator uses <c>NoHistory</c>, which is the same state
+    /// as an uncommitted mirror — so no other test's behaviour depends on git being reachable.
+    /// </param>
     private SyncOrchestrator BuildOrchestrator(
-        RepoConfig config, CodesysInstall? install, Versio.Core.Plc.IPlcRunner? runner = null)
+        RepoConfig config, CodesysInstall? install, GitCliClient? git = null,
+        Versio.Core.Plc.IPlcRunner? runner = null)
     {
         var machine = new MachineIdentity();
         return new SyncOrchestrator(
@@ -660,7 +1378,8 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
             new WindowsFileSystem(),
             runner ?? new LocalCodesysRunner(
                 install!.ExecutablePath, new ScriptExtractor(), new TestLogger(output)),
-            new JsonLockStore(_repo));
+            new JsonLockStore(_repo),
+            history: git is null ? null : new GitHistoricContent(git));
     }
 
     private async Task InitRepoAsync()
@@ -668,9 +1387,96 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
         Directory.CreateDirectory(Path.Combine(_repo, "plc"));
         File.Copy(FixtureProject, Path.Combine(_repo, "plc", "RefrigeratorControl.project"));
 
+        // COPYING THE `.opt` SIDECARS WAS TRIED HERE AND REMOVED, because it was watching
+        // nothing. `A_task_priority_edited_…` asserts the sidecars are beside the project
+        // before its second import; deleting the copy left that assertion green, because
+        // CODESYS writes its own `<project>-<user>-<machine>.opt` pair the first time it opens
+        // the project - which every test here does, on its first export, long before it
+        // imports.
+        //
+        // That corrects the loose end this came from, which read "none imports with the
+        // project's sidecars present". The `.opt` half of it was never true: they are there by
+        // import time in every test that exports first. What was genuinely missing is the
+        // compile cache and the second cycle, and those are what the test now covers.
         await RunGitAsync("init", "-b", "main");
         await RunGitAsync("config", "user.email", "test@versio.local");
         await RunGitAsync("config", "user.name", "Versio Test");
+    }
+
+    /// <summary>Everything CODESYS has left beside the project, newest state, sorted.</summary>
+    private List<string> Sidecars() =>
+        [.. Directory.EnumerateFiles(Path.Combine(_repo, "plc"))
+            .Select(f => Path.GetFileName(f)!)
+            .Where(f => !f.EndsWith(".project", StringComparison.Ordinal))
+            .OrderBy(f => f, StringComparer.Ordinal)];
+
+    /// <summary>
+    /// Read one field of one named task out of a <c>.tasks.yaml</c>, by indent, without a
+    /// parser.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not <c>LibraryCatalog</c>-shaped and deliberately not shared with the
+    /// production reader. The point of this test is to check what CODESYS holds after an
+    /// import, and reading the file back with the same code that wrote it would let a bug
+    /// common to both sides cancel out. Twenty lines of dumb line-scanning cannot agree with
+    /// the emitter by accident.
+    ///
+    /// Returns a sentence rather than throwing or returning null on a miss, so a failed
+    /// assertion says which field was not found instead of a bare "expected 9, got ".
+    /// </remarks>
+    private static string FieldOf(string yaml, string task, string field)
+    {
+        const string NameKey = "  - name: ";
+        var wanted = $"    {field}: ";
+        var inTask = false;
+
+        foreach (var line in yaml.Replace("\r\n", "\n").Split('\n'))
+        {
+            if (line.StartsWith(NameKey, StringComparison.Ordinal))
+            {
+                inTask = line[NameKey.Length..].Trim().Trim('"') == task;
+            }
+            else if (inTask && line.StartsWith(wanted, StringComparison.Ordinal))
+            {
+                return line[wanted.Length..].Trim().Trim('"');
+            }
+        }
+
+        return $"<no {field} on a task called {task}>";
+    }
+
+    /// <summary>Rewrite one field of one named task, asserting it hit exactly one line.</summary>
+    /// <remarks>
+    /// The count assertion is the guard that matters. A blind string replace over this file
+    /// would also match <c>watchdogSensitivity: "1"</c> or the other task's value, and a test
+    /// that edits the wrong line still goes green when the importer does nothing - it would be
+    /// asserting that an unchanged value stayed unchanged.
+    /// </remarks>
+    private static string WithField(string yaml, string task, string field, string value)
+    {
+        const string NameKey = "  - name: ";
+        var wanted = $"    {field}: ";
+        var lines = yaml.Replace("\r\n", "\n").Split('\n');
+        var inTask = false;
+        var rewritten = 0;
+
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (lines[i].StartsWith(NameKey, StringComparison.Ordinal))
+            {
+                inTask = lines[i][NameKey.Length..].Trim().Trim('"') == task;
+            }
+            else if (inTask && lines[i].StartsWith(wanted, StringComparison.Ordinal))
+            {
+                lines[i] = wanted + value;
+                inTask = false;
+                rewritten++;
+            }
+        }
+
+        Assert.True(rewritten == 1,
+                    $"expected to rewrite exactly one {field} line for {task}, rewrote {rewritten}");
+        return string.Join("\n", lines);
     }
 
     private async Task RunGitAsync(params string[] args)

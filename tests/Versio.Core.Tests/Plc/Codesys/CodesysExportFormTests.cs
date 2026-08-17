@@ -124,8 +124,31 @@ public class ExportFormRulesTests
         // change form.
         Assert.Equal(ExportForm.StFull,
             ExportFormRules.Decide(CodesysObjectType.Pou, true, true, hasChildren: true));
-        Assert.Equal(ExportForm.NativeRecursive,
+        // TaskConfiguration is the example here because it is a mapped type that really does
+        // have children. Its form moved NativeRecursive -> TaskBoth in Phase 4; what this
+        // test asserts is unchanged, which is that the unknown-container rule did not touch it.
+        Assert.Equal(ExportForm.TaskBoth,
             ExportFormRules.Decide(CodesysObjectType.TaskConfiguration, false, false, hasChildren: true));
+    }
+
+    [Fact]
+    public void Task_configuration_exports_both_forms_because_its_native_XML_must_not_be_imported()
+    {
+        // Not a readability preference. Round-tripping task configuration through
+        // import_native cost two measured defects: Core2 - a task's CPU core affinity -
+        // rewritten on every import without being asked, and every import after the first
+        // throwing on the task objects while the run reported failed: 0.
+        //
+        // TaskBoth writes the native XML for fidelity and a .tasks.yaml that is the
+        // importable half, which is what takes the file off that path.
+        Assert.Equal(ExportForm.TaskBoth,
+            ExportFormRules.Decide(CodesysObjectType.TaskConfiguration, false, false));
+
+        // The textual fallbacks must not touch it: it has neither a declaration nor an
+        // implementation, and a rule that downgraded it to Native would put it straight back
+        // where it started.
+        Assert.Equal(ExportForm.TaskBoth,
+            ExportFormRules.Decide(CodesysObjectType.TaskConfiguration, true, true));
     }
 
     [Theory]

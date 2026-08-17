@@ -148,8 +148,28 @@ public sealed class AsyncCommand<T>(
 
     public event EventHandler? CanExecuteChanged;
 
+    /// <summary>
+    /// True from the moment the command is invoked until its task completes.
+    /// </summary>
+    /// <remarks>
+    /// <b>Public to match <see cref="AsyncCommand"/>, which has always exposed it.</b> The two
+    /// had the same field and only one had the property, so the generic command could not be
+    /// asked whether it had finished — and <c>Execute</c> is <c>async void</c>, so there is no
+    /// other way to know. Set before the first await and cleared in a <c>finally</c>, which is
+    /// what makes it a sound completion signal rather than a hint.
+    /// </remarks>
+    public bool IsRunning
+    {
+        get => _isRunning;
+        private set
+        {
+            _isRunning = value;
+            RaiseCanExecuteChanged();
+        }
+    }
+
     public bool CanExecute(object? parameter) =>
-        !_isRunning && parameter is T typed && (canExecute?.Invoke(typed) ?? true);
+        !IsRunning && parameter is T typed && (canExecute?.Invoke(typed) ?? true);
 
     public async void Execute(object? parameter)
     {
@@ -158,8 +178,7 @@ public sealed class AsyncCommand<T>(
             return;
         }
 
-        _isRunning = true;
-        RaiseCanExecuteChanged();
+        IsRunning = true;
 
         try
         {
@@ -171,8 +190,7 @@ public sealed class AsyncCommand<T>(
         }
         finally
         {
-            _isRunning = false;
-            RaiseCanExecuteChanged();
+            IsRunning = false;
         }
     }
 

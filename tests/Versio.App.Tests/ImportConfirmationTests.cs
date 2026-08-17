@@ -34,7 +34,12 @@ public sealed class ImportConfirmationTests
     private static ShellViewModel Shell(out InMemoryLogSink sink) => TestShell.Build(out sink);
 
     /// <summary>A repository with one tracked project whose mirror is already exported.</summary>
-    private static void GivenATrackedProject(TempRepo repo)
+    /// <remarks>
+    /// Internal because <see cref="ImportPlanHandoverTests"/> needs exactly this repository —
+    /// one binding, one manifest that records one object, and a mirror already committed. Two
+    /// fixtures drifting apart is how one of them ends up testing a layout nothing ships.
+    /// </remarks>
+    internal static void GivenATrackedProject(TempRepo repo)
     {
         var versio = Path.Combine(repo.Path, ".versio");
         Directory.CreateDirectory(versio);
@@ -80,11 +85,11 @@ public sealed class ImportConfirmationTests
             DateTimeOffset.UtcNow,
             WatchTier.Watcher);
 
-    private static string ProjectPath(TempRepo repo) =>
+    internal static string ProjectPath(TempRepo repo) =>
         Path.Combine(repo.Path, "plc", "Machine.project");
 
     /// <summary>Edit the exported text, which is the whole point of the mirror.</summary>
-    private static async Task EditTheMirrorAndSettle(TempRepo repo, ShellViewModel shell)
+    internal static async Task EditTheMirrorAndSettle(TempRepo repo, ShellViewModel shell)
     {
         await File.AppendAllTextAsync(
             Path.Combine(repo.Path, "plc", "Machine", "App", "FB_Motor.st"), "// edited\n");

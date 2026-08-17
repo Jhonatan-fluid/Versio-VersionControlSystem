@@ -118,8 +118,33 @@ public sealed class GitIgnoreTests
         var patterns = CodesysProjectFormat.Instance
             .TransientPatternsFor("plc/machines/Machine.project");
 
-        Assert.Equal(["plc/machines/Machine.~u*", "plc/machines/Machine-*.opt"], patterns);
+        Assert.Equal(
+            [
+                "plc/machines/Machine.~u*",
+                "plc/machines/Machine-*.opt",
+                "plc/machines/Machine_project.precompilecache",
+            ],
+            patterns);
         Assert.All(patterns, p => Assert.StartsWith("plc/machines/", p, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void The_precompile_cache_is_ignored_and_its_dot_becomes_an_underscore()
+    {
+        // Machine.project produces Machine_project.precompilecache - the extension's dot is
+        // replaced, not kept and not dropped. Confirmed across six projects on 3.5.22.20.
+        // Getting this wrong is silent: a pattern matching nothing looks exactly like a
+        // pattern matching a file that is not there.
+        //
+        // It is the largest of the three transient files - 277 KB beside the fixture - and it
+        // was missing from this list until an import defect turned out to be caused by it.
+        // This repository never noticed, because *.precompilecache was typed into its own
+        // .gitignore by hand; a repository Versio adopted got no rule at all.
+        var patterns = CodesysProjectFormat.Instance.TransientPatternsFor("plc/Machine.project");
+
+        Assert.Contains("plc/Machine_project.precompilecache", patterns);
+        Assert.DoesNotContain("plc/Machine.project.precompilecache", patterns);
+        Assert.DoesNotContain("plc/Machine.precompilecache", patterns);
     }
 
     [Fact]
@@ -138,7 +163,8 @@ public sealed class GitIgnoreTests
     {
         var patterns = CodesysProjectFormat.Instance.TransientPatternsFor("odd/name");
 
-        Assert.Equal(["odd/name.~u*", "odd/name-*.opt"], patterns);
+        Assert.Equal(
+            ["odd/name.~u*", "odd/name-*.opt", "odd/name_project.precompilecache"], patterns);
         Assert.Empty(CodesysProjectFormat.Instance.TransientPatternsFor(string.Empty));
     }
 }

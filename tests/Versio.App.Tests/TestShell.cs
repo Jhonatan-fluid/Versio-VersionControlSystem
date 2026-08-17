@@ -61,13 +61,23 @@ internal static class TestShell
     /// requires a process name starting with "Versio", so no pid a test can reach ever looks
     /// like a live instance.
     /// </param>
-    public static ShellViewModel Build(out InMemoryLogSink sink, IProcessProbe? processes = null)
+    /// <param name="toolchain">
+    /// Injected only by tests that need to get <i>past</i> the toolchain rather than be
+    /// refused by it. The default is no toolchain at all, which is what every test wants that
+    /// is asserting on a refusal, a banner or a prompt — and what made the confirmed import
+    /// path unreachable from this suite until <see cref="CapturingToolchain"/> existed.
+    /// </param>
+    public static ShellViewModel Build(
+        out InMemoryLogSink sink,
+        IProcessProbe? processes = null,
+        Versio.Core.Plc.IPlcToolchain? toolchain = null)
     {
         sink = new InMemoryLogSink();
 
         var logger = new VersioLogger(new SystemClock()).AddSink(sink);
 
         return new ShellViewModel(
-            logger, new LogViewModel(sink), toolchains: (_, _) => null, processes: processes);
+            logger, new LogViewModel(sink), toolchains: (_, _) => toolchain,
+            processes: processes);
     }
 }

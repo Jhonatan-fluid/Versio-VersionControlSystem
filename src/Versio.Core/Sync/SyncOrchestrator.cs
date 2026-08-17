@@ -126,6 +126,7 @@ public sealed class SyncOrchestrator
     /// engine assumed before anybody asked.
     /// </summary>
     private readonly IConflictProbe _conflicts;
+    private readonly IHistoricContentProbe _history;
 
     public SyncOrchestrator(
         string repoRoot,
@@ -139,10 +140,12 @@ public sealed class SyncOrchestrator
         IProgress<PlcProgress>? progress = null,
         IVersioLogger? logger = null,
         IProjectOccupancyProbe? occupancy = null,
-        IConflictProbe? conflicts = null)
+        IConflictProbe? conflicts = null,
+        IHistoricContentProbe? history = null)
     {
         _occupancy = occupancy;
         _conflicts = conflicts ?? NoConflicts.Instance;
+        _history = history ?? NoHistory.Instance;
         _repoRoot = repoRoot;
         _owner = owner;
         _progress = progress;
@@ -891,7 +894,8 @@ public sealed class SyncOrchestrator
             return operation == PlcOperation.Export
                 ? await ExportAsync(attempt.Binding, transition, scratchProject, operationId, ct)
                     .ConfigureAwait(false)
-                : await ImportAsync(attempt.Binding, transition, operationId, ct)
+                : await ImportAsync(attempt.Binding, transition, operationId,
+                                    attempt.Job.Plan, ct)
                     .ConfigureAwait(false);
         }
         finally
@@ -1516,11 +1520,100 @@ public sealed class SyncOrchestrator
         }
     }
 
+    /// <summary>
+    /// Decide what importing a binding's mirror would do, without starting the toolchain.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The IO half of planning.</b> The rules are pure and belong to the vendor —
+    /// <see cref="IPlcProjectFormat.PlanImport"/> — but somebody has to read the manifest and
+    /// walk the mirror, and that has to happen where a confirmation dialog can wait for it:
+    /// 17–31 s before CODESYS starts, not inside it. It runs on <see cref="IFileSystem"/>,
+    /// which is why this can sit in <c>Versio.Core</c> at all.
+    /// </para>
+    /// <para>
+    /// <b>Vendor knowledge stays behind the seam.</b> This method knows there is a manifest
+    /// and that some files need their text loaded; it does not know which suffixes, what a
+    /// form is, or that CODESYS exists. The format answers both questions —
+    /// <see cref="IPlcProjectFormat.NeedsTextToPlan"/> per file, then
+    /// <see cref="IPlcProjectFormat.PlanImport"/> once — and this walks the disk for it.
+    /// </para>
+    /// <para>
+    /// Returns null when the binding is unknown or no registered format claims its project,
+    /// which is the same answer as "there is nothing to import here" and never a throw: this
+    /// is called speculatively, to fill in a dialog.
+    /// </para>
+    /// </remarks>
+    public async Task<ImportPlan?> PlanImportAsync(string bindingId, CancellationToken ct)
+    {
+        if (!_bindings.TryGetValue(bindingId, out var binding))
+        {
+            return null;
+        }
+
+        var format = PlcFormats.ForPath(binding.ProjectPath);
+        if (format is null)
+        {
+            return null;
+        }
+
+        return await PlanImportAsync(binding, format, ct).ConfigureAwait(false);
+    }
+
+    /// <remarks>
+    /// <b>The git client is handed over so a rename that also edited a file can be seen.</b>
+    /// Pairing a departed file with the one it became is exact while its content is unchanged;
+    /// once it has been edited too, the only copy of the old bytes is in HEAD, because the
+    /// manifest keeps a hash rather than the content. The reader fetches them and the planner
+    /// stays pure — it is handed content and never goes looking for any.
+    /// <para>
+    /// <c>binding.ExportPath</c> is repository-relative and the planner speaks mirror-relative,
+    /// so the export path is exactly the prefix that turns one into the other.
+    /// </para>
+    /// </remarks>
+    private Task<ImportPlan> PlanImportAsync(
+        ProjectBinding binding, IPlcProjectFormat format, CancellationToken ct) =>
+        ImportPlanReader.ReadAsync(
+            _fs, format, Absolute(binding.ExportPath), _log, LogCategory.Sync, binding.Id, ct,
+            _history, binding.ExportPath);
+
     private async Task<SyncOutcome> ImportAsync(
         ProjectBinding binding, TransitionResult transition, string operationId,
-        CancellationToken ct)
+        ImportPlan? agreed, CancellationToken ct)
     {
         var started = _clock.UtcNow;
+
+        // A MISSING mirror is not an empty one, and the difference is the whole outcome.
+        //
+        // An empty plan is a valid instruction meaning "touch no file", so an import of a
+        // mirror that is not there runs, changes nothing, and reports success — which reads
+        // as "your edits were applied". Until 2026-08-15 this was caught by accident:
+        // Directory.EnumerateFiles throws on a missing directory, and the plan walk called it
+        // straight. Moving that walk onto IFileSystem, whose EnumerateFiles answers [] for a
+        // root that is not there, turned the throw into a silent success.
+        //
+        // Refused before the backup, so a project is not copied aside for an import that
+        // cannot happen. Deleting a whole mirror is a real thing somebody does — and what it
+        // should MEAN is Phase 2's question, not something to answer by doing nothing quietly.
+        var mirror = Absolute(binding.ExportPath);
+        if (!_fs.DirectoryExists(mirror))
+        {
+            await ApplyAsync(binding.Id, SyncTrigger.ImportFailed, string.Empty, ct)
+                .ConfigureAwait(false);
+
+            var missing = $"the exported text at {binding.ExportPath} is not there, so there "
+                          + "is nothing to import; the project is unchanged";
+            _log.Error(LogCategory.Sync, $"{binding.Id}: {missing}");
+
+            return new SyncOutcome
+            {
+                Verdict = SyncVerdict.Failed,
+                BindingId = binding.Id,
+                Explanation = missing,
+                State = SyncDirection.Failed,
+                Duration = _clock.UtcNow - started,
+            };
+        }
 
         try
         {
@@ -1546,6 +1639,19 @@ public sealed class SyncOrchestrator
             };
         }
 
+        // The plan a person agreed to, when there was one, rather than a fresh one computed
+        // after they clicked. Recomputing here would make the confirmation dialog's account
+        // of what is about to happen true only by coincidence — see SyncJob.Plan.
+        //
+        // Without a confirmation there is nobody to have agreed, so one is computed now. A
+        // format that no longer claims the path leaves it null and the runner decides; that
+        // is the same door a test driving a runner directly comes through.
+        var plan = agreed;
+        if (plan is null && PlcFormats.ForPath(binding.ProjectPath) is { } format)
+        {
+            plan = await PlanImportAsync(binding, format, ct).ConfigureAwait(false);
+        }
+
         var job = new PlcJob
         {
             Operation = PlcOperation.Import,
@@ -1558,6 +1664,7 @@ public sealed class SyncOrchestrator
                     BindingId = binding.Id,
                     ProjectPath = Absolute(binding.ProjectPath),
                     Path = Absolute(binding.ExportPath),
+                    Plan = plan,
                 },
             ],
         };

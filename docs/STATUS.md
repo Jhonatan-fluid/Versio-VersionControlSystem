@@ -1,6 +1,104 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-15 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,384 unit + 478 UI + 192 integration, 0 skipped
+**Date:** 2026-08-16 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,494 unit + 480 UI + 243 integration, 0 skipped
+· *(integration now runs ~30 min, not the 10–16 it did before the import feature checklist added
+13 tests; run three times end to end on 2026-08-16 with no flake, plus every affected test
+individually — see the flake note in `CLAUDE.md`, which is about earlier runs)*
+
+> **⚠️ Versio removes, renames and moves objects in projects — Phases 2 and 3 of the import
+> plan, and the first things it does that destroy work.** Delete a `.st` from the mirror,
+> confirm the import, and the POU leaves the project. Read this before anything else in this
+> file.
+>
+> **Renaming is the safe half of that pair and is still worth knowing about**: a file renamed
+> in the mirror renames the *object*, keeping its GUID, and any task that ran it is repointed.
+> What Versio does **not** fix is a reference held by name that it does not know about — a
+> visualisation binding has never been measured.
+>
+> **It is built as a set of refusals with one door**, because P3 measured that CODESYS's
+> `remove()` takes referenced objects with it silently — no exception, no cascade, no warning,
+> so there is no toolchain backstop. The planner proposes a deletion only when five
+> preconditions hold (a trusted manifest, every file for the GUID gone, export-only records
+> neither voting nor vetoing, nothing surviving inside it at any depth, an owner chain recorded
+> rather than guessed); the confirmation dialog names every object; and the script makes the
+> one check only it can — that the live object still matches what was exported. **An object
+> edited in the IDE since the last export is kept**, because a missing mirror file says
+> somebody deleted a file, not that nobody touched the object.
+>
+> **Native objects are deleted too, as of the same day** — a GVL, a visualisation, a native
+> POU. The manifest's raw hash could never answer for them: it is over exported native bytes,
+> and a re-export of an untouched native object changes every cycle (P7). **Manifest schema 5
+> records the hash of the NORMALISED payload as well**, so a re-export has something to be
+> compared against, and the old side no longer has to come from the file that was deleted.
+> **A native object on a pre-schema-5 mirror stays refused until the next export** — an absent
+> hash is not evidence of an unchanged object.
+>
+> **The dialog says which objects will really go and which will really stay**, separately. It
+> did not for one commit: the script grew `remove()` while the dialog went on saying objects
+> *will stay*, and a green suite did not notice because the test pinning the wording asserted
+> the old sentence. It is the worst defect this project has shipped, it is written up in full
+> under Findings, and it is the reason the planner now predicts the script's own refusal.
+>
+> Proven against real CODESYS: a changed object is refused, an honest one is removed, a GVL
+> goes only when both its files check out — and, for the native check specifically, four
+> scenarios including one that makes a genuine IDE edit and demands the deletion be refused.
+> **Nothing else in the repository fails if this starts deleting the wrong things.**
+
+> **The import is plan-driven as of 2026-08-15 — Phase 1 of the import plan.** What an import
+> will do is decided C#-side by `CodesysImportPlanner`, pure, from `_manifest.json` and a
+> directory listing, before CODESYS starts; the job file (schema 2) carries the plan and
+> `versio_import.py` executes exactly it, deciding nothing. The filename-derived walk — the
+> shared root cause of gaps G3–G6 — is deleted, and a planless import job refuses to
+> serialize, so there is no door back to it. G3 and G6 are closed and **proven against real
+> CODESYS**: `PROGRAM Foo` in `Bar.st` creates `Foo`, and a `README.md` in the mirror is
+> warned about instead of being handed to CODESYS as native XML. See
+> [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md).
+
+> **Also 2026-08-15, on branch `GitImportPlan`: Phase 0 of the import plan started, and its
+> first probe found a defect that reaches users.** P7 measured what an import → export cycle does
+> to an unedited mirror — it churns forever, +3 per cycle, from two causes rather than one — and
+> in passing turned up that **every import after the first silently fails to apply task
+> configuration** on any machine where the project has been opened in the IDE. Root cause: a
+> stale `_project.precompilecache`. One half is fixed (`TransientPatternsFor` now ignores it);
+> **the import half is fixed too, later the same day — by Phase 4, which stops handing task
+> configuration to `import_native` at all, so the mitigation was never needed and Versio deletes
+> nothing of CODESYS's.** All three suites re-run green
+> afterwards — **1,385 + 478 + 192, 0 skipped**, integration 6m57s against real CODESYS. See the
+> findings, and [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md) for what P7 changed in the
+> plan itself.
+>
+> **Phase 4 of the import plan landed the same day, and it is the first product change this
+> work has produced beyond a `.gitignore` line.** Task configuration is exported as `TASK_BOTH` —
+> the native `.xml` for fidelity, a `.tasks.yaml` that is the importable half — and applied back
+> through typed property assignment instead of `import_native`. **G7 and G11 are both measured
+> closed:** `Core2` stopped moving, and three import cycles came back with zero warnings where
+> cycles 2 and 3 used to throw twice each. Versio deletes nothing of CODESYS's; the trigger is
+> simply never reached. Proven non-vacuously — editing the YAML and importing changes the project
+> and reads back changed.
+>
+> **And then a second read of Phase 4 found what closing G7 and G11 had opened.** Making the
+> `.tasks.yaml` the importable half made the `Task Configuration.xml` beside it a file the export
+> writes and the import silently discards — **the exact definition `_coverage.md` exists to
+> report** — and nothing reported it: the XML was still recorded `NATIVE_R`, so the coverage
+> report skipped it and the panel drew it as an ordinary editable row. It is recorded
+> `TASK_NATIVE` now, one-wayness is read from one list per side, and three guards watch it, each
+> **verified by breaking it deliberately**. The clearest evidence is that the code already knew:
+> `TaskBoth`'s own documentation said "its native XML is export-only" while the predicate 114
+> lines below in the same file still answered "libraries only" — a predicate that had **no caller
+> and no test in its entire life**. See the finding.
+>
+> **Phase 0 is now complete — all nine probes measured.** `rename` and `move` preserve identity
+> across a save and reopen, so Phase 3 is safe to build; the typed task API is sufficient, so
+> Phase 4 is; awkward object names cannot be created at all, which closes two gaps as
+> unreachable; and **four of the seven API spellings the plan had were wrong**, because
+> reflection says a member exists without saying what it accepts. The one bad answer is P3:
+> `remove()` deletes an object other objects reference **silently** — no throw, no cascade, no
+> warning — which makes Phase 2's preconditions the only protection there is rather than a
+> second layer of one.
+>
+> **One entry in that work was recorded as a cause before it was tested, and was wrong.** It is
+> kept in the finding rather than tidied away, because it is the clearest example in this file of
+> the difference between a story that fits the evidence and a cause.
 
 > **All three re-derived on 2026-08-15**, on branch `CodeAuditCleanup`, after the shell
 > decomposition: `GitAuthViewModel`, `GitRemoteViewModel` and `LogPanelView` out of
@@ -66,7 +164,7 @@ opens. That is `SAFEGUARDS.md` phases 1–8, and phase 9 is features rather than
 
 ```
   CODESYS pipeline    ████████████████████  proven on a real project
-  Domain core         ████████████████████  1,384 tests, under 400 ms
+  Domain core         ████████████████████  1,494 tests, under 400 ms
   Vendor seam         ████████████████████  enforced from assembly metadata
   Infrastructure      ████████████████████  drives real CODESYS + real git
   Desktop shell       ███████████████████░  full git surface, diff, and a UI audit applied
@@ -86,6 +184,9 @@ opens. That is `SAFEGUARDS.md` phases 1–8, and phase 9 is features rather than
 | Does an edited `.st` reach the project? | **Yes** — export, edit, import, verified byte-changed on the real fixture |
 | Can library references be read at all? | **Yes** — `libman.references`, iterated. Not `get_libraries()`, which returns names only, and not `references[i]`, which indexes by id and raises for a position |
 | Is a library reference's identity stable? | **No.** `ref.id` is re-minted on every open: 34 of 34 changed across two runs, with nothing else moving. Not recorded — the same trap as the `__VisualizationStyle` GUID, caught before it shipped this time |
+| Does an unedited mirror ever stop churning? | **It does now.** It did not: `UniqueIdGenerator` climbed +3 per import→export cycle and never settled, four of eight native files differing forever from **two** causes rather than one. Phase 5 keeps the existing bytes when the fresh export is equivalent to them, and `Measure-ImportStability.ps1` now prints **`P7: SETTLES`** with the counter flat across three cycles |
+| Is the mirror's churn *semantically* nothing? | **Yes** — all four churning files are `NativeXmlNormalizer`-equivalent, with symmetric mask counts on every one, which is what says they differ in the masked positions and nowhere else |
+| Does a fresh export still reproduce the committed mirror? | **Yes** — a P7 baseline export into a different directory, from a project with a different filename, was byte-identical to `fixtures/projects/RefrigeratorControl/` on every object file. The only differences were `bindingId` and `project` inside `_manifest.json`, which are the two fields that *should* differ. An incidental re-confirmation of determinism across a path change, which the fingerprint test does not cover |
 
 ### Known limitations, carried deliberately
 
@@ -110,8 +211,17 @@ opens. That is `SAFEGUARDS.md` phases 1–8, and phase 9 is features rather than
 - **Managed (fixed-version) library references are untested.** All 34 references in the fixture
   are placeholders, so the branch that reads `version`, `company` and `title` off a managed
   library is written from the API's description and has never run against a real one.
-- **Task configuration is diff-only.** `import_native` changes a task's `Core2` from `-1` to
-  `-2` unasked. Reproduced three times, pinned by a test, not masked.
+- ~~**Task configuration is diff-only.** `import_native` changes a task's `Core2` from `-1` to
+  `-2` unasked.~~ — **no longer true, as of Phase 4 on 2026-08-15.** A task configuration
+  exports as `TASK_BOTH` and its `.tasks.yaml` is applied back through typed property
+  assignment, so `import_native` never sees the object and `Core2` stops moving. The `Core2`
+  measurement itself still stands and is still pinned by a test — but that test reads
+  **committed bytes captured before Phase 4**, so it documents what `import_native` did rather
+  than guarding what Versio now does. **What is still limited, and deliberately:** the `.xml`
+  half is export-only (`TASK_NATIVE`), a task named in the YAML but absent from the project is
+  **warned about, never created**, and a task deleted from the YAML is **left alone** — removing
+  one is a deletion, and deletions are Phase 2. See G7 and G11 in
+  [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md).
 - **Graphical POUs export as native XML**, so their diffs will never read as well as ST.
   Inherent to the format.
 - **Interfaces, text lists, image pools** have export rules written and unit tested but never
@@ -201,6 +311,16 @@ unless something changes.
 > **Picking this up?** Items 1 and 2 are done and kept for their reasoning. Items 3–8 are
 > untouched: **item 3 is the smallest**, item 4 is the largest piece of user-visible value, and
 > nothing below depends on anything above it except where it says so.
+>
+> **This list is not the active work.** The import side has its own plan and its own queue —
+> [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md), whose *Handoff* section is the one to read
+> first, and whose **feature checklist** is what says which of its 49 behaviours have been run
+> against a real project and which have not. **Phases 0–5 there are complete and Phase 6 is
+> nearly done**; **G9 is guarded** as of 2026-08-16 and **G8 is the only gap left**.
+> **[What is left, and what it costs](CODESYS-IMPORT-PLAN.md#what-is-left-and-what-it-costs)**
+> is the table to read: one gap of about half a day, and four items that are decisions rather
+> than tasks. G9's remaining half is one of them — the worst case is reported but still
+> producible, and preventing it renames committed files in every mirror already written.
 
 > **The second queue — the code-shape work — is CLOSED, and three of its items were closed by
 > deciding not to do them.** It never had any bearing on what the product does. What was worth
@@ -380,6 +500,14 @@ being CODESYS-derived, and Studio 5000 the harshest.
 
 More fixture projects. Every field bug becomes a fixture before it is fixed.
 
+**A second one landed 2026-08-16**: `MachineWithMembers`, built against real CODESYS by
+`tools\versio_make_member_fixture.py` because the import feature checklist found five rows that
+`RefrigeratorControl` cannot reach — it has no member object of any kind, so it produces no
+`ST_IMPL`, no `NATIVE_R` and no recorded `parent`. The new one has a folder, a function block
+inside it, and a method, an action and a property inside that. **It closed A3, E1 and E3.** What
+is still uncovered is a name needing percent-encoding, which P5 measured cannot be created —
+it has to arrive from a library or an external-file reference.
+
 ---
 
 ## Handoff — the UI pass
@@ -430,6 +558,21 @@ has a window before believing a clean binding trace — see *Verifying the UI* b
 Small, specific, and none of them blocking. Written down because an audit that finds things and
 does not record them has to be run again.
 
+- **Launching the app against this repository adopts the 21 `phase0/` scratch projects and
+  starts exporting all of them.** Observed 2026-08-15 while doing the `CLAUDE.md` "run the app"
+  step: within a second of opening `C:/GIT/Versio` the log reads *"21 newly tracked project(s)
+  have never been exported; exporting now"*, the commit gate demands all 21, and it begins
+  driving real CODESYS — one project at a time, ~20 s each. It also writes 21 rule blocks into
+  `.gitattributes`, 21 into `.gitignore`, and 21 bindings into `.versio/repo.json`.
+  - **Not a defect — it is adoption working exactly as specified** on a repository that happens
+    to contain 22 tracked `.project` files because Phase 0 committed its probe corpus.
+  - **It matters anyway, twice.** It takes the machine-wide CODESYS lock, so it will fight a
+    running `Versio.Integration.Tests` and make both look slow; and the adoption files it
+    writes are unrelated working-tree changes that are easy to commit by accident. `git
+    checkout -- .gitattributes .gitignore .versio/repo.json` afterwards.
+  - **The launch itself is clean**: zero `ERR` lines, so the window constructed, the panels
+    realised and the bindings resolved. That is what the step is for; the rest is noise from
+    the corpus.
 - **Cancelling a running toolchain job is not implemented.** A change arriving mid-run is
   queued, which is correct and cheap; restarting instead would be better when the run has
   barely begun, and needs process cancellation plus cleanup of the staging folder a killed
@@ -446,6 +589,251 @@ does not record them has to be run again.
   three setters in `Buttons.xaml`. **13 → 0**, and the accessibility tests still pass, which is
   what proves the names resolve to the tooltips rather than to the empty string the fix
   introduced.
+- ~~**`TransientPatternsFor` does not name `_project.precompilecache`.**~~ — **fixed.** It
+  returned `[stem + ".~u*", stem + "-*.opt"]`, and its remarks say only observed files are
+  listed; this one was not observed, so an adopted repository had no rule for a 277 KB binary
+  compile cache CODESYS writes beside every project it opens, and *Stage all* would have
+  committed it. This repository was never exposed, because `*.precompilecache` had been typed
+  into `.gitignore` by hand — the same way the staging rule was present here and missing
+  everywhere else, which is why nobody noticed. The dot of `.project` becomes an underscore
+  (`Machine.project` → `Machine_project.precompilecache`), confirmed across six projects, and a
+  test asserts that shape specifically: a pattern matching nothing looks exactly like a pattern
+  matching a file that is not there. **Deleting the fix leaves three tests red**, two of them
+  pre-existing.
+- ~~**An import of a mirror that is not there reported success.**~~ — **found and fixed
+  2026-08-15, in a review of the change that caused it.** An empty plan is a valid instruction
+  meaning "touch no file", so an import whose mirror directory has gone ran, changed nothing,
+  and came back `Completed` — which a user reads as "my edits were applied".
+  - **It had been caught by accident, and the accident was removed.**
+    `Directory.EnumerateFiles` throws on a missing directory and the old plan walk called it
+    straight; moving that walk onto `IFileSystem`, whose `EnumerateFiles` answers `[]` for a
+    root that is not there, turned a throw into a silent success. **No test noticed**, because
+    none had ever pointed an import at a mirror that had gone.
+  - `ImportAsync` refuses before the backup now, so a project is not copied aside for an import
+    that cannot happen, and `ImportPlanReader` says in the log that the plan is empty *because
+    there is nothing there*.
+  - **Reaching it honestly took two corrections to the test**, both worth knowing. A fresh
+    binding answers `NoChange`, because "never synced" and "the mirror is gone" both hash to
+    nothing and the gate cannot tell them apart — correct, and it means the refusal is
+    reachable only once a real baseline exists. And deleting every *file* leaves the directory
+    behind, on a real filesystem as in the fake, so `FakeFileSystem` gained a `RemoveDirectory`
+    — until then the fake could not express "not there" at all, only "empty".
+  - **An emptied mirror is a different case and is still open**: the folder exists, the plan is
+    empty, everything lands in `MissingFromMirror`, and the run reports `Completed` having
+    applied nothing. That is Phase 2's question — it is at least logged, and the sentence names
+    the version limitation.
+- ~~**`Eventually.Press` did not wait for the command it pressed.**~~ — **fixed 2026-08-15,
+  and what it was hiding is worse than the bug.** `AsyncCommand.Execute` is `async void`, so it
+  returns to its caller at the **first `await`**, not at the end. `Press` called it and moved
+  on, which meant every assertion after a press was racing whatever the command did past its
+  first suspension point — and passing only because these commands happened to run
+  synchronously up to the interesting part.
+  - **Found by adding one `await`.** Deciding the import plan *before* asking about it put a
+    suspension point ahead of the confirmation prompt, and `Declining_writes_nothing` went red
+    asserting the question had been asked — before it had been. Nothing was broken except the
+    test's assumption, which is the tell: a suite that fails when correct code is reorganised
+    was measuring the shape of the code, not its behaviour.
+  - `Press` now waits on `IsRunning`, which is set before the first await and cleared in a
+    `finally`. **All 478 tests passed unchanged afterwards**, so nothing had been depending on
+    the fire-and-forget — it was pure latent risk across 35 call sites.
+  - **`AsyncCommand<T>` had no public `IsRunning` while `AsyncCommand` always had.** Same
+    field, same lifecycle, one property — so the parameterised command could not be asked
+    whether it had finished, and there is no other way to ask an `async void`.
+- ~~**No app test ever accepted an import.**~~ — **closed 2026-08-15.** `TestShell` wired
+  `toolchains: (_, _) => null`, so every test in `ImportConfirmationTests` either declines or
+  never presses: the confirmed path — the one that writes into somebody's project — was
+  reachable only through a real 17–31 s CODESYS launch. `CapturingToolchain` reports itself
+  available and records jobs instead of running them.
+  - **Worth knowing before writing the next one:** a toolchain being *present* changes what
+    opening a repository does. Versio catches up by exporting, which takes the direction lock
+    to `ProjectAuthoritative` and correctly refuses an import afterwards, so the fixture has to
+    release it the way the application does. **`SyncTrigger.ForceReleased` has no production
+    caller at all** — only `ReleaseAfterPushAsync` and `ReleaseAfterDiscardAsync` reach Clean.
+- **~~Three~~ Two of the seven C#/python pairs are still compared by nothing** —
+  `NativeXmlScrubber` ↔ `scrub_native_xml` and `StDeclarationParser` ↔ `parse_declaration`.
+  ~~`StTextCodec` is the one that matters: a bug in `split_st` silently moves code between a
+  declaration and an implementation, and it is a hand-maintained copy.~~ — **closed
+  2026-08-16, and it mattered exactly as much as this said**: the parity test found a
+  divergence on its first run, worth a renamed POU's GUID. See the Finding.
+  **This is not theoretical** — [`CODESYS.md`](CODESYS.md) §9 counts four drifts across the
+  pairs that *are* compared, two with the C# right and two with the python right, and reading
+  the two sources side by side caught none of them. The harness exists: `RunPython` in
+  `PythonFileNameParityTests` takes a snippet and a JSON payload, and
+  `versio_native_equiv.py` ↔ `NativeXmlNormalizer` was added through it on 2026-08-15 in a few
+  dozen lines. Listed in the import plan's Phase 6.
+  - **And the script inventory in §10 had gone stale unnoticed while this was true**: it said
+    ten files and five pure modules when there were twelve and seven, having missed
+    `versio_tasks.py` and `versio_yaml.py`'s reader when Phase 4 landed, and **every line count
+    in it was wrong** — `versio_import.py` read 450 against an actual 735. Corrected
+    2026-08-15, with the one-line re-derivation beside the table, because the numbers will go
+    stale again and editing the one you think changed is what produced this.
+- ~~**An object whose exported file has gone is accounted for only in the log.**~~ —
+  **closed 2026-08-15.** `ImportNarrative.Describe` puts it in the confirmation dialog, named,
+  alongside how much will be applied, the planner's warnings, and whether structural changes
+  are available at all. The log is not where anybody is looking at the moment they are
+  deciding whether to press Import.
+  - ~~**In the present tense**, because deletions are planned and executed by nothing: it says
+    the objects *will stay*. Two tests pin it, so the wording cannot drift ahead of the
+    script.~~ — **this was true when written and false one commit later, and the tests did not
+    say so.** The script grew `remove()`; the wording did not move; the pinning assertions were
+    on the *old* sentence, so they could only have failed if somebody fixed it. The dialog
+    promised objects would stay and the import deleted them. **Fixed 2026-08-15**: the dialog
+    names what will really go and what will really stay, separately — see the Finding above.
+- ~~**Deletes do not propagate.**~~ — **closed outright 2026-08-15, textual and native.**
+  `versio_import.py` runs a delete phase **last**, after everything that adds, because
+  `remove()` takes referenced objects with it silently (P3). Proven against real CODESYS in
+  one test with three halves: an object edited since the export is kept, the same object with
+  an honest hash is removed, and a GVL goes only when **both** of its files check out.
+  - **The content check is the script's own**, because only the CODESYS process can see the
+    project. It rebuilds what the exporter *would* have written for the live object and
+    compares to the manifest's hash; a mismatch means somebody edited it in the IDE since, and
+    a missing mirror file is not permission to destroy work that exists nowhere else.
+  - ~~**⛔ Native objects cannot be checked, so they are never deleted.**~~ — **closed the
+    same day, by manifest schema 5.** The obstacle was real: comparing through
+    `versio_native_equiv` needs the old bytes, and for a deletion those were in the file that
+    was deleted. Recording the **normalised** hash at export time puts the old side in the
+    manifest instead, so a fresh export has something to be compared against. **This limit
+    was found by the integration test, not by review**, and the test that found it now
+    asserts the opposite.
+    - **The design was wrong on first principles and a measurement caught it.** It was going
+      to compare with GUIDs unmasked, because `normalize`'s docstring says masking must be off
+      when comparing two exports of one project. True — across two exports. **Across a round
+      trip CODESYS re-mints GUIDs**: 3 differing lines of 117 in `GlobalTextList.xml`, all
+      three `System.Guid` values. Masked, and the residual risk — a GUID-value-only edit
+      reading as unchanged — is stated in `versio_types.py` rather than glossed.
+    - **Four scenarios against real CODESYS, because a check that refuses everything and one
+      that approves everything both look green from one angle**: a clean native delete
+      (removed), a genuinely edited object judged against the original manifest (kept,
+      `DELETE_CONTENT_CHANGED`), two round trips of churn in between (removed — the raw hash
+      moved and `nhash` did not), and a schema-4 mirror (kept, `DELETE_UNVERIFIABLE`).
+  - **`removed` had to go into the `dirty` test**, or a run whose only work was a deletion
+    closes without saving and the object comes back. Second time this project has nearly paid
+    for that: `partial` exists for the same reason.
+- **The delete set is planned in C#, before CODESYS starts** (2026-08-15).
+  `ImportPlan.Deletions` carries objects the mirror no longer holds any file for, having
+  passed five preconditions:
+  a trusted manifest, every file for the GUID gone, export-only records neither voting nor
+  vetoing, nothing surviving living inside it at any depth, and an owner chain that is
+  **recorded rather than guessed**. The script checks the one thing the planner cannot — that
+  the live object still matches what was exported — and refuses its own deletion if it does
+  not, so the two halves are independent rather than layered.
+  - The tripwire test that held the wire shut while only one half existed has **flipped**: it
+    now asserts what crosses, and that `deletions` is omitted entirely when there is nothing
+    to delete.
+  - **The transitive orphan rule was a bug a pre-existing test found**, not a review. Checking
+    direct children only would delete a class whose property is gone while the property's
+    *accessor* survives, taking both. What went red was a resolution test whose fixture listed
+    one file out of three recorded — a mirror that cannot exist, harmless until absences began
+    to mean something. **A fixture that could not occur is a fixture that will eventually lie**;
+    it describes a real directory now.
+  - **The guessed-chain rule came out of a second pass over the same code.** The resolver falls
+    back to splitting a file stem when an owner is missing from the manifest, which is a fair
+    guess for an update — text applied to the wrong object is something git undoes. The
+    identical guess reached by a *deletion* resolves to some other object and destroys it. **A
+    shared helper is only as safe as its most dangerous caller**, and nothing about the
+    resolver's own code says which callers it has.
+- **Phase 2's delete preconditions are now load-bearing, not defensive.** P3 measured what
+  `remove()` does to an object others reference: it removes it, saves cleanly, and warns about
+  nothing. There is no toolchain backstop. So the manifest-only rule, the content check and the
+  named confirmation are the entire safety story for deletion, and each one is worth more than it
+  looked when they were written as belt-and-braces.
+- ~~**G11 has a measured mitigation and no decision.**~~ — **closed by Phase 4, and the
+  decision never had to be made.** Task configuration is exported as `TASK_BOTH` and imported
+  through typed property assignment, so `import_native` never touches it and the stale compile
+  cache is never reached. Versio deletes nothing of CODESYS's. Measured over three cycles:
+  zero warnings, where cycles 2 and 3 used to throw twice each. **`Core2` stopped moving in
+  the same change**, which closes G7 with it.
+- ~~**The typed task-import path is half covered — the half that writes to CODESYS is not.**~~
+  — **closed 2026-08-15, both halves.** The parsing half went first: the committed
+  `.tasks.yaml` is parsed by the reader the importer calls, in a test needing no CODESYS.
+  **The write half is now covered too** —
+  `AdoptAndExportTests.A_task_priority_edited_in_the_mirror_reaches_the_project_and_survives_a_second_import`
+  edits a priority in the mirror, imports against real CODESYS, and reads the value back out of
+  the project. Verified non-vacuous twice, by deleting each half of Phase 4 in turn: stub the
+  `setattr` and it reads back `1` instead of `7`; make `typed_sibling_for` return `None` and it
+  reads back `1` as well. **`TaskCatalog.cs`, the C# reader, is still unwritten**, so nothing
+  outside python can read the file and the panel cannot show tasks — that part of Phase 4 is
+  still open.
+- ~~**The committed fixture mirror is a shape the exporter can no longer produce.**~~
+  **Closed 2026-08-15 by regenerating it**, and it cost far less than "moves committed bytes"
+  implied. **Every existing content file came back byte-identical, `Task Configuration.xml`
+  included.** The whole diff is the new `.tasks.yaml`, `_coverage.md`, and one `form` field
+  plus `objectCount` in the manifest. `ExportOnlyFiles` 2 → 3 was the single predicted cascade
+  and the only one. That the other twelve files did not move is itself worth recording: it is
+  the strongest evidence available that the export is still deterministic across everything
+  this touched.
+- ~~**An import's summary is logged with the exporter's field names.**~~ — **fixed 2026-08-15,
+  and it was worse than the bullet said.** `walked` / `written` / `skipped` / `gaps` against an
+  import that reports none of them, so every import logged a line of blanks with one true
+  number on it. It reads `import: 1 updated, 7 native, 2 unchanged, 3 not applied
+  (export-only) — 0 warning(s)` now, keyed on the job's operation rather than on which keys
+  happen to be present, with zero-valued fields omitted.
+  - **"Read from the code, not seen in a log" is no longer true either** — it was watched
+    happening, twice, while building the Phase 4 integration test, which is what turned this
+    from a code-reading finding into something with a reproduction.
+  - **Four import events had no `case` at all** and fell through to `_log.Debug("· {type}")`.
+    The one that matters is **`task_set`**: Versio writing a task's priority, interval or CPU
+    core binding logged as the literal string `· task_set` — no task, no field, no value, at
+    Debug. That is the single write the whole Phase 4 argument exists for, and it was the least
+    legible line in the log. `Info` now.
+  - **`ImportLoggingTests` is new**, the sibling `ExportLoggingTests` never had: one test for a
+    clean import's numbers, one for **an import that loses a file**. The second exists because
+    nothing in the suite had ever run a failing import, so "the summary is wrong when something
+    goes wrong" had no way to be caught — the same shape as G11.
+  - ~~The `not_imported` line in the same handler hard-codes "change this in the IDE".~~
+    **Fixed 2026-08-15** alongside the export-only finding. It was right while a library file
+    was the only thing that reached it and wrong the moment a task configuration's XML did —
+    and the script had been sending the `sibling` field all along, which the log discarded.
+    A **different case in the same `switch`**, so the field-name defect above is untouched.
+- ~~**`versio_import.py` does not count a native-import failure.**~~ — **fixed 2026-08-15, and
+  it was not one line.** `ReplaceHandler` counts `errors` and `refused` now; a file that lost
+  any object is counted in `failed`, taken out of `native`, and reported as a new
+  `native_partial` event with how many objects survived.
+  - **The hazard the one-line version would have caused.** `main()` decides whether to save
+    from `dirty = updated > 0 or native > 0`. Taking a partly-failed file out of `native` would
+    have made the run that had *already written to the project* the one that skipped its save,
+    dropping the objects that did paste. A `partial` counter is in the `dirty` test for that
+    reason. **Fixing a lying counter must not cost somebody the half of the import that
+    worked**, and reading the fix as "one line" is what would have.
+  - **The `native_partial` branch itself is uncovered and says so in the test.** It needs
+    CODESYS to report a per-object exception through the progress callback and continue; the
+    only trigger anyone has observed was G11, and Phase 4 removed it. Forcing one with
+    malformed XML produces the other route instead — `import_native` raises — which is now
+    tested and reports `1 FAILED`.
+- **The phase-split save in `versio_import.py` is conditional and skips the case it was written
+  for.** `if self.created > 0 or self.updated > 0` — an import touching only native files never
+  saves between the phases, which is exactly the shape of run that hit the exception the split
+  exists to prevent.
+- ~~**No test imports twice, and none imports with the project's sidecars present.**~~ —
+  **closed 2026-08-15, and half of it was never true.** One test imports twice now, and the
+  compile cache is **asserted** present before the second import rather than assumed — the
+  first import writes one, which was inherited from `Measure-ImportStability.ps1` and is
+  measured from a test for the first time. The assertion is there so the axis cannot decay
+  silently if a future CODESYS stops writing a cache on a headless run.
+  - **The `.opt` half of this bullet was wrong, and finding that out is the point.** The test
+    was written copying the committed `.opt` pair beside the project, exactly as this bullet
+    asked. **Deleting that copy left every assertion green** — so the copy was watching nothing
+    and was removed. **The bullet was written by reading the test setup rather than by looking
+    at what was on disk afterwards**, which is the same mistake as the first G11 explanation
+    one section down: a story that fits, recorded as a fact.
+  - **Which tool writes which sidecar, now measured rather than reasoned about.** The test
+    lists the project's directory at both import points, and the two lines answer it outright:
+
+    | | Beside the project | Written by |
+    |---|---|---|
+    | before import 1 | the `.opt` pair, **no cache** | the **export** — it opens the project too |
+    | before import 2 | the `.opt` pair **and** the cache | the **import** |
+
+    So *"the first import creates the cache"* holds, and is measured from a test for the first
+    time instead of inherited from `Measure-ImportStability.ps1`. And the `.opt` files are the
+    export's doing, which is exactly why copying them in changed nothing. **The export was
+    never a suspect until the second pass asked which of the two runs had produced them** — the
+    original comment asserted the import created both, from the same not-looking that wrote
+    the bullet.
+  - **A second import needs a second edit**, because re-running the same one is refused as
+    `NoChange` by the hash gate, correctly. That turned out to make the test stronger rather
+    than weaker: the final assertion reads the *second* edit's value, so it can only pass if
+    the cycle that used to fail actually applied something.
 - **`ToolchainState` is a public observable property with no view.** It survives because the
   runner uses its text as the "why this is unavailable" explanation. It should be a plain
   string, not a bindable one.
@@ -579,6 +967,875 @@ would have gone on passing while checking one fewer every time a panel moved out
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### The cap that said it bounded the path bounded one segment, and was off by seven
+
+**Found 2026-08-16 by measuring G9 before building its guard**, with the pure functions that
+actually run rather than by counting characters in a comment.
+
+`_MAX_STEM = 80` carried this justification, in both languages: *"short enough that a deep
+CODESYS folder chain plus this still clears Windows' 260-character path limit."* Two things
+make it false, and the second is the one that matters:
+
+```
+safe_file_stem("A" * 300)                 ->  87 chars   the shortened branch adds "~" + 6 hex
+file_name_for(child, TRANSITION, NATIVE, parent)
+                                          -> 190 chars   TWO shortened stems in one name
+```
+
+`file_name_for` prefixes a member with its owner — method, action, property, transition — so a
+single **file name** is two capped stems plus an infix plus a suffix. With
+`Device/Plc Logic/Application`, the chain every CODESYS project has, and a **one-character**
+project name, that leaves **19 characters for the repository root**. `C:\GIT\Versio` is 13 and
+fits by six; `C:\Users\m.lamp\Documents\GitHub\MachineControl` is 47 and does not.
+
+**No deep folder chain is needed**, which the gap row had assumed for its whole life.
+
+**And the number was wrong twice before it was derived.** 189 by hand, in the first write-up
+of this. Then **201**, from a test that enumerated `CodesysObjectType` against `ExportForm` and
+found `Transition/Libraries` — a combination the exporter cannot produce, because
+`.libraries.yaml` belongs to a library manager and a library manager is not parent-prefixed.
+Asking `ExportFormRules.Decide` which forms a type can actually take gives **190**. **A worst
+case built from impossible inputs is not a worst case**, and this one was inflated by eleven
+characters until the rule was asked instead of the enum.
+
+**The test that should have caught it asserted `< 100`.** `A_name_nobody_could_open_is_shortened_rather_than_written`
+passed at 87 and would have passed at 99. It pins 87 now — a loose bound on a number whose
+exact value is the whole point is a test that measures nothing.
+
+**The design trap, which is why this took a shape the plan did not ask for.** The plan said
+"shorten deeper segments or adopt `\\?\`". Both are wrong here:
+
+- **Shortening keyed on the total path makes the export machine-dependent.** The total includes
+  the repository root, which differs per developer — so two people cloning one repository would
+  produce *different file names for the same object*, and git would see renames that are not
+  renames. The mirror has to be a function of the project alone.
+- **`\\?\` only helps the writer.** It lifts the limit for Versio's own file APIs and leaves
+  git, CODESYS and the engineer's editor unable to open the file.
+
+So it is **two guards on two channels**, and the channel is the load-bearing part.
+`too_long_for_any_machine` reads only the mirror-relative path, gives every developer the same
+answer, and is recorded in `_manifest.json`. `too_long_for_this_machine` reads the staging path
+and goes to `emit()` and the log **only** — routing it through `warn()` would put it in the
+manifest, where a machine-dependent sentence makes two developers' manifests differ and the
+mirror churns on every export by whoever is checked out deeper. **That is Phase 5's defect
+arriving through a door Phase 5 could not have known about**, and the difference between the two
+spellings is one word at the call site, which is why a test asserts it rather than a comment.
+
+**What is not closed, deliberately.** The guards report the 190-character case; they do not
+prevent it. Preventing it means shrinking `MaxStem` or dropping the parent prefix, and either
+**renames every method, action, property and transition in every mirror already committed** —
+a git rename with no content change, in everybody's repository, on the next export. That is a
+decision rather than a consequence, so it is written up with its cost instead of taken.
+`The_longest_legal_file_name_overflows_MAX_PATH_before_any_folder_chain` **derives** the number
+instead of asserting it, so whoever takes it on is told when they have succeeded rather than
+having to re-measure.
+
+**The second pass over the guard found it measuring the wrong thing, and the shape is the one
+this repository keeps meeting.** It checked the object's **primary** file only — but a
+`GVL_BOTH` writes two, and its `.gvl.xml` is a character **longer** than the `.gvl.st` beside
+it. So the one file a GVL could overflow on first was the file nothing looked at. `TASK_BOTH`
+escaped only by luck, its `.tasks.yaml` being longer than its `.xml`, which is the kind of luck
+that stops holding when a suffix changes. **That is G7 and G12 for the third time**: a rule
+written for objects, applied to something that writes two files. The check is a method taking
+one path now, called for each file written, and
+`Every_file_the_export_writes_has_its_path_length_checked` counts the call sites against the
+second-file writes so the next form cannot quietly skip one.
+
+**The test written for that omission then passed its own mutation.** It counted
+`check_path_length(` call sites and required one more than the number of second-file writes —
+but the regex also matched the `def check_path_length(` line, so definition-plus-two-calls
+cleared a bar that three real calls were meant to clear. Deleting the GVL check left it green.
+`self.`-prefixed now. **It looked right, and it was watching nothing at exactly the boundary it
+existed for** — which is the argument for running the mutation rather than reasoning about it,
+made by the one test in this change whose whole job was to catch a missing call.
+
+**And the commit that fixed `MaxStem`'s wording claimed to fix it "in both languages" and fixed
+one.** `versio_text.py` was corrected; `CodesysPathMapper.cs` kept the false sentence in two
+places, and `CODESYS.md` §5.3 kept a third copy. **Four copies of one claim, and the commit
+message asserting the sweep was itself the least accurate of them** — which is the same defect
+as the claim it was fixing, one level up: a statement about evidence that nobody checked.
+
+**`PATH_TOO_LONG` is not a coverage gap and is not treated as one.** The object *is* in the
+mirror on the machine that wrote it; what is wrong is every other machine. It is
+`recordedAnyway` in the warning invariant — and it is the first code that invariant forced
+somebody to classify, which is what it was built for.
+
+### An export that lost an object reported full coverage, and `Warnings` had no reader
+
+**Found 2026-08-16 by tracing G9 rather than by building it.** The gap says the total path is
+unguarded; the question asked before writing the guard was what happens today when it is
+missed, and the answer was worse than the missing guard.
+
+`versio_export.py` wraps every object's write in one `except`. When it fires, the handler warns
+and **returns before `record()`** — so the object is in neither `objects` nor `skipped`. It
+exists in `warnings` and nowhere else.
+
+`ExportCoverage.Of` read `manifest.Skipped`, filtered to `NOT_IMPLEMENTED`, and **never looked
+at `manifest.Warnings` at all**. So:
+
+```
+object throws on write  →  EXPORT_FAILED warning, no record
+                        →  ExportCoverage.Of sees an empty skip list
+                        →  CoverageVerdict.Complete
+                        →  panel: "Everything in this project reaches the mirror."
+                        →  commit gate offers a mirror with the object missing from it
+                        →  run reports Completed
+```
+
+**`ProjectManifest.Warnings` was parsed, typed, and documented — "what the export noticed and
+could not act on" — and read by nothing in the codebase.** Every `.Warnings` reference in
+`Versio.Core` was `plan.Warnings` or `result.Warnings`. That is the rolling-file-sink shape:
+every part of the mechanism present except the one that makes it visible.
+
+**It is the third recurrence of this class's own subject, and the first through a warning.**
+`TASK_NATIVE` and `GVL_NATIVE` both arrived as a *form* the coverage rules did not name; this
+arrived as a code they did not read. `ExportCoverage`'s remarks already say what the first two
+cost — "no line in `_coverage.md`, no lock glyph in the panel, nothing in the manifest".
+
+**The second door, found by re-reading the same function afterwards.** `UNNAMED_OBJECT` has the
+identical shape and is one step *earlier*: `get_name()` raises, the walk warns and returns
+before `self.total` is incremented, so the object is missing from the walk count as well as
+from both lists. **Its docstring three lines above promises the opposite** — "unmapped type
+GUIDs are exported natively and warned about, never dropped: a newer CODESYS adding a type must
+not silently lose objects" — which is true of the line below it and false of this one. Closing
+`EXPORT_FAILED` alone would have been G7-patched-and-G12-missed exactly.
+
+**So the fix is a rule, not two constants.** `ExportCoverage.IsFailure(code)` is the single
+authority on "this object is not in the mirror at all", the same shape as `IsExportOnly` and
+for the same reason. `Every_exporter_warning_is_classified_as_losing_an_object_or_not` scans
+the **embedded** script for every `self.warn("…")` code and fails when one is neither in
+`IsFailure` nor in an explicit harmless list — so the next warning added to the exporter is a
+decision somebody makes rather than a door nobody notices. `UNKNOWN_TYPE_GUID` is the harmless
+one, and it earns its place in the test: it warns and then *falls through* to a form, so the
+object is exported and recorded. Not every warning is a loss, and a rule that said so would put
+a red line on exports that are fine.
+
+**Why the pure suite could never have caught the spelling, measured rather than assumed.** Every
+`ExportCoverageTests` fixture is built from `ExportCoverage`'s own constants, so both sides of
+the comparison move together. Setting `FailureCode` to `EXPORT_FAILEDX` left **all 1,492 unit
+tests green**. `ScriptContractTests` exists for that: it reads the script through
+`ScriptExtractor` — the **embedded** copy, the one that runs — and pins the code, the skip
+reason, and the path spelling. This is the C#/python drift `CODESYS.md` §9 counts four instances
+of, one level down: not two algorithms disagreeing, but one side reading a literal the other
+side stopped writing.
+
+**And the path in that sentence was not a path.** Five sites in the exporter build an object's
+path from `rel_dir` and `name`; the three that reach `_manifest.json` normalised it and the two
+that reach `warnings` did not — so the same object was `App/Thing` in the skips and
+`\App/Thing` in the warnings, mixing separators and keeping a leading slash at the project
+root. **The comment beside the normalised one states the rule** — "one spelling of the path,
+shared by the manifest and the log line" — and it was stated where only the callers written
+beside it would ever see it. It stopped being cosmetic the moment the panel began printing the
+`EXPORT_FAILED` path in a sentence: a name with a stray backslash is a name nobody can search
+the mirror for. `versio_text.object_path` is the one home now, in the pure module rather than
+in `versio_export.py`, which imports `scriptengine` at import time and therefore cannot be
+loaded under CPython at all — a rule living in it is a rule nothing can test.
+
+**And the second pass over the fix found the fix incomplete.** `UNNAMED_OBJECT` was added to
+`IsFailure` and left passing a **raw `rel_dir`** into `warn` — so the one code this change
+taught the panel to print was the one site still spelling its path with `os.path.join`'s
+backslashes, while the other four had been converted. Nothing failed: the path-spelling test
+forbade the inline `rel_dir + "/" + name` expression and a bare `rel_dir` is not that
+expression. **A test written against the shape of the defect you just fixed does not cover the
+shape you did not.** `object_path` takes a nameless object now — as its own branch, because a
+CODESYS name may legitimately contain `/` and stripping a trailing slash would eat one — and
+the test forbids the raw form by name.
+
+**And the invariant claimed more than it checked.** `Every_exporter_warning_is_classified…`
+scanned for `self.warn("CODE"` — the exporter's own literals — and there are four more codes
+that reach `manifest.warnings` without ever appearing beside a `warn` in `versio_export.py`:
+the library and task readers raise theirs through an `on_error` callback the exporter hands
+them. **A test named "every" that covers one of two spellings is the door it was written to
+close**, so the scan now reads all three modules and both forms. The four are
+`recordedAnyway` with their reason stated — the file *is* written and recorded, with content
+that may be short of what the project holds, which is a different unanswered question and one
+this repository does not measure yet. `PROJECT_CLOSE_FAILED` stays out and correctly: it goes
+to `emit` rather than through `warn`, so it never enters the manifest at all.
+
+**One limit found the same way and left alone, deliberately.** A two-file object records its
+first half before writing its second, so a `GVL_BOTH` whose `.gvl.st` throws is in `objects`
+*and* in `warnings`. Reporting it as not exported is right — the declaration really is not in
+the mirror — but "1 object not exported" undercounts what survived. Stated on `FailureCode`
+rather than fixed; the alternative was to say nothing, which is the state this exists to end.
+
+**Mutation-checked, six ways**, because most of this change is a rule and rules pass silently:
+stop failures reaching the verdict → 3 red; gut the extracted gap clause → 4 red, which is what
+says the pure move kept its coverage; misspell `FailureCode` → the pin only, and 0 red in the
+pure suite; drop `UnnamedCode` from `IsFailure` → the invariant, naming the code in its message;
+reintroduce an inline path spelling in the exporter → the shape test; gut `object_path`'s
+normalisation → 2 red in the python behaviour tests.
+
+**What this does not do.** It makes a failed export *visible*; it does not stop one happening.
+G9 is still open and is still the next thing — but its fix is now a guard on a path rather than
+a guard on a silence, which is a much smaller thing to get right.
+
+### The two ST codecs disagreed about four characters, and a rename is what it would have cost
+
+**Found 2026-08-16 by writing the parity test the plan had been asking for**, on its first run.
+
+`StTextCodec` (C#) and `versio_text` (python) both split a `.st` file into a declaration and an
+implementation, and both trimmed the edges of each half with their own language's default —
+`string.Trim()` and `str.strip()`. Those are not the same set. Enumerated rather than read off
+either documentation:
+
+```
+python strips 29 codepoints
+C#     trims  25
+python only:  U+001C U+001D U+001E U+001F   (file, group, record and unit separators)
+C# only:      none
+```
+
+**Everything else matched exactly**, across the whole range scanned — the two disagreed about
+four control characters and nothing else.
+
+**What it would have cost, which is not "a stray character".** The exporter records `ihash` over
+python's `split_st(...)` implementation. `CodesysImportPlanner` re-computes that hash over
+`StTextCodec.Split(...)`'s, and **the two hashes are what pair a renamed POU with the file it
+became** — Phase 3's second pass, the one that handles the ordinary case where a POU's name
+lives inside its own declaration. A body ending in one of those four characters hashes
+differently on the two sides, the pass finds no match, and the rename is not detected: the
+object is destroyed and rebuilt with a new GUID, taking every reference and task assignment
+with it. That is G2's failure mode, reached by a control character.
+
+Both C# callers of the codec are **readers** of what python wrote, which is what makes the
+direction of the divergence matter rather than being symmetrical.
+
+**Fixed by naming the set once, on both sides, instead of inheriting it.** `versio_text.WS` and
+`Versio.Core.Text.PayloadWhitespace` are the same 29 characters, spelled out. Python's set was
+adopted because the exporter is the writer and every hash in every committed manifest came from
+it.
+
+**And it was not one surface but three, which is why the definition moved out into a type of its
+own.** `LineSketch` had the identical divergence with the identical consequence one pass further
+along: a line whose edge is trimmed differently hashes differently, so the two sketches share no
+digest for it and the similarity is under-reported — losing the rename that the sketch fallback
+exists to catch on a mirror git never saw. `versio_import.apply_st` had it too, in a comparison
+rather than a hash: it asks whether the live text differs from what `split_st` produced, and two
+different trims would report an unchanged object as changed and rewrite it on every import,
+forever. `TextSimilarity` has no python mirror but reads the same array now, because
+`line_sketch`'s own docstring promises the two "agree about what a line is" — a shared
+definition is what makes that true rather than aspirational.
+
+**And that removes an assumption nobody could have tested.** The python that runs inside CODESYS
+is **IronPython 2.7**; the python that tests it is CPython 3. A bare `strip()` makes the rule
+whatever the interpreter thinks it is, and no test in this repository can see IronPython's
+answer. Naming the characters makes the two agree by construction.
+
+**Byte-neutral, verified rather than asserted, and verified twice.** No text file in either
+committed mirror contains any of the four. Both fixtures were re-exported and diffed after the
+codec change, and again after the `line_sketch` change: every content file identical, and every
+recorded `hash`, `ihash`, `shash` and `nhash` identical, with only the `bindingId` differing
+because the check passed a different one.
+
+**Both halves of the test were mutation-checked.** Removing `U+001C` from the C# set fails on the
+corpus payload that contains it; removing `U+205F` — which no payload contains — fails **only**
+the assertion that compares the two sets directly. That second check is the one that earns its
+place: the divergence this test actually found was in the corpus only because somebody guessed
+it might be worth including.
+
+### A GVL's declaration is applied and then overwritten by its own XML, and the log says it worked
+
+**Found by running the feature checklist rather than by reading anything**, on 2026-08-16, in
+the one import path no test had ever asserted: `ST_DECL`.
+
+Edit `Glob_Var.gvl.st` in the mirror, import, re-export. The import log reads
+
+```
+applied Device/Plc Logic/Application/Glob_Var.gvl.st (declaration)
+...
+imported Device/Plc Logic/Application/Glob_Var.gvl.xml as native XML into Device/Plc Logic/Application
+import: 1 updated, 7 native, 2 unchanged, 3 not applied (export-only) — 0 warning(s)
+```
+
+and **the edit is not in the project.** Both lines are true; the second undoes the first.
+
+**Why.** A GVL exports as `GVL_BOTH`: one object, one GUID, two files — a `.gvl.st` recorded
+`ST_DECL` and a `.gvl.xml` recorded plain **`NATIVE`**. `versio_import.py` runs its phases
+**textual → native → delete**, so the declaration is written into the object and then
+`import_native` replaces that object from an XML holding the declaration as it was at export
+time. The later phase wins, every time, on every GVL.
+
+**This is G7 wearing different clothes, and the fix for G7 was modelled on the thing that is
+broken.** `TASK_BOTH` has exactly the same shape and does not have the defect, because Phase 4
+gave its XML half its own form — `TASK_NATIVE` — and `ExportCoverage.IsExportOnly` names it, so
+the importer skips it and the log says *"edit Task Configuration.tasks.yaml instead"*.
+`IsExportOnly` names `LIBRARIES` and `TASK_NATIVE` and nothing else. The GVL's XML half was
+never given one.
+
+**The intention was written down and never enforced.** `versio_types.py`, on `FORM_TASK_BOTH`:
+
+> Follows GVL_BOTH exactly: one object, two files, one GUID in the manifest. The difference is
+> which half is authoritative — **a GVL imports from its `.st`**, and a task configuration
+> imports from its `.tasks.yaml`
+
+A GVL does not import from its `.st`. It imports from its `.st` and then from its `.xml`.
+
+**And `_coverage.md` says nothing about it**, which is the part that makes this data loss
+rather than an inefficiency. The report names three files as *"exported for review, not applied
+back"* — two `.libraries.yaml` and `Task Configuration.xml` — and in a report whose entire job
+is to list what an edit will not reach, absence from that list is a promise. `Glob_Var.gvl.st`
+is absent from it. **That is the gap `_coverage.md` was built to close, re-opened for the second
+time**; the first was closing G7 and G11, and it has its own finding below.
+
+**How it was proven rather than argued.** Two runs differing in exactly one thing: the second
+turns the plan's entry for `Glob_Var.gvl.xml` into a skip before the job is handed over, and
+leaves the edit and everything else identical. The declaration survives. So the write lands and
+the native phase is what removes it — which the log alone could not have told anybody, because
+it says `applied` either way.
+
+**✅ FIXED 2026-08-16, the same day.** The `.gvl.xml` is recorded `GVL_NATIVE` and
+`ExportCoverage.IsExportOnly` names it, so the import applies the `.gvl.st` alone and the log
+says *"edit `…Glob_Var.gvl.st` instead"*. Verified against real CODESYS: the edit is in the
+project on the re-export, where the same test failed an hour earlier.
+
+**And the shape is an invariant now, which is the part that matters more than the fix.** G7 was
+patched on `TASK_BOTH` and `GVL_BOTH` had the identical defect for months, because the fix was
+applied to the instance rather than to the shape.
+`An_object_never_writes_two_files_the_import_would_both_apply` asserts against a **real
+export** that no object writes two files the import applies — real, because both defects were
+in what the exporter wrote and every unit test passed throughout. Removing `GvlNativeForm` from
+`IsExportOnly` turns it red, naming both files; that mutation was run rather than assumed.
+
+**It cost the two-file rule its subject, deliberately.** An export-only record neither votes
+nor vetoes in the delete planner, so a GVL now has exactly one importable file and `gone ≠
+importable` can no longer happen for anything. A GVL became an ordinary single-file object:
+deleting `Glob_Var.gvl.st` removes it, exactly as deleting `Simulation.st` has always removed
+the POU, and **the content check is what stands in front of it** — `ST_DECL` is verifiable, so
+a GVL edited in the IDE since the export is still kept. The rule is kept rather than deleted:
+an older mirror still records the XML as `NATIVE` and still reaches it, and a second vendor is
+under no obligation to adopt the one-importable-file shape. The integration test that asserted
+the old behaviour now asserts the new one, and says both were right at the time.
+
+**The three candidates, and why this one.** They were not equivalent:
+
+- **Give the XML half its own form**, as `TASK_NATIVE` did — **chosen.** Cleanest, and the
+  remedy sentence comes free because the exporter finds the sibling by GUID. Its cost is the
+  delete rule above, which on inspection makes a GVL *consistent* with every other object
+  rather than less safe.
+- **Apply textual after native**, which fixes every `BOTH` pair at once and re-orders a phase
+  sequence whose current order is load-bearing for creates (`run()` says why).
+- **Rebuild the XML from the edited declaration before importing it**, which is the only option
+  that keeps both halves authoritative and is by far the most work.
+
+The measurement and the three options are recorded here so the choice is made deliberately
+rather than by whoever touches it next.
+
+### "References and task assignments survive" was an inference, and it is false
+
+> **In one line:** a renamed POU keeps its GUID — genuinely the same object — and **its task
+> still lists the old name**, because CODESYS stores a task's POU list by NAME and a scripted
+> `rename()` does not rewrite it. The claim was written into the README, the plan, `SAFEGUARDS`
+> and the **confirmation dialog** on the strength of GUID equality, never measured.
+> **✅ Corrected AND fixed 2026-08-15**: the wording no longer over-promises, and the import
+> repoints the task so the claim it does make is true.
+
+**It was found by a question, not by a test.** Asked whether a real project had actually been
+renamed and imported, the honest answer was "yes, and the GUID was asserted" — which is evidence
+that the object survived, and *not* evidence of what that survival buys. The fixture happens to
+have `MainTask` listing `Simulation` among its POUs, so the claim was directly checkable. It
+was checked. It failed.
+
+```
+before   pous: [PLC_PRG, Simulation]        Simulation.st, guid 980a4bef…
+rename   Simulation → Renamed               same guid 980a4bef… — same object
+after    pous: [PLC_PRG, Simulation]        ← the task still names a POU that no longer exists
+```
+
+**This is the live project talking, not a stale file.** `versio_import.py` never writes `pous`;
+it applies priority, interval, core binding and watchdog only. So the re-export is reading what
+the task actually holds.
+
+**What it costs a user.** Rename a POU in the mirror, import, and the object is renamed properly
+— but any task that ran it now references a name nothing answers to. Nothing warns, because
+Versio did exactly what it was asked. A delete-plus-create would have broken the same reference,
+so this is not a regression; the defect was **claiming otherwise in the one dialog somebody
+reads before agreeing**.
+
+**Corrected rather than quietly dropped.** The dialog now says the same object is kept and that
+anything referring to it *by name* still uses the old name and needs checking in the IDE. The
+narrative test asserts the false phrase is **absent**, not merely that the new one is present —
+the same two-sided discipline the deletion wording needed after it lied in the other direction.
+The integration test pins the behaviour as it really is, so it will notice if a future CODESYS,
+or a fix here, starts updating the reference.
+
+**✅ And then fixed, the same day.** The import repoints the task itself: after a rename it walks
+every object carrying a POU list and rewrites entries matching the old name. Measured — `MainTask`
+now reads `[PLC_PRG, Renamed]`, with `PLC_PRG` untouched, so the retarget is per entry rather than
+a rewrite of the task.
+
+**The API took two probes and every spelling but one is a trap:**
+
+| Call | Result |
+|---|---|
+| `pous[i] = name` | raises — the list does not support item assignment |
+| `pous.remove(name)` | **reports success and does nothing** — a silent no-op, exactly like `move()` |
+| `pous.remove(index)` | raises *"not found in the specified Collection"* |
+| `pous.replace(name, name)` | raises *"expected int, got str"* |
+| **`pous.replace(index, name)`** | **works, and survives a save and reopen** |
+
+**The first probe nearly recorded the wrong answer**, again: it tried `remove` then `add`, saw
+both report success, and would have concluded the list was writable that way — while `remove`
+had changed nothing and `add` had left a third entry behind. Reading the *value back* after each
+call is what caught it. That is the third silent success measured in this API, after `move()`
+and `create_folder`.
+
+**The dialog says the narrower true thing.** It names tasks specifically rather than claiming
+"references" survive: a visualisation binding may refer to an object by name too, and that has
+not been measured. The vaguer word is exactly how the original false claim got in, so
+`ImportNarrativeTests` asserts the word *references* is **absent**.
+
+### A rename that renames nothing was reported as a rename — and the test that found it was written to assert the opposite
+
+> **In one line:** exact-content rename matching cannot see a POU rename, because a POU's name
+> lives in its own declaration — and when the file alone is renamed the planner emitted a rename
+> whose old and new names were equal, which the script counted as a success.
+> **✅ CLOSED 2026-08-15** by withdrawing both sides and warning instead.
+
+**The measurement that "proved" renames worked had bypassed the planner.** A scratchpad harness
+hand-wrote the rename entry with `newName: "Renamed"` and drove the script with it. That was a
+real and useful measurement — it is what proved `rename()` preserves the GUID — but it proved
+the **executing** half only, and it read as proof of the whole thing.
+
+**The integration test written afterwards is what caught the difference**, by failing. It asserted
+that renaming `Simulation.st` to `Renamed.st` renames the object, and it does not: the file still
+opens `PROGRAM Simulation`, so the plan reads that name, old equals new, and there is nothing to
+rename it to.
+
+| What somebody does | What the planner sees | What happens |
+|---|---|---|
+| rename the file only | declaration still names the object — old = new | nothing renamed, both sides withdrawn, warned |
+| rename the file *and* the declaration | content changed, no hash matches | delete + create, **GUID lost** — step 2 |
+
+**So step 1 detects a rename only for a form whose content does not carry the name** — actions and
+transitions. The fixture has none, which is why unit tests, a hand-built harness and a green
+suite all agreed with each other and none of them touched the real case.
+
+**The false success is the fourth in this path this session**, and the one that got furthest: the
+script's own `RENAME_NOT_APPLIED` verification could not catch it, because the object never had
+to move for the check to pass. **A verification that asks "is it where I expected" cannot notice
+that nothing was asked of it.**
+
+**✅ Closed the same day by manifest schema 6.** A full ST record carries `ihash`, the hash of
+its implementation alone, and a second pass pairs a departed POU with an arrived one on it. A
+real POU rename — file and declaration — now keeps its GUID, measured end to end against real
+CODESYS, with the new declaration applied to the renamed object rather than skipped. **The
+arrival must be applied**, and that is the difference from the exact-content pass: skip it and
+the object wears its new name over its old declaration.
+
+**The first answer written here was also wrong, and is corrected rather than quietly dropped.**
+It said a real POU rename could be matched by comparing the implementation exactly and the
+declaration with its name masked, needing nothing but the manifest and the mirror. **It cannot**:
+the manifest records one `hash` per file and the old file is gone, so there is no old
+implementation to compare against. Every fuzzy match needs the departed content, and only two
+things have it — a hash recorded at export time (schema 6, `ihash` + `dhash`, the same shape as
+`nhash`), or `git show HEAD:<path>`. The first covers a pure rename cheaply; the second is the
+only route to a rename that also edits the body.
+
+### `move()` accepted an instruction, did nothing, and reported success
+
+> **In one line:** moving a POU out of `Application` into `Plc Logic` raises nothing and moves
+> nothing; the first Phase 3 run reported `renamed: 1`, `failed: 0`, **zero warnings**, and a
+> re-export showed the object at its old path. **✅ CLOSED 2026-08-15** by making the script
+> re-resolve the object where it was supposed to land and report `RENAME_NOT_APPLIED` when it
+> is not there.
+
+**The third silent success in the delete/rename path this session**, after the dialog that
+promised objects would stay while deleting them and the log line that described the previous
+version's behaviour. The shape is identical every time: a step that cannot fail loudly, and a
+counter that is incremented on the assumption it worked.
+
+**What makes this one worse than the others** is that nothing above it could have noticed. The
+import verdict was `Completed`, the summary said one object was renamed, the warning list was
+empty, and the only way to find out was to export the project again and read the paths. **A
+counter incremented next to an operation is not evidence the operation happened** — and this
+codebase now has three examples of exactly that.
+
+**✅ The open half of this is now settled, and `move()` is fine.** A folder was created under
+`Application` in a throwaway copy and `Simulation` moved into it: no exception, under the folder
+in session, still under it **after a save and reopen**, and the GUID `980a4bef…` unchanged
+throughout. So `Application` → `Plc Logic` was CODESYS **correctly refusing an illegal parent**
+for a POU — the operation is sound and the defect was only ever the silence.
+
+**The verification stays anyway**, and that is the point rather than a leftover: a refusal that
+says nothing is indistinguishable from a success no matter *why* it refused, and Versio cannot
+enumerate which parents a toolchain considers legal. Checking the outcome costs a walk of names
+already in memory.
+
+**`create_folder` returns `None`** — the folder is created regardless and must be found by name.
+That silently skipped the entire probe on its first run: the return value was used as the move
+destination, so the move never ran, and the result read as "move does not work". **The first
+run of a measurement nearly wrote down the opposite of the truth**, which is the same trap as
+the harness that proved the executing half and read as proof of the whole feature.
+
+**Rename in place is unaffected and works**: same GUID before and after, no warnings, verified
+against real CODESYS.
+
+### The delete path explained itself to nobody — three channels, three different silences
+
+> **In one line:** the dialog said the wrong thing, the plan's log said nothing at all and then
+> said something false, and the adapter threw away the script's explanation — so a refusal to
+> destroy something reached a person as `DELETE_UNVERIFIABLE: Diagnosis` at best.
+> **✅ ALL THREE CLOSED 2026-08-15.** The dialog has its own Finding below; these are the other
+> two, found by auditing the change rather than by any test failing.
+
+**`ImportPlanReader` logged nothing about deletions, and had no tests at all.** It logged the
+planner's warnings, the schema explanation and the missing-file count — and not the one decision
+in a plan that takes work *out* of a project. The removals were logged, but only by the script,
+*after* they happened. What had been decided, and what somebody agreed to ~20 s earlier,
+appeared nowhere.
+
+**Worse, its missing-file line was actively false.** It read *"deleting objects from the project
+is not applied by this version, so they remain in the project"* — written when it was true, left
+in place after the import learned to delete. **The identical stale-sentence defect as the
+dialog, in a second channel, surviving for the identical reason: no assertion had ever read
+it.** `ImportPlanReaderTests` is new and exists because of this; one of its four cases asserts
+that exact sentence is *absent* rather than merely replaced, since a test checking only the new
+wording goes green again the moment somebody restores the old line beside it.
+
+**And the adapter dropped the reason.** `LocalCodesysRunner` projected script warnings as
+`$"{code}: {path}"`, discarding the `detail` the scripts have always emitted. So every refusal
+arrived with its explanation removed:
+
+```
+DELETE_UNVERIFIABLE: Diagnosis                     ← what a user saw
+DELETE_UNVERIFIABLE: Diagnosis — its NATIVE file cannot be compared against
+  the live object, so whether it changed since the export is unknowable   ← what the script said
+```
+
+**A warning that is present, looks complete and answers nothing is worse than a missing one.**
+It mattered least when a warning meant "an object was skipped" and most now that it means
+"Versio declined to delete this, and here is what would change that". Fixed in the adapter,
+because `SyncOrchestrator.LogWarnings` documents that nothing above it knows what a CODESYS
+warning code looks like — and that stays true.
+
+| Guard | Breaks when |
+|---|---|
+| `ImportPlanReaderTests` (4 cases) | the plan stops naming what it will remove or keep, or the false sentence returns — verified red by disabling the removal line |
+| `AdoptAndExportTests` … `_leaves_the_project_and_an_edited_one_does_not` | the adapter drops `detail` again; asserts the reason text against the real script through the real adapter |
+
+### The confirmation dialog told people their objects would stay, and then deleted them
+
+> **In one line:** `670642c` taught `versio_import.py` to run `obj.remove()` and did not touch
+> `ImportNarrative`, so for one commit the last thing anybody read before an import said *"This
+> version does not remove objects from the project, so they will stay"* — and then the import
+> removed them. **✅ CLOSED 2026-08-15**, by splitting the deletion set into what will really go
+> and what will really stay, and saying both.
+
+**This is the exact failure the whole import-confirmation chain exists to prevent, pointed the
+other way.** The chain is unusually well built: the plan is decided C#-side before CODESYS starts
+(Phase 1), carried to the dialog and back so the plan agreed to is the plan executed (Phase 2's
+seam step), and `RequireImportConfirmation` defaults to `true` so no watcher-triggered import can
+delete anything without somebody being asked. Every one of those gates worked. The sentence they
+delivered to the person was false.
+
+**What it cost a user.** Delete `FB_Motor.st`, commit, press Import. The dialog names `FB_Motor`,
+says it will stay, and suggests deleting it in the IDE if that is what you want. Press Import —
+the POU is gone from the project. There is no undo inside Versio, and the object's own file was
+deleted in the same change, so the mirror does not hold a copy either.
+
+**Why a green suite did not notice.** `ImportNarrativeTests` pinned the wording with
+`Contains("they will stay")` and `DoesNotContain("will be removed")`, under a comment reading
+*"When the script grows remove(), this test is what says the wording has to change with it."* It
+does not, and it cannot. **An assertion on the old sentence cannot fail when the behaviour moves
+— it can only fail when somebody fixes the sentence.** The tripwire was a lock. The same
+assertion sat in `ImportPlanHandoverTests`, and both stayed green across the commit that shipped
+deleting, at 1,443 and 480 tests.
+
+**The stale claims trailed it in four more places**, all of them written while they were true and
+none updated by the commit that falsified them: `ImportPlan`'s own remarks (*"no wire carries one
+yet and nothing executes one"*), `CodesysImportPlanner`'s (*"a deletion is a proposal and nothing
+executes it yet"*), this file's bullet recording the wording as correct-and-pinned — **directly
+above the bullet announcing that deletes now work** — and the import plan's Phase 2 section.
+
+**The fix is a split, not a re-word.** Flipping the sentence to *"will be removed"* would have
+been a fresh lie for native objects, which the script refuses (`DELETE_UNVERIFIABLE`) and which
+are **7 of the fixture's 13 objects**. So `PlannedDeletion.CannotVerify` carries the planner's
+prediction of the script's own refusal — null when the object will go, a sentence when it will
+stay — and the dialog says both things in two sentences, grouped by reason.
+
+**What is watching it now:**
+
+| Guard | Breaks when |
+|---|---|
+| `ImportNarrativeTests.Objects_the_import_will_remove_are_named_and_said_to_be_going` | the dialog stops promising removal, **or starts promising it falsely** — both sides asserted, which is what the original pair lacked |
+| `ImportNarrativeTests.A_mixed_plan_says_both_things_and_does_not_merge_them` | one sentence starts covering both outcomes again |
+| `PythonFileNameParityTests.The_planner_and_the_script_agree_about_which_deletions_can_be_checked` | the planner's prediction and `versio_types.can_verify` drift — verified red by adding `FORM_NATIVE` to the python list |
+
+**The parity test is the structural fix.** The planner and the script answer the same question
+~20 s apart and had no shared authority; `CAN_VERIFY_FORMS` now lives in `versio_types.py`, which
+is pure and therefore runnable under CPython, and the C# mirrors it. A rule living in
+`versio_import.py` is a rule nothing can compare, because that module cannot be imported outside
+CODESYS.
+
+**Measured end to end**, one import deleting one textual and one native object against real
+CODESYS 3.5.22.20: `Simulation` (`ST_FULL`) removed, `Diagnosis` (`NATIVE`) kept with
+`DELETE_UNVERIFIABLE`, and a re-export confirming the project afterwards holds the second and not
+the first.
+
+### Closing G7 and G11 re-opened the gap `_coverage.md` was built to close
+
+> **In one line:** making `Task Configuration.tasks.yaml` the importable half turned the `.xml`
+> beside it into a file the export writes and the import silently discards — and every channel
+> that exists to say so reported it as ordinary, because it was still recorded `NATIVE_R`.
+> **✅ CLOSED 2026-08-15**, by recording it `TASK_NATIVE` and reading one-wayness from one list
+> per side instead of one constant.
+
+Versio has machinery for exactly this. `_coverage.md` carries a section headed *"Exported for
+review, not applied back"*; the manifest records a `form`; the changed-files row draws a lock
+glyph with a tooltip. `STATUS.md` describes the discipline in four places, in the row about
+library references, and the comment in `versio_export.py` above the section states the reason
+outright: *a file that is written for review and silently ignored on the way back is its own kind
+of gap — editing it looks exactly like editing a POU.*
+
+**The task XML got none of the four.** One-wayness was decided by comparing against a single
+constant on each side — `form == FORM_LIBRARIES` in the report, `form == "LIBRARIES"` in
+`ObjectIndex` — so the second one-way form was invisible to both by construction.
+
+**The strongest evidence is that the code already said it.** `CodesysExportForm.cs` documents
+`TaskBoth` with *"its native XML is export-only"*, and 114 lines below it in the same file sat:
+
+```csharp
+// "The predicate the UI needs for the Tier 3 lock glyph … Kept beside the form table so
+//  the next one-way form is declared in the same place as the rule that writes it."
+public static bool IsExportOnly(ExportForm form) => form is ExportForm.Libraries;
+```
+
+The comment names the rule and the function contradicts it. It had **no caller and no test in its
+entire life** — the panel is vendor-neutral and reads a manifest, so the live path never touched
+this enum at all. That is why nothing went red: the one place that claimed to enforce the rule was
+not connected to anything. It is deleted rather than corrected. **A second home for a rule that
+cannot be reached from the code that needs it is not a safeguard, it is a comment that compiles.**
+
+**What it cost a user.** Edit `Task Configuration.xml` in the mirror — a watchdog setting, say,
+which the YAML does not carry — commit it, import. The edit is discarded, the log says nothing
+useful, `_coverage.md` claims the only one-way files are the two library managers, and the panel
+shows an ordinary editable row. The change is in the git history and not in the machine.
+
+**The wrong-remedy half.** Both surfaces that *did* speak hard-coded the library manager's answer,
+*"change this in the IDE"* — which for a task configuration walks the reader straight past the
+`.tasks.yaml` they were meant to edit. The import log discarded the `sibling` field the script was
+already sending it. Both now name the sibling when there is one, and the panel's summary sentence
+names no remedy at all: the remedy is per file, so it is stated per file and in one place.
+
+**What is watching it now**, since three of these changes are the kind nothing would have failed
+on:
+
+| Guard | Breaks when |
+|---|---|
+| `TypeTableParityTests.Python_and_csharp_agree_on_which_forms_are_never_applied_back` | the two `EXPORT_ONLY_FORMS` lists drift — verified red by removing `FORM_TASK_NATIVE` from the python one |
+| `ObjectIndexTests.The_native_half_of_a_task_configuration_is_flagged_and_its_yaml_half_is_not` | the glyph goes back to a single-constant comparison — verified red by restoring it |
+| `ExportCoverageFromRealExportTests.The_task_configurations_native_half_is_recorded_and_named_as_one_way` | the exporter records the wrong form, or the report stops naming the file or its sibling |
+
+The third is against a **real export**, because the defect was in what the exporter wrote and
+every unit test in the repository passed with the old form. `report.ExportOnlyFiles` moved
+**2 → 3** in that suite: the cheapest possible signal, already asserted, and it could not fire
+because it was written before there was a second kind of one-way file to count.
+
+**The general lesson, and it is the one this repository keeps re-learning.** Phase 4 was measured
+carefully — four snapshots for `Core2`, three cycles for G11, a mutation run to prove the result
+was not vacuous. All of it measured *the thing being fixed*. Nothing measured what the fix changed
+about a file it was not about. **A change that makes one file authoritative makes the other file
+something else, and the something else needs a name.**
+
+### Two bugs that only running the exporter could show
+
+Phase 4's export half added `TASK_BOTH`: task configuration now writes a `.tasks.yaml` beside
+its `.xml`. Unit tests were green, the solution built warning-free, and both defects below
+were still there.
+
+**One · the walk descended into the task children.** `descends_into_children` decides the
+progress pre-count and a separate guard in `handle()` decides the actual recursion. The new
+form was added to the first and not the second, so the exporter walked `MainTask` and
+`VISU_TASK` as objects in their own right.
+
+**Nothing was written**, because a `TASK` is `FORM_SKIP`. The only symptom was arithmetic:
+`counted 18` against `walked 20`, and `skipped 4 → 6`, on a project that had gained no
+objects. That is exactly the divergence `descends_into_children`'s own docstring says cannot
+happen — *"the count and the walk cannot disagree"* — and it happened the first time a form
+was added after that sentence was written. **A guard that lives in two places has to be
+changed in two places, and only one of them is named after what it does.**
+
+**Two · `pous` rendered as python's `repr`.** The task's POU list came out as
+`pous: "['PLC_PRG', 'Simulation']"` — a quoted string that merely looks like a list, and
+would parse back as one on nobody's reader. `versio_yaml`'s subset had no list-of-scalars, so
+a python list fell through to the scalar branch, where `_to_text` did what it is supposed to
+do.
+
+**This is the same shape as the `FORM_GVL_BOTH` suffix bug**: a value that did not match any
+case in a table quietly took the default, and the default produced a file whose contents lied
+about their own type. The emitter gained a scalar-list construct — its first addition since it
+was written — and its header now records why, because that file states outright that every
+construct added is one both halves have to agree about forever.
+
+**Neither would have been caught by a test**, because neither breaks anything a test asserts:
+the file count is right, the bytes are deterministic, and every existing assertion passes. The
+first shows up only if you read two numbers in the summary against each other, and the second
+only if you read the file.
+
+### Every import after the first fails on task configuration, and reports success
+
+> **In one line:** a stale `<project>_project.precompilecache` beside the project made
+> `import_native` throw on `MainTask` and `VISU_TASK` while the run reported `failed: 0`.
+> **✅ CLOSED 2026-08-15 by Phase 4**, which stops handing task configuration to `import_native`
+> at all — three cycles, zero warnings, where cycles 2 and 3 used to throw twice each. **Versio
+> never deletes the cache**: the trigger is simply never reached, so the measured cache-deletion
+> mitigation was not needed and was not adopted. `Core2` stopped moving in the same change, which
+> closes G7 with it.
+
+Probe P7 of [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md) ran the round trip three times
+instead of once, on a scratch copy, with the mirror held still between cycles. Cycle 1 is clean:
+`native: 8, failed: 0, warnings: 0`. **Cycles 2 and 3 each throw twice** — on `MainTask` and
+`VISU_TASK`, the two children of `Task Configuration`:
+
+```
+System.InvalidOperationException: Collection was modified; enumeration operation may not execute.
+  at _3S.CoDeSys.ObjectManager.Project.GetUniqueName(...)
+  at _3S.CoDeSys.ObjectManager.AbstractPasteOrMergeOperation.DoExecuteObject(...)
+```
+
+Nothing is lost — the objects survive and the file is simply not applied.
+
+**The cause is a stale `<project>_project.precompilecache`.** Five runs against the same mirror,
+varying one thing each:
+
+| The project directory carries | Result |
+|---|---|
+| `.project` + `.opt` pair + `_project.precompilecache` | **fails** — `MainTask`, `VISU_TASK` |
+| `.project` + `_project.precompilecache` only | **fails** — same two |
+| `.project` + `.opt` pair only | passes |
+| `.project` alone | passes |
+| pristine project, fully round-tripped mirror | passes |
+
+The cache alone is sufficient; the `.opt` files are innocent; the mirror's bytes are irrelevant.
+A freshly copied project has no cache and the first import creates one, **so the first import
+after a clone works and every one after it fails** — which is why it presents as "the second
+cycle", and why it reproduced 4 for 4 across two independent P7 runs.
+
+**This reaches real users and could not reach the suite.** Anyone who has opened their project
+in the IDE has a cache beside it. `Versio.Integration.Tests` copied the `.project` and nothing
+else, so no test had ever run an import with one present — and both of its real-CODESYS import
+tests imported exactly **once**, so they would have stopped one step short even if it did.
+
+> **Both axes closed 2026-08-15** — see the loose end. And the diagnosis in this paragraph is
+> half wrong, kept because the correction is the useful part: *copying* sidecars was never the
+> missing piece. The **export** writes the `.opt` pair and the **import** writes the cache, both
+> now measured from the test itself. So any test that exports, imports, then imports again
+> reaches the failing state without help. The gap was only ever the second cycle.
+
+**Deleting the cache immediately before an import fixes it, and the import regenerates it.**
+Control with the cache present fails; the same directory with the cache removed passes with zero
+warnings. Exporting both afterwards gives `walked 18 / written 12 / skipped 4` either way with
+nothing added or removed — the only difference being the two `EventPOUGuid`s, which a *successful*
+native import re-mints and the failing one never reached. So it is a working mitigation. Whether
+Versio should delete another tool's files on that evidence is a separate question and is not
+decided here.
+
+**Related, and fixed on the way past:** `CodesysProjectFormat.TransientPatternsFor` did not name
+the cache, so an adopted repository left a 277 KB binary untracked beside the project where
+*Stage all* would commit it — see the loose end above.
+
+#### Three smaller defects this exposed — **two and three fixed 2026-08-15, one still open**
+
+**One · the guard written for this exact exception never runs.** The exception is quoted verbatim
+in `versio_import.py`'s own `run()` docstring, as the thing the two-phase split with a save
+between the phases exists to prevent. The save is conditional on `created > 0 or updated > 0`,
+and an import touching only native files has both at zero — every cycle here had
+`created: 0, updated: 0`. So **the guard never executed during the measurement that hit the bug
+it was written for.** ~~Whether running it would have helped is untested~~ — **one observation
+exists now, and it favours the guard.** The Phase-4-reverted run inside
+`A_task_priority_edited_…` put the task XML back on the `import_native` path with the cache
+present and the exception did not return; that run had `updated > 0`, so the save ran. The
+mutation moved two things at once, so this is a lead rather than a result — but it is the first
+one. A guard skipped in exactly the case it names is worth fixing regardless, because its
+docstring reads as coverage.
+
+**Two · the script's summary contradicts its own warnings.** ~~`ReplaceHandler.progress` catches
+the exception and warns but never increments `self.failed`; `handle_file` increments
+`self.native` regardless. So the summary reads `native: 8, failed: 0` on a run where two objects
+failed.~~ The warnings *do* reach the log at `Warn` through `SyncOrchestrator.LogWarnings`, whose
+comment already says the right thing — "the run succeeded but is not complete" — so this was a
+wrong one-line answer rather than a silent one. The one-line answer is what gets read.
+
+**✅ Fixed 2026-08-15**, and not as the one-liner it looked like. Counting a partly-failed file
+out of `native` also takes it out of `dirty = updated > 0 or native > 0`, which is what decides
+whether the run saves — so the naive fix would have made the run that had already written to the
+project the one that discarded it. There is a `partial` counter in that test now. **The lesson
+generalises past this defect: a counter that decides a side effect is not just a report, and
+correcting what it reports can change what it does.**
+
+**Three · nothing in the suite imports twice.** ~~Both real-CODESYS import tests in
+`Versio.Integration.Tests` import exactly once, and all of them copy the `.project` without its
+sidecars. So the suite could not have caught this on either axis, and a defect that needs a
+second cycle has no coverage at all.~~ **Closed 2026-08-15** — and it closed Phase 4's own
+missing write coverage with it, because they wanted the same fixture and turned out to be one
+test. It imports twice with the compile cache present, asserts the cache is there rather than
+trusting that it is, and reads a written priority back out of the project.
+
+> **"and all of them copy the `.project` without its sidecars" was wrong**, which only came out
+> when the fix was built. CODESYS writes the `.opt` pair itself on first open, so every test
+> that exports before importing already had them; copying them in changed nothing and no
+> assertion could see the difference. The cache is the sidecar that mattered, and it is the one
+> the five-run table above had already isolated. See the loose end.
+
+> **One thing it measured that contradicts the story above.** Deliberately reverting Phase 4 —
+> putting the task XML back on the `import_native` path, with the cache present — did **not**
+> bring the exception back. It silently overwrote the typed write instead. The one variable
+> that differs from P7 is that this run had `updated > 0`, so the phase-split save in defect
+> One above actually ran. Two things moved at once, so this is a lead rather than an answer;
+> but it is the first evidence on the question defect One has been carrying, and it points at
+> the guard being real rather than decorative.
+
+**The first explanation of this was wrong, and the way it was wrong is worth more than the
+finding.** It said this was "the `Core2` mutation seen from the other end" — cycle 1 mutates the
+file, cycle 2 chokes on it. That fitted every observation then available, explained the timing,
+and named a phase that would fix it. It was written into three documents **before a single
+variable had been varied**, and the first experiment that varied one killed it: a fully
+round-tripped `Task Configuration.xml` imports cleanly into a project with no cache. A story
+that fits one run is a hypothesis, and this one was recorded as a cause.
+
+**Found by running the thing twice.** Ten gaps came out of reading the import path carefully;
+this one was invisible to reading, because it does not exist on the first cycle.
+`tools\Measure-ImportStability.ps1` is committed so it stays reproducible.
+
+### An import's summary was logged with the exporter's field names, and four of its events with nothing at all
+
+Found while tracing the above. `LocalCodesysRunner.cs:514` handles `case "summary"` with one
+message built from `walked`, `written`, `skipped` and `gaps` — which are the **exporter's**
+fields. An import summary carries `updated`, `unchanged`, `native`, `created`, `missing`,
+`failed` and `notImported`, and `ScriptEvent.Int` returns `int?`, null for an absent key. So
+every import logs:
+
+```
+walked , wrote , skipped  (of which  not implemented), 2 warning(s)
+```
+
+The warning count is the only true number in it, and the six an import actually reports never
+reach the log at `Info` at all. ~~**Not observed in a log**, because no import has run through
+the app in the retained logs — read from the code rather than from evidence, which is worth
+stating rather than blurring.~~ **It was observed on 2026-08-15**, twice, in the logs of the
+Phase 4 integration test being built — exactly as written above, blanks and all. Recording that
+because the caveat was the right thing to write at the time and the upgrade from "read from the
+code" to "watched happening" is the part a reader should be able to see. It is the same class as
+the rolling file sink that was never instantiated: a log line that exists, is reached, and says
+nothing.
+
+**✅ FIXED 2026-08-15.** The `summary` case switches on the job's operation, and an import reads
+`import: 1 updated, 7 native, 2 unchanged, 3 not applied (export-only) — 0 warning(s)`. Keyed on
+the operation rather than on which keys are present, so a third script growing a summary is a
+compiler error rather than a silently-chosen branch; zero-valued fields are omitted, because
+`0 failed` on every line is the noise that let the blank version survive.
+
+**And the same reading found four events with no `case` at all**, falling through to
+`_log.Debug("· {type}")`. The worst by a distance was **`task_set`** — Versio setting a task's
+priority, interval or **CPU core binding** logged as the literal string `· task_set`, with no
+task, field or value. That is the one write the entire G7/G11 argument exists to make deliberate,
+and it was the least legible line in the log. `Info` now, naming all three.
+
+**`ImportLoggingTests` is the instrument this finding was missing.** `ExportLoggingTests` had
+existed for months; the import had no equivalent, which is the whole reason a line of blanks
+survived unnoticed. Two tests — a clean import's numbers, and **an import that loses a file**,
+because nothing in the suite had ever run a failing import at all. Both verified by mutation.
 
 ### Three moves, three deleted subscriptions, three green suites
 

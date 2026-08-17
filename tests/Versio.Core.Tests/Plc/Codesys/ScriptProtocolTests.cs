@@ -170,10 +170,225 @@ public class CodesysJobTests
         var json = (Job(new ProjectJob
         {
             BindingId = "b-1", ProjectPath = @"C:\w\A.project", Path = @"C:\w\A",
+            Plan = new Versio.Core.Plc.ImportPlan { Files = [] },
         }) with { Operation = CodesysOperation.Import }).ToJson();
 
         Assert.Contains("\"src\"", json);
         Assert.DoesNotContain("\"out\"", json);
+    }
+
+    [Fact]
+    public void An_import_job_without_a_plan_is_refused_here_rather_than_by_python()
+    {
+        // Same argument as the multi-project refusal below: fail before the 17-31 s cold
+        // start, in words naming the missing thing. The script executes a plan and nothing
+        // else - its filename-derived walk is gone, so a planless job has no meaning it
+        // could fall back to.
+        var ex = Assert.Throws<InvalidOperationException>(() => (Job(new ProjectJob
+        {
+            BindingId = "b-1", ProjectPath = @"C:\w\A.project", Path = @"C:\w\A",
+        }) with { Operation = CodesysOperation.Import }).ToJson());
+
+        Assert.Contains("plan", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_planned_deletion_crosses_the_wire_with_what_the_script_needs_to_refuse_it()
+    {
+        // This test used to assert the OPPOSITE, and that was its job. While the planner
+        // proposed deletions and the script could not execute them, it held the two halves
+        // together: adding remove() without this field would have produced a script that
+        // deletes nothing while everything above it said deletions were planned, and adding
+        // the field without the script would have sent a key nothing reads.
+        //
+        // Both halves are here now, so it flips to asserting what crosses — and what crosses
+        // is chosen by what the script must be able to REFUSE with, not by what it needs to
+        // act. The resolve chain, because the file is gone and a location can no longer be
+        // derived from a path. The recorded hash and form per file, because the one check
+        // only the CODESYS process can make is whether the live object still matches what was
+        // exported — a mirror file being absent says somebody deleted it, not that nobody
+        // edited the object since.
+        var json = (Job(new ProjectJob
+        {
+            BindingId = "b-1", ProjectPath = @"C:\w\A.project", Path = @"C:\w\A",
+            Plan = new Versio.Core.Plc.ImportPlan
+            {
+                Files = [],
+                Deletions =
+                [
+                    new Versio.Core.Plc.PlannedDeletion
+                    {
+                        Guid = "g1",
+                        Name = "FB_Motor",
+                        Resolve = ["Device", "Plc Logic", "Application", "FB_Motor"],
+                        Files = [new Versio.Core.Plc.DeletedFile(
+                            "App/FB_Motor.st", "sha256:aaa", "ST_FULL")],
+                    },
+                ],
+            },
+        }) with { Operation = CodesysOperation.Import }).ToJson();
+
+        Assert.Contains("\"deletions\"", json, StringComparison.Ordinal);
+        Assert.Contains("FB_Motor", json, StringComparison.Ordinal);
+        Assert.Contains("Plc Logic", json, StringComparison.Ordinal);
+        Assert.Contains("sha256:aaa", json, StringComparison.Ordinal);
+        Assert.Contains("ST_FULL", json, StringComparison.Ordinal);
+
+        // A textual record carries no nhash, and the key is omitted rather than sent empty —
+        // so a mirror with nothing normalised to send produces the job file it always did.
+        Assert.DoesNotContain("nhash", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_rename_crosses_the_wire_with_where_it_is_and_where_it_should_end_up()
+    {
+        var json = (Job(new ProjectJob
+        {
+            BindingId = "b-1", ProjectPath = @"C:\w\A.project", Path = @"C:\w\A",
+            Plan = new Versio.Core.Plc.ImportPlan
+            {
+                Files =
+                [
+                    new Versio.Core.Plc.PlannedFile
+                    {
+                        Path = "Lib/New.st",
+                        Action = Versio.Core.Plc.PlannedAction.Skip,
+                        Skip = Versio.Core.Plc.PlannedSkip.RenameTarget,
+                    },
+                ],
+                Renames =
+                [
+                    new Versio.Core.Plc.PlannedRename
+                    {
+                        Guid = "g1",
+                        Resolve = ["App", "Old"],
+                        OldName = "Old",
+                        NewName = "New",
+                        NewParent = ["Lib"],
+                        OldPath = "App/Old.st",
+                        NewPath = "Lib/New.st",
+                    },
+                ],
+            },
+        }) with { Operation = CodesysOperation.Import }).ToJson();
+
+        Assert.Contains("\"renames\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"oldName\": \"Old\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"newName\": \"New\"", json, StringComparison.Ordinal);
+
+        // isMove is computed C#-side rather than re-derived in IronPython: it is a list
+        // comparison, and asking two languages to agree about one buys nothing.
+        Assert.Contains("\"isMove\": true", json, StringComparison.Ordinal);
+
+        // THE SKIP KIND THAT REAL CODESYS CAUGHT FIRST. PlannedSkip's serialiser falls back to
+        // "unknownForm" for anything it does not name, so adding RenameTarget without adding
+        // it here sent the script a skip it did not recognise — and the script warned
+        // FORM_NOT_UNDERSTOOD about a file that was perfectly well understood. A rename looked
+        // like a broken plan, on a run that had otherwise worked.
+        Assert.Contains("\"skip\": \"renameTarget\"", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("unknownForm", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_plan_with_nothing_to_rename_sends_no_renames_key_at_all()
+    {
+        var json = (Job(new ProjectJob
+        {
+            BindingId = "b-1", ProjectPath = @"C:\w\A.project", Path = @"C:\w\A",
+            Plan = new Versio.Core.Plc.ImportPlan { Files = [] },
+        }) with { Operation = CodesysOperation.Import }).ToJson();
+
+        Assert.DoesNotContain("renames", json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void A_native_deletion_carries_the_normalised_hash_the_script_compares_against()
+    {
+        // The raw hash is over bytes that churn between exports, so it is not what a native
+        // deletion is checked against and sending it alone would have the script refuse every
+        // one of them. nhash is the whole of the native check crossing the wire.
+        var json = (Job(new ProjectJob
+        {
+            BindingId = "b-1", ProjectPath = @"C:\w\A.project", Path = @"C:\w\A",
+            Plan = new Versio.Core.Plc.ImportPlan
+            {
+                Files = [],
+                Deletions =
+                [
+                    new Versio.Core.Plc.PlannedDeletion
+                    {
+                        Guid = "g1",
+                        Name = "Glob_Var",
+                        Resolve = ["Device", "Glob_Var"],
+                        Files = [new Versio.Core.Plc.DeletedFile(
+                            "App/Glob_Var.gvl.xml", "sha256:raw", "NATIVE", "sha256:norm")],
+                    },
+                ],
+            },
+        }) with { Operation = CodesysOperation.Import }).ToJson();
+
+        Assert.Contains("\"nhash\": \"sha256:norm\"", json, StringComparison.Ordinal);
+        Assert.Contains("sha256:raw", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_plan_with_nothing_to_delete_sends_no_deletions_key_at_all()
+    {
+        // Omitted rather than sent empty. Every import carries a plan and almost none of them
+        // delete anything, so an always-present "deletions": [] would put the most dangerous
+        // word in the protocol into every job file Versio has ever written — and a key that
+        // is normally there is a key nobody looks twice at on the day it is not empty.
+        var json = (Job(new ProjectJob
+        {
+            BindingId = "b-1", ProjectPath = @"C:\w\A.project", Path = @"C:\w\A",
+            Plan = new Versio.Core.Plc.ImportPlan { Files = [] },
+        }) with { Operation = CodesysOperation.Import }).ToJson();
+
+        Assert.DoesNotContain("deletions", json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void The_plan_travels_in_the_words_the_script_dispatches_on()
+    {
+        // The action and skip tokens are the wire protocol: versio_import.py switches on
+        // these strings, so a C#-side enum rename must not reach the JSON. Asserted
+        // against the serialized text for exactly that reason.
+        var json = (Job(new ProjectJob
+        {
+            BindingId = "b-1", ProjectPath = @"C:\w\A.project", Path = @"C:\w\A",
+            Plan = new Versio.Core.Plc.ImportPlan
+            {
+                Files =
+                [
+                    new Versio.Core.Plc.PlannedFile
+                    {
+                        Path = "App/Simulation.st",
+                        Action = Versio.Core.Plc.PlannedAction.ApplyText,
+                        Name = "Simulation",
+                        Resolve = ["App", "Simulation"],
+                    },
+                    new Versio.Core.Plc.PlannedFile
+                    {
+                        Path = "App/Task Configuration.xml",
+                        Action = Versio.Core.Plc.PlannedAction.Skip,
+                        Skip = Versio.Core.Plc.PlannedSkip.ExportOnly,
+                        ImportableSibling = "App/Task Configuration.tasks.yaml",
+                    },
+                ],
+            },
+        }) with { Operation = CodesysOperation.Import }).ToJson();
+
+        Assert.Contains("\"schema\": 2", json);
+        Assert.Contains("\"action\": \"text\"", json);
+        Assert.Contains("\"action\": \"skip\"", json);
+        Assert.Contains("\"skip\": \"exportOnly\"", json);
+        Assert.Contains("\"sibling\": \"App/Task Configuration.tasks.yaml\"", json);
+        Assert.Contains("\"resolve\"", json);
+
+        // Warnings and the missing-file list stay on this side of the process boundary -
+        // they are for the person and the log, and the script has no use for them.
+        Assert.DoesNotContain("missingFromMirror", json);
+        Assert.DoesNotContain("warnings", json);
     }
 
     [Fact]

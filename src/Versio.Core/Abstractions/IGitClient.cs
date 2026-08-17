@@ -165,6 +165,25 @@ public interface IGitClient
     Task<string> RevParseAsync(string revision, CancellationToken ct);
 
     /// <summary>
+    /// The content of a file as HEAD has it, or empty when HEAD has no such file.
+    /// </summary>
+    /// <param name="path">Repository-relative, forward slashes — git's own path shape.</param>
+    /// <remarks>
+    /// <para>
+    /// <b>The only way to see a file the working tree no longer has.</b> Planning a rename needs
+    /// the departed file's content, and the manifest keeps one hash per file rather than the
+    /// bytes — so for anything a hash cannot answer, this is the source.
+    /// </para>
+    /// <para>
+    /// <b>Empty for a mirror that was never committed</b>, and that is a real state rather than
+    /// an error: an export that has not been committed yet has no HEAD copy of anything. The
+    /// caller falls back to whatever it does without old content, which for a rename is a
+    /// delete and a create.
+    /// </para>
+    /// </remarks>
+    Task<string> ShowAtHeadAsync(string path, CancellationToken ct);
+
+    /// <summary>
     /// Take one side of a conflicted file and stage it.
     /// </summary>
     /// <param name="ours">

@@ -47,6 +47,77 @@ public sealed record ProjectObject
     [JsonPropertyName("parent")] public string Parent { get; init; } = string.Empty;
 
     [JsonPropertyName("hash")] public string Hash { get; init; } = string.Empty;
+
+    /// <summary>
+    /// For a native payload, the hash of its <b>normalised</b> form. Empty before schema 5,
+    /// and empty for every non-native record.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="Hash"/> is over the bytes on disk, and for a native file those churn: three
+    /// export/import round trips of the fixture with nothing edited came back byte-different
+    /// on four of them every time. So <see cref="Hash"/> cannot answer the one question a
+    /// deletion has to ask — is the live object still what was exported? — because a
+    /// re-export never reproduces it.
+    /// </para>
+    /// <para>
+    /// <b>Recording the comparison form is what breaks the circle.</b> Comparing through
+    /// <c>versio_native_equiv</c> needs both payloads, and for a deletion the old one was in
+    /// the file that was just deleted. Keeping it in the manifest means the fresh export has
+    /// something to be compared against.
+    /// </para>
+    /// <para>
+    /// <b>Empty is not "unchanged".</b> A schema-4 manifest has no <c>nhash</c> because
+    /// nothing wrote one, and reading that as agreement would delete work on every mirror
+    /// exported before 2026-08-15. A native object without one stays unverifiable until the
+    /// project is exported again.
+    /// </para>
+    /// </remarks>
+    [JsonPropertyName("nhash")] public string NormalizedHash { get; init; } = string.Empty;
+
+    /// <summary>
+    /// For a full ST body, the hash of its <b>implementation alone</b>. Empty before schema 6,
+    /// and empty for every form that is not <c>ST_FULL</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>It exists so a renamed POU can be recognised as one.</b> <see cref="Hash"/> is over
+    /// the whole file, and a POU's file opens <c>PROGRAM Simulation</c> — the object's name is
+    /// <i>in</i> the content — so renaming the object rewrites the file and the whole-file hash
+    /// matches nothing. The body is the half a rename does not touch.
+    /// </para>
+    /// <para>
+    /// <b><c>ST_FULL</c> only, and that is not an oversight.</b> An action or a transition is
+    /// implementation with no declaration, and a GVL's <c>.st</c> is a declaration with no name
+    /// in it — for both, the whole-file hash already survives a rename.
+    /// </para>
+    /// <para>
+    /// <b>Empty is not "no implementation".</b> A schema-5 manifest has none because nothing
+    /// wrote one, so a renamed POU on such a mirror is not recognised and falls back to a
+    /// delete and a create — which is what happened before this existed.
+    /// </para>
+    /// </remarks>
+    [JsonPropertyName("ihash")] public string ImplementationHash { get; init; } = string.Empty;
+
+    /// <summary>
+    /// For a full ST body, a bounded fingerprint of its lines — enough to <i>estimate</i> how
+    /// alike it and another file are, without keeping the text. Empty before schema 7.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>It covers the case git cannot.</b> A rename that also edited the body matches no
+    /// hash, so the departed file's content is the only thing that can pair it — and the
+    /// mirror has just lost that file. HEAD has it when the mirror was committed; when it was
+    /// not, or when the file was never tracked, this is the only record of what the file
+    /// looked like.
+    /// </para>
+    /// <para>
+    /// <b>An estimate, and second choice on purpose.</b> It compares line <i>sets</i>, so it
+    /// cannot see order or repetition — coarser than comparing the real texts. The planner
+    /// uses git's bytes whenever it has them and falls back to this.
+    /// </para>
+    /// </remarks>
+    [JsonPropertyName("shash")] public string LineSketch { get; init; } = string.Empty;
     [JsonPropertyName("bytes")] public long Bytes { get; init; }
 }
 

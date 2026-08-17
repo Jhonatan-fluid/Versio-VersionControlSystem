@@ -69,6 +69,16 @@ public sealed class CodesysProjectFormat : IPlcProjectFormat
     /// the working tree, and left Versio spending a <c>git status</c> on each one.
     /// </para>
     /// <para>
+    /// <b><c>&lt;stem&gt;_project.precompilecache</c> was one of the unobserved ones until
+    /// 2026-08-15</b>, and it is the largest of the three — 277 KB of binary beside the
+    /// fixture. The dot of <c>.project</c> becomes an underscore, confirmed across six
+    /// projects. It went unnoticed because *this* repository has <c>*.precompilecache</c> in
+    /// <c>.gitignore</c>, typed there by hand, so the only tree anybody watched was already
+    /// covered — the same way the staging rule was present here and missing from every
+    /// repository Versio adopted. An adopted repository was leaving it untracked where
+    /// <i>Stage all</i> would commit it.
+    /// </para>
+    /// <para>
     /// Only observed files are listed. CODESYS can be configured to write <c>.bak</c> backups
     /// too, and that is deliberately absent: it has not been seen here, and the rules are
     /// re-checked on every adoption, so it costs one line to add when it is.
@@ -87,7 +97,7 @@ public sealed class CodesysProjectFormat : IPlcProjectFormat
             ? normalized[..^BindingConventions.ProjectExtension.Length]
             : normalized;
 
-        return [stem + ".~u*", stem + "-*.opt"];
+        return [stem + ".~u*", stem + "-*.opt", stem + "_project.precompilecache"];
     }
 
     /// <summary>
@@ -138,6 +148,19 @@ public sealed class CodesysProjectFormat : IPlcProjectFormat
             ProcessId = int.TryParse(Field(lines, 2), out var pid) && pid > 0 ? pid : null,
         };
     }
+
+    /// <inheritdoc />
+    public bool NeedsTextToPlan(string relativePath) =>
+        CodesysImportPlanner.NeedsText(relativePath);
+
+    /// <inheritdoc />
+    /// <remarks>Delegates to <see cref="CodesysImportPlanner"/>, where the reasoning lives —
+    /// this class is the seam's phone book, not its brain.</remarks>
+    public ImportPlan PlanImport(
+        Projects.ProjectManifest? manifest,
+        IReadOnlyList<MirrorFile> mirror,
+        IReadOnlyDictionary<string, string> departed) =>
+        CodesysImportPlanner.Plan(manifest, mirror, departed);
 
     /// <summary>The line separator, written without an escape on purpose.</summary>
     /// <remarks>

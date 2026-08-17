@@ -37,6 +37,8 @@ Both directions run automatically and deterministically. A per-project **directi
 | **Ten copies of every project, and a way back to them** | ✅ one is taken before every import and the last ten survive. A *Restore a saved copy…* button appears on a project that has them, listing each by local time and how long ago. **Restoring keeps a copy of what it replaced**, so going back one copy too far is recoverable rather than final. Refused while the IDE holds the project |
 | Import native XML **in place**, GUID preserved | ✅ no delete-and-recreate |
 | Create objects that do not exist yet | ✅ POU / FB / FUNCTION / INTERFACE / DUT / GVL |
+| **Delete a source file and the object leaves the project** | ✅ **textual and native alike.** Deleting is the one thing Versio does that destroys work, so it is built as refusals: five checks before it is even proposed, **the confirmation dialog naming which objects will really go and which will really stay**, and a final check inside CODESYS that the object still matches what was exported — **an object somebody edited in the IDE since is kept**, because a missing file says a file was deleted, not that the object was abandoned. A textual file is rebuilt and compared byte for byte; a native one is re-exported and compared against the normalised hash the export recorded (manifest schema 5), since native bytes churn between exports. A native object exported before that hash existed is refused until the next export |
+| **Rename a source file and the object is renamed, not rebuilt** | ✅ **including a POU.** The import renames and moves the object itself, GUID intact, rather than destroying it and building a new one — **and repoints any task that ran it**, because a task's POU list is stored by NAME and a rename does not update it. That was measured after the fact: the object survived and its task went on naming a POU that no longer existed. A POU's name lives inside its declaration, so renaming one rewrites the whole file — it is paired on the **implementation**, which a rename does not touch (manifest schema 6), and the new declaration is then applied to the renamed object. Ambiguity is refused rather than guessed: two objects sharing a body cannot be told apart, so both stay a delete and a create. Renaming only the file is recognised as changing nothing and says so, and a move the toolchain silently declines is caught and reported rather than counted. A rename that also **edits** the body matches no hash at all, so it is scored on similarity — against the departed file's content at HEAD, or against a fingerprint the export recorded when the mirror was never committed and git has no old copy. The last of three passes, in order of certainty, and the only one that says in the dialog that it used a judgement and which instrument made it |
 | Drive CODESYS headlessly from C# | ✅ `LocalCodesysRunner` |
 | Git status / branches / stage / commit / diff / push | ✅ `GitCliClient` over real `git.exe` |
 | Direction lock, hash gate, coalescer, commit gate | ✅ pure logic, heavily tested |
@@ -81,7 +83,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | **One project view** — the full CODESYS tree with changes marked, plus every other changed file | ✅ replaced the PLC panel and the changed-files list |
 | A project with a clean mirror is not listed | ✅ unless it needs attention — never exported, behind, locked, failed. The empty state says why rather than going blank |
 | **Lazy object rendering** — a row is built when something can reach it, not before | ✅ `TreeRow.Children` on first access; the tree survives a refresh without collapsing |
-| **Export coverage stated, not assumed** — `_coverage.md` + every skip in the manifest | ✅ a gap is distinguished from a deliberate omission; an old manifest reports "unknown", never "complete" |
+| **Export coverage stated, not assumed** — `_coverage.md` + every skip in the manifest | ✅ a gap is distinguished from a deliberate omission; an old manifest reports "unknown", never "complete"; and **an object the export could not write at all is reported rather than counted as covered** — it reaches neither the records nor the skips, so until 2026-08-16 a lost object left a verdict of "everything reaches the mirror" |
 | **Library references exported** (`<manager>.libraries.yaml`) | ✅ **the gap is closed.** One file per library manager, beside the object that owns it — 21 references on the fixture's application, 13 on its project. Hand-written YAML on both sides, no third-party dependency. Export-only: change libraries in the IDE |
 | Template generation | ⛔ needs a new operation and script — not assembly |
 | A second vendor (TwinCAT / Studio 5000 / TIA Portal) | ⛔ the seam is ready and unproven |
@@ -119,7 +121,15 @@ smaller polish items.
 surface, the command line, both sides of the JSON-lines protocol, every script, and the export
 and import mechanics. Its §12 is a standing audit of that integration: what is broken, what is
 merely stale, and where the C# and the python have drifted apart.
-**[docs/PHASE0-FINDINGS.md](docs/PHASE0-FINDINGS.md)** records the measurements and the known limitations — including one real CODESYS mutation (`Core2` in task configuration) that keeps task config **diff-only** for now.
+**[docs/PHASE0-FINDINGS.md](docs/PHASE0-FINDINGS.md)** records the measurements and the known
+limitations — including the one real CODESYS mutation it found: `Core2`, a task's CPU core
+affinity, rewritten by `import_native` without being asked. **That one is fixed** — task
+configuration imports through the typed API now and is no longer diff-only — so read that
+document as a record of what was measured in Phase 0, not as a list of what is still true.
+**[docs/CODESYS-IMPORT-PLAN.md](docs/CODESYS-IMPORT-PLAN.md)** is where the import side is
+being finished, and it is the active plan: eleven numbered gaps, what each measurement closed,
+and the order the evidence argues for building the rest in.
+**[docs/PLAN.md](docs/PLAN.md)** is the full architecture plan behind all of it.
 
 ---
 
@@ -156,13 +166,14 @@ Versio.sln
 │  │
 │  └─ Versio.Scripts.Codesys/   IronPython 2.7, run inside CODESYS. Embedded into
 │                               Versio.Infrastructure as resources. The pure modules
-│                               (text, types, yaml, libraries) import no scriptengine
-│                               and run on CPython too.
+│                               (text, types, decl, yaml, libraries, tasks,
+│                               native_equiv) import no scriptengine and run on
+│                               CPython too, which is what the parity tests use.
 ├─ tests/
-│  ├─ Versio.Core.Tests/        1,384 unit tests — pure, no IO, under a second
-│  ├─ Versio.App.Tests/         478 tests that build the real windows and panels against
+│  ├─ Versio.Core.Tests/        1,494 unit tests — pure, no IO, under a second
+│  ├─ Versio.App.Tests/         480 tests that build the real windows and panels against
 │  │                            the real stylesheet on an STA thread — none is ever shown
-│  └─ Versio.Integration.Tests/ 192 tests against real CODESYS and real git, ~7 min
+│  └─ Versio.Integration.Tests/ 243 tests against real CODESYS and real git, ~31 min (192 of them in 18 s without CODESYS — see CLAUDE.md)
 ├─ tools/                       PowerShell harnesses used during Phase 0, plus
 │                               New-VersioIcon.ps1 which generates the app icon
 ├─ assets/                      versio.svg (reference drawing) and versio.ico
@@ -275,7 +286,7 @@ dotnet test tests/Versio.Core.Tests
 |---|---|---|
 | `Versio.Core.Tests` | nothing — pure, no IO, no clock, no UI | ~0.3 s |
 | `Versio.App.Tests` | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~0.4 s |
-| `Versio.Integration.Tests` | a real CODESYS and a real `git.exe`, and **skips cleanly** when either is absent | ~7 min |
+| `Versio.Integration.Tests` | a real CODESYS and a real `git.exe`, and **skips cleanly** when either is absent | ~10 min |
 
 ```bash
 dotnet test
@@ -342,7 +353,7 @@ Each of these cost real debugging time and is now pinned by a test.
 | **`git status` writes to `.git/index`** | It rewrites the stat cache. Anything that refreshes *because* the index changed will refresh forever. `StatusRefreshPolicy` ignores metadata events for a second after each refresh; working-tree events are never suppressed. |
 | **A directory swap invalidates the watcher watching it** | The export stages into `<mirror>.versio_staging` and swaps, which kills the `FileSystemWatcher` handle on the old directory — *Access is denied*, events lost. The rescan that follows is correct and reports **every file in the tree** as changed, because they are new files. Each one used to cost a `git status` and a full-tree hash before the direction lock refused it: quadratic, in the one place a project is large. `BeginOwnWrite` is the window that makes our own writes free; a genuine overflow still costs one job per file. |
 | **Windows raises a `.git` directory event for every write inside it** | Including the lock files git creates around each invocation. Treating a bare `.git` event as a real change made lock-file churn alone wake the watcher — caught by the integration suite, not by reading the code. Nothing is lost by dropping it: a write to `.git/index` also raises an event naming `.git/index`. |
-| **Not every CODESYS object name is a name** | An external-file reference is identified as {GUID}|C:\Users\<user>\...\file.txt, and percent-encoding that produced a 120-character filename carrying a username and a directory layout into a shared repository. A path-like or over-long name is shortened to its last segment plus a six-character digest (license.txt~45a921); the manifest keeps the real name. Reversibility is not lost, because unsafe_file_stem was never called - imports resolve objects through the project tree, not by parsing filenames. |
+| **Not every CODESYS object name is a name** | An external-file reference is identified as `{GUID}\|C:\Users\<user>\...\file.txt`, and percent-encoding that produced a 120-character filename carrying a username and a directory layout into a shared repository. A path-like or over-long name is shortened to its last segment plus a six-character digest (`license.txt~45a921`); the manifest keeps the real name. Reversibility is not lost, because `unsafe_file_stem` was never called — imports resolve objects through the project tree, not by parsing filenames. |
 | **The IDE rewrites its lock marker every few seconds** | And not in place: it writes `<project>.~u~` — trailing tilde — and renames it over `.~u`, so a rule covering `.~u` alone left an unignored file appearing and vanishing in the working tree. Every rewrite also moves the *folder's* timestamp. Measured over 20 idle seconds: 7 events for `.~u~`, 4 for `.~u`, 4 for the folder. Left alone this was a `git status` every 2.5 s for as long as an engineer had the project open. |
 | **CODESYS leaves `.opt` files beside a project** | An export or an open writes `<name>-AllUsers.opt` and `<name>-<user>-<machine>.opt`, and they **persist** — the second puts a username and machine name into git by its filename alone. Adoption ignores them. A clean open/close leaves no `.~u`; only a crash does. |
 | **A project open in the IDE is refused, and `<project>.~u` says so** | CODESYS writes that file beside the project while it holds it — user, machine, pid, timestamp — and refuses any second instance with *"currently in use by 'x' on 'y'"*. Both export and import fail cleanly and change nothing, but `CODESYS.exe` still **exits 0**, so success must be judged from the script's own `rc` and `done` events. Read the `.~u` first and skip the 17–31 s launch. |

@@ -206,4 +206,33 @@ public sealed partial class GitCliClient
 
         return result.Success ? result.StdOut.Trim() : string.Empty;
     }
+
+    /// <summary>A file's content as HEAD has it, or empty when HEAD has no such file.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b><c>HEAD:./path</c> rather than <c>HEAD:path</c>.</b> Without the <c>./</c> git treats
+    /// the argument as relative to the repository root only by luck of the working directory,
+    /// and a leading component that happens to match a revision name is ambiguous. The explicit
+    /// form is what makes the path a path.
+    /// </para>
+    /// <para>
+    /// <b>Not trimmed, unlike every other reader here.</b> This is file content, and a trailing
+    /// newline is part of it — the exporter writes one and hashes what it writes, so trimming
+    /// would make every comparison against a recorded hash fail for a reason that has nothing
+    /// to do with the file.
+    /// </para>
+    /// <para>
+    /// A missing path, an empty repository and a mirror that was never committed all exit
+    /// non-zero and all mean the same thing to the caller: there is no old copy. Reported as
+    /// empty rather than thrown, because for the caller it is an ordinary answer.
+    /// </para>
+    /// </remarks>
+    public async Task<string> ShowAtHeadAsync(string path, CancellationToken ct)
+    {
+        var result = await RunAsync(
+            ["show", $"HEAD:./{path.Replace('\\', '/')}"], null, ct, TimeSpan.FromSeconds(15))
+            .ConfigureAwait(false);
+
+        return result.Success ? result.StdOut : string.Empty;
+    }
 }

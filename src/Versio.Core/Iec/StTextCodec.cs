@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Versio.Core.Text;
 
 namespace Versio.Core.Iec;
 
@@ -35,6 +36,17 @@ public static class StTextCodec
     /// </remarks>
     private const string EscapeMarker = "//!VERSIO-ESC!";
 
+    /// <summary>
+    /// The trim set, in one place for every surface that has to agree about it.
+    /// </summary>
+    /// <remarks>
+    /// Forwarded rather than redeclared: <see cref="PayloadWhitespace"/> says why the set
+    /// is named at all, and <c>LineSketch</c> and <c>TextSimilarity</c> read the same array.
+    /// This property exists so <c>PythonFileNameParityTests</c> can compare it against
+    /// <c>versio_text.WS</c> without reaching across namespaces for a codec concern.
+    /// </remarks>
+    public static IReadOnlyList<char> TrimmedCharacters => PayloadWhitespace.Characters;
+
     /// <summary>Combine declaration and implementation into a single .st payload.</summary>
     /// <remarks>
     /// The trim-and-single-trailing-newline normalisation is what makes
@@ -61,12 +73,12 @@ public static class StTextCodec
         if (idx < 0)
         {
             // No delimiter: declaration-only file (DUT, GVL).
-            return (Unescape(text.Trim()), string.Empty);
+            return (Unescape(text.Trim(PayloadWhitespace.Characters)), string.Empty);
         }
 
         var decl = text[..idx];
         var impl = text[(idx + ImplementationDelimiter.Length)..];
-        return (Unescape(decl.Trim()), Unescape(impl.Trim()));
+        return (Unescape(decl.Trim(PayloadWhitespace.Characters)), Unescape(impl.Trim(PayloadWhitespace.Characters)));
     }
 
     // Order matters: escape the marker itself first, so decoding can distinguish a
@@ -83,7 +95,7 @@ public static class StTextCodec
     public static string DeclarationOnly(string? declaration) => Normalize(declaration) + "\n";
 
     private static string Normalize(string? s) =>
-        (s ?? string.Empty).Replace("\r\n", "\n").Trim();
+        (s ?? string.Empty).Replace("\r\n", "\n").Trim(PayloadWhitespace.Characters);
 
     /// <summary>Stable content hash of an ST payload.</summary>
     /// <remarks>Delegates to <see cref="Hashing.ContentHash"/>. Hashing is not an IEC

@@ -15,6 +15,7 @@ namespace Versio.Integration.Tests;
 /// round, or an object type nobody anticipated.
 /// </remarks>
 [Trait("Category", "Integration")]
+[Trait("Toolchain", "Codesys")]
 [Collection(CodesysCollection.Name)]
 public sealed class ProjectTreeFromRealExportTests(ITestOutputHelper output) : IDisposable
 {

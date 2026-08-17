@@ -2342,7 +2342,9 @@ forget, and the one that was already forgotten is the one that mattered.
   "editing `Library Manager.libraries.yaml` changes nothing in the project" as a known limitation
   with **"and the panel does not say so yet"** beside it, parked on tree work. The changed-files
   row is where somebody is about to *stage* that edit, so it is where the sentence belongs. It is
-  a glyph and a tooltip, off `ExportCoverage.ExportOnlyForm`, which already existed.
+  a glyph and a tooltip, off `ExportCoverage.IsExportOnly`, which already existed. (It read
+  one constant, `ExportOnlyForm`, until 2026-08-15; the day a second export-only form arrived
+  the glyph was silently right for one file and silently wrong for another.)
 - **The type table is a table.** The tempting rule — lowercase, replace underscores, capitalise —
   yields "Gvl", "Pou", "Textlist" and "Imagepool". Engineers read those daily and a tool that
   renames them reads as one that does not know the domain. An unknown type is shown exactly as

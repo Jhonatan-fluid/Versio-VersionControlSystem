@@ -146,6 +146,9 @@ internal sealed class CountingGitClient : IGitClient
 
     public Task<string> RevParseAsync(string revision, CancellationToken ct) =>
         throw new NotSupportedException();
+    public Task<string> ShowAtHeadAsync(string path, CancellationToken ct) =>
+        Task.FromResult(string.Empty);
+
 
     public Task<GitResult> SignInAsync(string protocol, string host, CancellationToken ct) =>
         throw new NotSupportedException();

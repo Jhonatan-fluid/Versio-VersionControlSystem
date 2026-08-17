@@ -30,9 +30,9 @@ namespace Versio.Core.Serialization;
 ///   </item>
 ///   <item>
 ///     <b>A name past <see cref="MaxStem"/> characters.</b> Windows still enforces 260
-///     characters in most configurations, and a deep CODESYS folder chain plus a
-///     percent-encoded name reaches it. A file nobody can open is worse than an abbreviated
-///     name.
+///     characters in most configurations, and a file nobody can open is worse than an
+///     abbreviated name. It shortens one <i>segment</i>; it does not bound the path, and the
+///     remarks on <see cref="MaxStem"/> say what does.
 ///   </item>
 /// </list>
 /// <para>
@@ -59,9 +59,27 @@ public static partial class PathMapper
     /// Longest stem written before a name is shortened instead.
     /// </summary>
     /// <remarks>
-    /// Long enough for any object name a person types, short enough that a deep CODESYS folder
-    /// chain plus this still clears Windows' 260-character path limit. Must equal
-    /// <c>_MAX_STEM</c> in <c>versio_text.py</c>.
+    /// <para>
+    /// Long enough for any object name a person types. Must equal <c>_MAX_STEM</c> in
+    /// <c>versio_text.py</c>.
+    /// </para>
+    /// <para>
+    /// <b>It does not bound the path, and it said it did until 2026-08-16</b> — "short enough
+    /// that a deep CODESYS folder chain plus this still clears Windows' 260-character path
+    /// limit". Two things make that false, both measured rather than read.
+    /// <see cref="Shortened"/> returns <c>tail[..80] + "~" + six hex</c>, so the cap is really
+    /// <b>87</b>. And <see cref="FileNameFor"/> prefixes a member with its owner, so a Method,
+    /// Property, Action or Transition file name is <b>two</b> of these — <b>190</b> characters
+    /// at worst, which leaves 19 for the repository root with the ordinary
+    /// <c>Device/Plc Logic/Application</c> chain and no deep chain at all.
+    /// </para>
+    /// <para>
+    /// The path is bounded by <c>too_long_for_any_machine</c> and
+    /// <c>too_long_for_this_machine</c> in <c>versio_text.py</c>, per <i>file</i> rather than
+    /// per object. This number bounds one segment, which is all a per-name rule can honestly
+    /// bound — and it is the only shortening that can key on something every machine agrees
+    /// about, which is why the guards report rather than shorten.
+    /// </para>
     /// </remarks>
     private const int MaxStem = 80;
 

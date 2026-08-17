@@ -116,7 +116,8 @@ if ($MutateFirst) {
 
 Write-Host "`n[3/5] importing the exported files into the copy" -ForegroundColor Cyan
 $r2 = & "$tools\Run-Codesys.ps1" -Script "$scripts\versio_import.py" `
-    -Job @{ project = $copyProject; src = $baselineOut; save = $true } -Profile $Profile
+    -Job @{ schema = 2; project = $copyProject; src = $baselineOut; save = $true;
+            plan = (& "$tools\New-ImportPlan.ps1" -Mirror $baselineOut) } -Profile $Profile
 if ($r2.ExitCode -ne 0) { throw "import failed (exit $($r2.ExitCode))" }
 ($r2.Events | Where-Object t -eq 'summary') | ConvertTo-Json -Compress | Write-Host
 $warned = $r2.Events | Where-Object t -eq 'warning'

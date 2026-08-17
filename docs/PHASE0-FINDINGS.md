@@ -20,6 +20,8 @@
 | 0.15 | ST round-trip | ✅ verified in code + unit tests |
 | **0.5** | **Round-trip losslessness — textual path** | ✅ **proven with a real mutation** (see below) |
 | 0.5b | Round-trip — native XML path | ⚠️ **not yet tested** — 8 of 10 files skipped by the importer |
+| P7 | Import → export churn over 3 cycles | ⚠️ **climbs +3 per cycle, never settles** — and every import after the first fails. See below |
+| P0–P9 | The import API, called rather than reflected on | ⚠️ **four of seven documented spellings were wrong**, two gaps closed as unreachable, and `remove()` dangles silently. See below |
 
 ---
 
@@ -170,7 +172,342 @@ Core2: -1  ->  -2      (directly beside an unchanged  Core: -1)
 
 That is a task's **CPU core affinity**, and `import_native` changed it without being asked. It is deliberately **not** masked. It is pinned by a test asserting the deviation is *exactly* this one field, so the suite fails the moment it grows.
 
-**Recommendation: treat Task Configuration as diff-only (Tier 3) until this is understood on more projects.** It may be a benign sentinel normalisation, but "probably benign" is not a basis for writing to someone's task scheduling.
+~~**Recommendation: treat Task Configuration as diff-only (Tier 3) until this is understood on more projects.** It may be a benign sentinel normalisation, but "probably benign" is not a basis for writing to someone's task scheduling.~~ **Spent — see the two notes below.** The second sentence was right and the recommendation drawn from it was wrong: the answer was not to wait for more projects but to stop handing the file to `import_native` at all, and the reason it took two supersessions to get there is that the deviation was read as CODESYS's behaviour rather than as a consequence of our own choice.
+
+> **Superseded on 2026-08-15 by P7 below.** Diff-only is not a safe resting place: the very
+> next import of a mirror this deviation produced **fails**, and the failure is silent in the
+> summary. The recommendation now is Phase 4 of [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md)
+> — typed task configuration, so `import_native` never sees this file again.
+>
+> **✅ And that is now built, on the same day.** Task configuration exports as `TASK_BOTH` and
+> is applied back through typed property assignment; `import_native` is never handed the object.
+> `Core2` reads `-2,-1` across four consecutive snapshots where it used to move on the first
+> cycle, and `Task Configuration.xml` has dropped out of the churn set. **The deviation above is
+> history, not a live limitation** — the measurement stands, the recommendation is spent.
+>
+> **And the write is under test now, later the same day.**
+> `AdoptAndExportTests.A_task_priority_edited_in_the_mirror_reaches_the_project_and_survives_a_second_import`
+> edits a priority in the mirror, imports twice against real CODESYS, and reads the value back
+> out of the project. The pinning test named above cannot do that job — it reads bytes captured
+> *before* Phase 4, so it passes whatever the importer does today.
+>
+> **One thing to carry forward from the numbers above: `-2,-1` is `MainTask,VISU_TASK`, and
+> only VISU_TASK's was ever the defect.** The baseline capture already has MainTask at `-2`.
+> Both tasks reading `-2` is the bug; MainTask reading `-2` on its own is not.
+
+---
+
+## P0–P9 — the import API, called rather than reflected on
+
+**Measured 2026-08-15**, `tools\Probe-ImportApi.ps1`, one scratch copy per probe.
+
+The import plan's API table came from reflecting over `ScriptEngine3.dll`. Reflection was already
+an improvement — a string search of the same binary had reported `move` as absent when it exists,
+and nearly wrote a wrong constraint into the design. **Reflection was still not enough: it says a
+member exists, not what it accepts, and four of the seven rows were wrong about that.**
+
+| Probe | Question | Answer |
+|---|---|---|
+| P0 | What does the API surface look like from inside? | **Nothing.** `dir()` on a `ScriptObject` is empty and `GetMembers()` omits members the exporter calls daily |
+| P1 | Does a rename preserve identity? | **Yes** — same GUID in session and after save/close/reopen |
+| P2 | Does a move? What is `new_index`? | **Yes.** `new_index` **must be `-1`** for an unsorted parent |
+| P3 | `remove()` on a referenced object | **Dangles silently** — no throw, no cascade, no warning |
+| P4 | Can `find` resolve what our encoding cannot? | **Varargs yes**, python list `TypeError`, bare name returns empty |
+| P5 | Can awkward names be created? | **No** — all four refused by name validation |
+| P6 | Is the typed task path sufficient? | **Yes**, including `core_binding`; setters are property assignment |
+| P8 | Where does path length break? | **Not in CODESYS** — ten 40-char levels, ~420 characters, no complaint |
+| P9 | Can a fixed-version library reference be made? | **Yes, one call.** Produces `is_managed: true` |
+
+### The three that changed something
+
+**P0 · introspection from inside the script is worthless, and that is the finding.** `dir()` on a
+`ScriptObject` returns an **empty list**. `GetType().GetMembers()` does better — it shows `rename`,
+`move`, `remove`, `find`, `guid`, `parent`, `index` — but it **omits `get_children`, `get_name` and
+`textual_declaration`**, three members `versio_export.py` has called on every run for months. Those
+arrive through *extenders* at runtime.
+
+So **absence from either listing proves nothing**, and a probe that concluded "the typed task API
+does not exist" from the CLR member list would have been wrong: every one of the seven task fields
+reads fine despite none of them appearing there. The only sound probe is to call the thing, which
+is why every probe here reports the exception type and message rather than a bare `None`.
+
+**P3 · `remove()` dangles, silently — the worst of the three possible answers.** The plan called
+this an open risk. Removing the `Glob_Var` GVL, which the POUs read from, threw nothing, cascaded
+nothing, saved cleanly, took the object count 25 → 24, and stayed gone after a reopen.
+
+That **raises** the stakes on Phase 2. Its preconditions are not defence-in-depth over a toolchain
+that would catch the mistake anyway — they are the only thing between a stale manifest and quietly
+breaking a project, because nothing downstream will object.
+
+**P5 · the awkward names are refused, which is narrower than it sounds.** `create_pou` rejected
+`My.Thing`, `weird<name>`, `Pump ` and `Pump.`, each with *"The name is not valid for this
+object."* So the importer will never be asked to *create* one, and G3's blast radius shrinks.
+
+**It does not follow that such names cannot exist, and the encoding must not be deleted on the
+strength of this.** `README.md` already records that an external-file reference is named
+`{GUID}\|C:\Users\<user>\...\file.txt` — a real object name carrying `|`, `:` and `\`, which
+is precisely what `safe_file_stem` shortens, and which did not come from `create_pou`. P5 tested
+one door; names also arrive from the IDE, from libraries and device descriptions, and from
+`import_native`.
+
+---
+
+## P7 — the churn does not settle, and it is narrower than G10 assumed
+
+> **Superseded on 2026-08-16 by Phase 5, and kept because it is what justified it.** Everything
+> below is a true record of the behaviour *before* the fix. The same tool now prints
+> **`P7: SETTLES`** — zero differences on all three cycles, `UniqueIdGenerator` flat at 44 across
+> every one — because the export keeps the bytes already in the mirror when the fresh payload is
+> normaliser-equivalent to them.
+>
+> **The narrowing recorded below is what made the fix correct**, and is the reason to read this
+> rather than skip it: `GlobalTextList.xml` churns with no counter in it at all, so a fix aimed
+> at `UniqueIdGenerator` would have settled three files, left the fourth diffing forever, and
+> looked like it worked.
+
+**Measured 2026-08-15**, `tools/Measure-ImportStability.ps1`, on a scratch copy of the fixture.
+Three consecutive import → export cycles over **one** mirror directory, re-exported into,
+**nothing edited between cycles**. Every difference below is therefore produced by the round
+trip and by nothing else, which is the whole reason for holding the mirror still.
+
+This is probe P7 of [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md), and it exists to decide
+one thing: whether the counter climbs forever or settles the way `Core2` does. Until now that
+was an argument.
+
+```
+Cycle  Textual  ExportOnly  Native  Bookkeeping  Structural
+  1       0          0        5          1           0
+  2       0          0        4          1           0
+  3       0          0        4          1           0
+```
+
+| File | `UniqueIdGenerator`, by cycle | |
+|---|---|---|
+| `Diagnosis.vis.xml` | 44 → 47 → 50 → 53 | **climbing** |
+| `Live_Visu.vis.xml` | 26 → 29 → 32 → 35 | **climbing** |
+| `Visualization.vis.xml` | 26 → 29 → 32 → 35 | **climbing** |
+| `PLC_PRG.xml` | 347 → 347 → 347 → 347 | flat |
+| `Signals.xml` | 149 → 149 → 149 → 149 | flat |
+
+**Verdict: it climbs, linearly, +3 per cycle, and never settles.** G10 is measured rather than
+argued, and Phase 5 is justified.
+
+**The whole run was repeated from scratch and came back identical** — same per-cycle counts, same
+five counter series, same two import failures on the same two objects. That matters twice over:
+it rules out this being one unlucky run, and it says the loop is *deterministic*, which is what
+made the later bisection of the import failure trustworthy. A measurement that moves between runs
+cannot be used to test one variable at a time.
+
+**An incidental confirmation worth keeping.** The cycle-0 baseline — exported into a different
+directory, from a project with a different filename — was byte-identical to the committed
+`fixtures/projects/RefrigeratorControl/` on every object file. The only differences were
+`bindingId` and `project` inside `_manifest.json`, which are exactly the two fields that should
+differ. The determinism fingerprint test compares two exports in one place; this says the output
+does not depend on where the project lives or what it is called.
+
+Three things the measurement changed:
+
+- **Only visualisations climb, and the churn set is smaller than G10 claimed.** G10 said an
+  import leaves a diff in "every native file it touched". It touches **eight**, and they split
+  four ways:
+
+  | | Files |
+  |---|---|
+  | climb on the counter, every cycle | `Diagnosis.vis.xml`, `Live_Visu.vis.xml`, `Visualization.vis.xml` |
+  | churn every cycle with **no counter** | `GlobalTextList.xml` |
+  | move once, then settle | `Task Configuration.xml` |
+  | byte-stable throughout | `Glob_Var.gvl.xml`, `PLC_PRG.xml`, `Signals.xml` |
+
+  So the steady state is **four of eight, forever** — not all eight, and not only the ones with
+  a counter in them.
+- **`Task Configuration.xml` settles after one cycle.** `Core2` −1 → −2 plus two `EventPOUGuid`
+  re-mints in cycle 1, then byte-identical in cycles 2 and 3. It is the one file that behaves
+  the way the counter was assumed to.
+- **`GlobalTextList.xml` churns every cycle and carries no counter at all.** Its diff is three
+  lines — `GuidInit`, `GuidReInit`, `GuidExitX` — which is the re-minted-internal-GUID class
+  above, at identical byte length. So the steady-state churn has **two** causes, not one, and
+  **a fix aimed at the counter would leave a file diffing forever.** This is the concrete reason
+  Phase 5's rule has to key on normaliser-equivalence rather than on the counter, and it is
+  worth more than the counter measurement it came in beside.
+  - **It decided a second design on 2026-08-15**, which is not what it was measured for.
+    Phase 2's native content check was going to compare with GUIDs **unmasked**, because
+    `versio_native_equiv.normalize` documents that masking must be off when comparing two
+    exports of one project. True — but a delete check compares an old export against a fresh
+    one across however many round trips have happened since, and **these three lines are
+    exactly what moves across a round trip**. Masking is therefore required, and the residual
+    cost is recorded in `versio_types.py`.
+  - **This finding was re-measured from scratch before it was found here**, which is the cost
+    `CLAUDE.md` warns about. The re-measurement agreed line for line — same three fields, same
+    file. The lesson is not that the measurement was wasted (it decided the design in ten
+    minutes) but that **reading P7 first would have decided it in one**.
+
+**And the textual path held.** Zero `.st` differences across three round trips, zero
+export-only differences, and nothing added or removed at any cycle. Gate 0.5 was proven once
+with one mutation; this is the same claim survived three times unattended.
+
+**All four churning files are `NativeXmlNormalizer`-equivalent**, run over snapshots 002 and 003
+— the two steady-state cycles of an unedited mirror. Nine files byte-identical, four equivalent,
+and only `_manifest.json` left, which records the hashes of the four. The masked counts are
+symmetric on every file (695/695, 3656/3656, 521/521 and 30/30 GUIDs; 2/2, 2/2, 2/2 and 1/1
+counters), which is what says the two sides differ in the masked positions and **nowhere else** —
+an asymmetric count would mean one side had something the other did not and the equivalence
+verdict would be hiding it.
+
+So Phase 5's keep-existing-bytes rule is **sufficient for everything P7 found churning**, which
+was previously an inference from gate 0.5b rather than a measurement. It also surfaced a trap in
+how that phase must be built — the manifest records the hash of the payload the exporter
+generated, so substituting bytes at write time would leave the manifest disagreeing with the file
+beside it. See [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md) Phase 5.
+
+### ⚠️ Every import after the first fails, and says it succeeded
+
+Not what P7 went looking for, and more important than what it did.
+
+Cycle 1 is clean: `native: 8, failed: 0, warnings: 0`. Cycles 2 and 3 **both throw twice**, on
+`MainTask` and `VISU_TASK` — the two children of `Task Configuration`. (The obvious reading of
+that timing is that the mirror cycle 1 produced is what cycle 2 chokes on. It is not; see
+below.)
+
+```
+System.InvalidOperationException: Collection was modified; enumeration operation may not execute.
+  at _3S.CoDeSys.Utilities.LDictionary`2.ValueCollection.Enumerator.MoveNext()
+  at _3S.CoDeSys.ObjectManager.Project.GetUniqueName(...)
+  at _3S.CoDeSys.ObjectManager.AbstractPasteOrMergeOperation.DoExecuteObject(...)
+```
+
+That is the **exact** exception `versio_import.py`'s `run()` docstring names, and the two-phase
+split with a save between them was written to prevent it. It did not prevent this one.
+
+Worth recording separately, because it is true whatever the cause turns out to be: **that save
+never ran.** It is conditional on `created > 0 or updated > 0`, and both were **0 in every cycle
+here** — an import touching only native files never saves between the phases at all. So the
+guard the docstring presents as covering this exception did not execute once during the
+measurement that hit it. ~~Whether running it would have helped is untested~~ — **there is one
+observation now, and it points at the guard being real.** Reverting Phase 4 inside the new
+integration test put the task XML back on the `import_native` path with the cache present, and
+the exception **did not** come back; that run had `updated > 0`, so the save executed. Two
+things moved at once, so it is a lead rather than a result. A guard whose docstring reads as
+coverage and which is skipped in the case it names is worth fixing either way.
+
+Nothing is destroyed: the objects survive and the file is simply not applied. What is wrong is
+what the run then reports. `ReplaceHandler.progress` warns and never increments `self.failed`,
+and `handle_file` increments `self.native` regardless — so the summary reads `native: 8,
+failed: 0` on a run where two objects failed. The warnings themselves do reach the log at `Warn`
+through `SyncOrchestrator.LogWarnings`, so it is not silent; the one-line answer is just wrong,
+and the one-line answer is what gets read.
+
+### What actually causes it: a stale `.precompilecache`
+
+**The first explanation written here was wrong, and is kept because the way it failed is the
+point.** It said this was "the `Core2` mutation seen from the other end" — that cycle 1 mutates
+the file and cycle 2 chokes on what it wrote. That story fitted every observation available at
+the time and was written into three documents before anything tested it. It is false.
+
+The first four rows import the **same mirror** into the **same project bytes**, varying only what
+sits beside the project. The fifth varies the mirror instead, and is the row that killed the
+original explanation:
+
+| Project directory carries | Mirror | Result |
+|---|---|---|
+| `.project` + `.opt` pair + `_project.precompilecache` | round-tripped | **fails** — `MainTask`, `VISU_TASK` |
+| `.project` + `_project.precompilecache` only | round-tripped | **fails** — same two |
+| `.project` + `.opt` pair only | round-tripped | passes |
+| `.project` alone | round-tripped | passes |
+| pristine project, no sidecars | round-tripped (`Core2 = -2`, both `EventPOUGuid`s re-minted) | passes |
+
+**It is `<project>_project.precompilecache`, and nothing else.** The cache alone is sufficient to
+cause it and a project without one imports cleanly; the `.opt` files, which are the user's own
+editor state, make no difference either way; and the mirror's bytes are irrelevant, since a fully
+round-tripped `Task Configuration.xml` imports cleanly into a project that has no cache.
+
+### ✅ Closed on 2026-08-15 by Phase 4, without deleting anything
+
+Task configuration is now exported as `TASK_BOTH` — the native `.xml` for fidelity, a
+`.tasks.yaml` that is the importable half — and applied through typed property assignment.
+`import_native` never sees the file, so the stale compile cache is never reached.
+
+Measured over three import→export cycles with the cache present:
+
+| | Before | After |
+|---|---|---|
+| warnings, cycles 1/2/3 | 0 / **2** / **2** | **0 / 0 / 0** |
+| native files imported | 8 | 7 — the task XML skipped as `TYPED_SIBLING` |
+| `Core2` across four snapshots | moved on cycle 1 | `-2,-1` throughout — `MainTask,VISU_TASK`, and **only VISU_TASK's `-1` was ever at risk**; MainTask was `-2` in the baseline |
+| `Task Configuration.xml` in the churn set | cycle 1 | never |
+
+**And non-vacuously**, which matters because every cycle reports `updated: 0` when nothing was
+edited — gate 0.5 records exactly that trap. Editing the YAML to `priority: "5"` and
+`coreBinding: 0` and importing gives `updated: 1` with two `task_set` events, and reading the
+project back through the typed API returns priority 5 and core binding 0, with the other task
+untouched.
+
+**So the mitigation below was never adopted.** It is kept because it is the fallback if the typed
+path is ever unavailable, and because the measurement cost real time to get.
+
+> **What this table did not measure, and a second read found.** Every number above is about the
+> file being fixed. None of them asks what the fix did to the file beside it — and making the
+> `.tasks.yaml` authoritative made `Task Configuration.xml` a file the export writes and the
+> import discards, with nothing recording it: the manifest still said `NATIVE_R`, so
+> `_coverage.md` skipped it and the panel drew it as editable. **Closed the same day** by
+> recording it `TASK_NATIVE`; see the finding in [`STATUS.md`](STATUS.md). The general form is
+> worth carrying into Phases 1–3: *a measurement aimed at the defect will not see what the fix
+> changed about anything else.*
+
+### The mitigation that turned out not to be needed
+
+The cells above all reached "no cache" by copying a project that never had one, which is not the
+same experiment as removing one — CODESYS could rebuild it while opening the project and the
+mitigation would buy nothing. Tested directly, same directory, same mirror, cache deleted in the
+instant before the import:
+
+| | Result |
+|---|---|
+| control — cache present | **fails**, `MainTask` + `VISU_TASK` |
+| cache deleted immediately before importing | **passes**, 0 warnings |
+
+**And the cache is regenerated by that same import**, so this removes a stale artefact rather
+than a needed one — the next IDE open finds a fresh cache, rebuilt inside a CODESYS run that was
+being paid for anyway.
+
+The cost side was checked rather than assumed: both projects were exported afterwards and
+compared. `walked 18 / written 12 / skipped 4` on both, nothing added or removed, and the only
+files differing are `GlobalTextList.xml` and the two `EventPOUGuid` lines in
+`Task Configuration.xml` — which are **the fix showing itself**, because those GUIDs are re-minted
+by a native import that *succeeds*, and the control's never did.
+
+**Still not decided: whether Versio should do this.** The cache is CODESYS's, not Versio's, and a
+tool that deletes another tool's files needs a better argument than "it worked six times on one
+fixture". Recorded as a working mitigation, not adopted.
+
+That also explains the shape of the P7 result, which no theory about file content ever could.
+A freshly copied project has no cache; the first import creates one. **So the first import after
+a fresh clone works, and every import after that fails** — which is exactly cycle 1 passing and
+cycles 2, 3 and 4 failing, reproduced 4 for 4 across two independent P7 runs and again in
+isolation.
+
+**The consequence is worse than a round-trip curiosity.** Anyone who has opened their project in
+the CODESYS IDE has a precompile cache beside it. Versio's imports work once on a fresh clone and
+then stop applying task configuration, reporting `failed: 0` each time.
+
+**And it was invisible to the suite by construction.** `Versio.Integration.Tests` copied the
+`.project` and nothing beside it, so no test had ever run an import with a cache present — and
+both of its real-CODESYS import tests imported exactly **once**, so even with the cache they
+would reach the failing state and stop one step short of it.
+
+> **Both axes closed 2026-08-15**, by
+> `AdoptAndExportTests.A_task_priority_edited_in_the_mirror_reaches_the_project_and_survives_a_second_import`.
+> **The reasoning above is half wrong in a way worth keeping**: copying sidecars was never
+> needed. The *export* writes the `.opt` pair and the *import* writes the cache, both measured
+> from that test — so a test that exports, imports, and imports again arrives in the failing
+> state on its own. What was missing was never the copying; it was the second cycle.
+
+> **The cache is not in `TransientPatternsFor`.** `CodesysProjectFormat.TransientPatternsFor`
+> returns `[stem + ".~u*", stem + "-*.opt"]`; `_project.precompilecache` is absent, and its own
+> remarks say "only observed files are listed". *This* repository ignores it only because
+> somebody typed `*.precompilecache` into `.gitignore` by hand — the same shape as the staging
+> rule that `RepoSetup` records as having been missing from every adopted repository. An
+> adopted user repository gets no rule for it, so a 277 KB binary cache sits untracked beside
+> the project and *Stage all* would commit it.
 
 ---
 
@@ -283,7 +620,7 @@ It skips cleanly on a machine without CODESYS or the fixture, so the suite still
 
 | Item | Status |
 |---|---|
-| **Task Configuration `Core2` mutation** | **Confirmed reproducible.** Investigate before enabling task-config import; diff-only until then |
+| ~~**Task Configuration `Core2` mutation**~~ | ~~**Confirmed reproducible.** Investigate before enabling task-config import; diff-only until then~~ — **closed 2026-08-15 by Phase 4**, which took the file off the `import_native` path entirely rather than investigating what CODESYS meant by it. The cause was ours, not CODESYS's. It closed G11 with it |
 | **Recreated objects get NEW GUIDs** | `create_pou` mints a fresh GUID, so anything referencing the old one (task config `EventPOUGuid`) is left stale. Fine when recreating a deleted object; needs thought for cross-machine sync |
 | 0.16 gap types (Interface, TextList, ImagePool…) | Rules written and unit tested; **not exercised** — this project contains none |
 | 0.18 `system.prompt_answers` | Not needed yet — no dialog encountered under 10 headless runs |

@@ -253,7 +253,7 @@ public sealed class ChangeSummaryTests
     public void An_export_only_file_is_still_described_it_is_just_flagged_elsewhere()
     {
         var index = Index(Obj("App/Library Manager.libraries.yaml", "Library Manager",
-            "LIBRARY_MANAGER", "l1", ExportCoverage.ExportOnlyForm));
+            "LIBRARY_MANAGER", "l1", ExportCoverage.LibrariesForm));
 
         var changes = new[] { Changed($"{Root}/App/Library Manager.libraries.yaml") };
 

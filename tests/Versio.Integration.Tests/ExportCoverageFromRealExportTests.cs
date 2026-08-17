@@ -23,6 +23,7 @@ namespace Versio.Integration.Tests;
 /// </para>
 /// </remarks>
 [Trait("Category", "Integration")]
+[Trait("Toolchain", "Codesys")]
 [Collection(CodesysCollection.Name)]
 public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) : IDisposable
 {
@@ -191,20 +192,204 @@ public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) 
         var written = manifest.Objects.Where(o => o.Type == "LIBRARY_MANAGER").ToList();
 
         Assert.Equal(2, written.Count);
-        Assert.All(written, o => Assert.Equal(ExportCoverage.ExportOnlyForm, o.Form));
+        Assert.All(written, o => Assert.Equal(ExportCoverage.LibrariesForm, o.Form));
         Assert.Contains(written, o => o.Path == "Library Manager.libraries.yaml");
         Assert.Contains(written,
             o => o.Path == "Device/Plc Logic/Application/Library Manager.libraries.yaml");
 
         // Exported is not the same as editable, and the report says so rather than leaving
         // it to be found out by editing one.
-        Assert.Equal(2, report.ExportOnlyFiles);
+        //
+        // FOUR: the two library files, the task configuration's native .xml, and the GVL's.
+        //
+        // It was 2, then 3, and each step was a defect being closed rather than a feature
+        // arriving. 2 → 3 when Phase 4 made the task's .tasks.yaml the importable half and
+        // nobody re-recorded its .xml; 3 → 4 on 2026-08-16 when G12 found the GVL's .gvl.xml
+        // doing the identical thing — applied after the .gvl.st and overwriting it, with the
+        // log reporting both as successes.
+        //
+        // BOTH TIMES THIS COUNT WAS THE CHEAPEST THING THAT COULD HAVE NOTICED, and both
+        // times it did not, because it was written to pin the number rather than to ask
+        // whether the number was right. What asks that now is
+        // An_object_never_writes_two_files_the_import_would_both_apply, which is about the
+        // shape and cannot be satisfied by an arithmetic that happens to agree.
+        Assert.Equal(4, report.ExportOnlyFiles);
         Assert.Contains("not applied back", report.Describe(), StringComparison.Ordinal);
 
         // The deliberate skips are still not counted as gaps: the fixture's visualisation
         // manager is skipped for a reason that loses nothing.
         Assert.Contains(manifest.Skipped, s => s.Reason == "SERVICE_OBJECT");
         Assert.DoesNotContain(report.Gaps, g => g.Reason == "SERVICE_OBJECT");
+    }
+
+    [SkippableFact]
+    public async Task The_task_configurations_native_half_is_recorded_and_named_as_one_way()
+    {
+        // What nothing was watching. The .tasks.yaml is the importable half and the .xml
+        // beside it is discarded by the importer as TYPED_SIBLING — but the manifest recorded
+        // that .xml as NATIVE_R, a form that a property's recursive export uses and that the
+        // importer applies. So the panel drew it as an ordinary editable file and _coverage.md
+        // never mentioned it: an edit to a task's XML was thrown away in silence.
+        //
+        // Against a real export rather than a hand-built manifest, because the defect was in
+        // what the exporter WROTE. The unit tests would all have passed with the old form: the
+        // C#/python seam only proves the two sides agree about which forms are one-way, not
+        // that this file carries one of them.
+        var exportRoot = await ExportAsync("first");
+
+        var manifest = ProjectManifest.Parse(
+            await File.ReadAllTextAsync(Path.Combine(exportRoot, "_manifest.json")));
+
+        var task = manifest.Objects
+            .Where(o => o.Type == "TASK_CONFIGURATION")
+            .OrderBy(o => o.Path, StringComparer.Ordinal)
+            .ToList();
+
+        output.WriteLine(string.Join("\n", task.Select(o => $"{o.Form,-12} {o.Path}")));
+
+        // One object, two files, one GUID — the GVL_BOTH shape, with the halves
+        // reversed. GVL_BOTH was the model this was written against and it had the
+        // identical defect at the time, unnoticed for another day: see G12 and
+        // An_object_never_writes_two_files_the_import_would_both_apply.
+        Assert.Equal(2, task.Count);
+        Assert.Single(task.Select(o => o.Guid).Distinct(StringComparer.Ordinal));
+
+        var xml = Assert.Single(task, o => o.Path.EndsWith(".xml", StringComparison.Ordinal));
+        var yaml = Assert.Single(task,
+            o => o.Path.EndsWith(".tasks.yaml", StringComparison.Ordinal));
+
+        Assert.Equal(ExportCoverage.TaskNativeForm, xml.Form);
+        Assert.True(ExportCoverage.IsExportOnly(xml.Form));
+        Assert.False(ExportCoverage.IsExportOnly(yaml.Form));
+
+        // And said out loud where somebody will meet it, with the remedy that is actually
+        // right for this file. "Change it in the IDE" — correct for a library manager — would
+        // walk the reader straight past the .tasks.yaml they were meant to edit.
+        var coverage = await File.ReadAllTextAsync(Path.Combine(exportRoot, "_coverage.md"));
+        output.WriteLine(coverage);
+
+        Assert.Contains("Exported for review, not applied back", coverage, StringComparison.Ordinal);
+        Assert.Contains(xml.Path, coverage, StringComparison.Ordinal);
+        Assert.Contains($"edit `{yaml.Path}` instead", coverage, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// No object writes two files the import would both apply.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The rule the two-file shape never had, written after it failed twice.</b> A
+    /// <c>_BOTH</c> form gives one object two files under one GUID, and
+    /// <c>versio_import.py</c> runs its phases in a fixed order — rename, textual, native,
+    /// delete. If both files are importable, the later phase silently overwrites whatever the
+    /// earlier one applied, and the log reports both as successes because both were.
+    /// </para>
+    /// <para>
+    /// That is G7 and it is G12. <c>TASK_BOTH</c> was fixed in Phase 4 by giving its XML half
+    /// a form of its own; <c>GVL_BOTH</c> had the identical defect and nobody looked, because
+    /// the fix was applied to the instance and not to the shape. This is the shape.
+    /// </para>
+    /// <para>
+    /// <b>Against a real export, deliberately.</b> Both defects were in what the exporter
+    /// <i>wrote</i>: every unit test passed throughout, and the C#/python seam only proves the
+    /// two sides agree about which forms are one-way — never that the file in front of you
+    /// carries one of them. A hand-built manifest would assert this test's own assumptions.
+    /// </para>
+    /// <para>
+    /// It costs no CODESYS launch of its own: <c>ExportAsync</c> is cached across this class.
+    /// </para>
+    /// </remarks>
+    [SkippableFact]
+    public async Task An_object_never_writes_two_files_the_import_would_both_apply()
+    {
+        var exportRoot = await ExportAsync("first");
+
+        var manifest = ProjectManifest.Parse(
+            await File.ReadAllTextAsync(Path.Combine(exportRoot, "_manifest.json")));
+
+        var doubled = manifest.Objects
+            .Where(o => !ExportCoverage.IsExportOnly(o.Form))
+            .GroupBy(o => o.Guid, StringComparer.OrdinalIgnoreCase)
+
+            // An empty GUID is not an identity. record() falls back to "" when obj.guid
+            // raises, so grouping on it would file every unreadable object together and
+            // report a collision that is really two different objects.
+            .Where(g => !string.IsNullOrEmpty(g.Key) && g.Count() > 1)
+            .OrderBy(g => g.Key, StringComparer.Ordinal)
+            .ToList();
+
+        foreach (var group in doubled)
+        {
+            output.WriteLine($"{group.Key}: "
+                             + string.Join(", ", group.Select(o => $"{o.Form} {o.Path}")));
+        }
+
+        Assert.True(doubled.Count == 0,
+            "these objects write more than one file the import applies, so the last phase to "
+            + "run wins and the other file's edits are discarded in silence — give the "
+            + "non-authoritative half its own form and add it to EXPORT_ONLY_FORMS and "
+            + "ExportCoverage.IsExportOnly, as TASK_NATIVE and GVL_NATIVE both do: "
+            + string.Join(" | ", doubled.Select(g => string.Join(", ", g.Select(o => o.Path)))));
+
+        // NON-VACUOUS, and it has to be said because the assertion above passes on an empty
+        // manifest, on a manifest of one object, and on a project with no two-file form in it
+        // at all. The fixture has two of them — the GVL and the task configuration — so a
+        // regression that made either half importable again lands here.
+        var pairs = manifest.Objects
+            .GroupBy(o => o.Guid, StringComparer.OrdinalIgnoreCase)
+            .Where(g => !string.IsNullOrEmpty(g.Key) && g.Count() > 1)
+            .ToList();
+
+        Assert.Equal(2, pairs.Count);
+
+        foreach (var pair in pairs)
+        {
+            Assert.Single(pair, o => !ExportCoverage.IsExportOnly(o.Form));
+        }
+    }
+    /// <summary>
+    /// A GVL's native half is recorded as one-way, and its declaration is the half that
+    /// imports.
+    /// </summary>
+    /// <remarks>
+    /// G12's regression test, and the sibling of
+    /// <see cref="The_task_configurations_native_half_is_recorded_and_named_as_one_way"/> —
+    /// the same claim about the pair that had the defect rather than the pair that was fixed.
+    /// Until 2026-08-16 the <c>.gvl.xml</c> was recorded plain <c>NATIVE</c>, so the import
+    /// applied it after the <c>.gvl.st</c> and put the old declaration back.
+    /// </remarks>
+    [SkippableFact]
+    public async Task The_GVLs_native_half_is_recorded_and_named_as_one_way()
+    {
+        var exportRoot = await ExportAsync("first");
+
+        var manifest = ProjectManifest.Parse(
+            await File.ReadAllTextAsync(Path.Combine(exportRoot, "_manifest.json")));
+
+        var gvl = manifest.Objects
+            .Where(o => o.Type == "GVL")
+            .OrderBy(o => o.Path, StringComparer.Ordinal)
+            .ToList();
+
+        output.WriteLine(string.Join("\n", gvl.Select(o => $"{o.Form,-12} {o.Path}")));
+
+        Assert.Equal(2, gvl.Count);
+        Assert.Single(gvl.Select(o => o.Guid).Distinct(StringComparer.Ordinal));
+
+        var xml = Assert.Single(gvl, o => o.Path.EndsWith(".gvl.xml", StringComparison.Ordinal));
+        var st = Assert.Single(gvl, o => o.Path.EndsWith(".gvl.st", StringComparison.Ordinal));
+
+        Assert.Equal(ExportCoverage.GvlNativeForm, xml.Form);
+        Assert.True(ExportCoverage.IsExportOnly(xml.Form));
+        Assert.False(ExportCoverage.IsExportOnly(st.Form));
+
+        // And the remedy names the file somebody is meant to edit, rather than sending them
+        // to the IDE. The exporter finds it by GUID, so this sentence costs nothing per form.
+        var coverage = await File.ReadAllTextAsync(Path.Combine(exportRoot, "_coverage.md"));
+        output.WriteLine(coverage);
+
+        Assert.Contains(xml.Path, coverage, StringComparison.Ordinal);
+        Assert.Contains($"edit `{st.Path}` instead", coverage, StringComparison.Ordinal);
     }
 
     [SkippableFact]
@@ -286,6 +471,117 @@ public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) 
         // It goes into the repository beside the objects, so it has to read as a diff: no
         // CRLF, and a trailing newline like every other file the export writes.
         Assert.DoesNotContain('\r', text);
+    }
+
+    /// <summary>
+    /// An import and a re-export leave the mirror byte-identical — G10.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The churn this measures was measured first and fixed second.</b> P7 ran three
+    /// import→export cycles with nothing edited between them and watched
+    /// <c>UniqueIdGenerator</c> climb 44 → 47 → 50 → 53, +3 every cycle, never
+    /// settling. Four of the eight native files differed forever, from two causes: three
+    /// visualisations riding that counter, and <c>GlobalTextList.xml</c>, which churns with no
+    /// counter in it at all.
+    /// </para>
+    /// <para>
+    /// <b>That second file is why Phase 5 keys on equivalence and never on the counter.</b> A
+    /// fix aimed at <c>UniqueIdGenerator</c> would have settled three files, left the fourth
+    /// diffing forever, and looked like it worked.
+    /// </para>
+    /// <para>
+    /// <b>Why the export has to land in the SAME directory both times.</b> The preservation
+    /// only happens when there is a previous mirror to preserve from, so exporting into two
+    /// fresh directories cannot see this at all — that arrangement is the determinism gate
+    /// next door, and it deliberately still means what it always meant. This one exports, round
+    /// trips through a real import, and exports again over the top.
+    /// </para>
+    /// <para>
+    /// <b>The manifest is included in the comparison, not excluded from it.</b> It was the one
+    /// file still differing between two steady-state snapshots, and it settles only if the
+    /// recorded hash follows the bytes actually written — which is why the substitution
+    /// happens before <c>record()</c> hashes anything rather than at write time. Excluding it
+    /// here would hide exactly the mistake that trap describes.
+    /// </para>
+    /// </remarks>
+    [SkippableFact]
+    public async Task An_import_and_a_re_export_leave_the_mirror_byte_identical()
+    {
+        var install = new Versio.Infrastructure.Plc.Codesys.CodesysLocator()
+            .FindInstalls().FirstOrDefault(i => i.Profiles.Count > 0);
+        Skip.If(install is null, "no CODESYS installation with a profile");
+
+        var fixture = Core.Tests.TestPaths.Project("RefrigeratorControl.project");
+        Skip.If(!File.Exists(fixture), "fixture project missing");
+
+        var work = Path.Combine(_root, "g10");
+        Directory.CreateDirectory(work);
+
+        var project = Path.Combine(work, "RefrigeratorControl.project");
+        File.Copy(fixture, project);
+
+        var mirror = Path.Combine(work, "RefrigeratorControl");
+        var runner = new Versio.Infrastructure.Plc.Codesys.LocalCodesysRunner(
+            install!.ExecutablePath,
+            new Versio.Infrastructure.Plc.Codesys.ScriptExtractor(),
+            new TestLogger(output));
+
+        async Task RunAsync(Versio.Core.Plc.Codesys.CodesysOperation operation)
+        {
+            var job = new Versio.Core.Plc.Codesys.CodesysJob
+            {
+                Operation = operation,
+                Profile = install.Profiles[0],
+                Projects =
+                [
+                    new Versio.Core.Plc.Codesys.ProjectJob
+                    {
+                        BindingId = "g10", ProjectPath = project, Path = mirror,
+                    },
+                ],
+                Timeout = TimeSpan.FromMinutes(5),
+            };
+
+            var result = await runner.RunAsync(job, null, CancellationToken.None);
+            Assert.True(result.Succeeded, result.FailureReason ?? $"{operation} failed");
+        }
+
+        await RunAsync(Versio.Core.Plc.Codesys.CodesysOperation.Export);
+        var before = Fingerprint(mirror);
+
+        // The round trip. Nothing is edited: this is P7's measurement, which found the mirror
+        // moving anyway.
+        await RunAsync(Versio.Core.Plc.Codesys.CodesysOperation.Import);
+        await RunAsync(Versio.Core.Plc.Codesys.CodesysOperation.Export);
+
+        var after = Fingerprint(mirror);
+
+        Assert.Equal(before.Keys.OrderBy(k => k, StringComparer.Ordinal),
+                     after.Keys.OrderBy(k => k, StringComparer.Ordinal));
+
+        var differing = before.Where(kv => after[kv.Key] != kv.Value)
+            .Select(kv => kv.Key)
+            .OrderBy(k => k, StringComparer.Ordinal)
+            .ToList();
+
+        foreach (var path in differing)
+        {
+            output.WriteLine($"differs: {path}");
+        }
+
+        Assert.True(differing.Count == 0,
+            "these files changed across an import and a re-export with nothing edited, which "
+            + "is G10 - every one of them is a diff in somebody's commit that means nothing: "
+            + string.Join(", ", differing));
+
+        // NON-VACUOUS. All of the above passes on a mirror of no files at all, and the four
+        // that used to churn are native - so if the fixture ever stopped having native objects
+        // this test would go quietly green while measuring nothing.
+        Assert.True(before.Count >= 15, $"only {before.Count} files in the mirror");
+        Assert.Contains(before.Keys, k => k.EndsWith(".vis.xml", StringComparison.Ordinal));
+        Assert.Contains(before.Keys, k => k.EndsWith("GlobalTextList.xml", StringComparison.Ordinal));
+        Assert.Contains(before.Keys, k => k.EndsWith("_manifest.json", StringComparison.Ordinal));
     }
 
     [SkippableFact]

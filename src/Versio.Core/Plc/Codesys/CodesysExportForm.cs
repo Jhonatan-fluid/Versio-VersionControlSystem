@@ -61,6 +61,30 @@ public enum ExportForm
     /// neither.
     /// </remarks>
     NativeWithChildren,
+
+    /// <summary>
+    /// Native <c>.xml</c> for fidelity plus <c>.tasks.yaml</c> for review — and the YAML is
+    /// the half that imports.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Shaped after <see cref="GvlBoth"/>: one object, two files, one GUID in the manifest.
+    /// The difference is which half is authoritative. A GVL imports from its <c>.st</c>; a
+    /// task configuration imports from its <c>.tasks.yaml</c>, and its native XML is
+    /// export-only — recorded in the manifest as
+    /// <see cref="Versio.Core.Projects.ExportCoverage.TaskNativeForm"/>, which is what makes
+    /// that last clause true anywhere but this comment. It was only a comment until
+    /// 2026-08-15.
+    /// </para>
+    /// <para>
+    /// <b>That asymmetry is the entire point, and it is not about readability.</b> Handing
+    /// task configuration to <c>import_native</c> cost two measured defects: it rewrote
+    /// <c>Core2</c> — a task's CPU core affinity — on every import without being asked, and
+    /// every import after the first threw on the task objects while the run reported
+    /// <c>failed: 0</c>. Both stop when this file stops going through that path.
+    /// </para>
+    /// </remarks>
+    TaskBoth,
 }
 
 /// <summary>
@@ -89,7 +113,7 @@ public static class ExportFormRules
         [CodesysObjectType.Transition] = ExportForm.StImplementation,
 
         [CodesysObjectType.Visualisation] = ExportForm.Native,
-        [CodesysObjectType.TaskConfiguration] = ExportForm.NativeRecursive,
+        [CodesysObjectType.TaskConfiguration] = ExportForm.TaskBoth,
         [CodesysObjectType.TextList] = ExportForm.Native,
         [CodesysObjectType.GlobalTextList] = ExportForm.Native,
         [CodesysObjectType.ImagePool] = ExportForm.Native,
@@ -154,14 +178,18 @@ public static class ExportFormRules
     public static bool IsTextual(ExportForm form) =>
         form is ExportForm.StFull or ExportForm.StDeclaration or ExportForm.StImplementation;
 
-    /// <summary>
-    /// True when the form travels one way: exported for review, never applied back.
-    /// </summary>
-    /// <remarks>
-    /// The predicate the UI needs for the Tier 3 lock glyph (plan §9.3), and the reason the
-    /// export tree has three kinds of file rather than two — objects, Versio's own bookkeeping,
-    /// and real project state with no trustworthy import path. Kept beside the form table so
-    /// the next one-way form is declared in the same place as the rule that writes it.
-    /// </remarks>
-    public static bool IsExportOnly(ExportForm form) => form is ExportForm.Libraries;
+    // An IsExportOnly(ExportForm) lived here until 2026-08-15, documented as "the predicate the
+    // UI needs for the Tier 3 lock glyph" and as the place "the next one-way form is declared".
+    // It was neither. It had NO caller and NO test in its whole life, because the panel is
+    // vendor-neutral and reads a manifest, not this enum — the live path is ObjectIndex asking
+    // ExportCoverage.IsExportOnly(string).
+    //
+    // So when TaskBoth arrived and its own documentation said its native XML was export-only,
+    // this predicate still answered "libraries only" and nothing went red, because nothing was
+    // asking. It is deleted rather than corrected: a second home for a rule that cannot be
+    // reached from the code that needs it is not a safeguard, it is a comment that compiles.
+    //
+    // One-wayness is a property of the manifest's recorded form, which is why it belongs with
+    // the other manifest strings. This enum is the DECISION table — what to write — and
+    // TASK_NATIVE is never decided, only recorded.
 }

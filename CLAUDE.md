@@ -39,8 +39,9 @@ questions about "why is this like this" are already answered there.
 | `docs/PLAN.md` | The full architecture plan |
 | `docs/SAFEGUARDS.md` | What Versio refuses, asks about, or waits for |
 | `docs/CODESYS.md` | How CODESYS is driven end to end, and the audit of it |
+| `docs/CODESYS-IMPORT-PLAN.md` | **The active plan.** Twelve numbered import gaps, what each measurement closed, the order to build the rest in — deliberately not 1, 2, 3 — and **the feature checklist**, which says which of the import’s 49 behaviours have been run against a real project and which have not |
 | `docs/GIT-PANEL-PLAN.md` | The git panel's functionality and UX |
-| `docs/PHASE0-FINDINGS.md` | Measured results and known limitations |
+| `docs/PHASE0-FINDINGS.md` | What Phase 0 measured. **A record, not a live limitation list** — read its supersession notes |
 | `README.md` | Repository layout, vendor boundaries, the one architectural rule |
 
 **This is a rule because ignoring it has already cost.** An audit was asked for and re-derived
@@ -154,6 +155,13 @@ explicit `encoding='utf-8', newline='\n'`, or the editing tools.
 **Never edit source through a shell heredoc.** Python-in-bash eats backslashes and backticks
 silently. Write the script to a file and run it.
 
+**The python scripts are EMBEDDED in `Versio.Infrastructure.dll`.** Editing
+`src/Versio.Scripts.Codesys/*.py` and then running `dotnet test --no-build` tests the script
+that was embedded at the last build, not the one on disk. It looks exactly like a change that
+did nothing: a Phase 5 mutation check reported the acceptance test still passing with the
+feature disabled, which is the most misleading answer a mutation check can give. **Rebuild after
+touching python**, always.
+
 **The suite is the safety net, so keep it honest.** `Versio.App.Tests` shells own watchers,
 pollers, the log console and the repository lock — `using var shell = ...`, always, and never
 construct one inline as an argument, because then there is nothing to put `using` on. Fifty-six
@@ -162,7 +170,15 @@ it to about one in fourteen, so **a lone red run is still worth re-running befor
 
 **It still flakes, and what is left of it looks like real git rather than leaked objects.** The
 last three failures observed were all in tests that drive git subprocesses against a temp
-repository, and all of them dispose correctly. If you measure the rate, **do it on an idle
+repository, and all of them dispose correctly. **A fourth, on 2026-08-15, was not**: it was
+`AdoptAndExportTests.A_task_priority_edited_in_the_mirror_…`, a CODESYS test, once in four full
+runs, passing alone immediately afterwards and in the next full run. So the remaining flake is
+not only the git-subprocess class.
+
+**Never run the integration suite with `-v q`.** That failure arrived with no message, because
+quiet verbosity prints the FAIL line and swallows the assertion — so the one run that had
+something to say could not say it, and it cost a full 13-minute re-run to get back to. Use
+plain `--nologo`; the extra output is worth it on a suite this slow to reproduce. If you measure the rate, **do it on an idle
 machine and leave it alone while it runs** — a measurement taken while a second `dotnet test` is
 running measures that instead.
 
@@ -187,9 +203,23 @@ stays that way.
 
 | Suite | Count | Time |
 |---|---|---|
-| `Versio.Core.Tests` | 1,384 | under a second |
-| `Versio.App.Tests` | 478 | ~50 s, STA, no window shown |
-| `Versio.Integration.Tests` | 192 | ~7 min, real CODESYS and real git |
+| `Versio.Core.Tests` | 1,494 | under a second |
+| `Versio.App.Tests` | 480 | ~50 s, STA, no window shown |
+| `Versio.Integration.Tests` | 243 | ~31 min, real CODESYS and real git |
+
+**Do not sit through the integration suite while you work.** 192 of its 243 tests finish in
+**18 seconds**; the other 50 are the half hour, because a CODESYS cold start is 17–31 s, every
+launch pays it in full, an import test needs three to five of them, and they cannot run in
+parallel. So:
+
+```
+C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Integration.Tests --filter "Toolchain!=Codesys"
+```
+
+is the loop to work in, and the full run is the gate before a commit. `FastLaneTests` asserts —
+from assembly metadata, both directions — that every class in the CODESYS collection carries the
+tag and nothing else does, so the filter cannot quietly stop excluding things or quietly hide
+half an hour of coverage behind a flag nobody runs.
 
 A red integration run is worth re-running a project at a time before reading it as a
 regression — it drives real CODESYS with real timeouts.

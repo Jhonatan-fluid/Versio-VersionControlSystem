@@ -21,14 +21,20 @@ import scriptengine  # type: ignore
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from versio_text import (content_hash, join_st, normalize_decl_only,  # noqa: E402
-                         safe_file_stem, scrub_native_xml)
-from versio_types import (FORM_CONTAINER, FORM_GVL_BOTH, FORM_LIBRARIES,  # noqa: E402
+                         line_sketch, object_path, safe_file_stem,
+                         scrub_native_xml, split_st, too_long_for_any_machine,
+                         too_long_for_this_machine)
+from versio_types import (EXPORT_ONLY_FORMS, FORM_CONTAINER,  # noqa: E402
+                          FORM_GVL_BOTH, FORM_GVL_NATIVE, FORM_LIBRARIES,
                           FORM_NATIVE, FORM_NATIVE_R, FORM_NATIVE_WITH_CHILDREN,
                           FORM_SKIP, FORM_ST_DECL, FORM_ST_FULL, FORM_ST_IMPL,
+                          FORM_TASK_BOTH, FORM_TASK_NATIVE, NATIVE_FORMS,
                           SKIP_EXPLANATION, SKIP_GAP, decide_form,
                           descends_into_children, file_name_for, skip_reason,
                           type_of)
+from versio_native_equiv import are_equivalent, normalize  # noqa: E402
 import versio_libraries  # noqa: E402
+import versio_tasks  # noqa: E402
 import versio_yaml  # noqa: E402
 
 
@@ -118,8 +124,19 @@ class Exporter(object):
     native XML - is decided by versio_types.decide_form.
     """
 
-    def __init__(self, out_root, expected=0):
+    def __init__(self, out_root, expected=0, previous=None):
         self.out_root = out_root
+
+        # WHERE THE LAST EXPORT'S BYTES ARE, or None on the first export ever.
+        #
+        # out_root above is the STAGING directory - empty by construction, because
+        # main() creates it fresh and the three-rename swap happens afterwards. So the
+        # mirror somebody has committed is somewhere else entirely, and preserving a
+        # byte from it means being told where. That is what this is.
+        #
+        # Read BEFORE the swap, which is the only window in which both exist.
+        self.previous = previous
+        self.preserved = 0
         self.records = []
         self.warnings = []
         self.skips = []
@@ -144,6 +161,41 @@ class Exporter(object):
             w["detail"] = detail
         self.warnings.append(w)
         emit({"t": "warning", "code": code, "path": path, "detail": detail})
+
+    def check_path_length(self, rel_path, abs_path):
+        """Both G9 guards, for ONE file the export is about to write.
+
+        PER FILE, NOT PER OBJECT, and that distinction is the bug this was extracted
+        for. The first version measured only the object's primary path, so a
+        GVL_BOTH's .gvl.xml went unchecked - and that is the LONGER of its pair by a
+        character, so the one file a GVL could overflow on was the one nothing looked
+        at. Same shape as G7 and G12: a rule written for objects, applied to a thing
+        that writes two files. TASK_BOTH was safe only by luck, its .tasks.yaml being
+        longer than its .xml.
+
+        The warning names the FILE rather than the object, unlike EXPORT_FAILED and
+        UNNAMED_OBJECT. A path length is a fact about a path; naming the object would
+        make a GVL's two answers indistinguishable, which is exactly what left the
+        second one unnoticed.
+        """
+        spelled = rel_path.replace("\\", "/")
+
+        detail = too_long_for_any_machine(spelled)
+        if detail:
+            self.warn("PATH_TOO_LONG", spelled, detail)
+
+        detail = too_long_for_this_machine(abs_path)
+        if detail:
+            # emit, NOT warn, and this is the whole reason the two guards are separate
+            # functions. warn() appends to self.warnings, which is written into
+            # _manifest.json - so a sentence whose answer depends on the repository
+            # root would make the manifest differ between two developers exporting the
+            # same project, and the mirror would churn on every export by whoever is
+            # checked out deeper. That is the churn Phase 5 closed, arriving through a
+            # new door. PROJECT_CLOSE_FAILED goes this way for the same reason: a
+            # protocol event, not a coverage fact.
+            emit({"t": "warning", "code": "PATH_TOO_LONG_HERE",
+                  "path": spelled, "detail": detail})
 
     def progress(self, name):
         """Say which object is being exported, and how far through the tree we are.
@@ -191,6 +243,63 @@ class Exporter(object):
             "bytes": len(text.encode("utf-8")),
         }
 
+        # A second hash for native payloads, over the NORMALISED form - schema 5.
+        #
+        # `hash` above is over the bytes on disk, and for a native file those churn: three
+        # export/import round trips of the fixture with nothing edited came back
+        # byte-different on 4 of them every time. That makes `hash` useless for the one
+        # question a delete has to answer - "is the live object still what was exported?" -
+        # because a re-export never reproduces it. Comparing through versio_native_equiv
+        # would settle it, but it needs the OLD bytes, and for a deletion those were in the
+        # file that was just deleted. Recording the comparison form HERE is what breaks that
+        # circle: the old side is in the manifest, so the fresh export has something to be
+        # compared against.
+        #
+        # Additive, and deliberately so. A pre-schema-5 mirror simply has no nhash, and
+        # can_verify answers False for its native objects - the same "unavailable until the
+        # next export" shape the planner already uses. No existing mirror is invalidated and
+        # no committed file changes shape.
+        #
+        # mask_guids is left at its default of True, and that is the load-bearing choice: see
+        # the note above NATIVE_FORMS in versio_types.py. Across a round trip CODESYS re-mints
+        # GUIDs, measured as 3 differing lines of 117 in GlobalTextList.xml and all three
+        # System.Guid values, so an unmasked hash would refuse those deletions forever.
+        if form in NATIVE_FORMS:
+            rec["nhash"] = content_hash(normalize(text)[0])
+
+        # A third hash for a full ST body, over the IMPLEMENTATION alone - schema 6.
+        #
+        # It exists so a renamed POU can be recognised as one. `hash` is over the whole file,
+        # and a POU's file opens `PROGRAM Simulation` - the object's name is IN the content -
+        # so renaming the object changes the file and the whole-file hash matches nothing.
+        # The body does not change, and that is the signal.
+        #
+        # ST_FULL only, and that is not an oversight. An action or a transition is
+        # implementation with no declaration, and a GVL's .st is a declaration with no name
+        # in it, so for both of those the whole-file hash already survives a rename and a
+        # second hash would say nothing new.
+        #
+        # DELIBERATELY NOT a name-masked declaration hash beside it. That was the first
+        # design; masking means finding the name inside the declaration, and doing it
+        # identically in IronPython 2.7 and .NET regex - across Unicode word boundaries and a
+        # comment that happens to contain the object's name - is a parity problem worth more
+        # than it buys. The implementation alone is exact, needs no parsing, and is the half
+        # a rename does not touch.
+        if form == FORM_ST_FULL:
+            _decl, impl = split_st(text)
+            rec["ihash"] = content_hash(impl)
+
+            # And a bounded fingerprint of the whole file - schema 7.
+            #
+            # `ihash` pairs a rename whose BODY is untouched. A rename that edits the body too
+            # matches no hash at all, and the only way to recognise it is to compare content -
+            # which needs the departed file, and the mirror has just lost it. Git has it when
+            # the mirror was committed; THIS is what covers the case where it was not, or
+            # where the file was never tracked.
+            #
+            # Recorded here because this is the last moment the content exists anywhere.
+            rec["shash"] = line_sketch(text)
+
         # Omitted rather than written empty, so a top-level object's record is
         # byte-identical to what schema 3 wrote. An export that changed every line
         # of the manifest for objects that did not move would put a diff in front
@@ -220,10 +329,89 @@ class Exporter(object):
         raw = read_text(tmp)
         os.remove(tmp)
         scrubbed, n = scrub_native_xml(raw)
-        write_text(abs_path, scrubbed)
-        return scrubbed, n
 
-    def export_libraries(self, obj, object_path, rel_path):
+        # G10, AND THE ORDER HERE IS THE WHOLE FIX.
+        #
+        # The substitution happens BEFORE the caller hashes anything, because the
+        # caller hashes what this returns: record() does `h = content_hash(text)` on
+        # the value it is handed, and write_text's docstring states the invariant it
+        # depends on - "the exporter hashes what it writes". Swapping the bytes at
+        # write time instead would leave _manifest.json recording a hash of a payload
+        # that is not the one on disk beside it, and Versio's hash gate reads the
+        # disk. The manifest is the one file that still differed between two steady
+        # state snapshots, and it settles only if the recorded hash follows the bytes
+        # actually written.
+        payload = self.preserve_equivalent(abs_path, scrubbed)
+        write_text(abs_path, payload)
+        return payload, n
+
+    def preserve_equivalent(self, abs_path, scrubbed):
+        """The bytes already in the mirror when they mean the same thing, else the new
+        ones.
+
+        WHY THIS EXISTS. P7 ran three import/export cycles with nothing edited between
+        them and watched UniqueIdGenerator climb 44 -> 47 -> 50 -> 53, +3 every time,
+        never settling. Four of eight native files differed forever. Every one of those
+        differences is semantically nothing - measured, not assumed: all four are
+        NativeXmlNormalizer-equivalent with symmetric mask counts, which is what says
+        they differ in the masked positions and nowhere else.
+
+        KEYED ON EQUIVALENCE, NEVER ON THE COUNTER, and that is not a stylistic
+        preference. GlobalTextList.xml churns every cycle and contains no counter at
+        all; a fix aimed at UniqueIdGenerator would have left that file diffing forever
+        and looked like it worked on the three that do carry one.
+
+        THE DETERMINISM GATE STILL HOLDS. Two exports into two empty directories stay
+        byte-identical, because neither has a previous mirror to preserve from - the
+        branch below is simply not taken. Only export-into-an-existing-mirror behaves
+        differently, and that is the case this is for.
+
+        MASKED COMPARISON, deliberately. are_equivalent masks GUIDs by default and the
+        churn is exactly there: Phase 2 measured that GUIDs are stable across two
+        exports and NOT across a round trip. Keeping the old bytes therefore keeps the
+        old ids, which is what the mirror already held and what CODESYS already accepts
+        back - import_native replaces an existing object in place either way.
+
+        WHAT MASKING COSTS, written down rather than discovered. An object DELETED and
+        RECREATED with identical content has a new identity but an equivalent payload,
+        so this keeps the old bytes and the mirror's XML carries ids the project no
+        longer has - while the manifest, which reads obj.guid directly, records the new
+        one. The two then disagree.
+
+        Not fixed, and this is the reasoning rather than an oversight. The disagreement
+        is not destructive: importing that file replaces the object in place and the old
+        ids simply come back, which is the state the mirror already described. And it
+        cannot be told apart from the ordinary case by looking at the payload, because
+        the ordinary case IS a GUID that changed for no reason - that is the churn this
+        exists to remove. The cheap fix if it ever matters is to refuse preservation
+        when the last manifest's GUID for this path differs from the live object's,
+        which costs loading the old manifest here; nobody has seen it happen, so it is
+        recorded rather than built.
+        """
+        if not self.previous:
+            return scrubbed
+
+        rel_path = os.path.relpath(abs_path, self.out_root)
+        old_path = os.path.join(self.previous, rel_path)
+        if not os.path.isfile(old_path):
+            return scrubbed
+
+        old = safe(lambda: read_text(old_path), None)
+        if old is None or old == scrubbed:
+            # Already identical: there is nothing to preserve and nothing to say. Most
+            # files in most exports land here, which is why this is not reported.
+            return scrubbed
+
+        if not safe(lambda: are_equivalent(old, scrubbed), False):
+            # A real change. This is the ordinary reason a native file differs and the
+            # whole point of exporting it.
+            return scrubbed
+
+        self.preserved += 1
+        emit({"t": "preserved", "path": rel_path.replace("\\", "/")})
+        return old
+
+    def export_libraries(self, obj, obj_path, rel_path):
         """Render one library manager's references as neutral YAML.
 
         This is the object whose absence started the coverage report: a library
@@ -233,7 +421,7 @@ class Exporter(object):
         nothing had ever written.
 
         The file is EXPORT-ONLY. It is written for review and is never applied back:
-        see EXPORT_ONLY_SUFFIXES in versio_types for why an import path is not merely
+        see EXPORT_ONLY_FORMS in versio_types for why an import path is not merely
         missing but deliberately absent.
         """
         refs = versio_libraries.read_references(
@@ -241,7 +429,7 @@ class Exporter(object):
             on_error=lambda code, detail: self.warn(code, rel_path, detail))
 
         name = safe(lambda: obj.get_name(), u"Library Manager")
-        text = versio_libraries.catalog_document(versio_yaml, name, object_path, refs)
+        text = versio_libraries.catalog_document(versio_yaml, name, obj_path, refs)
 
         # Said out loud, at Info: this is the one export form whose whole point is
         # content that used to be invisible, and "0 references" is a real answer that
@@ -249,6 +437,28 @@ class Exporter(object):
         emit({"t": "libraries", "path": rel_path.replace("\\", "/"),
               "count": len(refs),
               "system": len([r for r in refs if r.get("systemLibrary")])})
+        return text
+
+    def export_tasks(self, obj, obj_path, rel_path):
+        """Render one task configuration's tasks as neutral YAML.
+
+        Unlike the library file beside it, this one is IMPORTABLE and is the authoritative
+        half of the pair. The .xml is written too, for fidelity and for a reviewer who
+        wants the whole picture, but it is never applied back - handing it to import_native
+        is what rewrote Core2 on every import (G7) and what threw on the task objects while
+        reporting failed: 0 (G11).
+        """
+        tasks = versio_tasks.read_tasks(
+            obj, safe,
+            on_error=lambda code, detail: self.warn(code, rel_path, detail))
+
+        name = safe(lambda: obj.get_name(), u"Task Configuration")
+        text = versio_tasks.catalog_document(versio_yaml, name, obj_path, tasks)
+
+        # Said out loud, at Info, for the same reason the library count is: this is state
+        # that used to be an opaque XML blob in the diff, and "how many tasks" is a
+        # question somebody may need answered without opening the file.
+        emit({"t": "tasks", "path": rel_path.replace("\\", "/"), "count": len(tasks)})
         return text
 
     def handle(self, obj, rel_dir, parent_name, parent_guid=None):
@@ -269,7 +479,12 @@ class Exporter(object):
         """
         name = safe(lambda: obj.get_name(), None)
         if name is None:
-            self.warn("UNNAMED_OBJECT", rel_dir)
+            # object_path with no name, not a raw rel_dir. This is the earliest way an
+            # object can vanish - before `total`, before a form, before any record or
+            # skip - so the directory is the entire description of it that will ever
+            # exist, and ExportCoverage reads this code and prints that directory. A
+            # backslash in it makes the one clue unsearchable.
+            self.warn("UNNAMED_OBJECT", object_path(rel_dir, None))
             return
         type_guid = safe(lambda: str(obj.type), "")
         obj_type = type_of(type_guid)
@@ -277,7 +492,7 @@ class Exporter(object):
         has_decl = bool(safe(lambda: obj.has_textual_declaration, False))
 
         if obj_type == "UNKNOWN":
-            self.warn("UNKNOWN_TYPE_GUID", rel_dir + "/" + name, type_guid)
+            self.warn("UNKNOWN_TYPE_GUID", object_path(rel_dir, name), type_guid)
 
         # Read once and reused: an unmapped type's form depends on whether it HAS children,
         # and asking CODESYS twice for the same list is both wasteful and a chance for the
@@ -298,7 +513,12 @@ class Exporter(object):
             # One spelling of the path, shared by the manifest and the log line. Two would
             # mean a reader comparing the log against _manifest.json sees different strings
             # for the same object and has to work out whether that means anything.
-            skip_path = (rel_dir + "/" + name).replace("\\", "/").lstrip("/")
+            #
+            # This was the only site that honoured that, and it was stated here rather
+            # than anywhere the other four callers would see it - so the two warnings did
+            # not. versio_text.object_path is the rule now; the rest of the argument is
+            # in its docstring.
+            skip_path = object_path(rel_dir, name)
 
             self.skips.append({
                 # No guid. CODESYS re-mints the project-level __VisualizationStyle's guid on
@@ -327,6 +547,22 @@ class Exporter(object):
         rel_path = os.path.join(rel_dir, fname)
         abs_path = os.path.join(self.out_root, rel_path)
 
+        # G9. Said BEFORE the write rather than left to fail: Windows raises an
+        # IOError that names the path and not the reason, and one of the two answers
+        # is not a failure on this machine at all. If a write does then throw,
+        # EXPORT_FAILED fires beside these carrying the interpreter's own message -
+        # the object is reported either way, which is what the coverage change landed
+        # first to guarantee.
+        #
+        # Neither guard shortens anything. Shortening keyed on a total path would make
+        # a file name depend on where the repository is checked out, so two developers
+        # would produce different names for one object and git would see renames that
+        # are not renames. See too_long_for_any_machine.
+        #
+        # This is the object's PRIMARY file. The two-file forms check their second one
+        # themselves, below - see check_path_length for why that is not a tidy-up.
+        self.check_path_length(rel_path, abs_path)
+
         try:
             if form == FORM_ST_FULL:
                 text = join_st(obj.textual_declaration.text, obj.textual_implementation.text)
@@ -345,15 +581,55 @@ class Exporter(object):
 
             elif form == FORM_GVL_BOTH:
                 xml_path = os.path.join(rel_dir, stem_name + ".gvl.xml")
-                xml_text, _ = self.export_native(obj, os.path.join(self.out_root, xml_path), False)
-                self.record(obj, obj_type, FORM_NATIVE, xml_path, xml_text, parent_guid)
+                xml_abs = os.path.join(self.out_root, xml_path)
+
+                # The LONGER half of this pair, by the one character between .gvl.st
+                # and .gvl.xml - so this is the file a GVL overflows on first, and it
+                # was the one the guard did not look at.
+                self.check_path_length(xml_path, xml_abs)
+                xml_text, _ = self.export_native(obj, xml_abs, False)
+
+                # Recorded GVL_NATIVE, not NATIVE. The bytes are the same native export
+                # either way; the form is the only thing that tells the importer, the
+                # coverage report and the panel that this file is not applied back. It
+                # said NATIVE until 2026-08-16, which made both halves importable and
+                # let the later phase overwrite the earlier one - G12.
+                self.record(obj, obj_type, FORM_GVL_NATIVE, xml_path, xml_text,
+                            parent_guid)
                 st_text = normalize_decl_only(obj.textual_declaration.text)
                 write_text(abs_path, st_text)
                 self.record(obj, obj_type, FORM_ST_DECL, rel_path, st_text, parent_guid)
 
+            elif form == FORM_TASK_BOTH:
+                # Two files, one object, one GUID - exactly like GVL_BOTH. The .xml keeps
+                # the name it has always had, so this is additive: no committed file is
+                # renamed and no mirror churns structurally on the way in.
+                xml_path = os.path.join(rel_dir, stem_name + ".xml")
+                xml_abs = os.path.join(self.out_root, xml_path)
+
+                # Shorter than its .tasks.yaml sibling, so the primary check already
+                # covers it. Checked anyway: "safe because the other name is longer"
+                # is true of today's suffixes and of nothing else.
+                self.check_path_length(xml_path, xml_abs)
+                xml_text, _ = self.export_native(obj, xml_abs, True)
+
+                # Recorded TASK_NATIVE, not NATIVE_R. The bytes are a recursive native
+                # export either way, but the manifest's form is the only thing that tells
+                # a reader this file is never applied back - and the import stopped
+                # applying it the moment the .tasks.yaml beside it became the importable
+                # half. NATIVE_R said the opposite, because a PROPERTY's NATIVE_R does
+                # import.
+                self.record(obj, obj_type, FORM_TASK_NATIVE, xml_path, xml_text,
+                            parent_guid)
+
+                obj_path = object_path(rel_dir, name)
+                text = self.export_tasks(obj, obj_path, rel_path)
+                write_text(abs_path, text)
+                self.record(obj, obj_type, form, rel_path, text, parent_guid)
+
             elif form == FORM_LIBRARIES:
-                object_path = (rel_dir + "/" + name).replace("\\", "/").lstrip("/")
-                text = self.export_libraries(obj, object_path, rel_path)
+                obj_path = object_path(rel_dir, name)
+                text = self.export_libraries(obj, obj_path, rel_path)
                 write_text(abs_path, text)
                 self.record(obj, obj_type, form, rel_path, text, parent_guid)
 
@@ -363,7 +639,12 @@ class Exporter(object):
                 text, _ = self.export_native(obj, abs_path, form == FORM_NATIVE_R)
                 self.record(obj, obj_type, form, rel_path, text, parent_guid)
         except Exception as e:
-            self.warn("EXPORT_FAILED", rel_dir + "/" + name, str(e))
+            # object_path, not rel_dir + "/" + name. This warning is the ONLY record
+            # that the object exists: the exception unwinds past every record() call in
+            # the try above, so a failed object reaches neither `objects` nor `skipped`.
+            # ExportCoverage reads this code now and prints the path in the panel, so it
+            # has to be the same string the skips use or it matches nothing.
+            self.warn("EXPORT_FAILED", object_path(rel_dir, name), str(e))
             return
 
         if form == FORM_NATIVE_WITH_CHILDREN:
@@ -378,7 +659,15 @@ class Exporter(object):
 
         # Children of a leaf object (methods, actions, properties on a POU) live
         # alongside it in the same folder, prefixed with the parent name.
-        if form != FORM_NATIVE_R:
+        #
+        # TASK_BOTH does not recurse, for the same reason NATIVE_R does not: its recursive
+        # .xml already contains every task, and its .tasks.yaml lists them again. Walking
+        # them a third time wrote nothing extra - a TASK is FORM_SKIP - but it moved the
+        # counters, and THAT is what caught it: walked 18 -> 20 and skipped 4 -> 6 on a
+        # project that had gained no objects. descends_into_children was updated for the
+        # pre-count and this guard was not, so the count and the walk disagreed, which is
+        # precisely the divergence that function's docstring says cannot happen.
+        if form not in (FORM_NATIVE_R, FORM_TASK_BOTH):
             own_guid = safe(lambda: str(obj.guid), "")
             for child in children:
                 self.handle(child, rel_dir, name, own_guid)
@@ -471,17 +760,40 @@ def coverage_markdown(project, records, skips, warnings):
     # on the way back is its own kind of gap: editing it looks exactly like editing a
     # POU, and nothing would tell the engineer their change went nowhere. Stated here
     # for the same reason the skips are.
-    one_way = [r for r in records if r.get("form") == FORM_LIBRARIES]
+    #
+    # The remedy differs per file, and saying the wrong one is its own small defect. A
+    # library file has no importable form anywhere, so the answer really is "in the IDE".
+    # A task configuration has its importable half sitting right beside it, and sending
+    # somebody to the IDE would walk them past the file they were meant to edit.
+    #
+    # The sibling is found by GUID rather than by rewriting the suffix, because the GUID is
+    # the identity everywhere else in this manifest and a suffix rule would have to be kept
+    # in step with SUFFIX by hand. Any future one object, two files form gets this for free.
+    one_way = [r for r in records if r.get("form") in EXPORT_ONLY_FORMS]
     if one_way:
+        # Empty GUIDs are excluded rather than indexed. record() falls back to "" when
+        # obj.guid raises, so indexing on it would file every unreadable object under one
+        # key and hand a one-way file the path of an unrelated object as its remedy -
+        # a confidently wrong instruction, which is worse than the generic one.
+        importable = {}
+        for r in records:
+            if r.get("form") not in EXPORT_ONLY_FORMS and r.get("guid"):
+                importable.setdefault(r["guid"], r.get("path"))
+
         lines.append(u"## Exported for review, not applied back")
         lines.append(u"")
         lines.append(u"**These files are written by the export and ignored by the import.**")
         lines.append(u"They show what the project asks for, so a change reaches the diff and")
-        lines.append(u"the commit - but editing one here does not change the project. Change")
-        lines.append(u"these in the IDE.")
+        lines.append(u"the commit - but editing one here does not change the project.")
         lines.append(u"")
         for r in sorted(one_way, key=lambda x: x["path"]):
-            lines.append(u"- `%s` — %s" % (r["path"], r["type"]))
+            sibling = importable.get(r["guid"]) if r.get("guid") else None
+            if sibling:
+                lines.append(u"- `%s` — %s · edit `%s` instead"
+                             % (r["path"], r["type"], sibling))
+            else:
+                lines.append(u"- `%s` — %s · change it in the IDE"
+                             % (r["path"], r["type"]))
         lines.append(u"")
 
     other = sorted(k for k in by_reason if k != SKIP_GAP)
@@ -565,7 +877,11 @@ def main():
     expected = sum(count_objects(child) for child in roots)
     emit({"t": "counted", "objects": expected})
 
-    ex = Exporter(staging, expected)
+    # PREVIOUS is the live mirror, not staging - and it is read here because this is the
+    # only moment both exist. main() has just created staging empty and the three-rename
+    # swap has not happened yet, so out_root still holds what the last export wrote.
+    ex = Exporter(staging, expected,
+                  previous=out_root if os.path.isdir(out_root) else None)
     for child in roots:
         ex.handle(child, "", None)
 
@@ -588,7 +904,22 @@ def main():
         # owns it. A schema-3 manifest carries no parents at all, which is why the
         # reader falls back to the flat shape rather than treating "no parents" as
         # "nothing is a member".
-        "schema": 4,
+        #
+        # 5: a native record carries "nhash", the hash of its NORMALISED payload,
+        # beside the raw one. Same ambiguity as every bump above, and the reason
+        # the field cannot simply be read optimistically: on a schema-4 manifest a
+        # native object with no nhash means nobody was writing them yet, and its
+        # deletion has to stay refused. Reading "absent" as "unchanged" would
+        # delete work on every mirror exported before today.
+        # 7: a full ST record carries "shash", a bounded fingerprint of its lines,
+        # so a rename that edited the body can be recognised on a mirror that was
+        # never committed - where git has no old copy to compare against.
+        #
+        # 6: a full ST record carries "ihash", the hash of its implementation alone.
+        # A schema-5 manifest has none because nothing wrote one, and a renamed POU
+        # is simply not recognised as renamed on such a mirror - it falls back to a
+        # delete and a create, which is what happened before this existed.
+        "schema": 7,
         "bindingId": job.get("bindingId", ""),
         "project": os.path.basename(job["project"]),
         "objectCount": len(ex.records),
@@ -657,7 +988,8 @@ def main():
     close_project(proj)
     gaps = len([s for s in ex.skips if s["reason"] == SKIP_GAP])
     emit({"t": "summary", "walked": ex.total, "written": len(ex.records),
-          "skipped": ex.skipped, "gaps": gaps, "warnings": len(ex.warnings)})
+          "skipped": ex.skipped, "gaps": gaps, "warnings": len(ex.warnings),
+          "preserved": ex.preserved})
     emit({"t": "done"})
     return 0
 
