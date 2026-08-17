@@ -54,30 +54,6 @@ public sealed class VendorSeamTests
         "Versio.Core.Logging",
     ];
 
-    /// <summary>
-    /// The vendor-naming strings in neutral namespaces today, pinned so they cannot grow.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>A list that exists to be deleted.</b> These three are the leaks the string checks were
-    /// written to find, and the next commit removes them. They are pinned rather than tolerated
-    /// so that this file passes on its own — a red commit is a commit somebody cannot bisect
-    /// through — while a <i>fourth</i> leak still fails the build the day it is typed.
-    /// </para>
-    /// <para>
-    /// Two of them are sentences a person reads. The commit gate tells somebody whose repository
-    /// holds only TwinCAT projects that "no CODESYS projects are tracked", which is not a
-    /// cosmetic problem: it is the application confidently describing a situation that is not
-    /// the one they are in.
-    /// </para>
-    /// </remarks>
-    private static readonly string[] KnownLeaks =
-    [
-        "CommitGate.Evaluate: \"no CODESYS projects are tracked in this repository\"",
-        "OrphanScanner.Scan: \"untracked CODESYS project — track it to start exporting\"",
-        "Versio.Core.Logging.LogCategory.Codesys = \"Codesys\"",
-    ];
-
     public static TheoryData<string> Neutral => [.. NeutralNamespaces];
 
     [Theory]
@@ -104,13 +80,28 @@ public sealed class VendorSeamTests
             string.Join(Environment.NewLine, offenders));
     }
 
+    /// <summary>No brand written down anywhere that serves every brand.</summary>
+    /// <remarks>
+    /// <para>
+    /// Constants and compiled literals together, because the two halves are the same mistake
+    /// wearing different clothes. When this check was added it found three, and they had all
+    /// been there long enough to be invisible:
+    /// </para>
+    /// <para>
+    /// <c>CommitGate</c> told somebody "no CODESYS projects are tracked in this repository" —
+    /// the application confidently describing a situation that is not the one a TwinCAT owner is
+    /// in. <c>OrphanScanner</c> offered to track an "untracked CODESYS project". And
+    /// <c>LogCategory</c> carried a <c>Codesys</c> constant directly beneath the paragraph
+    /// explaining why the category above it must never name a vendor.
+    /// </para>
+    /// <para>
+    /// The first two are now "PLC"; the third moved to <c>CodesysLog.Category</c>, where the
+    /// vendor declares its own label and the logged word is unchanged.
+    /// </para>
+    /// </remarks>
     [Fact]
     public void A_neutral_namespace_speaks_no_vendor_name_to_anybody()
     {
-        // Constants and compiled literals together, because the two halves of this leak are the
-        // same mistake wearing different clothes: a brand written down somewhere that serves
-        // every brand. Sorted and compared as a whole set rather than asserted empty, so that
-        // removing one of the three is a visible deletion here rather than a silent loosening.
         var found = VendorSeamScanner
             .VendorNamingLiterals(Core, NeutralNamespaces)
             .Concat(VendorSeamScanner.VendorNamingConstants(Core, NeutralNamespaces))
@@ -118,9 +109,7 @@ public sealed class VendorSeamTests
             .OrderBy(s => s, StringComparer.Ordinal)
             .ToList();
 
-        Assert.Equal(
-            KnownLeaks.OrderBy(s => s, StringComparer.Ordinal).ToList(),
-            found);
+        Assert.Empty(found);
     }
 
     [Fact]

@@ -184,8 +184,13 @@ public sealed class OrphanScanner
 
         foreach (var proj in orphanProjects.Where(p => !handledOrphans.Contains(p)))
         {
+            // "PLC" rather than the brand. Scan takes no format — it works from a snapshot so
+            // it stays pure — so there is nothing here that could name the vendor honestly, and
+            // guessing CODESYS is how somebody with a TwinCAT repository gets told about a tool
+            // they do not own. Once the formats are injected rather than fetched from a static
+            // registry, this sentence can name the real one.
             findings.Add(new ScanFinding(BindingHealth.OrphanedProject, proj, null,
-                "untracked CODESYS project — track it to start exporting"));
+                "untracked PLC project — track it to start exporting"));
         }
 
         foreach (var exp in orphanExports)

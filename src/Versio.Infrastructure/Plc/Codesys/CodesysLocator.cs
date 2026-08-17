@@ -42,7 +42,7 @@ public sealed class CodesysLocator(
     {
         var installs = new List<CodesysInstall>();
 
-        _log.Debug(LogCategory.Codesys,
+        _log.Debug(CodesysLog.Category,
             $"searching for CODESYS under {string.Join(", ", _roots)}");
 
         foreach (var root in _roots.Where(Directory.Exists))
@@ -67,7 +67,7 @@ public sealed class CodesysLocator(
 
                 // The profile names in full, because they cannot be guessed from the
                 // folder name and the exact string is what --profile= requires.
-                _log.Info(LogCategory.Codesys,
+                _log.Info(CodesysLog.Category,
                     $"found CODESYS {install.FileVersion} at {exe} with " +
                     (install.Profiles.Count == 0
                         ? "no usable profiles"
@@ -79,7 +79,7 @@ public sealed class CodesysLocator(
         {
             // Not an error here — the app runs without CODESYS and says so — but it is the
             // reason every later export is refused, so it is stated once, plainly.
-            _log.Warn(LogCategory.Codesys,
+            _log.Warn(CodesysLog.Category,
                 "no CODESYS installation found; export and import will be unavailable");
         }
 

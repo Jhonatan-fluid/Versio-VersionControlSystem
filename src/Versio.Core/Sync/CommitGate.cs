@@ -75,7 +75,7 @@ public static class CommitGate
             return new CommitGateResult
             {
                 Decision = GateDecision.Proceed,
-                Explanation = "no CODESYS projects are tracked in this repository",
+                Explanation = "no PLC projects are tracked in this repository",
             };
         }
 

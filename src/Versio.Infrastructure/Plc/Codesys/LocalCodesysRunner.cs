@@ -183,17 +183,17 @@ public sealed class LocalCodesysRunner(
         var scriptPath = scripts.PathFor(script);
         var jobFile = WriteJobFile(job);
 
-        _log.Info(LogCategory.Codesys,
+        _log.Info(CodesysLog.Category,
             $"{job.Operation} of {job.Projects.Count} project(s) using {script}" +
             (string.IsNullOrWhiteSpace(job.Profile) ? string.Empty : $" [{job.Profile}]"));
 
         foreach (var project in job.Projects)
         {
-            _log.Debug(LogCategory.Codesys,
+            _log.Debug(CodesysLog.Category,
                 $"{project.BindingId}: {project.ProjectPath} ↔ {project.Path}");
         }
 
-        _log.Debug(LogCategory.Codesys, $"job file {jobFile}, timeout {job.Timeout}");
+        _log.Debug(CodesysLog.Category, $"job file {jobFile}, timeout {job.Timeout}");
 
         try
         {
@@ -240,7 +240,7 @@ public sealed class LocalCodesysRunner(
                 // A previous Versio died holding it. We are now the owner, and that is
                 // safe: CODESYS state lives in files, not in the mutex.
                 acquired = true;
-                _log.Warn(LogCategory.Codesys,
+                _log.Warn(CodesysLog.Category,
                     "recovered an abandoned CODESYS lock — a previous Versio process died " +
                     "while holding it");
             }
@@ -249,7 +249,7 @@ public sealed class LocalCodesysRunner(
 
             if (!acquired)
             {
-                _log.Error(LogCategory.Codesys,
+                _log.Error(CodesysLog.Category,
                     $"gave up waiting for the machine-wide CODESYS lock after " +
                     $"{waited.Elapsed.TotalMinutes:F0} minutes");
                 throw new TimeoutException(
@@ -262,7 +262,7 @@ public sealed class LocalCodesysRunner(
             // appeared to hang before it had even started.
             if (waited.Elapsed > TimeSpan.FromSeconds(1))
             {
-                _log.Info(LogCategory.Codesys,
+                _log.Info(CodesysLog.Category,
                     $"waited {waited.Elapsed.TotalSeconds:F1}s for the machine-wide CODESYS lock");
             }
 
@@ -347,7 +347,7 @@ public sealed class LocalCodesysRunner(
         // The exact command line, because CODESYS argument quoting is the single most
         // reliable source of "exits 1 in under a second having done nothing" and the only
         // way to diagnose it is to see what was actually passed.
-        _log.Debug(LogCategory.Codesys, $"exec {codesysExecutablePath} {psi.Arguments}");
+        _log.Debug(CodesysLog.Category, $"exec {codesysExecutablePath} {psi.Arguments}");
 
         process.Start();
         process.BeginOutputReadLine();
@@ -367,13 +367,13 @@ public sealed class LocalCodesysRunner(
             timedOut = timeoutCts.IsCancellationRequested;
             if (timedOut)
             {
-                _log.Error(LogCategory.Codesys,
+                _log.Error(CodesysLog.Category,
                     $"timed out after {job.Timeout} — killing the CODESYS process tree. A " +
                     "--noUI CODESYS sitting on a hidden modal never exits on its own");
             }
             else
             {
-                _log.Warn(LogCategory.Codesys, "cancelled — killing the CODESYS process tree");
+                _log.Warn(CodesysLog.Category, "cancelled — killing the CODESYS process tree");
             }
 
             KillTree(process);
@@ -399,7 +399,7 @@ public sealed class LocalCodesysRunner(
         var exitCode = timedOut ? -1 : SafeExitCode(process);
 
         _log.Log(exitCode == 0 && !timedOut ? LogLevel.Information : LogLevel.Error,
-            LogCategory.Codesys,
+            CodesysLog.Category,
             $"exit={exitCode} in {stopwatch.Elapsed.TotalSeconds:F1}s " +
             $"events={output.Events.Count} warnings={output.Warnings.Count()}");
 
@@ -407,7 +407,7 @@ public sealed class LocalCodesysRunner(
         {
             // A specific, recognisable failure with a specific fix, and one nobody guesses:
             // the profile string cannot be derived from the install folder name.
-            _log.Error(LogCategory.Codesys,
+            _log.Error(CodesysLog.Category,
                 $"CODESYS rejected the profile '{job.Profile}'. The profile name is not the " +
                 @"install folder name — read it from …\CODESYS\Profiles\*.profile.xml");
         }
@@ -423,7 +423,7 @@ public sealed class LocalCodesysRunner(
         // only evidence there is.
         foreach (var line in output.Chatter)
         {
-            _log.Debug(LogCategory.Codesys, $"› {line}");
+            _log.Debug(CodesysLog.Category, $"› {line}");
         }
 
         return new CodesysResult
@@ -495,20 +495,20 @@ public sealed class LocalCodesysRunner(
             switch (evt.Type)
             {
                 case "swap":
-                    _log.Info(LogCategory.Codesys,
+                    _log.Info(CodesysLog.Category,
                         $"replacing the export directory {evt.String("out")}: " +
                         $"{evt.Int("replacing")} existing file(s) removed, " +
                         $"{evt.Int("with")} written in their place");
                     break;
 
                 case "swapped":
-                    _log.Info(LogCategory.Codesys,
+                    _log.Info(CodesysLog.Category,
                         $"export directory now holds {evt.Int("files")} file(s)");
                     break;
 
                 case "staging-cleared":
                     // A staging folder that survived means a previous export was killed.
-                    _log.Warn(LogCategory.Codesys,
+                    _log.Warn(CodesysLog.Category,
                         $"cleared {evt.Int("files")} file(s) from a leftover staging folder " +
                         $"{evt.String("path")} — a previous export did not finish");
                     break;
@@ -519,14 +519,14 @@ public sealed class LocalCodesysRunner(
                     // the one window in which the mirror could have looked wrong. Says
                     // where the previous export went, because that is what somebody
                     // needs if they arrived here looking for a mirror that vanished.
-                    _log.Warn(LogCategory.Codesys,
+                    _log.Warn(CodesysLog.Category,
                         $"cleared {evt.Int("files")} file(s) from {evt.String("path")} — " +
                         "a previous export was killed while swapping the new tree into place, " +
                         "and this was the export it was replacing");
                     break;
 
                 case "skip":
-                    _log.Info(LogCategory.Codesys,
+                    _log.Info(CodesysLog.Category,
                         $"not exported ({evt.String("reason")}): {evt.String("path")} " +
                         $"[{evt.String("type")}]");
                     break;
@@ -540,7 +540,7 @@ public sealed class LocalCodesysRunner(
                     // and they are the least interesting four; on the export after a real
                     // change it is how somebody finds out WHY a file they expected to move
                     // did not. The summary carries the count for the Info-level reader.
-                    _log.Debug(LogCategory.Codesys,
+                    _log.Debug(CodesysLog.Category,
                         $"kept the existing bytes for {evt.String("path")} — the new export " +
                         "is equivalent to it");
                     break;
@@ -550,7 +550,7 @@ public sealed class LocalCodesysRunner(
                     // managers, and this is the one export form whose entire point is
                     // content that used to be invisible. "0 references" is a real answer
                     // somebody may need to read rather than infer from a file.
-                    _log.Info(LogCategory.Codesys,
+                    _log.Info(CodesysLog.Category,
                         $"library references recorded: {evt.Int("count")} " +
                         $"({evt.Int("system")} added by plug-ins) in {evt.String("path")}");
                     break;
@@ -566,7 +566,7 @@ public sealed class LocalCodesysRunner(
                     // configuration's XML has its importable half sitting beside it, and the
                     // script already says which file that is — so the line said the one thing
                     // guaranteed to send the reader past it.
-                    _log.Info(LogCategory.Codesys,
+                    _log.Info(CodesysLog.Category,
                         $"not applied to the project ({evt.String("reason")}): " +
                         $"{evt.String("path")} — " +
                         (evt.String("sibling") is { Length: > 0 } sibling
@@ -579,7 +579,7 @@ public sealed class LocalCodesysRunner(
                     // only place the two numbers in "walked N" can be checked against what
                     // the export expected to walk before it started — a large gap between
                     // them means the pre-count and the walk disagree about descent.
-                    _log.Debug(LogCategory.Codesys,
+                    _log.Debug(CodesysLog.Category,
                         $"expecting to walk {evt.Int("objects")} object(s)");
                     break;
 
@@ -604,7 +604,7 @@ public sealed class LocalCodesysRunner(
                     // payload would have worked today and would silently pick a branch the
                     // day a third script grows a summary; a switch on the operation makes
                     // that a compiler error instead.
-                    _log.Info(LogCategory.Codesys, job.Operation switch
+                    _log.Info(CodesysLog.Category, job.Operation switch
                     {
                         CodesysOperation.Import => ImportSummary(evt),
                         // `preserved` is appended rather than always present: on a first
@@ -622,11 +622,11 @@ public sealed class LocalCodesysRunner(
                     break;
 
                 case "fatal":
-                    _log.Error(LogCategory.Codesys, $"script failed: {evt.String("msg")}");
+                    _log.Error(CodesysLog.Category, $"script failed: {evt.String("msg")}");
                     break;
 
                 case "created":
-                    _log.Info(LogCategory.Codesys,
+                    _log.Info(CodesysLog.Category,
                         $"created {evt.String("kind")} {evt.String("name")} " +
                         $"in {evt.String("into")}");
                     break;
@@ -636,7 +636,7 @@ public sealed class LocalCodesysRunner(
                     // project. Everything else here either adds or replaces; this is the one
                     // that cannot be undone from the mirror, so it names the object and where
                     // it lived rather than a count somebody has to go and expand.
-                    _log.Info(LogCategory.Codesys,
+                    _log.Info(CodesysLog.Category,
                         $"removed {evt.String("name")} from {evt.String("path")}");
                     break;
 
@@ -648,7 +648,7 @@ public sealed class LocalCodesysRunner(
                     //
                     // A handler at all, because four import events once had none and one of
                     // them logged as the literal string "· task_set".
-                    _log.Info(LogCategory.Codesys,
+                    _log.Info(CodesysLog.Category,
                         evt.Bool("moved") == true
                             ? $"moved {evt.String("name")} to {evt.String("newParent")}"
                               + $"/{evt.String("newName")}"
@@ -660,7 +660,7 @@ public sealed class LocalCodesysRunner(
                     // merely changed. A task's POU list is stored by name and a rename does not
                     // update it, so without this step the task would name a POU that no longer
                     // exists — and without this line, the fix would happen silently.
-                    _log.Info(LogCategory.Codesys,
+                    _log.Info(CodesysLog.Category,
                         $"{evt.String("task")} now runs {evt.String("to")} "
                         + $"(was {evt.String("from")}, renamed by this import)");
                     break;
@@ -669,19 +669,19 @@ public sealed class LocalCodesysRunner(
                     // Not a failure and not a refusal: the mirror said delete it and the
                     // project no longer has it, so the two agree. Debug because the
                     // interesting case is the one where something WAS removed.
-                    _log.Debug(LogCategory.Codesys,
+                    _log.Debug(CodesysLog.Category,
                         $"{evt.String("name")} is already gone from the project");
                     break;
 
                 case "updated":
                     // One per file the import changed, so Debug for the same reason "object"
                     // is: bounded by what was edited today, but there is no ceiling on that.
-                    _log.Debug(LogCategory.Codesys,
+                    _log.Debug(CodesysLog.Category,
                         $"applied {evt.String("path")} ({evt.String("part")})");
                     break;
 
                 case "native_imported":
-                    _log.Debug(LogCategory.Codesys,
+                    _log.Debug(CodesysLog.Category,
                         $"imported {evt.String("path")} as native XML into " +
                         $"{evt.String("into")}");
                     break;
@@ -692,7 +692,7 @@ public sealed class LocalCodesysRunner(
                     // exception to a callback and carries on - so this is the difference
                     // between a file that was applied and one that was half applied, on a run
                     // that otherwise looks entirely successful.
-                    _log.Warn(LogCategory.Codesys,
+                    _log.Warn(CodesysLog.Category,
                         $"{evt.String("path")} was only partly applied: " +
                         $"{evt.Int("pasted")} object(s) imported, {evt.Int("errors")} failed, " +
                         $"{evt.Int("refused")} refused by CODESYS — the project has some of " +
@@ -706,34 +706,34 @@ public sealed class LocalCodesysRunner(
                     // machine runs: a priority, an interval, or the CPU core a task is bound
                     // to. It logged as "· task_set" with no detail at all until 2026-08-15,
                     // which is a poor way to record the one write this whole path exists for.
-                    _log.Info(LogCategory.Codesys,
+                    _log.Info(CodesysLog.Category,
                         $"set {evt.String("task")}.{evt.String("field")} = " +
                         $"{evt.String("value")} ({evt.String("path")})");
                     break;
 
                 case "phase_saved":
-                    _log.Debug(LogCategory.Codesys,
+                    _log.Debug(CodesysLog.Category,
                         $"saved after the {evt.String("after")} phase");
                     break;
 
                 case "saved":
-                    _log.Info(LogCategory.Codesys, "project saved");
+                    _log.Info(CodesysLog.Category, "project saved");
                     break;
 
                 case "nothing_to_save":
                     // Info, because "I edited the mirror and nothing happened" is a question
                     // somebody asks, and this is the line that answers it.
-                    _log.Info(LogCategory.Codesys,
+                    _log.Info(CodesysLog.Category,
                         "the project was not modified, so nothing was saved");
                     break;
 
                 case "object":
-                    _log.Debug(LogCategory.Codesys,
+                    _log.Debug(CodesysLog.Category,
                         $"wrote {evt.String("path")} [{evt.String("form")}]");
                     break;
 
                 default:
-                    _log.Debug(LogCategory.Codesys, $"· {evt.Type}");
+                    _log.Debug(CodesysLog.Category, $"· {evt.Type}");
                     break;
             }
         }
@@ -854,7 +854,7 @@ public sealed class LocalCodesysRunner(
             CodesysProjectFormat.Instance,
             mirrorRoot,
             _log,
-            LogCategory.Codesys,
+            CodesysLog.Category,
 
             // No binding id down here: this runner is handed paths, not bindings. The
             // orchestrator's call supplies one, which is why the reader takes a label rather

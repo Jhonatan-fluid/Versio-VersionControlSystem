@@ -1,5 +1,6 @@
 using Versio.Core.Abstractions;
 using Versio.Core.Logging;
+using Versio.Core.Plc.Codesys;
 using Xunit;
 
 namespace Versio.Core.Tests.Logging;
@@ -56,7 +57,7 @@ public class VersioLoggerTests
         using (logger.BeginOperation("7f3a"))
         {
             await Task.Yield();
-            await Task.Run(() => logger.Info(LogCategory.Codesys, "on a pool thread"));
+            await Task.Run(() => logger.Info(CodesysLog.Category, "on a pool thread"));
         }
 
         Assert.Equal("7f3a", Assert.Single(sink.Snapshot()).OperationId);
@@ -197,7 +198,7 @@ public class VersioLoggerTests
 
         using (logger.BeginOperation("7f3a"))
         {
-            logger.Warn(LogCategory.Codesys, "object not exportable");
+            logger.Warn(CodesysLog.Category, "object not exportable");
         }
 
         var text = Assert.Single(sink.Snapshot()).Format();

@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using Versio.Core.Logging;
+using Versio.Core.Plc.Codesys;
 
 namespace Versio.Infrastructure.Plc.Codesys;
 
@@ -26,7 +27,7 @@ public sealed class ScriptExtractor
         {
             if (rootOverride is not null)
             {
-                _log.Debug(LogCategory.Codesys, $"using script directory override {rootOverride}");
+                _log.Debug(CodesysLog.Category, $"using script directory override {rootOverride}");
                 return rootOverride;
             }
 
@@ -91,7 +92,7 @@ public sealed class ScriptExtractor
 
         // The stamp is the answer to "is CODESYS running the scripts I think it is". A
         // mismatched one is what a stale extraction looks like from the outside.
-        _log.Debug(LogCategory.Codesys,
+        _log.Debug(CodesysLog.Category,
             $"scripts ready at {dir} (stamp {stamp}, {resources.Count} embedded, {written} written)");
 
         return dir;

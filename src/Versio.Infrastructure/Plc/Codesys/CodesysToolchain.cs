@@ -82,11 +82,11 @@ public sealed class CodesysToolchain(IVersioLogger? logger = null) : IPlcToolcha
 
         if (status.Available)
         {
-            _log.Info(LogCategory.Codesys, $"toolchain ready: {status.Explanation}");
+            _log.Info(CodesysLog.Category, $"toolchain ready: {status.Explanation}");
         }
         else
         {
-            _log.Warn(LogCategory.Codesys, $"toolchain unavailable: {status.Explanation}");
+            _log.Warn(CodesysLog.Category, $"toolchain unavailable: {status.Explanation}");
         }
 
         return Task.FromResult(status);
