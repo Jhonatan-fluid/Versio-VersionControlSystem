@@ -109,6 +109,32 @@ public sealed class SyncOrchestrator
     /// </remarks>
     private readonly Dictionary<string, SyncJob> _deferred = new(StringComparer.Ordinal);
     private readonly CircuitBreaker _breaker;
+    /// <summary>
+    /// Which vendor format claims a project path.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Injected rather than fetched, because this is the file the vendor rule exists to
+    /// protect.</b> It used to call <c>PlcFormats.ForPath</c> directly — a static, mutable,
+    /// process-wide registry — so the orchestrator's behaviour depended on ambient state that
+    /// no caller could see and no test could set. The seam test could not notice: a static call
+    /// puts no vendor type in a signature.
+    /// </para>
+    /// <para>
+    /// <b>It is not theoretical.</b> Two tests this week passed alone and failed in company
+    /// because one class registered a stand-in vendor into that registry while another was
+    /// reading it — xunit runs test classes in parallel, and a static registry is shared by all
+    /// of them. Being able to hand this in is what makes an orchestrator test independent of
+    /// whatever else is running.
+    /// </para>
+    /// <para>
+    /// Defaulted rather than required, which is the same shape <c>RepoScanner</c>,
+    /// <c>RepoSetup</c> and <c>ProjectOccupancy</c> already use: existing callers are unchanged
+    /// and the application passes its own.
+    /// </para>
+    /// </remarks>
+    private readonly Func<string, IPlcProjectFormat?> _formats;
+
     private readonly SelfWriteSuppressor _suppressor;
     private readonly IVersioLogger _log;
 
@@ -141,8 +167,10 @@ public sealed class SyncOrchestrator
         IVersioLogger? logger = null,
         IProjectOccupancyProbe? occupancy = null,
         IConflictProbe? conflicts = null,
-        IHistoricContentProbe? history = null)
+        IHistoricContentProbe? history = null,
+        Func<string, IPlcProjectFormat?>? formats = null)
     {
+        _formats = formats ?? PlcFormats.ForPath;
         _occupancy = occupancy;
         _conflicts = conflicts ?? NoConflicts.Instance;
         _history = history ?? NoHistory.Instance;
@@ -1551,7 +1579,7 @@ public sealed class SyncOrchestrator
             return null;
         }
 
-        var format = PlcFormats.ForPath(binding.ProjectPath);
+        var format = _formats(binding.ProjectPath);
         if (format is null)
         {
             return null;
@@ -1647,7 +1675,7 @@ public sealed class SyncOrchestrator
         // format that no longer claims the path leaves it null and the runner decides; that
         // is the same door a test driving a runner directly comes through.
         var plan = agreed;
-        if (plan is null && PlcFormats.ForPath(binding.ProjectPath) is { } format)
+        if (plan is null && _formats(binding.ProjectPath) is { } format)
         {
             plan = await PlanImportAsync(binding, format, ct).ConfigureAwait(false);
         }

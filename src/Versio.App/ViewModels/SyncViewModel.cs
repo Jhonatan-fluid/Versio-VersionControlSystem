@@ -892,7 +892,13 @@ public sealed class SyncViewModel : ObservableObject
             // What HEAD held for a file the mirror has lost. Without it a file that was renamed
             // AND edited matches no hash, and the import falls back to destroying the object
             // and rebuilding it under the new name — losing its GUID and every reference to it.
-            history: _git is null ? null : new GitHistoricContent(_git));
+            history: _git is null ? null : new GitHistoricContent(_git),
+
+            // Which vendor claims a project path. Handed in rather than left to the engine to
+            // fetch from the static registry, so the composition root stays the one place that
+            // decides which vendors exist — and so an orchestrator under test is independent of
+            // whatever else has registered into a process-wide static.
+            formats: PlcFormats.ForPath);
 
         AttachRunSignals(_orchestrator);
 

@@ -60,6 +60,17 @@ public class SyncOrchestratorTests
         /// engine's default — nothing is ever conflicted — under test as well.</summary>
         public IConflictProbe? Conflicts { get; set; }
 
+        /// <summary>
+        /// Which vendor format claims a path, as the engine sees it.
+        /// </summary>
+        /// <remarks>
+        /// Null leaves the engine on <c>PlcFormats.ForPath</c>, so every existing scenario is
+        /// unchanged. Set it to make a test independent of a static, process-wide registry that
+        /// any other test class can write to while this one runs — which has already caused two
+        /// pass-alone-fail-in-company failures this week.
+        /// </remarks>
+        public Func<string, IPlcProjectFormat?>? Formats { get; set; }
+
         public Harness(OrchestratorOptions? options = null, params ProjectBinding[] extra)
         {
             Binding = new ProjectBinding
@@ -90,7 +101,8 @@ public class SyncOrchestratorTests
                 options ?? new OrchestratorOptions { RequireImportConfirmation = false },
                 logger: LoggerOverride ?? new VersioLogger(Clock).AddSink(Sink),
                 occupancy: Occupancy,
-                conflicts: Conflicts);
+                conflicts: Conflicts,
+                formats: Formats);
 
         public void SetProject(string content) =>
             Fs.Write(Path.Combine(Root, "plc", "A.project"), content);
@@ -1073,6 +1085,35 @@ public class SyncOrchestratorTests
 
         var project = Assert.Single(Assert.Single(h.Codesys.Jobs).Projects);
         Assert.Equal(Path.Combine(Root, "plc", "A.project"), project.ProjectPath);
+    }
+
+    [Fact]
+    public async Task The_engine_asks_the_resolver_it_was_given_and_not_a_global_registry()
+    {
+        // SyncOrchestrator is the file the vendor rule exists to protect, and it used to call
+        // the static PlcFormats.ForPath directly - a process-wide mutable registry whose
+        // contents no caller could see and no test could set. The seam test could never notice:
+        // a static call puts no vendor type in any signature.
+        //
+        // Handing a resolver in is what makes an orchestrator test independent of whatever else
+        // has registered into that static. That is not hypothetical - two tests this week passed
+        // alone and failed in company for exactly that reason.
+        var asked = new List<string>();
+        var h = new Harness();
+        h.Formats = path =>
+        {
+            asked.Add(path);
+            return null;   // nothing claims it, so no plan can be computed
+        };
+        h.Build();
+
+        var plan = await h.Orchestrator.PlanImportAsync(BindingId, CancellationToken.None);
+
+        // Null because THIS resolver said so, not because the registry happens to be empty:
+        // CODESYS is registered in this assembly and would have claimed plc/A.project.
+        Assert.Null(plan);
+        Assert.Contains("plc/A.project", asked);
+        Assert.NotNull(PlcFormats.ForPath("plc/A.project"));
     }
 
 }

@@ -985,6 +985,37 @@ would have gone on passing while checking one fewer every time a panel moved out
 
 Written down with their evidence, because the reasoning is worth more than the fix.
 
+### The engine reached for a global registry, and no seam test could see it
+
+**Fixed 2026-08-17.** `SyncOrchestrator` — the file the whole vendor rule exists to protect —
+called `PlcFormats.ForPath` directly, twice. That is a **static, mutable, process-wide**
+registry, so the engine's behaviour depended on ambient state no caller could see and no test
+could set.
+
+**Invisible to every mechanical check.** A static call puts no vendor type in a signature, so
+the type checks pass; it names no brand, so the constant and literal checks pass; and it lives
+in a neutral namespace, so nothing about it looks wrong. The only thing that finds it is reading
+the file and asking where that answer comes from.
+
+**Not a theoretical hazard — it cost twice this week.** Two tests passed alone and failed in
+company because one class registered a stand-in vendor into that registry while another was
+reading it. xunit runs test classes in parallel, and a static registry is shared by all of them.
+An engine that is *handed* its resolver is independent of whatever else is running.
+
+Injected with a default, the same shape `RepoScanner`, `RepoSetup` and `ProjectOccupancy` already
+use, so no existing caller moved. `SyncViewModel` — the composition root's agent — now passes it
+explicitly, and the orchestrator harness can override it per test.
+
+**Pinned by the one assertion that could catch it.** The test hands in a resolver that claims
+nothing, asserts no plan is produced, *and* asserts that `PlcFormats.ForPath` would have claimed
+the same path — so it fails if the engine ever quietly goes back to the registry. Making
+`_formats` ignore its argument takes it red.
+
+**What was deliberately left alone.** `RepoSetup`, `ObjectTypeNames` and `SyncViewModel` still
+default to the registry. They are called from the composition root or are pure display helpers,
+and the registry is populated by exactly one line in `App.xaml.cs` — so the ambient reach that
+mattered was the engine's, and that one is closed.
+
 ### The vendor seam is a project boundary now, not a namespace and a reflection test
 
 **Done 2026-08-17.** CODESYS lived in the namespace `Versio.Core.Plc.Codesys` *inside*
