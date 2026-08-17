@@ -117,7 +117,7 @@ that disappears while it is open.
 **[docs/GIT-PANEL-PLAN.md](docs/GIT-PANEL-PLAN.md)** is the git panel's functionality and UX.
 Eleven of its twelve phases are built; what is left is the ahead/behind previews and a list of
 smaller polish items.
-**[docs/CODESYS.md](docs/CODESYS.md)** is how CODESYS is actually driven — the ScriptEngine
+**[docs/vendors/codesys/DRIVING.md](docs/vendors/codesys/DRIVING.md)** is how CODESYS is actually driven — the ScriptEngine
 surface, the command line, both sides of the JSON-lines protocol, every script, and the export
 and import mechanics. Its §12 is a standing audit of that integration: what is broken, what is
 merely stale, and where the C# and the python have drifted apart.
@@ -126,7 +126,7 @@ limitations — including the one real CODESYS mutation it found: `Core2`, a tas
 affinity, rewritten by `import_native` without being asked. **That one is fixed** — task
 configuration imports through the typed API now and is no longer diff-only — so read that
 document as a record of what was measured in Phase 0, not as a list of what is still true.
-**[docs/CODESYS-IMPORT-PLAN.md](docs/CODESYS-IMPORT-PLAN.md)** is where the import side is
+**[docs/vendors/codesys/IMPORT-PLAN.md](docs/vendors/codesys/IMPORT-PLAN.md)** is where the import side is
 being finished, and it is the active plan: eleven numbered gaps, what each measurement closed,
 and the order the evidence argues for building the rest in.
 **[docs/PLAN.md](docs/PLAN.md)** is the full architecture plan behind all of it.
@@ -144,13 +144,14 @@ Versio.sln
 │  │  ├─ Diff/                  unified-diff parser and the syntax tokenizer
 │  │  ├─ Git/                   porcelain v2 parser, progress parser, .gitattributes planner
 │  │  ├─ Hashing/               content and export-tree hashing
-│  │  ├─ Iec/                   IEC 61131-3, shared by every vendor: ST codec, declarations
+│  │  ├─ Iec/                   IEC 61131-3, shared by every vendor: ST codec, declarations,
+│  │  │                         the standard's object-type names
 │  │  ├─ Locking/               lock records, reboot-survival recovery policy
 │  │  ├─ Logging/               ring buffer, correlation ids, heartbeat
-│  │  ├─ Plc/                   the vendor seam: IPlcRunner, PlcJob, PlcResult, PlcFormats
-│  │  │  └─ Codesys/            one vendor: GUID table, XML shape, profiles, wire protocol
+│  │  ├─ Plc/                   the vendor seam: IPlcRunner, PlcJob, PlcResult, PlcVendor,
+│  │  │                         PlcFormats — and nothing that names a brand
 │  │  ├─ Projects/              the manifest, the export-coverage report, the library
-│  │  │                         catalog, and the CODESYS-shaped project tree
+│  │  │                         catalog, the object-type dispatch and the project tree
 │  │  ├─ Sync/                  state machine, hash gate, suppressor, breaker, commit gate
 │  │  └─ Watching/              debounce, coalescing, and when the shell re-reads git
 │  │
@@ -161,31 +162,61 @@ Versio.sln
 │  │  ├─ Logging/               rolling file sink
 │  │  ├─ Platform/              clock, machine identity, process probe
 │  │  ├─ Plc/                   toolchain registry, stand-in for an absent toolchain
-│  │  │  └─ Codesys/            process host, install locator, script extractor
 │  │  └─ Watching/              the OS-level file and repository watchers
 │  │
-│  └─ Versio.Scripts.Codesys/   IronPython 2.7, run inside CODESYS. Embedded into
-│                               Versio.Infrastructure as resources. The pure modules
-│                               (text, types, decl, yaml, libraries, tasks,
-│                               native_equiv) import no scriptengine and run on
-│                               CPython too, which is what the parity tests use.
+│  ├─ Versio.Plc.Codesys/       ONE VENDOR, pure. GUID table, XML shape, profiles, wire
+│  │                            protocol, import planner, CODESYS's own tree vocabulary.
+│  │                            Versio.Core has no reference to this — that is the rule,
+│  │                            and the compiler is what enforces it.
+│  │
+│  └─ Versio.Plc.Codesys.Infrastructure/
+│                               ONE VENDOR, driven. Process host, install locator, script
+│                               extractor, and CodesysPack.Register().
+│     └─ Scripts/               IronPython 2.7, run inside CODESYS, embedded into this
+│                               assembly as resources. The pure modules (text, types,
+│                               decl, yaml, libraries, tasks, native_equiv) import no
+│                               scriptengine and run on CPython too, which is what the
+│                               parity tests use.
 ├─ tests/
-│  ├─ Versio.Core.Tests/        1,494 unit tests — pure, no IO, under a second
+│  ├─ Versio.TestSupport/       not a test project: the three helpers more than one suite
+│  │                            needs (TestPaths, TestLogger, VendorSeamScanner)
+│  ├─ Versio.Core.Tests/        1,295 unit tests — pure, no IO, under a second
+│  ├─ Versio.Integration.Tests/ 141 tests against real git and the real filesystem, ~10 s.
+│  │                            NO CODESYS: that is a different project now, so this one
+│  │                            needs no filter and cannot accidentally cost half an hour
 │  ├─ Versio.App.Tests/         480 tests that build the real windows and panels against
 │  │                            the real stylesheet on an STA thread — none is ever shown
-│  └─ Versio.Integration.Tests/ 243 tests against real CODESYS and real git, ~31 min (192 of them in 18 s without CODESYS — see CLAUDE.md)
-├─ tools/                       PowerShell harnesses used during Phase 0, plus
-│                               New-VersioIcon.ps1 which generates the app icon
+│  └─ Versio.Plc.Codesys.Tests/ 365 tests against real CODESYS, ~31 min. The gate before a
+│                               commit, and the only suite that needs a toolchain installed
+├─ tools/                       PowerShell and python harnesses. Seven of the nine are
+│                               CODESYS-specific probes; New-VersioIcon.ps1 generates the
+│                               app icon and Compare-Exports.ps1 diffs any two export trees
 ├─ assets/                      versio.svg (reference drawing) and versio.ico
 │                               (the build input — generated, never hand-edited)
-├─ fixtures/projects/           the CODESYS project the suite runs against
+├─ fixtures/projects/           the CODESYS projects the suite runs against, plus their
+│                               committed export mirrors. The .project files are GIT LFS
+│                               POINTERS — a clone without git-lfs installed gets 130-byte
+│                               stubs and the integration suite fails confusingly
+├─ phase0/                      GITIGNORED scratch. Experiment output from tools/; it
+│                               reached 29 MB in one afternoon. It also holds 22 .project
+│                               files, which is why launching the app against this
+│                               repository adopts and exports all of them — see STATUS.md's
+│                               Known loose ends before doing that
+├─ .versio/                     Versio's own state for this repository, because it tracks
+│                               its own fixtures. repo.json is committed; local/ is not
 └─ docs/
    ├─ PLAN.md                   the full architecture plan
    ├─ STATUS.md                 where the project is and what remains
+   ├─ FINDINGS.md               99 defects with their evidence, newest first — the
+   │                            engineering log, split out of STATUS.md when it reached
+   │                            77% of that file
    ├─ SAFEGUARDS.md             what Versio refuses, asks about, or waits for
    ├─ GIT-PANEL-PLAN.md         the git panel's functionality and UX — eleven of twelve phases built
-   ├─ CODESYS.md                how CODESYS is driven end to end, and the audit of it
-   └─ PHASE0-FINDINGS.md        measured results and known limitations
+   ├─ PHASE0-FINDINGS.md        measured results and known limitations
+   └─ vendors/codesys/          ONE VENDOR's documentation, beside its two projects
+      ├─ DRIVING.md             how CODESYS is driven end to end, and the audit of it
+      └─ IMPORT-PLAN.md         the active plan: the numbered import gaps and the
+                                feature checklist
 ```
 
 `Versio.App` holds the WPF shell: `Theme/tokens/` for the design tokens, `Theme/controls/` for
@@ -225,31 +256,48 @@ listen to `IsExpanded` independently rather than one calling the other.
 Versio started CODESYS-only and will grow to other PLC toolchains, so the code is split
 three ways and the namespaces say which is which:
 
-| Namespace | Scope | Example |
+| Project | Scope | Example |
 |---|---|---|
-| `Versio.Core.Plc` | **Neutral contracts** every vendor implements | `IPlcRunner`, `PlcJob`, `PlcResult`, `PlcFormats` |
-| `Versio.Core.Plc.Codesys` | **One vendor.** Object-type GUIDs, native XML shape, `CODESYS.exe` invocation, the ScriptEngine protocol | `CodesysObjectType`, `ProfileResolver` |
-| `Versio.Core.Iec` | **The IEC 61131-3 standard**, shared by every vendor | `StTextCodec`, `StDeclarationParser` |
+| `Versio.Core` → `Plc/` | **Neutral contracts** every vendor implements | `IPlcRunner`, `PlcJob`, `PlcResult`, `PlcFormats` |
+| `Versio.Core` → `Iec/` | **The IEC 61131-3 standard**, shared by every vendor | `StTextCodec`, `StDeclarationParser`, `IecObjectTypeNames` |
+| **`Versio.Plc.Codesys`** | **One vendor, pure.** Object-type GUIDs, native XML shape, the import planner, the ScriptEngine protocol, CODESYS's own words for its tree | `CodesysObjectType`, `ProfileResolver` |
+| **`Versio.Plc.Codesys.Infrastructure`** | **One vendor, driven.** Finding the install, starting `CODESYS.exe`, unpacking the embedded python | `LocalCodesysRunner`, `CodesysPack` |
 | everything else | **Vendor-neutral.** git, diff, sync, locking, watching, logging, bindings | `SyncOrchestrator`, `GitCliClient` |
+
+**Those are projects, not folders, and that is the whole point.** Until 2026-08-17 the vendor
+lived in the namespace `Versio.Core.Plc.Codesys` *inside* `Versio.Core`, so the rule below was
+checkable only by a reflection test reading namespace strings — and such a test cannot see a
+static call, a string literal, or a type hiding inside a generic until somebody teaches it to,
+which took three separate goes. `Versio.Core` now has **no project reference** to either pack, so
+a leak is a compiler error.
 
 Structured Text is a *standard*, not a CODESYS feature — putting it under `Iec` means a
 second vendor inherits the codec, the declaration parser and the syntax highlighting rather
 than reimplementing them.
 
-**Adding a vendor** means implementing `IPlcRunner`, `IPlcProjectFormat` and `IPlcToolchain`,
-and registering the format with `PlcFormats`. Nothing in `Sync/`, `Git/`, `Locking/`,
-`Watching/`, `Projects/` or `Diff/` may change — **if it does, vendor knowledge has leaked past
-the seam, and the leak is the bug.**
+**Adding a vendor** means a new project implementing `IPlcRunner`, `IPlcProjectFormat` and
+`IPlcToolchain`, one `ProjectReference` from `Versio.App`, and one `Register()` call in
+`App.xaml.cs` beside the existing `CodesysPack.Register()`. Nothing in `Sync/`, `Git/`,
+`Locking/`, `Watching/`, `Projects/` or `Diff/` may change — **if it does, vendor knowledge has
+leaked past the seam, and the leak is the bug.**
 
-That rule is now enforced by `VendorSeamTests`, which reads assembly metadata and fails the
-build on a leak. It had to be: the rule was stated from the start and was not true — the sync
-orchestrator was built directly on CODESYS types until 2026-08-12.
+Three things enforce that, and all three had to be built because the rule was stated from the
+start and was not true:
+
+- **The project graph.** `Versio.Core` cannot see a vendor pack, so the compiler refuses.
+- **`VendorSeamTests` / `VendorSeamInfrastructureTests`**, which read assembly metadata —
+  signatures, generic arguments, string constants and the literals compiled into method bodies.
+  The first version read signatures only and was green while three vendor names sat in neutral
+  namespaces as strings.
+- **`SecondVendorTests`**, which stands up a second vendor and drives it, because
+  `PlcFormats.Register` had **zero callers** until 2026-08-16 — the mechanism the whole
+  architecture rests on had never once run.
 
 ### The one architectural rule
 
 **`Versio.Core` never touches the outside world.** No `System.IO`, no `Process`, no `DateTimeOffset.Now`, no UI framework. Everything external sits behind an interface in `Abstractions/`, and `Versio.Infrastructure` is the only project that implements them.
 
-That is not tidiness for its own sake — it is what makes the risky parts (the lock model, the loop defences, the state machine) testable without CODESYS, without git, without sleeping, and without a UI. It is also why the test suite is roughly 1:1 with source by line count and still runs in a tenth of a second.
+That is not tidiness for its own sake — it is what makes the risky parts (the lock model, the loop defences, the state machine) testable without CODESYS, without git, without sleeping, and without a UI. It is also why the unit suite is roughly 1:1 with source by line count and still runs in under a second.
 
 ---
 
@@ -264,7 +312,7 @@ That is not tidiness for its own sake — it is what makes the risky parts (the 
   everything, so a machine without it starts and says so rather than working. Nothing is
   vendored: that is what makes Git Credential Manager, SSH agents, 2FA and corporate proxies
   behave exactly as they do in your own terminal. |
-| CODESYS | 3.5 SP22 — **integration tests only**, unit tests need none |
+| CODESYS | 3.5 SP22 — **`Versio.Plc.Codesys.Tests` only**; the other four suites need none |
 
 ```bash
 dotnet build
@@ -280,13 +328,18 @@ dotnet test tests/Versio.Core.Tests
 > `%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe`, or set `DOTNET_ROOT` to it — the same install
 > layout that makes a framework-dependent `Versio.exe` fail to start, noted again below.
 
-**Three suites, and they need different things:**
+**Five suites, and they need different things:**
 
-| Suite | Needs | Runs in |
-|---|---|---|
-| `Versio.Core.Tests` | nothing — pure, no IO, no clock, no UI | ~0.3 s |
-| `Versio.App.Tests` | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~0.4 s |
-| `Versio.Integration.Tests` | a real CODESYS and a real `git.exe`, and **skips cleanly** when either is absent | ~10 min |
+| Suite | Tests | Needs | Runs in |
+|---|---|---|---|
+| `Versio.Core.Tests` | 1,295 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
+| `Versio.Integration.Tests` | 141 | a real `git.exe` and the real filesystem | ~10 s |
+| `Versio.Arch.Tests` | 14 | nothing — it reads assembly metadata, IL, and the project files | instant |
+| `Versio.App.Tests` | 480 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
+| `Versio.Plc.Codesys.Tests` | 365 | **a real CODESYS**, and **skips cleanly** without one | **~31 min** |
+
+The first four are the loop to work in. The last is the gate before a commit — and it is a
+separate project precisely so that running the loop cannot cost you half an hour by accident.
 
 ```bash
 dotnet test
@@ -297,12 +350,12 @@ dotnet test
 `tools/` holds the harnesses used to validate everything before the C# runner existed. They remain the fastest way to poke at CODESYS directly.
 
 ```bash
-pwsh tools/Test-RoundTrip.ps1 -Project fixtures/projects/RefrigeratorControl.project -Profile "CODESYS V3.5 SP22 Patch 2" -MutateFirst
+pwsh tools/codesys/Test-RoundTrip.ps1 -Project fixtures/projects/RefrigeratorControl.project -Profile "CODESYS V3.5 SP22 Patch 2" -MutateFirst
 ```
 
 `-MutateFirst` edits an exported `.st` before importing it. **Use it.** Without a deliberate change, a round-trip comparison can pass while the import silently did nothing — a green result that cannot fail is worse than a red one.
 
-**The verdict is per layer, because the layers have different fidelity rules.** Textual `.st` and export-only `.yaml` must be byte-identical and are fatal if they are not; native `.xml` is *expected* to differ, because `import_native` legitimately advances counters, reorders unordered collections and re-mints internal GUIDs. A single byte verdict over both printed `Lossless: False` on a perfectly healthy project, which is worse than useless — see [docs/CODESYS.md](docs/CODESYS.md) §6.6.
+**The verdict is per layer, because the layers have different fidelity rules.** Textual `.st` and export-only `.yaml` must be byte-identical and are fatal if they are not; native `.xml` is *expected* to differ, because `import_native` legitimately advances counters, reorders unordered collections and re-mints internal GUIDs. A single byte verdict over both printed `Lossless: False` on a perfectly healthy project, which is worse than useless — see [docs/vendors/codesys/DRIVING.md](docs/vendors/codesys/DRIVING.md) §6.6.
 
 ```
   textual (.st)        LOSSLESS - byte-identical
@@ -333,6 +386,11 @@ Deliberately few. Every one is a thing that can break a build or a publish.
 | Xunit.SkippableFact | tests | integration tests skip cleanly without CODESYS |
 
 **`Versio.Core` and `Versio.Infrastructure` have no third-party dependencies at all.**
+
+**One tool is a prerequisite rather than a package: `git-lfs`.** The `.project` fixtures are
+stored in LFS, so a clone on a machine without it gets 130-byte pointer files instead. Nothing
+fails at build time — the integration suite fails later, complaining that a CODESYS project it
+was handed is not a project, which is a long way from the cause.
 
 Two absences are decisions, not omissions:
 

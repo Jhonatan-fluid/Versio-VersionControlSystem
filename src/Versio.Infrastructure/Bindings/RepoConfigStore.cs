@@ -31,11 +31,15 @@ public sealed class RepoConfigStore(string repositoryRoot)
 
         // Enums by NAME, not by ordinal.
         //
-        // repo.json is committed and shared, so both of the alternatives are bad in ways that
-        // do not announce themselves. A reviewer reading "vendor": 0 in a diff learns nothing;
-        // worse, inserting a vendor into PlcVendor - alphabetically, say - would silently
-        // repoint every existing binding at a different toolchain, and the first sign would be
-        // an export driven by the wrong tool.
+        // repo.json is committed and shared, so the alternative is bad in a way that does not
+        // announce itself: a reviewer reading "health": 0 in a diff learns nothing.
+        //
+        // This used to carry a second and sharper argument, about inserting a vendor into
+        // PlcVendor - alphabetically, say - silently repointing every existing binding at a
+        // different toolchain, first noticed as an export driven by the wrong tool. That hazard
+        // is GONE rather than mitigated: PlcVendor stopped being an enum on 2026-08-16, so there
+        // is no ordinal left to shift. The name is the identity. It carries its own converter on
+        // the type, which is why it does not depend on this line any more.
         Converters = { new JsonStringEnumConverter() },
     };
 

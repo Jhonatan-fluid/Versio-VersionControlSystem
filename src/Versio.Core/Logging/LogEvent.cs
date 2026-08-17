@@ -38,19 +38,24 @@ public static class LogCategory
     /// <summary>Direction-lock transitions, persistence and reboot recovery.</summary>
     public const string Lock = "Lock";
 
-    /// <summary>The CODESYS subprocess: invocation, chatter, exit code, heartbeats.</summary>
     /// <summary>
     /// Anything coming from a PLC toolchain, whichever vendor's.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Vendor-neutral because the sync engine is: a log filter that said "Codesys" would stop
     /// finding the interesting lines the moment a repository holds a TwinCAT project. The
     /// runner names the vendor in the message where it matters.
+    /// </para>
+    /// <para>
+    /// <b>A vendor's own chatter gets its own category, declared by that vendor</b> — see
+    /// <c>CodesysLog.Category</c>. It used to be a <c>Codesys</c> constant sitting right here,
+    /// directly beneath the paragraph above explaining why it must not be, and above a second
+    /// <c>&lt;summary&gt;</c> left behind when that paragraph was written. Neither survived
+    /// contact with a seam test that reads constants.
+    /// </para>
     /// </remarks>
     public const string Plc = "Plc";
-
-    /// <summary>CODESYS-specific lines, emitted by its runner and scripts.</summary>
-    public const string Codesys = "Codesys";
 
     /// <summary>Everything driven through <c>git.exe</c>.</summary>
     public const string Git = "Git";

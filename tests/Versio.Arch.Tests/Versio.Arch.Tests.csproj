@@ -1,0 +1,32 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Windows-flavoured because rule 3 and rule 4 are about Versio.App, which is WPF. -->
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Versio.Arch.Tests</RootNamespace>
+    <!-- The project docs/PLAN.md section 12.2 has promised since it was written, under the
+         heading "Dependency rules — enforced, not documented". It listed five rules and said
+         this project "fails the build if any of these are violated".
+
+         It had never existed. src/Versio.Core/Versio.Core.csproj cited it by name in a comment,
+         which is the only trace it ever left. Four of the five rules were true anyway — held by
+         discipline — and one was quietly violated. That is the exact shape of the rolling file
+         sink: every part of the mechanism present except the one that makes it visible. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Versio.App\Versio.App.csproj" />
+    <ProjectReference Include="..\..\src\Versio.Core\Versio.Core.csproj" />
+    <ProjectReference Include="..\..\src\Versio.Infrastructure\Versio.Infrastructure.csproj" />
+    <ProjectReference Include="..\Versio.TestSupport\Versio.TestSupport.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,8 +1,9 @@
 using Versio.Core.Diff;
 using Versio.Core.Git;
 using Versio.Infrastructure.Git;
-using Xunit;
+using Versio.TestSupport;
 using Xunit.Abstractions;
+using Xunit;
 
 namespace Versio.Integration.Tests;
 

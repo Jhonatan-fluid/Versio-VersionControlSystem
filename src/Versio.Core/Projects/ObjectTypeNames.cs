@@ -1,7 +1,9 @@
+using Versio.Core.Plc;
+
 namespace Versio.Core.Projects;
 
 /// <summary>
-/// How one CODESYS object type is written on screen: as a chip, and in a counted sentence.
+/// How one object type is written on screen: as a chip, and in a counted sentence.
 /// </summary>
 /// <remarks>
 /// Three forms rather than one, because English needs three and deriving them from each other
@@ -15,84 +17,59 @@ namespace Versio.Core.Projects;
 /// <param name="Many">In a sentence, plural: <c>3 POUs</c>, <c>3 visualisations</c>.</param>
 public readonly record struct ObjectTypeName(string Chip, string One, string Many);
 
-/// <summary>The display names for the type strings the exporter writes.</summary>
+/// <summary>
+/// Renders an object's type, in whichever vendor's vocabulary wrote it.
+/// </summary>
 /// <remarks>
 /// <para>
-/// <b>A table, not an algorithm.</b> The obvious alternative — lowercase, replace underscores,
-/// capitalise the first letter — is wrong for over half of these: it yields "Gvl", "Textlist",
-/// "Imagepool" and "Pou". Engineers read those every day and would read a tool that renamed them
-/// as a tool that did not know the domain.
+/// <b>This was one table of thirty entries, and it read as a domain vocabulary that it was
+/// not.</b> Roughly a quarter of it is IEC 61131-3 — <c>POU</c>, <c>ACTION</c>,
+/// <c>TRANSITION</c>, <c>METHOD</c>, <c>PROPERTY</c>, <c>INTERFACE</c>, <c>TASK</c> — and means
+/// the same thing whoever implements the standard. The rest is one vendor's model of its own
+/// project tree: <c>PLC_LOGIC</c>, <c>CALL_TO_POU</c>, <c>LIBRARY_MANAGER</c>,
+/// <c>TASK_CONFIGURATION</c>, four kinds of visualisation. TwinCAT organises the same machine
+/// differently, and would have arrived to find a "neutral" table full of somebody else's words
+/// that it could neither use nor correct.
 /// </para>
 /// <para>
-/// <b>An unknown type is shown as the exporter wrote it, never guessed at.</b> The type strings
-/// come from <c>versio_types.py</c> and that table grows — <c>APPLICATION</c> and
-/// <c>PLC_LOGIC</c> were both added by probing a real project. A build that met a type added
-/// after it shipped would otherwise invent an English word for something it has never seen, and
-/// the raw <c>WEB_VISUALISATION</c> is more honest than a plausible mistranslation of it. This
-/// is the same rule the git panel applies to a path with no object behind it: fall back, never
-/// fabricate.
+/// So this asks three things in order: <b>the vendor that wrote the manifest</b>, then
+/// <see cref="Iec.IecObjectTypeNames"/>, then nothing — an unrecognised type is shown exactly as
+/// the exporter wrote it. Falling back to IEC rather than to raw matters because the standard's
+/// words are the ones a second vendor is most likely to share.
 /// </para>
 /// <para>
-/// Kept beside the manifest that produces the strings rather than in the App, because it is a
-/// rule about the domain and it is tested without a window.
+/// <b>The vendor's half is asked of its own <see cref="IPlcProjectFormat"/></b> rather than of a
+/// second registry beside <see cref="PlcFormats"/>. The format object already is the thing a
+/// vendor registers, and it already carries knowledge of this kind — the export-path convention,
+/// the template rule, which files a plan needs text for. One registry, asked a new question.
+/// </para>
+/// <para>
+/// <b>An unknown type is shown as the exporter wrote it, never guessed at.</b> A build that met
+/// a type added after it shipped would otherwise invent an English word for something it has
+/// never seen, and the raw <c>WEB_VISUALISATION</c> is more honest than a plausible
+/// mistranslation. This is the same rule the git panel applies to a path with no object behind
+/// it: fall back, never fabricate.
 /// </para>
 /// </remarks>
 public static class ObjectTypeNames
 {
-    private static readonly Dictionary<string, ObjectTypeName> Table =
-        new(StringComparer.OrdinalIgnoreCase)
-        {
-            ["POU"] = new("POU", "POU", "POUs"),
-            ["DUT"] = new("DUT", "DUT", "DUTs"),
-            ["GVL"] = new("GVL", "GVL", "GVLs"),
-            ["GVL_PERSISTENT"] = new("Persistent GVL", "persistent GVL", "persistent GVLs"),
-            ["EVC"] = new("EVC", "EVC", "EVCs"),
-            ["INTERFACE"] = new("Interface", "interface", "interfaces"),
-            ["TASK"] = new("Task", "task", "tasks"),
-
-            // A method with no return value is still a method to anybody reading the list. The
-            // distinction matters to the exporter, which has to write a different ST header for
-            // it, and to nobody scanning a column of changed objects.
-            ["METHOD"] = new("Method", "method", "methods"),
-            ["METHOD_NORET"] = new("Method", "method", "methods"),
-
-            ["PROPERTY"] = new("Property", "property", "properties"),
-            ["PROPERTY_METHOD"] = new("Accessor", "property accessor", "property accessors"),
-            ["ACTION"] = new("Action", "action", "actions"),
-            ["TRANSITION"] = new("Transition", "transition", "transitions"),
-            ["IMAGEPOOL"] = new("Image pool", "image pool", "image pools"),
-            ["TEXTLIST"] = new("Text list", "text list", "text lists"),
-            ["GLOBAL_TEXTLIST"] = new("Global text list", "global text list", "global text lists"),
-            ["LIBRARY_MANAGER"] = new("Library manager", "library manager", "library managers"),
-            ["TASK_CONFIGURATION"] = new("Task configuration", "task configuration", "task configurations"),
-            ["PROJECT_INFORMATION"] = new("Project information", "project information", "project information"),
-            ["PROJECT_SETTINGS"] = new("Project settings", "project settings", "project settings"),
-            ["DEVICE"] = new("Device", "device", "devices"),
-            ["FOLDER"] = new("Folder", "folder", "folders"),
-            ["CALL_TO_POU"] = new("POU call", "POU call", "POU calls"),
-            ["VISUALISATION"] = new("Visualisation", "visualisation", "visualisations"),
-            ["VISUALISATION_MANAGER"] = new("Visualisation manager", "visualisation manager", "visualisation managers"),
-            ["TARGET_VISUALISATION"] = new("Target visualisation", "target visualisation", "target visualisations"),
-            ["WEB_VISUALISATION"] = new("Web visualisation", "web visualisation", "web visualisations"),
-            ["VISUALISATION_STYLE"] = new("Visualisation style", "visualisation style", "visualisation styles"),
-            ["PLC_LOGIC"] = new("PLC logic", "PLC logic", "PLC logic"),
-            ["APPLICATION"] = new("Application", "application", "applications"),
-        };
-
-    /// <summary>How this type is written, or the raw string when it is not one we know.</summary>
-    public static ObjectTypeName For(string? type)
+    /// <summary>How this type is written, or the raw string when nobody names it.</summary>
+    public static ObjectTypeName For(PlcVendor vendor, string? type)
     {
         var raw = type ?? string.Empty;
-        return Table.TryGetValue(raw, out var name) ? name : new ObjectTypeName(raw, raw, raw);
+
+        return PlcFormats.ForVendor(vendor)?.DisplayNameFor(raw)
+               ?? Iec.IecObjectTypeNames.TryFor(raw)
+               ?? new ObjectTypeName(raw, raw, raw);
     }
 
     /// <summary>The chip shown beside an object's name.</summary>
-    public static string Chip(string? type) => For(type).Chip;
+    public static string Chip(PlcVendor vendor, string? type) => For(vendor, type).Chip;
 
     /// <summary>"3 POUs", "1 visualisation" — the count and the type in one phrase.</summary>
-    public static string Counted(string? type, int count)
+    public static string Counted(PlcVendor vendor, string? type, int count)
     {
-        var name = For(type);
+        var name = For(vendor, type);
         return $"{count} {(count == 1 ? name.One : name.Many)}";
     }
 }

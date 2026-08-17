@@ -1,6 +1,6 @@
 using Versio.Core.Locking;
 using Versio.Core.Plc;
-using Versio.Core.Plc.Codesys;
+using Versio.Plc.Codesys;
 using Xunit;
 
 namespace Versio.Core.Tests.Plc;

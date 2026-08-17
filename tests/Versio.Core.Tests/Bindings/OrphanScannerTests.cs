@@ -73,6 +73,13 @@ public class OrphanScannerTests
         var f = Assert.Single(findings);
         Assert.Equal(BindingHealth.OrphanedProject, f.Health);
         Assert.Equal("plc/New.project", f.Path);
+
+        // The sentence, which nothing asserted until 2026-08-16 — so it read "untracked CODESYS
+        // project" for as long as it liked, in a namespace forbidden to name a vendor, and could
+        // have drifted in any direction without a test noticing. Scan works from a snapshot and
+        // is handed no format, so "PLC" is the most it can honestly say.
+        Assert.Contains("untracked PLC project", f.Explanation);
+        Assert.DoesNotContain("CODESYS", f.Explanation);
     }
 
     [Fact]
@@ -118,6 +125,33 @@ public class OrphanScannerTests
 
         var orphan = Assert.Single(findings, f => f.Health == BindingHealth.OrphanedProject);
         Assert.Equal("plc/Real.project", orphan.Path);
+    }
+
+    [Fact]
+    public void An_ignored_paths_export_tree_is_not_offered_either()
+    {
+        // HALF A RULE IS WORSE THAN NONE HERE. The ignore list filtered orphaned projects and
+        // not their mirrors, so ignoring a directory of scratch projects made the projects
+        // disappear from the panel and left one finding per export tree — and a scratch
+        // directory of round-trip experiments has an export tree for every project in it.
+        //
+        // Found by opening this repository in the app: adoption correctly ignored 21 phase0
+        // projects and the panel still said 43 things needed attention. Nothing in the suite
+        // noticed, because the existing test only ever supplied ProjectFiles.
+        var config = new RepoConfig { Ignore = ["scratch/**"] };
+        var snapshot = new RepoSnapshot
+        {
+            ProjectFiles = ["scratch/Probe.project", "plc/Real.project"],
+            ExportDirectories = ["scratch/Probe", "scratch/RoundTrip", "plc/Orphaned"],
+        };
+
+        var findings = Scanner.Scan(config, snapshot);
+
+        // The one export tree outside the ignored directory, and only that one.
+        var orphan = Assert.Single(findings, f => f.Health == BindingHealth.OrphanedExport);
+        Assert.Equal("plc/Orphaned", orphan.Path);
+
+        Assert.DoesNotContain(findings, f => f.Path.StartsWith("scratch/", StringComparison.Ordinal));
     }
 
     [Fact]

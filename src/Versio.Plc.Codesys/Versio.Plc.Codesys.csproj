@@ -1,0 +1,23 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Versio.Plc.Codesys</RootNamespace>
+    <!-- ONE VENDOR. The object-type GUIDs, the native XML shape, the import planner, the
+         ScriptEngine wire protocol, and the words CODESYS uses for its own project tree.
+
+         This exists as a project rather than a folder so the compiler enforces the rule the
+         README has always stated: nothing here may be reachable from Versio.Core. It used to be
+         the namespace Versio.Core.Plc.Codesys INSIDE Versio.Core, so the rule was checkable only
+         by a reflection test over namespace strings - and that test could not see a static call,
+         a string literal or a type hidden in a generic until it was taught to.
+
+         The pure half: no processes, no filesystem, no CODESYS.exe. Driving CODESYS lives in
+         Versio.Plc.Codesys.Infrastructure, for the same reason Versio.Core and
+         Versio.Infrastructure are two projects. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Versio.Core\Versio.Core.csproj" />
+  </ItemGroup>
+
+</Project>

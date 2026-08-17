@@ -8,23 +8,34 @@ here is about refusing to act rather than acting.
 **It is multi-vendor by design. CODESYS is the first toolchain, not the only one** — and that
 distinction is the project's central architectural rule rather than an aspiration:
 
-| Namespace | Scope |
+| Project | Scope |
 |---|---|
-| `Versio.Core.Plc` | Neutral contracts every vendor implements — `IPlcRunner`, `PlcJob`, `PlcResult`, `PlcFormats` |
-| `Versio.Core.Plc.Codesys` | **One vendor.** Object-type GUIDs, native XML shape, `CODESYS.exe`, the ScriptEngine protocol |
-| `Versio.Core.Iec` | The IEC 61131-3 **standard**, shared by every vendor — ST codec, declaration parser |
+| `Versio.Core` (`Plc/`) | Neutral contracts every vendor implements — `IPlcRunner`, `PlcJob`, `PlcResult`, `PlcFormats` |
+| `Versio.Core` (`Iec/`) | The IEC 61131-3 **standard**, shared by every vendor — ST codec, declaration parser, the standard's object-type names |
+| `Versio.Plc.Codesys` | **One vendor, pure.** Object-type GUIDs, native XML shape, import planner, ScriptEngine protocol, CODESYS's own tree vocabulary |
+| `Versio.Plc.Codesys.Infrastructure` | **One vendor, driven.** `CODESYS.exe`, the install locator, the embedded python |
 | everything else | Vendor-neutral: git, diff, sync, locking, watching, logging, bindings |
 
-Structured Text is a standard, not a CODESYS feature. Adding a vendor means implementing
-`IPlcRunner`, `IPlcProjectFormat` and `IPlcToolchain` and registering with `PlcFormats` —
+Structured Text is a standard, not a CODESYS feature. Adding a vendor means a new project
+implementing `IPlcRunner`, `IPlcProjectFormat` and `IPlcToolchain`, one `ProjectReference` from
+`Versio.App`, and one `Register()` call in `App.xaml.cs` beside `CodesysPack.Register()` —
 **nothing in `Sync/`, `Git/`, `Locking/`, `Watching/`, `Projects/` or `Diff/` may change. If it
-does, vendor knowledge has leaked past the seam, and the leak is the bug.** `VendorSeamTests`
-reads assembly metadata and fails the build on one. It had to be written: the rule was stated
-from the start and was not true — the sync orchestrator was built directly on CODESYS types
-until 2026-08-12.
+does, vendor knowledge has leaked past the seam, and the leak is the bug.**
 
-So: never write CODESYS knowledge outside `*.Plc.Codesys`, and never describe Versio as a
-CODESYS tool. See README's *Vendor boundaries*.
+**`Versio.Core` has no project reference to a vendor pack**, so that is a compiler error rather
+than an opinion. `VendorSeamTests` and `VendorSeamInfrastructureTests` read assembly metadata on
+top — signatures, generic arguments, string constants, and the literals compiled into method
+bodies. Every part of it had to be built, because the rule was stated from the start and was not
+true: the sync orchestrator was built on CODESYS types until 2026-08-12; three vendor names were
+still sitting in neutral namespaces as strings until 2026-08-16; and `PlcFormats.Register` had
+**zero callers** until the same day.
+
+**The python lives in `Versio.Plc.Codesys.Infrastructure/Scripts/`** and is embedded from there.
+It used to be a loose `src/Versio.Scripts.Codesys/` folder that no project owned, which is
+precisely why its rebuild trap existed.
+
+So: never write CODESYS knowledge outside the `Versio.Plc.Codesys*` projects, and never describe
+Versio as a CODESYS tool. See README's *Vendor boundaries*.
 
 ---
 
@@ -35,11 +46,12 @@ questions about "why is this like this" are already answered there.
 
 | File | What it holds |
 |---|---|
-| `docs/STATUS.md` | Where the project is, **Known loose ends** (an audit of the repository), and **Findings** — every defect written up with its evidence |
+| `docs/STATUS.md` | Where the project is, and **Known loose ends** — an audit of the repository |
+| `docs/FINDINGS.md` | **Every defect written up with its evidence**, newest first. 99 of them. Search it rather than reading it; `STATUS.md` carries the index |
 | `docs/PLAN.md` | The full architecture plan |
 | `docs/SAFEGUARDS.md` | What Versio refuses, asks about, or waits for |
-| `docs/CODESYS.md` | How CODESYS is driven end to end, and the audit of it |
-| `docs/CODESYS-IMPORT-PLAN.md` | **The active plan.** Twelve numbered import gaps, what each measurement closed, the order to build the rest in — deliberately not 1, 2, 3 — and **the feature checklist**, which says which of the import’s 49 behaviours have been run against a real project and which have not |
+| `docs/vendors/codesys/DRIVING.md` | **One vendor's docs**, beside its two projects. How CODESYS is driven end to end, and the audit of it |
+| `docs/vendors/codesys/IMPORT-PLAN.md` | **The active plan.** Twelve numbered import gaps, what each measurement closed, the order to build the rest in — deliberately not 1, 2, 3 — and **the feature checklist**, which says which of the import’s 49 behaviours have been run against a real project and which have not |
 | `docs/GIT-PANEL-PLAN.md` | The git panel's functionality and UX |
 | `docs/PHASE0-FINDINGS.md` | What Phase 0 measured. **A record, not a live limitation list** — read its supersession notes |
 | `README.md` | Repository layout, vendor boundaries, the one architectural rule |
@@ -115,7 +127,8 @@ If a refactor turns up an unrelated defect, fix it in its own commit.
 Any change that alters what the docs claim updates the docs in the same session.
 
 - Test counts in `README.md` and `docs/STATUS.md` go stale silently — re-derive, never trust.
-- A defect worth understanding gets a **Finding** in `STATUS.md`, with its evidence.
+- A defect worth understanding gets a **Finding** in `docs/FINDINGS.md`, at the TOP — newest
+  first — with its evidence, and a line in `STATUS.md`'s index.
 - A structural change gets whatever a future reader needs before editing that file.
 - A loose end that is closed gets struck through, not deleted, with what actually happened.
 
@@ -201,25 +214,32 @@ C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test Versio.sln
 `TreatWarningsAsErrors` and `EnforceCodeStyleInBuild` are on: the build is warning-free and
 stays that way.
 
-| Suite | Count | Time |
-|---|---|---|
-| `Versio.Core.Tests` | 1,494 | under a second |
-| `Versio.App.Tests` | 480 | ~50 s, STA, no window shown |
-| `Versio.Integration.Tests` | 243 | ~31 min, real CODESYS and real git |
+| Suite | Count | Time | Needs |
+|---|---|---|---|
+| `Versio.Core.Tests` | 1,295 | under a second | nothing |
+| `Versio.Integration.Tests` | 141 | ~10 s | real git |
+| `Versio.Arch.Tests` | 14 | instant | nothing — it reads assembly metadata, IL and the `.csproj` files |
+| `Versio.App.Tests` | 480 | ~50 s, STA, no window shown | nothing |
+| `Versio.Plc.Codesys.Tests` | 365 | **~31 min** | **real CODESYS** |
 
-**Do not sit through the integration suite while you work.** 192 of its 243 tests finish in
-**18 seconds**; the other 50 are the half hour, because a CODESYS cold start is 17–31 s, every
-launch pays it in full, an import test needs three to five of them, and they cannot run in
-parallel. So:
+**The loop to work in is everything except the last one:**
 
 ```
-C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Integration.Tests --filter "Toolchain!=Codesys"
+C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Core.Tests
+C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Integration.Tests
+C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Arch.Tests
 ```
 
-is the loop to work in, and the full run is the gate before a commit. `FastLaneTests` asserts —
-from assembly metadata, both directions — that every class in the CODESYS collection carries the
-tag and nothing else does, so the filter cannot quietly stop excluding things or quietly hide
-half an hour of coverage behind a flag nobody runs.
+Eleven seconds together, plus fifty for `Versio.App.Tests` when the UI is in play.
+`Versio.Plc.Codesys.Tests` is the gate before a commit.
 
-A red integration run is worth re-running a project at a time before reading it as a
-regression — it drives real CODESYS with real timeouts.
+**That split used to be a `--filter "Toolchain!=Codesys"` expression** over one integration
+project, policed by a `FastLaneTests` whose whole job was checking the tag had been applied in
+both directions. It is a project boundary now, so the filter, the tag and the test guarding them
+are all gone: you cannot accidentally run half an hour of CODESYS, and you cannot accidentally
+hide coverage behind a flag nobody runs. The cost is real and worth restating — a CODESYS cold
+start is 17–31 s, every launch pays it in full, an import test needs three to five of them, and
+they cannot run in parallel.
+
+A red `Versio.Plc.Codesys.Tests` run is worth re-running a project at a time before reading it
+as a regression — it drives real CODESYS with real timeouts.

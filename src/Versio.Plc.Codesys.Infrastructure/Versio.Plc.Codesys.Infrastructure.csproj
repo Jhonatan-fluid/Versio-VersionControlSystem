@@ -1,0 +1,39 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Versio.Plc.Codesys.Infrastructure</RootNamespace>
+    <!-- Driving CODESYS: finding the install, starting CODESYS.exe, speaking the ScriptEngine
+         protocol, and unpacking the python that runs inside it. Everything here touches a
+         process or a disk, which is why it is separate from Versio.Plc.Codesys. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Versio.Infrastructure\Versio.Infrastructure.csproj" />
+    <ProjectReference Include="..\Versio.Plc.Codesys\Versio.Plc.Codesys.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Command-line construction is internal but must be regression-tested: the quoting
+         CODESYS accepts is not what .NET's ArgumentList produces. -->
+    <InternalsVisibleTo Include="Versio.Plc.Codesys.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The python travels inside this assembly and is written to a temp directory at run time,
+         so it always matches the app version. A stale copy on disk would be very hard to
+         diagnose from the symptoms.
+
+         IT LIVES HERE NOW, in Scripts/, rather than in a loose src/Versio.Scripts.Codesys/
+         folder that no project owned. That folder was in no solution, so nothing built it,
+         nothing showed it in an IDE, and its one documented trap followed directly from having
+         no project identity: editing a .py and running `dotnet test` with the no-build flag
+         tests the copy embedded at the LAST build, which looks exactly like a change that did
+         nothing.
+
+         ScriptExtractor needed no change to follow it. It resolves through
+         typeof(ScriptExtractor).Assembly and filters on the .py suffix rather than on a
+         hardcoded resource prefix, so moving the code and the resources together just works. -->
+    <EmbeddedResource Include="Scripts\*.py" LinkBase="Scripts" />
+  </ItemGroup>
+
+</Project>

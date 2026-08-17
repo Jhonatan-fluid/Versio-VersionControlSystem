@@ -177,7 +177,8 @@ public sealed record ProjectManifest
 {
     /// <summary>
     /// Manifest format version. 2 added <see cref="Skipped"/>; 3 exports library references;
-    /// 4 records each member's owner in <see cref="ProjectObject.Parent"/>.
+    /// 4 records each member's owner in <see cref="ProjectObject.Parent"/>; 8 names the
+    /// <see cref="Vendor"/> that wrote it.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -194,6 +195,29 @@ public sealed record ProjectManifest
     /// </para>
     /// </remarks>
     [JsonPropertyName("schema")] public int Schema { get; init; } = 1;
+
+    /// <summary>
+    /// Which toolchain wrote this mirror. Added by schema 8.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Absent means CODESYS, not unknown.</b> Every manifest written before schema 8 was
+    /// written by CODESYS, because CODESYS was all there was — so defaulting is a statement of
+    /// fact about those files rather than a guess. It is the same backward-compatible shape
+    /// <see cref="Bindings.ProjectBinding.Vendor"/> already uses, and for the same reason: a
+    /// mirror exported by an older Versio must keep meaning what it meant.
+    /// </para>
+    /// <para>
+    /// <b>Recorded rather than inferred, because the vocabulary in here belongs to somebody.</b>
+    /// <see cref="ProjectObject.Type"/> holds a toolchain's own tree vocabulary —
+    /// <c>PLC_LOGIC</c>, <c>CALL_TO_POU</c>, <c>GVL_PERSISTENT</c> are CODESYS's words, not
+    /// IEC 61131-3's — and a reader that has to guess whose words it is holding cannot render
+    /// them without guessing too. Two vendors' manifests were otherwise indistinguishable on
+    /// disk.
+    /// </para>
+    /// </remarks>
+    [JsonPropertyName("vendor")] public Plc.PlcVendor Vendor { get; init; } = Plc.PlcVendor.Codesys;
+
     [JsonPropertyName("bindingId")] public string BindingId { get; init; } = string.Empty;
     [JsonPropertyName("project")] public string Project { get; init; } = string.Empty;
     [JsonPropertyName("objectCount")] public int ObjectCount { get; init; }
@@ -281,6 +305,11 @@ public sealed record ProjectManifest
             return new ProjectManifest
             {
                 Schema = Scalar(root, "schema", Empty.Schema, found),
+
+                // Empty.Vendor is Codesys, so an absent field lands on the pre-schema-8
+                // reading without a second rule stating it anywhere.
+                Vendor = Scalar(root, "vendor", Empty.Vendor, found),
+
                 BindingId = Scalar(root, "bindingId", Empty.BindingId, found),
                 Project = Scalar(root, "project", Empty.Project, found),
                 ObjectCount = Scalar(root, "objectCount", Empty.ObjectCount, found),

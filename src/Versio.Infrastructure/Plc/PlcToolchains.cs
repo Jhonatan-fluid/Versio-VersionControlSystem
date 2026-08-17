@@ -1,6 +1,5 @@
 using Versio.Core.Logging;
 using Versio.Core.Plc;
-using Versio.Infrastructure.Plc.Codesys;
 
 namespace Versio.Infrastructure.Plc;
 
@@ -23,11 +22,16 @@ namespace Versio.Infrastructure.Plc;
 /// </remarks>
 public static class PlcToolchains
 {
+    /// <summary>
+    /// Empty until somebody registers, for the same reason <see cref="PlcFormats"/> is.
+    /// </summary>
+    /// <remarks>
+    /// <c>CodesysPack.Register</c> is what puts CODESYS in it, and the application's startup is
+    /// what calls that. A hardcoded entry here made "adding a vendor means registering" a
+    /// description of something nothing did.
+    /// </remarks>
     private static readonly Dictionary<PlcVendor, Func<IVersioLogger?, IPlcToolchain>> Factories =
-        new()
-        {
-            [PlcVendor.Codesys] = log => new CodesysToolchain(log),
-        };
+        [];
 
     /// <summary>Vendors that can actually be driven, not merely recognised.</summary>
     public static IReadOnlyList<PlcVendor> Supported
@@ -47,6 +51,21 @@ public static class PlcToolchains
         lock (Factories)
         {
             Factories[vendor] = factory;
+        }
+    }
+
+    /// <summary>Forget a vendor's toolchain. True when one was registered.</summary>
+    /// <remarks>
+    /// The counterpart to <see cref="Register"/>, for the same reason
+    /// <c>PlcFormats.Unregister</c> exists: without it a registration is permanent for the life
+    /// of the process, and a test that registers a stand-in vendor cannot put the registry back
+    /// the way it found it.
+    /// </remarks>
+    public static bool Unregister(PlcVendor vendor)
+    {
+        lock (Factories)
+        {
+            return Factories.Remove(vendor);
         }
     }
 

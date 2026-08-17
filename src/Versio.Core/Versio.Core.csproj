@@ -2,8 +2,12 @@
 
   <PropertyGroup>
     <RootNamespace>Versio.Core</RootNamespace>
-    <!-- Versio.Core is deliberately platform-neutral and UI-free.
-         See plan section 12.2 - enforced by Versio.Arch.Tests. -->
+    <!-- Versio.Core is deliberately platform-neutral and UI-free: no System.IO, no Process,
+         no DateTimeOffset.Now, no UI framework, and no vendor pack.
+
+         See docs/PLAN.md section 12.2. That is enforced by tests/Versio.Arch.Tests, which
+         reads this assembly's metadata and its own IL - and which this comment cited for
+         months before anybody created it. -->
   </PropertyGroup>
 
 </Project>

@@ -1,3 +1,4 @@
+using Versio.Core.Plc;
 using Versio.Core.Projects;
 using Xunit;
 
@@ -173,5 +174,62 @@ public sealed class ProjectManifestTests
 
         Assert.Equal("Pump", Assert.Single(manifest.Objects).Name);
         Assert.Empty(problems);
+    }
+
+    [Fact]
+    public void Schema_8_names_the_vendor_that_wrote_the_mirror()
+    {
+        var manifest = ProjectManifest.Parse("""
+        { "schema": 8, "vendor": "Codesys", "objects": [] }
+        """, out var problems);
+
+        Assert.Equal(8, manifest.Schema);
+        Assert.Equal(PlcVendor.Codesys, manifest.Vendor);
+        Assert.Empty(problems);
+    }
+
+    [Fact]
+    public void A_manifest_written_before_schema_8_reads_as_CODESYS()
+    {
+        // Not a guess. Every mirror exported before this field existed was written by CODESYS
+        // because CODESYS was all there was, so the default states a fact about those files.
+        // The same backward-compatible shape ProjectBinding.Vendor uses.
+        var manifest = ProjectManifest.Parse("""
+        { "schema": 7, "objects": [] }
+        """, out var problems);
+
+        Assert.Equal(PlcVendor.Codesys, manifest.Vendor);
+        Assert.Empty(problems);
+    }
+
+    [Fact]
+    public void A_manifest_from_a_vendor_this_build_never_heard_of_keeps_its_name()
+    {
+        // The reason the field is worth having. Two vendors' manifests were otherwise
+        // indistinguishable on disk, and the type strings inside belong to whoever wrote them.
+        var manifest = ProjectManifest.Parse("""
+        { "schema": 8, "vendor": "Mitsubishi GX Works3", "objects": [] }
+        """, out var problems);
+
+        Assert.Equal(new PlcVendor("Mitsubishi GX Works3"), manifest.Vendor);
+        Assert.NotEqual(PlcVendor.Codesys, manifest.Vendor);
+        Assert.Empty(problems);
+    }
+
+    [Fact]
+    public void The_sidecars_lower_case_spelling_still_resolves()
+    {
+        // versio_libraries.py and versio_tasks.py have written `"vendor": "codesys"` into every
+        // exported sidecar since they were added - lower case, and duplicated in both modules.
+        // The manifest writes "Codesys". Those bytes are already committed in every mirror and
+        // rewriting them would churn a file in every repository over a capital letter, so the
+        // two spellings are allowed to coexist and PlcVendor compares case-insensitively.
+        //
+        // This test is what makes that a decision rather than an accident.
+        var manifest = ProjectManifest.Parse("""
+        { "schema": 8, "vendor": "codesys", "objects": [] }
+        """, out _);
+
+        Assert.Equal(PlcVendor.Codesys, manifest.Vendor);
     }
 }

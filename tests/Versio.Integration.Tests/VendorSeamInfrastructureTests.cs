@@ -1,0 +1,102 @@
+using System.Reflection;
+using Versio.TestSupport;
+using Versio.Infrastructure.Git;
+using Xunit;
+
+namespace Versio.Integration.Tests;
+
+/// <summary>
+/// The vendor seam again, on the assembly nothing was checking.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>The rule was only ever half-enforced.</b> <c>VendorSeamTests</c> reads
+/// <c>typeof(PlcJob).Assembly</c> and stops there, so <c>Versio.Infrastructure</c> — which holds
+/// the git client, the watchers, the filesystem and the toolchain registry — was never examined
+/// at all. It happens to be clean today. Nothing was keeping it that way, and "it was clean when
+/// somebody last looked" is exactly the state the original seam test was written to end.
+/// </para>
+/// <para>
+/// <b>In this project rather than <c>Versio.Core.Tests</c></b> for the same reason
+/// <c>VendorBoundaryTests</c> is: <c>Versio.Infrastructure</c> is where the code lives, and
+/// <c>Versio.Core.Tests</c> deliberately does not reference it and should not start. It needs no
+/// CODESYS, no python and no git, and runs in milliseconds — so it belongs in this project
+/// rather than in <c>Versio.Plc.Codesys.Tests</c>, which is the half-hour one.
+/// </para>
+/// <para>
+/// The scanner lives in <c>Versio.TestSupport</c> rather than being copied here. Two copies of
+/// a rule is how the two copies start disagreeing — and it was shared by
+/// <c>&lt;Compile Include Link&gt;</c> until the fourth test project made that arrangement
+/// untenable.
+/// </para>
+/// </remarks>
+[Trait("Category", "Integration")]
+public sealed class VendorSeamInfrastructureTests
+{
+    private static readonly Assembly Infrastructure = typeof(GitCliClient).Assembly;
+
+    /// <summary>
+    /// Namespaces in <c>Versio.Infrastructure</c> that must know nothing about any brand.
+    /// </summary>
+    /// <remarks>
+    /// <c>Versio.Infrastructure.Plc</c> is now IN the list. It could not be until 2026-08-17:
+    /// <c>PlcToolchains</c> held a factory naming CODESYS, so the namespace defining the seam
+    /// was the one crossing it. The vendor moved into its own assembly and the factory moved to
+    /// the application's composition root, so the seam has nothing brand-specific left in it.
+    /// </remarks>
+    private static readonly string[] NeutralNamespaces =
+    [
+        "Versio.Infrastructure.Plc",
+        "Versio.Infrastructure.Bindings",
+        "Versio.Infrastructure.FileSystem",
+        "Versio.Infrastructure.Git",
+        "Versio.Infrastructure.Logging",
+        "Versio.Infrastructure.Platform",
+        "Versio.Infrastructure.Watching",
+    ];
+
+    /// <summary>The vendor namespaces this assembly may reach into from its seam, and nowhere else.</summary>
+    private static readonly string[] VendorNamespaces = ["Versio.Plc."];
+
+    public static TheoryData<string> Neutral => [.. NeutralNamespaces];
+
+    [Theory]
+    [MemberData(nameof(Neutral))]
+    public void A_neutral_namespace_names_no_vendor_in_its_own_types(string ns)
+    {
+        var offenders = VendorSeamScanner.VendorNamedTypes(Infrastructure, ns).ToList();
+
+        Assert.True(offenders.Count == 0,
+            $"{ns} declares vendor-named types: {string.Join(", ", offenders)}");
+    }
+
+    [Theory]
+    [MemberData(nameof(Neutral))]
+    public void A_neutral_namespace_does_not_depend_on_a_vendor_type(string ns)
+    {
+        var offenders = VendorSeamScanner
+            .VendorTypeReferences(Infrastructure, ns, VendorNamespaces)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(offenders.Count == 0,
+            "vendor knowledge has leaked past the seam:" + Environment.NewLine +
+            string.Join(Environment.NewLine, offenders));
+    }
+
+    [Fact]
+    public void A_neutral_namespace_speaks_no_vendor_name_to_anybody()
+    {
+        // Empty, and asserted rather than assumed. Versio.Core's equivalent pins three known
+        // leaks because it has three; this one has none, and the whole value of the test is that
+        // the first one to arrive fails a build instead of shipping.
+        var found = VendorSeamScanner
+            .VendorNamingLiterals(Infrastructure, NeutralNamespaces)
+            .Concat(VendorSeamScanner.VendorNamingConstants(Infrastructure, NeutralNamespaces))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(s => s, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.Empty(found);
+    }
+}

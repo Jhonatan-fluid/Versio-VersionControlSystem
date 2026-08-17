@@ -103,7 +103,12 @@ public class CommitGateTests
         var result = CommitGate.Evaluate([]);
 
         Assert.Equal(GateDecision.Proceed, result.Decision);
-        Assert.Contains("no CODESYS projects", result.Explanation);
+
+        // "PLC", not the brand. This assertion is why the wording could not drift quietly, and
+        // it is worth keeping specific: the gate is explaining itself to somebody who is being
+        // allowed to commit, and naming a toolchain they may not own reads as a tool that has
+        // misunderstood their repository.
+        Assert.Contains("no PLC projects", result.Explanation);
     }
 
     [Fact]

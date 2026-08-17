@@ -1,8 +1,9 @@
 using Versio.Core.Bindings;
 using Versio.Core.Git;
 using Versio.Core.Projects;
-using Xunit;
+using Versio.TestSupport;
 using Xunit.Abstractions;
+using Xunit;
 
 namespace Versio.Integration.Tests;
 
@@ -29,7 +30,7 @@ public sealed class WorkspaceTreeFromCommittedExportTests(ITestOutputHelper outp
     private const string ExportPath = "fixtures/projects/RefrigeratorControl";
 
     private static string ManifestPath => Path.Combine(
-        Core.Tests.TestPaths.Root,
+        TestPaths.Root,
         ExportPath.Replace('/', Path.DirectorySeparatorChar),
         BindingConventions.ManifestFileName);
 
@@ -263,7 +264,7 @@ public sealed class WorkspaceTreeFromCommittedExportTests(ITestOutputHelper outp
         // file format that never meet in the same process, and the committed export is the
         // only place they can be checked against each other for free.
         var path = Path.Combine(
-            Core.Tests.TestPaths.Root,
+            TestPaths.Root,
             ExportPath.Replace('/', Path.DirectorySeparatorChar),
             "Library Manager.libraries.yaml");
 
@@ -285,7 +286,7 @@ public sealed class WorkspaceTreeFromCommittedExportTests(ITestOutputHelper outp
         // arrives as a reviewable diff in a pull request rather than as a number in a panel
         // nobody had open.
         var path = Path.Combine(
-            Core.Tests.TestPaths.Root,
+            TestPaths.Root,
             ExportPath.Replace('/', Path.DirectorySeparatorChar),
             "_coverage.md");
 

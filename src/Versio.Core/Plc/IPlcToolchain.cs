@@ -1,31 +1,5 @@
 namespace Versio.Core.Plc;
 
-/// <summary>
-/// A PLC engineering tool Versio can drive.
-/// </summary>
-/// <remarks>
-/// Versio started CODESYS-only, but nothing above this line is CODESYS-shaped: git, the
-/// diff, the direction lock, change detection and the commit gate all work the same way
-/// whichever tool produced the project. This enum is the seam where vendor knowledge
-/// begins.
-/// </remarks>
-public enum PlcVendor
-{
-    /// <summary>CODESYS 3.5 and the many OEM rebrands built on it.</summary>
-    Codesys,
-
-    /// <summary>Siemens TIA Portal. Not implemented — listed so the shape of the
-    /// abstraction is judged against a real second vendor rather than a hypothetical one.</summary>
-    TiaPortal,
-
-    /// <summary>Rockwell Studio 5000. Not implemented.</summary>
-    Studio5000,
-
-    /// <summary>Beckhoff TwinCAT. Not implemented. Note it is CODESYS-derived but has
-    /// diverged enough to need its own handling.</summary>
-    TwinCat,
-}
-
 /// <summary>What a vendor's toolchain can actually do.</summary>
 /// <remarks>
 /// Capabilities are declared rather than assumed because they differ sharply. CODESYS can
@@ -149,6 +123,27 @@ public interface IPlcProjectFormat
         Projects.ProjectManifest? manifest,
         IReadOnlyList<MirrorFile> mirror,
         IReadOnlyDictionary<string, string> departed);
+
+    /// <summary>
+    /// How this vendor writes one of its own object types on screen, or null if it does not
+    /// name that type.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The type strings in a manifest belong to whoever wrote it. <c>PLC_LOGIC</c>,
+    /// <c>CALL_TO_POU</c> and <c>LIBRARY_MANAGER</c> describe how one vendor organises a
+    /// project, and a second vendor organising the same machine differently needs its own
+    /// answers rather than inherited ones.
+    /// </para>
+    /// <para>
+    /// <b>Null for anything the standard already names.</b>
+    /// <see cref="Projects.ObjectTypeNames"/> falls through to
+    /// <see cref="Iec.IecObjectTypeNames"/>, so a vendor implements only the words that are its
+    /// own — and a vendor that adds nothing to IEC 61131-3 can return null throughout and still
+    /// render correctly.
+    /// </para>
+    /// </remarks>
+    Projects.ObjectTypeName? DisplayNameFor(string type);
 }
 
 /// <summary>

@@ -129,7 +129,7 @@
     }
   ], 
   "project": "RefrigeratorControl.project", 
-  "schema": 7, 
+  "schema": 8, 
   "skipped": [
     {
       "name": "Visualization Manager", 
@@ -156,5 +156,6 @@
       "type": "VISUALISATION_STYLE"
     }
   ], 
+  "vendor": "Codesys", 
   "warnings": []
 }

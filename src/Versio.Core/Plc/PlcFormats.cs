@@ -19,8 +19,17 @@ namespace Versio.Core.Plc;
 /// </remarks>
 public static class PlcFormats
 {
-    private static readonly List<IPlcProjectFormat> Registered =
-        [Codesys.CodesysProjectFormat.Instance];
+    /// <summary>
+    /// Empty until somebody registers. <b>Deliberately.</b>
+    /// </summary>
+    /// <remarks>
+    /// This held <c>[CodesysProjectFormat.Instance]</c>, which meant <c>Versio.Core</c> — the
+    /// assembly the architectural rule exists to keep free of vendor knowledge — named a vendor
+    /// in a field initialiser, and the "registry" was a constant with a mutator bolted on.
+    /// Registration is now the only way a vendor gets in, which is what the README, CLAUDE.md
+    /// and this file's own remarks have always said it was.
+    /// </remarks>
+    private static readonly List<IPlcProjectFormat> Registered = [];
 
     /// <summary>Formats in registration order.</summary>
     public static IReadOnlyList<IPlcProjectFormat> All
@@ -46,6 +55,29 @@ public static class PlcFormats
         {
             Registered.RemoveAll(f => f.Vendor == format.Vendor);
             Registered.Add(format);
+        }
+    }
+
+    /// <summary>Forget a vendor's format. True when one was registered.</summary>
+    /// <remarks>
+    /// <para>
+    /// The other half of <see cref="Register"/>, and it was missing. A host that can swap in its
+    /// own implementation of a vendor — the case <see cref="Register"/> exists for — can only do
+    /// so in one direction without this, so a registration was permanent for the life of the
+    /// process and there was no way back to a known state.
+    /// </para>
+    /// <para>
+    /// <b>Written because the first test ever to call <see cref="Register"/> could not clean up
+    /// after itself.</b> This registry is static and xunit runs test classes in parallel by
+    /// default, so a fake vendor left behind is not a tidiness problem — it is one class quietly
+    /// changing what every other class sees.
+    /// </para>
+    /// </remarks>
+    public static bool Unregister(PlcVendor vendor)
+    {
+        lock (Registered)
+        {
+            return Registered.RemoveAll(f => f.Vendor == vendor) > 0;
         }
     }
 

@@ -85,3 +85,7 @@ fixtures/projects/RefrigeratorControl.~u*
 fixtures/projects/RefrigeratorControl-*.opt
 fixtures/projects/RefrigeratorControl.versio_staging/
 fixtures/projects/RefrigeratorControl.versio_trash/
+
+# Added by Versio: files the PLC toolchain writes beside a project.
+# The per-user one carries a username and machine name in its filename.
+fixtures/projects/RefrigeratorControl_project.precompilecache

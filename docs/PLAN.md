@@ -1741,13 +1741,23 @@ flowchart LR
     style NOTHING fill:#f4f4f4,stroke:#999,stroke-dasharray: 4 4
 ```
 
-`Versio.Arch.Tests` fails the build if any of these are violated:
+`Versio.Arch.Tests` fails the build if any of these are violated.
+
+> **It did not exist until 2026-08-17.** This section was headed *"enforced, not documented"* from
+> the day it was written, and the project it named had never been created — its only trace in the
+> repository was a comment in `Versio.Core.csproj` citing it. Four of the five rules held anyway,
+> by discipline. One did not. That is the same shape as the rolling file sink in `FINDINGS.md`:
+> every part of the mechanism present except the one that makes it visible, and a document
+> claiming enforcement spends the reader's trust on top.
+
+Where each rule now stands:
 
 1. `Versio.Core` must not reference `PresentationFramework`, `System.Windows`, or `Versio.Infrastructure`. Worth keeping even though the app is Windows-only: it is what keeps a future UI-framework change, a CLI, or a test harness a view-layer job rather than a rewrite.
-2. `Versio.Core` must not use `System.IO.File`, `Directory`, `Process`, `DateTime.Now`, or `Guid.NewGuid` directly — all are behind abstractions, which is what makes time, filesystem and identity controllable in tests.
-3. `Versio.App.Views` must not reference `Versio.Infrastructure`.
-4. No type in `Views/` may contain a literal `Color`, `Brush`, `FontFamily`, or hard-coded margin (§9.0) — a XAML lint rule.
-5. Every `public async` method in `Core` must accept a `CancellationToken`.
+2. `Versio.Core` must not use `System.IO.File`, `Directory`, `Process` or `DateTime.Now` directly — all are behind abstractions, which is what makes time, filesystem and identity controllable in tests. **Enforced** by an IL scan over the assembly's own call sites.
+   - **`Guid.NewGuid` is exempted, narrowly and deliberately.** It was listed here and quietly violated: it produces the default operation id that correlates a run's log lines, and every one of those is an `init` property a caller can set — so identity *is* controllable exactly as this rule intends, without an `IIdentityProvider` nobody would inject anywhere else. The two permitted call sites are named in `PurityRuleTests`, and a third appearing fails the build, so the exemption cannot spread by being typed rather than argued.
+3. `Versio.App.Views` must not reference `Versio.Infrastructure`. **Enforced.**
+4. No type in `Views/` may contain a literal `Color`, `Brush`, `FontFamily`, or hard-coded margin (§9.0) — a XAML lint rule. **NOT enforced**, and said so rather than left implied: it is a lint over markup rather than a dependency rule over metadata, and `StockControlStyleTests` and `FocusVisualTests` already catch the failure it exists to prevent by rendering the controls and reading the result. Worth building only if that stops being true.
+5. Every `public async` method in `Core` must accept a `CancellationToken`. **Enforced**, and it was already true.
 
 ### 12.3 The core contracts
 
@@ -2184,7 +2194,7 @@ Large-project performance, ST syntax highlighting in the diff, per-hunk staging,
 | R4 | `--noUI` hangs on a hidden modal | Stuck jobs | **Low** ↓ | **`system.prompt_answers` pre-answers dialogs, and `PromptHandling.LogMessageKeys` discovers the keys** (Phase 0.18). Timeout + process-tree kill remains as backstop |
 | R5 | Cold start too slow to feel automatic | Poor UX | **Confirmed** — 31.5 s cold / 17.6 s warm, measured | Exporting on every detected change is the default, with the coalescer and a 10 s minimum interval bounding the cost (§7.4.6). **Batching all bindings into one session is designed and NOT built** (§12.4) — the scripts read one project per job and `CodesysJob.ToJson()` now refuses the rest. A resident-session script and the Phase 5 add-in remain the paths to sub-second |
 | R31 | **Profile cannot be resolved** — none installed, several installed, or a pinned one missing | Versio cannot export or import at all; `--noUI` exits 1 | **Medium** | Blocking startup gate with its own diagnostic screen (§3.7); `ProfileResolver` reads profiles from disk, never synthesises a name, never guesses between several, and fails loudly on a missing pin |
-| R32 | **A newer CODESYS adds object types we do not know** | Objects flattened or exported without structure | **Medium-high** — 2 found in a 25-object project | Native fallback never drops an object; unknown GUIDs surfaced in `_coverage.md` and the UI so the table can be extended; an unknown node **with children** keeps its subtree via `NATIVE_WITH_CHILDREN`. **Built on both sides as of 2026-08-14** — it had existed only in `ExportFormRules.cs`, which nothing calls, while `decide_form` returned plain `FORM_NATIVE` and the exporter flattened the children into the *parent's* folder. Verified against real CODESYS by unmapping `APPLICATION` in a copy of the scripts (docs/CODESYS.md §12 C1) |
+| R32 | **A newer CODESYS adds object types we do not know** | Objects flattened or exported without structure | **Medium-high** — 2 found in a 25-object project | Native fallback never drops an object; unknown GUIDs surfaced in `_coverage.md` and the UI so the table can be extended; an unknown node **with children** keeps its subtree via `NATIVE_WITH_CHILDREN`. **Built on both sides as of 2026-08-14** — it had existed only in `ExportFormRules.cs`, which nothing calls, while `decide_form` returned plain `FORM_NATIVE` and the exporter flattened the children into the *parent's* folder. Verified against real CODESYS by unmapping `APPLICATION` in a copy of the scripts (docs/vendors/codesys/DRIVING.md §12 C1) |
 | R6 | CODESYS version/profile drift silently upgrades a project | Corrupted project | Medium | Profile pinned per repo, mismatch refuses to run |
 | R7 | Scripting licence restrictions | Blocks automation | Low-medium | Phase 0.8 |
 | R8 | Merge conflicts inside native XML are unreadable | Team friction | Medium | Textual objects are `.st` and merge like normal code; native XML is per-object so conflicts stay local; `--ff-only` default; Phase 5 merge assist |

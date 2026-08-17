@@ -1,5 +1,5 @@
 using Versio.Core.Plc;
-using Versio.Core.Plc.Codesys;
+using Versio.Plc.Codesys;
 using Xunit;
 
 namespace Versio.Core.Tests.Plc;
@@ -78,10 +78,13 @@ public class PlcFormatTests
     [Fact]
     public void Every_declared_vendor_has_a_distinct_name()
     {
-        // Guards the enum against a copy-paste duplicate as vendors are added.
-        var values = Enum.GetValues<PlcVendor>();
+        // Guards the well-known list against a copy-paste duplicate as vendors are added.
+        // It stopped being an enum on 2026-08-16 - a closed enum meant a vendor that was not
+        // already listed could not be named without editing Versio.Core, which is the one
+        // assembly the whole rule exists to keep untouched.
+        var values = PlcVendor.Known;
 
-        Assert.Equal(values.Length, values.Distinct().Count());
+        Assert.Equal(values.Count, values.Distinct().Count());
     }
 
     [Fact]

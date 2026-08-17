@@ -1,0 +1,26 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Versio.TestSupport</RootNamespace>
+    <!-- NOT a test project: it declares no tests and no runner. It is the small set of helpers
+         that more than one test project genuinely needs.
+
+         It exists because those helpers were shared by `<Compile Include Link>` instead — an
+         arrangement that works for two projects and stops scaling at four. Splitting the
+         integration suite in two would have needed a third and fourth link of the same files,
+         and two copies of a rule is how the two copies start disagreeing. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.abstractions" Version="2.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Versio.Core only. Nothing here touches the filesystem beyond locating the repository
+         root, and nothing here knows a vendor: the seam scanner reads whatever assembly it is
+         handed. -->
+    <ProjectReference Include="..\..\src\Versio.Core\Versio.Core.csproj" />
+  </ItemGroup>
+
+</Project>
