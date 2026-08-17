@@ -720,16 +720,24 @@ def probe_move_matrix(proj, project_path):
     if folder is not None:
         describe(lambda: folder.create_folder("VersioMoveProbeInner"))
 
-    # Two more folders, and they exist to remove a confound rather than to test a feature.
+    # Three more folders, and they exist to remove confounds rather than to test features.
     # The folder step below moves one that HAS CHILDREN, so on its own it cannot tell "this
     # destination refuses a folder" from "a folder with something in it cannot be moved".
-    # VersioMoveEmpty is empty; VersioMoveHost is somewhere legal to move it to.
+    # VersioMoveEmpty is empty; VersioMoveHost is somewhere legal to move something to.
+    #
+    # VersioMoveEmpty2 exists because the first run of this probe used ONE empty folder for
+    # both isolating steps: step 8 moved it into Plc Logic, succeeded, and step 9 then looked
+    # for it at its old path under Application - OBJECT_NOT_AT_SOURCE, no call ever made. A
+    # step whose source depends on an earlier step's OUTCOME measures nothing when that
+    # outcome goes the other way, which is the by-index pairing defect in its third costume.
     describe(lambda: app.create_folder("VersioMoveEmpty"))
+    describe(lambda: app.create_folder("VersioMoveEmpty2"))
     describe(lambda: app.create_folder("VersioMoveHost"))
 
     PROBE_FOLDER = APP_PATH + ["VersioMoveProbe"]
     INNER = PROBE_FOLDER + ["VersioMoveProbeInner"]
     EMPTY = APP_PATH + ["VersioMoveEmpty"]
+    EMPTY2 = APP_PATH + ["VersioMoveEmpty2"]
     HOST = APP_PATH + ["VersioMoveHost"]
 
     # (label, object's current path, destination path). [] is the project root.
@@ -749,9 +757,11 @@ def probe_move_matrix(proj, project_path):
 
         # The two that isolate the variable. If the empty one is declined too, the
         # destination is what refuses; if it is accepted, the earlier row was about the
-        # children and the finding would have been wrong.
+        # children and the finding would have been wrong. Each uses ITS OWN folder - see
+        # the creation comment above - so neither step's source depends on the other's
+        # outcome.
         ("an_empty_folder_into_plc_logic", EMPTY, ["Device", "Plc Logic"]),
-        ("an_empty_folder_into_another_folder", EMPTY, HOST),
+        ("an_empty_folder_into_another_folder", EMPTY2, HOST),
     ]
 
     rows = []
@@ -807,7 +817,15 @@ def probe_move_matrix(proj, project_path):
         # `into_folder_under_application` - which reads as "a move into a folder does not
         # survive a reopen", contradicts P2, and is an artefact of step 2 moving the same
         # POU back out. An absence has to be attributed before it is reported.
-        superseded = [s[0] for s in steps[i + 1:] if s[1][-1] == row["object"]]
+        #
+        # AND ONLY A STEP THAT ACTUALLY MOVED THE OBJECT CAN SUPERSEDE. The first run
+        # matched later steps by NAME alone, and step 8's reopen check was skipped in
+        # deference to a step 9 that had reported OBJECT_NOT_AT_SOURCE and called nothing -
+        # so "an empty folder into Plc Logic survives a reopen" went unmeasured while three
+        # documents claimed it. A declined or never-run step left the object exactly where
+        # this step put it, which is the position this check exists to read.
+        superseded = [rows[j]["step"] for j in range(i + 1, len(rows))
+                      if rows[j].get("object") == row["object"] and rows[j].get("applied")]
         if superseded:
             after.append({"step": label, "object": row["object"],
                           "verdict": "SUPERSEDED",

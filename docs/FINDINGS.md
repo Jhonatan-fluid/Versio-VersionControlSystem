@@ -17,6 +17,51 @@ produce a diff touching everything else.
 
 ---
 
+### The probe that caught two of its own lies was carrying a third, and three documents believed it
+
+**Found 2026-08-17 by reviewing the P11 probe's own output against its step list** — the run
+whose results went into four documents an hour earlier. The finding below this one records two
+method errors the probe's author caught and fixed mid-session: a by-index pairing that reported
+a pass for a move that never happened, and an after-reopen check that reported a failure that
+never happened. The fixed probe had a third error of exactly the same class, and this time the
+output said so and nobody read that line.
+
+**The two isolating steps shared one folder.** Step 8 moved `VersioMoveEmpty` into `Plc Logic`
+and succeeded; step 9 then looked for the same folder at its *old* path under `Application` —
+and reported **`OBJECT_NOT_AT_SOURCE`**, right there in the raw log, no call ever made. A step
+whose source depends on an earlier step's *outcome* measures nothing when that outcome goes the
+other way. So "nine ordered moves" was eight, and "an empty folder into another folder" was
+never measured at all.
+
+**The supersession check then compounded it.** It matched later steps by object name alone, so
+step 8's after-reopen check was skipped as `SUPERSEDED` — in deference to a step that had run
+nothing. The consequence: **"an empty folder into `Plc Logic` survives a reopen" was claimed in
+the commit message, `DRIVING.md` and the plan's What-is-left row, and the probe had never
+measured it.** The finding below was quietly more honest: its table omits "survives a reopen"
+on exactly the two superseded rows, which is the tell that the writer had the raw output in
+front of them and the claims elsewhere were written from memory.
+
+**Fixed and re-run 2026-08-17**: step 9 gets its own folder (`VersioMoveEmpty2`), so neither
+isolating step's source depends on the other's outcome, and a step supersedes only if it
+actually **applied** — a declined or never-run step left the object where the earlier step put
+it, which is the position the reopen check exists to read. The re-run answers everything:
+
+- **Nine moves, nine calls, six performed, three declined** — the same three declined as before.
+- **An empty folder into `Plc Logic` survives a save/close/reopen, GUID stable** — the claim is
+  true; now it is also measured.
+- **An empty folder into an ordinary folder is performed and survives a reopen** — a new row,
+  and the corpus's first successful folder-into-folder move: until this run, every successful
+  folder move in the record had `Plc Logic` as its destination.
+
+**The lesson the first two errors taught was incomplete.** Both were found by re-reading the
+method; this one was sitting in the *results* — one row of JSON saying `OBJECT_NOT_AT_SOURCE` —
+and survived because the summary lists were read instead of the rows. A probe's verdict rows
+are the measurement; its summary is an index into them. **Read every row whose verdict is not
+the one the step was written to produce**, because a step that did not run looks exactly like a
+step that was not needed.
+
+---
+
 ### `move()` declines three moves of nine, raises for none, and the destination is not what decides
 
 **Measured 2026-08-17 by P11**, the last open task in the import plan. Two results existed on
@@ -25,7 +70,9 @@ reopen; the feature checklist's D6 moved one out of `Application` into `Plc Logi
 accepted the call, raised nothing, and left the object where it was. Both true, and together
 they said only that "Versio moves objects" was partly true.
 
-Nine ordered moves on one project, each re-resolved at its intended path afterwards:
+Nine ordered moves on one project, each re-resolved at its intended path afterwards. *(This
+table was corrected after the re-run the finding above records: the first run's ninth step
+never executed, and the two rows marked with a date gained their reopen evidence then.)*
 
 | What, and where to | Result |
 |---|---|
@@ -33,7 +80,8 @@ Nine ordered moves on one project, each re-resolved at its intended path afterwa
 | a POU into a folder inside that folder | **performed**, GUID intact, survives a reopen |
 | a POU back out of a folder into `Application` | **performed**, GUID intact, survives a reopen |
 | a GVL to **the project root** | **performed**, GUID intact, survives a reopen |
-| an **empty folder** into `Plc Logic` | **performed**, GUID intact |
+| an **empty folder** into `Plc Logic` | **performed**, GUID intact, survives a reopen *(measured on the re-run)* |
+| an **empty folder** into an ordinary folder | **performed**, GUID intact, survives a reopen *(measured on the re-run — the first run never reached it)* |
 | a visualisation into `Plc Logic` | accepted, **ignored** |
 | a POU into `Device` | accepted, **ignored** |
 | a folder **holding a POU** into `Plc Logic` | accepted, **ignored** |
