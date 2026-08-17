@@ -11,6 +11,10 @@
       "enabled": true
     }
   ],
-  "ignore": [],
+  "ignore": [
+    "phase0/**",
+    "fixtures/projects/MachineWithMembers",
+    "fixtures/projects/MachineWithMembers.project"
+  ],
   "autoAdoptNewProjects": false
 }

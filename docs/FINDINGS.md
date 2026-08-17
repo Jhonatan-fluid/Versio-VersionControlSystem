@@ -17,6 +17,53 @@ produce a diff touching everything else.
 
 ---
 
+### The ignore list hid the projects and kept every one of their mirrors
+
+**Found 2026-08-17 by opening the app**, which is the only thing that could have found it.
+
+Launching Versio against this repository has always adopted the 22 `.project` files under
+`phase0/` — gitignored experiment scratch — taking the machine-wide CODESYS lock, queueing
+twenty minutes of exports, and rewriting `.gitattributes`, `.gitignore`, `.versio/repo.json` and
+any committed fixture mirror it reached. It was logged as a Known loose end for days and cost the
+schema-7 backward-compatibility fixture **twice** in one session.
+
+**`repo.json` has had an `ignore` array the whole time**, honoured by `Adoption` and
+`OrphanScanner`, and it was empty. Adding `phase0/**` stopped the adoption dead: 22 projects
+adopted became 1 watched, and the export queue emptied.
+
+**And the panel still said 43 things needed attention.**
+
+```csharp
+var orphanExports = exportsOnDisk.Where(e => !boundExports.Contains(e)).ToList();
+```
+
+**The ignore list was applied to orphaned projects and not to orphaned export trees.** That is
+half a rule, and half is worse than none here: the projects vanished from the panel and every one
+of their mirrors stayed, one finding each — and a directory of round-trip experiments has a
+mirror for *every* project in it. Ignoring 21 projects removed 13 findings and left 43.
+
+| | Findings |
+|---|---|
+| Before | 56 |
+| After `phase0/**` | 43 |
+| After the scanner fix | **1** |
+| After ignoring the frozen fixture's mirror as well as its file | **0** |
+
+**The last one is worth its own note.** `fixtures/projects/MachineWithMembers.project` is
+deliberately frozen at manifest schema 7 as the only committed pre-schema-8 artifact, so it is
+ignored — but the glob matched the *file* and not the *directory beside it*, and the mirror was
+reported as an orphaned export. Both are listed explicitly now rather than covered by a wildcard,
+because a reader should be able to see exactly what is frozen.
+
+**Nothing in the suite could have caught the scanner half.** `Ignored_paths_are_not_offered`
+existed and passed — it only ever supplied `ProjectFiles`, so the export path was never exercised
+with an ignore list at all. A test that covers one half of a rule reads exactly like a test that
+covers the rule.
+
+**This is the third time this session that running the app found something no test did**, and the
+first two were cosmetic by comparison. `CLAUDE.md` says tests prove things resolve, lay out and
+are reachable, and do not prove the app behaves — this is that, with a number attached.
+
 ### The guard I wrote for the seam was weaker than the claim I made for it
 
 **Found 2026-08-17, in a second pass over this session's own work, by mutation.**

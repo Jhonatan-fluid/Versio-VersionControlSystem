@@ -160,7 +160,20 @@ public sealed class OrphanScanner
         }
 
         // --- export trees whose project is gone ------------------------------------
-        var orphanExports = exportsOnDisk.Where(e => !boundExports.Contains(e)).ToList();
+        //
+        // THE IGNORE LIST APPLIES HERE TOO, and it did not until 2026-08-17. An ignore rule was
+        // filtering orphaned projects and not their mirrors, which is half a rule: the project
+        // disappeared from the panel and every one of its export directories stayed, one finding
+        // each. Found by opening this repository in the app after adding `phase0/**` — adoption
+        // correctly ignored 21 scratch projects and the panel still reported 43 things needing
+        // attention, almost all of them the mirrors of the projects just ignored.
+        //
+        // A directory holding a _manifest.json IS an export tree to the scanner, whatever it is
+        // called, so scratch directories full of round-trip experiments qualify.
+        var orphanExports = exportsOnDisk
+            .Where(e => !boundExports.Contains(e))
+            .Where(e => !IsIgnored(e, config.Ignore))
+            .ToList();
 
         // --- rename detection ------------------------------------------------------
         // git already reports 'R old -> new' for a tracked rename; that is the strongest

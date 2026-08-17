@@ -128,6 +128,33 @@ public class OrphanScannerTests
     }
 
     [Fact]
+    public void An_ignored_paths_export_tree_is_not_offered_either()
+    {
+        // HALF A RULE IS WORSE THAN NONE HERE. The ignore list filtered orphaned projects and
+        // not their mirrors, so ignoring a directory of scratch projects made the projects
+        // disappear from the panel and left one finding per export tree — and a scratch
+        // directory of round-trip experiments has an export tree for every project in it.
+        //
+        // Found by opening this repository in the app: adoption correctly ignored 21 phase0
+        // projects and the panel still said 43 things needed attention. Nothing in the suite
+        // noticed, because the existing test only ever supplied ProjectFiles.
+        var config = new RepoConfig { Ignore = ["scratch/**"] };
+        var snapshot = new RepoSnapshot
+        {
+            ProjectFiles = ["scratch/Probe.project", "plc/Real.project"],
+            ExportDirectories = ["scratch/Probe", "scratch/RoundTrip", "plc/Orphaned"],
+        };
+
+        var findings = Scanner.Scan(config, snapshot);
+
+        // The one export tree outside the ignored directory, and only that one.
+        var orphan = Assert.Single(findings, f => f.Health == BindingHealth.OrphanedExport);
+        Assert.Equal("plc/Orphaned", orphan.Path);
+
+        Assert.DoesNotContain(findings, f => f.Path.StartsWith("scratch/", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void An_export_tree_with_no_project_is_reported_but_never_deleted()
     {
         var findings = Scanner.Scan(new RepoConfig(), new RepoSnapshot

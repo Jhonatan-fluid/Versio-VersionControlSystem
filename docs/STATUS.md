@@ -581,25 +581,18 @@ has a window before believing a clean binding trace — see *Verifying the UI* b
 Small, specific, and none of them blocking. Written down because an audit that finds things and
 does not record them has to be run again.
 
-- **Launching the app against this repository adopts the 21 `phase0/` scratch projects and
-  starts exporting all of them.** Observed 2026-08-15 while doing the `CLAUDE.md` "run the app"
-  step: within a second of opening `C:/GIT/Versio` the log reads *"21 newly tracked project(s)
-  have never been exported; exporting now"*, the commit gate demands all 21, and it begins
-  driving real CODESYS — one project at a time, ~20 s each. It also writes 21 rule blocks into
-  `.gitattributes`, 21 into `.gitignore`, and 21 bindings into `.versio/repo.json`.
-  - **Not a defect — it is adoption working exactly as specified** on a repository that happens
-    to contain 22 tracked `.project` files because Phase 0 committed its probe corpus.
-  - **It matters anyway, three times.** It takes the machine-wide CODESYS lock, so it will fight
-    a running `Versio.Integration.Tests` and make both look slow; the adoption files it writes
-    are unrelated working-tree changes that are easy to commit by accident; and **it exports,
-    which rewrites committed fixture mirrors.** On 2026-08-17 a twelve-second launch regenerated
-    `fixtures/projects/MachineWithMembers/_manifest.json`, the file kept at schema 7 on purpose
-    as the only committed pre-schema-8 artifact in the repository — a deliberate decision undone
-    by a diagnostic step, silently. `git checkout -- .gitattributes .gitignore .versio/repo.json
-    fixtures/` afterwards, and check `fixtures/` specifically.
-  - **The launch itself is clean**: zero `ERR` lines, so the window constructed, the panels
-    realised and the bindings resolved. That is what the step is for; the rest is noise from
-    the corpus.
+- ~~**Launching the app against this repository adopts the 21 `phase0/` scratch projects and
+  starts exporting all of them.**~~ — **closed 2026-08-17, and the closing found a defect.**
+  `.versio/repo.json` has always had an `ignore` array that `Adoption` and `OrphanScanner` both
+  honour, and it was empty. `phase0/**` is in it now, along with the deliberately frozen
+  `MachineWithMembers` fixture and its mirror. Opening this repository is quiet: **23 projects
+  seen, 0 findings, 1 watched, nothing exported, zero `ERR`**.
+  - **It cost the frozen fixture twice before it was closed**, both times in a launch done to
+    check something else — the second time while the owner was looking at the panel.
+  - **And `phase0/**` alone only took 56 findings to 43.** The ignore list was filtering orphaned
+    *projects* and not orphaned *export trees*, so every ignored project's mirror was still
+    reported. See the Finding: half a rule, and nothing in the suite could have caught it because
+    the existing test only ever supplied `ProjectFiles`.
 - **Cancelling a running toolchain job is not implemented.** A change arriving mid-run is
   queued, which is correct and cheap; restarting instead would be better when the run has
   barely begun, and needs process cancellation plus cleanup of the staging folder a killed
@@ -1003,6 +996,7 @@ actually do.
 
 The full list, newest first:
 
+- [The ignore list hid the projects and kept every one of their mirrors](FINDINGS.md#the-ignore-list-hid-the-projects-and-kept-every-one-of-their-mirrors)
 - [The guard I wrote for the seam was weaker than the claim I made for it](FINDINGS.md#the-guard-i-wrote-for-the-seam-was-weaker-than-the-claim-i-made-for-it)
 - [A `git mv` moves a test; it does not move what the test reads](FINDINGS.md#a-git-mv-moves-a-test-it-does-not-move-what-the-test-reads)
 - [The architecture tests PLAN promised for months had never been written](FINDINGS.md#the-architecture-tests-plan-promised-for-months-had-never-been-written)
