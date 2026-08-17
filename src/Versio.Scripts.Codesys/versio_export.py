@@ -162,6 +162,41 @@ class Exporter(object):
         self.warnings.append(w)
         emit({"t": "warning", "code": code, "path": path, "detail": detail})
 
+    def check_path_length(self, rel_path, abs_path):
+        """Both G9 guards, for ONE file the export is about to write.
+
+        PER FILE, NOT PER OBJECT, and that distinction is the bug this was extracted
+        for. The first version measured only the object's primary path, so a
+        GVL_BOTH's .gvl.xml went unchecked - and that is the LONGER of its pair by a
+        character, so the one file a GVL could overflow on was the one nothing looked
+        at. Same shape as G7 and G12: a rule written for objects, applied to a thing
+        that writes two files. TASK_BOTH was safe only by luck, its .tasks.yaml being
+        longer than its .xml.
+
+        The warning names the FILE rather than the object, unlike EXPORT_FAILED and
+        UNNAMED_OBJECT. A path length is a fact about a path; naming the object would
+        make a GVL's two answers indistinguishable, which is exactly what left the
+        second one unnoticed.
+        """
+        spelled = rel_path.replace("\\", "/")
+
+        detail = too_long_for_any_machine(spelled)
+        if detail:
+            self.warn("PATH_TOO_LONG", spelled, detail)
+
+        detail = too_long_for_this_machine(abs_path)
+        if detail:
+            # emit, NOT warn, and this is the whole reason the two guards are separate
+            # functions. warn() appends to self.warnings, which is written into
+            # _manifest.json - so a sentence whose answer depends on the repository
+            # root would make the manifest differ between two developers exporting the
+            # same project, and the mirror would churn on every export by whoever is
+            # checked out deeper. That is the churn Phase 5 closed, arriving through a
+            # new door. PROJECT_CLOSE_FAILED goes this way for the same reason: a
+            # protocol event, not a coverage fact.
+            emit({"t": "warning", "code": "PATH_TOO_LONG_HERE",
+                  "path": spelled, "detail": detail})
+
     def progress(self, name):
         """Say which object is being exported, and how far through the tree we are.
 
@@ -512,35 +547,21 @@ class Exporter(object):
         rel_path = os.path.join(rel_dir, fname)
         abs_path = os.path.join(self.out_root, rel_path)
 
-        # G9, and it is TWO questions rather than one threshold.
-        #
-        # Said BEFORE the write rather than left to fail: Windows raises an IOError
-        # that names the path and not the reason, and one of these two answers is not
-        # a failure on this machine at all. If a write does then throw, EXPORT_FAILED
-        # still fires beside these and carries the interpreter's own message - the
-        # object is reported either way, which is what the coverage change landed
+        # G9. Said BEFORE the write rather than left to fail: Windows raises an
+        # IOError that names the path and not the reason, and one of the two answers
+        # is not a failure on this machine at all. If a write does then throw,
+        # EXPORT_FAILED fires beside these carrying the interpreter's own message -
+        # the object is reported either way, which is what the coverage change landed
         # first to guarantee.
         #
-        # Neither shortens anything. Shortening keyed on a total path would make a
-        # file name depend on where the repository is checked out, so two developers
+        # Neither guard shortens anything. Shortening keyed on a total path would make
+        # a file name depend on where the repository is checked out, so two developers
         # would produce different names for one object and git would see renames that
         # are not renames. See too_long_for_any_machine.
-        detail = too_long_for_any_machine(rel_path.replace("\\", "/"))
-        if detail:
-            self.warn("PATH_TOO_LONG", object_path(rel_dir, name), detail)
-
-        detail = too_long_for_this_machine(abs_path)
-        if detail:
-            # emit, NOT warn, and this is the whole reason the two are separate
-            # functions. warn() appends to self.warnings, which is written into
-            # _manifest.json - so a sentence whose answer depends on the repository
-            # root would make the manifest differ between two developers exporting
-            # the same project, and the mirror would churn on every export by
-            # whoever is checked out deeper. That is the churn Phase 5 closed,
-            # arriving through a new door. PROJECT_CLOSE_FAILED goes this way for
-            # the same reason: a protocol event, not a coverage fact.
-            emit({"t": "warning", "code": "PATH_TOO_LONG_HERE",
-                  "path": object_path(rel_dir, name), "detail": detail})
+        #
+        # This is the object's PRIMARY file. The two-file forms check their second one
+        # themselves, below - see check_path_length for why that is not a tidy-up.
+        self.check_path_length(rel_path, abs_path)
 
         try:
             if form == FORM_ST_FULL:
@@ -560,7 +581,13 @@ class Exporter(object):
 
             elif form == FORM_GVL_BOTH:
                 xml_path = os.path.join(rel_dir, stem_name + ".gvl.xml")
-                xml_text, _ = self.export_native(obj, os.path.join(self.out_root, xml_path), False)
+                xml_abs = os.path.join(self.out_root, xml_path)
+
+                # The LONGER half of this pair, by the one character between .gvl.st
+                # and .gvl.xml - so this is the file a GVL overflows on first, and it
+                # was the one the guard did not look at.
+                self.check_path_length(xml_path, xml_abs)
+                xml_text, _ = self.export_native(obj, xml_abs, False)
 
                 # Recorded GVL_NATIVE, not NATIVE. The bytes are the same native export
                 # either way; the form is the only thing that tells the importer, the
@@ -578,8 +605,13 @@ class Exporter(object):
                 # the name it has always had, so this is additive: no committed file is
                 # renamed and no mirror churns structurally on the way in.
                 xml_path = os.path.join(rel_dir, stem_name + ".xml")
-                xml_text, _ = self.export_native(
-                    obj, os.path.join(self.out_root, xml_path), True)
+                xml_abs = os.path.join(self.out_root, xml_path)
+
+                # Shorter than its .tasks.yaml sibling, so the primary check already
+                # covers it. Checked anyway: "safe because the other name is longer"
+                # is true of today's suffixes and of nothing else.
+                self.check_path_length(xml_path, xml_abs)
+                xml_text, _ = self.export_native(obj, xml_abs, True)
 
                 # Recorded TASK_NATIVE, not NATIVE_R. The bytes are a recursive native
                 # export either way, but the manifest's form is the only thing that tells

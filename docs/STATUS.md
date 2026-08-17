@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-16 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,494 unit + 480 UI + 242 integration, 0 skipped
+**Date:** 2026-08-16 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,494 unit + 480 UI + 243 integration, 0 skipped
 · *(integration now runs ~30 min, not the 10–16 it did before the import feature checklist added
 13 tests; run three times end to end on 2026-08-16 with no flake, plus every affected test
 individually — see the flake note in `CLAUDE.md`, which is about earlier runs)*
@@ -1030,6 +1030,31 @@ decision rather than a consequence, so it is written up with its cost instead of
 `The_longest_legal_file_name_overflows_MAX_PATH_before_any_folder_chain` **derives** the number
 instead of asserting it, so whoever takes it on is told when they have succeeded rather than
 having to re-measure.
+
+**The second pass over the guard found it measuring the wrong thing, and the shape is the one
+this repository keeps meeting.** It checked the object's **primary** file only — but a
+`GVL_BOTH` writes two, and its `.gvl.xml` is a character **longer** than the `.gvl.st` beside
+it. So the one file a GVL could overflow on first was the file nothing looked at. `TASK_BOTH`
+escaped only by luck, its `.tasks.yaml` being longer than its `.xml`, which is the kind of luck
+that stops holding when a suffix changes. **That is G7 and G12 for the third time**: a rule
+written for objects, applied to something that writes two files. The check is a method taking
+one path now, called for each file written, and
+`Every_file_the_export_writes_has_its_path_length_checked` counts the call sites against the
+second-file writes so the next form cannot quietly skip one.
+
+**The test written for that omission then passed its own mutation.** It counted
+`check_path_length(` call sites and required one more than the number of second-file writes —
+but the regex also matched the `def check_path_length(` line, so definition-plus-two-calls
+cleared a bar that three real calls were meant to clear. Deleting the GVL check left it green.
+`self.`-prefixed now. **It looked right, and it was watching nothing at exactly the boundary it
+existed for** — which is the argument for running the mutation rather than reasoning about it,
+made by the one test in this change whose whole job was to catch a missing call.
+
+**And the commit that fixed `MaxStem`'s wording claimed to fix it "in both languages" and fixed
+one.** `versio_text.py` was corrected; `CodesysPathMapper.cs` kept the false sentence in two
+places, and `CODESYS.md` §5.3 kept a third copy. **Four copies of one claim, and the commit
+message asserting the sweep was itself the least accurate of them** — which is the same defect
+as the claim it was fixing, one level up: a statement about evidence that nobody checked.
 
 **`PATH_TOO_LONG` is not a coverage gap and is not treated as one.** The object *is* in the
 mirror on the machine that wrote it; what is wrong is every other machine. It is

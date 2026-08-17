@@ -205,9 +205,9 @@ stays that way.
 |---|---|---|
 | `Versio.Core.Tests` | 1,494 | under a second |
 | `Versio.App.Tests` | 480 | ~50 s, STA, no window shown |
-| `Versio.Integration.Tests` | 242 | ~31 min, real CODESYS and real git |
+| `Versio.Integration.Tests` | 243 | ~31 min, real CODESYS and real git |
 
-**Do not sit through the integration suite while you work.** 191 of its 242 tests finish in
+**Do not sit through the integration suite while you work.** 192 of its 243 tests finish in
 **18 seconds**; the other 50 are the half hour, because a CODESYS cold start is 17–31 s, every
 launch pays it in full, an import test needs three to five of them, and they cannot run in
 parallel. So:

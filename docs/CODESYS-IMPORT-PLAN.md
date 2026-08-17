@@ -1049,7 +1049,7 @@ prevent. It needs `git show HEAD:<path>` and a similarity score. **`IGitClient` 
 
 ---
 
-## Phase 5 — A mirror that stops churning *(G10)*
+## Phase 5 — A mirror that stops churning *(G10)* · ✅ **built 2026-08-16**
 
 In `versio_export.py`, when exporting a native object: if the freshly exported payload is
 **`versio_native_equiv`-equivalent** to the file already at that path in the *current* mirror, use
@@ -1091,7 +1091,7 @@ the **existing bytes**.
 
 ---
 
-## Phase 6 — Remaining gaps, tests and docs
+## Phase 6 — Remaining gaps, tests and docs · **G8 is all that is left**
 
 - **G8** — a fixture variant carrying at least one fixed-version reference, asserting the
   `managed_library` branch. **P9 makes this cheap**: `add_library("Standard, 3.5.17.0 (System)")`
@@ -1514,11 +1514,12 @@ earlier test's leftovers could in principle have been doing the work.
 ## Verification
 
 1. `dotnet test tests\Versio.Core.Tests` — pure, ~0.3 s. Carries the bulk of the new coverage.
-2. `dotnet test tests\Versio.Integration.Tests --filter PythonFileName` — parity, 51 tests,
-   ~11 s. Needs `python` on PATH and skips cleanly without it, so **a green run on a machine
-   with no python has verified nothing** — check the count, not the colour.
+2. `dotnet test tests\Versio.Integration.Tests --filter PythonFileName` — parity, **62 tests**.
+   Needs `python` on PATH and skips cleanly without it, so **a green run on a machine with no
+   python has verified nothing** — check the count, not the colour. (Said 51 until 2026-08-16,
+   which is the same staleness this list warns about one line down.)
 3. `tools\Test-RoundTrip.ps1 … -MutateFirst` — the per-layer verdict stays **PASS**, and
-   `Task Configuration.xml` drops out of the native-differs list once Phase 4 lands.
+   `Task Configuration.xml` dropped out of the native-differs list when Phase 4 landed.
 4. **The G10 acceptance test:** `tools\Measure-ImportStability.ps1` must print **`P7: SETTLES`**
    **and report zero warnings.** ✅ **Both halves pass as of 2026-08-16.** Historic note: **The zero-warnings half passes
    as of Phase 4** — all three cycles clean, where cycles 2 and 3 used to throw twice each. It
@@ -1538,7 +1539,19 @@ earlier test's leftovers could in principle have been doing the work.
    `dotnet test tests\Versio.Integration.Tests --filter A_task_priority_edited_in_the_mirror` —
    four CODESYS launches, 72–78 s, and it is the only thing in the repository that fails if the
    typed write stops reaching the project.
-8. Full integration suite against real CODESYS (~10 min).
+8. **The full integration suite, and it is the gate before a commit** — 243 tests, of which
+   **192 finish in 18 seconds** (`--filter "Toolchain!=Codesys"`, the loop to work in) and the
+   other **51 take ~31 minutes**, because a CODESYS cold start is 17–31 s and every launch pays
+   it in full. **This line said "~10 min" until 2026-08-16**, which is a third of the truth and
+   the sort of number that makes somebody kill a run they should have waited out. `FastLaneTests`
+   asserts from assembly metadata, both directions, that the filter cannot quietly stop
+   excluding things.
+9. **The warning invariant**, and it is the cheapest gate here at ~15 ms:
+   `dotnet test tests\Versio.Integration.Tests --filter ScriptContractTests` — no CODESYS, no
+   python. It fails when `versio_export.py` grows a warning code that `ExportCoverage` neither
+   treats as losing an object nor the test lists as harmless, and when a file the export writes
+   has no path-length check. **Both of those have already caught a real omission**, one of them
+   in the change that added it.
 
 Build with `& "$env:LOCALAPPDATA\Microsoft\dotnet\dotnet.exe"` — `dotnet` on PATH is runtime-only.
 Close Versio.exe first; it locks its own DLLs.

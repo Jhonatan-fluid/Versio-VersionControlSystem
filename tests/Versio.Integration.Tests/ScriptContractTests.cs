@@ -236,6 +236,44 @@ public sealed class ScriptContractTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void Every_file_the_export_writes_has_its_path_length_checked()
+    {
+        // THE OMISSION THIS EXISTS FOR, found by re-reading the guard rather than by any
+        // test of it. G9's check measured the object's PRIMARY path only, and a two-file
+        // form writes a second one: a GVL_BOTH's .gvl.xml, which is a character LONGER than
+        // the .gvl.st beside it. So the one file a GVL could overflow on first was the file
+        // nothing looked at.
+        //
+        // It is the G7 and G12 shape for the third time — a rule written for objects,
+        // applied to something that writes two files. TASK_BOTH escaped only by luck, its
+        // .tasks.yaml being longer than its .xml, which is exactly the kind of luck that
+        // stops holding when a suffix changes.
+        var source = WithoutComments(Exporter());
+
+        var secondFiles = System.Text.RegularExpressions.Regex
+            .Matches(source, @"xml_path = os\.path\.join\(").Count;
+        // `self.` prefixed, so the `def check_path_length(` line is not counted as a call.
+        // WITHOUT IT THIS TEST PASSED ITS OWN MUTATION: definition plus two calls is three,
+        // which cleared a `>= 3` bar that the three real calls were supposed to clear. It
+        // looked right, and it was watching nothing at exactly the boundary it existed for.
+        var checks = System.Text.RegularExpressions.Regex
+            .Matches(source, @"self\.check_path_length\(").Count;
+
+        output.WriteLine($"second-file writes: {secondFiles}, path checks: {checks}");
+
+        // Non-vacuous: there really are two-file forms to miss.
+        Assert.Equal(2, secondFiles);
+
+        // One for the primary path, one for each second file. Counting rather than matching
+        // positions because the two branches build their paths differently and a positional
+        // rule would break on a refactor that is not a regression.
+        Assert.True(checks >= secondFiles + 1,
+            $"versio_export.py writes {secondFiles} second file(s) and calls "
+            + $"check_path_length {checks} time(s). Every file the export writes needs its "
+            + "own check — the guard measures a PATH, and a two-file object has two of them.");
+    }
+
+    [Fact]
     public void Every_warning_the_exporter_raises_travels_the_one_path_spelling()
     {
         // The rule versio_text.object_path exists to hold. Two of the exporter's five

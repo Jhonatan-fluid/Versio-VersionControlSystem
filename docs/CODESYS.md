@@ -474,7 +474,23 @@ CODESYS names are much freer than file names, so:
   repository. It now becomes `license.txt~3f9a1c`. Found in a real mirror, not in a test;
   now covered by `PythonFileNameTests`;
 - anything over 80 characters is shortened the same way, because Windows still enforces a
-  260-character path in most configurations and a deep CODESYS folder chain reaches it.
+  260-character path in most configurations.
+
+> **What that shortening does *not* do, measured 2026-08-16.** It bounds one **segment**, not
+> the path — and the wording here, in `versio_text.py` and in `CodesysPathMapper.cs` all said
+> otherwise for months ("a deep CODESYS folder chain plus this still clears Windows'
+> 260-character limit"). Two things make it false. The shortened form is `tail[:80] + "~" +
+> six hex`, so the cap is **87**. And the parent prefix below puts **two** shortened stems in
+> one file name: **190 characters** at worst, a `TRANSITION` exported as native XML. With
+> `Device/Plc Logic/Application` — the chain every project has — and a one-character project
+> name, that leaves **19 characters for the repository root**. `C:\GIT\Versio` is 13 and fits
+> by six; anything under a user profile does not.
+>
+> **So no deep folder chain is needed**, which is what G9 assumed for its whole life. The path
+> is guarded by `too_long_for_any_machine` and `too_long_for_this_machine`, per **file** rather
+> than per object — a `GVL_BOTH` writes two, and its `.gvl.xml` is the longer of the pair.
+> `The_longest_legal_file_name_leaves_no_room_for_an_ordinary_checkout` derives the number
+> rather than asserting it. See the Finding in [`STATUS.md`](STATUS.md).
 
 Then a **type infix** keeps same-named objects of different kinds apart — a `Main`
 visualisation and a `Main` POU are a common real collision:
