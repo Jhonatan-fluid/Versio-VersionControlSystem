@@ -58,8 +58,15 @@ public static class ExportCoverage
     public const int ReportingSchema = 2;
 
     /// <summary>The schema today's exporter writes.</summary>
+    /// <remarks>
+    /// <b>Half of a cross-language pair, and the C# half cannot notice when the other moves.</b>
+    /// The number that matters is the literal in <c>versio_export.py</c>'s manifest; this
+    /// mirrors it so a fresh export can be checked against what this build expects. Two
+    /// integration tests assert they agree, which is the only thing standing between them and
+    /// the silent drift <c>CODESYS.md</c> §9 already counts four of.
+    /// </remarks>
     /// <seealso cref="ProjectManifest.Schema"/>
-    public const int CurrentSchema = 7;
+    public const int CurrentSchema = 8;
 
     /// <summary>The exporter's code for a skip that loses something.</summary>
     public const string GapReason = "NOT_IMPLEMENTED";

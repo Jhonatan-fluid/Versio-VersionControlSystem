@@ -38,6 +38,17 @@ import versio_tasks  # noqa: E402
 import versio_yaml  # noqa: E402
 
 
+# Which toolchain wrote this mirror. Recorded in the manifest from schema 8 so a reader
+# does not have to infer it from the shape of the files - see the schema note below.
+#
+# Spelled the way repo.json and PlcVendor.Codesys spell it, NOT the way versio_libraries
+# and versio_tasks spell it in their sidecars ("codesys", lower case, and duplicated in
+# both modules). Those bytes are already committed in every mirror and rewriting them
+# would churn a file in every repository to fix a capital letter; the C# side compares
+# vendor names case-insensitively, which is what makes leaving them alone safe.
+VENDOR = "Codesys"
+
+
 def emit(obj):
     """Write one JSON-lines protocol event to stdout.
 
@@ -919,7 +930,18 @@ def main():
         # A schema-5 manifest has none because nothing wrote one, and a renamed POU
         # is simply not recognised as renamed on such a mirror - it falls back to a
         # delete and a create, which is what happened before this existed.
-        "schema": 7,
+        # 8: the manifest names the vendor that wrote it. Every manifest before this one
+        # was written by CODESYS because CODESYS was all there was, so an absent "vendor"
+        # reads as Codesys rather than as unknown - the same backward-compatible shape
+        # ProjectBinding.Vendor already uses, and for the same reason: a mirror exported by
+        # an older Versio must keep meaning what it meant.
+        #
+        # Worth recording rather than inferring. The type strings in this manifest are
+        # CODESYS's own tree vocabulary - PLC_LOGIC, CALL_TO_POU, GVL_PERSISTENT - and a
+        # reader that has to guess whose vocabulary it is holding cannot translate them
+        # for display without guessing at the same time.
+        "schema": 8,
+        "vendor": VENDOR,
         "bindingId": job.get("bindingId", ""),
         "project": os.path.basename(job["project"]),
         "objectCount": len(ex.records),

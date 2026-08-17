@@ -981,6 +981,51 @@ would have gone on passing while checking one fewer every time a panel moved out
 
 Written down with their evidence, because the reasoning is worth more than the fix.
 
+### The manifest could not say who wrote it, and its vocabulary belongs to somebody
+
+**Found 2026-08-16.** `_manifest.json` was schema-versioned seven times over and carried no
+vendor. Two vendors' mirrors were indistinguishable on disk — which matters more than it sounds,
+because `ProjectObject.Type` holds a *toolchain's own tree vocabulary*. `PLC_LOGIC`,
+`CALL_TO_POU`, `GVL_PERSISTENT` and `LIBRARY_MANAGER` are CODESYS's words, not IEC 61131-3's, and
+a reader that has to guess whose words it is holding cannot render them without guessing too.
+
+**Schema 8 adds `vendor`, and absent reads as CODESYS** — a statement of fact rather than a
+guess, because every mirror written before the field existed was written by CODESYS, since
+CODESYS was all there was. The same backward-compatible shape `ProjectBinding.Vendor` already
+uses.
+
+**Two spellings of one vendor already existed in shipped bytes.** `versio_libraries.py` and
+`versio_tasks.py` have each written `"vendor": "codesys"` — lower case, and the constant is
+*duplicated* in both modules — into every exported sidecar since they were added. `repo.json`
+writes `"Codesys"`. Those sidecar bytes are committed in every mirror and rewriting them would
+churn a file in every repository over a capital letter, so the manifest matches `repo.json` and
+the two spellings are allowed to coexist. **`PlcVendor` comparing case-insensitively is what
+makes that safe** — a decision taken the same day for a different reason, which turned out to be
+load-bearing for an inconsistency nobody had noticed.
+
+**The fixture had to be regenerated, and the test that forced it was doing its job.**
+`WorkspaceTreeFromCommittedExportTests` asserts the committed mirror's schema equals
+`ExportCoverage.CurrentSchema`, and went red the moment the constant moved. Its own comment
+explains why that assertion exists: *"a stale fixture makes a true assertion protect a dead
+specification, and nothing about it looks stale from here."* A real export regenerated it in
+23.9 s.
+
+**The diff was exactly two lines** — `"schema": 7` → `8`, and one added `"vendor": "Codesys"` —
+across a mirror of 18 objects. Every other byte identical, which is independent evidence that
+the exporter is deterministic across runs and that the change was surgical.
+
+**`MachineWithMembers` was deliberately left at schema 7.** Nothing asserts its schema, so
+regenerating it would have been free and would have quietly destroyed the only committed
+pre-schema-8 artifact in the repository — the one file that exercises the backward-compatible
+reading against something nobody wrote for the purpose. `CommittedManifestVendorTests` now says
+so, so a future regeneration is a decision rather than a side effect.
+
+**A near-vacuous pass, caught by mutation.** With `Parse` changed to ignore the field entirely,
+*every* test asserting a CODESYS manifest still passed — because the default is CODESYS. The
+only assertion that failed was the one reading a vendor this build has never heard of. Every
+"does it read Codesys" test in this area is satisfied by the default, and that one test is the
+whole proof the field is read at all.
+
 ### `PlcVendor` was a closed enum, so you could not name what you were told to register
 
 **Found 2026-08-16, and it is the one that made the architectural rule literally false.** The
