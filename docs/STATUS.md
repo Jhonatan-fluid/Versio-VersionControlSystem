@@ -1,15 +1,15 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,295 across five
+**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,316 across five
 projects, 0 skipped — re-derived by running each, not carried forward
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,295 | under a second | nothing |
+| `Versio.Core.Tests` | 1,296 | under a second | nothing |
 | `Versio.Integration.Tests` | 141 | ~10 s | real git |
 | `Versio.App.Tests` | 480 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 14 | instant | nothing |
-| `Versio.Plc.Codesys.Tests` | 365 | **~31 min** | **real CODESYS** |
+| `Versio.Plc.Codesys.Tests` | 385 | **~31 min** | **real CODESYS** |
 
 *The first four are eleven seconds plus the UI suite, and are the loop to work in. The last is
 the gate before a commit. Until 2026-08-17 the split was a `--filter` expression over one
@@ -172,9 +172,17 @@ with the sync state it had; an export can be killed at any instant without leavi
 without a mirror; and what a killed run leaves behind is put right the next time the repository
 opens. That is `SAFEGUARDS.md` phases 1–8, and phase 9 is features rather than guards.
 
+**The CODESYS import plan is finished, as of 2026-08-17.** All twelve of its gaps are closed or
+guarded and both of its remaining tasks are done — G8, where a managed library reference was
+recording the exporting machine's installed version or nothing at all, and P11, which measured
+which moves CODESYS actually performs and disproved the tidy rule its own first run produced.
+What is left in [`vendors/codesys/IMPORT-PLAN.md`](vendors/codesys/IMPORT-PLAN.md) is three
+decisions and no work. **So the next thing to build is item 4 below — the project tree panel**,
+which is also what `TaskCatalog.cs` and `LibraryCatalog.cs` are waiting for.
+
 ```
   CODESYS pipeline    ████████████████████  proven on a real project
-  Domain core         ████████████████████  1,295 tests, under 400 ms
+  Domain core         ████████████████████  1,296 tests, under 400 ms
   Vendor seam         ████████████████████  enforced by the project graph + metadata
   Infrastructure      ████████████████████  drives real CODESYS + real git
   Desktop shell       ███████████████████░  full git surface, diff, and a UI audit applied
@@ -193,6 +201,8 @@ opens. That is `SAFEGUARDS.md` phases 1–8, and phase 9 is features rather than
 | How long does a CODESYS launch cost? | **17–31 s.** Paid on every automatic export; the coalescer is what makes that bearable |
 | Does an edited `.st` reach the project? | **Yes** — export, edit, import, verified byte-changed on the real fixture |
 | Can library references be read at all? | **Yes** — `libman.references`, iterated. Not `get_libraries()`, which returns names only, and not `references[i]`, which indexes by id and raises for a position |
+| Where does a fixed-version library's version come from? | **From the reference's own name, and not from `managed_library`.** That object exists, and every field on it raises `NullReferenceException` for a library the exporting machine does not have installed — while `is_managed` still reads `True`. What it answers when it does answer is *installation* state, which two engineers would disagree about. Measured both ways, 2026-08-17 |
+| Which moves does CODESYS actually perform? | **Not the ones the destination would suggest.** An empty folder moves into `Plc Logic`; a POU does not; the same folder stops moving there once a POU is inside it; a GVL moves to the project root. **Nine moves, three declined, and not one call raised** — so the import's read-back after every move is the only signal that exists. Measured 2026-08-17 (P11) |
 | Is a library reference's identity stable? | **No.** `ref.id` is re-minted on every open: 34 of 34 changed across two runs, with nothing else moving. Not recorded — the same trap as the `__VisualizationStyle` GUID, caught before it shipped this time |
 | Does an unedited mirror ever stop churning? | **It does now.** It did not: `UniqueIdGenerator` climbed +3 per import→export cycle and never settled, four of eight native files differing forever from **two** causes rather than one. Phase 5 keeps the existing bytes when the fresh export is equivalent to them, and `Measure-ImportStability.ps1` now prints **`P7: SETTLES`** with the counter flat across three cycles |
 | Is the mirror's churn *semantically* nothing? | **Yes** — all four churning files are `NativeXmlNormalizer`-equivalent, with symmetric mask counts on every one, which is what says they differ in the masked positions and nowhere else |

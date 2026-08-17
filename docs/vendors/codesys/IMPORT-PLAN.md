@@ -275,8 +275,9 @@ already exists.**
 | ~~**14th**~~ | ✅ **Phase 5 — a mirror that stops churning.** Landed 2026-08-16 | Its prerequisite was proven twice over: `versio_native_equiv` exists, and Phase 2 measured that normalisation is stable across round trips. `Measure-ImportStability.ps1` prints `P7: SETTLES` with the counter flat at 44 across all three cycles |
 | ~~**13th**~~ | ✅ **G12 — a GVL's `.gvl.st` edit reaching the project.** Landed 2026-08-16 | **Was a live silent-data-loss path**, found by the feature checklist on 2026-08-16 and the only open defect that destroys somebody's edit without saying so. Phase 5 changes when files are rewritten and touches the same export code, so fixing this first keeps the two reviews apart. Its three candidate fixes are not interchangeable and one of them stops the two-file rule protecting a GVL — the choice was made deliberately: the XML half became export-only, which leaves a GVL with one importable file and therefore **no two-file rule** — it is an ordinary single-file object now, protected by the content check like every other one |
 | ~~**15th**~~ | ✅ **The coverage blind spot, and G9's guard.** Landed 2026-08-16 | **Not planned as a step** — found by asking what G9 costs *today* before writing its guard. An export that could not write an object reported `Complete`, because `ExportCoverage` read the skips and nothing read `manifest.warnings`. Fixed first, because it is what makes every *other* export failure visible too; G9's guard went in behind it. See the two Findings in [`STATUS.md`](../../STATUS.md) |
-| ✅ 7th | **Phase 6 — G8, and it was not a fixture** | The parity tests and the integration breadth landed 2026-08-16; G9 is guarded; **G8 closed 2026-08-17**. P9's `add_library("Standard, 3.5.17.0 (System)")` did make the reference cheap to produce — and producing one is not what was missing. The branch read the version off `managed_library`, which answers only on a machine that has the library installed, so the last gap turned out to be a live defect with a silent failure in it |
-| **NEXT** | **Nothing in this plan.** The moves probe and three decisions | Every G is closed or guarded. What remains is in [What is left, and what it costs](#what-is-left-and-what-it-costs), and only the first row of it is a task |
+| ~~**16th**~~ | ✅ **Phase 6 — G8, and it was not a fixture.** Landed 2026-08-17 | The parity tests and the integration breadth landed 2026-08-16; G9 is guarded. P9's `add_library("Standard, 3.5.17.0 (System)")` did make the reference cheap to produce — and producing one is not what was missing. The branch read the version off `managed_library`, which answers only on a machine that has the library installed, so the last gap turned out to be a live defect with a silent failure in it. **This row was numbered 7th when it was written**, which the Phase 1 row above already is; the ordinals are a sequence, so a duplicate is a claim that two things happened at once |
+| ~~**17th**~~ | ✅ **The moves probe — P11.** Landed 2026-08-17 | The last task in *What is left*. Nine ordered moves, and **the tidy rule its first seven produced was wrong**: the destination is not what decides. An empty folder goes into `Plc Logic`; a POU does not; the same folder stops going there once a POU is inside it. Nothing raised, ever, so the import's read-back is the entire signal — and it now names the measured cases rather than only refusing |
+| **NEXT** | **Nothing in this plan is a task.** Three decisions, and a reader waiting on the panel | Every G is closed or guarded and both remaining tasks are done. What is left is in [What is left, and what it costs](#what-is-left-and-what-it-costs): whose repositories to churn for G9's remaining half, whether to chase a fixture nobody can build for E2/E4, and `TaskCatalog.cs` when the panel arrives to consume it. **The next piece of work for this product is the project tree panel**, which is `STATUS.md`'s queue rather than this document's |
 
 ### The three honesty fixes — all three done
 
@@ -1232,10 +1233,31 @@ the **existing bytes**.
 
 ## Handoff — picking this up after the feature checklist
 
-**Where you are.** The import is plan-driven end to end, and Versio **deletes, renames and moves**
-objects as well as applying text. **Every one of those behaviours has been run against a real
-project one row at a time** — the [feature checklist](#the-import-feature-checklist-run-one-row-at-a-time--2026-08-16)
-is the list, the method and the verdicts, and it is the first thing to read after this paragraph.
+**Where you are, as of 2026-08-17.** **This plan is finished.** All twelve gaps are closed or
+guarded, both tasks in *What is left* are done, and what remains under that heading is three
+decisions and one reader waiting on a panel that does not exist yet. The import is plan-driven
+end to end, and Versio **deletes, renames and moves** objects as well as applying text.
+**Every one of those behaviours has been run against a real project one row at a time** — the
+[feature checklist](#the-import-feature-checklist-run-one-row-at-a-time--2026-08-16) is the
+list, the method and the verdicts, and it is the first thing to read after this paragraph.
+
+**If you are looking for the next thing to build, it is not here.** It is the project tree
+panel in [`STATUS.md`](../../STATUS.md)'s queue — `TaskCatalog.cs` and `LibraryCatalog.cs` are
+both readers with no consumer, and both are waiting on it.
+
+**The two closing pieces of work are worth reading before you trust anything in this file**,
+because each was carried for weeks as a small task and turned out to be a live defect:
+
+- **G8** was "an untested branch, needs a fixture". It was recording whichever version of a
+  library the *exporting machine* had installed — and, for one that machine did not have,
+  recording nothing at all and warning about nothing.
+- **The moves probe** was "settle an honesty gap". Its first seven measurements produced a
+  clean rule that was wrong, and the eighth — added only because re-reading the probe raised a
+  question the probe could not answer — overturned it.
+
+**Both were found by calling the toolchain rather than reading about it, and in both cases the
+error was in the METHOD rather than in the results.** That is the standing lesson of this
+document, now with two more examples.
 
 **Read the checklist's *"What this run found"* before starting anything.** Three of its four
 notes are about how to test this code rather than about the import itself, and each one cost a
