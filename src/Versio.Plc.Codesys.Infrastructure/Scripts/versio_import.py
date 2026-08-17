@@ -197,10 +197,16 @@ class Importer(object):
     ScriptEngine.
     """
 
-    def __init__(self, proj, src_root, plan):
+    def __init__(self, proj, src_root, plan, save_between_phases=True):
         self.proj = proj
         self.src_root = src_root
         self.plan = plan
+
+        # The job's `save` flag, honoured by the phase-split save below as well as by the
+        # final save in main(). Nothing sends false today; the flag exists so that if
+        # anything ever does, the phase save does not persist what the final save was told
+        # not to.
+        self.save_between_phases = save_between_phases
         self.updated = 0
         self.unchanged = 0
         self.missing = 0
@@ -1093,7 +1099,17 @@ class Importer(object):
                 self.failed += 1
                 self.warn("TASKS_APPLY_FAILED", rel_path, str(e))
 
-        if self.created > 0 or self.updated > 0:
+        # UNCONDITIONAL since 2026-08-17, and the history of this line is the argument for
+        # it. It read `if self.created > 0 or self.updated > 0`, which is the same shape as
+        # the dirty-test bug this file has paid for twice: a condition deciding whether to
+        # SAVE that does not count every way the project has been written. Renames run
+        # before this line and mutate the very name dictionary the docstring above
+        # describes, and were not counted; a native-only import skipped the save entirely -
+        # the exact shape of run the phase split exists to protect, carried in the import
+        # plan as an open judgement call. One save per import is cheaper than the question,
+        # and a condition that cannot be wrong is cheaper than one that has to be kept in
+        # step with every new phase.
+        if self.save_between_phases:
             self.proj.save()
             emit({"t": "phase_saved", "after": "textual"})
 
@@ -1151,7 +1167,7 @@ def main():
     proj = remember_project(scriptengine.projects.open(job["project"]))
     emit({"t": "opened", "path": str(proj.path)})
 
-    imp = Importer(proj, job["src"], plan)
+    imp = Importer(proj, job["src"], plan, job.get("save", True))
     imp.run()
 
     # `partial` is in here because a native import that lost some objects still applied the
