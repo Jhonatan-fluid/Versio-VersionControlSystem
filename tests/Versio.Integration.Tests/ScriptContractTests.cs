@@ -1,5 +1,5 @@
 using Versio.Core.Projects;
-using Versio.Infrastructure.Plc.Codesys;
+using Versio.Plc.Codesys.Infrastructure;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -27,7 +27,7 @@ namespace Versio.Integration.Tests;
 /// </para>
 /// <para>
 /// <b>It reads the EMBEDDED copy, deliberately</b>, through <see cref="ScriptExtractor"/> —
-/// the parity tests read <c>src\Versio.Scripts.Codesys</c> because their subject is the source
+/// the parity tests read <c>src\Versio.Plc.Codesys.Infrastructure\Scripts</c> because their subject is the source
 /// of truth, but the subject here is what actually ships and runs. Editing a <c>.py</c> and
 /// running <c>--no-build</c> tests the script embedded at the last build, and that trap has
 /// already cost this project a mutation check that reported a disabled feature as working.

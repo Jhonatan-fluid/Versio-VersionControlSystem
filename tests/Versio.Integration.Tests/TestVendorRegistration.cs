@@ -1,5 +1,5 @@
 using System.Runtime.CompilerServices;
-using Versio.Infrastructure.Plc.Codesys;
+using Versio.Plc.Codesys.Infrastructure;
 
 namespace Versio.Integration.Tests;
 

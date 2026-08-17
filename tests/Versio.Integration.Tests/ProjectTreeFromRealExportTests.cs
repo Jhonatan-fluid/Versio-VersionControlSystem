@@ -45,7 +45,7 @@ public sealed class ProjectTreeFromRealExportTests(ITestOutputHelper output) : I
     [SkippableFact]
     public async Task A_real_export_builds_a_tree_shaped_like_the_project()
     {
-        var install = new Versio.Infrastructure.Plc.Codesys.CodesysLocator()
+        var install = new Versio.Plc.Codesys.Infrastructure.CodesysLocator()
             .FindInstalls().FirstOrDefault(i => i.Profiles.Count > 0);
         Skip.If(install is null, "no CODESYS installation with a profile");
 
@@ -55,20 +55,20 @@ public sealed class ProjectTreeFromRealExportTests(ITestOutputHelper output) : I
         Directory.CreateDirectory(Path.Combine(_repo, "plc"));
         File.Copy(fixture, Path.Combine(_repo, "plc", "RefrigeratorControl.project"));
 
-        var runner = new Versio.Infrastructure.Plc.Codesys.LocalCodesysRunner(
+        var runner = new Versio.Plc.Codesys.Infrastructure.LocalCodesysRunner(
             install!.ExecutablePath,
-            new Versio.Infrastructure.Plc.Codesys.ScriptExtractor(),
+            new Versio.Plc.Codesys.Infrastructure.ScriptExtractor(),
             new TestLogger(output));
 
         var exportRoot = Path.Combine(_repo, "plc", "RefrigeratorControl");
         var result = await runner.RunAsync(
-            new Versio.Core.Plc.Codesys.CodesysJob
+            new Versio.Plc.Codesys.CodesysJob
             {
-                Operation = Versio.Core.Plc.Codesys.CodesysOperation.Export,
+                Operation = Versio.Plc.Codesys.CodesysOperation.Export,
                 Profile = install.Profiles[0],
                 Projects =
                 [
-                    new Versio.Core.Plc.Codesys.ProjectJob
+                    new Versio.Plc.Codesys.ProjectJob
                     {
                         BindingId = "b-tree",
                         ProjectPath = Path.Combine(_repo, "plc", "RefrigeratorControl.project"),

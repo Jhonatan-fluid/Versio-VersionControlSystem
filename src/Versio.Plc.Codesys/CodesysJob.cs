@@ -1,7 +1,8 @@
-using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json;
+using Versio.Core.Plc;
 
-namespace Versio.Core.Plc.Codesys;
+namespace Versio.Plc.Codesys;
 
 /// <summary>Which script the CODESYS subprocess should run.</summary>
 public enum CodesysOperation

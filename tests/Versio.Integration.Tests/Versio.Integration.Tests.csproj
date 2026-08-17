@@ -15,6 +15,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Versio.Core\Versio.Core.csproj" />
     <ProjectReference Include="..\..\src\Versio.Infrastructure\Versio.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Versio.Plc.Codesys.Infrastructure\Versio.Plc.Codesys.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>

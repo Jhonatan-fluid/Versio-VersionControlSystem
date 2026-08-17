@@ -1,10 +1,11 @@
 using Versio.Core.Diff;
 using Versio.Core.Hashing;
 using Versio.Core.Iec;
+using Versio.Core.Plc;
 using Versio.Core.Projects;
 using Versio.Core.Serialization;
 
-namespace Versio.Core.Plc.Codesys;
+namespace Versio.Plc.Codesys;
 
 /// <summary>
 /// Decides what an import of a CODESYS mirror would do — pure, from the manifest and a
@@ -592,8 +593,8 @@ public static class CodesysImportPlanner
             var scored = creates
                 .Select(c => (c.File, c.Index, Score: exact
                     ? TextSimilarity.Of(old, text[c.File.Path])
-                    : Diff.LineSketch.Similarity(
-                        sketch, Diff.LineSketch.Of(text[c.File.Path]))))
+                    : Versio.Core.Diff.LineSketch.Similarity(
+                        sketch, Versio.Core.Diff.LineSketch.Of(text[c.File.Path]))))
                 .Where(c => c.Score >= (exact ? SimilarityFloor : SketchFloor))
                 .OrderByDescending(c => c.Score)
 

@@ -1,4 +1,6 @@
-namespace Versio.Core.Plc.Codesys;
+using Versio.Core.Plc;
+
+namespace Versio.Plc.Codesys;
 
 /// <summary>
 /// CODESYS object types, identified by the type GUID CODESYS stamps on every object.

@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
+using Versio.Core.Plc;
 
-namespace Versio.Core.Plc.Codesys;
+namespace Versio.Plc.Codesys;
 
 /// <summary>
 /// Normalises native CODESYS XML for <b>comparison only</b> — never for what is written

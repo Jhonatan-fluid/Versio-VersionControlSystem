@@ -52,7 +52,7 @@ public sealed class ExportLoggingTests(ITestOutputHelper output) : IDisposable
     [SkippableFact]
     public async Task Replacing_the_export_directory_is_written_down()
     {
-        var install = new Versio.Infrastructure.Plc.Codesys.CodesysLocator()
+        var install = new Versio.Plc.Codesys.Infrastructure.CodesysLocator()
             .FindInstalls().FirstOrDefault(i => i.Profiles.Count > 0);
         Skip.If(install is null, "no CODESYS installation with a profile");
 
@@ -70,20 +70,20 @@ public sealed class ExportLoggingTests(ITestOutputHelper output) : IDisposable
         recorder.AddSink(buffer);
         var exportRoot = Path.Combine(_root, "RefrigeratorControl");
 
-        var runner = new Versio.Infrastructure.Plc.Codesys.LocalCodesysRunner(
+        var runner = new Versio.Plc.Codesys.Infrastructure.LocalCodesysRunner(
             install!.ExecutablePath,
-            new Versio.Infrastructure.Plc.Codesys.ScriptExtractor(),
+            new Versio.Plc.Codesys.Infrastructure.ScriptExtractor(),
             recorder);
 
         async Task ExportAsync() => Assert.True(
             (await runner.RunAsync(
-                new Versio.Core.Plc.Codesys.CodesysJob
+                new Versio.Plc.Codesys.CodesysJob
                 {
-                    Operation = Versio.Core.Plc.Codesys.CodesysOperation.Export,
+                    Operation = Versio.Plc.Codesys.CodesysOperation.Export,
                     Profile = install.Profiles[0],
                     Projects =
                     [
-                        new Versio.Core.Plc.Codesys.ProjectJob
+                        new Versio.Plc.Codesys.ProjectJob
                         {
                             BindingId = "b-log",
                             ProjectPath = project,

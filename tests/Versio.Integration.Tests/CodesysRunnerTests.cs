@@ -1,5 +1,5 @@
-using Versio.Core.Plc.Codesys;
-using Versio.Infrastructure.Plc.Codesys;
+using Versio.Plc.Codesys;
+using Versio.Plc.Codesys.Infrastructure;
 using Xunit;
 using Xunit.Abstractions;
 

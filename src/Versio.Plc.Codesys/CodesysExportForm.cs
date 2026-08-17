@@ -1,4 +1,5 @@
-using Versio.Core.Plc.Codesys;
+using Versio.Core.Plc;
+using Versio.Plc.Codesys;
 
 namespace Versio.Core.Serialization;
 

@@ -8,23 +8,34 @@ here is about refusing to act rather than acting.
 **It is multi-vendor by design. CODESYS is the first toolchain, not the only one** — and that
 distinction is the project's central architectural rule rather than an aspiration:
 
-| Namespace | Scope |
+| Project | Scope |
 |---|---|
-| `Versio.Core.Plc` | Neutral contracts every vendor implements — `IPlcRunner`, `PlcJob`, `PlcResult`, `PlcFormats` |
-| `Versio.Core.Plc.Codesys` | **One vendor.** Object-type GUIDs, native XML shape, `CODESYS.exe`, the ScriptEngine protocol |
-| `Versio.Core.Iec` | The IEC 61131-3 **standard**, shared by every vendor — ST codec, declaration parser |
+| `Versio.Core` (`Plc/`) | Neutral contracts every vendor implements — `IPlcRunner`, `PlcJob`, `PlcResult`, `PlcFormats` |
+| `Versio.Core` (`Iec/`) | The IEC 61131-3 **standard**, shared by every vendor — ST codec, declaration parser, the standard's object-type names |
+| `Versio.Plc.Codesys` | **One vendor, pure.** Object-type GUIDs, native XML shape, import planner, ScriptEngine protocol, CODESYS's own tree vocabulary |
+| `Versio.Plc.Codesys.Infrastructure` | **One vendor, driven.** `CODESYS.exe`, the install locator, the embedded python |
 | everything else | Vendor-neutral: git, diff, sync, locking, watching, logging, bindings |
 
-Structured Text is a standard, not a CODESYS feature. Adding a vendor means implementing
-`IPlcRunner`, `IPlcProjectFormat` and `IPlcToolchain` and registering with `PlcFormats` —
+Structured Text is a standard, not a CODESYS feature. Adding a vendor means a new project
+implementing `IPlcRunner`, `IPlcProjectFormat` and `IPlcToolchain`, one `ProjectReference` from
+`Versio.App`, and one `Register()` call in `App.xaml.cs` beside `CodesysPack.Register()` —
 **nothing in `Sync/`, `Git/`, `Locking/`, `Watching/`, `Projects/` or `Diff/` may change. If it
-does, vendor knowledge has leaked past the seam, and the leak is the bug.** `VendorSeamTests`
-reads assembly metadata and fails the build on one. It had to be written: the rule was stated
-from the start and was not true — the sync orchestrator was built directly on CODESYS types
-until 2026-08-12.
+does, vendor knowledge has leaked past the seam, and the leak is the bug.**
 
-So: never write CODESYS knowledge outside `*.Plc.Codesys`, and never describe Versio as a
-CODESYS tool. See README's *Vendor boundaries*.
+**`Versio.Core` has no project reference to a vendor pack**, so that is a compiler error rather
+than an opinion. `VendorSeamTests` and `VendorSeamInfrastructureTests` read assembly metadata on
+top — signatures, generic arguments, string constants, and the literals compiled into method
+bodies. Every part of it had to be built, because the rule was stated from the start and was not
+true: the sync orchestrator was built on CODESYS types until 2026-08-12; three vendor names were
+still sitting in neutral namespaces as strings until 2026-08-16; and `PlcFormats.Register` had
+**zero callers** until the same day.
+
+**The python lives in `Versio.Plc.Codesys.Infrastructure/Scripts/`** and is embedded from there.
+It used to be a loose `src/Versio.Scripts.Codesys/` folder that no project owned, which is
+precisely why its rebuild trap existed.
+
+So: never write CODESYS knowledge outside the `Versio.Plc.Codesys*` projects, and never describe
+Versio as a CODESYS tool. See README's *Vendor boundaries*.
 
 ---
 

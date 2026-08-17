@@ -1,4 +1,4 @@
-using Versio.Infrastructure.Plc.Codesys;
+using Versio.Plc.Codesys.Infrastructure;
 using Xunit;
 
 namespace Versio.Integration.Tests;

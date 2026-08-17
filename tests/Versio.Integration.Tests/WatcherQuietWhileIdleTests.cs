@@ -1,4 +1,4 @@
-using Versio.Core.Plc.Codesys;
+using Versio.Plc.Codesys;
 using Versio.Infrastructure.Platform;
 using Versio.Infrastructure.Watching;
 using Xunit;

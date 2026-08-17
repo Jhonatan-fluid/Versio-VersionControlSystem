@@ -1,8 +1,9 @@
 using Versio.Core.Logging;
 using Versio.Core.Plc;
-using Versio.Core.Plc.Codesys;
+using Versio.Infrastructure.Plc;
+using Versio.Plc.Codesys;
 
-namespace Versio.Infrastructure.Plc.Codesys;
+namespace Versio.Plc.Codesys.Infrastructure;
 
 /// <summary>
 /// Everything Versio needs to know to see and drive CODESYS, registered in one call.

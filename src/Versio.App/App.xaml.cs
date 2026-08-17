@@ -11,7 +11,7 @@ using Versio.Core.Plc;
 using Versio.Infrastructure.FileSystem;
 using Versio.Infrastructure.Logging;
 using Versio.Infrastructure.Platform;
-using Versio.Infrastructure.Plc.Codesys;
+using Versio.Plc.Codesys.Infrastructure;
 
 namespace Versio.App;
 

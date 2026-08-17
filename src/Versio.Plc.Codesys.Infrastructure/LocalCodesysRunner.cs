@@ -3,9 +3,10 @@ using System.Text;
 using Versio.Core.Abstractions;
 using Versio.Core.Logging;
 using Versio.Core.Plc;
-using Versio.Core.Plc.Codesys;
+using Versio.Infrastructure.Plc;
+using Versio.Plc.Codesys;
 
-namespace Versio.Infrastructure.Plc.Codesys;
+namespace Versio.Plc.Codesys.Infrastructure;
 
 /// <summary>
 /// Runs a Versio script inside a headless CODESYS process.
@@ -850,7 +851,7 @@ public sealed class LocalCodesysRunner(
     private Task<Versio.Core.Plc.ImportPlan> PlanImportAsync(
         string mirrorRoot, CancellationToken ct) =>
         Versio.Core.Plc.ImportPlanReader.ReadAsync(
-            new FileSystem.WindowsFileSystem(),
+            new Versio.Infrastructure.FileSystem.WindowsFileSystem(),
             CodesysProjectFormat.Instance,
             mirrorRoot,
             _log,

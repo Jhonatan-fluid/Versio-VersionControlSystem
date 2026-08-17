@@ -1,6 +1,7 @@
+using Versio.Core.Plc;
 using Versio.Core.Projects;
 
-namespace Versio.Core.Plc.Codesys;
+namespace Versio.Plc.Codesys;
 
 /// <summary>
 /// How CODESYS's own object kinds are written on screen.

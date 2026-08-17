@@ -1,9 +1,11 @@
 using System.Diagnostics;
 using Versio.Core.Abstractions;
 using Versio.Core.Logging;
-using Versio.Core.Plc.Codesys;
+using Versio.Core.Plc;
+using Versio.Infrastructure.Plc;
+using Versio.Plc.Codesys;
 
-namespace Versio.Infrastructure.Plc.Codesys;
+namespace Versio.Plc.Codesys.Infrastructure;
 
 /// <summary>
 /// Finds CODESYS installations and their usable profiles by reading the filesystem.

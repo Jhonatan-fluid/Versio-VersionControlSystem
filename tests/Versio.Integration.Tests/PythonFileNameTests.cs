@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using Versio.Core.Diff;
 using Versio.Core.Iec;
-using Versio.Core.Plc.Codesys;
+using Versio.Plc.Codesys;
 using Versio.Core.Projects;
 using Versio.Core.Serialization;
 using Xunit;
@@ -37,8 +37,7 @@ namespace Versio.Integration.Tests;
 [Trait("Category", "Integration")]
 public sealed class PythonFileNameTests(ITestOutputHelper output)
 {
-    private static readonly string Scripts = Path.Combine(
-        Core.Tests.TestPaths.Root, "src", "Versio.Scripts.Codesys");
+    private static readonly string Scripts = Core.Tests.TestPaths.Scripts;
 
     /// <summary>Run <c>object_path</c> over one directory and name.</summary>
     /// <remarks>
@@ -432,8 +431,7 @@ public sealed class PythonFileNameTests(ITestOutputHelper output)
 [Trait("Category", "Integration")]
 public sealed class PythonFileNameParityTests(ITestOutputHelper output)
 {
-    private static readonly string Scripts = Path.Combine(
-        Core.Tests.TestPaths.Root, "src", "Versio.Scripts.Codesys");
+    private static readonly string Scripts = Core.Tests.TestPaths.Scripts;
 
     /// <summary>
     /// Names chosen to hit every branch on both sides.

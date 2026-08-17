@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Versio.Core.Plc;
 
 namespace Versio.Core.Serialization;
 

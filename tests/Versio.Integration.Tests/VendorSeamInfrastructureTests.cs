@@ -38,13 +38,14 @@ public sealed class VendorSeamInfrastructureTests
     /// Namespaces in <c>Versio.Infrastructure</c> that must know nothing about any brand.
     /// </summary>
     /// <remarks>
-    /// <c>Versio.Infrastructure.Plc</c> is absent for the same reason <c>Versio.Core.Plc</c> is
-    /// absent from the list in <c>VendorSeamTests</c>: it is the seam itself, and
-    /// <c>PlcToolchains</c> holds the factory that names the one vendor built so far. Phase C
-    /// moves that to the application's composition root and this list should then grow by one.
+    /// <c>Versio.Infrastructure.Plc</c> is now IN the list. It could not be until 2026-08-17:
+    /// <c>PlcToolchains</c> held a factory naming CODESYS, so the namespace defining the seam
+    /// was the one crossing it. The vendor moved into its own assembly and the factory moved to
+    /// the application's composition root, so the seam has nothing brand-specific left in it.
     /// </remarks>
     private static readonly string[] NeutralNamespaces =
     [
+        "Versio.Infrastructure.Plc",
         "Versio.Infrastructure.Bindings",
         "Versio.Infrastructure.FileSystem",
         "Versio.Infrastructure.Git",
@@ -54,11 +55,7 @@ public sealed class VendorSeamInfrastructureTests
     ];
 
     /// <summary>The vendor namespaces this assembly may reach into from its seam, and nowhere else.</summary>
-    private static readonly string[] VendorNamespaces =
-    [
-        "Versio.Core.Plc.Codesys",
-        "Versio.Infrastructure.Plc.Codesys",
-    ];
+    private static readonly string[] VendorNamespaces = ["Versio.Plc."];
 
     public static TheoryData<string> Neutral => [.. NeutralNamespaces];
 

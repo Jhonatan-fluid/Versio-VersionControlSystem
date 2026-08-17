@@ -1,6 +1,7 @@
 using Versio.Core.Bindings;
+using Versio.Core.Plc;
 
-namespace Versio.Core.Plc.Codesys;
+namespace Versio.Plc.Codesys;
 
 /// <summary>
 /// CODESYS 3.5's project-file conventions.
@@ -157,7 +158,7 @@ public sealed class CodesysProjectFormat : IPlcProjectFormat
     /// <remarks>Delegates to <see cref="CodesysImportPlanner"/>, where the reasoning lives —
     /// this class is the seam's phone book, not its brain.</remarks>
     public ImportPlan PlanImport(
-        Projects.ProjectManifest? manifest,
+        Versio.Core.Projects.ProjectManifest? manifest,
         IReadOnlyList<MirrorFile> mirror,
         IReadOnlyDictionary<string, string> departed) =>
         CodesysImportPlanner.Plan(manifest, mirror, departed);
@@ -177,11 +178,11 @@ public sealed class CodesysProjectFormat : IPlcProjectFormat
     /// <summary>CODESYS's own words for its own tree. Null for anything IEC 61131-3 names.</summary>
     /// <remarks>
     /// Returning null for <c>POU</c> and <c>ACTION</c> is deliberate rather than an omission:
-    /// those belong to the standard, <see cref="Projects.ObjectTypeNames"/> falls through to it,
+    /// those belong to the standard, <see cref="Versio.Core.Projects.ObjectTypeNames"/> falls through to it,
     /// and a vendor repeating them here would be the first step back towards one table nobody
     /// can partition.
     /// </remarks>
-    public Projects.ObjectTypeName? DisplayNameFor(string type) =>
+    public Versio.Core.Projects.ObjectTypeName? DisplayNameFor(string type) =>
         CodesysObjectTypeNames.TryFor(type);
 
 }

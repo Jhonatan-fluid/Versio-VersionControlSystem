@@ -25,7 +25,7 @@ public sealed class SwapDirectoryTests
 {
     private static string Exporter() =>
         File.ReadAllText(Path.Combine(
-            TestPaths.Root, "src", "Versio.Scripts.Codesys", "versio_export.py"));
+            TestPaths.Scripts, "versio_export.py"));
 
     [Fact]
     public void The_exporter_and_the_ignore_plan_use_the_same_names()

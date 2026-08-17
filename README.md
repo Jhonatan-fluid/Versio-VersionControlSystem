@@ -148,8 +148,8 @@ Versio.sln
 │  │  │                         the standard's object-type names
 │  │  ├─ Locking/               lock records, reboot-survival recovery policy
 │  │  ├─ Logging/               ring buffer, correlation ids, heartbeat
-│  │  ├─ Plc/                   the vendor seam: IPlcRunner, PlcJob, PlcResult, PlcFormats
-│  │  │  └─ Codesys/            one vendor: GUID table, XML shape, profiles, wire protocol
+│  │  ├─ Plc/                   the vendor seam: IPlcRunner, PlcJob, PlcResult, PlcVendor,
+│  │  │                         PlcFormats — and nothing that names a brand
 │  │  ├─ Projects/              the manifest, the export-coverage report, the library
 │  │  │                         catalog, the object-type dispatch and the project tree
 │  │  ├─ Sync/                  state machine, hash gate, suppressor, breaker, commit gate
@@ -162,14 +162,21 @@ Versio.sln
 │  │  ├─ Logging/               rolling file sink
 │  │  ├─ Platform/              clock, machine identity, process probe
 │  │  ├─ Plc/                   toolchain registry, stand-in for an absent toolchain
-│  │  │  └─ Codesys/            process host, install locator, script extractor
 │  │  └─ Watching/              the OS-level file and repository watchers
 │  │
-│  └─ Versio.Scripts.Codesys/   IronPython 2.7, run inside CODESYS. Embedded into
-│                               Versio.Infrastructure as resources. The pure modules
-│                               (text, types, decl, yaml, libraries, tasks,
-│                               native_equiv) import no scriptengine and run on
-│                               CPython too, which is what the parity tests use.
+│  ├─ Versio.Plc.Codesys/       ONE VENDOR, pure. GUID table, XML shape, profiles, wire
+│  │                            protocol, import planner, CODESYS's own tree vocabulary.
+│  │                            Versio.Core has no reference to this — that is the rule,
+│  │                            and the compiler is what enforces it.
+│  │
+│  └─ Versio.Plc.Codesys.Infrastructure/
+│                               ONE VENDOR, driven. Process host, install locator, script
+│                               extractor, and CodesysPack.Register().
+│     └─ Scripts/               IronPython 2.7, run inside CODESYS, embedded into this
+│                               assembly as resources. The pure modules (text, types,
+│                               decl, yaml, libraries, tasks, native_equiv) import no
+│                               scriptengine and run on CPython too, which is what the
+│                               parity tests use.
 ├─ tests/
 │  ├─ Versio.Core.Tests/        1,494 unit tests — pure, no IO, under a second
 │  ├─ Versio.App.Tests/         480 tests that build the real windows and panels against
@@ -226,25 +233,42 @@ listen to `IsExpanded` independently rather than one calling the other.
 Versio started CODESYS-only and will grow to other PLC toolchains, so the code is split
 three ways and the namespaces say which is which:
 
-| Namespace | Scope | Example |
+| Project | Scope | Example |
 |---|---|---|
-| `Versio.Core.Plc` | **Neutral contracts** every vendor implements | `IPlcRunner`, `PlcJob`, `PlcResult`, `PlcFormats` |
-| `Versio.Core.Plc.Codesys` | **One vendor.** Object-type GUIDs, native XML shape, `CODESYS.exe` invocation, the ScriptEngine protocol | `CodesysObjectType`, `ProfileResolver` |
-| `Versio.Core.Iec` | **The IEC 61131-3 standard**, shared by every vendor | `StTextCodec`, `StDeclarationParser` |
+| `Versio.Core` → `Plc/` | **Neutral contracts** every vendor implements | `IPlcRunner`, `PlcJob`, `PlcResult`, `PlcFormats` |
+| `Versio.Core` → `Iec/` | **The IEC 61131-3 standard**, shared by every vendor | `StTextCodec`, `StDeclarationParser`, `IecObjectTypeNames` |
+| **`Versio.Plc.Codesys`** | **One vendor, pure.** Object-type GUIDs, native XML shape, the import planner, the ScriptEngine protocol, CODESYS's own words for its tree | `CodesysObjectType`, `ProfileResolver` |
+| **`Versio.Plc.Codesys.Infrastructure`** | **One vendor, driven.** Finding the install, starting `CODESYS.exe`, unpacking the embedded python | `LocalCodesysRunner`, `CodesysPack` |
 | everything else | **Vendor-neutral.** git, diff, sync, locking, watching, logging, bindings | `SyncOrchestrator`, `GitCliClient` |
+
+**Those are projects, not folders, and that is the whole point.** Until 2026-08-17 the vendor
+lived in the namespace `Versio.Core.Plc.Codesys` *inside* `Versio.Core`, so the rule below was
+checkable only by a reflection test reading namespace strings — and such a test cannot see a
+static call, a string literal, or a type hiding inside a generic until somebody teaches it to,
+which took three separate goes. `Versio.Core` now has **no project reference** to either pack, so
+a leak is a compiler error.
 
 Structured Text is a *standard*, not a CODESYS feature — putting it under `Iec` means a
 second vendor inherits the codec, the declaration parser and the syntax highlighting rather
 than reimplementing them.
 
-**Adding a vendor** means implementing `IPlcRunner`, `IPlcProjectFormat` and `IPlcToolchain`,
-and registering the format with `PlcFormats`. Nothing in `Sync/`, `Git/`, `Locking/`,
-`Watching/`, `Projects/` or `Diff/` may change — **if it does, vendor knowledge has leaked past
-the seam, and the leak is the bug.**
+**Adding a vendor** means a new project implementing `IPlcRunner`, `IPlcProjectFormat` and
+`IPlcToolchain`, one `ProjectReference` from `Versio.App`, and one `Register()` call in
+`App.xaml.cs` beside the existing `CodesysPack.Register()`. Nothing in `Sync/`, `Git/`,
+`Locking/`, `Watching/`, `Projects/` or `Diff/` may change — **if it does, vendor knowledge has
+leaked past the seam, and the leak is the bug.**
 
-That rule is now enforced by `VendorSeamTests`, which reads assembly metadata and fails the
-build on a leak. It had to be: the rule was stated from the start and was not true — the sync
-orchestrator was built directly on CODESYS types until 2026-08-12.
+Three things enforce that, and all three had to be built because the rule was stated from the
+start and was not true:
+
+- **The project graph.** `Versio.Core` cannot see a vendor pack, so the compiler refuses.
+- **`VendorSeamTests` / `VendorSeamInfrastructureTests`**, which read assembly metadata —
+  signatures, generic arguments, string constants and the literals compiled into method bodies.
+  The first version read signatures only and was green while three vendor names sat in neutral
+  namespaces as strings.
+- **`SecondVendorTests`**, which stands up a second vendor and drives it, because
+  `PlcFormats.Register` had **zero callers** until 2026-08-16 — the mechanism the whole
+  architecture rests on had never once run.
 
 ### The one architectural rule
 

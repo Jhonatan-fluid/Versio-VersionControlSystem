@@ -25,7 +25,7 @@ namespace Versio.App.Tests;
 /// </remarks>
 internal sealed class CapturingToolchain : IPlcToolchain, IPlcRunner
 {
-    public IPlcProjectFormat Format => Versio.Core.Plc.Codesys.CodesysProjectFormat.Instance;
+    public IPlcProjectFormat Format => Versio.Plc.Codesys.CodesysProjectFormat.Instance;
 
     /// <summary>Every job the application asked to be run, in order.</summary>
     public List<PlcJob> Jobs { get; } = [];

@@ -53,25 +53,25 @@ public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) 
     /// <summary>Export a project that already exists, to a directory of its own.</summary>
     private async Task<string> ExportAgainAsync(string project, string outLabel)
     {
-        var install = new Versio.Infrastructure.Plc.Codesys.CodesysLocator()
+        var install = new Versio.Plc.Codesys.Infrastructure.CodesysLocator()
             .FindInstalls().FirstOrDefault(i => i.Profiles.Count > 0);
         Skip.If(install is null, "no CODESYS installation with a profile");
 
         var exportRoot = Path.Combine(_root, outLabel);
 
-        var runner = new Versio.Infrastructure.Plc.Codesys.LocalCodesysRunner(
+        var runner = new Versio.Plc.Codesys.Infrastructure.LocalCodesysRunner(
             install!.ExecutablePath,
-            new Versio.Infrastructure.Plc.Codesys.ScriptExtractor(),
+            new Versio.Plc.Codesys.Infrastructure.ScriptExtractor(),
             new TestLogger(output));
 
         var result = await runner.RunAsync(
-            new Versio.Core.Plc.Codesys.CodesysJob
+            new Versio.Plc.Codesys.CodesysJob
             {
-                Operation = Versio.Core.Plc.Codesys.CodesysOperation.Export,
+                Operation = Versio.Plc.Codesys.CodesysOperation.Export,
                 Profile = install.Profiles[0],
                 Projects =
                 [
-                    new Versio.Core.Plc.Codesys.ProjectJob
+                    new Versio.Plc.Codesys.ProjectJob
                     {
                         BindingId = "b-coverage",
                         ProjectPath = project,
@@ -86,7 +86,7 @@ public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) 
 
     private async Task<string> ExportAsync(string label)
     {
-        var install = new Versio.Infrastructure.Plc.Codesys.CodesysLocator()
+        var install = new Versio.Plc.Codesys.Infrastructure.CodesysLocator()
             .FindInstalls().FirstOrDefault(i => i.Profiles.Count > 0);
         Skip.If(install is null, "no CODESYS installation with a profile");
 
@@ -99,21 +99,21 @@ public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) 
         var project = Path.Combine(work, "RefrigeratorControl.project");
         File.Copy(fixture, project);
 
-        var runner = new Versio.Infrastructure.Plc.Codesys.LocalCodesysRunner(
+        var runner = new Versio.Plc.Codesys.Infrastructure.LocalCodesysRunner(
             install!.ExecutablePath,
-            new Versio.Infrastructure.Plc.Codesys.ScriptExtractor(),
+            new Versio.Plc.Codesys.Infrastructure.ScriptExtractor(),
             new TestLogger(output));
 
         var exportRoot = Path.Combine(work, "RefrigeratorControl");
 
         var result = await runner.RunAsync(
-            new Versio.Core.Plc.Codesys.CodesysJob
+            new Versio.Plc.Codesys.CodesysJob
             {
-                Operation = Versio.Core.Plc.Codesys.CodesysOperation.Export,
+                Operation = Versio.Plc.Codesys.CodesysOperation.Export,
                 Profile = install.Profiles[0],
                 Projects =
                 [
-                    new Versio.Core.Plc.Codesys.ProjectJob
+                    new Versio.Plc.Codesys.ProjectJob
                     {
                         BindingId = "b-coverage",
                         ProjectPath = project,
@@ -508,7 +508,7 @@ public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) 
     [SkippableFact]
     public async Task An_import_and_a_re_export_leave_the_mirror_byte_identical()
     {
-        var install = new Versio.Infrastructure.Plc.Codesys.CodesysLocator()
+        var install = new Versio.Plc.Codesys.Infrastructure.CodesysLocator()
             .FindInstalls().FirstOrDefault(i => i.Profiles.Count > 0);
         Skip.If(install is null, "no CODESYS installation with a profile");
 
@@ -522,20 +522,20 @@ public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) 
         File.Copy(fixture, project);
 
         var mirror = Path.Combine(work, "RefrigeratorControl");
-        var runner = new Versio.Infrastructure.Plc.Codesys.LocalCodesysRunner(
+        var runner = new Versio.Plc.Codesys.Infrastructure.LocalCodesysRunner(
             install!.ExecutablePath,
-            new Versio.Infrastructure.Plc.Codesys.ScriptExtractor(),
+            new Versio.Plc.Codesys.Infrastructure.ScriptExtractor(),
             new TestLogger(output));
 
-        async Task RunAsync(Versio.Core.Plc.Codesys.CodesysOperation operation)
+        async Task RunAsync(Versio.Plc.Codesys.CodesysOperation operation)
         {
-            var job = new Versio.Core.Plc.Codesys.CodesysJob
+            var job = new Versio.Plc.Codesys.CodesysJob
             {
                 Operation = operation,
                 Profile = install.Profiles[0],
                 Projects =
                 [
-                    new Versio.Core.Plc.Codesys.ProjectJob
+                    new Versio.Plc.Codesys.ProjectJob
                     {
                         BindingId = "g10", ProjectPath = project, Path = mirror,
                     },
@@ -547,13 +547,13 @@ public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) 
             Assert.True(result.Succeeded, result.FailureReason ?? $"{operation} failed");
         }
 
-        await RunAsync(Versio.Core.Plc.Codesys.CodesysOperation.Export);
+        await RunAsync(Versio.Plc.Codesys.CodesysOperation.Export);
         var before = Fingerprint(mirror);
 
         // The round trip. Nothing is edited: this is P7's measurement, which found the mirror
         // moving anyway.
-        await RunAsync(Versio.Core.Plc.Codesys.CodesysOperation.Import);
-        await RunAsync(Versio.Core.Plc.Codesys.CodesysOperation.Export);
+        await RunAsync(Versio.Plc.Codesys.CodesysOperation.Import);
+        await RunAsync(Versio.Plc.Codesys.CodesysOperation.Export);
 
         var after = Fingerprint(mirror);
 

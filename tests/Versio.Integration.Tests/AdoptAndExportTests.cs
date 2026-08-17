@@ -1,13 +1,13 @@
 using Versio.Core.Bindings;
 using Versio.Core.Locking;
-using Versio.Core.Plc.Codesys;
+using Versio.Plc.Codesys;
 using Versio.Core.Sync;
 using Versio.Infrastructure.Bindings;
 using Versio.Infrastructure.FileSystem;
 using Versio.Infrastructure.Git;
 using Versio.Infrastructure.Platform;
 using Versio.Infrastructure.Plc;
-using Versio.Infrastructure.Plc.Codesys;
+using Versio.Plc.Codesys.Infrastructure;
 using Xunit;
 using Xunit.Abstractions;
 

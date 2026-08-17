@@ -24,6 +24,24 @@ public static class TestPaths
     public static string Project(string name) =>
         Path.Combine(Fixtures, "projects", name);
 
+    /// <summary>
+    /// The python, on disk rather than embedded.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The parity tests read the SOURCE, deliberately: their subject is the script a person
+    /// edits, and comparing the embedded copy would only ever prove the last build agreed with
+    /// itself.
+    /// </para>
+    /// <para>
+    /// <b>Here rather than spelled out at each call site.</b> Three tests hardcoded
+    /// <c>src/Versio.Scripts.Codesys</c>, and all three broke together when the scripts moved
+    /// into the vendor pack — the same reason this class exists at all, one directory along.
+    /// </para>
+    /// </remarks>
+    public static string Scripts =>
+        Path.Combine(Root, "src", "Versio.Plc.Codesys.Infrastructure", "Scripts");
+
     private static string FindRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

@@ -2,9 +2,11 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using Versio.Core.Logging;
-using Versio.Core.Plc.Codesys;
+using Versio.Core.Plc;
+using Versio.Infrastructure.Plc;
+using Versio.Plc.Codesys;
 
-namespace Versio.Infrastructure.Plc.Codesys;
+namespace Versio.Plc.Codesys.Infrastructure;
 
 /// <summary>
 /// Writes the embedded python scripts to a temp directory so CODESYS can run them.

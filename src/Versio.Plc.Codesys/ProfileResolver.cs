@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
+using Versio.Core.Plc;
 
-namespace Versio.Core.Plc.Codesys;
+namespace Versio.Plc.Codesys;
 
 /// <summary>One CODESYS installation found on this machine.</summary>
 public sealed record CodesysInstall

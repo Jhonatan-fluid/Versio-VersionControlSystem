@@ -1,7 +1,7 @@
 using System.Collections.ObjectModel;
 using Versio.App.Mvvm;
 using Versio.Core.Logging;
-using Versio.Core.Plc.Codesys;
+using Versio.Plc.Codesys;
 
 namespace Versio.App.ViewModels;
 

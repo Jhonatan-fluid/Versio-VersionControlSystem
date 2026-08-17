@@ -1,7 +1,8 @@
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.RegularExpressions;
-using Versio.Core.Plc.Codesys;
+using System.Text;
+using Versio.Core.Plc;
+using Versio.Plc.Codesys;
 
 namespace Versio.Core.Serialization;
 

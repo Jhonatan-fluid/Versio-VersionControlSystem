@@ -1,5 +1,5 @@
 using Versio.Core.Plc;
-using Versio.Core.Plc.Codesys;
+using Versio.Plc.Codesys;
 using Versio.Core.Projects;
 using Xunit;
 

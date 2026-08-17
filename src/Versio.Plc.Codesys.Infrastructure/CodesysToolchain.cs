@@ -1,8 +1,9 @@
 using Versio.Core.Logging;
 using Versio.Core.Plc;
-using Versio.Core.Plc.Codesys;
+using Versio.Infrastructure.Plc;
+using Versio.Plc.Codesys;
 
-namespace Versio.Infrastructure.Plc.Codesys;
+namespace Versio.Plc.Codesys.Infrastructure;
 
 /// <summary>
 /// CODESYS 3.5, as something the application can ask for by vendor rather than by name.

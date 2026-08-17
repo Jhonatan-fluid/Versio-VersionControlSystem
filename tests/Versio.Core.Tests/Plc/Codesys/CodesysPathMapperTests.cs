@@ -1,5 +1,5 @@
 using Versio.Core.Bindings;
-using Versio.Core.Plc.Codesys;
+using Versio.Plc.Codesys;
 using Versio.Core.Serialization;
 using Xunit;
 

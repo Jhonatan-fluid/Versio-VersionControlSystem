@@ -1,4 +1,6 @@
-namespace Versio.Core.Plc.Codesys;
+using Versio.Core.Plc;
+
+namespace Versio.Plc.Codesys;
 
 /// <summary>
 /// How CODESYS's own chatter is labelled in the log.

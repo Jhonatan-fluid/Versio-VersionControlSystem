@@ -35,10 +35,10 @@ public sealed class VendorSeamTests
 
     /// <summary>Namespaces that must know nothing about any particular brand.</summary>
     /// <remarks>
-    /// <c>Versio.Core.Plc</c> is deliberately absent: it is the seam itself, and
-    /// <c>PlcFormats</c> holds the registry that names the one vendor built so far. Phase C of
-    /// the restructure moves that registration out to the application's composition root, at
-    /// which point this list should grow by one.
+    /// <c>Versio.Core.Plc</c> is absent from THIS list and checked separately below. It is the
+    /// seam itself, and it names the four well-known vendors on purpose — so "contains no brand
+    /// name" is the wrong assertion for it, and "contains exactly these four" is the right one.
+    /// Everything else about it is held to the same rules as the rest.
     /// </remarks>
     private static readonly string[] NeutralNamespaces =
     [
@@ -54,7 +54,17 @@ public sealed class VendorSeamTests
         "Versio.Core.Logging",
     ];
 
-    public static TheoryData<string> Neutral => [.. NeutralNamespaces];
+    /// <summary>
+    /// The seam. Held to the type rules with everything else, from 2026-08-17.
+    /// </summary>
+    /// <remarks>
+    /// It could not be, until the vendor moved into its own assembly: <c>PlcFormats</c> held
+    /// <c>[CodesysProjectFormat.Instance]</c> in a field initialiser, so the one namespace whose
+    /// job is to define the seam was the one namespace that crossed it.
+    /// </remarks>
+    private const string Seam = "Versio.Core.Plc";
+
+    public static TheoryData<string> Neutral => [.. NeutralNamespaces, Seam];
 
     [Theory]
     [MemberData(nameof(Neutral))]
@@ -71,7 +81,7 @@ public sealed class VendorSeamTests
     public void A_neutral_namespace_does_not_depend_on_a_vendor_type(string ns)
     {
         var offenders = VendorSeamScanner
-            .VendorTypeReferences(Core, ns, "Versio.Core.Plc.")
+            .VendorTypeReferences(Core, ns, "Versio.Plc.")
             .Distinct(StringComparer.Ordinal)
             .ToList();
 
@@ -110,6 +120,42 @@ public sealed class VendorSeamTests
             .ToList();
 
         Assert.Empty(found);
+    }
+
+    [Fact]
+    public void The_seam_names_the_four_well_known_vendors_and_no_others()
+    {
+        // Versio.Core.Plc is the one place in this assembly allowed to write a brand down, and
+        // PlcVendor's well-known statics are why. So the assertion is not "no brands" - it is
+        // "exactly these brands", which fails just as loudly on a fifth one appearing as the
+        // neutral rule does on a first.
+        //
+        // A fifth vendor belongs in its own pack, named by whoever registers it. Adding a static
+        // here would put it back in the assembly the whole rule exists to keep clean.
+        var brands = VendorSeamScanner
+            .VendorNamingLiterals(Core, [Seam])
+            .Concat(VendorSeamScanner.VendorNamingConstants(Core, [Seam]))
+            .SelectMany(found => VendorSeamScanner.VendorNames.Where(
+                v => found.Contains(v, StringComparison.Ordinal)))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(v => v, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.Equal(["Codesys", "Studio5000", "TiaPortal", "TwinCat"], brands);
+    }
+
+    [Fact]
+    public void No_neutral_namespace_can_even_see_the_vendor_pack()
+    {
+        // The compiler enforces this now, and this test says so out loud: Versio.Core has no
+        // project reference to Versio.Plc.Codesys, so a leak is a build failure rather than a
+        // reflection test's opinion. If this ever passes trivially because somebody added the
+        // reference back, the assertion below is what notices.
+        var referenced = Core.GetReferencedAssemblies().Select(a => a.Name).ToList();
+
+        Assert.DoesNotContain("Versio.Plc.Codesys", referenced);
+        Assert.DoesNotContain("Versio.Plc.Codesys.Infrastructure", referenced);
+        Assert.DoesNotContain("Versio.Infrastructure", referenced);
     }
 
     [Fact]

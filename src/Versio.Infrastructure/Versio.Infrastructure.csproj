@@ -11,17 +11,8 @@
     <ProjectReference Include="..\Versio.Core\Versio.Core.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <!-- Command-line construction is internal but must be regression-tested: the quoting
-         CODESYS accepts is not what .NET's ArgumentList produces. -->
-    <InternalsVisibleTo Include="Versio.Integration.Tests" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- Scripts travel inside the assembly and are written to a temp directory at run time,
-         so they always match the app version. A stale copy on disk would be very hard to
-         diagnose from the symptoms. -->
-    <EmbeddedResource Include="..\Versio.Scripts.Codesys\*.py" LinkBase="Scripts" />
-  </ItemGroup>
+  <!-- The CODESYS command-line InternalsVisibleTo and the embedded python both moved to
+       Versio.Plc.Codesys.Infrastructure with the code they belong to. Nothing vendor-specific
+       is left in this project, which is the point of the split. -->
 
 </Project>

@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 using Versio.Core.Projects;
-using Versio.Core.Plc.Codesys;
+using Versio.Plc.Codesys;
 using Xunit;
 
 namespace Versio.Core.Tests.Plc.Codesys;

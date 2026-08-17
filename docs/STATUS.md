@@ -985,6 +985,63 @@ would have gone on passing while checking one fewer every time a panel moved out
 
 Written down with their evidence, because the reasoning is worth more than the fix.
 
+### The vendor seam is a project boundary now, not a namespace and a reflection test
+
+**Done 2026-08-17.** CODESYS lived in the namespace `Versio.Core.Plc.Codesys` *inside*
+`Versio.Core`, and in `Versio.Infrastructure.Plc.Codesys` inside `Versio.Infrastructure`, with
+its python in a loose `src/Versio.Scripts.Codesys/` folder no project owned. So the central
+architectural rule — *nothing outside the vendor's own corner may know about CODESYS* — was
+checkable only by a test reading namespace strings.
+
+**A reflection test cannot see what a compiler sees.** Over three commits it had to be taught,
+separately, about string constants, about literals compiled into method bodies (including inside
+lambdas), and about types hiding in generic arguments — and it still could not have caught B3's
+leak, where a neutral namespace declared one vendor's *vocabulary* as though it were everybody's.
+Each of those was a real leak sitting under a green suite.
+
+`Versio.Core` and `Versio.Infrastructure` now have **no project reference** to
+`Versio.Plc.Codesys` or `Versio.Plc.Codesys.Infrastructure`. A leak is a build failure.
+
+| | |
+|---|---|
+| Moved | 12 pure files, 5 infrastructure files, 12 python modules |
+| Namespaces | `Versio.Core.Plc.Codesys` → `Versio.Plc.Codesys`; `Versio.Infrastructure.Plc.Codesys` → `Versio.Plc.Codesys.Infrastructure` |
+| Files touched by the rename | 54 |
+| `Versio.Core` references to a pack | **0** |
+
+**The namespaces were renamed rather than kept.** A namespace called `Versio.Core.*` living in a
+different assembly misleads every reader and every namespace-based tool — including the seam
+scanner, which filters by namespace and would have been quietly asserting about the wrong thing.
+
+**Two namespaces joined the neutral list**, which is the visible payoff: `Versio.Core.Plc` and
+`Versio.Infrastructure.Plc` are the namespaces that *define* the seam, and until today each one
+crossed it — `PlcFormats` held `[CodesysProjectFormat.Instance]` and `PlcToolchains` a factory
+naming CODESYS. `Versio.Core.Plc` is checked with one deliberate exception, asserted rather than
+exempted: it names **exactly** the four well-known vendors, so a fifth static appearing there
+fails just as loudly as a first brand appearing anywhere else.
+
+**What made it cheap, and it was measured before starting rather than hoped for.** Only two
+compile-time references crossed the seam in all of `src` — `PlcFormats.cs:23` and
+`PlcToolchains.cs:29` — and both were lines C2 deleted anyway. `ScriptExtractor` resolves through
+`typeof(ScriptExtractor).Assembly` and filters on the `.py` suffix rather than a hardcoded
+resource prefix, so the code and its resources moved together with **no code change at all**.
+
+**The ordering in the plan was wrong, and the dependency graph said so.** C1 was to move the
+files and C2 to remove the hardcoded registrations. That cannot work: while `PlcFormats`
+references `CodesysProjectFormat`, moving that type out makes `Versio.Core` depend on a project
+that depends on `Versio.Core`. C2 ran first.
+
+**The python folder finally has an owner.** `src/Versio.Scripts.Codesys/` was in no solution, so
+nothing built it, nothing showed it in an IDE, and its documented rebuild trap — edit a `.py`,
+run the suite without building, and test the copy embedded at the *last* build — followed
+directly from having no project identity.
+
+**And nothing fast was watching the embedding.** Every test that touches `ScriptExtractor` is
+CODESYS-tagged, so a broken `EmbeddedResource` glob would have left the 19-second lane entirely
+green and surfaced only in a 31-minute run, as CODESYS failing to start over a missing script.
+`EmbeddedScriptTests` now asserts all twelve are present, in milliseconds, and narrowing the glob
+to one file takes it red.
+
 ### The registries were constants with a mutator bolted on
 
 **Found 2026-08-16, fixed 2026-08-17.** `PlcFormats` held

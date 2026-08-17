@@ -1,6 +1,7 @@
 using System.Text.Json;
+using Versio.Core.Plc;
 
-namespace Versio.Core.Plc.Codesys;
+namespace Versio.Plc.Codesys;
 
 /// <summary>One JSON-lines event emitted by a Versio python script.</summary>
 public sealed record ScriptEvent

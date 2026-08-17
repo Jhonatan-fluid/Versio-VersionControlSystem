@@ -61,7 +61,7 @@ public sealed class VendorSeamScannerTests
         // argument, an array element, and a generic whose vendor type is the SECOND argument -
         // which a naive "first type argument" unwrap would miss.
         var found = VendorSeamScanner
-            .VendorTypeReferences(Here, Fixtures, "Versio.Core.Plc.Codesys")
+            .VendorTypeReferences(Here, Fixtures, "Versio.Plc.Codesys")
             .ToList();
 
         Assert.Contains(found, f => f.Contains("CodesysProjectFormat", StringComparison.Ordinal));

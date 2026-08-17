@@ -1,4 +1,4 @@
-using Versio.Core.Plc.Codesys;
+using Versio.Plc.Codesys;
 
 namespace Versio.Core.Tests.Plc.SeamFixtures;
 
