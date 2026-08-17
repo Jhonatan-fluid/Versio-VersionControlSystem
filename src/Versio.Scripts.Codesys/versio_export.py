@@ -21,8 +21,8 @@ import scriptengine  # type: ignore
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from versio_text import (content_hash, join_st, normalize_decl_only,  # noqa: E402
-                         line_sketch, safe_file_stem, scrub_native_xml,
-                         split_st)
+                         line_sketch, object_path, safe_file_stem,
+                         scrub_native_xml, split_st)
 from versio_types import (EXPORT_ONLY_FORMS, FORM_CONTAINER,  # noqa: E402
                           FORM_GVL_BOTH, FORM_GVL_NATIVE, FORM_LIBRARIES,
                           FORM_NATIVE, FORM_NATIVE_R, FORM_NATIVE_WITH_CHILDREN,
@@ -375,7 +375,7 @@ class Exporter(object):
         emit({"t": "preserved", "path": rel_path.replace("\\", "/")})
         return old
 
-    def export_libraries(self, obj, object_path, rel_path):
+    def export_libraries(self, obj, obj_path, rel_path):
         """Render one library manager's references as neutral YAML.
 
         This is the object whose absence started the coverage report: a library
@@ -393,7 +393,7 @@ class Exporter(object):
             on_error=lambda code, detail: self.warn(code, rel_path, detail))
 
         name = safe(lambda: obj.get_name(), u"Library Manager")
-        text = versio_libraries.catalog_document(versio_yaml, name, object_path, refs)
+        text = versio_libraries.catalog_document(versio_yaml, name, obj_path, refs)
 
         # Said out loud, at Info: this is the one export form whose whole point is
         # content that used to be invisible, and "0 references" is a real answer that
@@ -403,7 +403,7 @@ class Exporter(object):
               "system": len([r for r in refs if r.get("systemLibrary")])})
         return text
 
-    def export_tasks(self, obj, object_path, rel_path):
+    def export_tasks(self, obj, obj_path, rel_path):
         """Render one task configuration's tasks as neutral YAML.
 
         Unlike the library file beside it, this one is IMPORTABLE and is the authoritative
@@ -417,7 +417,7 @@ class Exporter(object):
             on_error=lambda code, detail: self.warn(code, rel_path, detail))
 
         name = safe(lambda: obj.get_name(), u"Task Configuration")
-        text = versio_tasks.catalog_document(versio_yaml, name, object_path, tasks)
+        text = versio_tasks.catalog_document(versio_yaml, name, obj_path, tasks)
 
         # Said out loud, at Info, for the same reason the library count is: this is state
         # that used to be an opaque XML blob in the diff, and "how many tasks" is a
@@ -443,7 +443,12 @@ class Exporter(object):
         """
         name = safe(lambda: obj.get_name(), None)
         if name is None:
-            self.warn("UNNAMED_OBJECT", rel_dir)
+            # object_path with no name, not a raw rel_dir. This is the earliest way an
+            # object can vanish - before `total`, before a form, before any record or
+            # skip - so the directory is the entire description of it that will ever
+            # exist, and ExportCoverage reads this code and prints that directory. A
+            # backslash in it makes the one clue unsearchable.
+            self.warn("UNNAMED_OBJECT", object_path(rel_dir, None))
             return
         type_guid = safe(lambda: str(obj.type), "")
         obj_type = type_of(type_guid)
@@ -451,7 +456,7 @@ class Exporter(object):
         has_decl = bool(safe(lambda: obj.has_textual_declaration, False))
 
         if obj_type == "UNKNOWN":
-            self.warn("UNKNOWN_TYPE_GUID", rel_dir + "/" + name, type_guid)
+            self.warn("UNKNOWN_TYPE_GUID", object_path(rel_dir, name), type_guid)
 
         # Read once and reused: an unmapped type's form depends on whether it HAS children,
         # and asking CODESYS twice for the same list is both wasteful and a chance for the
@@ -472,7 +477,12 @@ class Exporter(object):
             # One spelling of the path, shared by the manifest and the log line. Two would
             # mean a reader comparing the log against _manifest.json sees different strings
             # for the same object and has to work out whether that means anything.
-            skip_path = (rel_dir + "/" + name).replace("\\", "/").lstrip("/")
+            #
+            # This was the only site that honoured that, and it was stated here rather
+            # than anywhere the other four callers would see it - so the two warnings did
+            # not. versio_text.object_path is the rule now; the rest of the argument is
+            # in its docstring.
+            skip_path = object_path(rel_dir, name)
 
             self.skips.append({
                 # No guid. CODESYS re-mints the project-level __VisualizationStyle's guid on
@@ -549,14 +559,14 @@ class Exporter(object):
                 self.record(obj, obj_type, FORM_TASK_NATIVE, xml_path, xml_text,
                             parent_guid)
 
-                object_path = (rel_dir + "/" + name).replace("\\", "/").lstrip("/")
-                text = self.export_tasks(obj, object_path, rel_path)
+                obj_path = object_path(rel_dir, name)
+                text = self.export_tasks(obj, obj_path, rel_path)
                 write_text(abs_path, text)
                 self.record(obj, obj_type, form, rel_path, text, parent_guid)
 
             elif form == FORM_LIBRARIES:
-                object_path = (rel_dir + "/" + name).replace("\\", "/").lstrip("/")
-                text = self.export_libraries(obj, object_path, rel_path)
+                obj_path = object_path(rel_dir, name)
+                text = self.export_libraries(obj, obj_path, rel_path)
                 write_text(abs_path, text)
                 self.record(obj, obj_type, form, rel_path, text, parent_guid)
 
@@ -566,7 +576,12 @@ class Exporter(object):
                 text, _ = self.export_native(obj, abs_path, form == FORM_NATIVE_R)
                 self.record(obj, obj_type, form, rel_path, text, parent_guid)
         except Exception as e:
-            self.warn("EXPORT_FAILED", rel_dir + "/" + name, str(e))
+            # object_path, not rel_dir + "/" + name. This warning is the ONLY record
+            # that the object exists: the exception unwinds past every record() call in
+            # the try above, so a failed object reaches neither `objects` nor `skipped`.
+            # ExportCoverage reads this code now and prints the path in the panel, so it
+            # has to be the same string the skips use or it matches nothing.
+            self.warn("EXPORT_FAILED", object_path(rel_dir, name), str(e))
             return
 
         if form == FORM_NATIVE_WITH_CHILDREN:

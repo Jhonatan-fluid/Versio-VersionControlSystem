@@ -196,6 +196,51 @@ def content_hash(text):
     return u"sha256:" + hashlib.sha256(data).hexdigest()
 
 
+def object_path(rel_dir, name):
+    """How one object is spelled when a PERSON is going to read it.
+
+    ONE SPELLING, and it exists because there were two. The exporter builds this
+    string in five places - a skip record, a task configuration's object path, a
+    library manager's, and two warnings - and the three that reach _manifest.json
+    normalised it while the two that reach `warnings` did not. So the same object
+    was `App/Thing` in the skips and `\\App/Thing` in the warnings, mixing
+    separators and keeping a leading slash from an empty rel_dir at the root.
+
+    The comment beside the skip version said exactly why that must not happen -
+    "a reader comparing the log against _manifest.json sees different strings for
+    the same object and has to work out whether that means anything" - and the
+    rule was applied to the three callers written beside it and to neither of the
+    others. A rule stated in a comment is a rule with as many copies as it has
+    call sites; this is the copy that runs.
+
+    It matters more than tidiness now that ExportCoverage reads EXPORT_FAILED:
+    the panel names the failed object in a sentence, and a name with a stray
+    backslash in it is a name somebody cannot search the mirror for.
+
+    Here rather than in versio_export.py because that module imports scriptengine
+    at import time and therefore cannot be loaded under CPython at all - a rule
+    living in it is a rule nothing can test.
+
+    AN EMPTY NAME IS A REAL CASE, not defensive padding. UNNAMED_OBJECT fires when
+    get_name() itself raises, so the only thing the caller has left is the directory
+    - and that caller was the one site still passing a raw os.path.join result when
+    the other four had been converted. Handled as its own branch rather than by
+    stripping a trailing slash off the joined form, because a CODESYS object name
+    may legitimately contain "/" and an rstrip would silently eat one.
+
+    IT CHANGES ONE EXISTING ANSWER, said plainly rather than glossed as a no-op. An
+    object whose get_name() RETURNS "" - as opposed to raising, which is the case
+    above - used to spell as "Dir/" and now spells as "Dir". Nothing in either
+    fixture has one, so no committed byte moves; the new answer is the better of the
+    two; and it is written down because "identical for the callers that had a name"
+    was the claim, and it is true only for names that are not empty.
+    """
+    if not name:
+        return rel_dir.replace(u"\\", u"/").lstrip(u"/")
+
+    return (rel_dir + u"/" + name).replace(u"\\", u"/").lstrip(u"/")
+
+
 _INVALID_WIN = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 # Long enough for any object name a person types, short enough that a deep CODESYS
 # folder chain plus this still clears Windows' 260-character path limit.

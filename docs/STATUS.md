@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-16 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,485 unit + 480 UI + 230 integration, 0 skipped
+**Date:** 2026-08-16 · **Commits:** `git rev-list --count HEAD` · **Tests:** 1,493 unit + 480 UI + 237 integration, 0 skipped
 · *(integration now runs ~30 min, not the 10–16 it did before the import feature checklist added
 13 tests; run three times end to end on 2026-08-16 with no flake, plus every affected test
 individually — see the flake note in `CLAUDE.md`, which is about earlier runs)*
@@ -164,7 +164,7 @@ opens. That is `SAFEGUARDS.md` phases 1–8, and phase 9 is features rather than
 
 ```
   CODESYS pipeline    ████████████████████  proven on a real project
-  Domain core         ████████████████████  1,485 tests, under 400 ms
+  Domain core         ████████████████████  1,493 tests, under 400 ms
   Vendor seam         ████████████████████  enforced from assembly metadata
   Infrastructure      ████████████████████  drives real CODESYS + real git
   Desktop shell       ███████████████████░  full git surface, diff, and a UI audit applied
@@ -316,8 +316,9 @@ unless something changes.
 > [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md), whose *Handoff* section is the one to read
 > first, and whose **feature checklist** is what says which of its 49 behaviours have been run
 > against a real project and which have not. **Phases 0–5 there are complete and Phase 6 is part
-> done**; what is left of it is **G8 and G9**, and G9 is the one with a real-world failure behind
-> it rather than tidy-up.
+> done**; what is left of it is **G8 and G9**, and G9 is the bigger of the two. **It is
+> reachable by arithmetic, not by a field report** — see the correction in the import plan's G9
+> row, and the Finding below on what an export that loses an object used to report.
 
 > **The second queue — the code-shape work — is CLOSED, and three of its items were closed by
 > deciding not to do them.** It never had any bearing on what the product does. What was worth
@@ -962,6 +963,115 @@ would have gone on passing while checking one fewer every time a panel moved out
 ## Findings
 
 Written down with their evidence, because the reasoning is worth more than the fix.
+
+### An export that lost an object reported full coverage, and `Warnings` had no reader
+
+**Found 2026-08-16 by tracing G9 rather than by building it.** The gap says the total path is
+unguarded; the question asked before writing the guard was what happens today when it is
+missed, and the answer was worse than the missing guard.
+
+`versio_export.py` wraps every object's write in one `except`. When it fires, the handler warns
+and **returns before `record()`** — so the object is in neither `objects` nor `skipped`. It
+exists in `warnings` and nowhere else.
+
+`ExportCoverage.Of` read `manifest.Skipped`, filtered to `NOT_IMPLEMENTED`, and **never looked
+at `manifest.Warnings` at all**. So:
+
+```
+object throws on write  →  EXPORT_FAILED warning, no record
+                        →  ExportCoverage.Of sees an empty skip list
+                        →  CoverageVerdict.Complete
+                        →  panel: "Everything in this project reaches the mirror."
+                        →  commit gate offers a mirror with the object missing from it
+                        →  run reports Completed
+```
+
+**`ProjectManifest.Warnings` was parsed, typed, and documented — "what the export noticed and
+could not act on" — and read by nothing in the codebase.** Every `.Warnings` reference in
+`Versio.Core` was `plan.Warnings` or `result.Warnings`. That is the rolling-file-sink shape:
+every part of the mechanism present except the one that makes it visible.
+
+**It is the third recurrence of this class's own subject, and the first through a warning.**
+`TASK_NATIVE` and `GVL_NATIVE` both arrived as a *form* the coverage rules did not name; this
+arrived as a code they did not read. `ExportCoverage`'s remarks already say what the first two
+cost — "no line in `_coverage.md`, no lock glyph in the panel, nothing in the manifest".
+
+**The second door, found by re-reading the same function afterwards.** `UNNAMED_OBJECT` has the
+identical shape and is one step *earlier*: `get_name()` raises, the walk warns and returns
+before `self.total` is incremented, so the object is missing from the walk count as well as
+from both lists. **Its docstring three lines above promises the opposite** — "unmapped type
+GUIDs are exported natively and warned about, never dropped: a newer CODESYS adding a type must
+not silently lose objects" — which is true of the line below it and false of this one. Closing
+`EXPORT_FAILED` alone would have been G7-patched-and-G12-missed exactly.
+
+**So the fix is a rule, not two constants.** `ExportCoverage.IsFailure(code)` is the single
+authority on "this object is not in the mirror at all", the same shape as `IsExportOnly` and
+for the same reason. `Every_exporter_warning_is_classified_as_losing_an_object_or_not` scans
+the **embedded** script for every `self.warn("…")` code and fails when one is neither in
+`IsFailure` nor in an explicit harmless list — so the next warning added to the exporter is a
+decision somebody makes rather than a door nobody notices. `UNKNOWN_TYPE_GUID` is the harmless
+one, and it earns its place in the test: it warns and then *falls through* to a form, so the
+object is exported and recorded. Not every warning is a loss, and a rule that said so would put
+a red line on exports that are fine.
+
+**Why the pure suite could never have caught the spelling, measured rather than assumed.** Every
+`ExportCoverageTests` fixture is built from `ExportCoverage`'s own constants, so both sides of
+the comparison move together. Setting `FailureCode` to `EXPORT_FAILEDX` left **all 1,492 unit
+tests green**. `ScriptContractTests` exists for that: it reads the script through
+`ScriptExtractor` — the **embedded** copy, the one that runs — and pins the code, the skip
+reason, and the path spelling. This is the C#/python drift `CODESYS.md` §9 counts four instances
+of, one level down: not two algorithms disagreeing, but one side reading a literal the other
+side stopped writing.
+
+**And the path in that sentence was not a path.** Five sites in the exporter build an object's
+path from `rel_dir` and `name`; the three that reach `_manifest.json` normalised it and the two
+that reach `warnings` did not — so the same object was `App/Thing` in the skips and
+`\App/Thing` in the warnings, mixing separators and keeping a leading slash at the project
+root. **The comment beside the normalised one states the rule** — "one spelling of the path,
+shared by the manifest and the log line" — and it was stated where only the callers written
+beside it would ever see it. It stopped being cosmetic the moment the panel began printing the
+`EXPORT_FAILED` path in a sentence: a name with a stray backslash is a name nobody can search
+the mirror for. `versio_text.object_path` is the one home now, in the pure module rather than
+in `versio_export.py`, which imports `scriptengine` at import time and therefore cannot be
+loaded under CPython at all — a rule living in it is a rule nothing can test.
+
+**And the second pass over the fix found the fix incomplete.** `UNNAMED_OBJECT` was added to
+`IsFailure` and left passing a **raw `rel_dir`** into `warn` — so the one code this change
+taught the panel to print was the one site still spelling its path with `os.path.join`'s
+backslashes, while the other four had been converted. Nothing failed: the path-spelling test
+forbade the inline `rel_dir + "/" + name` expression and a bare `rel_dir` is not that
+expression. **A test written against the shape of the defect you just fixed does not cover the
+shape you did not.** `object_path` takes a nameless object now — as its own branch, because a
+CODESYS name may legitimately contain `/` and stripping a trailing slash would eat one — and
+the test forbids the raw form by name.
+
+**And the invariant claimed more than it checked.** `Every_exporter_warning_is_classified…`
+scanned for `self.warn("CODE"` — the exporter's own literals — and there are four more codes
+that reach `manifest.warnings` without ever appearing beside a `warn` in `versio_export.py`:
+the library and task readers raise theirs through an `on_error` callback the exporter hands
+them. **A test named "every" that covers one of two spellings is the door it was written to
+close**, so the scan now reads all three modules and both forms. The four are
+`recordedAnyway` with their reason stated — the file *is* written and recorded, with content
+that may be short of what the project holds, which is a different unanswered question and one
+this repository does not measure yet. `PROJECT_CLOSE_FAILED` stays out and correctly: it goes
+to `emit` rather than through `warn`, so it never enters the manifest at all.
+
+**One limit found the same way and left alone, deliberately.** A two-file object records its
+first half before writing its second, so a `GVL_BOTH` whose `.gvl.st` throws is in `objects`
+*and* in `warnings`. Reporting it as not exported is right — the declaration really is not in
+the mirror — but "1 object not exported" undercounts what survived. Stated on `FailureCode`
+rather than fixed; the alternative was to say nothing, which is the state this exists to end.
+
+**Mutation-checked, six ways**, because most of this change is a rule and rules pass silently:
+stop failures reaching the verdict → 3 red; gut the extracted gap clause → 4 red, which is what
+says the pure move kept its coverage; misspell `FailureCode` → the pin only, and 0 red in the
+pure suite; drop `UnnamedCode` from `IsFailure` → the invariant, naming the code in its message;
+reintroduce an inline path spelling in the exporter → the shape test; gut `object_path`'s
+normalisation → 2 red in the python behaviour tests.
+
+**What this does not do.** It makes a failed export *visible*; it does not stop one happening.
+G9 is still open and is still the next thing — but its fix is now a guard on a path rather than
+a guard on a silence, which is a much smaller thing to get right.
 
 ### The two ST codecs disagreed about four characters, and a rename is what it would have cost
 

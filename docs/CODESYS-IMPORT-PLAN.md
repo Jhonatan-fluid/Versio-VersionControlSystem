@@ -2,7 +2,8 @@
 
 **Date:** 2026-08-16 · **Phases 0, 4, 1, 2, 3 and 5 are COMPLETE.** **Phase 6 is part
 done** — the codec parity test and the integration breadth landed on 2026-08-16; **G8 and G9
-are what is left of it, and G9 is the one with a real-world failure behind it.** (Dates below read
+are what is left of it, and G9 is the bigger of the two.** Its silence is closed: an export that
+loses an object used to report full coverage, and does not now. (Dates below read
 2026-08-15 for work that ran past midnight into the 16th; the git log is the authority on when
 anything landed.)
 
@@ -89,7 +90,7 @@ amount of reading, because it does not exist on the first cycle.
 | G6 | **Stray files go to `import_native`** — a `README.md` in the mirror is handed to CODESYS as native XML | ✅ **CLOSED by Phase 1, 2026-08-15.** A file that is neither a recorded object, bookkeeping, nor a recognisable source is skipped with a warning and never handed to the toolchain — including unrecorded YAML, and files appearing between planning and execution (`NOT_IN_PLAN`). **Proven live** with a real `README.md` in `ImportLoggingTests` |
 | G7 | **Task Configuration mutated on every import** — `Core2` `-1`→`-2`; documented as "diff-only", which it never was | ✅ **CLOSED by Phase 4, 2026-08-15.** `Core2` reads `-2,-1` across four consecutive snapshots where it used to move on the first cycle, and `Task Configuration.xml` has dropped out of the churn set entirely. **`-2,-1` is `MainTask,VISU_TASK`, and only the second number was ever the defect** — the baseline capture has MainTask at `-2` already, so **VISU_TASK's `-1` is the one G7 destroyed** and the one an integration test now asserts. Worth knowing before reading a diff of this file: a run where both read `-2` is the bug, not a run where either does |
 | G8 | **Managed library references unproven** — every fixture reference is a placeholder, so the `managed_library` branch has never executed | **Half closed**: P9 produces a real managed reference in one call, so no hand-built fixture is needed. (This row used to say 34 references; the Library Manager reports **21**) |
-| G9 | **Total path length unguarded** — stems capped at 80, the full path is not, and `.versio_staging` makes it 16 longer | Open, and **entirely ours**: P8 shows CODESYS imposes no limit of its own |
+| G9 | **Total path length unguarded** — stems capped at 80, the full path is not, and `.versio_staging` makes it 16 longer | Open, and **entirely ours**: P8 shows CODESYS imposes no limit of its own. **Reachable by arithmetic; not observed in the field** — see the correction below. **Its silence is closed** (2026-08-16): an object the export cannot write is now reported instead of vanishing behind a `Complete` verdict |
 | **G10** | **Import → export is not byte-stable.** `UniqueIdGenerator` **44 → 47 → 50 → 53**, +3 per cycle, never settling | ✅ **CLOSED by Phase 5, 2026-08-16.** `Measure-ImportStability.ps1` prints **`P7: SETTLES`** with zero differences on all three cycles and the counter flat at **44 → 44 → 44 → 44**. The export keeps the bytes already in the mirror when the fresh payload is `versio_native_equiv`-equivalent to them, and the substitution happens **before** `record()` hashes anything — which is why `_manifest.json` settles too. Was, before the fix: Of the eight native files touched: three visualisations climb on the counter, `GlobalTextList.xml` churns with **no counter at all**, `Task Configuration.xml` moves once then settles, three are byte-stable. **Four of eight forever, from two causes** — not "every file", and not just the counter |
 | **G11** | **Every import after the first fails on task configuration and reports success.** `import_native` throws `Collection was modified` at `Project.GetUniqueName` on `MainTask` and `VISU_TASK`; the summary still reads `failed: 0` | ✅ **CLOSED by Phase 4, 2026-08-15.** Three import→export cycles with the compile cache present: **zero warnings on every one**, where cycles 2 and 3 used to throw twice each. `native: 8 → 7`, the task XML skipped as `TYPED_SIBLING`. **Versio never deletes CODESYS's compile cache** — the trigger is simply never reached |
 | **G12** | **A GVL's declaration is applied and then overwritten by its own XML**, and the import reports `applied … (declaration)` either way | ✅ **CLOSED 2026-08-16, the same day it was found by the feature checklist rather than by reading anything.** The `.gvl.xml` is recorded `GVL_NATIVE`, which `ExportCoverage.IsExportOnly` names — so a GVL has exactly one importable file and the edit reaches the project. **The shape is now an invariant rather than a habit**: `An_object_never_writes_two_files_the_import_would_both_apply` asserts, against a real export, that no object writes two files the import applies, which is what neither G7 nor this had. `GVL_BOTH` writes a `.gvl.st` recorded `ST_DECL` and a `.gvl.xml` recorded plain `NATIVE`; the phases run textual before native, so the XML puts the old declaration back. **G7 in a different object** — `TASK_BOTH` escapes only because Phase 4 gave its XML half its own `TASK_NATIVE` form, and `ExportCoverage.IsExportOnly` names `LIBRARIES` and `TASK_NATIVE` and nothing else. Proven by a control run that skips the `.gvl.xml` and changes nothing else, after which the edit survives. The three candidate fixes and what each costs are in [`STATUS.md`](STATUS.md) |
@@ -1097,6 +1098,18 @@ the **existing bytes**.
   `is_managed` / `is_placeholder` are how they are told apart. **If it still turns out awkward,
   mark the branch unproven in `versio_libraries.py` and stop** — an untested branch that says so
   is honest; one that is quietly assumed to work is the thing this gap already was.
+- ✅ **G9's silence, closed 2026-08-16 — the half that had to go first.** Traced before the
+  guard was written: when the exporter cannot write an object it warns and returns *before*
+  `record()`, so the object is in neither `objects` nor `skipped`, and `ExportCoverage.Of` read
+  `skipped` only. The verdict came back `Complete`, the panel said everything reached the
+  mirror, and the commit gate offered a mirror with an object missing from it.
+  `ProjectManifest.Warnings` had **no reader in the codebase**. `ExportCoverage.IsFailure` is
+  the rule now, covering `EXPORT_FAILED` **and** `UNNAMED_OBJECT` — the second door, one step
+  earlier, found by re-reading the same function and missed by the first pass exactly as G7 was
+  missed by the fix for it. `ScriptContractTests` pins the codes against the **embedded**
+  script and fails when the exporter grows one nothing classifies. It generalises past path
+  length: every export exception was invisible, and the guard fixes one cause. See the Finding
+  in [`STATUS.md`](STATUS.md).
 - **G9** — guard the **total** path in the exporter, measured against the staging path since it is
   the longer of the two. **P8 confirms nothing upstream will help**: CODESYS accepted ten nested
   40-character folders, ~420 characters, without complaint. Shorten deeper segments or adopt
@@ -1180,10 +1193,31 @@ additive, each is unavailable until the next export, and **absent never means "u
 **Next, in order:**
 
 1. **Phase 6 — what is left of it is G8 and G9.** The parity tests and the integration breadth
-   landed on 2026-08-16. **G9 is the one with a real-world failure behind it**: stems are
-   capped at 80 characters, the total path is not, and `.versio_staging` makes the longer of
-   the two 16 characters longer again — so a real machine project with a deep folder chain
-   reaches `MAX_PATH` and P8 confirmed CODESYS will not stop it. G8 is cheap since P9.
+   landed on 2026-08-16. G8 is cheap since P9.
+
+   **G9, with its evidence corrected.** This document said three times that G9 "has a
+   real-world failure behind it", and **nothing in the repository supports that**. What
+   exists is P8 — a measurement of *CODESYS's* tolerance, ~420 characters without complaint —
+   and the path-like-name leak, which was found in a real mirror and is a different problem,
+   already closed by `Shortened()`. **Nobody has watched an export hit `MAX_PATH`.** It is the
+   "a story that fits, recorded as a fact" shape this file has caught itself in twice before,
+   propagated across two documents unchallenged.
+
+   **It is real anyway, and by worse arithmetic than the gap row assumed.** `MaxStem = 80`'s
+   own remarks say 80 was chosen so "a deep CODESYS folder chain plus this still clears
+   Windows' 260-character path limit". Two things make that false:
+
+   - the shortened branch returns `tail[..80] + "~" + digest6` — **87 characters, not 80**;
+   - `file_name_for` prefixes a member with its owner, so a METHOD, PROPERTY, ACTION or
+     TRANSITION file name is **two capped stems**: 87 + 1 + 87 + `.action` + `.st` = **185
+     characters**, every one of them legal under the cap.
+
+   185 + `Device\Plc Logic\Application\` (29) + `\plc\<project>.versio_staging\` (~40) is
+   **254 below the repository root**, so `C:\GIT\Versio` reaches **267**. There is no
+   repository root short enough, and no deep folder chain is needed — which is what the gap
+   row assumed. **Measure before building**: P8's scratch project already exists, so export
+   into it and watch what today actually does before writing the guard. Fix `MaxStem`'s
+   remarks and the parent-prefixed doubling on **both** sides of the parity test while there.
 
 2. **The two rows the corpus still cannot reach: E2 and E4.** Both need an object whose name
    requires percent-encoding, and P5 measured that CODESYS refuses to *create* one — so no

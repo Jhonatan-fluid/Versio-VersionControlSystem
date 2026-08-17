@@ -40,6 +40,107 @@ public sealed class PythonFileNameTests(ITestOutputHelper output)
     private static readonly string Scripts = Path.Combine(
         Core.Tests.TestPaths.Root, "src", "Versio.Scripts.Codesys");
 
+    /// <summary>Run <c>object_path</c> over one directory and name.</summary>
+    /// <remarks>
+    /// Tab-separated rather than JSON because the inputs are two plain strings and the
+    /// output is one — the same file-passing argument as <see cref="Stem"/>, since a
+    /// <c>rel_dir</c> is exactly the thing that carries backslashes.
+    /// </remarks>
+    private string ObjectPath(string relDir, string? name)
+    {
+        var input = Path.GetTempFileName();
+        var result = Path.GetTempFileName();
+        var script = Path.GetTempFileName() + ".py";
+
+        try
+        {
+            File.WriteAllText(input, relDir + "\t" + name, new System.Text.UTF8Encoding(false));
+            File.WriteAllText(script, $"""
+                import io, sys
+                sys.path.insert(0, r"{Scripts}")
+                import versio_text
+                rel_dir, name = io.open(r"{input}", encoding="utf-8").read().split("\t")
+                out = versio_text.object_path(rel_dir, name)
+                io.open(r"{result}", "w", encoding="utf-8").write(out)
+                """);
+
+            using var python = Process.Start(new ProcessStartInfo
+            {
+                FileName = "python",
+                Arguments = $"\"{script}\"",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                StandardOutputEncoding = System.Text.Encoding.UTF8,
+            });
+
+            var stderr = python!.StandardError.ReadToEnd();
+            python.WaitForExit();
+            Assert.True(python.ExitCode == 0, stderr);
+
+            return File.ReadAllText(result, new System.Text.UTF8Encoding(false));
+        }
+        finally
+        {
+            File.Delete(input);
+            File.Delete(result);
+            File.Delete(script);
+        }
+    }
+
+    [SkippableFact]
+    public void An_object_at_the_project_root_has_no_leading_slash()
+    {
+        // rel_dir is EMPTY at the root, so the naive spelling produces "/Device" — a path
+        // that matches nothing in the manifest and reads, to anybody who knows unix, as
+        // absolute. This is the case the two warning sites got wrong for as long as they
+        // existed, and it is the one the panel now prints when an export fails.
+        Skip.IfNot(PythonIsAvailable(), "python is not on PATH");
+
+        Assert.Equal("Device", ObjectPath(string.Empty, "Device"));
+    }
+
+    [SkippableFact]
+    public void A_windows_separator_from_os_path_join_is_normalised_to_a_forward_slash()
+    {
+        // rel_dir is built with os.path.join, so on Windows it arrives with backslashes
+        // while the literal joining it to the name is a forward slash. Mixed, the same
+        // object is spelled two ways in one file — and _manifest.json, _coverage.md, the
+        // log and the panel are all supposed to agree on one string.
+        Skip.IfNot(PythonIsAvailable(), "python is not on PATH");
+
+        Assert.Equal("Device/Plc Logic/Application",
+                     ObjectPath("Device\\Plc Logic", "Application"));
+    }
+
+    [SkippableFact]
+    public void An_object_whose_name_could_not_be_read_is_spelled_the_same_way()
+    {
+        // UNNAMED_OBJECT fires when get_name() itself raises, so the directory is the whole
+        // description of the object that will ever exist — and it is the site that was STILL
+        // passing a raw os.path.join result after the other four had been converted. Caught by
+        // re-reading this change rather than by any of its own tests.
+        Skip.IfNot(PythonIsAvailable(), "python is not on PATH");
+
+        Assert.Equal("Device/Plc Logic", ObjectPath("Device\\Plc Logic", null));
+
+        // And at the project root there is no directory either. The empty string has to come
+        // back cleanly rather than as "/" — ExportCoverage prints this.
+        Assert.Equal(string.Empty, ObjectPath(string.Empty, null));
+    }
+
+    [SkippableFact]
+    public void An_ordinary_nested_object_is_left_alone()
+    {
+        // The non-vacuous half. A rule that rewrote every path would satisfy both tests
+        // above and quietly repoint every record in the manifest.
+        Skip.IfNot(PythonIsAvailable(), "python is not on PATH");
+
+        Assert.Equal("Device/Plc Logic/Application/FB_Pump",
+                     ObjectPath("Device/Plc Logic/Application", "FB_Pump"));
+    }
+
     /// <summary>Run <c>safe_file_stem</c> over one name and return what it produced.</summary>
     private string Stem(string name)
     {
