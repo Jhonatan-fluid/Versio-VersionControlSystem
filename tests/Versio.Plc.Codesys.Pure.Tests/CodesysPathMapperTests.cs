@@ -285,6 +285,17 @@ public class PathMapperTests
         Assert.Equal(expected, PathMapper.SuffixFor(form));
     }
 
+    [Fact]
+    public void The_catalog_suffix_matches_the_neutral_readers()
+    {
+        // The shell recognises changed catalogs by Versio.Core's LibraryCatalog.FileSuffix
+        // before any manifest is parsed; this vendor writes the files it will recognise.
+        // Two constants in two assemblies that must agree, pinned from the side that is
+        // allowed to see both — Core cannot reference this project to check.
+        Assert.Equal(Versio.Core.Projects.LibraryCatalog.FileSuffix,
+            PathMapper.SuffixFor(ExportForm.Libraries));
+    }
+
     [Theory]
     [InlineData(@"a\b\c", "a/b/c")]
     [InlineData("/a/b", "a/b")]

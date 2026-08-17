@@ -91,6 +91,37 @@ public sealed record LibraryReference
         !string.IsNullOrEmpty(Version) ? Version
         : !string.IsNullOrEmpty(Redirection) ? Redirection
         : DefaultResolution;
+
+    /// <summary>Whether two references record the same facts.</summary>
+    /// <remarks>
+    /// <para>
+    /// Not <c>Equals</c>, because the generated record equality compares
+    /// <see cref="Parameters"/> by reference — two references with identical parameter pairs
+    /// read as different, and every fresh parse allocates a fresh dictionary.
+    /// </para>
+    /// <para>
+    /// Written as record equality over clones whose dictionaries are swapped for one shared
+    /// instance, rather than as a field-by-field comparison, so that a field added to this
+    /// type later is compared without anyone remembering to extend a list here. A hand-written
+    /// comparison that silently ignored a new field would mark a changed library as unchanged,
+    /// which is the failure this method exists to report.
+    /// </para>
+    /// </remarks>
+    public bool ContentEquals(LibraryReference other)
+    {
+        if (this with { Parameters = NoParameters } != other with { Parameters = NoParameters })
+        {
+            return false;
+        }
+
+        return Parameters.Count == other.Parameters.Count &&
+               Parameters.All(p =>
+                   other.Parameters.TryGetValue(p.Key, out var value) &&
+                   string.Equals(p.Value, value, StringComparison.Ordinal));
+    }
+
+    private static readonly IReadOnlyDictionary<string, string> NoParameters =
+        new Dictionary<string, string>(StringComparer.Ordinal);
 }
 
 /// <summary>
@@ -107,6 +138,18 @@ public sealed record LibraryReference
 /// </remarks>
 public sealed record LibraryCatalog
 {
+    /// <summary>
+    /// What every catalog file's name ends with, whichever vendor exported it.
+    /// </summary>
+    /// <remarks>
+    /// Part of the neutral format, not a vendor detail: the file is
+    /// <c>&lt;manager&gt;.libraries.yaml</c> for the same reason its fields are vendor-neutral,
+    /// and the shell needs the suffix to know which changed files have a HEAD copy worth
+    /// fetching <i>before</i> any manifest has been parsed. The CODESYS path mapper carries
+    /// the same string on the writing side; a parity test pins the two together.
+    /// </remarks>
+    public const string FileSuffix = ".libraries.yaml";
+
     /// <summary>
     /// Document format version, so an older file is not mistaken for a complete one.
     /// </summary>

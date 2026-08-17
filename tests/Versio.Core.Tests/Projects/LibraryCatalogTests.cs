@@ -289,4 +289,45 @@ public sealed class LibraryCatalogTests
             Assert.False(r.PublishSymbols);
         });
     }
+
+    [Fact]
+    public void Two_parses_of_one_document_are_content_equal()
+    {
+        // Record equality answers false here, because each parse allocates a fresh
+        // Parameters dictionary and records compare dictionaries by reference. ContentEquals
+        // exists precisely for this pair; if this test fails, every library row in the tree
+        // shows as modified on every refresh.
+        const string yaml = "schema: 1\nreferences:\n  - name: Util\n    parameters:\n" +
+                            "      IBLOCKSIZE: \"22800\"\n";
+
+        var a = Assert.Single(LibraryCatalog.Parse(yaml).References);
+        var b = Assert.Single(LibraryCatalog.Parse(yaml).References);
+
+        Assert.True(a.ContentEquals(b));
+    }
+
+    [Theory]
+    [InlineData("", "    redirection: \"Util, 3.5.19.0 (System)\"\n")]
+    [InlineData("", "    optional: true\n")]
+    [InlineData("", "    namespace: Renamed\n")]
+    [InlineData("", "    parameters:\n      IBLOCKSIZE: \"4096\"\n")]
+    [InlineData("    parameters:\n      IBLOCKSIZE: \"22800\"\n",
+                "    parameters:\n      IBLOCKSIZE: \"4096\"\n")]
+    [InlineData("    parameters:\n      IBLOCKSIZE: \"22800\"\n",
+                "    parameters:\n      IBLOCKSIZE: \"22800\"\n      EXTRA: \"1\"\n")]
+    public void Any_recorded_difference_is_a_content_difference(string left, string right)
+    {
+        // Every field the file records is project state a reviewer must see move. Each case
+        // varies exactly one thing, so a comparison that went blind to one field fails the
+        // case for that field instead of passing on the strength of another difference. The
+        // scalar half is record equality over clones — a field added to the type later is
+        // covered without anyone extending a list — and the parameter cases pin the
+        // dictionary half, which is the one part that comparison cannot see.
+        var a = Assert.Single(
+            LibraryCatalog.Parse($"schema: 1\nreferences:\n  - name: Util\n{left}").References);
+        var b = Assert.Single(
+            LibraryCatalog.Parse($"schema: 1\nreferences:\n  - name: Util\n{right}").References);
+
+        Assert.False(a.ContentEquals(b));
+    }
 }

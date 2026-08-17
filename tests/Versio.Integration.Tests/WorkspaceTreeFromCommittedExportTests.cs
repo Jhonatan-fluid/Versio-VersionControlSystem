@@ -280,6 +280,68 @@ public sealed class WorkspaceTreeFromCommittedExportTests(ITestOutputHelper outp
     }
 
     [SkippableFact]
+    public void The_committed_catalogs_hang_their_references_under_both_managers()
+    {
+        // The unit tests hand the builder catalogs a test wrote; this hands it the two
+        // CODESYS actually produced — including the quoting that exists because library
+        // names really contain commas and parentheses — and checks the full path from
+        // committed bytes to rows. The fixture has two managers on purpose: a snapshot
+        // joined to the wrong one would put the application's 21 references under the
+        // project's manager, and no single-manager test can notice that.
+        Skip.If(!File.Exists(ManifestPath), "the fixture's export is not committed");
+
+        var manifest = ProjectManifest.Parse(File.ReadAllText(ManifestPath));
+        var snapshots = manifest.Objects
+            .Where(o => o.Form == ExportCoverage.LibrariesForm)
+            .Select(o => new LibrarySnapshot
+            {
+                Path = $"{ExportPath}/{o.Path}",
+                Current = LibraryCatalog.Parse(File.ReadAllText(Path.Combine(
+                    TestPaths.Root,
+                    ExportPath.Replace('/', Path.DirectorySeparatorChar),
+                    o.Path.Replace('/', Path.DirectorySeparatorChar)))),
+            })
+            .ToList();
+
+        Assert.Equal(2, snapshots.Count);
+
+        var roots = WorkspaceTreeBuilder.Build(
+            [Fixture() with { Libraries = snapshots }], [], KeepClean);
+
+        var managers = Flatten(Assert.Single(roots))
+            .Where(n => n.Type == "LIBRARY_MANAGER")
+            .ToList();
+
+        Assert.Equal(2, managers.Count);
+        foreach (var manager in managers)
+        {
+            var snapshot = snapshots.Single(s =>
+                string.Equals(s.Path, manager.Path, StringComparison.OrdinalIgnoreCase));
+
+            output.WriteLine($"{manager.Path}: {manager.Children.Count} references");
+            Assert.Equal(snapshot.Current.References.Count, manager.Children.Count);
+            Assert.All(manager.Children, c => Assert.Equal(ProjectNodeKind.Library, c.Kind));
+
+            // Chosen before system — the three somebody picked must not be lost among the
+            // eighteen the visualisation plug-in pulled in.
+            var firstSystem = manager.Children.ToList()
+                .FindIndex(c => c.Detail.EndsWith("· system", StringComparison.Ordinal));
+            var lastChosen = manager.Children.ToList()
+                .FindLastIndex(c => !c.Detail.EndsWith("· system", StringComparison.Ordinal));
+            if (firstSystem >= 0 && lastChosen >= 0)
+            {
+                Assert.True(lastChosen < firstSystem,
+                    "a chosen library is sorted among the system ones");
+            }
+        }
+
+        // And one known row, with the pin a reviewer would look for.
+        var application = managers.Single(m => m.Path.Contains("/Application/"));
+        var standard = application.Children.Single(c => c.Name == "Standard");
+        Assert.StartsWith("Standard, 3.5.", standard.Detail);
+    }
+
+    [SkippableFact]
     public void The_coverage_report_is_committed_beside_the_manifest()
     {
         // It is a markdown file in the repository on purpose: a coverage regression then

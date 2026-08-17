@@ -28,6 +28,17 @@ public enum ProjectNodeKind
 
     /// <summary>A changed file that is not part of any export tree.</summary>
     File,
+
+    /// <summary>
+    /// One library reference, read from an exported catalog and drawn under its manager.
+    /// </summary>
+    /// <remarks>
+    /// Not an <see cref="Object"/>: it has no GUID, no files of its own and no diff — its
+    /// facts live inside the manager's one YAML file, which is what selecting it opens. It
+    /// exists as a row so a version bump reads as <i>that library</i> rather than as "the
+    /// library manager changed".
+    /// </remarks>
+    Library,
 }
 
 /// <summary>One node of the project as the engineer thinks about it.</summary>
@@ -99,6 +110,41 @@ public sealed record ProjectTreeNode
     public bool HasChanges => Status != ChangeKind.Unmodified || ChangedDescendants > 0;
 }
 
+/// <summary>
+/// One exported library catalog, with the copy to compare it against.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The catalogs are handed in already parsed rather than read here, for the same reason the
+/// manifest is: reading them is IO and this assembly does none. Whoever builds the tree reads
+/// each <c>*.libraries.yaml</c> the manifest names and, when git reports that file changed,
+/// fetches HEAD's copy too — that pair is what lets the tree say <i>which</i> library moved
+/// instead of only that the manager's file did.
+/// </para>
+/// <para>
+/// <see cref="Baseline"/> is null when there is nothing to compare against: the file is
+/// unchanged, or HEAD has no copy. Null means "mark nothing", not "everything is new" — a
+/// first export adds the manager's file, and drawing its twenty references as twenty additions
+/// would bury the one line git actually has to say about it.
+/// </para>
+/// </remarks>
+public sealed record LibrarySnapshot
+{
+    /// <summary>Repo-relative path of the catalog's YAML file, forward slashes.</summary>
+    /// <remarks>
+    /// The join key: it matches the manager object's own file path in the tree, which is how
+    /// the references find the node they hang under. The catalog's <c>path</c> header names
+    /// the manager's position instead of its file and cannot serve here.
+    /// </remarks>
+    public required string Path { get; init; }
+
+    /// <summary>The catalog as the working tree has it.</summary>
+    public required LibraryCatalog Current { get; init; }
+
+    /// <summary>The catalog as HEAD has it, or null when there is nothing to compare.</summary>
+    public LibraryCatalog? Baseline { get; init; }
+}
+
 /// <summary>What to include when building the tree.</summary>
 public sealed record ProjectTreeOptions
 {
@@ -156,11 +202,15 @@ public static class ProjectTreeBuilder
     /// <param name="exportPath">Repo-relative export root, so manifest paths can be matched
     /// against git's repo-relative ones.</param>
     /// <param name="changes">What git reports for the working tree.</param>
+    /// <param name="libraries">Parsed library catalogs, one per manager, keyed by their file's
+    /// repo-relative path. Empty is the ordinary state of a project whose catalogs have not
+    /// been read, not an error.</param>
     public static ProjectTreeNode Build(
         ProjectManifest manifest,
         string exportPath,
         IReadOnlyList<FileChange> changes,
-        ProjectTreeOptions? options = null)
+        ProjectTreeOptions? options = null,
+        IReadOnlyList<LibrarySnapshot>? libraries = null)
     {
         var opts = options ?? new ProjectTreeOptions();
         var root = exportPath.Replace('\\', '/').Trim('/');
@@ -178,6 +228,8 @@ public static class ProjectTreeBuilder
             .GroupBy(o => string.IsNullOrEmpty(o.Guid) ? o.Path : o.Guid, StringComparer.Ordinal)
             .Select(g => BuildLeaf(g.ToList(), root, status))
             .ToList();
+
+        objects = AttachLibraries(objects, libraries);
 
         // Members hung off their owner before anything is placed in a folder, because a
         // method's folder is its owner's folder — the export writes clsLight.Light.xml beside
@@ -351,6 +403,127 @@ public static class ProjectTreeBuilder
             // owner — a GVL's .st and .xml cannot belong to different function blocks.
             first.Parent);
     }
+
+    /// <summary>Hang each catalog's references under the manager that owns them.</summary>
+    /// <remarks>
+    /// Joined on the manager's file path rather than on its name or GUID, because the snapshot
+    /// was produced by reading a file and the file's path is the one fact both sides hold. A
+    /// snapshot whose path matches no leaf is dropped silently: the manifest is the authority
+    /// on what exists, and a stray catalog must not conjure a manager the export never wrote.
+    /// </remarks>
+    private static List<Leaf> AttachLibraries(
+        List<Leaf> leaves, IReadOnlyList<LibrarySnapshot>? libraries)
+    {
+        if (libraries is null || libraries.Count == 0)
+        {
+            return leaves;
+        }
+
+        var byPath = new Dictionary<string, LibrarySnapshot>(StringComparer.OrdinalIgnoreCase);
+        foreach (var snapshot in libraries)
+        {
+            byPath[snapshot.Path.Replace('\\', '/').Trim('/')] = snapshot;
+        }
+
+        return leaves
+            .Select(l =>
+                byPath.TryGetValue(l.Node.Path, out var snapshot) &&
+                snapshot.Current.IsValid &&
+                LibraryNodes(l.Node, snapshot) is { Count: > 0 } children
+                    ? l with { Node = WithChildren(l.Node, children) }
+                    : l)
+            .ToList();
+    }
+
+    /// <summary>One row per library reference, marked against the baseline when there is one.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A null or unreadable baseline marks nothing.</b> The manager's own row already
+    /// carries the file's git state; without an old copy to compare against, per-library marks
+    /// would be guesses, and a fresh export's twenty references drawn as twenty additions
+    /// would bury the one thing that happened.
+    /// </para>
+    /// <para>
+    /// <b>A reference deleted from the catalog still gets a row</b>, from the baseline's copy
+    /// of it — a library that silently vanished from the panel is indistinguishable from one
+    /// that was never referenced, and removal is exactly the change a reviewer must see.
+    /// </para>
+    /// <para>
+    /// <b>Chosen libraries sort before system ones.</b> On the fixture, 18 of 21 references
+    /// are system libraries pulled in by the visualisation plug-in; listed alphabetically
+    /// beside them, the three somebody actually chose are lost in the middle of the list.
+    /// </para>
+    /// </remarks>
+    private static List<ProjectTreeNode> LibraryNodes(
+        ProjectTreeNode manager, LibrarySnapshot snapshot)
+    {
+        var baseline = snapshot.Baseline is { IsValid: true } b
+            ? b.References
+                .GroupBy(r => r.Name, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal)
+            : null;
+
+        var rows = new List<(LibraryReference Reference, ChangeKind Status)>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var reference in snapshot.Current.References)
+        {
+            if (!seen.Add(reference.Name))
+            {
+                continue;
+            }
+
+            var status =
+                baseline is null ? ChangeKind.Unmodified
+                : !baseline.TryGetValue(reference.Name, out var old) ? ChangeKind.Added
+                : reference.ContentEquals(old) ? ChangeKind.Unmodified
+                : ChangeKind.Modified;
+
+            rows.Add((reference, status));
+        }
+
+        if (baseline is not null)
+        {
+            rows.AddRange(baseline.Values
+                .Where(old => !seen.Contains(old.Name))
+                .Select(old => (old, ChangeKind.Deleted)));
+        }
+
+        return rows
+            .OrderBy(r => r.Reference.SystemLibrary)
+            .ThenBy(r => DisplayName(r.Reference), StringComparer.OrdinalIgnoreCase)
+            .Select(r => new ProjectTreeNode
+            {
+                Name = DisplayName(r.Reference),
+
+                // Identity for the row across rebuilds, never shown and never a file. The
+                // raw reference name, not the display name, because the display name is
+                // free to change its mind about which field reads best.
+                Path = $"{manager.Path}::{r.Reference.Name}",
+                Kind = ProjectNodeKind.Library,
+                Detail = Describe(r.Reference),
+
+                // The manager's own file: a library has no file of its own, and selecting
+                // it opens the one place its facts are recorded.
+                Files = manager.Files,
+                Status = r.Status,
+            })
+            .ToList();
+    }
+
+    /// <summary>What the row is called: the name a person chose, not the toolchain's spelling.</summary>
+    private static string DisplayName(LibraryReference reference) =>
+        !string.IsNullOrEmpty(reference.Placeholder) ? reference.Placeholder
+        : !string.IsNullOrEmpty(reference.Title) ? reference.Title
+        : reference.Name;
+
+    /// <summary>The version phrase beside the name, with the system flag when it applies.</summary>
+    private static string Describe(LibraryReference reference) =>
+        reference.SystemLibrary && reference.DisplayVersion.Length > 0
+            ? $"{reference.DisplayVersion} · system"
+            : reference.SystemLibrary
+                ? "system"
+                : reference.DisplayVersion;
 
     /// <summary>Hang every leaf off its folder chain, then roll the badges up.</summary>
     private static ProjectTreeNode Assemble(IReadOnlyList<Leaf> leaves, string name, string path)
