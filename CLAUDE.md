@@ -220,7 +220,9 @@ stays that way.
 | `Versio.Integration.Tests` | 141 | ~10 s | real git |
 | `Versio.Arch.Tests` | 14 | instant | nothing — it reads assembly metadata, IL and the `.csproj` files |
 | `Versio.App.Tests` | 480 | ~50 s, STA, no window shown | nothing |
-| `Versio.Plc.Codesys.Tests` | 386 | **~31 min** | **real CODESYS** |
+| `Versio.Plc.Codesys.Pure.Tests` | 252 | under a second | nothing — the planner, the codecs, the protocol |
+| `Versio.Plc.Codesys.Parity.Tests` | 82 | ~15 s | `python` on PATH — **skips cleanly without it, so check the count, not the colour** |
+| `Versio.Plc.Codesys.Tests` | 52 | **~30 min** | **real CODESYS** — every test launches it, which is the whole cost |
 
 **The loop to work in is everything except the last one:**
 
@@ -228,10 +230,13 @@ stays that way.
 C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Core.Tests
 C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Integration.Tests
 C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Arch.Tests
+C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Plc.Codesys.Pure.Tests
+C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Plc.Codesys.Parity.Tests
 ```
 
-Eleven seconds together, plus fifty for `Versio.App.Tests` when the UI is in play.
-`Versio.Plc.Codesys.Tests` is the gate before a commit.
+About thirty seconds together, plus fifty for `Versio.App.Tests` when the UI is in play.
+`Versio.Plc.Codesys.Tests` is the gate before a commit — and any change to the python touches
+the parity project's subject, so run it before believing a script edit.
 
 **That split used to be a `--filter "Toolchain!=Codesys"` expression** over one integration
 project, policed by a `FastLaneTests` whose whole job was checking the tag had been applied in

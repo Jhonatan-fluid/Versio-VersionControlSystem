@@ -1622,16 +1622,16 @@ earlier test's leftovers could in principle have been doing the work.
 ## Verification
 
 1. `dotnet test tests\Versio.Core.Tests` — pure, ~0.3 s. Carries the bulk of the new coverage.
-2. `dotnet test tests\Versio.Plc.Codesys.Tests --filter PythonFileName` — parity, **62 tests**,
-   ~16 s and **no CODESYS**, despite the project it now lives in.
+2. `dotnet test tests\Versio.Plc.Codesys.Parity.Tests` — **the whole parity project, 82
+   tests**, ~15 s and **no CODESYS**. Since 2026-08-17 these are a project of their own rather
+   than a `--filter` inside the half-hour gate, which is the third time this list has had to
+   re-point at them: 51 tests until 2026-08-16, named `Versio.Integration.Tests` until
+   2026-08-17, then a filter over `Versio.Plc.Codesys.Tests` for a day. A project boundary
+   ends that: no filter to remember, and the count IS the project.
    Needs `python` on PATH and skips cleanly without it, so **a green run on a machine with no
-   python has verified nothing** — check the count, not the colour. (Said 51 until 2026-08-16;
-   and named `Versio.Integration.Tests` until 2026-08-17, a year of muscle memory pointing at a
-   project these tests had left. Same staleness this list warns about one line down, arriving
-   through the structure move rather than through a count.)
-2b. `dotnet test tests\Versio.Plc.Codesys.Tests --filter PythonLibraryRecord` — **20 tests**,
-   ~4 s, no CODESYS. G8's regression half: the managed-library branch, its strict name parse and
-   the two codes it raises. Same python skip, same warning — check the count.
+   python has verified nothing** — check the count, not the colour. G8's regression half — the
+   managed-library branch, its strict name parse and the two codes it raises — is the
+   `PythonLibraryRecord` 20 of the 82.
 3. `tools\codesys\Test-RoundTrip.ps1 … -MutateFirst` — the per-layer verdict stays **PASS**, and
    `Task Configuration.xml` dropped out of the native-differs list when Phase 4 landed.
 4. **The G10 acceptance test:** `tools\codesys\Measure-ImportStability.ps1` must print **`P7: SETTLES`**
@@ -1653,12 +1653,14 @@ earlier test's leftovers could in principle have been doing the work.
    `dotnet test tests\Versio.Plc.Codesys.Tests --filter A_task_priority_edited_in_the_mirror` —
    four CODESYS launches, 72–78 s, and it is the only thing in the repository that fails if the
    typed write stops reaching the project.
-8. **`Versio.Plc.Codesys.Tests` is the gate before a commit** — 386 tests, about half an
-   hour, which is the sort of number that makes somebody kill a run they should have waited out.
-   The loop to work in is `Versio.Core.Tests` and `Versio.Integration.Tests`: 1,437 tests in
-   fifteen seconds, needing no toolchain. That used to be one integration project split by a trait and
-   policed by a `FastLaneTests`; it is a project boundary now, so there is no filter to remember
-   and no tag to forget.
+8. **`Versio.Plc.Codesys.Tests` is the gate before a commit** — 52 tests, about half an
+   hour, and **every one of them launches real CODESYS**, which is the whole cost. The loop
+   to work in is `Versio.Core.Tests`, `Versio.Integration.Tests`,
+   `Versio.Plc.Codesys.Pure.Tests` and `Versio.Plc.Codesys.Parity.Tests`: 1,771 tests in
+   about thirty seconds, needing no toolchain. That used to be one integration project split
+   by a trait and policed by a `FastLaneTests`; it is three project boundaries now, split by
+   need — 334 of the old gate's 386 tests needed no toolchain and surface in seconds since
+   2026-08-17 — so there is no filter to remember and no tag to forget.
 
 **Every path in this list was re-run on 2026-08-17 rather than read**, which is how four of
 them were found pointing at a project or a folder that no longer holds what they name. A

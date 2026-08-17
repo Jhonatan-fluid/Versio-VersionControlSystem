@@ -186,7 +186,11 @@ Versio.sln
 │  │                            needs no filter and cannot accidentally cost half an hour
 │  ├─ Versio.App.Tests/         480 tests that build the real windows and panels against
 │  │                            the real stylesheet on an STA thread — none is ever shown
-│  └─ Versio.Plc.Codesys.Tests/ 386 tests against real CODESYS, ~31 min. The gate before a
+│  ├─ Versio.Plc.Codesys.Pure.Tests/ 252 pure vendor tests — the planner, the codecs, the
+│  │                            protocol — under a second, needing nothing
+│  ├─ Versio.Plc.Codesys.Parity.Tests/ 82 CPython parity tests over the vendor's python,
+│  │                            ~15 s, no CODESYS — python on PATH, skips cleanly without
+│  └─ Versio.Plc.Codesys.Tests/ 52 tests against real CODESYS, ~30 min. The gate before a
 │                               commit, and the only suite that needs a toolchain installed
 ├─ tools/                       PowerShell and python harnesses. Seven of the nine are
 │                               CODESYS-specific probes; New-VersioIcon.ps1 generates the
@@ -328,7 +332,7 @@ dotnet test tests/Versio.Core.Tests
 > `%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe`, or set `DOTNET_ROOT` to it — the same install
 > layout that makes a framework-dependent `Versio.exe` fail to start, noted again below.
 
-**Five suites, and they need different things:**
+**Seven suites, and they need different things:**
 
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|
@@ -336,10 +340,14 @@ dotnet test tests/Versio.Core.Tests
 | `Versio.Integration.Tests` | 141 | a real `git.exe` and the real filesystem | ~10 s |
 | `Versio.Arch.Tests` | 14 | nothing — it reads assembly metadata, IL, and the project files | instant |
 | `Versio.App.Tests` | 480 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
-| `Versio.Plc.Codesys.Tests` | 386 | **a real CODESYS**, and **skips cleanly** without one | **~31 min** |
+| `Versio.Plc.Codesys.Pure.Tests` | 252 | nothing — the vendor's planner, codecs and protocol, pure | under a second |
+| `Versio.Plc.Codesys.Parity.Tests` | 82 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
+| `Versio.Plc.Codesys.Tests` | 52 | **a real CODESYS**, and **skips cleanly** without one | **~30 min** |
 
-The first four are the loop to work in. The last is the gate before a commit — and it is a
+The first six are the loop to work in. The last is the gate before a commit — and it is a
 separate project precisely so that running the loop cannot cost you half an hour by accident.
+Of the 386 tests that used to sit behind that half-hour wall, **334 needed no toolchain at
+all**; they surface in seconds now.
 
 ```bash
 dotnet test

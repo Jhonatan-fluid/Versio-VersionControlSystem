@@ -1,0 +1,56 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <!-- THE VENDOR'S PURE TESTS: everything about CODESYS that needs neither CODESYS nor
+         python. The planner rules, the export form tables, the object-type GUIDs, the
+         stem codec, the native-XML normaliser and scrubber, the wire protocol, the
+         profile resolver against in-memory installs, the vendor boundary, and the script
+         contract read off the embedded sources.
+
+         These ran inside the 31-minute gate, in milliseconds, since the gate was split
+         out of the integration suite - the gate's own header claimed "every test that
+         launches CODESYS, and nothing else", and these were the "else". They cost that
+         suite nothing in time. What they cost was VISIBILITY: a red planner rule
+         surfaced after half an hour of real CODESYS instead of after half a second,
+         which is the exact property the fast/slow split exists to provide, denied to the
+         tests that guard the import's decisions.
+
+         Three vendor test projects now, split by NEED, the same axis the repository
+         already splits Core/Integration/App on: this one needs nothing, Parity.Tests
+         needs python on PATH, and Versio.Plc.Codesys.Tests needs the real toolchain and
+         is the gate. -->
+    <RootNamespace>Versio.Plc.Codesys.Tests</RootNamespace>
+    <!-- RootNamespace stays Versio.Plc.Codesys.Tests: the files moved here unedited, and
+         a namespace that tracks a file's current csproj is churn with no reader - the
+         assembly name is what names this project in a test run. Same choice as
+         Parity.Tests, for the same reason. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="Xunit.SkippableFact" Version="1.5.23" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Versio.Core\Versio.Core.csproj" />
+    <ProjectReference Include="..\..\src\Versio.Infrastructure\Versio.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Versio.Plc.Codesys\Versio.Plc.Codesys.csproj" />
+    <ProjectReference Include="..\..\src\Versio.Plc.Codesys.Infrastructure\Versio.Plc.Codesys.Infrastructure.csproj" />
+    <ProjectReference Include="..\Versio.TestSupport\Versio.TestSupport.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The python type table and the text helpers, beside the tests that read them.
+         TypeTableParityTests (in CodesysObjectTypeTests.cs) compares versio_types.py
+         against the C# enum and reads THIS copy from AppContext.BaseDirectory rather
+         than from source. The items followed the file here from the gate project - "a
+         git mv moves a test; it does not move the data the test needs" is this
+         repository's own finding, and these two items are its second application. -->
+    <None Include="..\..\src\Versio.Plc.Codesys.Infrastructure\Scripts\versio_types.py" Link="versio_types.py" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\Versio.Plc.Codesys.Infrastructure\Scripts\versio_text.py" Link="versio_text.py" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

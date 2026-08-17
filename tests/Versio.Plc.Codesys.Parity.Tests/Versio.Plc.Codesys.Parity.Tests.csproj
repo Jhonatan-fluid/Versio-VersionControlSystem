@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <!-- THE CPYTHON PARITY TESTS, and nothing that needs CODESYS.
+
+         These are the tests that run the vendor's python under CPython and compare it
+         against the C# that must agree with it: the stem codec, the ST text codec, the
+         native-XML normaliser, the G9 path guards, and the managed-library record. They
+         need `python` on PATH, about twenty seconds, and no toolchain - and they lived
+         inside the 31-minute CODESYS gate, where a red parity run cost half an hour to
+         see and a skipped one (no python) hid inside a 386-test count nobody re-derives
+         per file.
+
+         The split is the same argument the gate itself was split from the integration
+         suite with, one level further down: a filter expression somebody has to remember
+         is the wrong shape, a project boundary is the right one. `dotnet test
+         tests\Versio.Plc.Codesys.Parity.Tests` is now part of the fast loop; the gate
+         keeps only what actually launches CODESYS - which is what its own header always
+         claimed it held.
+
+         These tests SKIP cleanly without python on PATH, so a green run on a machine
+         with no python has verified nothing - check the count, not the colour. That
+         warning used to live 386 tests deep; here the count is the whole project. -->
+    <RootNamespace>Versio.Plc.Codesys.Tests</RootNamespace>
+    <!-- RootNamespace stays Versio.Plc.Codesys.Tests: the files moved here unedited, and
+         a namespace that tracks a file's current csproj is churn with no reader - the
+         assembly name is what names this project in a test run. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="Xunit.SkippableFact" Version="1.5.23" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Versio.Core\Versio.Core.csproj" />
+    <ProjectReference Include="..\..\src\Versio.Plc.Codesys\Versio.Plc.Codesys.csproj" />
+    <ProjectReference Include="..\Versio.TestSupport\Versio.TestSupport.csproj" />
+  </ItemGroup>
+
+</Project>

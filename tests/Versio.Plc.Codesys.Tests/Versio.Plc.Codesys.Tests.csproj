@@ -3,7 +3,7 @@
   <PropertyGroup>
     <IsPackable>false</IsPackable>
     <RootNamespace>Versio.Plc.Codesys.Tests</RootNamespace>
-    <!-- EVERY TEST THAT LAUNCHES CODESYS, and nothing else.
+    <!-- EVERY TEST THAT LAUNCHES CODESYS - and, said honestly, some that do not.
 
          This used to be a [Trait("Toolchain", "Codesys")] tag inside Versio.Integration.Tests,
          policed by FastLaneTests, because the split it expresses is real and expensive: measured
@@ -15,7 +15,18 @@
          somebody has to remember, it put the slow suite's dependencies on the fast suite's
          project, and it needed a test whose whole job was to check the tag had been applied.
          A project boundary needs none of those: `dotnet test tests\Versio.Integration.Tests`
-         is the loop, and this is the gate. -->
+         is the loop, and this is the gate.
+
+         The first line of this comment said "and nothing else" for a day, and it was false
+         the day it was written: the CPython parity tests hid in here until they became
+         Versio.Plc.Codesys.Parity.Tests on 2026-08-17, and the pure vendor tests - the
+         planner rules, the normalizer, the scrubber, the protocol contract - hid here too,
+         running in milliseconds with no toolchain, until they became
+         Versio.Plc.Codesys.Pure.Tests the same day. They cost this suite nothing in time;
+         what they cost was VISIBILITY, a red planner rule surfacing after half an hour of
+         real CODESYS instead of after half a second. Three vendor test projects now, split
+         by need: nothing, python, the real toolchain - and the first line above is finally
+         just true. -->
   </PropertyGroup>
 
   <ItemGroup>
@@ -33,18 +44,10 @@
     <ProjectReference Include="..\Versio.TestSupport\Versio.TestSupport.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <!-- The python type table and the text helpers, beside the tests that read them.
-
-         TypeTableParityTests compares versio_types.py against the C# enum so the two cannot
-         drift, and it reads the copy from AppContext.BaseDirectory rather than from source.
-
-         THESE ITEMS LIVED IN Versio.Core.Tests UNTIL THE TESTS MOVED OUT AND THEY DID NOT.
-         Five tests failed on a missing file, and only in the 32-minute suite, because the fast
-         projects had nothing left that read them. A `git mv` moves a test; it does not move the
-         data the test needs. -->
-    <None Include="..\..\src\Versio.Plc.Codesys.Infrastructure\Scripts\versio_types.py" Link="versio_types.py" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\src\Versio.Plc.Codesys.Infrastructure\Scripts\versio_text.py" Link="versio_text.py" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
+  <!-- The versio_types.py / versio_text.py None-includes that used to sit here followed
+       TypeTableParityTests into Versio.Plc.Codesys.Pure.Tests on 2026-08-17 - the same
+       move that stranded them once before, done right this time: the items went WITH the
+       test that reads them. "A git mv moves a test; it does not move the data the test
+       needs" is the finding, and its csproj carries the items' own history. -->
 
 </Project>

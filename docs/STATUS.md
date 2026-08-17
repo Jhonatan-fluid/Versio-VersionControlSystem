@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,317 across five
+**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,317 across seven
 projects, 0 skipped — re-derived by running each, not carried forward
 
 | Project | Tests | Time | Needs |
@@ -9,11 +9,16 @@ projects, 0 skipped — re-derived by running each, not carried forward
 | `Versio.Integration.Tests` | 141 | ~10 s | real git |
 | `Versio.App.Tests` | 480 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 14 | instant | nothing |
-| `Versio.Plc.Codesys.Tests` | 386 | **~31 min** | **real CODESYS** |
+| `Versio.Plc.Codesys.Pure.Tests` | 252 | under a second | nothing |
+| `Versio.Plc.Codesys.Parity.Tests` | 82 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
+| `Versio.Plc.Codesys.Tests` | 52 | **~30 min** | **real CODESYS** |
 
-*The first four are eleven seconds plus the UI suite, and are the loop to work in. The last is
-the gate before a commit. Until 2026-08-17 the split was a `--filter` expression over one
-integration project; it is a project boundary now.*
+*The first six are the loop to work in — about thirty seconds plus the UI suite. The last is
+the gate before a commit. Until 2026-08-17 the fast/slow split was a `--filter` expression over
+one integration project; it is three project boundaries now, split by need — nothing / python /
+the real toolchain. Of the 386 tests that sat behind the half-hour gate, 334 needed no
+toolchain and surface in seconds now; the 52 that remain each launch real CODESYS, which is
+the whole cost.*
 
 > **⚠️ Versio removes, renames and moves objects in projects — Phases 2 and 3 of the import
 > plan, and the first things it does that destroy work.** Delete a `.st` from the mirror,
