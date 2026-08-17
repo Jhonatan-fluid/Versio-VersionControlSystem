@@ -57,7 +57,7 @@ G12 had. **It cost a delete rule its subject** — see the checklist's C6.
 |---|---|
 | Document | **The plan for making the import side a real bidirectional sync.** Deletes, renames, moves, typed task configuration, and a mirror that stops churning after every import |
 | Status | **Phases 0, 4, 1, 2, 3 and 5 COMPLETE, with all three honesty fixes. Phase 6 nearly done — G9 is guarded and G8 is the only gap left.** **An export that loses an object is reported** rather than passing as complete coverage: `ProjectManifest.Warnings` had no reader at all, so a failed write vanished from the mirror, the manifest and the panel while the run said `Completed`. **G10 is closed**: an import and a re-export leave the mirror byte-identical, `P7: SETTLES`.** G1 and G2 both closed outright. Two gaps closed as unreachable, four API spellings corrected, six live defects fixed — G7 and G11 by Phase 4, G3 and G6 by Phase 1, **G1 by Phase 2 outright, textual and native**, with G4's resolution half and G5's recorded-object half beside them, and the confirmation dialog corrected after it spent a commit promising the opposite of what an import did. The import is **plan-driven end to end**: decided C#-side from the manifest, agreed to before CODESYS starts, refused without a plan, executed by a script that decides nothing — and it now **removes, renames and moves** objects as well as adding them, saying beforehand which ones will really go and which will really stay. **Every one of those behaviours has now been run against a real project one row at a time** — see the feature checklist — and **one failed: G12**, a GVL's declaration overwritten by its own XML, **closed the same day**, with an invariant behind it so the shape cannot recur |
-| Related | [`CODESYS.md`](CODESYS.md) — how CODESYS is driven today, and §12, the audit these gaps came from · [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) — what was measured · [`PLAN.md`](PLAN.md) — the architecture · [`SAFEGUARDS.md`](SAFEGUARDS.md) — what Versio refuses or waits for |
+| Related | [`CODESYS.md`](DRIVING.md) — how CODESYS is driven today, and §12, the audit these gaps came from · [`PHASE0-FINDINGS.md`](../../PHASE0-FINDINGS.md) — what was measured · [`PLAN.md`](../../PLAN.md) — the architecture · [`SAFEGUARDS.md`](../../SAFEGUARDS.md) — what Versio refuses or waits for |
 
 > **These phase numbers are identifiers, not an order**, and they are **not** `PLAN.md`'s phases —
 > that document numbers the whole project 1–5 and means something different by every one of them.
@@ -72,7 +72,7 @@ G12 had. **It cost a delete rule its subject** — see the checklist's C6.
 The export side is solid — deterministic, byte-identical across runs, nothing silently dropped.
 The **import** side only ever updates and creates.
 
-Ten gaps came out of auditing it ([`CODESYS.md`](CODESYS.md) §12). Nine share one root cause:
+Ten gaps came out of auditing it ([`CODESYS.md`](DRIVING.md) §12). Nine share one root cause:
 `versio_import.py` walks the **mirror filesystem** and infers everything from **file names**, never
 reading `_manifest.json`. The tenth is about what `import_native` does to the bytes on the way back.
 
@@ -94,7 +94,7 @@ amount of reading, because it does not exist on the first cycle.
 | G9 | **Total path length unguarded** — stems capped at 80, the full path is not, and `.versio_staging` makes it 16 longer | ✅ **GUARDED 2026-08-16**, in two halves, because one of them cannot be machine-independent. `too_long_for_any_machine` measures the **mirror-relative** path against 200 and warns through the manifest; `too_long_for_this_machine` measures the **staging** path against 260 and warns through the log only — recording it would make `_manifest.json` differ between two developers and churn the mirror, which is Phase 5's defect through a new door. **Neither shortens**, and that is a decision: see *Why nothing shortens*. **Measured, and worse than this row assumed** — a legal file name reaches **190** characters, which leaves **19** for the repository root with no deep chain at all. **Not closed outright**: the arithmetic that produces 190 is still reachable, and shrinking it renames committed files |
 | **G10** | **Import → export is not byte-stable.** `UniqueIdGenerator` **44 → 47 → 50 → 53**, +3 per cycle, never settling | ✅ **CLOSED by Phase 5, 2026-08-16.** `Measure-ImportStability.ps1` prints **`P7: SETTLES`** with zero differences on all three cycles and the counter flat at **44 → 44 → 44 → 44**. The export keeps the bytes already in the mirror when the fresh payload is `versio_native_equiv`-equivalent to them, and the substitution happens **before** `record()` hashes anything — which is why `_manifest.json` settles too. Was, before the fix: Of the eight native files touched: three visualisations climb on the counter, `GlobalTextList.xml` churns with **no counter at all**, `Task Configuration.xml` moves once then settles, three are byte-stable. **Four of eight forever, from two causes** — not "every file", and not just the counter |
 | **G11** | **Every import after the first fails on task configuration and reports success.** `import_native` throws `Collection was modified` at `Project.GetUniqueName` on `MainTask` and `VISU_TASK`; the summary still reads `failed: 0` | ✅ **CLOSED by Phase 4, 2026-08-15.** Three import→export cycles with the compile cache present: **zero warnings on every one**, where cycles 2 and 3 used to throw twice each. `native: 8 → 7`, the task XML skipped as `TYPED_SIBLING`. **Versio never deletes CODESYS's compile cache** — the trigger is simply never reached |
-| **G12** | **A GVL's declaration is applied and then overwritten by its own XML**, and the import reports `applied … (declaration)` either way | ✅ **CLOSED 2026-08-16, the same day it was found by the feature checklist rather than by reading anything.** The `.gvl.xml` is recorded `GVL_NATIVE`, which `ExportCoverage.IsExportOnly` names — so a GVL has exactly one importable file and the edit reaches the project. **The shape is now an invariant rather than a habit**: `An_object_never_writes_two_files_the_import_would_both_apply` asserts, against a real export, that no object writes two files the import applies, which is what neither G7 nor this had. `GVL_BOTH` writes a `.gvl.st` recorded `ST_DECL` and a `.gvl.xml` recorded plain `NATIVE`; the phases run textual before native, so the XML puts the old declaration back. **G7 in a different object** — `TASK_BOTH` escapes only because Phase 4 gave its XML half its own `TASK_NATIVE` form, and `ExportCoverage.IsExportOnly` names `LIBRARIES` and `TASK_NATIVE` and nothing else. Proven by a control run that skips the `.gvl.xml` and changes nothing else, after which the edit survives. The three candidate fixes and what each costs are in [`STATUS.md`](STATUS.md) |
+| **G12** | **A GVL's declaration is applied and then overwritten by its own XML**, and the import reports `applied … (declaration)` either way | ✅ **CLOSED 2026-08-16, the same day it was found by the feature checklist rather than by reading anything.** The `.gvl.xml` is recorded `GVL_NATIVE`, which `ExportCoverage.IsExportOnly` names — so a GVL has exactly one importable file and the edit reaches the project. **The shape is now an invariant rather than a habit**: `An_object_never_writes_two_files_the_import_would_both_apply` asserts, against a real export, that no object writes two files the import applies, which is what neither G7 nor this had. `GVL_BOTH` writes a `.gvl.st` recorded `ST_DECL` and a `.gvl.xml` recorded plain `NATIVE`; the phases run textual before native, so the XML puts the old declaration back. **G7 in a different object** — `TASK_BOTH` escapes only because Phase 4 gave its XML half its own `TASK_NATIVE` form, and `ExportCoverage.IsExportOnly` names `LIBRARIES` and `TASK_NATIVE` and nothing else. Proven by a control run that skips the `.gvl.xml` and changes nothing else, after which the edit survives. The three candidate fixes and what each costs are in [`STATUS.md`](../../STATUS.md) |
 
 **Intended outcome:** the mirror becomes authoritative for object *existence* and *identity*, not
 just content; task scheduling stops being changed by a tool nobody asked to change it; and an
@@ -242,7 +242,7 @@ already exists.**
 | # | What | Why here |
 |---|---|---|
 | ~~1st~~ | ✅ **Phase 4 — typed task configuration.** Landed 2026-08-15, both halves. **G7 and G11 measured closed** | The only phase that fixes **two live, user-facing defects**: G7 changes CPU core affinity nobody asked to change, and G11 makes every import after the first silently fail. P6 proved the typed path works; a direct experiment proved removing the file from `import_native` fixes G11 without relocating the fault. Independent of everything else here |
-| ~~2nd~~ | ✅ **The task XML's one-wayness, recorded.** Landed 2026-08-15, immediately after | **Not planned — found by re-reading Phase 4 as if somebody else had written it.** Making the YAML importable made the `.xml` a file the export writes and the import discards, and nothing said so: not `_coverage.md`, not the manifest, not the panel's lock glyph. It went first because it is a **live silent-data-loss path introduced by the commit that had just landed**, where the honesty fixes below make *future* failures visible. See the finding in [`STATUS.md`](STATUS.md) |
+| ~~2nd~~ | ✅ **The task XML's one-wayness, recorded.** Landed 2026-08-15, immediately after | **Not planned — found by re-reading Phase 4 as if somebody else had written it.** Making the YAML importable made the `.xml` a file the export writes and the import discards, and nothing said so: not `_coverage.md`, not the manifest, not the panel's lock glyph. It went first because it is a **live silent-data-loss path introduced by the commit that had just landed**, where the honesty fixes below make *future* failures visible. See the finding in [`STATUS.md`](../../STATUS.md) |
 | ~~3rd~~ | ✅ **The committed fixture mirror, regenerated.** Landed 2026-08-15 | It was asserting against a mirror the current exporter cannot produce. **The feared cost did not materialise: every existing content file came back byte-identical**, `Task Configuration.xml` included — the only changes are the new `.tasks.yaml`, one `form` field (`NATIVE_R` → `TASK_NATIVE`), `objectCount` 12 → 13, and the coverage report. One assertion moved, exactly as predicted. It also unlocked the reader test below |
 | ~~4th~~ | ✅ **`.tasks.yaml` parsed by its own reader, against committed bytes.** Landed 2026-08-15 | The cheap half of the typed path's missing coverage, and it needs **no CODESYS** — the same shape as the library test that has run for months. Verified non-vacuous by perturbing an expected value. ~~The expensive half, a real mutation applied to a project, stays in Phase 6~~ — it did not: it came next instead, as the row below |
 | ~~5th~~ | ✅ **The write, tested against a real project — and the two axes G11 hid behind, in the same run.** Landed 2026-08-15 | **Pulled forward from Phase 6, where it was scheduled dead last.** It was the third honesty fix and the expensive half of Phase 4's coverage, and they turned out to be **one test**: the same fixture, the same adopt-and-export scaffolding, the same CODESYS launches. Splitting them would have paid for that setup twice. It is also the item every other document already called load-bearing — the single step the whole G7/G11 argument rests on. See below |
@@ -250,12 +250,12 @@ already exists.**
 | ~~7th~~ | ✅ **Phase 1 — manifest-driven importer.** Landed 2026-08-15, both halves: the pure planner behind the seam, then schema 2 and the script executing exactly the plan | The foundation. The walk that inferred everything from file names is deleted, not bypassed — a planless import job now refuses to serialize, so there is no door back to it |
 | ~~8th~~ | ✅ **`versio_native_equiv.py`.** Landed 2026-08-15, with its parity test in the same commit | A shared prerequisite, not a phase. Phase 2's native content check needs it and so does Phase 5 — it was written down as a Phase 5 artifact and is needed earlier. **Moved up from 8th to next for that reason, then built** |
 | ~~9th~~ | ✅ **Phase 2 — deletes.** Landed 2026-08-15 in six commits: the seam, the delete set, the dialog, the executing half, the dialog's honesty, the native half | Planned to land with Phase 3 and split from it deliberately. Deletion is the first thing Versio does that destroys work, and the safety argument is entirely its own — five planner preconditions and a content check only the CODESYS process can make. Renames share the detection input, not the risk |
-| ~~10th~~ | ✅ **The dialog corrected.** Landed 2026-08-15 | **Not planned — found by re-reading the executing half as if somebody else had written it.** The script grew `remove()` and no sentence moved, so the confirmation dialog told people their objects would stay and then deleted them. Same shape as the 2nd row: a live defect introduced by the commit that had just landed. See the finding in [`STATUS.md`](STATUS.md) |
+| ~~10th~~ | ✅ **The dialog corrected.** Landed 2026-08-15 | **Not planned — found by re-reading the executing half as if somebody else had written it.** The script grew `remove()` and no sentence moved, so the confirmation dialog told people their objects would stay and then deleted them. Same shape as the 2nd row: a live defect introduced by the commit that had just landed. See the finding in [`STATUS.md`](../../STATUS.md) |
 | ~~11th~~ | ✅ **The native content check — Phase 2's open half.** Landed 2026-08-15, manifest schema 5 | It went before Phase 3 because it makes deletion **whole** rather than a feature that works on 2 of the fixture's 13 objects, and because the alternative design would have dragged git into the script to serve a phase that had not been written yet. Verified four ways against real CODESYS, including a falsification case |
 | ~~12th~~ | ✅ **Phase 3 — renames and moves, all three passes.** Landed 2026-08-15 | Split from step 2 deliberately: exact-content matching needs nothing but the manifest and the mirror, covers most real renames, and does not drag git into the planner. It also turned up `move()` succeeding silently without moving anything — see the box in Phase 3 |
 | ~~**14th**~~ | ✅ **Phase 5 — a mirror that stops churning.** Landed 2026-08-16 | Its prerequisite was proven twice over: `versio_native_equiv` exists, and Phase 2 measured that normalisation is stable across round trips. `Measure-ImportStability.ps1` prints `P7: SETTLES` with the counter flat at 44 across all three cycles |
 | ~~**13th**~~ | ✅ **G12 — a GVL's `.gvl.st` edit reaching the project.** Landed 2026-08-16 | **Was a live silent-data-loss path**, found by the feature checklist on 2026-08-16 and the only open defect that destroys somebody's edit without saying so. Phase 5 changes when files are rewritten and touches the same export code, so fixing this first keeps the two reviews apart. Its three candidate fixes are not interchangeable and one of them stops the two-file rule protecting a GVL — the choice was made deliberately: the XML half became export-only, which leaves a GVL with one importable file and therefore **no two-file rule** — it is an ordinary single-file object now, protected by the content check like every other one |
-| ~~**15th**~~ | ✅ **The coverage blind spot, and G9's guard.** Landed 2026-08-16 | **Not planned as a step** — found by asking what G9 costs *today* before writing its guard. An export that could not write an object reported `Complete`, because `ExportCoverage` read the skips and nothing read `manifest.warnings`. Fixed first, because it is what makes every *other* export failure visible too; G9's guard went in behind it. See the two Findings in [`STATUS.md`](STATUS.md) |
+| ~~**15th**~~ | ✅ **The coverage blind spot, and G9's guard.** Landed 2026-08-16 | **Not planned as a step** — found by asking what G9 costs *today* before writing its guard. An export that could not write an object reported `Complete`, because `ExportCoverage` read the skips and nothing read `manifest.warnings`. Fixed first, because it is what makes every *other* export failure visible too; G9's guard went in behind it. See the two Findings in [`STATUS.md`](../../STATUS.md) |
 | **NEXT** | **Phase 6 — what is left is G8** | The parity tests and the integration breadth landed 2026-08-16; G9 is guarded. **G8 is the last gap**, and P9 made it cheap: `add_library("Standard, 3.5.17.0 (System)")` yields `is_managed: true` in one call |
 
 ### The three honesty fixes — all three done
@@ -373,7 +373,7 @@ Mirrors the library-reference design exactly, which is the precedent to copy:
   recursive export carries, so the coverage report skipped it and the panel drew it as an
   ordinary editable row. **Recorded `TASK_NATIVE` now**, one-wayness is read from a single
   list on each side (`EXPORT_ONLY_FORMS` ↔ `ExportCoverage.IsExportOnly`), and the two are
-  compared in a unit test. See the finding in [`STATUS.md`](STATUS.md).
+  compared in a unit test. See the finding in [`STATUS.md`](../../STATUS.md).
   - **A side effect worth having:** the importer currently probes the disk for a typed
     sibling, with a comment saying the check can go once Phase 1 reads the manifest. The
     manifest now carries the answer, so Phase 1 inherits it rather than having to derive it.
@@ -538,7 +538,7 @@ the three unordered-container names, counters masked before GUIDs, and the same 
 and CPython 3.
 
 ✅ **Three parity tests, in the same commit as the module** — the rule the whole of §9 of
-[`CODESYS.md`](CODESYS.md) argues for, and the first pair in this repository never to have had
+[`CODESYS.md`](DRIVING.md) argues for, and the first pair in this repository never to have had
 an uncompared moment:
 
 - **18 measured cases, both maskings.** `NativeXmlNormalizerTests`' own corpus, because every
@@ -637,7 +637,7 @@ happen.
 > nobody agreed to.
 >
 > **Reaching that test cost two fixes of its own**, both in this repository's own scaffolding
-> rather than in the product, and both recorded in [`STATUS.md`](STATUS.md): `Eventually.Press`
+> rather than in the product, and both recorded in [`STATUS.md`](../../STATUS.md): `Eventually.Press`
 > was fire-and-forget, and no app test had ever *accepted* an import.
 
 ### ✅ The delete set and its preconditions, landed 2026-08-15
@@ -698,7 +698,7 @@ is the only moment the walk is worth paying for.
 > green at 1,443 + 480**, because both pinning assertions were on the *old* sentence — an
 > assertion that a dialog says `will stay` cannot fail when the behaviour changes underneath
 > it, only when somebody fixes it. For one commit Versio named an object, said it would stay,
-> and then deleted it. Written up as a Finding in [`STATUS.md`](STATUS.md).
+> and then deleted it. Written up as a Finding in [`STATUS.md`](../../STATUS.md).
 >
 > **The lesson is about the shape of the tripwire, not the diligence of the author.** A test
 > written to catch a future change has to assert the property that will become false, and
@@ -846,7 +846,7 @@ destroyed and rebuilt.
 > five that works — so `MainTask` reads `[PLC_PRG, Renamed]` afterwards, `PLC_PRG` untouched.
 > The dialog names tasks specifically rather than claiming "references" in general, because a
 > visualisation binding may refer by name too and that has not been measured. See the Finding in
-> [`STATUS.md`](STATUS.md).
+> [`STATUS.md`](../../STATUS.md).
 
 | Pass | Sees | Needs |
 |---|---|---|
@@ -1111,7 +1111,7 @@ the **existing bytes**.
   missed by the fix for it. `ScriptContractTests` pins the codes against the **embedded**
   script and fails when the exporter grows one nothing classifies. It generalises past path
   length: every export exception was invisible, and the guard fixes one cause. See the Finding
-  in [`STATUS.md`](STATUS.md).
+  in [`STATUS.md`](../../STATUS.md).
 - ✅ **G9 — guarded 2026-08-16**, and the shape of the fix is not what this bullet asked for.
 
   **The measurement first, which is what changed it** — and it is derived by a test rather
@@ -1164,7 +1164,7 @@ the **existing bytes**.
   removes an assumption nothing could test, since the python that *runs* is IronPython 2.7 and
   the python that *tests* is CPython 3. The test compares the two sets directly as well as 27
   payloads and 81 splits, and both halves are mutation-checked. See the finding in
-  [`STATUS.md`](STATUS.md).
+  [`STATUS.md`](../../STATUS.md).
 - Integration, on a copy of the fixture: delete an object, rename one, move one, and assert the
   project afterwards — including that GUIDs survived. ~~Change a task priority.~~ ~~**And import
   twice, with the sidecars present**, which is the pair of axes G11 hid behind.~~ **Those two
@@ -1178,9 +1178,9 @@ the **existing bytes**.
     — in `ImportFeatureAuditTests`, and the move row is the one worth reading: **CODESYS
     declined the move silently** and Versio reported `RENAME_NOT_APPLIED` rather than claiming
     it. GUID survival is asserted on three separate rename paths.
-- Docs: [`CODESYS.md`](CODESYS.md) §1.3 (the API this uncovered), §3.1 (job schema 2), §5.2
+- Docs: [`CODESYS.md`](DRIVING.md) §1.3 (the API this uncovered), §3.1 (job schema 2), §5.2
   (`TASK_BOTH`), §6 (plan-driven import), §7 (G10, and what "deterministic" now means), §12 D1–D6
-  resolved rather than described. [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) gate 0.5b annotated:
+  resolved rather than described. [`PHASE0-FINDINGS.md`](../../PHASE0-FINDINGS.md) gate 0.5b annotated:
   the `Core2` deviation is fixed, not tolerated.
 
 ---
@@ -1222,7 +1222,7 @@ SyncViewModel decides the plan ─► asks ─► SyncJob.Plan ─► PlcProject
   the CODESYS process — used by the delete check, and **Phase 5 is its other caller**.
 
 **The manifest is the memory, and every schema bump exists because a hash could not answer
-something.** Read `_manifest.json`'s table in [`CODESYS.md`](CODESYS.md) §5.4 before touching
+something.** Read `_manifest.json`'s table in [`CODESYS.md`](DRIVING.md) §5.4 before touching
 the exporter: `nhash` (5) makes a native deletion checkable, `ihash` (6) makes a renamed POU
 recognisable, `shash` (7) makes a renamed-and-edited one recognisable without git. Each is
 additive, each is unavailable until the next export, and **absent never means "unchanged"**.
@@ -1484,7 +1484,7 @@ export** that no object writes two files the import applies — real, because bo
 were in what the exporter *wrote*, and every unit test passed throughout both. Removing
 `GvlNativeForm` from `IsExportOnly` turns it red; that mutation was run rather than assumed.
 **It cost the two-file rule its subject** — see C6 and C13 above, and the finding in
-[`STATUS.md`](STATUS.md).
+[`STATUS.md`](../../STATUS.md).
 
 **2 — The only fixture could not reach a whole section of this list, so a second one was
 built.** `RefrigeratorControl` has no member objects — no method, no action, no property —

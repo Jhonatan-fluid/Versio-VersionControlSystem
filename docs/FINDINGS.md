@@ -1131,7 +1131,7 @@ only if you read the file.
 > mitigation was not needed and was not adopted. `Core2` stopped moving in the same change, which
 > closes G7 with it.
 
-Probe P7 of [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md) ran the round trip three times
+Probe P7 of [`vendors/codesys/IMPORT-PLAN.md`](vendors/codesys/IMPORT-PLAN.md) ran the round trip three times
 instead of once, on a scratch copy, with the mirror held still between cycles. Cycle 1 is clean:
 `native: 8, failed: 0, warnings: 0`. **Cycles 2 and 3 each throw twice** — on `MainTask` and
 `VISU_TASK`, the two children of `Task Configuration`:

@@ -115,7 +115,7 @@ public sealed record CodesysJob
         {
             Op = Operation.ToString().ToLowerInvariant(),
 
-            // 2 since the plan-driven import (Phase 1 of docs/CODESYS-IMPORT-PLAN.md).
+            // 2 since the plan-driven import (Phase 1 of docs/vendors/codesys/IMPORT-PLAN.md).
             // The scripts REFUSE a schema they do not expect rather than half-executing
             // it — a stale extracted script meeting a newer job file must die loudly.
             Schema = 2,

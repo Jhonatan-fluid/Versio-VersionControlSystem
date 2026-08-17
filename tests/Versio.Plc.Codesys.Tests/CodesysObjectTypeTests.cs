@@ -193,7 +193,7 @@ public class TypeTableParityTests
 
         // ── THE THIRD HOME, which this test did not know about until it cost a run ──
         //
-        // tools/New-ImportPlan.ps1 builds the plan for everything in tools/ — the round-trip
+        // tools/codesys/New-ImportPlan.ps1 builds the plan for everything in tools/ — the round-trip
         // harness and the P7 stability measurement — because those drive the scripts raw,
         // without LocalCodesysRunner, so they need a plan from somewhere. It has its own copy
         // of the export-only list, and it REFUSES a form it does not know rather than guessing.

@@ -176,7 +176,7 @@ That is a task's **CPU core affinity**, and `import_native` changed it without b
 
 > **Superseded on 2026-08-15 by P7 below.** Diff-only is not a safe resting place: the very
 > next import of a mirror this deviation produced **fails**, and the failure is silent in the
-> summary. The recommendation now is Phase 4 of [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md)
+> summary. The recommendation now is Phase 4 of [`vendors/codesys/IMPORT-PLAN.md`](vendors/codesys/IMPORT-PLAN.md)
 > — typed task configuration, so `import_native` never sees this file again.
 >
 > **✅ And that is now built, on the same day.** Task configuration exports as `TASK_BOTH` and
@@ -265,12 +265,12 @@ one door; names also arrive from the IDE, from libraries and device descriptions
 > at `UniqueIdGenerator` would have settled three files, left the fourth diffing forever, and
 > looked like it worked.
 
-**Measured 2026-08-15**, `tools/Measure-ImportStability.ps1`, on a scratch copy of the fixture.
+**Measured 2026-08-15**, `tools/codesys/Measure-ImportStability.ps1`, on a scratch copy of the fixture.
 Three consecutive import → export cycles over **one** mirror directory, re-exported into,
 **nothing edited between cycles**. Every difference below is therefore produced by the round
 trip and by nothing else, which is the whole reason for holding the mirror still.
 
-This is probe P7 of [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md), and it exists to decide
+This is probe P7 of [`vendors/codesys/IMPORT-PLAN.md`](vendors/codesys/IMPORT-PLAN.md), and it exists to decide
 one thing: whether the counter climbs forever or settles the way `Core2` does. Until now that
 was an argument.
 
@@ -357,7 +357,7 @@ So Phase 5's keep-existing-bytes rule is **sufficient for everything P7 found ch
 was previously an inference from gate 0.5b rather than a measurement. It also surfaced a trap in
 how that phase must be built — the manifest records the hash of the payload the exporter
 generated, so substituting bytes at write time would leave the manifest disagreeing with the file
-beside it. See [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md) Phase 5.
+beside it. See [`vendors/codesys/IMPORT-PLAN.md`](vendors/codesys/IMPORT-PLAN.md) Phase 5.
 
 ### ⚠️ Every import after the first fails, and says it succeeded
 

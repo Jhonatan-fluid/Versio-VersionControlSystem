@@ -161,7 +161,7 @@ public sealed class LocalCodesysRunner(
 
         // An import runs from a plan, decided before CODESYS starts — the script executes
         // exactly what the plan says and derives nothing from file names (Phase 1 of
-        // docs/CODESYS-IMPORT-PLAN.md). A caller that computed its own plan keeps it; one
+        // docs/vendors/codesys/IMPORT-PLAN.md). A caller that computed its own plan keeps it; one
         // that did not gets it computed here, so every import is plan-driven whichever door
         // it came through, including a test driving the runner directly.
         if (job.Operation == CodesysOperation.Import

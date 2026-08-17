@@ -18,7 +18,7 @@ namespace Versio.Plc.Codesys.Tests;
 /// Only the small files are committed. The three visualisation exports exhibit the same
 /// three volatility classes but total 2.9 MB, which is not worth carrying in git — they are
 /// covered synthetically in <see cref="NativeXmlNormalizerTests"/> and can be regenerated
-/// with <c>tools/Test-RoundTrip.ps1</c>.
+/// with <c>tools/codesys/Test-RoundTrip.ps1</c>.
 /// </para>
 /// </remarks>
 public class RealRoundTripEquivalenceTests

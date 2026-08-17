@@ -5,7 +5,7 @@
 #
 # Run it by hand through the phase 0 harness (one line; PowerShell continues with a
 # backtick, not a backslash):
-#   tools/Run-Codesys.ps1 -Script src/Versio.Scripts.Codesys/versio_delete_objects.py
+#   tools/codesys/Run-Codesys.ps1 -Script src/Versio.Scripts.Codesys/versio_delete_objects.py
 #       -Profile "CODESYS V3.5 SP22 Patch 2"
 #       -Job @{ project = "...\Machine.project"; objects = @("Device/Plc Logic/Application/Simulation") }
 #

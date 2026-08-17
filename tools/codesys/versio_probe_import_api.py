@@ -2,7 +2,7 @@
 # REMEMBER: this runs in CODESYS ScriptEngine = IronPython 2.7. No f-strings, no dict
 # comprehensions with unpacking, and `except X as e` is the only spelling that works.
 #
-# Phase 0 probes P1-P6, P8 and P9 of docs/CODESYS-IMPORT-PLAN.md. Every one of them exists
+# Phase 0 probes P1-P6, P8 and P9 of docs/vendors/codesys/IMPORT-PLAN.md. Every one of them exists
 # because the plan asserts something about the ScriptEngine API that nobody has run.
 #
 # ---------------------------------------------------------------------------------------

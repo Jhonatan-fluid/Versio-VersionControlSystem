@@ -33,7 +33,7 @@ namespace Versio.Plc.Codesys;
 /// export recorded and what the mirror holds now, so it can say which objects have lost every
 /// file — but not whether the project still has them, or whether they were edited in the IDE
 /// since, which are the executing side's questions. Renames and moves are Phase 3 of
-/// <c>docs/CODESYS-IMPORT-PLAN.md</c>.
+/// <c>docs/vendors/codesys/IMPORT-PLAN.md</c>.
 /// </para>
 /// <para>
 /// <see cref="PlannedDeletion.CannotVerify"/> is the planner's prediction of the executing

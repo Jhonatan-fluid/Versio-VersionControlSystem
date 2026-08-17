@@ -52,7 +52,7 @@ individually — see the flake note in `CLAUDE.md`, which is about earlier runs)
 > serialize, so there is no door back to it. G3 and G6 are closed and **proven against real
 > CODESYS**: `PROGRAM Foo` in `Bar.st` creates `Foo`, and a `README.md` in the mirror is
 > warned about instead of being handed to CODESYS as native XML. See
-> [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md).
+> [`vendors/codesys/IMPORT-PLAN.md`](vendors/codesys/IMPORT-PLAN.md).
 
 > **Also 2026-08-15, on branch `GitImportPlan`: Phase 0 of the import plan started, and its
 > first probe found a defect that reaches users.** P7 measured what an import → export cycle does
@@ -64,7 +64,7 @@ individually — see the flake note in `CLAUDE.md`, which is about earlier runs)
 > configuration to `import_native` at all, so the mitigation was never needed and Versio deletes
 > nothing of CODESYS's.** All three suites re-run green
 > afterwards — **1,385 + 478 + 192, 0 skipped**, integration 6m57s against real CODESYS. See the
-> findings, and [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md) for what P7 changed in the
+> findings, and [`vendors/codesys/IMPORT-PLAN.md`](vendors/codesys/IMPORT-PLAN.md) for what P7 changed in the
 > plan itself.
 >
 > **Phase 4 of the import plan landed the same day, and it is the first product change this
@@ -221,7 +221,7 @@ opens. That is `SAFEGUARDS.md` phases 1–8, and phase 9 is features rather than
   half is export-only (`TASK_NATIVE`), a task named in the YAML but absent from the project is
   **warned about, never created**, and a task deleted from the YAML is **left alone** — removing
   one is a deletion, and deletions are Phase 2. See G7 and G11 in
-  [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md).
+  [`vendors/codesys/IMPORT-PLAN.md`](vendors/codesys/IMPORT-PLAN.md).
 - **Graphical POUs export as native XML**, so their diffs will never read as well as ST.
   Inherent to the format.
 - **Interfaces, text lists, image pools** have export rules written and unit tested but never
@@ -326,11 +326,11 @@ unless something changes.
 > nothing below depends on anything above it except where it says so.
 >
 > **This list is not the active work.** The import side has its own plan and its own queue —
-> [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md), whose *Handoff* section is the one to read
+> [`vendors/codesys/IMPORT-PLAN.md`](vendors/codesys/IMPORT-PLAN.md), whose *Handoff* section is the one to read
 > first, and whose **feature checklist** is what says which of its 49 behaviours have been run
 > against a real project and which have not. **Phases 0–5 there are complete and Phase 6 is
 > nearly done**; **G9 is guarded** as of 2026-08-16 and **G8 is the only gap left**.
-> **[What is left, and what it costs](CODESYS-IMPORT-PLAN.md#what-is-left-and-what-it-costs)**
+> **[What is left, and what it costs](vendors/codesys/IMPORT-PLAN.md#what-is-left-and-what-it-costs)**
 > is the table to read: one gap of about half a day, and four items that are decisions rather
 > than tasks. G9's remaining half is one of them — the worst case is reported but still
 > producible, and preventing it renames committed files in every mirror already written.
@@ -672,7 +672,7 @@ does not record them has to be run again.
   declaration and an implementation, and it is a hand-maintained copy.~~ — **closed
   2026-08-16, and it mattered exactly as much as this said**: the parity test found a
   divergence on its first run, worth a renamed POU's GUID. See the Finding.
-  **This is not theoretical** — [`CODESYS.md`](CODESYS.md) §9 counts four drifts across the
+  **This is not theoretical** — [`CODESYS.md`](vendors/codesys/DRIVING.md) §9 counts four drifts across the
   pairs that *are* compared, two with the C# right and two with the python right, and reading
   the two sources side by side caught none of them. The harness exists: `RunPython` in
   `PythonFileNameParityTests` takes a snippet and a JSON payload, and
@@ -911,7 +911,7 @@ does not record them has to be run again.
   `OrphanScanner.cs:194` reports an export directory with no bound project as "never deleted
   automatically because it is committed history". That is the usual case and the right default,
   but it is stated as fact: the scanner never asks git. An export tree under an ignored path -
-  `phase0/roundtrip/baseline`, written by `tools/Test-RoundTrip.ps1` - was reported with the
+  `phase0/roundtrip/baseline`, written by `tools/codesys/Test-RoundTrip.ps1` - was reported with the
   same words while being neither committed nor history.
 - **`RefrigeratorControl.~u` is in pushed history.** Untracked and ignored now, but the commit
   that carried a username, machine name and pid to `origin/main` is still there. Removing it

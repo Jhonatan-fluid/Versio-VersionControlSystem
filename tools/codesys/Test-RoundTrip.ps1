@@ -56,7 +56,7 @@
 .PARAMETER UpdateEquivalenceFixtures
   Copy the small baseline/roundtrip pairs into fixtures/equivalence/, which is where
   RealRoundTripEquivalenceTests reads them from. That test's own remarks have always said
-  the fixtures "can be regenerated with tools/Test-RoundTrip.ps1" - this is the switch
+  the fixtures "can be regenerated with tools/codesys/Test-RoundTrip.ps1" - this is the switch
   that makes the claim true. Refuses to run with -MutateFirst, which would bake the probe
   comment into a committed fixture.
 #>

@@ -6,7 +6,7 @@
 |---|---|
 | Document | **The CODESYS integration, end to end.** Which CODESYS interface Versio uses, how the process is launched, what crosses the boundary in each direction, what every script does, and where the seams and the gaps are |
 | Audience | An engineer who has to change the export, the import, the runner or the scripts — or add a second vendor beside them |
-| Related | [`PLAN.md`](PLAN.md) — the architecture · [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) — what was measured against real CODESYS · [`STATUS.md`](STATUS.md) — where the project is · [`SAFEGUARDS.md`](SAFEGUARDS.md) — what Versio refuses or waits for |
+| Related | [`PLAN.md`](../../PLAN.md) — the architecture · [`PHASE0-FINDINGS.md`](../../PHASE0-FINDINGS.md) — what was measured against real CODESYS · [`STATUS.md`](../../STATUS.md) — where the project is · [`SAFEGUARDS.md`](../../SAFEGUARDS.md) — what Versio refuses or waits for |
 | Audit | §12 is a standing audit of this integration. Every finding it raised is fixed; each entry is kept, with what changed and why. The rest of the document describes the system as it actually behaves, not as it is meant to |
 
 ---
@@ -34,14 +34,14 @@ likely way to misread this codebase, and it is how two of the audit's findings s
 
 **Before changing the exporter or the importer**, know that the fixture round trip is not a
 byte comparison (§6.6): textual and export-only must match exactly, native XML is *expected* to
-differ, and `tools/Test-RoundTrip.ps1 -MutateFirst` is the command that tells you which. Without
+differ, and `tools/codesys/Test-RoundTrip.ps1 -MutateFirst` is the command that tells you which. Without
 `-MutateFirst` it cannot fail.
 
 **To verify a change against real CODESYS**, in increasing cost: `dotnet test tests\Versio.Core.Tests`
 (no CODESYS, ~0.3 s) → the round-trip harness (~2 min, 4 CODESYS launches) → the full
 integration suite (~7–11 min). A path the fixture cannot reach — an unmapped object type, for
 instance — is best exercised by patching a **copy** of the scripts and pointing
-`tools/Run-Codesys.ps1` at it, which is how §12 C1 was verified.
+`tools/codesys/Run-Codesys.ps1` at it, which is how §12 C1 was verified.
 
 ---
 
@@ -74,7 +74,7 @@ Consequences that shape everything else in this document:
 |---|---|
 | The interpreter is **IronPython 2.7** | The scripts are Python 2 source. `unicode`, `unichr`, `io.open` and `u""` literals are load-bearing, not legacy. Plain `open()` in Python 2 encodes unicode as ASCII and dies on the accented characters that appear in real PLC comments |
 | `pip` is not available | **No third-party Python dependencies at all.** The YAML emitter and the JSON-lines protocol are hand-written (`versio_yaml.py`), and the C# side that reads them is hand-written too |
-| The interpreter runs **inside CODESYS** | Running a script means paying CODESYS's cold start — measured **17–31 s** ([PHASE0-FINDINGS §4](PHASE0-FINDINGS.md)) — on every invocation |
+| The interpreter runs **inside CODESYS** | Running a script means paying CODESYS's cold start — measured **17–31 s** ([PHASE0-FINDINGS §4](../../PHASE0-FINDINGS.md)) — on every invocation |
 | CODESYS is a desktop IDE, not a server | Two concurrent headless instances on one profile are not safe. The runner serialises them behind a machine-wide mutex |
 
 ### 1.2 The command-line surface
@@ -258,7 +258,7 @@ command line**; everything else travels as JSON inside the file it names.
 The file is written to `%TEMP%\Versio\jobs\job-<opId>-<guid>.json` and deleted in a `finally`.
 It **must be UTF-8 without a BOM**: IronPython 2.7's `json.load` fails on a BOM with
 `No JSON object could be decoded`. PowerShell 5.1's `-Encoding utf8` writes one, which is why
-both `LocalCodesysRunner.WriteJobFile` and `tools/Run-Codesys.ps1` use
+both `LocalCodesysRunner.WriteJobFile` and `tools/codesys/Run-Codesys.ps1` use
 `UTF8Encoding($false)` explicitly.
 
 ### 3.2 Outbound — the `@@VERSIO@@` JSON-lines protocol
@@ -304,7 +304,7 @@ on, because a script that dies mid-write is exactly when the diagnostics matter:
 | **`removed`**, **`renamed`**, `already_gone` | import | `removed` and `renamed` are **Info**: they are the two structural changes an import can make, and they are the lines somebody goes looking for when an object is not where they expect. `renamed` says "moved X to Y" or "renamed X to Y" depending on which it was, because being told "renamed" about a file that only changed folder reads as a bug in the tool. `already_gone` is Debug — the mirror and the project agree, so nothing happened |
 | `not_imported` | import | Info — an export-only file the import left alone. **Not** a warning, on purpose: one that fires on every import is how a real one gets read past |
 | `nothing_to_save`, `saved` | import | `saved` and `nothing_to_save` are Info — "I edited the mirror and nothing happened" is a question somebody asks, and `nothing_to_save` is the line that answers it. `phase_saved` stays Debug |
-| `summary` | export, import, probe | Info — the roll-up line, **and it has two forms.** It is keyed on the job's operation, not on which fields are present: the export's `walked / wrote / skipped / gaps`, and the import's `import: N updated, N native, … — N warning(s)` with zero-valued fields omitted. Reading an import's summary with the exporter's field names logged a line of blanks for the whole life of the import path; see the finding in [`STATUS.md`](STATUS.md) |
+| `summary` | export, import, probe | Info — the roll-up line, **and it has two forms.** It is keyed on the job's operation, not on which fields are present: the export's `walked / wrote / skipped / gaps`, and the import's `import: N updated, N native, … — N warning(s)` with zero-valued fields omitted. Reading an import's summary with the exporter's field names logged a line of blanks for the whole life of the import path; see the finding in [`STATUS.md`](../../STATUS.md) |
 | `fatal` | all | **Error**, and becomes `CodesysResult.FailureReason` |
 | `exit` | all | `ScriptOutput.ScriptExitCode` |
 | `done` | all | `ScriptOutput.Completed` |
@@ -409,13 +409,13 @@ CPython.
 | `ST_DECL` | declaration only, one `.st` | `DUT` |
 | `ST_IMPL` | implementation only (no declaration exists) | `ACTION`, `TRANSITION` |
 | `GVL_BOTH` | **two files** — `.gvl.xml` for structure, `.gvl.st` for a readable diff **and for import**. The *decision* is `GVL_BOTH`; the two files are **recorded** `GVL_NATIVE` and `ST_DECL`, because only the `.st` is applied back | `GVL`, `GVL_PERSISTENT` |
-| `GVL_NATIVE` | **recorded, never decided.** The `.gvl.xml` half above, marked so the manifest says it is export-only. It carried plain `NATIVE` until 2026-08-16 — an *importable* form, so both halves were applied and the later phase won. That is G12; see the finding in [`STATUS.md`](STATUS.md) | — |
+| `GVL_NATIVE` | **recorded, never decided.** The `.gvl.xml` half above, marked so the manifest says it is export-only. It carried plain `NATIVE` until 2026-08-16 — an *importable* form, so both halves were applied and the later phase won. That is G12; see the finding in [`STATUS.md`](../../STATUS.md) | — |
 | `NATIVE` | `obj.export_native(path, False)` | `EVC`, `VISUALISATION`, `TEXTLIST`, `GLOBAL_TEXTLIST`, `IMAGEPOOL`, `PROJECT_INFORMATION` |
 | `NATIVE_R` | `obj.export_native(path, True)` — owns children not walked separately | `PROPERTY` |
 | `NATIVE_WITH_CHILDREN` | the node natively **and** a subdirectory for its children | **no type maps to it** — only an *unmapped* type that has children |
 | `LIBRARIES` | `<manager>.libraries.yaml`, **export-only** | `LIBRARY_MANAGER` |
 | `TASK_BOTH` | **two files** — `.xml` (recursive) for fidelity, `<name>.tasks.yaml` for review **and for import**. The *decision* is `TASK_BOTH`; the two files are **recorded** `TASK_NATIVE` and `TASK_BOTH`, because only the YAML is applied back | `TASK_CONFIGURATION` |
-| `TASK_NATIVE` | **recorded, never decided.** The `.xml` half above, marked so the manifest says it is export-only. It carried `NATIVE_R` until 2026-08-15, which is an *importable* form — see the finding in [`STATUS.md`](STATUS.md) | — |
+| `TASK_NATIVE` | **recorded, never decided.** The `.xml` half above, marked so the manifest says it is export-only. It carried `NATIVE_R` until 2026-08-15, which is an *importable* form — see the finding in [`STATUS.md`](../../STATUS.md) | — |
 | `SKIP` | nothing, but the reason is recorded | see below |
 
 **The fallbacks are the interesting part.** A POU declared in ST but *drawn* in CFC / LD / FBD
@@ -490,7 +490,7 @@ CODESYS names are much freer than file names, so:
 > is guarded by `too_long_for_any_machine` and `too_long_for_this_machine`, per **file** rather
 > than per object — a `GVL_BOTH` writes two, and its `.gvl.xml` is the longer of the pair.
 > `The_longest_legal_file_name_leaves_no_room_for_an_ordinary_checkout` derives the number
-> rather than asserting it. See the Finding in [`STATUS.md`](STATUS.md).
+> rather than asserting it. See the Finding in [`STATUS.md`](../../STATUS.md).
 
 Then a **type infix** keeps same-named objects of different kinds apart — a `Main`
 visualisation and a `Main` POU are a common real collision:
@@ -803,7 +803,7 @@ list per side: `EXPORT_ONLY_FORMS` in `versio_types.py`, `ExportCoverage.IsExpor
 
 ### 6.6 How the round trip is judged
 
-`export → import → export` does not have one fidelity rule, so `tools/Test-RoundTrip.ps1` does
+`export → import → export` does not have one fidelity rule, so `tools/codesys/Test-RoundTrip.ps1` does
 not give it one verdict. The layers are judged separately, and only some of them can fail:
 
 | Layer | Rule | Fatal? |
@@ -1005,7 +1005,7 @@ Seven C# types restate logic that also exists in Python:
 > row here**: a bug in `split_st` silently moves code between a declaration and an
 > implementation, and the test found one on its first run. Two languages' default `trim`
 > disagreed about four characters, which would have cost a renamed POU its GUID. See the
-> Finding in [`STATUS.md`](STATUS.md). **This row is why the remaining two are worth doing
+> Finding in [`STATUS.md`](../../STATUS.md). **This row is why the remaining two are worth doing
 > rather than reasoning about**: reading the two sources side by side had caught none of the
 > four drifts below, and it did not catch this one either.
 
@@ -1099,7 +1099,7 @@ poke at CODESYS directly.
 | `Compare-Exports.ps1` | Byte-compares two export trees — the determinism gate, where a byte comparison is exactly right. `-Quiet` returns the result without the banner, for a caller presenting its own verdict |
 | `Test-RoundTrip.ps1` | export → copy → import → export → compare, **judged one layer at a time** (§6.6). **Use `-MutateFirst`** — without a deliberate change the comparison can pass while the import did nothing, and a green result that cannot fail is worse than a red one. `-UpdateEquivalenceFixtures` refreshes the inputs `RealRoundTripEquivalenceTests` reads |
 | `Probe-ImportApi.ps1` | Runs the Phase 0 import-API probes, **one scratch copy per probe** because every one of them mutates and P3 removes a referenced object. Answers what `rename`, `move`, `remove`, `find`, the task fields and `add_library` actually accept -- four of which the plan had wrong. `-Probes P5` runs one |
-| `Measure-ImportStability.ps1` | Runs the round trip **N times over one mirror**, re-exporting into it, and reports what differs per cycle plus every `UniqueIdGenerator` as a series. `Test-RoundTrip.ps1` answers "is one round trip lossless"; this answers "does it ever *stop*", which is a different question and the one that found G11. Prints `P7: SETTLES` or `P7: CHURNS`; **it settles, as of Phase 5 on 2026-08-16** — it churned from the day it was written until then, and the record of what it churned is in [`PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md). **A clean byte verdict is not enough on its own — check the warning count too**, or a failing import hides under a settled mirror |
+| `Measure-ImportStability.ps1` | Runs the round trip **N times over one mirror**, re-exporting into it, and reports what differs per cycle plus every `UniqueIdGenerator` as a series. `Test-RoundTrip.ps1` answers "is one round trip lossless"; this answers "does it ever *stop*", which is a different question and the one that found G11. Prints `P7: SETTLES` or `P7: CHURNS`; **it settles, as of Phase 5 on 2026-08-16** — it churned from the day it was written until then, and the record of what it churned is in [`PHASE0-FINDINGS.md`](../../PHASE0-FINDINGS.md). **A clean byte verdict is not enough on its own — check the warning count too**, or a failing import hides under a settled mirror |
 
 > **⚠️ These harnesses do not take the machine-wide mutex.** `LocalCodesysRunner` serialises
 > every CODESYS launch behind `Global\Versio.Codesys.SingleInstance`; `Run-Codesys.ps1` starts
@@ -1164,11 +1164,11 @@ documentation-level defect.
 
 ### A. Broken — will fail if used
 
-**A1 · ✅ FIXED · `tools/Test-RoundTrip.ps1` pointed at a folder that does not exist.**
+**A1 · ✅ FIXED · `tools/codesys/Test-RoundTrip.ps1` pointed at a folder that does not exist.**
 *(High — a documented command failed on the first line that used it.)*
 
 ```
-tools/Test-RoundTrip.ps1:29   $scripts = Join-Path $repoRoot "src\Versio.Scripts"
+tools/codesys/Test-RoundTrip.ps1:29   $scripts = Join-Path $repoRoot "src\Versio.Scripts"
 ```
 
 The folder was renamed to `src\Versio.Scripts.Codesys`. All three invocations (lines 39, 64, 75)
@@ -1259,7 +1259,7 @@ Three things were deliberately *not* done:
   perturbed. It is classified as derived bookkeeping now, and reported.
 
 **A second false claim closed on the way past.** `RealRoundTripEquivalenceTests` has always said
-its fixtures "can be regenerated with `tools/Test-RoundTrip.ps1`", and nothing in that script did
+its fixtures "can be regenerated with `tools/codesys/Test-RoundTrip.ps1`", and nothing in that script did
 it — the committed fixtures were whatever somebody copied by hand. `-UpdateEquivalenceFixtures`
 now refreshes them by name from a real run, and refuses to run alongside `-MutateFirst`, which
 would bake the probe comment into the fixture that asserts byte-identical textual round-tripping.
@@ -1378,12 +1378,12 @@ listed here because only one of them is currently written down anywhere.
 
 | # | Limitation | Consequence |
 |---|---|---|
-| D1 | ~~**Deletions do not propagate.**~~ — **closed outright 2026-08-15, textual and native.** The *decision* exists: `CodesysImportPlanner` proposes `ImportPlan.Deletions` from the manifest, behind five preconditions (a trusted manifest, every file for the GUID gone, export-only records neither voting nor vetoing, nothing surviving inside it at any depth, an owner chain recorded rather than guessed). The execution exists too: `deletions` crosses the wire and `versio_import.py` runs a delete phase **last**, after everything that adds. A textual file is rebuilt and compared byte for byte; **a native one is re-exported, normalised, and compared against the manifest's `nhash`** (schema 5), which is what a re-export can be compared against when the raw bytes churn | Removing a `.st` from the mirror removes the POU from the project, and removing both of a GVL's files removes the GVL — proven against real CODESYS. An object edited in the IDE since the export is kept (`DELETE_CONTENT_CHANGED`): a missing file is not permission to destroy work that exists nowhere else. A native object on a pre-schema-5 mirror is refused (`DELETE_UNVERIFIABLE`) until the next export. See G1 in [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md) |
+| D1 | ~~**Deletions do not propagate.**~~ — **closed outright 2026-08-15, textual and native.** The *decision* exists: `CodesysImportPlanner` proposes `ImportPlan.Deletions` from the manifest, behind five preconditions (a trusted manifest, every file for the GUID gone, export-only records neither voting nor vetoing, nothing surviving inside it at any depth, an owner chain recorded rather than guessed). The execution exists too: `deletions` crosses the wire and `versio_import.py` runs a delete phase **last**, after everything that adds. A textual file is rebuilt and compared byte for byte; **a native one is re-exported, normalised, and compared against the manifest's `nhash`** (schema 5), which is what a re-export can be compared against when the raw bytes churn | Removing a `.st` from the mirror removes the POU from the project, and removing both of a GVL's files removes the GVL — proven against real CODESYS. An object edited in the IDE since the export is kept (`DELETE_CONTENT_CHANGED`): a missing file is not permission to destroy work that exists nowhere else. A native object on a pre-schema-5 mirror is refused (`DELETE_UNVERIFIABLE`) until the next export. See G1 in [`vendors/codesys/IMPORT-PLAN.md`](IMPORT-PLAN.md) |
 | D2 | ~~**Filenames are never decoded.**~~ — **closed 2026-08-15 by the plan-driven import.** Resolution chains are built C#-side by `CodesysImportPlanner` from the manifest's verbatim names, with directory segments decoded through `PathMapper.DecodeStem` — which gained its first production caller in the process. The script compares real names against real names | An object or folder whose name needed encoding resolves now. A *shortened* stem (digest tail) still cannot be recovered from the path alone — the object it names simply does not resolve, and the script reports it rather than guessing |
 | D3 | ~~**A dot in an object name breaks the owner split.**~~ — **closed 2026-08-15 for recorded objects**: the manifest's `parent` GUID chain decides ownership, and for pre-schema-4 mirrors the recorded *name* disambiguates the split — a name equal to the whole stem is not split, however many dots the filename carries. **Still true for a manifest-absent create**, where only the filename exists; P5 measured that such names cannot be created, so that residue is unreachable by the only door left | `My.Thing.xml` recorded as `My.Thing` resolves as one object. A brand-new dotted file with no manifest record would still be read as owner and member — and CODESYS would refuse to create it anyway |
 | D4 | ~~**Any stray non-`.st` file in the mirror is handed to `import_native`.**~~ — **closed 2026-08-15.** The planner classifies from the manifest, and a file that is neither a recorded object, bookkeeping, nor a recognisable source is **skipped with a warning, never handed to the toolchain** — including a YAML the manifest does not record, and including files that appear between planning and execution (`NOT_IN_PLAN`) | Proven live: a `README.md` dropped into the mirror is warned about and never imported, in the same run that catches a corrupt native file — see `ImportLoggingTests` |
 | D5 | **`*.libraries.yaml` is export-only** | Editing it changes nothing. Stated in the file's own header, in `_coverage.md`, in the manifest and by a lock glyph in the UI |
-| D6 | ~~**Task Configuration is diff-only**~~ — **closed 2026-08-15**, both halves of it | This row carried two defects. `import_native` mutated `Core2` (§7); and — *not* the same defect, though this row said so for an afternoon — every import run with a `<project>_project.precompilecache` beside the project threw on `MainTask` and `VISU_TASK` while reporting `failed: 0`. **Phase 4 removed both by removing the shared cause**: task configuration exports as `TASK_BOTH` and imports through typed property assignment, so `import_native` is never handed the object. Measured over three cycles with the cache present: **zero warnings**, where cycles 2 and 3 used to throw twice each. Versio deletes nothing of CODESYS's. See G7 and G11 in [`CODESYS-IMPORT-PLAN.md`](CODESYS-IMPORT-PLAN.md) and the findings in [`STATUS.md`](STATUS.md). **What replaces it, and it is smaller:** the `.xml` half is export-only, a task named in the YAML but absent from the project is warned about rather than created, and a task deleted from the YAML is left alone until Phase 2 |
+| D6 | ~~**Task Configuration is diff-only**~~ — **closed 2026-08-15**, both halves of it | This row carried two defects. `import_native` mutated `Core2` (§7); and — *not* the same defect, though this row said so for an afternoon — every import run with a `<project>_project.precompilecache` beside the project threw on `MainTask` and `VISU_TASK` while reporting `failed: 0`. **Phase 4 removed both by removing the shared cause**: task configuration exports as `TASK_BOTH` and imports through typed property assignment, so `import_native` is never handed the object. Measured over three cycles with the cache present: **zero warnings**, where cycles 2 and 3 used to throw twice each. Versio deletes nothing of CODESYS's. See G7 and G11 in [`vendors/codesys/IMPORT-PLAN.md`](IMPORT-PLAN.md) and the findings in [`STATUS.md`](../../STATUS.md). **What replaces it, and it is smaller:** the `.xml` half is export-only, a task named in the YAML but absent from the project is warned about rather than created, and a task deleted from the YAML is left alone until Phase 2 |
 
 ### E. Smaller observations
 
@@ -1451,9 +1451,9 @@ asks: what is it, which version, and did anybody pin it.
 |---|---|
 | **CODESYS ScriptEngine** | The scripting plug-in shipped with CODESYS 3.5. Its API reference is installed with the product and published in the CODESYS Online Help under *Scripting*. Everything Versio uses is listed in §1.3, and every member was confirmed against 3.5.22.20 |
 | **greenforge-labs/codescribe** (Apache-2.0) | `https://github.com/greenforge-labs/codescribe` — source of the object-type GUID table (`src/object_type.py`), the visualisation-manager skip, and the "do not rewrite Ids" warning. Where Versio departs from it, §5–§6 say so and why |
-| [`docs/PHASE0-FINDINGS.md`](PHASE0-FINDINGS.md) | The measurements: determinism, cold start, the native-import probe, the `Core2` deviation, the two bugs that only appear against a real process |
-| [`docs/PLAN.md`](PLAN.md) | The architecture, the tier model (§3.10), the vendor seam |
-| [`docs/SAFEGUARDS.md`](SAFEGUARDS.md) | The interruption guard, the staging swap, and what Versio refuses |
+| [`docs/PHASE0-FINDINGS.md`](../../PHASE0-FINDINGS.md) | The measurements: determinism, cold start, the native-import probe, the `Core2` deviation, the two bugs that only appear against a real process |
+| [`docs/PLAN.md`](../../PLAN.md) | The architecture, the tier model (§3.10), the vendor seam |
+| [`docs/SAFEGUARDS.md`](../../SAFEGUARDS.md) | The interruption guard, the staging swap, and what Versio refuses |
 | `fixtures/projects/RefrigeratorControl.project` | 383 KB, 25 objects. The project the whole suite runs against, with its committed mirror beside it |
 
 ### Where to start reading the code

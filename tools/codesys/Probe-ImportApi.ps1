@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Runs the Phase 0 import-API probes (P0-P3, P5, P6, P8, P9) of docs/CODESYS-IMPORT-PLAN.md,
+  Runs the Phase 0 import-API probes (P0-P3, P5, P6, P8, P9) of docs/vendors/codesys/IMPORT-PLAN.md,
   each against its own scratch copy of the project.
 
 .DESCRIPTION

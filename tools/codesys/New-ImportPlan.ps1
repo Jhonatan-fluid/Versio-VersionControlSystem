@@ -4,7 +4,7 @@
 
 .DESCRIPTION
   versio_import.py executes a plan and nothing else (job schema 2, Phase 1 of
-  docs/CODESYS-IMPORT-PLAN.md) - a planless job is refused before the project is opened.
+  docs/vendors/codesys/IMPORT-PLAN.md) - a planless job is refused before the project is opened.
   The tools in this directory drive the script raw, without LocalCodesysRunner, so they
   need a plan from somewhere, and this is it.
 

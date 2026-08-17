@@ -23,7 +23,7 @@
 #
 # Two callers need this verdict from INSIDE the CODESYS process, where the C# cannot be
 # reached: Versio.Core targets net9.0 and this runs on IronPython 2.7. It is the same wall
-# that stops tools/Test-RoundTrip.ps1 calling the C# normaliser (CODESYS.md section 6), and
+# that stops tools/codesys/Test-RoundTrip.ps1 calling the C# normaliser (vendors/codesys/DRIVING.md section 6), and
 # reimplementing was rejected there because PowerShell had no need of its own - here both
 # callers do.
 #

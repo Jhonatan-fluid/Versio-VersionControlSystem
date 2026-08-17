@@ -50,8 +50,8 @@ questions about "why is this like this" are already answered there.
 | `docs/FINDINGS.md` | **Every defect written up with its evidence**, newest first. 99 of them. Search it rather than reading it; `STATUS.md` carries the index |
 | `docs/PLAN.md` | The full architecture plan |
 | `docs/SAFEGUARDS.md` | What Versio refuses, asks about, or waits for |
-| `docs/CODESYS.md` | How CODESYS is driven end to end, and the audit of it |
-| `docs/CODESYS-IMPORT-PLAN.md` | **The active plan.** Twelve numbered import gaps, what each measurement closed, the order to build the rest in — deliberately not 1, 2, 3 — and **the feature checklist**, which says which of the import’s 49 behaviours have been run against a real project and which have not |
+| `docs/vendors/codesys/DRIVING.md` | **One vendor's docs**, beside its two projects. How CODESYS is driven end to end, and the audit of it |
+| `docs/vendors/codesys/IMPORT-PLAN.md` | **The active plan.** Twelve numbered import gaps, what each measurement closed, the order to build the rest in — deliberately not 1, 2, 3 — and **the feature checklist**, which says which of the import’s 49 behaviours have been run against a real project and which have not |
 | `docs/GIT-PANEL-PLAN.md` | The git panel's functionality and UX |
 | `docs/PHASE0-FINDINGS.md` | What Phase 0 measured. **A record, not a live limitation list** — read its supersession notes |
 | `README.md` | Repository layout, vendor boundaries, the one architectural rule |

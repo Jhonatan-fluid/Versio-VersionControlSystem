@@ -117,7 +117,7 @@ that disappears while it is open.
 **[docs/GIT-PANEL-PLAN.md](docs/GIT-PANEL-PLAN.md)** is the git panel's functionality and UX.
 Eleven of its twelve phases are built; what is left is the ahead/behind previews and a list of
 smaller polish items.
-**[docs/CODESYS.md](docs/CODESYS.md)** is how CODESYS is actually driven — the ScriptEngine
+**[docs/vendors/codesys/DRIVING.md](docs/vendors/codesys/DRIVING.md)** is how CODESYS is actually driven — the ScriptEngine
 surface, the command line, both sides of the JSON-lines protocol, every script, and the export
 and import mechanics. Its §12 is a standing audit of that integration: what is broken, what is
 merely stale, and where the C# and the python have drifted apart.
@@ -126,7 +126,7 @@ limitations — including the one real CODESYS mutation it found: `Core2`, a tas
 affinity, rewritten by `import_native` without being asked. **That one is fixed** — task
 configuration imports through the typed API now and is no longer diff-only — so read that
 document as a record of what was measured in Phase 0, not as a list of what is still true.
-**[docs/CODESYS-IMPORT-PLAN.md](docs/CODESYS-IMPORT-PLAN.md)** is where the import side is
+**[docs/vendors/codesys/IMPORT-PLAN.md](docs/vendors/codesys/IMPORT-PLAN.md)** is where the import side is
 being finished, and it is the active plan: eleven numbered gaps, what each measurement closed,
 and the order the evidence argues for building the rest in.
 **[docs/PLAN.md](docs/PLAN.md)** is the full architecture plan behind all of it.
@@ -210,12 +210,13 @@ Versio.sln
    ├─ FINDINGS.md               99 defects with their evidence, newest first — the
    │                            engineering log, split out of STATUS.md when it reached
    │                            77% of that file
-   ├─ CODESYS-IMPORT-PLAN.md    the active plan: the numbered import gaps and the
-   │                            feature checklist
    ├─ SAFEGUARDS.md             what Versio refuses, asks about, or waits for
    ├─ GIT-PANEL-PLAN.md         the git panel's functionality and UX — eleven of twelve phases built
-   ├─ CODESYS.md                how CODESYS is driven end to end, and the audit of it
-   └─ PHASE0-FINDINGS.md        measured results and known limitations
+   ├─ PHASE0-FINDINGS.md        measured results and known limitations
+   └─ vendors/codesys/          ONE VENDOR's documentation, beside its two projects
+      ├─ DRIVING.md             how CODESYS is driven end to end, and the audit of it
+      └─ IMPORT-PLAN.md         the active plan: the numbered import gaps and the
+                                feature checklist
 ```
 
 `Versio.App` holds the WPF shell: `Theme/tokens/` for the design tokens, `Theme/controls/` for
@@ -344,12 +345,12 @@ dotnet test
 `tools/` holds the harnesses used to validate everything before the C# runner existed. They remain the fastest way to poke at CODESYS directly.
 
 ```bash
-pwsh tools/Test-RoundTrip.ps1 -Project fixtures/projects/RefrigeratorControl.project -Profile "CODESYS V3.5 SP22 Patch 2" -MutateFirst
+pwsh tools/codesys/Test-RoundTrip.ps1 -Project fixtures/projects/RefrigeratorControl.project -Profile "CODESYS V3.5 SP22 Patch 2" -MutateFirst
 ```
 
 `-MutateFirst` edits an exported `.st` before importing it. **Use it.** Without a deliberate change, a round-trip comparison can pass while the import silently did nothing — a green result that cannot fail is worse than a red one.
 
-**The verdict is per layer, because the layers have different fidelity rules.** Textual `.st` and export-only `.yaml` must be byte-identical and are fatal if they are not; native `.xml` is *expected* to differ, because `import_native` legitimately advances counters, reorders unordered collections and re-mints internal GUIDs. A single byte verdict over both printed `Lossless: False` on a perfectly healthy project, which is worse than useless — see [docs/CODESYS.md](docs/CODESYS.md) §6.6.
+**The verdict is per layer, because the layers have different fidelity rules.** Textual `.st` and export-only `.yaml` must be byte-identical and are fatal if they are not; native `.xml` is *expected* to differ, because `import_native` legitimately advances counters, reorders unordered collections and re-mints internal GUIDs. A single byte verdict over both printed `Lossless: False` on a perfectly healthy project, which is worse than useless — see [docs/vendors/codesys/DRIVING.md](docs/vendors/codesys/DRIVING.md) §6.6.
 
 ```
   textual (.st)        LOSSLESS - byte-identical

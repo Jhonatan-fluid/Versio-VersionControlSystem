@@ -10,7 +10,7 @@
 #   RefrigeratorControl has thirteen records and not one member object - no method, no
 #   action, no property, no folder below Application. Its manifest therefore records no
 #   `parent` for anything, and every resolve chain the import has ever built came from
-#   directory names. The import feature checklist (docs/CODESYS-IMPORT-PLAN.md) marks five
+#   directory names. The import feature checklist (docs/vendors/codesys/IMPORT-PLAN.md) marks five
 #   rows NOT REACHED for that one reason, and two of them are G4 and G5 - the gaps with the
 #   least evidence behind them.
 #
@@ -38,7 +38,7 @@
 #   you about one surprise per run.
 #
 #   `create_folder` is the standing warning: it RETURNS None and creates the folder anyway
-#   (CODESYS.md), so the destination is found by name afterwards rather than taken from the
+#   (vendors/codesys/DRIVING.md), so the destination is found by name afterwards rather than taken from the
 #   return value.
 # ---------------------------------------------------------------------------------------
 #
