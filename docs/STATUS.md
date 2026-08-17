@@ -647,10 +647,12 @@ does not record them has to be run again.
     to `ProjectAuthoritative` and correctly refuses an import afterwards, so the fixture has to
     release it the way the application does. **`SyncTrigger.ForceReleased` has no production
     caller at all** — only `ReleaseAfterPushAsync` and `ReleaseAfterDiscardAsync` reach Clean.
-- **Three of the seven C#/python pairs are still compared by nothing** — `NativeXmlScrubber` ↔
-  `scrub_native_xml`, `StTextCodec` ↔ `join_st`/`split_st`, and `StDeclarationParser` ↔
-  `parse_declaration`. `StTextCodec` is the one that matters: a bug in `split_st` silently
-  moves code between a declaration and an implementation, and it is a hand-maintained copy.
+- **~~Three~~ Two of the seven C#/python pairs are still compared by nothing** —
+  `NativeXmlScrubber` ↔ `scrub_native_xml` and `StDeclarationParser` ↔ `parse_declaration`.
+  ~~`StTextCodec` is the one that matters: a bug in `split_st` silently moves code between a
+  declaration and an implementation, and it is a hand-maintained copy.~~ — **closed
+  2026-08-16, and it mattered exactly as much as this said**: the parity test found a
+  divergence on its first run, worth a renamed POU's GUID. See the Finding.
   **This is not theoretical** — [`CODESYS.md`](CODESYS.md) §9 counts four drifts across the
   pairs that *are* compared, two with the C# right and two with the python right, and reading
   the two sources side by side caught none of them. The harness exists: `RunPython` in

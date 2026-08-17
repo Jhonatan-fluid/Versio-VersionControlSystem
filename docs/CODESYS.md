@@ -979,16 +979,18 @@ Seven C# types restate logic that also exists in Python:
 | `ExportFormRules` | `TYPE_FORM` / `decide_form` | **tests only** | `PythonFileNameParityTests` — **runs** the python, 33 GUIDs × 8 combinations |
 | `PathMapper` | `safe_file_stem` / `file_name_for` | **tests only** | `PythonFileNameParityTests` — **runs** the python, 35 names |
 | `NativeXmlScrubber` | `scrub_native_xml` | **tests only** | nothing — an open gap |
-| `StTextCodec` | `join_st` / `split_st` | **tests only** | nothing — an open gap |
+| `StTextCodec` | `join_st` / `split_st` | **tests only** | `PythonFileNameParityTests` **(2026-08-16)** — **runs** the python: 27 payloads, 81 splits, and the two trim sets compared directly. **It found a divergence on its first run** |
 | `StDeclarationParser` | `parse_declaration` | **tests only** | nothing — an open gap |
 | `NativeXmlNormalizer` | `versio_native_equiv.py` **(2026-08-15)** | C#: `RealRoundTripEquivalenceTests`. Python: **nothing yet** — Phases 2 and 5 are its callers | `PythonFileNameParityTests` — **runs** the python, 2.9 MB of real CODESYS output plus 18 measured cases, both maskings |
 
-> **`NativeXmlScrubber`, `StTextCodec` and `StDeclarationParser` are where the next drift will
-> happen.** `StTextCodec` in particular is the highest-consequence pure code in the product — a
-> bug in `split_st` silently moves code between a declaration and an implementation — and it is
-> a hand-maintained copy with no output comparison. The machinery to close this now exists:
-> `RunPython` in `PythonFileNameParityTests` takes a snippet and a JSON payload, so a codec
-> parity test is a few lines rather than a new harness.
+> **`NativeXmlScrubber` and `StDeclarationParser` are where the next drift will happen.**
+> ~~`StTextCodec` in particular~~ — **closed 2026-08-16, and it was the highest-consequence
+> row here**: a bug in `split_st` silently moves code between a declaration and an
+> implementation, and the test found one on its first run. Two languages' default `trim`
+> disagreed about four characters, which would have cost a renamed POU its GUID. See the
+> Finding in [`STATUS.md`](STATUS.md). **This row is why the remaining two are worth doing
+> rather than reasoning about**: reading the two sources side by side had caught none of the
+> four drifts below, and it did not catch this one either.
 
 > **The normaliser's row was written the other way round, and it is the one to copy.** Its
 > python half and its parity test landed in the same commit, so the pair has never had a
@@ -1013,6 +1015,15 @@ only, in *both* directions:
 | `NativeWithChildren` for an unmapped container (§12 C1) | C# | python | this audit |
 | Path-like and over-long name shortening (§12 C2) | python | C# | this audit |
 | Trailing space or dot collapsing two names onto one file (§12 C2) | C# | python | porting the previous row |
+
+**A different kind of drift, and it had nothing watching it at all until 2026-08-16.** The
+rows above are two *implementations* disagreeing. There is also one side reading a **literal**
+the other side stopped writing — a manifest `form`, a skip reason, a warning code. Nothing in
+the pure suite can see it, because every C# test builds its fixture from the same constant it
+asserts against: setting `ExportCoverage.FailureCode` to `EXPORT_FAILEDX` left all 1,492 unit
+tests green. `ScriptContractTests` reads the **embedded** script — the copy that runs, not the
+one on disk — and pins the codes, plus the invariant that every warning the exporter can raise
+is classified as losing an object or not.
 
 **Comparing tables was never going to catch these.** The GUID tables were byte-identical every
 time; the *behaviour* differed. `PythonFileNameParityTests` therefore runs both implementations
