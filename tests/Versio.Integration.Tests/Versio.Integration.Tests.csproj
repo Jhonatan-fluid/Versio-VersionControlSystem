@@ -22,6 +22,11 @@
          location so the suite runs from any clone path — hardcoded paths broke the moment
          the checkout moved. -->
     <Compile Include="..\Versio.Core.Tests\TestPaths.cs" Link="TestPaths.cs" />
+
+    <!-- The seam scanner, shared for the same reason: two copies of a rule is how the two
+         copies start disagreeing. Versio.Core.Tests cannot host the Infrastructure half of the
+         check because it deliberately does not reference Versio.Infrastructure. -->
+    <Compile Include="..\Versio.Core.Tests\Plc\VendorSeamScanner.cs" Link="VendorSeamScanner.cs" />
   </ItemGroup>
 
 </Project>
