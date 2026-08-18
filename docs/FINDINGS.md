@@ -17,6 +17,43 @@ produce a diff touching everything else.
 
 ---
 
+### The project row stuck on "exporting…", and the await that widened a race until it hit
+
+**Found 2026-08-17 by the product owner running the app** — the sixth defect in three
+branches found that way and by nothing else. They added `FB_Alarm` in CODESYS; the automatic
+export ran and finished cleanly ("exported 14 object(s) in 20.7s", `ExportSucceeded`,
+`ProjectAuthoritative`) — and the project row said **"exporting…" forever**.
+
+**The race was two refreshes finishing out of order.** `RefreshTreeAsync` captures its
+sources — including each row's busy flag — at entry, then awaits before applying. A refresh
+captured *mid-export* (busy, "exporting…") could therefore apply **after** the refresh that
+saw the export complete, landing the stale snapshot last. And the signature gate then made it
+permanent: the stale refresh had already recorded its signature as "shown", so every later
+refresh with unchanged inputs returned early while the tree displayed the superseded build.
+
+**The window was always there; the catalog-baseline work widened it from microseconds to a
+git spawn.** Before, the only await between the gate and the apply was the `Task.Run` build —
+milliseconds. The per-library HEAD fetch added `ShowAtHeadAsync` — a process spawn, tens of
+milliseconds per changed catalog — into exactly that window, on exactly the refreshes that
+follow an export (which is when the manifest and catalogs have just changed). The feature
+that made the tree say *which library moved* is what let the export's completion lose the
+race to its own beginning.
+
+**Fixed with the pattern the codebase already had**: `DiffView.Rebuild`'s generation guard,
+carried over with its reasoning — the last call to enter owns the tree, everything older
+abandons at the checkpoint after the awaits — plus the second half `DiffView` never needed:
+the signature is recorded only when a build is **applied**, because a signature claimed by a
+refresh that then abandoned is a claim about something nobody is seeing.
+
+**No deterministic regression test, stated rather than papered over.** The inversion needs
+the older refresh's awaits to outlast the newer one's, which on the test dispatcher resolves
+FIFO — a test of the interleaving would pass with the fix deleted on almost every run, and a
+sometimes-red test is the suite's most expensive kind. The guard is structural, the pattern
+is the one `DiffView` has carried untested for the same reason, and the reasoning sits on
+the field, the entry and the checkpoint.
+
+---
+
 ### The expansion default missed the correction the pruner already carried
 
 **Found 2026-08-17, building the library reference rows** — PHASE2's first queue item, and the

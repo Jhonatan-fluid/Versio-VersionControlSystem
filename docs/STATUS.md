@@ -959,6 +959,7 @@ actually do.
 
 The full list, newest first:
 
+- [The project row stuck on "exporting…", and the await that widened a race until it hit](FINDINGS.md#the-project-row-stuck-on-exporting-and-the-await-that-widened-a-race-until-it-hit)
 - [The expansion default missed the correction the pruner already carried](FINDINGS.md#the-expansion-default-missed-the-correction-the-pruner-already-carried)
 - [`import_native` duplicates an external-file object instead of replacing it](FINDINGS.md#import_native-duplicates-an-external-file-object-instead-of-replacing-it)
 - [The probe that caught two of its own lies was carrying a third, and three documents believed it](FINDINGS.md#the-probe-that-caught-two-of-its-own-lies-was-carrying-a-third-and-three-documents-believed-it)

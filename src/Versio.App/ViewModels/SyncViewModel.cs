@@ -1763,6 +1763,13 @@ public sealed class SyncViewModel : ObservableObject
     /// regression the changed-files list was reconciled in place to avoid.
     /// </remarks>
     private string _treeSignature = string.Empty;
+
+    /// <summary>Which call to <see cref="RefreshTreeAsync(GitStatus)"/> owns the tree.</summary>
+    /// <remarks>
+    /// Bumped at entry, checked after the awaits. UI-thread only, so a plain int — the
+    /// interleaving is of continuations, not of threads.
+    /// </remarks>
+    private int _treeGeneration;
     private GitStatus? _lastStatus;
 
     /// <summary>What each project's export covers, keyed by its repo-relative path.</summary>
@@ -2145,6 +2152,16 @@ public sealed class SyncViewModel : ObservableObject
         // lasts seventeen.
         _lastStatus = status;
 
+        // The same guard DiffView.Rebuild carries, for the same race arrived at the same
+        // way. This method captures the sources — including each row's "exporting…" state —
+        // and then AWAITS twice before applying: the baseline fetch and the background
+        // build. A refresh captured mid-export can therefore finish AFTER the refresh that
+        // saw the export complete, and apply its stale snapshot last — observed as a project
+        // row stuck on "exporting…" forever, because the signature gate below then refused
+        // every later rebuild as already-shown. The last call to enter owns the tree;
+        // everything older abandons at the next checkpoint.
+        var generation = ++_treeGeneration;
+
         if (_repositoryRoot is null)
         {
             Tree.Clear();
@@ -2208,12 +2225,15 @@ public sealed class SyncViewModel : ObservableObject
                 .Select(c => $"{c.Path}|{c.Effective}|{c.IsStaged}"),
         ]);
 
+        // Compared against the signature of what was APPLIED, and recorded only when a
+        // build lands — never up front. Recording it before the awaits below was the second
+        // half of the stuck-row race: the superseded refresh had already claimed its
+        // signature as shown, so every later refresh with the same inputs returned early
+        // while the tree displayed something older.
         if (signature == _treeSignature && Tree.Count > 0)
         {
             return;
         }
-
-        _treeSignature = signature;
 
         // HEAD's copy of every changed catalog — library or task — fetched here because it
         // needs git and the build below deliberately does not. The pair is what lets the
@@ -2305,6 +2325,16 @@ public sealed class SyncViewModel : ObservableObject
                     // itself was written to end.
                     Objects: ObjectIndex.Of(projects));
         }).ConfigureAwait(true);
+
+        // The checkpoint. A newer refresh entered while this one was fetching or building;
+        // its snapshot is fresher than this one on every axis that matters — the busy flag
+        // above all — so this one abandons rather than applying stale rows last.
+        if (generation != _treeGeneration)
+        {
+            return;
+        }
+
+        _treeSignature = signature;
 
         foreach (var problem in built.Unreadable)
         {
