@@ -27,8 +27,8 @@ knows the mirror and the project are the same edit, it is ranked high.
 |---|---|---|---|
 | **UX-1** | **Merging a branch into the current one is not implemented at all** | medium | The one missing *verb*. And the one place Versio can beat a terminal outright |
 | **UX-2** | The rail carries no counts, so the app is blind from two of its three panels | small | Cheapest large win; the user asked for it by name |
-| **UX-3** | Branch actions are split across two surfaces, and half of them are panel-local | small–medium | `Delete branches…` is in the wrong place, and the fix is a group rather than a move |
-| **UX-4** | `STAGED` and `NOT STAGED` do not say how many | trivial | A one-line lie of omission on the panel's two busiest headers |
+| **UX-3** | The rare branch actions have no container, so each one lands as furniture | small | The fix is a shape, not a move — and it is where UX-1 lives |
+| **UX-4** | The two list headers say no count, and run into each other once there is one to say | small | A live layout defect, **and a test named for it that cannot reach the failing state** |
 | **UX-5** | The git panel's lists have no context menu and no double-click | small | The project tree got one this session; the panel about those same files did not |
 | **UX-6** | Nothing in the git panel or the history can be searched | small | The project panel has a find box. The list with four hundred rows does not |
 | **UX-7** | The keyboard reaches three things | small | Panel switching is the most frequent act in the app and has no key |
@@ -74,7 +74,7 @@ panel plan — *the reason to use Versio instead of a generic git client*.
 - `Task<GitResult> MergeBranchAsync(string branch, bool noFastForward, IProgress<GitProgress>?, CancellationToken)`
   on `IGitClient`, implemented in `GitCliClient.Branches.cs` beside the merge and rebase that
   already exist there.
-- A **`Merge a branch into <current>…`** action, in the branch group UX-3 proposes, opening a
+- A **`Merge a branch into <current>…`** entry in the branch overflow UX-3 proposes, opening a
   picker with the shape `BranchDeleteWindow` already has: local and remote branches, a
   `WhereText` column, and — free, because `MergedBranchesAsync` already exists and the delete
   dialog already calls it ([`IGitClient.cs:253`](../src/Versio.Core/Abstractions/IGitClient.cs)) —
@@ -141,43 +141,90 @@ zero-suppression test must fail.
 
 ---
 
-## UX-3 · Branch actions are split across two surfaces, and half of them are panel-local
+## UX-3 · The rare branch actions have no container, so each one lands as furniture
 
 **Today.** *Create a branch* is a `+` in the top bar beside the branch dropdown
 ([`MainWindow.xaml:295–300`](../src/Versio.App/Views/MainWindow.xaml)). *Delete branches…* is a
-right-aligned ghost button inside the git panel's branch card
+right-aligned ghost button in its own row inside the git panel's branch card
 ([`GitPanelView.xaml:461`](../src/Versio.App/Views/Panels/GitPanelView.xaml)).
 
-**Why it is wrong — and what the existing comment does and does not settle.** The comment above
-that button argues, correctly, that a fourth button in the fetch/pull/push row overflows the
-380 px panel and that a destructive act should not sit where `Fetch` sits. Both true. Neither is
-an argument for **that** home. Two things are actually wrong with it:
+**What this finding used to say, and why it changed.** The first version proposed hoisting both
+into one branch group in the top bar, on the argument that create and delete are the same
+family. **Rejected by the owner, 2026-08-18**, and the counter-argument is better than the
+proposal was:
 
-- **It is split from its own family.** Create and delete are the same question — *which branches
-  exist* — and they are on two different surfaces, one of which is reached through a rail
-  button. The branch card is about *where this branch stands against its remote*, which is a
-  different question and is exactly the reasoning the comment itself uses to keep the button out
-  of the fetch row.
-- **It is panel-local.** Deleting branches has nothing to do with staging, so it is unreachable
-  from two panels for no reason a user could state.
+> They are the same family and they are **not the same kind of act**. Creating a branch is
+> frequent, cheap and reversible; deleting one is rare and destroys work. Grouping by family
+> puts a rare destructive action at the same prominence as a frequent safe one — which is
+> precisely the mistake the existing comment already rejects when it refuses to let `Delete
+> branches…` sit where `Fetch` sits. Hoisting it to the top bar does not fix that mistake, it
+> relocates it to a more prominent row. **Frequency decides prominence; family decides
+> grouping**, and only one of those is a claim about where a control goes.
 
-**Proposal.** One branch group in the top bar, where the dropdown already is: the dropdown, `+`,
-and an overflow `⋯` carrying **New branch…**, **Merge a branch into `<current>`…** (UX-1) and
-**Delete branches…**. Destructive last and separated. This also gives UX-1 a home that does not
-cost the 380 px panel a row, and it makes every branch verb reachable from every panel.
+So `+` stays in the top bar, untouched. The rare actions stay in the git panel.
+
+**What is actually wrong, then.** Not the panel — the *shape*. `Delete branches…` is a
+permanent, top-level control in a 380 px column for something reached a few times a month, and
+it is the only one of its kind so far. UX-1 adds a second. Every future infrequent branch verb
+adds a third. There is no container for them, so each one arrives as another permanent button
+and the card degrades one row at a time. The stashes section one border up already made this
+argument and won it — *"the first version was six permanent controls in the panel's narrowest
+column for something reached a few times a month"* — and the answer there was zero permanent
+controls.
+
+**Accepted trade, recorded so it is not re-derived.** Branch deletion stays reachable only with
+the Git rail selected. That is a real cost — it is not a staging action and it is unreachable
+from Project and History — and it is accepted, because an action taken a few times a month can
+afford one rail click, and the alternative costs the top bar a permanent control.
+
+**Proposal.** One overflow, in the slot `Delete branches…` occupies today — same row, same
+right alignment, same quiet ghost styling, so the card's geometry does not move at all.
+
+- **Label it for what it holds, not `More…`.** `Branch ⌄` — or `Branch actions ⌄` if the width
+  allows. This codebase's own rule is that a caption says what will happen; `More…` says
+  nothing and makes the contents unguessable, which is the one thing an overflow must not do.
+  The tooltip names the entries, so the menu can be judged without being opened.
+- **Contents when built:** *Merge a branch into `<current>`…* (UX-1) first, then a separator,
+  then *Delete branches…* last. Destructive last and separated, the same order the branch
+  delete dialog already uses for its own force checkbox.
+- **The container is most of the value**, more than either entry. It is the standing answer to
+  *"where does the next infrequent branch verb go"* — rename a branch, set upstream, copy the
+  branch name, `fetch --prune`. None of those is proposed here. Naming the home means none of
+  them needs its own placement argument later, and none of them lands as another permanent
+  button.
+
+**One risk worth stating rather than discovering.** UX-1 is a verb users currently believe does
+not exist, and putting a brand-new verb behind an overflow on day one is how it stays
+undiscovered. Three cheap defences, in order: the label names the subject; the tooltip names the
+entries; and **promotion is one line if it turns out to be wanted often** — the merge-request
+button directly below is already a full-width row in this same card, at exactly the same
+once-per-branch frequency, so the precedent and the shape both exist. Ship it in the menu, and
+move it out if the owner finds themselves hunting for it.
 
 **One trap, already learned once this session.** A menu is a popup with its own HWND and does
 not inherit the window's theme — the project tree's context menu needed its own style for
 exactly this, and Aero's white slab is what appears otherwise. Reuse that style; do not
 rediscover it.
 
-**Cost:** small–medium. **Tests.** App: every branch verb is reachable with each of the three
-panels active — the point of the move, and a test that fails today. **Mutation check:** re-hide
-the menu behind the git panel; that test must go red.
+**Cost:** small. One control replacing one control, plus the menu's entries.
+
+**Tests.** App, in `GitPanelChromeTests`: the overflow exists, opens, and each entry raises the
+command it names. In `GitPanelGeometryTests`: the branch card's realised height is unchanged
+against today's — the whole point of reusing the slot, and the assertion that catches a menu
+that quietly grew a second row. **Mutation check:** put `Delete branches…` back as a bare
+top-level button; the chrome test asserting that no command which destroys work sits at the
+card's top level must go red. Write that test as the rule rather than as a name-check, so the
+third and fourth rare verb are covered by it too.
 
 ---
 
-## UX-4 · `STAGED` and `NOT STAGED` do not say how many
+## UX-4 · The two list headers say no count, and run into each other once there is one to say
+
+Two halves of one row, and they must be fixed together — because **fixing the first alone makes
+the second worse.** Adding a count to a header that already overflows widens the thing that
+overflows.
+
+### 4a · The headers do not say how many
 
 **Today.** `StagingSelection.Caption` returns the empty string unless something is ticked
 ([`StagingSelection.cs:90`](../src/Versio.Core/Git/StagingSelection.cs)), and it is the only
@@ -186,16 +233,108 @@ number beside either header ([`GitPanelView.xaml:846`](../src/Versio.App/Views/P
 
 **Why it is wrong.** The count is the first thing anybody wants from either list and the one
 thing a scrollable list cannot show. The commit button's caption carries a number — *"Stage &
-commit (3)"* — so the panel already knows it and states it in the one place that is about the
+commit (3)"* — so the panel already knows it, and states it only in the place that is about the
 *selection* rather than about the list.
 
-**Proposal.** `STAGED · 12` standing, replaced by `3 of 12 selected` while anything is ticked —
-the caption already renders that sentence, so this is a fallback rather than a new string.
-Suppressed at zero, with the empty-state line already covering that case.
+### 4b · The header controls collide once the labels grow — reported from the running app
 
-**Cost:** trivial, in Core, with the rest of `StagingSelection`. **Tests.** Core: the caption at
-zero ticked, at some, and at all. **Mutation check:** return the empty string again at zero
-ticked; the new Core case must fail.
+**Today**, the header of each list is a four-column grid — `Auto | Auto | * | Auto`
+([`GitPanelView.xaml:830`](../src/Versio.App/Views/Panels/GitPanelView.xaml), and the same shape
+at `:889`): checkbox, section label, caption, action buttons.
+
+**The mechanism.** A WPF `Grid` measures its `Auto` columns against infinity and hands each one
+its full desired width; the `*` column gets whatever is left, floored at zero and never
+negative. So when the `Auto` columns together want more than the row has, **the star column
+collapses to nothing and the Autos keep their width anyway** — the grid's desired width exceeds
+its slot, and the rightmost children are laid out past the panel's right edge, over the
+splitter and the diff pane. Nothing here clips, so nothing stops it.
+
+**And every input to that sum grows with the number of changes**, which is why it appears when
+the lists fill and not before:
+
+- The button labels are counts, not fixed strings.
+  `Label` renders `"{verb} {selected}"` ([`StagingSelection.cs:73`](../src/Versio.Core/Git/StagingSelection.cs)),
+  so `Discard` becomes `Discard 127` and `Stage` becomes `Stage 127`. The unstaged header
+  carries **two** of those side by side.
+- The section label cannot give way. `NOT STAGED` sits in an `Auto` column in the letter-spaced
+  `SectionLabel` face, with no trimming and no ceiling — so it is rigid while everything around
+  it is growing, and it is by some distance the least informative thing in the row.
+- The column is narrower than the test believes. `PanelColumn` is `Width="380" MinWidth="260"`
+  ([`MainWindow.xaml:436`](../src/Versio.App/Views/MainWindow.xaml)) and the width is
+  **persisted** ([`MainWindow.xaml.cs:245`](../src/Versio.App/Views/MainWindow.xaml.cs)), so a
+  panel dragged narrow once stays narrow across every later launch. 120 px of the budget can be
+  gone before a single row is drawn.
+
+**This is a defect with a test that is named for it and cannot see it.**
+`GitPanelGeometryTests.Nothing_overflows_the_panel_sideways` walks every visible child and
+asserts none crosses the panel's right edge — precisely this failure. It passes, for three
+independent reasons, and each one is worth writing down because the same trap is available to
+the next fixture:
+
+1. **It measures one width.** `PanelWidth = 380`
+   ([`GitPanelGeometryTests.cs:38`](../tests/Versio.App.Tests/GitPanelGeometryTests.cs)), and
+   the class comment calls it *"the panel's real column width"*. It is the **default** width, not
+   the only one — the control is user-resizable to 260 and remembers it.
+2. **Nothing in the fixture is ticked.** It adds 4 staged and 12 unstaged rows and never sets
+   `IsSelected`, so every button renders its `"{verb} all"` form and **both captions are the
+   empty string**. The widest state the header can reach is not merely untested — it cannot be
+   constructed in this fixture at all.
+3. **The empty caption is then skipped by the assertion itself.** The sweep filters on
+   `.Where(e => e.Visibility == Visibility.Visible && e.ActualWidth > 0)`. An empty `TextBlock`
+   measures zero wide, so the one control in the row *designed to absorb the slack* is excluded
+   from the only test watching the row. And twelve rows caps every count at two digits, where a
+   real import produces three.
+
+**This one gets a Finding when it is fixed**, at the top of `FINDINGS.md` with the index line in
+`STATUS.md` — not for the overlap, which is ordinary, but for the shape of the miss: a test
+written for exactly this failure, passing because its fixture cannot reach the failing state.
+That is the same class as the pinned wording that went on asserting the old sentence while the
+script grew `remove()`.
+
+### The proposal, for both halves
+
+**One column instead of two, and let it trim.** The section label and the caption become a
+single run in the star column — `STAGED · 12`, and `STAGED · 3 of 12 selected` while anything
+is ticked — with `TextTrimming="CharacterEllipsis"` and a `MinWidth` so it can shrink without
+vanishing. That delivers 4a's count as a side effect of 4b's fix rather than as an addition to
+it, and it removes an entire rigid `Auto` column from the row. Suppressed at zero, where the
+clean-tree line already speaks.
+
+**A ceiling on the buttons, and a fallback that is a rule rather than a layout trick.** Past
+that ceiling the labels drop to the bare verb — `Stage`, `Discard` — because by then the count
+is in the header, one control away. The fallback belongs in `StagingSelection` in Core, beside
+`Label`, so it is asserted without a window.
+
+**But `Stage all` and `Discard all` never abbreviate.** `Label`'s own doc comment carries the
+safety argument — *"a button reading 'Stage' over a list of forty with three ticked is
+ambiguous in the one direction that costs something"* — and that argument is about the
+**nothing-ticked** case, where the button silently acts on everything. That is the dangerous
+label and it stays verbatim. The one that abbreviates is `Discard 127`, which is both the widest
+and the *safe* case: the count is explicit in the header and the ticks are on screen.
+
+**`ClipToBounds` on both header grids, as the backstop.** Not the fix — a fix that relies on
+clipping is a fix that hides its own failure — but the guarantee that a label nobody predicted
+produces a clipped button instead of text painted across the diff pane. **The status bar already
+took exactly this lesson**, has `ClipToBounds="True"` on `StatusState` and a comment recording
+why ([`MainWindow.xaml:1181`](../src/Versio.App/Views/MainWindow.xaml)); the git panel's headers
+never got the same treatment. Carry the reasoning across, do not re-derive it.
+
+**Cost:** small — one Core rule, one column merge, two attributes. The test work is the larger
+half and is worth more.
+
+**Tests — the fixture first, before any markup moves.**
+
+- Fix `GitPanelGeometryTests` before fixing the panel, and **watch it go red**: parameterise the
+  width over `380` **and** `260`; tick a subset so both captions render and the labels carry
+  counts; use enough rows for a three-digit count. A layout fix landed against a fixture that
+  could never fail is a fix nobody can show working.
+- Drop the `ActualWidth > 0` filter, or narrow it to genuinely collapsed elements. It is there
+  to skip controls that are not laid out, and it is silently skipping one that is.
+- Core: the caption at zero ticked, at some and at all; the label's abbreviation threshold.
+
+**Mutation check:** put the rigid `Auto` label column back. The 260 px case must go red — and if
+it does not, the fixture is still not reaching the state the user is reporting, and nothing
+below it is worth believing.
 
 ---
 
@@ -369,11 +508,23 @@ written down, so a future session finds the decision instead of re-deriving it.
 
 ## Suggested order
 
-**UX-2, UX-4 and UX-11 together** — one change to the counts, cheap, and the whole app reads
-better afterwards. Then **UX-3**, because it is the home UX-1 needs. Then **UX-1**, which is the
-real work and the reason this document is ranked the way it is. **UX-5, UX-6, UX-7** are an
-interaction pass and can go in any order after that. **UX-8, UX-9, UX-10** are small and
-independent. **UX-12** is a question before it is a task.
+**UX-4 first, on its own**, and it has been promoted out of the cheap-counts group since the
+first draft: it is the only item here reported from the running app rather than read out of the
+markup, it is a live layout fault a user is hitting today, and its fixture work has to happen
+before any of it can be shown working. Start by making
+`Nothing_overflows_the_panel_sideways` fail.
+
+**Then UX-2 and UX-11 together** — one change to the counts, cheap, and the whole app reads
+better afterwards. UX-4's header merge has already delivered the third count by then.
+
+Then **UX-3 and UX-1 in that order but in one sitting**, not one release apart. UX-3 is the
+home UX-1 needs, and on its own it is a menu holding a single entry — which is strictly worse
+than the button it replaced, since it costs a click to reach the same thing. The container only
+pays for itself once there are two things in it, so land the overflow and the merge verb
+together, as two commits and one change of shape.
+
+**UX-5, UX-6, UX-7** are an interaction pass and can go in any order after that. **UX-8, UX-9,
+UX-10** are small and independent. **UX-12** is a question before it is a task.
 
 Nothing here touches `Sync/`, `Git/`, `Locking/`, `Watching/`, `Projects/` or `Diff/` in a way
 that carries vendor knowledge, and nothing here needs CODESYS — **except UX-1's step 3**, which
