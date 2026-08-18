@@ -207,6 +207,29 @@ time, so it is the one piece worth starting early once the queue above is nearly
 
 ---
 
+## Added by the owner after the queue closed — 2026-08-17 evening, all built
+
+The eyeball pass produced these, which is the pass doing its job:
+
+- **Project-level objects under an explicit POUs node.** The pool Library Manager flat at
+  the root read as a duplicate of the application's; CODESYS hides the pool behind its own
+  pane, Versio groups it under the pane's own name. Flat pre-schema-4 manifests are exempt,
+  or the whole project would file under POUs.
+- **The pane grew a Rendered | Raw split.** Rendered: a library manager is its references as
+  a table, the task configuration a task table, one task its facts, a `.st` its highlighted
+  content, and the project row a card — file size, vendor, toolchain presence, sync state,
+  last export, objects by type, libraries, tasks, coverage. Raw stays the diff. The default
+  follows the selection: changed files open on Raw because the diff is what review is;
+  clean ones on Rendered, because the diff of a clean file is nothing.
+- **A clean file renders as itself now**, in both tabs, with "no changes right now" said in
+  the pane header — a clean object used to render as a shrug.
+- **Known gap, recorded not guessed:** the card cannot say which CODESYS version last saved
+  the project — the manifest does not record it. Adding it means touching the exporter
+  (python + the half-hour gate), queued for the next exporter change rather than done in
+  passing.
+
+---
+
 ## Decisions taken, and why — the part a newcomer must not re-litigate
 
 Each of these was closed **on purpose**, with the reasoning recorded. Reopening one is allowed;

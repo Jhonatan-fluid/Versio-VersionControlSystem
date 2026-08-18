@@ -1019,6 +1019,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         _selectedDiffStaged = false;
         ShowFullFile = false;
         DiffLayers = [];
+        ClearRendered();
 
         // Handed back if this repository has one waiting. Empty otherwise, which is the point:
         // a message typed for one project must not be sitting in another project's box next to
@@ -3984,6 +3985,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         _shownCommit = (commitId, shortId, caption, null);
         _selectedDiffStaged = false;
         DiffLayers = [];
+        ClearRendered();
 
         // A commit is history: it is already staged, already committed, and there is nothing
         // to move in or out of the index. Offering to stage a hunk of it would be offering
@@ -4020,6 +4022,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         _selectedDiffStaged = false;
         CanStageHunks = false;
         DiffLayers = [];
+        ClearRendered();
 
         var patch = await _git
             .CommitFileDiffAsync(commitId, path, CancellationToken.None, DiffContext)
@@ -5235,6 +5238,281 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 .ToList()
             : [];
 
+    // ------------------------------------------------------ the rendered pane (Rendered | Raw)
+
+    private object? _renderedContent;
+    private bool _showRendered;
+    private string _paneNote = string.Empty;
+
+    /// <summary>
+    /// What the Rendered tab draws for the current selection, or null when there is only
+    /// the raw view.
+    /// </summary>
+    /// <remarks>
+    /// One object, dispatched by type through XAML data templates: a
+    /// <see cref="Versio.Core.Projects.LibraryCatalog"/> renders as the libraries table, a
+    /// <see cref="Versio.Core.Projects.TaskCatalog"/> as the task table,
+    /// <see cref="TaskDetailRender"/> as one task's facts, <see cref="SourceRender"/> as the
+    /// file's own highlighted content, and <see cref="ProjectSummaryRender"/> as the project
+    /// card. The data is parsed on the click, from the same readers the tree already trusts
+    /// — a second interpretation of a catalog would be a second answer to what it says.
+    /// </remarks>
+    public object? RenderedContent
+    {
+        get => _renderedContent;
+        private set
+        {
+            if (SetProperty(ref _renderedContent, value))
+            {
+                OnPropertyChanged(nameof(HasRenderedView));
+                OnPropertyChanged(nameof(ShowRenderedPane));
+            }
+        }
+    }
+
+    public bool HasRenderedView => _renderedContent is not null;
+
+    /// <summary>Which tab is showing. Defaults per selection, not sticky.</summary>
+    /// <remarks>
+    /// A changed file opens on Raw, because the diff is what review is; anything clean opens
+    /// on Rendered, because the diff of a clean file is nothing and the content is the
+    /// answer. A sticky choice was considered and dropped: which view reads better is a fact
+    /// about the file in front of you, not about the person.
+    /// </remarks>
+    public bool ShowRendered
+    {
+        get => _showRendered;
+        set
+        {
+            if (SetProperty(ref _showRendered, value))
+            {
+                OnPropertyChanged(nameof(ShowRenderedPane));
+                OnPropertyChanged(nameof(ShowRawTab));
+            }
+        }
+    }
+
+    /// <summary>The Raw chip's own state — WPF has no inverse TwoWay binding.</summary>
+    public bool ShowRawTab
+    {
+        get => !_showRendered;
+        set => ShowRendered = !value;
+    }
+
+    /// <summary>What the fill actually draws: the rendered host, or the diff under it.</summary>
+    public bool ShowRenderedPane => HasRenderedView && ShowRendered;
+
+    /// <summary>One sentence above the pane when it needs one — "no changes right now".</summary>
+    public string PaneNote
+    {
+        get => _paneNote;
+        private set => SetProperty(ref _paneNote, value);
+    }
+
+    private void ClearRendered()
+    {
+        RenderedContent = null;
+        ShowRendered = false;
+        PaneNote = string.Empty;
+    }
+
+    /// <summary>Build the rendered view for a tree row, or null when only raw makes sense.</summary>
+    private object? BuildRenderedContent(TreeRow row)
+    {
+        if (RepositoryPath is not { } root)
+        {
+            return null;
+        }
+
+        var node = row.Node;
+
+        string? CatalogFile(string suffix) => node.Files.FirstOrDefault(
+            f => f.EndsWith(suffix, StringComparison.OrdinalIgnoreCase));
+
+        string Absolute(string relative) =>
+            Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
+
+        string? ReadOrNull(string relative)
+        {
+            try
+            {
+                return File.ReadAllText(Absolute(relative));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                          or FileNotFoundException or DirectoryNotFoundException)
+            {
+                return null;
+            }
+        }
+
+        switch (node.Kind)
+        {
+            case ProjectNodeKind.Project:
+                return BuildProjectSummary(node);
+
+            // A reference or task row renders its whole catalog: the row's own facts are in
+            // the table, highlighted by being the thing the user just clicked at.
+            case ProjectNodeKind.Library
+                when CatalogFile(LibraryCatalog.FileSuffix) is { } yaml
+                     && ReadOrNull(yaml) is { } text
+                     && LibraryCatalog.Parse(text) is { IsValid: true } catalog:
+                return catalog;
+
+            case ProjectNodeKind.Task
+                when CatalogFile(TaskCatalog.FileSuffix) is { } yaml
+                     && ReadOrNull(yaml) is { } text
+                     && TaskCatalog.Parse(text).Tasks.FirstOrDefault(
+                            t => t.Name == node.Name) is { } task:
+                return new TaskDetailRender { Task = task };
+
+            case ProjectNodeKind.Object or ProjectNodeKind.File:
+                if (CatalogFile(LibraryCatalog.FileSuffix) is { } libraries
+                    && ReadOrNull(libraries) is { } libText
+                    && LibraryCatalog.Parse(libText) is { IsValid: true } libCatalog)
+                {
+                    return libCatalog;
+                }
+
+                if (CatalogFile(TaskCatalog.FileSuffix) is { } tasks
+                    && ReadOrNull(tasks) is { } taskText
+                    && TaskCatalog.Parse(taskText) is { IsValid: true } taskCatalog)
+                {
+                    return taskCatalog;
+                }
+
+                if (row.PrimaryFile is { } primary
+                    && SourceRender.Load(Absolute(primary), primary,
+                           noChanges: node.Status == ChangeKind.Unmodified) is { } source
+
+                    // A NUL says binary — an image or a compiled blob dropped into the
+                    // repository — and a code renderer fed one draws a wall of boxes.
+                    && !source.PseudoDiff.Contains('\0'))
+                {
+                    return source;
+                }
+
+                return null;
+
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>The project card: what a glance at the row should answer.</summary>
+    /// <remarks>
+    /// Everything here is already on this machine — the manifest, the catalogs, the
+    /// coverage, the file itself. The one fact people will look for and not find is which
+    /// CODESYS version last saved the project: the manifest does not record it, and saying
+    /// nothing beats guessing from the installed toolchain, which is a different question.
+    /// </remarks>
+    private ProjectSummaryRender BuildProjectSummary(Versio.Core.Projects.ProjectTreeNode node)
+    {
+        var facts = new List<FactRow>();
+        var manifest = Sync.ManifestFor(node.Path);
+
+        if (RepositoryPath is { } root)
+        {
+            var file = new FileInfo(Path.Combine(
+                root, node.Path.Replace('/', Path.DirectorySeparatorChar)));
+            if (file.Exists)
+            {
+                facts.Add(new FactRow("Project file",
+                    $"{file.Length / (1024.0 * 1024.0):0.##} MB · saved {file.LastWriteTime:g}"));
+            }
+        }
+
+        facts.Add(new FactRow("Vendor", (manifest?.Vendor ?? PlcVendor.Codesys).ToString()));
+        facts.Add(new FactRow("Toolchain",
+            Sync.ToolchainAvailable
+                ? "installed — version under Settings → System information"
+                : "not installed on this machine"));
+        facts.Add(new FactRow("Sync state",
+            node.Detail.Length > 0 ? node.Detail : "tracked"));
+
+        if (manifest is null)
+        {
+            facts.Add(new FactRow("Mirror", "never exported"));
+            return new ProjectSummaryRender { Name = node.Name, Facts = facts };
+        }
+
+        if (Sync.ManifestPathFor(node.Path) is { } manifestPath
+            && File.Exists(manifestPath))
+        {
+            facts.Add(new FactRow("Last export",
+                $"{File.GetLastWriteTime(manifestPath):g}"));
+        }
+
+        facts.Add(new FactRow("Mirror",
+            $"{manifest.Objects.Count} exported file(s) · manifest schema {manifest.Schema}"));
+
+        // One entry per OBJECT, not per file — a GVL is two files and one object, and a
+        // summary that counted it twice would disagree with the panel beside it.
+        var counts = manifest.Objects
+            .Where(o => !string.IsNullOrEmpty(o.Path))
+            .GroupBy(o => string.IsNullOrEmpty(o.Guid) ? o.Path : o.Guid, StringComparer.Ordinal)
+            .GroupBy(g => g.First().Type, StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(g => g.Count())
+            .Select(g => Versio.Core.Projects.ObjectTypeNames.Counted(
+                manifest.Vendor, g.Key, g.Count()));
+        facts.Add(new FactRow("Objects", string.Join(", ", counts)));
+
+        var references = manifest.Objects
+            .Where(o => o.Form == Versio.Core.Projects.ExportCoverage.LibrariesForm)
+            .Select(o => Sync.ExportPathFor(node.Path) is { } export
+                ? LibraryCatalog.Parse(
+                      ReadRepoFileOrNull($"{export.TrimEnd('/')}/{o.Path}") ?? string.Empty)
+                : LibraryCatalog.Empty)
+            .Where(c => c.IsValid)
+            .ToList();
+        if (references.Count > 0)
+        {
+            facts.Add(new FactRow("Libraries",
+                $"{references.Sum(c => c.References.Count)} reference(s) in " +
+                $"{references.Count} manager(s)"));
+        }
+
+        if (manifest.Objects.FirstOrDefault(
+                o => o.Form == Versio.Core.Projects.ExportCoverage.TaskBothForm) is { } taskRecord
+            && Sync.ExportPathFor(node.Path) is { } exportRoot
+            && ReadRepoFileOrNull($"{exportRoot.TrimEnd('/')}/{taskRecord.Path}") is { } taskYaml
+            && TaskCatalog.Parse(taskYaml) is { IsValid: true } taskCatalog)
+        {
+            facts.Add(new FactRow("Tasks", string.Join(", ",
+                taskCatalog.Tasks.Select(t => $"{t.Name} ({t.DisplaySchedule})"))));
+        }
+
+        facts.Add(new FactRow("Coverage",
+            Sync.CoverageFor(node.Path) is { HasGaps: true } report
+                ? report.Describe()
+                : "complete — every object the exporter understands is in the mirror"));
+
+        if (manifest.Warnings.Count > 0)
+        {
+            facts.Add(new FactRow("Warnings", $"{manifest.Warnings.Count} — see the log"));
+        }
+
+        return new ProjectSummaryRender { Name = node.Name, Facts = facts };
+    }
+
+    private string? ReadRepoFileOrNull(string repoRelative)
+    {
+        if (RepositoryPath is not { } root)
+        {
+            return null;
+        }
+
+        try
+        {
+            var absolute = Path.Combine(
+                root, repoRelative.Replace('/', Path.DirectorySeparatorChar));
+            return File.Exists(absolute) ? File.ReadAllText(absolute) : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>Keep the strip when the new path is one of its layers; clear it otherwise.</summary>
     private void ReconcileDiffLayers(string path)
     {
@@ -5339,6 +5617,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             CanStageHunks = false;
             DiffLayers = [];
 
+            // The card is the project's rendered view, and it is the DEFAULT: the raw half
+            // of a binary compound document is the explanation below, which is worth
+            // reading once, not on every click.
+            RenderedContent = BuildProjectSummary(row.Node);
+            ShowRendered = true;
+            PaneNote = string.Empty;
+
             var coverage = Sync.CoverageFor(row.Node.Path);
 
             SelectedDiff = string.Join(Environment.NewLine,
@@ -5366,6 +5651,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
             return;
         }
+
+        // The rendered half, beside whatever the raw half loads below. Defaulted per
+        // selection: a changed file opens on its diff, a clean one on its content —
+        // see ShowRendered's remark.
+        RenderedContent = BuildRenderedContent(row);
+        ShowRendered = HasRenderedView && row.Node.Status == ChangeKind.Unmodified;
 
         if (row.PrimaryFile is { } path)
         {
@@ -5414,8 +5705,26 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             HunkAction = fromIndex ? "Unstage hunk" : "Stage hunk";
 
             // Untracked files arrive here as a real all-additions diff, so the only things
-            // left with nothing to show are genuinely binary or genuinely unchanged. Saying
-            // which beats a catch-all that blames untracked files for a gap that was ours.
+            // left with nothing to show are genuinely binary or genuinely unchanged. An
+            // unchanged file now shows ITSELF — a clean object used to render as a shrug,
+            // and "here is the file, nothing has changed in it" answers the question the
+            // click asked. The note rides in the pane header, not the text, because the
+            // header is where a fact about the whole view belongs. Binary stays a sentence:
+            // a code renderer fed an image draws a wall of boxes.
+            if (string.IsNullOrWhiteSpace(diff)
+                && RepositoryPath is { } root
+                && SourceRender.Load(
+                       Path.Combine(root, path.Replace('/', Path.DirectorySeparatorChar)),
+                       path, noChanges: true) is { } content
+                && !content.PseudoDiff.Contains('\0'))
+            {
+                SelectedDiff = content.PseudoDiff;
+                PaneNote = "No changes right now — showing the whole file.";
+                CanStageHunks = false;
+                return;
+            }
+
+            PaneNote = string.Empty;
             SelectedDiff = string.IsNullOrWhiteSpace(diff)
                 ? path + Environment.NewLine + Environment.NewLine +
                   "Nothing to compare: this file is unchanged, or git reports it as binary."

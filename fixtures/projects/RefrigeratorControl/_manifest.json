@@ -1,6 +1,6 @@
 {
   "bindingId": "6d3f8855e205", 
-  "objectCount": 13, 
+  "objectCount": 14, 
   "objects": [
     {
       "bytes": 217759, 
@@ -11,6 +11,17 @@
       "nhash": "sha256:477d88255087f102da068c4f9febc94929fa040fa17f3fb0e80efa4ab87c0912", 
       "path": "Device/Plc Logic/Application/Diagnosis.vis.xml", 
       "type": "VISUALISATION"
+    }, 
+    {
+      "bytes": 154, 
+      "form": "ST_FULL", 
+      "guid": "6e8ed404-aa7c-4874-90d7-74d820d6423c", 
+      "hash": "sha256:bcdde6edf2bd4abe9067522e2677d5d70caf2428c29fb23cf956ebfd766b3138", 
+      "ihash": "sha256:278498707c4aaac7772f27ac0c508b4ad090ad8a6c76db3b7c30d2b67610f3f1", 
+      "name": "FB_Alarm", 
+      "path": "Device/Plc Logic/Application/FB_Alarm.st", 
+      "shash": "11b6aad5,27849870,3d3336fd,764147a3,a7096452,aebea00d,b0398cdf,ef9435db", 
+      "type": "POU"
     }, 
     {
       "bytes": 238, 

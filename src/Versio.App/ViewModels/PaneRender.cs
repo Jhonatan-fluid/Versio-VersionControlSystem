@@ -1,0 +1,94 @@
+using System.IO;
+using Versio.Core.Diff;
+using Versio.Core.Projects;
+
+namespace Versio.App.ViewModels;
+
+/// <summary>One label/value pair of a rendered summary.</summary>
+public sealed record FactRow(string Label, string Value);
+
+/// <summary>
+/// A file's own content, shaped for the diff control to draw.
+/// </summary>
+/// <remarks>
+/// The pane's renderer is <c>DiffView</c> — virtualized, gutter-numbered, syntax-coloured —
+/// and a full file is expressible as a diff of all-context lines, so rendering content
+/// reuses the one code-drawing control instead of growing a second. The hunk header is
+/// included so the gutter numbers from 1; the caller showing one of these never offers
+/// hunk actions, so the header row carries no button.
+/// </remarks>
+public sealed record SourceRender
+{
+    public required string Path { get; init; }
+    public required string PseudoDiff { get; init; }
+
+    /// <summary>Said out loud on the rendered view: the file is clean right now.</summary>
+    public bool NoChanges { get; init; }
+
+    /// <summary>Read one file as a rendered source view. Null when it cannot be read.</summary>
+    public static SourceRender? Load(string absolutePath, string repoRelativePath, bool noChanges)
+    {
+        string text;
+        try
+        {
+            text = File.ReadAllText(absolutePath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                      or FileNotFoundException or DirectoryNotFoundException)
+        {
+            // Mid-swap, deleted, or unreadable — the raw tab's diff still says what git
+            // knows, and a render that threw over a torn file would take the pane down on
+            // every export.
+            return null;
+        }
+
+        var lines = text.Replace("\r\n", "\n").Split('\n');
+
+        var builder = new System.Text.StringBuilder(text.Length + lines.Length + 32);
+        builder.Append("@@ -1,").Append(lines.Length)
+               .Append(" +1,").Append(lines.Length).Append(" @@\n");
+        foreach (var line in lines)
+        {
+            builder.Append(' ').Append(line).Append('\n');
+        }
+
+        return new SourceRender
+        {
+            Path = repoRelativePath,
+            PseudoDiff = builder.ToString(),
+            NoChanges = noChanges,
+        };
+    }
+}
+
+/// <summary>The project row's rendered view: the facts a glance should answer.</summary>
+public sealed record ProjectSummaryRender
+{
+    public required string Name { get; init; }
+    public required IReadOnlyList<FactRow> Facts { get; init; }
+}
+
+/// <summary>One task, opened from its row: everything its catalog records about it.</summary>
+public sealed record TaskDetailRender
+{
+    public required TaskRecord Task { get; init; }
+
+    public IReadOnlyList<FactRow> Facts =>
+        new List<FactRow>
+        {
+            new("Priority", Blank(Task.Priority)),
+            new("Interval", Blank(Task.DisplaySchedule)),
+            new("Core binding", Task.CoreBinding switch
+            {
+                "" => "—",
+                "-1" => "-1 (not bound to a core)",
+                var c => c,
+            }),
+            new("Watchdog", Task.WatchdogEnabled
+                ? $"enabled · time {Blank(Task.WatchdogTime)} · sensitivity {Blank(Task.WatchdogSensitivity)}"
+                : "disabled"),
+            new("Calls", Task.Pous.Count == 0 ? "—" : string.Join(", ", Task.Pous)),
+        };
+
+    private static string Blank(string value) => value.Length == 0 ? "—" : value;
+}

@@ -4,6 +4,7 @@
         xmlns:views="clr-namespace:Versio.App.Views"
         xmlns:panels="clr-namespace:Versio.App.Views.Panels"
         xmlns:vm="clr-namespace:Versio.App.ViewModels"
+        xmlns:projects="clr-namespace:Versio.Core.Projects;assembly=Versio.Core"
         Title="Versio" Height="840" Width="1420" WindowState="Maximized"
         Background="{DynamicResource Brush.Surface.Sunken}"
         TextOptions.TextFormattingMode="Display"
@@ -527,6 +528,47 @@
                              without reaching the label. -->
                         <StackPanel Grid.Column="1" Orientation="Horizontal"
                                     Margin="12,0,0,0" HorizontalAlignment="Right">
+                            <!-- RENDERED | RAW. Two answers to one click: what the file
+                                 MEANS (tables for catalogs, a card for the project,
+                                 highlighted source for code) and what git SAYS (the diff).
+                                 The chips exist only when a rendered view does; the default
+                                 follows the selection - changed files open on Raw because
+                                 the diff is what review is. -->
+                            <ToggleButton Style="{StaticResource FilterChip}"
+                                          Content="Rendered"
+                                          IsChecked="{Binding ShowRendered}"
+                                          Foreground="{DynamicResource Brush.Text.Secondary}"
+                                          ToolTip="The file as a table, card or highlighted source"
+                                          Visibility="{Binding HasRenderedView,
+                                              Converter={StaticResource BoolToVisibility}}" />
+                            <ToggleButton Style="{StaticResource FilterChip}"
+                                          Content="Raw" Margin="0,0,14,0"
+                                          IsChecked="{Binding ShowRawTab}"
+                                          Foreground="{DynamicResource Brush.Text.Secondary}"
+                                          ToolTip="The diff, or the plain file when nothing changed"
+                                          Visibility="{Binding HasRenderedView,
+                                              Converter={StaticResource BoolToVisibility}}" />
+
+                            <!-- One sentence about the whole view, when it needs one -
+                                 "no changes right now". In the header, not the text,
+                                 because it is a fact about the pane rather than a line
+                                 of the file. -->
+                            <TextBlock Text="{Binding PaneNote}" VerticalAlignment="Center"
+                                       Margin="0,0,14,0"
+                                       FontFamily="{DynamicResource Font.UI}"
+                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                       Foreground="{DynamicResource Brush.Status.Modified}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding PaneNote}" Value="">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+
                             <!-- The object's layers, when it has more than one: ST | native.
                                  The tree folds a GVL's .gvl.st and .gvl.xml into one row on
                                  purpose, which left the second layer reachable by nothing —
@@ -699,6 +741,231 @@
                             </TextBlock.Style>
                         </TextBlock>
 
+                    <!-- THE RENDERED HALF. One ContentControl, dispatched by the
+                         content's own type: a library catalog is a table, a task catalog
+                         is a table, one task is its facts, the project is a card, and a
+                         source file is the same DiffView the raw half uses, fed the whole
+                         file. The templates live here rather than in a resource file
+                         because this is their only host. -->
+                    <ContentControl Content="{Binding RenderedContent}"
+                                    Margin="6,0,6,8" Focusable="False"
+                                    Visibility="{Binding ShowRenderedPane,
+                                        Converter={StaticResource BoolToVisibility}}">
+                        <ContentControl.Resources>
+                            <!-- Shared fact-row shape: the project card and the task detail
+                                 are both label/value lists. -->
+                            <DataTemplate x:Key="FactRows" DataType="{x:Type vm:FactRow}">
+                                <Grid Margin="0,3">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="140" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{Binding Label}"
+                                               FontFamily="{DynamicResource Font.UI}"
+                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                               Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Value}"
+                                               TextWrapping="Wrap"
+                                               FontFamily="{DynamicResource Font.UI}"
+                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                               Foreground="{DynamicResource Brush.Text.Primary}" />
+                                </Grid>
+                            </DataTemplate>
+
+                            <DataTemplate DataType="{x:Type projects:LibraryCatalog}">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Auto">
+                                    <StackPanel Margin="8,4">
+                                        <TextBlock Text="{Binding Manager}"
+                                                   FontFamily="{DynamicResource Font.UI}"
+                                                   FontSize="{DynamicResource Font.Size.Body}"
+                                                   FontWeight="{DynamicResource Font.Weight.Semibold}"
+                                                   Foreground="{DynamicResource Brush.Text.Primary}" />
+                                        <TextBlock Text="Export-only: edit libraries in the IDE. This file records what the project asks for, never how it resolved here."
+                                                   TextWrapping="Wrap" Margin="0,2,0,8"
+                                                   FontFamily="{DynamicResource Font.UI}"
+                                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                                   Foreground="{DynamicResource Brush.Text.Disabled}" />
+                                        <Grid Margin="0,0,0,4">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="230" />
+                                                <ColumnDefinition Width="250" />
+                                                <ColumnDefinition Width="150" />
+                                                <ColumnDefinition Width="110" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="NAME" Style="{StaticResource SectionLabel}" />
+                                            <TextBlock Grid.Column="1" Text="RESOLUTION" Style="{StaticResource SectionLabel}" />
+                                            <TextBlock Grid.Column="2" Text="NAMESPACE" Style="{StaticResource SectionLabel}" />
+                                            <TextBlock Grid.Column="3" Text="KIND" Style="{StaticResource SectionLabel}" />
+                                        </Grid>
+                                        <ItemsControl ItemsSource="{Binding References}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid Margin="0,2">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="230" />
+                                                            <ColumnDefinition Width="250" />
+                                                            <ColumnDefinition Width="150" />
+                                                            <ColumnDefinition Width="110" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Text="{Binding Name}"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   ToolTip="{Binding Name}"
+                                                                   FontFamily="{DynamicResource Font.UI}"
+                                                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                                                   Foreground="{DynamicResource Brush.Text.Primary}" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding DisplayVersion}"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   ToolTip="{Binding DisplayVersion}"
+                                                                   FontFamily="{DynamicResource Font.Mono}"
+                                                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                                                   Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                                        <TextBlock Grid.Column="2" Text="{Binding Namespace}"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   FontFamily="{DynamicResource Font.Mono}"
+                                                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                                                   Foreground="{DynamicResource Brush.Text.Disabled}" />
+                                                        <TextBlock Grid.Column="3"
+                                                                   FontFamily="{DynamicResource Font.UI}"
+                                                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                                                   Foreground="{DynamicResource Brush.Text.Disabled}">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="Text" Value="chosen" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding SystemLibrary}" Value="True">
+                                                                            <Setter Property="Text" Value="system" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </ScrollViewer>
+                            </DataTemplate>
+
+                            <DataTemplate DataType="{x:Type projects:TaskCatalog}">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Auto">
+                                    <StackPanel Margin="8,4">
+                                        <TextBlock Text="{Binding Configuration}"
+                                                   FontFamily="{DynamicResource Font.UI}"
+                                                   FontSize="{DynamicResource Font.Size.Body}"
+                                                   FontWeight="{DynamicResource Font.Weight.Semibold}"
+                                                   Foreground="{DynamicResource Brush.Text.Primary}" />
+                                        <TextBlock Text="The importable half: edit the .tasks.yaml and the next import applies it. Tasks are never created or deleted by an import."
+                                                   TextWrapping="Wrap" Margin="0,2,0,8"
+                                                   FontFamily="{DynamicResource Font.UI}"
+                                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                                   Foreground="{DynamicResource Brush.Text.Disabled}" />
+                                        <Grid Margin="0,0,0,4">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="170" />
+                                                <ColumnDefinition Width="110" />
+                                                <ColumnDefinition Width="70" />
+                                                <ColumnDefinition Width="90" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="TASK" Style="{StaticResource SectionLabel}" />
+                                            <TextBlock Grid.Column="1" Text="INTERVAL" Style="{StaticResource SectionLabel}" />
+                                            <TextBlock Grid.Column="2" Text="PRIO" Style="{StaticResource SectionLabel}" />
+                                            <TextBlock Grid.Column="3" Text="WATCHDOG" Style="{StaticResource SectionLabel}" />
+                                            <TextBlock Grid.Column="4" Text="CALLS" Style="{StaticResource SectionLabel}" />
+                                        </Grid>
+                                        <ItemsControl ItemsSource="{Binding Tasks}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid Margin="0,2">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="170" />
+                                                            <ColumnDefinition Width="110" />
+                                                            <ColumnDefinition Width="70" />
+                                                            <ColumnDefinition Width="90" />
+                                                            <ColumnDefinition Width="*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Text="{Binding Name}"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   FontFamily="{DynamicResource Font.UI}"
+                                                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                                                   Foreground="{DynamicResource Brush.Text.Primary}" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding DisplaySchedule}"
+                                                                   FontFamily="{DynamicResource Font.Mono}"
+                                                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                                                   Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                                        <TextBlock Grid.Column="2" Text="{Binding Priority}"
+                                                                   FontFamily="{DynamicResource Font.Mono}"
+                                                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                                                   Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                                        <TextBlock Grid.Column="3"
+                                                                   FontFamily="{DynamicResource Font.UI}"
+                                                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                                                   Foreground="{DynamicResource Brush.Text.Disabled}">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="Text" Value="off" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding WatchdogEnabled}" Value="True">
+                                                                            <Setter Property="Text" Value="on" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                        <TextBlock Grid.Column="4" Text="{Binding CallsSummary}"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   ToolTip="{Binding CallsSummary}"
+                                                                   FontFamily="{DynamicResource Font.Mono}"
+                                                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                                                   Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </ScrollViewer>
+                            </DataTemplate>
+
+                            <DataTemplate DataType="{x:Type vm:TaskDetailRender}">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <StackPanel Margin="8,4">
+                                        <TextBlock Text="{Binding Task.Name}"
+                                                   FontFamily="{DynamicResource Font.UI}"
+                                                   FontSize="{DynamicResource Font.Size.Body}"
+                                                   FontWeight="{DynamicResource Font.Weight.Semibold}"
+                                                   Foreground="{DynamicResource Brush.Text.Primary}"
+                                                   Margin="0,0,0,6" />
+                                        <ItemsControl ItemsSource="{Binding Facts}"
+                                                      ItemTemplate="{StaticResource FactRows}" />
+                                    </StackPanel>
+                                </ScrollViewer>
+                            </DataTemplate>
+
+                            <DataTemplate DataType="{x:Type vm:ProjectSummaryRender}">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <StackPanel Margin="8,4">
+                                        <TextBlock Text="{Binding Name}"
+                                                   FontFamily="{DynamicResource Font.UI}"
+                                                   FontSize="{DynamicResource Font.Size.Body}"
+                                                   FontWeight="{DynamicResource Font.Weight.Semibold}"
+                                                   Foreground="{DynamicResource Brush.Text.Primary}"
+                                                   Margin="0,0,0,6" />
+                                        <ItemsControl ItemsSource="{Binding Facts}"
+                                                      ItemTemplate="{StaticResource FactRows}" />
+                                    </StackPanel>
+                                </ScrollViewer>
+                            </DataTemplate>
+
+                            <DataTemplate DataType="{x:Type vm:SourceRender}">
+                                <views:DiffView DiffText="{Binding PseudoDiff}"
+                                                FilePath="{Binding Path}" />
+                            </DataTemplate>
+                        </ContentControl.Resources>
+                    </ContentControl>
+
                     <views:DiffView DiffText="{Binding SelectedDiff}"
                                     FilePath="{Binding SelectedDiffPath}"
                                     SideBySide="{Binding DiffSideBySide}"
@@ -706,6 +973,15 @@
                                     ShowHunkActions="{Binding CanStageHunks}"
                                     HunkActionLabel="{Binding HunkAction}"
                                     Margin="6,0,6,8">
+                        <ListBox.Style>
+                            <Style TargetType="views:DiffView">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding ShowRenderedPane}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ListBox.Style>
                         <ListBox.ItemContainerStyle>
                             <!--
                                 SELECTION HAD TO BE VISIBLE WITHOUT DESTROYING THE ROW TINT.

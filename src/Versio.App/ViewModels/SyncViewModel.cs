@@ -2413,6 +2413,50 @@ public sealed class SyncViewModel : ObservableObject
     }
 
     /// <summary>What a project's export covers, or null when it is not a tracked project.</summary>
+    /// <summary>The manifest of one tracked project, freshly read, or null without one.</summary>
+    /// <remarks>
+    /// Read on demand for the project summary rather than cached: it is one small file, the
+    /// summary is built on a click, and a cached copy would be one more thing the export has
+    /// to invalidate.
+    /// </remarks>
+    public ProjectManifest? ManifestFor(string projectPath)
+    {
+        if (ManifestPathFor(projectPath) is not { } path || !File.Exists(path))
+        {
+            return null;
+        }
+
+        return ProjectManifest.Parse(File.ReadAllText(path));
+    }
+
+    /// <summary>Absolute path of a tracked project's manifest, or null when untracked.</summary>
+    public string? ManifestPathFor(string projectPath)
+    {
+        if (_repositoryRoot is null)
+        {
+            return null;
+        }
+
+        var normalized = Normalize(projectPath);
+        var binding = _config.Bindings.FirstOrDefault(b =>
+            string.Equals(Normalize(b.ProjectPath), normalized, StringComparison.OrdinalIgnoreCase));
+
+        return binding is null
+            ? null
+            : System.IO.Path.Combine(
+                AbsolutePath(binding.ExportPath), BindingConventions.ManifestFileName);
+    }
+
+    /// <summary>Repo-relative export root of one tracked project, or null when untracked.</summary>
+    public string? ExportPathFor(string projectPath)
+    {
+        var normalized = Normalize(projectPath);
+        return _config.Bindings.FirstOrDefault(b =>
+                string.Equals(Normalize(b.ProjectPath), normalized,
+                              StringComparison.OrdinalIgnoreCase))
+            ?.ExportPath;
+    }
+
     public CoverageReport? CoverageFor(string projectPath) =>
         _coverage.TryGetValue(Normalize(projectPath), out var report) ? report : null;
 

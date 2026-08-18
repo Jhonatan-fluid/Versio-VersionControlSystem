@@ -55,6 +55,9 @@ public sealed record TaskRecord
             ? $"{Interval} {IntervalUnit}"
             : Interval;
 
+    /// <summary>The POUs this task calls, as one cell of a table.</summary>
+    public string CallsSummary => Pous.Count == 0 ? "—" : string.Join(", ", Pous);
+
     /// <summary>Whether two records declare the same task.</summary>
     /// <remarks>
     /// Same construction as <see cref="LibraryReference.ContentEquals"/>, for the same two
