@@ -192,7 +192,16 @@ public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) 
         // under the device it belongs to, and two managers cannot share one file.
         var written = manifest.Objects.Where(o => o.Type == "LIBRARY_MANAGER").ToList();
 
-        Assert.Equal(2, written.Count);
+        // One file per library manager, however many the project has. It read 2 until the
+        // corpus gained a device that brings its own; what is being checked is that every
+        // manager reaches the mirror, not how many there happen to be.
+        Assert.Equal(
+            manifest.Objects.Count(o => o.Type == "LIBRARY_MANAGER"),
+            written.Count);
+
+        Assert.True(written.Count >= 2,
+            "the fixture must keep both library managers — the project's and the "
+            + "application's — or the per-manager export proves nothing");
         Assert.All(written, o => Assert.Equal(ExportCoverage.LibrariesForm, o.Form));
         Assert.Contains(written, o => o.Path == "Library Manager.libraries.yaml");
         Assert.Contains(written,
@@ -214,7 +223,18 @@ public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) 
         // whether the number was right. What asks that now is
         // An_object_never_writes_two_files_the_import_would_both_apply, which is about the
         // shape and cannot be satisfied by an arithmetic that happens to agree.
-        Assert.Equal(4, report.ExportOnlyFiles);
+        // DERIVED, with a floor. The literal 4 was right until 2026-08-18, when properties
+        // began writing readable text beside their payload and the corpus gained a second GVL
+        // — and a number that has to be re-typed whenever the project grows is a number that
+        // stops being checked. What must hold is that the report agrees with the manifest it
+        // describes; the floor keeps the claim non-vacuous.
+        Assert.Equal(
+            manifest.Objects.Count(o => ExportCoverage.IsExportOnly(o.Form)),
+            report.ExportOnlyFiles);
+
+        Assert.True(report.ExportOnlyFiles >= 4,
+            $"only {report.ExportOnlyFiles} one-way file(s) — the fixture must still carry "
+            + "the two library managers, the task XML and the GVL XML");
         Assert.Contains("not applied back", report.Describe(), StringComparison.Ordinal);
 
         // The deliberate skips are still not counted as gaps: the fixture's visualisation
@@ -341,7 +361,13 @@ public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) 
             .Where(g => !string.IsNullOrEmpty(g.Key) && g.Count() > 1)
             .ToList();
 
-        Assert.Equal(2, pairs.Count);
+        // AT LEAST the GVL and the task configuration; more since properties began writing
+        // their payload and their readable text under one GUID. The count was never the
+        // claim — the loop below is — and pinning it meant re-typing a literal every time a
+        // two-file form was added, which is how a non-vacuity guard turns into a chore.
+        Assert.True(pairs.Count >= 2,
+            $"only {pairs.Count} two-file object(s); the assertion above passes vacuously "
+            + "without them");
 
         foreach (var pair in pairs)
         {

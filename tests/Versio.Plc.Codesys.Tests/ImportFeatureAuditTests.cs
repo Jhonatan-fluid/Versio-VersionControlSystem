@@ -427,8 +427,13 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
 
         // And nothing else went with it. remove() dangles referenced objects silently (P3),
         // and the POUs in this fixture read from this GVL.
-        Assert.True(File.Exists(Path.Combine(after, RelApp, "Simulation.st")));
-        Assert.True(File.Exists(Path.Combine(after, RelApp, "PLC_PRG.xml")));
+        // BY OBJECT, NOT BY FILE NAME. `PLC_PRG.xml` was pinned here until 2026-08-18, when
+        // the owner rewrote PLC_PRG in Structured Text — it exports as `PLC_PRG.st` now, the
+        // object was never in danger, and the test reported a deletion taking more than it
+        // was asked to. An object's FORM is the owner's choice; that it still exists is the
+        // claim.
+        Assert.NotEmpty(Directory.GetFiles(Path.Combine(after, RelApp), "Simulation.*"));
+        Assert.NotEmpty(Directory.GetFiles(Path.Combine(after, RelApp), "PLC_PRG.*"));
 
         // The mirror still holds the orphaned one-way file, which the next export removes.
         Assert.True(File.Exists(Path.Combine(app, "Glob_Var.gvl.xml")),
@@ -464,13 +469,12 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
         var mirror = Path.Combine(_repo, "plc", "RefrigeratorControl");
         var app = Path.Combine(mirror, RelApp.Replace('/', Path.DirectorySeparatorChar));
 
-        // Diagnosis is a single-file NATIVE object, so its fate turns on nothing else.
         var manifestPath = Path.Combine(mirror, "_manifest.json");
         var manifest = await File.ReadAllTextAsync(manifestPath);
-        Assert.Contains("Diagnosis.vis.xml", manifest, StringComparison.Ordinal);
+        var subject = SingleFileNative(manifest);
 
-        await WriteAsync(manifestPath, StripNormalizedHashFor(manifest, "Diagnosis.vis.xml"));
-        File.Delete(Path.Combine(app, "Diagnosis.vis.xml"));
+        await WriteAsync(manifestPath, StripNormalizedHashFor(manifest, subject));
+        File.Delete(Path.Combine(mirror, subject.Replace('/', Path.DirectorySeparatorChar)));
 
         var outcome = await TextChanged(orchestrator, binding.Id);
         output.WriteLine($"import — {outcome.Verdict}: {SyncNarrative.Describe(outcome)}");
@@ -484,8 +488,9 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
             w => w.Contains("DELETE_UNVERIFIABLE", StringComparison.Ordinal));
 
         var after = await ReExport(install!, binding.Id, "verify-unverifiable");
-        Assert.True(File.Exists(Path.Combine(after, RelApp, "Diagnosis.vis.xml")),
-                    "a deletion nothing could check went ahead anyway");
+        Assert.True(
+            File.Exists(Path.Combine(after, subject.Replace('/', Path.DirectorySeparatorChar))),
+            "a deletion nothing could check went ahead anyway");
     }
 
     // ── C9: no manifest, no structural change ────────────────────────────────────────
@@ -968,11 +973,15 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
         var manifestPath = Path.Combine(mirror, "_manifest.json");
         var manifest = await File.ReadAllTextAsync(manifestPath);
 
-        // An owner GUID no record in this manifest carries.
-        await WriteAsync(manifestPath, GiveParent(
-            manifest, "Diagnosis.vis.xml", "00000000-dead-beef-0000-000000000000"));
+        // An owner GUID no record in this manifest carries, given to whichever single-file
+        // native object the fixture happens to have — see SingleFileNative for why it is
+        // discovered rather than named.
+        var subject = SingleFileNative(manifest);
 
-        File.Delete(Path.Combine(app, "Diagnosis.vis.xml"));
+        await WriteAsync(manifestPath, GiveParent(
+            manifest, subject, "00000000-dead-beef-0000-000000000000"));
+
+        File.Delete(Path.Combine(mirror, subject.Replace('/', Path.DirectorySeparatorChar)));
 
         var outcome = await TextChanged(orchestrator, binding.Id);
         output.WriteLine($"import — {outcome.Verdict}: {SyncNarrative.Describe(outcome)}");
@@ -985,8 +994,9 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
             l => l.Contains("can only be guessed at", StringComparison.Ordinal));
 
         var after = await ReExport(install!, binding.Id, "verify-guessed-chain");
-        Assert.True(File.Exists(Path.Combine(after, RelApp, "Diagnosis.vis.xml")),
-                    "an object was deleted at a location that could only be guessed at");
+        Assert.True(
+            File.Exists(Path.Combine(after, subject.Replace('/', Path.DirectorySeparatorChar))),
+            "an object was deleted at a location that could only be guessed at");
     }
 
     // ── D8: an ambiguous pairing ─────────────────────────────────────────────────────
@@ -1632,6 +1642,44 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
     /// comes before <c>path</c>. Searching forward finds the NEXT object's and edits a record
     /// the test never meant to touch.
     /// </remarks>
+    /// <summary>
+    /// The mirror path of an object that writes ONE file and owns nothing — the simplest
+    /// possible subject for a deletion test.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Discovered rather than named.</b> Two tests said <c>Diagnosis.vis.xml</c> until
+    /// 2026-08-18 and both went red when the owner deleted that visualisation while building
+    /// out the corpus. What they need is not that object — it is <i>an</i> object whose fate
+    /// turns on nothing else, so that a refusal or a deletion can be attributed to the rule
+    /// under test rather than to something the object was entangled with.
+    /// </para>
+    /// <para>
+    /// One file per GUID rules out a two-file form, where the halves vote together; no
+    /// recorded parent rules out a member, whose owner could veto on its behalf; and a
+    /// non-export-only form is required because the deletion path ignores the others.
+    /// </para>
+    /// </remarks>
+    private static string SingleFileNative(string manifestJson)
+    {
+        var manifest = ProjectManifest.Parse(manifestJson);
+
+        var candidate = manifest.Objects
+            .Where(o => !string.IsNullOrEmpty(o.Guid)
+                        && string.IsNullOrEmpty(o.Parent)
+                        && !ExportCoverage.IsExportOnly(o.Form)
+                        && manifest.Objects.Count(x => x.Guid == o.Guid) == 1
+                        && o.Path.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(o => o.Path, StringComparer.Ordinal)
+            .FirstOrDefault();
+
+        Assert.True(candidate is not null,
+            "the fixture has no single-file native object, so this test has no subject whose "
+            + "fate turns on nothing else");
+
+        return candidate!.Path;
+    }
+
     private static string StripNormalizedHashFor(string manifest, string fileName)
     {
         const string key = "\"nhash\": \"";

@@ -564,11 +564,16 @@ does not record them has to be run again.
     invariant over every recorded member and insists there are some, and the export-only count
     is derived from the manifest instead of typed in. That is better testing regardless of
     who is editing what.
-  - **The other half is a decision nobody has taken**: either the fixture is frozen the way
-    `MachineWithMembers` is and the owner's real work moves to a project outside `fixtures/`,
-    or the gate accepts that it can only be believed when the IDE is closed. Today it was the
-    second, by asking. `walked N` literals in `ExportLoggingTests` are the remaining hostages —
-    they have been re-typed three times in two days.
+  - ~~**The other half is a decision nobody has taken**~~ — **taken by the owner, 2026-08-18:
+    the fixture stays where it is.** *"Fixture is fine, I started adding more things to test
+    more thoroughly but this is not an every day project."* So the churn was deliberate
+    corpus-building rather than daily work, and it is finished. The gate is believable when
+    the IDE is closed, which is how it was run today, by asking.
+  - **What that decision leaves owed**: the literals that rot. `walked N` in
+    `ExportLoggingTests` was re-typed three times in two days, and five gate tests still name
+    objects the corpus-building removed. Deriving them beats re-typing them — three already
+    were, on 2026-08-18: the library reference count and the task count now read each file's
+    own header, and the committed task rows are asserted by containment.
 - **Regenerating the committed fixture mirror by hand has three arguments that are all easy
   to get wrong, and no coverage.** It is done through `tools/codesys/Run-Codesys.ps1` when the
   exporter's output shape changes, and on 2026-08-17 the third one was got wrong and shipped:

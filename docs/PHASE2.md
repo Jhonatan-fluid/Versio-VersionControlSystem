@@ -241,20 +241,27 @@ the panel showing `FB_Alarm` with four loose members under it.
   representations to keep in sync forever.
 - **Folders are rows again, and they come first.** Free, once an in-POU folder is a real
   directory: the tree builder already emitted directory groups before objects.
-- **Ordering inside a group is still alphabetical, and that is not finished.** The obvious
-  fix — record `get_children()` order and sort by it — was measured and rejected: it is
-  *creation* order, returning `M_Reset, Private, Protected, P_Faulted` where the IDE shows
-  `Private, Protected, M_Reset, P_Faulted`, and placing `FB_Alarm` eleventh of twelve where
-  the IDE shows it second. **What the IDE's within-group rule actually is has not been
-  measured**, and two cropped screenshots are not enough to derive it. It needs one wide
-  screenshot of an expanded Application node, or a probe that reads whatever the IDE sorts
-  by. Until then the panel sorts by name, which is right for methods and wrong for at least
-  `Library Manager`.
-- **Still not recorded: which CODESYS version last saved the project.** The gap above says
-  this was "queued for the next exporter change" — and the next exporter change happened
-  today without taking it. Deliberately: that commit already carried a schema bump and a
-  rename of every file in every mirror, and bundling an unrelated manifest field into it
-  would have made one commit answer two questions. Still owed, still one line plus a bump.
+- ~~**Ordering inside a group is still alphabetical**~~ — **accepted as it is by the owner,
+  2026-08-18: "group sort order is fine as it is right now".** Worth keeping the measurement
+  that stopped the wrong fix: recording `get_children()` order and sorting by it would have
+  been wrong, because that is *creation* order — it returns `M_Reset, Private, Protected,
+  P_Faulted` where the IDE shows `Private, Protected, M_Reset, P_Faulted`, and places
+  `FB_Alarm` eleventh of twelve where the IDE shows it second. Folders-first is what both
+  screenshots agreed on and is what shipped. If this is ever reopened, the within-group rule
+  still has not been measured, and two cropped screenshots are not enough to derive it.
+- **Still not recorded: which CODESYS version the project was exported by** — and the answer
+  to "what would it take" is now known rather than guessed. **It is already in the export.**
+  Inside CODESYS, `sys.version` returns
+  `CODESYS.exe CODESYS V3.5 SP22 Patch 2, ScriptEngine.plugin 4.2.0.0`, and
+  `versio_export.py` already emits it in its `start` event on every run — it simply never
+  reaches the manifest. So this is one field written, one field read on the card, and a
+  schema bump because an absent field must not read as "unknown version" on an old mirror.
+  No probe needed. Note it is the version that *performed the export*, not necessarily the
+  one that last saved the project; the two are the same whenever Versio did the export.
+- ~~**A graphical member inside an in-POU folder imports into the POU root**~~ — **parked by
+  the owner, 2026-08-18: "I don't care about graphical members, won't be working with those
+  for now, they are just part of a sample project".** The textual case — the normal one — is
+  covered end to end by `A_member_inside_a_folder_round_trips_and_moves_nothing_else`.
 
 ---
 
