@@ -488,6 +488,37 @@ public sealed class PythonFileNameParityTests(ITestOutputHelper output)
     }
 
     [SkippableFact]
+    public void The_walk_descends_into_a_property_now_that_its_accessors_are_files()
+    {
+        // THE HALF WITH NO C# TWIN. ExportFormRules decides a property's own form and stops
+        // there; whether the exporter then WALKS its accessors is decided only here, and the
+        // two answers have to agree or the accessors are never written at all.
+        //
+        // NATIVE_R and TASK_BOTH are excluded because their children are already inside
+        // what they write — a property's accessors in its recursive payload, a task
+        // configuration's tasks in its .tasks.yaml. Walking either would write a second copy.
+        //
+        // PROPERTY is in this list because it moved OFF NATIVE_R on 2026-08-18 and back on
+        // the same day: the export was right and the round trip emptied every getter. This
+        // line is what would have to change first if that is ever revisited, and it is here
+        // so that the change cannot be made in one language only.
+        Skip.IfNot(PythonFileNameTests.PythonIsAvailable(), "python is not on PATH");
+
+        var answers = RunPython(
+            JsonSerializer.Serialize(
+                new[] { "PROPERTY", "PROPERTY_METHOD", "TASK_CONFIGURATION", "POU", "FOLDER" }),
+            """
+            import versio_types
+            out = ["%s=%s" % (t, versio_types.descends_into_children(t)) for t in payload]
+            """);
+
+        Assert.Equal(
+            ["PROPERTY=False", "PROPERTY_METHOD=True", "TASK_CONFIGURATION=False",
+             "POU=True", "FOLDER=True"],
+            answers);
+    }
+
+    [SkippableFact]
     public void The_yaml_emitter_and_its_reader_agree_about_every_shape_they_support()
     {
         // versio_yaml gained a reader for the import half of Phase 4, and until now nothing
@@ -618,13 +649,21 @@ public sealed class PythonFileNameParityTests(ITestOutputHelper output)
             output.WriteLine(line);
         }
 
+        // The header's own count, so adding a task to the project does not fail this. What
+        // is being checked is that the reader returns as many tasks as the emitter declared —
+        // a reader that dropped one fails, and a third task does not. It read `count=2` until
+        // 2026-08-18, when the owner added one.
+        var declaredTasks = File.ReadAllLines(path)
+            .First(l => l.StartsWith("taskCount:", StringComparison.Ordinal))
+            .Split(':')[1].Trim();
+
         Assert.Equal(
             [
                 "key=tasks",
                 "schema=1",
                 "vendor=codesys",
-                "count=2",
-                "items=2",
+                $"count={declaredTasks}",
+                $"items={declaredTasks}",
 
                 // Every value is TEXT, including coreBinding, which CODESYS wants as an int
                 // on the way back. The reader never infers a type, because priority wants a
@@ -634,10 +673,23 @@ public sealed class PythonFileNameParityTests(ITestOutputHelper output)
                 // interval is the reason the values are verbatim: "t#20ms" on one task and
                 // "100" on the other, in one project. A normaliser would rewrite one of them
                 // and put a diff in front of somebody that they did not make.
-                "MainTask|1|t#20ms|-2|PLC_PRG,Simulation",
-                "VISU_TASK|31|100|-1|VisuElems.Visu_Prg",
+                //
+                // These two are asserted by CONTAINMENT below rather than by listing every
+                // row, because the project gained a third task on 2026-08-18 and will gain
+                // more. What must not change is that these two arrive verbatim.
             ],
-            lines);
+            lines.Take(5));
+
+        Assert.Contains("MainTask|1|t#20ms|-2|PLC_PRG,Simulation", lines);
+        Assert.Contains("VISU_TASK|31|100|-1|VisuElems.Visu_Prg", lines);
+
+        // And every row is five verbatim fields — a reader that inferred a type or dropped a
+        // field shows up here whichever tasks the project happens to hold.
+        foreach (var row in lines.Skip(5))
+        {
+            Assert.Equal(5, row.Split('|').Length);
+            Assert.False(string.IsNullOrWhiteSpace(row.Split('|')[0]), $"nameless task: {row}");
+        }
     }
 
     [SkippableFact]

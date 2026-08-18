@@ -123,6 +123,28 @@ public static class ExportFormRules
         [CodesysObjectType.Evc] = ExportForm.Native,
         [CodesysObjectType.Method] = ExportForm.StFull,
         [CodesysObjectType.MethodNoReturn] = ExportForm.StFull,
+        // A PROPERTY STAYS RECURSIVE, AND IT IS NOT FOR WANT OF TRYING.
+        //
+        // The owner asked for properties as readable text — "properties are still getting
+        // rendered as xml only" — and the shape is genuinely there. Measured on their project
+        // 2026-08-18: a PROPERTY has a textual declaration of 29–64 characters
+        // (`{attribute 'monitoring' := 'call'}` / `PROPERTY P_Active : BOOL`) and no
+        // implementation; each accessor has an EMPTY declaration and a real implementation of
+        // 17–40. So StDeclaration + StImplementation was tried, and the EXPORT half worked
+        // perfectly: `P_Active.st` holding the header and pragma, `P_Active/Get.st` holding
+        // `P_Active := State = E_AlarmState.Active;`.
+        //
+        // IT WAS REVERTED BECAUSE THE ROUND TRIP EMPTIES THE GETTER. Export, import, re-export
+        // with nothing edited, and all seven accessor bodies come back as empty files. That is
+        // silent destruction of every property body in the project, which is the one failure
+        // this repository exists to prevent — and the gate caught it, on the same run that
+        // proved the export was right.
+        //
+        // What is NOT yet known is which half does it: whether replacing the property's
+        // declaration resets its accessors, or whether applying an empty declaration to a
+        // PROPERTY_METHOD wipes the implementation beside it. Until that is measured, the
+        // recursive payload is the only form that survives the trip — the accessors travel
+        // inside it and nothing has to be reassembled. See the Finding in STATUS.md.
         [CodesysObjectType.Property] = ExportForm.NativeRecursive,
         [CodesysObjectType.Action] = ExportForm.StImplementation,
         [CodesysObjectType.Transition] = ExportForm.StImplementation,

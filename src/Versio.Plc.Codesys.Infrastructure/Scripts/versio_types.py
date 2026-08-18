@@ -244,6 +244,21 @@ TYPE_FORM = {
     "EVC": FORM_NATIVE,
     "METHOD": FORM_ST_FULL,
     "METHOD_NORET": FORM_ST_FULL,
+    # A PROPERTY STAYS RECURSIVE, AND IT IS NOT FOR WANT OF TRYING.
+    #
+    # The owner asked for properties as readable text, and the shape is genuinely there.
+    # Measured on their project 2026-08-18: a PROPERTY has a textual declaration of 29-64
+    # characters (the pragma and `PROPERTY P_Active : BOOL`) and NO implementation; each
+    # accessor has an EMPTY declaration and a real implementation of 17-40. So ST_DECL +
+    # ST_IMPL was tried, and the EXPORT half worked perfectly - P_Active.st holding the
+    # header, P_Active/Get.st holding `P_Active := State = E_AlarmState.Active;`.
+    #
+    # IT WAS REVERTED BECAUSE THE ROUND TRIP EMPTIES THE GETTER: export, import, re-export
+    # with nothing edited, and all seven accessor bodies come back as empty files. Which half
+    # does it is not yet measured - replacing the property's declaration may reset its
+    # accessors, or applying an accessor's EMPTY declaration may wipe the implementation
+    # beside it. Until that is known, the recursive payload is the only form that survives
+    # the trip: the accessors travel inside it and nothing is reassembled.
     "PROPERTY": FORM_NATIVE_R,    # carries getter/setter children
     "ACTION": FORM_ST_IMPL,
     "TRANSITION": FORM_ST_IMPL,

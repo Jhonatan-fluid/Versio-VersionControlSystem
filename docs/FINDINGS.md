@@ -17,6 +17,70 @@ produce a diff touching everything else.
 
 ---
 
+### Properties export as readable text perfectly, and the round trip empties every one
+
+**Asked for by the product owner on 2026-08-18**, looking at the panel: *"properties are still
+getting rendered as xml only, all the properties on the project only have a getter — needs to
+render the same way"*. Seven properties on one function block, seven opaque XML blobs, and
+every getter inside them is ordinary Structured Text.
+
+**The shape is genuinely there.** A probe of the live project:
+
+```
+P_Active         PROPERTY         decl 59 chars      impl none
+Get              PROPERTY_METHOD  decl 0 chars       impl 40 chars
+```
+
+A property is its header, an accessor is its body — exactly `ST_DECL` and `ST_IMPL`, the two
+forms a DUT and an ACTION already take. So the table was changed, `PROPERTY_METHOD` was added
+beside it, and **the export half worked on the first run**:
+
+```
+P_Active.st        {attribute 'monitoring' := 'call'}
+                   PROPERTY P_Active : BOOL
+P_Active/Get.st    P_Active := State = E_AlarmState.Active;
+```
+
+Readable, reviewable, pragma intact, and the accessor sitting inside the property's directory
+exactly as schema 9 says it should.
+
+**Then the round trip emptied all seven.** Export, import, re-export with nothing edited:
+
+```
+BEFORE >>P_Active := State = E_AlarmState.Active;<<
+AFTER  >><<
+```
+
+That is not churn, it is **silent destruction of every property body in the project** — the
+failure this repository exists to prevent, found by the gate on the same run that proved the
+export was right. Reverted the same hour.
+
+**Which half does it is not yet measured, and that is the whole of the remaining work.** Two
+candidates, and the fix differs completely between them:
+
+- **Replacing the property's declaration resets its accessors.** `apply_st` calls
+  `textual_declaration.replace` on the PROPERTY, and CODESYS may regenerate the Get/Set
+  underneath it. Ordering does not explain it away: `P_Active.st` sorts before
+  `P_Active/Get.st` (`.` is 46, `/` is 47), so the accessor is applied *after* the property
+  and still ends up empty.
+- **Applying the accessor's own EMPTY declaration wipes the implementation beside it.** A
+  PROPERTY_METHOD reports `has_textual_declaration` true with **zero characters**, which is a
+  shape nothing else in the table has — every other `ST_IMPL` object (an ACTION, a TRANSITION)
+  has no declaration at all rather than an empty one.
+
+**The recursive payload survives because nothing is reassembled**: the accessors travel inside
+the property's own XML, so no write ever touches them individually. That is why `NATIVE_R` is
+the form again, and the comment in both form tables now says so rather than implying it was
+never questioned.
+
+**What this cost and what it bought.** One CODESYS probe, one export, one gate round trip, and
+a revert — perhaps forty minutes. It bought the measurement that the export side is solved and
+the import side is one experiment away, which is a much better position than the guess it
+replaced. Reopening it means driving CODESYS directly: replace a property's declaration, read
+its accessor back, and see whether the body is still there.
+
+---
+
 ### An import destroyed a method, and the summary said seven native, zero warnings
 
 **Found 2026-08-18 by the CODESYS gate**, on a round trip nobody had been able to run before:

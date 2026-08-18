@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,492 across seven
+**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,493 across seven
 projects, 0 skipped — re-derived by running each, not carried forward
 
 | Project | Tests | Time | Needs |
@@ -10,7 +10,7 @@ projects, 0 skipped — re-derived by running each, not carried forward
 | `Versio.App.Tests` | 546 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 14 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 259 | under a second | nothing |
-| `Versio.Plc.Codesys.Parity.Tests` | 91 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
+| `Versio.Plc.Codesys.Parity.Tests` | 92 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
 | `Versio.Plc.Codesys.Tests` | 54 | **~30 min** | **real CODESYS** |
 
 *The first six are the loop to work in — about thirty seconds plus the UI suite. The last is
@@ -1000,6 +1000,7 @@ actually do.
 
 The full list, newest first:
 
+- [Properties export as readable text perfectly, and the round trip empties every one](FINDINGS.md#properties-export-as-readable-text-perfectly-and-the-round-trip-empties-every-one)
 - [An import destroyed a method, and the summary said seven native, zero warnings](FINDINGS.md#an-import-destroyed-a-method-and-the-summary-said-seven-native-zero-warnings)
 - [Ownership was spelled three ways in one tree, and the panel could only read one](FINDINGS.md#ownership-was-spelled-three-ways-in-one-tree-and-the-panel-could-only-read-one)
 - [A folder inside a POU stripped the owner off every method in it](FINDINGS.md#a-folder-inside-a-pou-stripped-the-owner-off-every-method-in-it)

@@ -61,8 +61,20 @@ public class ExportFormRulesTests
     }
 
     [Fact]
-    public void A_property_is_exported_recursively_because_it_owns_its_accessors()
+    public void A_property_is_exported_recursively_because_its_accessors_do_not_survive_apart()
     {
+        // NOT A READABILITY PREFERENCE, and it was tried the other way on 2026-08-18 because
+        // the owner asked for exactly that: "properties are still getting rendered as xml
+        // only". A PROPERTY really does carry a textual declaration (29–64 characters, pragma
+        // included) and its accessor a real implementation (17–40), so StDeclaration +
+        // StImplementation exports beautifully — `P_Active.st` and `P_Active/Get.st`, both
+        // readable.
+        //
+        // The round trip is what refused it. Export, import, re-export with nothing edited,
+        // and all seven getter bodies came back EMPTY — silent destruction of every property
+        // in the project. The recursive payload survives because the accessors travel inside
+        // it and nothing has to be reassembled. See the Finding in STATUS.md; reopening this
+        // means measuring which half empties them first.
         Assert.Equal(ExportForm.NativeRecursive,
             ExportFormRules.Decide(CodesysObjectType.Property, false, false));
     }

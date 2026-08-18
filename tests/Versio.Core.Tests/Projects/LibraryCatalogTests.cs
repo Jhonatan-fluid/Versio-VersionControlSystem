@@ -26,9 +26,12 @@ public sealed class LibraryCatalogTests
     private static string FixtureYaml(string relative) =>
         File.ReadAllText(Path.Combine(TestPaths.Project("RefrigeratorControl"), relative));
 
+    private static string ApplicationManagerYaml() =>
+        FixtureYaml(
+            Path.Combine("Device", "Plc Logic", "Application", "Library Manager.libraries.yaml"));
+
     private static LibraryCatalog ApplicationManager() =>
-        LibraryCatalog.Parse(FixtureYaml(
-            Path.Combine("Device", "Plc Logic", "Application", "Library Manager.libraries.yaml")));
+        LibraryCatalog.Parse(ApplicationManagerYaml());
 
     [Fact]
     public void The_real_export_parses_and_declares_its_schema()
@@ -51,9 +54,25 @@ public sealed class LibraryCatalogTests
     {
         var catalog = ApplicationManager();
 
-        // Measured against the fixture: 21 references, 18 of them pulled in by plug-ins.
-        Assert.Equal(21, catalog.References.Count);
-        Assert.Equal(18, catalog.References.Count(r => r.SystemLibrary));
+        // AGAINST THE FILE'S OWN HEADER, not a number typed here. The claim worth making is
+        // that the parser reads every reference the export wrote — a parser that dropped one
+        // fails, and adding a library to the project does not.
+        //
+        // It read `Assert.Equal(21, …)` until 2026-08-18 and went red when the owner added an
+        // EtherCAT master, which pulled in two more. That is a true statement about a Tuesday,
+        // and the fixture is a project somebody works in daily.
+        var declared = int.Parse(ApplicationManagerYaml()
+            .Split('\n')
+            .First(l => l.StartsWith("referenceCount:", StringComparison.Ordinal))
+            .Split(':')[1].Trim());
+
+        Assert.Equal(declared, catalog.References.Count);
+
+        // And plug-in libraries are still distinguished from the ones somebody chose, which
+        // is the flag the panel greys a row by. Both kinds must really be present, or the
+        // distinction is being asserted over an empty set.
+        Assert.Contains(catalog.References, r => r.SystemLibrary);
+        Assert.Contains(catalog.References, r => !r.SystemLibrary);
 
         // Nothing nameless survived, and nothing was invented.
         Assert.All(catalog.References, r => Assert.False(string.IsNullOrWhiteSpace(r.Name)));

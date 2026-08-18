@@ -551,6 +551,17 @@ public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) 
         await RunAsync(Versio.Plc.Codesys.CodesysOperation.Export);
         var before = Fingerprint(mirror);
 
+        // The TEXT of every source file, not just its hash — so a failure says what changed
+        // rather than only that something did. Added 2026-08-18, when seven property getters
+        // started differing across the round trip and the file list alone could not say
+        // whether they had been reformatted or emptied. They had been emptied.
+        var beforeText = Directory
+            .EnumerateFiles(mirror, "*.st", SearchOption.AllDirectories)
+            .ToDictionary(
+                f => Path.GetRelativePath(mirror, f).Replace(Path.DirectorySeparatorChar, '/'),
+                File.ReadAllText,
+                StringComparer.Ordinal);
+
         // The round trip. Nothing is edited: this is P7's measurement, which found the mirror
         // moving anyway.
         await RunAsync(Versio.Plc.Codesys.CodesysOperation.Import);
@@ -569,6 +580,12 @@ public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) 
         foreach (var path in differing)
         {
             output.WriteLine($"differs: {path}");
+            if (beforeText.TryGetValue(path, out var was))
+            {
+                var rel = path.Replace('/', Path.DirectorySeparatorChar);
+                output.WriteLine("  BEFORE >>" + was + "<<");
+                output.WriteLine("  AFTER  >>" + File.ReadAllText(Path.Combine(mirror, rel)) + "<<");
+            }
         }
 
         Assert.True(differing.Count == 0,
