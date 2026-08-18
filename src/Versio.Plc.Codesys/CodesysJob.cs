@@ -252,14 +252,33 @@ public sealed record CodesysJob
                     PlannedAction.Create => "create",
                     _ => "skip",
                 },
+                // EVERY VALUE NAMED, AND NO CATCH-ALL, because the catch-all lied once.
+                //
+                // This read `_ => "unknownForm"`, and adding PlannedSkip.WouldDestroyMembers
+                // on 2026-08-18 therefore told the script a refusal was an unrecognised form.
+                // The script has no arm for that either, so it fell through to its own default
+                // and warned FORM_NOT_UNDERSTOOD about a file the planner had deliberately and
+                // correctly declined — a warning that names the wrong cause is worse than the
+                // silence it replaced, and it took a 40-second CODESYS test to find.
+                //
+                // Throwing is the point: the next value added here fails loudly in the first
+                // test that serialises a plan, instead of arriving at CODESYS wearing another
+                // reason's name. `versio_import.py`'s announce_skip is the other half of this
+                // pair and has to gain an arm at the same time.
                 Skip = f.Skip switch
                 {
                     PlannedSkip.NotSkipped => null,
                     PlannedSkip.Bookkeeping => "bookkeeping",
                     PlannedSkip.ExportOnly => "exportOnly",
                     PlannedSkip.Stray => "stray",
+                    PlannedSkip.UnknownForm => "unknownForm",
                     PlannedSkip.RenameTarget => "renameTarget",
-                    _ => "unknownForm",
+                    PlannedSkip.WouldDestroyMembers => "wouldDestroyMembers",
+                    _ => throw new ArgumentOutOfRangeException(
+                        nameof(plan), f.Skip,
+                        "this skip reason has no wire name — add one here and an arm in "
+                        + "versio_import.py's announce_skip, or the script will warn about "
+                        + "the wrong thing"),
                 },
                 Name = f.Name,
                 Resolve = f.Resolve.Count > 0 ? [.. f.Resolve] : null,

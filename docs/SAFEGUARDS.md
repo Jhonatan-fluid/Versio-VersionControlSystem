@@ -968,6 +968,26 @@ a commit lands, dirtying the tree that was just committed. The commit gate expor
 not a correctness bug — but *"I committed and it immediately went dirty again"* reads as one.
 Suppress deferred work for the duration of a git write.
 
+### M. An import replaces an object and takes its members with it — **BUILT 2026-08-18**
+
+`import_native` **replaces** rather than merges, and a non-recursive payload holds the node
+alone. So handing back a graphical POU's `.xml` destroys every method, action and property
+inside it — measured by a round trip that exported 26 objects, imported, and re-exported 25.
+The textual phase runs first, so the member was written to the project and then destroyed by
+the phase after it, and the summary read `7 native, 0 warning(s)`.
+
+**Refused in the planner**, which is the only place that can see it: the script is handed one
+file at a time and cannot know what else belongs to the object. A native file whose object owns
+recorded members becomes `PlannedSkip.WouldDestroyMembers`, warning with their names. This is
+the rule `PlanDeletions` already applies to an owner whose children are still in the mirror —
+never remove the thing that others live inside — reached through a different door.
+
+**What it costs**, stated because somebody will meet it: a graphical POU's body stops being
+importable once it owns a member. Editing the members still works, and a graphical body was
+never reviewable text, so the loss is smaller than either alternative — exporting the POU
+recursively would take its members' readable ST away, and re-creating them afterwards is not
+possible at all, since a `METHOD` header is not a declaration the create path can identify.
+
 ### L. The toolchain is probed once per repository
 
 `ProbeToolchainAsync` runs at attach. CODESYS uninstalled, upgraded, or a profile removed mid-session

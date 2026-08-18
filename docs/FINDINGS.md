@@ -17,6 +17,126 @@ produce a diff touching everything else.
 
 ---
 
+### An import destroyed a method, and the summary said seven native, zero warnings
+
+**Found 2026-08-18 by the CODESYS gate**, on a round trip nobody had been able to run before:
+the product owner added `M_Test` to `PLC_PRG` that morning, and `PLC_PRG` is a **graphical**
+POU. Export, import, re-export — and the mirror came back with a file missing:
+
+```
+export     walked 26, wrote 19    …/PLC_PRG.xml, …/PLC_PRG/M_Test.st
+import     7 native, 8 unchanged, 0 warning(s)
+re-export  walked 25, wrote 18    …/PLC_PRG.xml
+```
+
+**`import_native` replaces, and a non-recursive payload is the node alone.** `PLC_PRG` exports
+as `NATIVE` — its body is graphical, so there is nothing textual to write — and its method
+exports separately as ST. Handing the `.xml` back replaces the POU with a payload that has no
+method in it, and the method goes. The textual phase runs *first*, so `M_Test` was written to
+the project and then destroyed a few seconds later by the phase after it.
+
+**Nothing said so.** `import: 7 native, 8 unchanged, 4 not applied — 0 warning(s)` is the whole
+report of a run that lost an object. The count of files applied was correct; there is no count
+of objects that stopped existing.
+
+**Pre-existing, and it needed one specific shape to fire**: an owner whose payload is
+non-recursive *and* a member exported to a file of its own. Neither fixture had one until that
+morning — `MachineWithMembers` gives its members to a **textual** `FB_Pump`, and
+`RefrigeratorControl` had no members at all until the day before. It is not related to the
+layout change landing beside it: the same three lines run whichever directory the member's
+file sits in.
+
+**Refused rather than worked around**, in the planner, because that is where the manifest can
+be read — the script sees one file at a time and cannot know what else belongs to the object.
+A native file whose object owns recorded members is now `PlannedSkip.WouldDestroyMembers`, with
+a warning naming them. The two alternatives were both worse:
+
+- **Export such a POU recursively.** The round trip becomes whole and the members lose their
+  reviewable text, which is the thing Versio exists to produce.
+- **Re-create the members afterwards.** Not available: a `METHOD` header is not a declaration
+  `create_textual` can identify, so the create path refuses it — which is *why* the loss was
+  silent rather than a crash.
+
+What it costs is real and small: a graphical POU's body stops being importable once it owns a
+member. Its members' own files still import, and a graphical body was never reviewable text.
+The warning says which members, and to change the body in the IDE.
+
+**It is the rule `PlanDeletions` already applies, one operation along** — never remove the
+thing that others live inside. That rule was written for deletions after P3 measured
+`remove()` taking a class's property with it; this is the same destruction reached through
+`import_native` instead, and it went unnoticed because the deletion path had a test corpus and
+this one had no fixture that could produce it.
+
+---
+
+### Ownership was spelled three ways in one tree, and the panel could only read one
+
+**Raised 2026-08-18 by the product owner, looking at two screens at once** — Explorer with
+seventeen files in one directory, and the panel showing `FB_Alarm` with four loose members
+under it. Two observations, one cause: *"having things flat on the export side will get really
+messy"*, and *"folders for private and protected are not shown, and P_Faulted is shown in the
+middle, while these are usually last in the CODESYS IDE"*.
+
+**The mirror encoded ownership three different ways.** A directory for a container, a
+`FB_Alarm.` prefix on a member's file name, and — for a folder inside a POU — nothing at all,
+the folder erased and its members flattened up beside the owner. All three had already been
+got wrong once each. The prefix was the only record of ownership until manifest schema 4, and
+a name containing a dot defeats it. The erasure was the finding below, fixed the previous day.
+
+**So the fix was to delete two of the three.** From schema 9 a container makes a directory, an
+object with exported children makes a directory named after itself, and a member goes inside
+it: `Device/Plc Logic/Application/FB_Alarm/Private/_M_Reset.st` is what CODESYS shows, segment
+for segment. The importer splits the path, the panel reads the path, and neither needs to know
+what a member is. `ResolveKnown`'s owner-chain walk and stem-split fallback survive for older
+mirrors and are dead code for new ones.
+
+**`parent` stays, because a path cannot say everything.** It answers whether
+`FB_Alarm/M_Reset.st` is the POU's method or an object that happens to sit in a folder of that
+name — and it is what the panel nests by, so a member still hangs off its owner rather than
+off a directory that merely shares its name.
+
+**Not everything with children gets a directory**, and the rule is "children exported as
+*files*". A task configuration's tasks are rows inside its `.tasks.yaml` — writing them
+separately produced a third copy of every task, which was its own defect — and a GVL's two
+files are two layers of one object. So `FB_Alarm/` and `PLC_PRG/` exist and
+`Task Configuration/` does not.
+
+**The measurement that stopped the wrong fix being built.** The panel sorted alphabetically
+and the IDE does not, so the obvious answer was "record the order CODESYS gives us and sort by
+it". A probe of the live project says that would have been wrong:
+
+```
+get_children()   M_Reset,  Private,  Protected,  P_Faulted     ← storage order
+CODESYS IDE      Private,  Protected,  M_Reset,  P_Faulted     ← what the owner sees
+```
+
+At application level it is starker: the probe returns `FB_Alarm` eleventh of twelve where the
+IDE shows it second. `get_children()` is **creation order**, and sorting by it would have
+shipped an ordering that looks authoritative and matches nothing. What the two screenshots do
+agree on is **folders first** — so that is the rule the panel now applies, and it costs no
+recorded data at all, because the tree builder already emitted directory groups before
+objects. Making the in-POU folder a directory was the whole fix. The rule *within* a group is
+still alphabetical and still unmeasured; it is not inferred from two cropped screenshots.
+
+**The one-time cost, stated where somebody will meet it.** Every file in every mirror written
+before schema 9 is at a different path, so the first export after upgrading renames the lot.
+Content is untouched, so git pairs them as renames and history survives, and the planner
+branches on `ExportCoverage.PathIsChainSchema` so an un-re-exported mirror keeps importing
+correctly. Both layouts are legal file names and neither is recognisable on sight — the schema
+number is the only thing that can tell them apart, which is why it is read rather than the
+path sniffed.
+
+Covered on both sides. `ProjectTreeMembersTests` gains three cases — folders as rows inside
+the POU with the right paths, roll-up through two levels, and a pre-schema-9 member gaining no
+folder — and three mutations each fail exactly one of them: never rebuilding the folders,
+counting the owner's own directory as one, and putting objects before folders.
+`CodesysImportPlannerTests` now names which layout each test describes, with the flat ones
+moved to a `LegacyManifest` helper that is *one below the threshold* rather than a literal 8.
+The export half rides on `ProjectTreeFromRealExportTests`, against a fixture that now carries
+two folders, a property with accessors, and a member on a natively-exported POU.
+
+---
+
 ### A folder inside a POU stripped the owner off every method in it
 
 **Found 2026-08-17 by the product owner reading the panel** — the eighth found that way, in

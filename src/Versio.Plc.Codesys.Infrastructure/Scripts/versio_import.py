@@ -519,6 +519,19 @@ class Importer(object):
             self.warn("NOT_IN_EXPORT", rel_path,
                       "not a file the export writes - never handed to the toolchain")
             return
+        if skip == "wouldDestroyMembers":
+            # A REFUSAL, and it counts as one-way rather than as a fault. import_native
+            # replaces, and this payload holds the object alone, so applying it would take
+            # every method, action and property inside it - measured by a round trip that
+            # exported 26 objects and re-exported 25. The planner made the decision because
+            # only it can see the manifest; this side says so in the words the log already
+            # uses for "real state, exported for review, no import path that can be trusted".
+            #
+            # The planner's own warning names the members. Repeating them here would print
+            # the same list twice for one file.
+            self.one_way += 1
+            emit({"t": "not_imported", "path": rel_path, "reason": "WOULD_DESTROY_MEMBERS"})
+            return
         if skip == "renameTarget":
             # SILENT, like bookkeeping. This file is where a renamed object's content already
             # is: the rename phase moved the object, so applying the file would write content

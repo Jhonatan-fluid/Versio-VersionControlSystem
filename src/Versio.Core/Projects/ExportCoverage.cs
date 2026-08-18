@@ -66,7 +66,27 @@ public static class ExportCoverage
     /// the silent drift <c>CODESYS.md</c> §9 already counts four of.
     /// </remarks>
     /// <seealso cref="ProjectManifest.Schema"/>
-    public const int CurrentSchema = 8;
+    public const int CurrentSchema = 9;
+
+    /// <summary>
+    /// From this schema, a recorded path <b>is</b> the chain of names to the object.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A threshold rather than the current version, and the only one of these that changes
+    /// how an existing file is <i>read</i> rather than what a new one contains. Before 9 a
+    /// member sat beside its owner as <c>FB_Alarm.M_Reset.st</c>, so reaching the object meant
+    /// taking the directories and then re-applying the owner chain from the GUIDs on top. From
+    /// 9 the member is at <c>FB_Alarm/M_Reset.st</c> and the directories already say it —
+    /// doing both would name <c>FB_Alarm</c> twice and resolve to nothing.
+    /// </para>
+    /// <para>
+    /// <b>So it cannot be inferred from the path.</b> Both layouts are legal file names and
+    /// neither is recognisable on sight; the schema number is the only thing that tells them
+    /// apart, which is what keeps a mirror exported last year importing correctly today.
+    /// </para>
+    /// </remarks>
+    public const int PathIsChainSchema = 9;
 
     /// <summary>The exporter's code for a skip that loses something.</summary>
     public const string GapReason = "NOT_IMPLEMENTED";

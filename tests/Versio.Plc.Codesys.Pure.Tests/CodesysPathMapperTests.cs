@@ -109,10 +109,18 @@ public class PathMapperTests
     public void The_longest_legal_file_name_leaves_no_room_for_an_ordinary_checkout()
     {
         // G9's arithmetic, DERIVED rather than asserted, so that changing MaxStem or the
-        // parent-prefix rule re-measures instead of leaving a stale number behind. Deriving
-        // it has already been worth it twice: the first version of this test enumerated
-        // impossible type/form pairs and reported 201, and the number quoted in the plan
-        // before that was a hand count of 189. The measured answer is 190.
+        // layout re-measures instead of leaving a stale number behind. Deriving it has
+        // already been worth it three times: the first version enumerated impossible
+        // type/form pairs and reported 201, the number quoted in the plan before that was a
+        // hand count of 189, and this version had to be rewritten when the layout moved. The
+        // measured answer is 190, and it did not change when the layout did.
+        //
+        // WHAT MOVED, and why the same number comes out. Until schema 9 a member was
+        // `Owner.Member.xml` — two shortened stems in ONE FILE NAME — and this test passed a
+        // parent to FileNameFor to build it. The exporter no longer passes one: the owner is
+        // a DIRECTORY now, so the two stems meet on the path with a slash between them. A
+        // test still asking for the prefixed name would be measuring something the exporter
+        // cannot produce, which is precisely the mistake the comment below records.
         //
         // The gap was written up as needing "a deep folder chain". It does not — one legal
         // file name plus the chain every CODESYS project has leaves 19 characters for the
@@ -140,10 +148,9 @@ public class PathMapperTests
                     {
                         var form = ExportFormRules.Decide(type, impl, decl, kids);
 
-                        // A parent is supplied for every type; FileNameFor uses it only for
-                        // the five that are parent-prefixed, so this finds those without
-                        // naming them and keeps working if that set changes.
-                        var fileName = PathMapper.FileNameFor(longName, type, form, longName);
+                        // NO PARENT. The name is one stem plus its infix and suffix; the
+                        // owner is added below as the directory it now is.
+                        var fileName = PathMapper.FileNameFor(longName, type, form);
                         if (fileName.Length > worst)
                         {
                             worst = fileName.Length;
@@ -153,6 +160,14 @@ public class PathMapperTests
                 }
             }
         }
+
+        // THE OWNER'S DIRECTORY, which every member is now inside. One level, not more: a
+        // folder inside a POU adds another and there is no bound on how many an engineer can
+        // nest, so a worst case built on that would be a worst case built on nothing. This is
+        // the shape every member has, and the per-file guards catch anything deeper.
+        var ownerDirectory = PathMapper.EncodeStem(longName).Length + 1;
+        worst += ownerDirectory;
+        worstLabel += $" inside a {ownerDirectory - 1}-character owner directory";
 
         // The shallowest chain a real project has. Every CODESYS project has it.
         const string Chain = @"Device\Plc Logic\Application";
@@ -174,9 +189,14 @@ public class PathMapperTests
         Assert.True(leftForRoot < 38,
             $"the longest file name is {worst} characters ({worstLabel}); with {Chain} and "
             + $"{above} that leaves {leftForRoot} characters for the repository root, which "
-            + "is now enough for an ordinary checkout. If MaxStem or the parent-prefix rule "
-            + "was tightened deliberately, this test has done its job — re-derive G9's "
-            + "numbers in CODESYS-IMPORT-PLAN.md and versio_text, which quote them.");
+            + "is now enough for an ordinary checkout. If MaxStem or the mirror layout was "
+            + "changed deliberately, this test has done its job — re-derive G9's numbers in "
+            + "DRIVING.md and versio_text, which quote them.");
+
+        // The number itself, pinned. The bound above stays true across a wide range of
+        // arithmetic, so it would not notice the two stems quietly becoming one — which is
+        // exactly what a layout change could do without anybody meaning to.
+        Assert.Equal(190, worst);
     }
 
     [Theory]

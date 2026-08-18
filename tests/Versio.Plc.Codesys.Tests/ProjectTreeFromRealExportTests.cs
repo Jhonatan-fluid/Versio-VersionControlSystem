@@ -139,61 +139,105 @@ public sealed class ProjectTreeFromRealExportTests(ITestOutputHelper output) : I
         Assert.Equal(objects.Count, tree.ChangedDescendants);
         Assert.Equal(ChangeKind.Untracked, tree.RollUp);
 
-        AMemberInAFolderStillBelongsToItsPou(manifest, all);
+        EveryMemberLivesInsideItsOwner(manifest, all);
     }
 
     /// <summary>
-    /// A method the IDE shows inside a folder inside a POU is exported as that POU's member.
+    /// The mirror path is the project path: every member inside its owner, folders and all.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>The fixture carries the case on purpose</b>: <c>FB_Alarm</c> has <c>M_Reset</c>
-    /// directly and <c>_M_Reset</c> inside a folder called <c>Private</c>, which is how the
-    /// defect was reported. Removing either from <c>RefrigeratorControl.project</c> makes this
-    /// fail rather than pass quietly, which is the point of naming them.
+    /// <b>The RULE over whatever the project contains, not a list of names.</b> The first
+    /// version of this named <c>FB_Alarm</c>, <c>M_Reset</c> and <c>_M_Reset</c> and pinned
+    /// their paths, and it went red twice in one morning — once when the owner reorganised
+    /// the real project into <c>Library/Alarm/POUs</c>, and once when they renamed a method.
+    /// A test that fails because somebody used the tool for its purpose is a test that will
+    /// be deleted, and it was measuring the fixture rather than the exporter.
     /// </para>
     /// <para>
-    /// <b>Only a real export can prove this half.</b> The rule lives in the walk inside
-    /// <c>versio_export.py</c>, which cannot run without <c>scriptengine</c> — so unlike the
-    /// importer's side (<c>PythonTreeWalkTests</c>, under a second) this one costs a CODESYS
-    /// launch and there is no cheaper substitute. It rides along on the export this test has
-    /// already paid for.
+    /// So it asserts the invariant every recorded member must satisfy, over all of them, and
+    /// separately insists there ARE some — which is the half that keeps it honest. The
+    /// specific shapes (a folder as a row, the order inside a POU) are pinned instantly and
+    /// against a manifest it owns in <c>ProjectTreeMembersTests</c>; what only a real export
+    /// can prove is that CODESYS's own tree comes out of the walk looking like this at all.
+    /// </para>
+    /// <para>
+    /// <b>Only a real export can prove this half</b>: the rule lives in the walk inside
+    /// <c>versio_export.py</c>, which cannot run without <c>scriptengine</c>. It rides along
+    /// on the export this test has already paid for.
     /// </para>
     /// </remarks>
-    private void AMemberInAFolderStillBelongsToItsPou(
+    private void EveryMemberLivesInsideItsOwner(
         ProjectManifest manifest, IReadOnlyList<ProjectTreeNode> all)
     {
-        var owner = manifest.Objects.Single(o => o.Name == "FB_Alarm");
-        var foldered = manifest.Objects.Single(o => o.Name == "_M_Reset");
-        var plain = manifest.Objects.Single(o => o.Name == "M_Reset");
+        // The schema is what tells a reader which of the two layouts this mirror is in, so a
+        // mirror in the new shape claiming the old number would be read wrong by the planner
+        // and silently resolve to nothing.
+        Assert.Equal(ExportCoverage.CurrentSchema, manifest.Schema);
+        Assert.True(manifest.Schema >= ExportCoverage.PathIsChainSchema);
 
-        output.WriteLine($"owner    {owner.Guid} {owner.Path}");
-        output.WriteLine($"foldered {foldered.Parent} {foldered.Path}");
+        var byGuid = manifest.Objects
+            .GroupBy(o => o.Guid, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
 
-        // The manifest records the owner, so the panel nests it and the planner resolves it
-        // through the owner chain rather than through its directory.
-        Assert.Equal(owner.Guid, foldered.Parent);
+        var members = manifest.Objects
+            .Where(o => !string.IsNullOrEmpty(o.Parent))
+            .ToList();
 
-        // And it sits BESIDE its owner, named after it — the same shape as the unfoldered
-        // member next to it, so re-organising the IDE tree produces no mirror diff at all.
-        Assert.Equal(DirectoryOf(plain.Path), DirectoryOf(foldered.Path));
-        Assert.Equal("FB_Alarm._M_Reset.st", Path.GetFileName(foldered.Path));
+        // NON-VACUOUS. Every assertion below is over `members`, so an export that recorded no
+        // owners at all would satisfy them by having nothing to check — which is precisely the
+        // defect this whole layout came from.
+        Assert.True(members.Count >= 3,
+            $"the fixture must carry members for this to mean anything; it has {members.Count}");
 
-        // The folder leaves nothing behind. A `Private` directory in the mirror would mean
-        // the walk still wrote it somewhere, whatever the manifest says.
-        Assert.DoesNotContain(manifest.Objects, o => o.Path.Contains("/Private/", StringComparison.Ordinal));
+        var foldered = 0;
 
-        // And the drawn tree agrees, which is what the owner actually looked at.
-        var pou = all.Single(n => n.Name == "FB_Alarm");
-        Assert.Contains(pou.Children, c => c.Name == "_M_Reset");
-        Assert.Contains(pou.Children, c => c.Name == "M_Reset");
-    }
+        foreach (var member in members)
+        {
+            Assert.True(byGuid.TryGetValue(member.Parent, out var owner),
+                $"{member.Path} names owner {member.Parent}, which the manifest does not record");
 
-    /// <summary>Not <c>System.IO</c>'s: a mirror path is forward-slashed, always.</summary>
-    private static string DirectoryOf(string path)
-    {
-        var slash = path.LastIndexOf('/');
-        return slash < 0 ? string.Empty : path[..slash];
+            // The owner's directory: its own file path with the extension taken off. Every
+            // suffix this export writes is the tail of the file name, so cutting at the first
+            // dot after the last slash is the owner's directory whatever its form.
+            var slash = owner!.Path.LastIndexOf('/');
+            var dot = owner.Path.IndexOf('.', slash + 1);
+            var ownerDirectory = dot < 0 ? owner.Path : owner.Path[..dot];
+
+            Assert.StartsWith(ownerDirectory + "/", member.Path, StringComparison.Ordinal);
+
+            // Anything between the owner's directory and the file is a folder the engineer
+            // made inside the POU, and it must be a row in the tree rather than part of a name.
+            var inside = member.Path[(ownerDirectory.Length + 1)..];
+            if (inside.Contains('/'))
+            {
+                foldered++;
+                var folder = inside[..inside.IndexOf('/')];
+                Assert.Contains(all, n => n.IsFolder && n.Name == folder
+                                          && n.Path.EndsWith($"{ownerDirectory}/{folder}",
+                                                             StringComparison.Ordinal));
+            }
+
+            // And no owner prefix survives anywhere: the directory says it, and saying it
+            // twice would give FB_Alarm/FB_Alarm.M_Reset.st.
+            var fileName = member.Path[(member.Path.LastIndexOf('/') + 1)..];
+            Assert.False(fileName.StartsWith(owner.Name + ".", StringComparison.Ordinal),
+                         $"{member.Path} still carries its owner's name as a prefix");
+        }
+
+        output.WriteLine($"{members.Count} member(s), {foldered} of them inside a folder");
+
+        // At least one member really is inside a folder, or the folder half of the rule is
+        // being asserted over an empty set. The fixture has carried two since 2026-08-17.
+        Assert.True(foldered >= 1, "no member is inside a folder, so that rule proved nothing");
+
+        // A member's node hangs off its owner's node, not off a directory that shares its name.
+        foreach (var member in members.Take(5))
+        {
+            var owner = byGuid[member.Parent];
+            var ownerNode = all.Single(n => n.Guid == owner.Guid);
+            Assert.Contains(Flatten(ownerNode).Skip(1), n => n.Guid == member.Guid);
+        }
     }
 
     private static IEnumerable<ProjectTreeNode> Flatten(ProjectTreeNode node)

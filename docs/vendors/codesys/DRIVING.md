@@ -481,8 +481,11 @@ CODESYS names are much freer than file names, so:
 > the path — and the wording here, in `versio_text.py` and in `CodesysPathMapper.cs` all said
 > otherwise for months ("a deep CODESYS folder chain plus this still clears Windows'
 > 260-character limit"). Two things make it false. The shortened form is `tail[:80] + "~" +
-> six hex`, so the cap is **87**. And the parent prefix below puts **two** shortened stems in
-> one file name: **190 characters** at worst, a `TRANSITION` exported as native XML. With
+> six hex`, so the cap is **87**. And a member meets **two** shortened stems on one path — its
+> owner's directory and its own file: **190 characters** at worst, a `TRANSITION` exported as
+> native XML. (Until schema 9 the same two met inside one *file name*, `Owner.Member.xml`. The
+> arithmetic did not change when the layout did; the separator is a slash now, and a folder
+> inside a POU can add a third.) With
 > `Device/Plc Logic/Application` — the chain every project has — and a one-character project
 > name, that leaves **19 characters for the repository root**. `C:\GIT\Versio` is 13 and fits
 > by six; anything under a user profile does not.
@@ -500,26 +503,49 @@ visualisation and a `Main` POU are a common real collision:
 <stem>[.vis|.gvl|.action|.transition][.st|.xml|.libraries.yaml]
 ```
 
-and a **sub-POU member is prefixed with its owner** (`clsLight.Light.xml`), because methods,
-actions, transitions and properties live in the same folder as the POU that owns them.
+**From schema 9 the mirror path is the project path.** One rule, applied everywhere: a
+container makes a directory, an object that owns exported children makes a directory named
+after itself, and a member goes inside it. `Device/Plc Logic/Application/FB_Alarm/Private/_M_Reset.st`
+is what CODESYS shows, segment for segment.
 
-> **A folder *inside* a POU is a view, not a place.** CODESYS lets a function block's methods
-> be grouped into folders. That grouping is organisation in the IDE tree and nothing else —
-> `_M_Reset` is FB_Alarm's method whichever folder shows it, its name is unique across the
-> whole POU either way, and dragging it between folders changes no code and no reference. So
-> the walk carries the ownership straight through and the folder leaves **no directory
-> behind**: `FB_Alarm._M_Reset.st` sits beside `FB_Alarm.M_Reset.st`, and re-organising the
-> IDE tree produces no mirror diff at all.
+> **Three encodings became one, and that is what the rename bought.** Ownership used to be
+> spelled a directory for a container, a `clsLight.` **prefix** on a member's file name, and —
+> for a folder inside a POU — nothing at all, the folder erased and its members flattened up
+> beside the owner. Each had already been got wrong once: the flattening lost the folder and
+> planned imports at a path that did not exist, and before that the prefix was the only record
+> of ownership, which a name containing a dot defeats.
 >
-> A folder at **project** level is the opposite and keeps its directory, because there the
-> nesting *is* where the object lives. What tells the two apart in `handle()` is whether an
-> owner GUID is already in play, which only a POU starts.
+> The importer now splits the path, the panel reads the path, and neither needs to know what a
+> member is. `parent` stays in the manifest because it answers the one question a path cannot:
+> whether `FB_Alarm/M_Reset.st` is the POU's method or an object that happens to sit in a
+> folder of the same name.
 >
-> The importer's half of this is `versio_tree.find_child_folder_blind`: a resolve chain names
-> objects and a folder is not one of the things it names, so the walk looks through folders —
-> refusing an ambiguous answer rather than guessing — and a direct child always outranks one
-> found inside a folder. Finding **nothing** is the dangerous outcome, not the safe one: an
-> import that cannot find the object it was told to update *creates* it. See the Finding in
+> **What it costs.** Every file in every mirror written before schema 9 is at a different
+> path, so the first export after upgrading renames the lot. Content is untouched, so git
+> pairs them as renames and history survives. `CodesysImportPlanner` branches on
+> `ExportCoverage.PathIsChainSchema`, so an un-re-exported mirror keeps importing correctly —
+> the two layouts are both legal file names and neither is recognisable on sight, which is why
+> the schema number has to be read rather than the path sniffed.
+>
+> **Not everything with children gets a directory** — only objects whose children are
+> *exported as files*. A task configuration's tasks are rows inside its `.tasks.yaml` (writing
+> them separately produced a third copy of every task, which was a real defect), and a GVL's
+> `.st` and `.xml` are two layers of one object rather than children. So `FB_Alarm/` and
+> `PLC_PRG/` exist and `Task Configuration/` does not.
+>
+> `versio_tree.find_child_folder_blind` is **still load-bearing, for every mirror that has not
+> been re-exported yet**. A schema-8 chain reaches `FB_Alarm/_M_Reset` while the live project
+> still has `Private` in the middle of it, so a strict walk fails on the last segment holding
+> a valid owner — and `import_native` both replaces and creates, so failing there pastes a
+> second copy into the POU's root. On a schema-9 mirror the chain names the folder and the
+> walk never needs to look through anything; there it is tolerance. It refuses an ambiguous
+> answer rather than guessing, and a direct child always outranks one found inside a folder.
+>
+> **Depth is not the cost it looks like.** The deepest path in the fixture went from 59 to 63
+> characters — `Device/Plc Logic/Application/FB_Alarm/Protected/_M_Protected.st` — because a
+> member pays `FB_Alarm/` in the path where it used to pay `FB_Alarm.` in the file name, which
+> is the same nine characters. Only a folder inside a POU adds a level, and the two guards
+> (200 and 260) are checked per file regardless. See the Findings in
 > [`STATUS.md`](../../STATUS.md).
 
 > **The bug this table caused once.** `FORM_GVL_BOTH` was missing from the Python `SUFFIX`
@@ -538,6 +564,12 @@ plc/Machine/                     ← the mirror
 │  └─ Plc Logic/
 │     └─ Application/
 │        ├─ Simulation.st                    ST_FULL   (textual POU)
+│        ├─ FB_Alarm.st                      ST_FULL   ┐ the POU, beside
+│        ├─ FB_Alarm/                                  │ the directory that
+│        │  ├─ M_Reset.st                    ST_FULL   │ holds its members —
+│        │  ├─ P_Faulted.xml                 NATIVE_R  │ folders and all, so
+│        │  ├─ Private/_M_Reset.st           ST_FULL   │ the path is the path
+│        │  └─ Protected/_M_Protected.st     ST_FULL   ┘ the IDE shows
 │        ├─ PLC_PRG.xml                      NATIVE    (graphical POU)
 │        ├─ Glob_Var.gvl.st                  ST_DECL   ┐ one object,
 │        ├─ Glob_Var.gvl.xml                 NATIVE    ┘ two files, one GUID
@@ -551,7 +583,7 @@ plc/Machine/                     ← the mirror
 └─ _coverage.md                  ← what a person reads in a pull request
 ```
 
-**`_manifest.json` is at schema 8.** The schema number is not decoration — each bump exists
+**`_manifest.json` is at schema 9.** The schema number is not decoration — each bump exists
 because an older manifest's *silence* would otherwise be misread:
 
 | Schema | Adds | The ambiguity it resolves |
@@ -562,6 +594,7 @@ because an older manifest's *silence* would otherwise be misread:
 | 7 | `shash` on full ST records | A bounded fingerprint of the file's lines — 16 values, 128 characters, whatever the POU's size. It is what pairs a renamed-**and-edited** POU when the mirror was never committed, so git has no old copy: schema 6 and earlier simply have no record of what the departed file looked like, and such a rename falls back to a delete and a create |
 | 6 | `ihash` on full ST records | A schema-5 manifest has no implementation hash because nothing wrote one, not because the object has no body. It is what pairs a **renamed POU** with the file it became — the whole-file hash cannot, since `PROGRAM Simulation` is inside the file — so without it a rename falls back to a delete and a create, losing the GUID |
 | 5 | `nhash` on native records | A schema-4 manifest has no normalised hash because nothing wrote one, not because the object is unchanged — reading absence as agreement would delete work on every mirror exported before 2026-08-15. Without it a native deletion stays refused |
+| 9 | the path **is** the chain of names | **The one bump that changes how an existing file is read rather than what a new one contains.** A member moved from `FB_Alarm.M_Reset.st` beside its owner to `FB_Alarm/M_Reset.st` inside it, so on schema 8 and below the owner chain must be re-applied on top of the directories and on 9 doing that names `FB_Alarm` twice and resolves to nothing. Both layouts are legal file names and neither is recognisable on sight, so the number is the only thing that can tell them apart |
 | 8 | `vendor` | Two vendors' mirrors were otherwise indistinguishable on disk — and `type` holds a *toolchain's own* tree vocabulary (`PLC_LOGIC`, `CALL_TO_POU`, `GVL_PERSISTENT` are CODESYS's words, not IEC 61131-3's), so a reader that has to guess whose words it holds cannot render them without guessing too. Absent reads as CODESYS, which is a fact rather than a guess: every mirror written before this was written by CODESYS |
 
 Two invariants worth knowing before touching the manifest:

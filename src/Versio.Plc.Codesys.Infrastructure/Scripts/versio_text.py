@@ -273,9 +273,14 @@ def too_long_for_any_machine(rel_path):
     MEASURED, so the numbers here are not hypothetical - and derived by a test
     rather than counted, because the hand count was wrong twice. safe_file_stem
     returns up to 87 characters, not the 80 _MAX_STEM advertises: the shortened
-    branch adds "~" plus six hex. file_name_for then prefixes a member with its
-    owner, so ONE file name is two of those - 190 characters at worst, a TRANSITION
+    branch adds "~" plus six hex. A member's path carries two of those - its owner's
+    directory and its own file - so ONE path is 190 characters at worst, a TRANSITION
     exported as native XML.
+
+    That worst case did not move when the layout did. Until schema 9 the two stems
+    met in one FILE NAME, `Owner.Member.xml`; now they meet as `Owner/Member.xml`,
+    which is the same characters with the dot as a separator. What changed is only
+    where the boundary falls, and a folder inside a POU can add a third.
 
     With the ordinary Device/Plc Logic/Application chain and a ONE-character project
     name, that leaves 19 characters for the repository root. C:\GIT\Versio is 13 and
@@ -328,10 +333,11 @@ _INVALID_WIN = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 # a deep CODESYS folder chain plus this still clears Windows' 260-character path
 # limit". Two things make that false, and both were found by measuring rather than by
 # reading it. The shortened branch below returns tail[:80] + "~" + six hex, so the cap
-# is really 87. And file_name_for prefixes a member with its owner, so a METHOD,
-# PROPERTY, ACTION or TRANSITION file name is TWO of these - up to 190 characters,
-# which leaves 19 for the repository root with the ordinary
-# Device/Plc Logic/Application chain and no deep chain at all.
+# is really 87. And a METHOD, PROPERTY, ACTION or TRANSITION meets two of these on one
+# path - its owner's directory and its own file - so that is up to 190 characters, which
+# leaves 19 for the repository root with the ordinary Device/Plc Logic/Application chain
+# and no deep chain at all. (Before schema 9 the same two stems met in one file name as
+# `Owner.Member.xml`; the arithmetic is unchanged, the separator is a slash now.)
 #
 # The path is bounded by too_long_for_any_machine and too_long_for_this_machine above.
 # This number bounds one segment, which is all a per-name rule can honestly bound.

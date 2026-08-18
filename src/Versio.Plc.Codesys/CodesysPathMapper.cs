@@ -69,10 +69,12 @@ public static partial class PathMapper
     /// that a deep CODESYS folder chain plus this still clears Windows' 260-character path
     /// limit". Two things make that false, both measured rather than read.
     /// <see cref="Shortened"/> returns <c>tail[..80] + "~" + six hex</c>, so the cap is really
-    /// <b>87</b>. And <see cref="FileNameFor"/> prefixes a member with its owner, so a Method,
-    /// Property, Action or Transition file name is <b>two</b> of these — <b>190</b> characters
-    /// at worst, which leaves 19 for the repository root with the ordinary
-    /// <c>Device/Plc Logic/Application</c> chain and no deep chain at all.
+    /// <b>87</b>. And a Method, Property, Action or Transition meets <b>two</b> of these on
+    /// one path — its owner's directory and its own file — so that is <b>190</b> characters at
+    /// worst, which leaves 19 for the repository root with the ordinary
+    /// <c>Device/Plc Logic/Application</c> chain and no deep chain at all. Until manifest
+    /// schema 9 the same two met inside one <i>file name</i> as <c>Owner.Member.xml</c>; the
+    /// arithmetic is unchanged and the separator is a slash now.
     /// </para>
     /// <para>
     /// The path is bounded by <c>too_long_for_any_machine</c> and
@@ -260,6 +262,17 @@ public static partial class PathMapper
     };
 
     /// <summary>Build the on-disk file name for an object.</summary>
+    /// <param name="parentName">
+    /// The owner, for the <b>pre-schema-9</b> naming only.
+    /// </param>
+    /// <remarks>
+    /// <b>Today's exporter never passes an owner</b> — a member goes into a directory named
+    /// after it, so a prefix as well would give <c>FB_Alarm/FB_Alarm.M_Reset.st</c>. The
+    /// parameter stays because every mirror committed before 2026-08-18 is named the old way
+    /// and <c>CodesysImportPlanner.FallBackToStemSplit</c> still has to reason about those
+    /// names; deleting the rule would leave that fallback describing a convention nothing in
+    /// the repository states any more.
+    /// </remarks>
     public static string FileNameFor(string name, CodesysObjectType type, ExportForm form,
                                      string? parentName = null)
     {

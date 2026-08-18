@@ -237,7 +237,20 @@ public sealed class WorkspaceTreeFromCommittedExportTests(ITestOutputHelper outp
         // fixture makes a true assertion protect a dead specification, and nothing about it
         // looks stale from here. The mirror was regenerated with the G12 fix for exactly that
         // reason.
-        Assert.Equal(4, report.ExportOnlyFiles);
+        //
+        // DERIVED, not typed. It read `Assert.Equal(4, …)` until 2026-08-18 and went red when
+        // the owner added a second GVL to the real project — a true statement about a Tuesday.
+        // What the number has to do is agree with the manifest beside it, which is a stronger
+        // claim than any literal and survives the fixture being worked in. The same argument
+        // ExportLoggingTests' file count already makes one suite over.
+        Assert.Equal(
+            manifest.Objects.Count(o => ExportCoverage.IsExportOnly(o.Form)),
+            report.ExportOnlyFiles);
+
+        // And there really are some, or the agreement above is between two zeroes.
+        Assert.True(report.ExportOnlyFiles >= 4,
+                    $"only {report.ExportOnlyFiles} one-way file(s) — the fixture must carry "
+                    + "the two library managers, the task XML and the GVL XML");
         Assert.Equal(2, manifest.Objects.Count(o => o.Type == "LIBRARY_MANAGER"));
 
         // The two that are not library managers, named rather than left as arithmetic — and

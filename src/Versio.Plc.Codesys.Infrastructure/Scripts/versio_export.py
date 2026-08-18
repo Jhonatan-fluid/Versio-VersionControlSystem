@@ -474,18 +474,24 @@ class Exporter(object):
         emit({"t": "tasks", "path": rel_path.replace("\\", "/"), "count": len(tasks)})
         return text
 
-    def handle(self, obj, rel_dir, parent_name, parent_guid=None):
+    def handle(self, obj, rel_dir, parent_guid=None):
         """Export one object and recurse into its children.
 
-        `rel_dir` is the folder mirroring this object's place in the CODESYS tree.
-        `parent_name` is set only for sub-POU members - methods, actions,
-        transitions, properties - whose filenames are prefixed with their owner so
-        a flat folder can still reconstruct ownership on import.
+        `rel_dir` is the directory mirroring this object's place in the CODESYS tree,
+        and from schema 9 that is the WHOLE of where an object goes: a container
+        makes a directory, an object with children makes one named after itself, and
+        a member goes inside its owner's. The mirror path is the path the IDE shows.
 
-        `parent_guid` is the same relationship written down for a reader rather
-        than for the importer: it goes into the manifest, and it is what the panel
-        nests by. Both are passed because they answer different questions - the
-        name shapes the file on disk, the GUID survives that file being renamed.
+        `parent_guid` is the owner of a sub-POU member - a method, action, transition
+        or property - and absent for everything else. It is not how the file is
+        placed any more; it answers the question the path cannot, which is whether
+        `FB_Alarm/M_Reset.st` is the POU's method or an object that happens to sit
+        in a folder of the same name. It survives a rename, as a name never could.
+
+        There used to be a `parent_name` beside it, because a member's FILE was
+        prefixed with its owner (`FB_Alarm.M_Reset.st`) to reconstruct ownership out
+        of a flat directory. The directory does that now, and a prefix as well would
+        say the same thing twice - `FB_Alarm/FB_Alarm.M_Reset.st`.
 
         Unmapped type GUIDs are exported natively and warned about, never dropped:
         a newer CODESYS adding a type must not silently lose objects.
@@ -549,51 +555,18 @@ class Exporter(object):
             return
 
         if form == FORM_CONTAINER:
-            # A FOLDER INSIDE A POU IS A VIEW, NOT A PLACE - so the ownership carries
-            # straight through it and the folder leaves no directory behind.
-            #
-            # CODESYS lets a function block's methods be grouped into folders. That grouping
-            # is organisation in the IDE tree and nothing else: `_M_Reset` is still
-            # FB_Alarm's method, its name is unique across the whole POU whichever folder
-            # holds it, and dragging it between folders changes no code and no reference.
-            # A member written beside its owner as `FB_Alarm._M_Reset.st` therefore says
-            # everything true about it, and says it the same way for every member of that
-            # POU - foldered or not - so re-organising the IDE tree produces no mirror diff.
-            #
-            # It passed None for both until 2026-08-17, which stripped the owner off every
-            # foldered member. The visible half was the panel: `Private/_M_Reset.st` with no
-            # parent recorded, drawn as a sibling of FB_Alarm instead of as its method, which
-            # is what the owner reported. The half nobody had reached was the import - the
-            # planner resolves a member with no recorded parent by its DIRECTORY, so the chain
-            # came out Application/Private/_M_Reset, and there is no `Private` under
-            # Application. An edit to that file was refused with PARENT_NOT_FOUND and dropped:
-            # the mirror showing a change the project never received. Had the folder shared a
-            # name with one that does exist at project level, the owner would have resolved
-            # and the method would have been created somewhere else entirely.
-            #
-            # The chain is right now, and the live project STILL HAS THE FOLDER in the middle
-            # of it - so versio_tree.find_child_folder_blind is the other half of this fix
-            # rather than a tidy-up. Without it the walk finds FB_Alarm, fails on the last
-            # segment while holding a valid owner, and import_native pastes the member into
-            # the POU's root beside the folder holding the original.
-            #
-            # A folder at PROJECT level is the opposite case and keeps its directory: there
-            # the nesting IS where the object lives, the mirror mirrors it, and the resolve
-            # chain walks those folder names as segments. `parent_guid` is what tells the two
-            # apart - it is set only inside a member chain, which only a POU starts.
-            if parent_guid:
-                for child in children:
-                    self.handle(child, rel_dir, parent_name, parent_guid)
-                return
-
+            # A folder is a directory, wherever it sits - including inside a POU, where
+            # `parent_guid` carries the OWNER through it so the members below still record
+            # whose they are. The two facts are independent: the directory says where the
+            # object is shown, the owner GUID says what it belongs to, and a method grouped
+            # into `Private` needs both said.
             child_dir = os.path.join(rel_dir, safe_file_stem(name))
             for child in children:
-                self.handle(child, child_dir, None)
+                self.handle(child, child_dir, parent_guid)
             return
 
         stem_name = safe_file_stem(name)
-        parent_stem = safe_file_stem(parent_name) if parent_name else None
-        fname = file_name_for(stem_name, obj_type, form, parent_stem)
+        fname = file_name_for(stem_name, obj_type, form)
         rel_path = os.path.join(rel_dir, fname)
         abs_path = os.path.join(self.out_root, rel_path)
 
@@ -702,17 +675,40 @@ class Exporter(object):
             return
 
         if form == FORM_NATIVE_WITH_CHILDREN:
-            # An unmapped type that turned out to be structural. Its children are objects in
-            # their own right, not members of it, so they go into a SUBDIRECTORY named after
-            # it and are not prefixed with its name - exactly what FORM_CONTAINER does. The
-            # difference is only that this node also had a payload worth writing.
+            # An unmapped type that turned out to be structural. Its children are objects
+            # in their own right rather than members, so they go into a subdirectory named
+            # after it and record NO owner GUID - which is the only thing separating this
+            # from the member recursion below, now that both write into a directory named
+            # after this object. The other difference is that this node also had a payload
+            # worth writing, which is why it is here and not in the FORM_CONTAINER branch.
             child_dir = os.path.join(rel_dir, stem_name)
             for child in children:
-                self.handle(child, child_dir, None)
+                self.handle(child, child_dir)
             return
 
-        # Children of a leaf object (methods, actions, properties on a POU) live
-        # alongside it in the same folder, prefixed with the parent name.
+        # Children of a leaf object - methods, actions, transitions, properties - live in a
+        # DIRECTORY NAMED AFTER IT, so the mirror path is the path the IDE shows.
+        #
+        # THE RULE THIS REPLACED, and why one rule is worth a rename of every mirror.
+        # Ownership used to be spelled three different ways in one tree: a directory for a
+        # container, a `FB_Alarm.` prefix on a member's file name, and - for a folder inside
+        # a POU - nothing at all, the folder erased and its members flattened up. Three
+        # encodings meant three things to get right, and each had already been got wrong: the
+        # flattening lost the folder (fixed 2026-08-17), and before that the prefix was the
+        # only record of ownership, which a name containing a dot defeats.
+        #
+        # Now there is one: `Device/Plc Logic/Application/FB_Alarm/Private/_M_Reset.st` is
+        # what CODESYS shows, segment for segment. The importer resolves it by splitting the
+        # path, the panel draws it by reading the path, and neither needs to know what a
+        # member is. `parent` stays in the manifest because it answers a question the path
+        # cannot: whether `FB_Alarm/M_Reset.st` is the POU's method or an object that happens
+        # to sit in a folder of the same name.
+        #
+        # THE COST, stated because somebody will meet it: every file in every mirror written
+        # before schema 9 is at a different path, so the first export after this renames the
+        # lot. Content is untouched, so git pairs them as renames and history survives; the
+        # planner reads both layouts and branches on the schema number, so an un-re-exported
+        # mirror keeps importing correctly until it is.
         #
         # TASK_BOTH does not recurse, for the same reason NATIVE_R does not: its recursive
         # .xml already contains every task, and its .tasks.yaml lists them again. Walking
@@ -723,8 +719,9 @@ class Exporter(object):
         # precisely the divergence that function's docstring says cannot happen.
         if form not in (FORM_NATIVE_R, FORM_TASK_BOTH):
             own_guid = safe(lambda: str(obj.guid), "")
+            child_dir = os.path.join(rel_dir, stem_name)
             for child in children:
-                self.handle(child, rel_dir, name, own_guid)
+                self.handle(child, child_dir, own_guid)
 
 
 def count_objects(obj, depth=0):
@@ -992,7 +989,7 @@ def main():
     ex = Exporter(staging, expected,
                   previous=out_root if os.path.isdir(out_root) else None)
     for child in roots:
-        ex.handle(child, "", None)
+        ex.handle(child, "")
 
     manifest = {
         # 2: adds "skipped". A schema-1 manifest is not a manifest with nothing
@@ -1038,7 +1035,16 @@ def main():
         # CODESYS's own tree vocabulary - PLC_LOGIC, CALL_TO_POU, GVL_PERSISTENT - and a
         # reader that has to guess whose vocabulary it is holding cannot translate them
         # for display without guessing at the same time.
-        "schema": 8,
+        # 9: THE PATH IS THE PROJECT PATH. A member lives in a directory named after its
+        # owner - Application/FB_Alarm/M_Reset.st - where before it sat beside it as
+        # Application/FB_Alarm.M_Reset.st, and a folder inside a POU is a directory rather
+        # than being erased. This is the one bump that is not additive: the same object is
+        # at a different path than it was, so a reader must know which layout it is holding
+        # before it can resolve anything. On schema 8 and below the owner chain has to be
+        # re-applied on top of the directories to reach the object; on 9 doing that would
+        # name FB_Alarm twice. CodesysImportPlanner branches on exactly this number, which
+        # is why an un-re-exported mirror keeps importing correctly.
+        "schema": 9,
         "vendor": VENDOR,
         "bindingId": job.get("bindingId", ""),
         "project": os.path.basename(job["project"]),

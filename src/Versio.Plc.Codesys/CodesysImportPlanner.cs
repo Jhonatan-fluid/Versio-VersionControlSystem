@@ -58,6 +58,18 @@ public static class CodesysImportPlanner
     /// <summary>Forms handed to <c>import_native</c>.</summary>
     private static readonly string[] NativeForms = ["NATIVE", "NATIVE_R", "NATIVE_WITH_CHILDREN"];
 
+    /// <summary>
+    /// The native form whose payload carries the object's whole subtree, and so can be
+    /// applied to an object that owns members without losing them.
+    /// </summary>
+    /// <remarks>
+    /// <c>NATIVE</c> and <c>NATIVE_WITH_CHILDREN</c> both write the node alone — the second
+    /// walks its children into files of their own — so replacing with either takes whatever
+    /// was inside. Only <c>NATIVE_R</c> exports recursively. See
+    /// <see cref="PlannedSkip.WouldDestroyMembers"/> for the round trip that measured it.
+    /// </remarks>
+    private const string RecursiveNativeForm = "NATIVE_R";
+
     /// <summary>The form applied through the typed task API.</summary>
     private const string TypedTaskForm = "TASK_BOTH";
 
@@ -110,9 +122,15 @@ public static class CodesysImportPlanner
         List<PlannedFile> files = [];
         List<string> warnings = [];
 
+        // Which layout this mirror is in. Read once, from the only thing that can say — see
+        // ExportCoverage.PathIsChainSchema. A missing manifest gets the OLD reading, because
+        // every mirror written without one predates the new layout.
+        var pathIsChain =
+            manifest is not null && manifest.Schema >= ExportCoverage.PathIsChainSchema;
+
         foreach (var file in mirror.OrderBy(f => f.Path, StringComparer.Ordinal))
         {
-            files.Add(PlanOne(file, byPath, byGuid, warnings));
+            files.Add(PlanOne(file, byPath, byGuid, warnings, pathIsChain));
         }
 
         // Phase 2's raw material. Export-only records are excluded: their files are rewritten
@@ -908,7 +926,8 @@ public static class CodesysImportPlanner
 
                 // From the recorded path, because there is no file to read one from — which is
                 // exactly why the chain is built from the manifest's names rather than stems.
-                Resolve = ResolveKnown(identity.Path, identity, byGuid, warnings),
+                Resolve = ResolveKnown(identity.Path, identity, byGuid, warnings,
+                                       manifest.Schema >= ExportCoverage.PathIsChainSchema),
                 Files = [.. gone
                     .OrderBy(o => o.Path, StringComparer.Ordinal)
                     .Select(o => new DeletedFile(
@@ -1023,7 +1042,8 @@ public static class CodesysImportPlanner
         MirrorFile file,
         Dictionary<string, ProjectObject> byPath,
         Dictionary<string, List<ProjectObject>> byGuid,
-        List<string> warnings)
+        List<string> warnings,
+        bool pathIsChain)
     {
         var fileName = file.Path[(file.Path.LastIndexOf('/') + 1)..];
 
@@ -1039,7 +1059,7 @@ public static class CodesysImportPlanner
 
         if (byPath.TryGetValue(file.Path, out var known))
         {
-            return PlanKnown(file, known, byGuid, warnings);
+            return PlanKnown(file, known, byGuid, warnings, pathIsChain);
         }
 
         return PlanUnknown(file, fileName, warnings);
@@ -1050,7 +1070,8 @@ public static class CodesysImportPlanner
         MirrorFile file,
         ProjectObject known,
         Dictionary<string, List<ProjectObject>> byGuid,
-        List<string> warnings)
+        List<string> warnings,
+        bool pathIsChain)
     {
         if (ExportCoverage.IsExportOnly(known.Form))
         {
@@ -1089,15 +1110,73 @@ public static class CodesysImportPlanner
             };
         }
 
+        // WOULD THIS REPLACE TAKE THE OBJECT'S MEMBERS WITH IT?
+        //
+        // import_native replaces rather than merges, and a non-recursive payload holds the
+        // node alone — so applying it to a POU that owns methods destroys them. Measured by a
+        // round trip that lost one: see PlannedSkip.WouldDestroyMembers.
+        //
+        // Refused here rather than in the script, because this is where the manifest can be
+        // read: the script sees one file at a time and has no way to know what else belongs
+        // to the object. It is the same rule PlanDeletions already applies to an owner whose
+        // children are still in the mirror — never remove the thing that others live inside.
+        if (action == PlannedAction.ApplyNative
+            && !string.Equals(known.Form, RecursiveNativeForm, StringComparison.Ordinal)
+            && MembersOf(known.Guid, byGuid) is { Count: > 0 } members)
+        {
+            warnings.Add(
+                $"{file.Path}: {known.Name} owns {Naming(members)}, and this file holds only "
+                + "the object itself — importing it would replace the object and take them "
+                + "with it, so it is not applied. Their own files still import; change the "
+                + "graphical body in the IDE.");
+
+            return new PlannedFile
+            {
+                Path = file.Path, Action = PlannedAction.Skip,
+                Skip = PlannedSkip.WouldDestroyMembers,
+                Name = known.Name, Guid = known.Guid,
+            };
+        }
+
         return new PlannedFile
         {
             Path = file.Path,
             Action = action,
             Name = known.Name,
             Guid = known.Guid,
-            Resolve = ResolveKnown(file.Path, known, byGuid, warnings),
+            Resolve = ResolveKnown(file.Path, known, byGuid, warnings, pathIsChain),
         };
     }
+
+    /// <summary>The distinct objects recorded as owned by this one.</summary>
+    /// <remarks>
+    /// By GUID, so an object exporting to two files counts once. Direct members only: a
+    /// property's accessors are inside the property, and the property is what would be lost
+    /// first — naming the whole subtree would make the warning longer without making the
+    /// refusal broader.
+    /// </remarks>
+    private static List<string> MembersOf(
+        string guid, Dictionary<string, List<ProjectObject>> byGuid)
+    {
+        if (string.IsNullOrEmpty(guid))
+        {
+            return [];
+        }
+
+        return byGuid.Values
+            .Select(records => records[0])
+            .Where(o => string.Equals(o.Parent, guid, StringComparison.OrdinalIgnoreCase))
+            .Select(o => o.Name)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    /// <summary>"2 members (Start, Stop)" — the count and the names, so the warning is
+    /// actionable rather than merely alarming.</summary>
+    private static string Naming(IReadOnlyList<string> members) =>
+        members.Count == 1
+            ? $"1 member ({members[0]})"
+            : $"{members.Count} members ({string.Join(", ", members)})";
 
     /// <summary>
     /// Real names from the root to a recorded object: decoded directories, then the owner
@@ -1107,9 +1186,20 @@ public static class CodesysImportPlanner
         string path,
         ProjectObject known,
         Dictionary<string, List<ProjectObject>> byGuid,
-        List<string> warnings)
+        List<string> warnings,
+        bool pathIsChain)
     {
         var chain = DirectoryNames(path);
+
+        // Schema 9 and later: the directories ARE the chain, because the exporter puts a
+        // member inside a directory named after its owner. Re-applying the owner chain here
+        // would say FB_Alarm twice and resolve to nothing — see ExportCoverage.PathIsChainSchema
+        // for why this cannot be told from the path alone.
+        if (pathIsChain)
+        {
+            chain.Add(known.Name);
+            return chain;
+        }
 
         if (!string.IsNullOrEmpty(known.Parent))
         {

@@ -1,5 +1,0 @@
-METHOD PUBLIC M_Reset : BOOL
-
-// --- BEGIN IMPLEMENTATION ---
-
-_M_Reset();

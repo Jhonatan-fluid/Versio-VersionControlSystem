@@ -170,15 +170,15 @@ public sealed class ExportLoggingTests(ITestOutputHelper output) : IDisposable
             l.Contains($"{gaps} not implemented", StringComparison.Ordinal));
 
         // And the fixture's own shape, so a silent drop in what gets walked still fails here.
-        // 22 objects is what this project contains; if that changes, it changed for a reason
+        // 26 objects is what this project contains; if that changes, it changed for a reason
         // somebody should have to state.
         //
-        // It was 18 until 2026-08-17. The four are FB_Alarm's two methods, the folder called
-        // `Private` that one of them was put inside, and the tag object added while testing
-        // the round trip — put there deliberately, because a folder INSIDE a POU is the case
-        // that had never been exercised and the one that turned out to be broken. The folder
-        // is walked and counted like any other container; what changed is only that its
-        // children keep their owner. See ProjectTreeFromRealExportTests.
-        Assert.Contains(lines, l => l.StartsWith("walked 22,", StringComparison.Ordinal));
+        // It was 18 until 2026-08-17, then 22, then this. Everything added is one case the
+        // export had never been run against: FB_Alarm's methods, the folders `Private` and
+        // `Protected` holding one each, a PROPERTY with its two accessors, and a method on
+        // PLC_PRG so that an owner exporting NATIVE has one too. Folders are walked and
+        // counted like any other container — what changed around them is where their children
+        // are written, not whether they are reached. See ProjectTreeFromRealExportTests.
+        Assert.Contains(lines, l => l.StartsWith("walked 26,", StringComparison.Ordinal));
     }
 }

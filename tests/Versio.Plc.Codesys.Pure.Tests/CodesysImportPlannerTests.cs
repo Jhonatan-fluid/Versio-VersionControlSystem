@@ -33,6 +33,28 @@ public class CodesysImportPlannerTests
         Schema = ExportCoverage.CurrentSchema, Objects = objects,
     };
 
+    /// <summary>
+    /// A mirror written before schema 9, where a member sat <i>beside</i> its owner.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Not a legacy curiosity — the shape of every mirror committed before 2026-08-18.</b>
+    /// The exporter now puts a member inside a directory named after its owner, so the
+    /// directories are the whole chain; before that they were only half of it and the owner
+    /// chain had to be re-applied from the GUIDs on top. Both readings are live, the schema
+    /// number is the only thing that distinguishes them, and a test using the wrong helper
+    /// asserts against a mirror that never existed.
+    /// </para>
+    /// <para>
+    /// One below the threshold rather than a literal 8, so the pair stays honest if the
+    /// threshold ever moves again.
+    /// </para>
+    /// </remarks>
+    private static ProjectManifest LegacyManifest(params ProjectObject[] objects) => new()
+    {
+        Schema = ExportCoverage.PathIsChainSchema - 1, Objects = objects,
+    };
+
     private static MirrorFile File(string path, string? text = null) =>
         new() { Path = path, Text = text };
 
@@ -117,24 +139,35 @@ public class CodesysImportPlannerTests
     {
         // A property's accessor: two levels of ownership, recorded by GUID. The file name
         // says almost nothing about this — which is the point of recording parents.
+        //
+        // A PRE-SCHEMA-9 MIRROR, and that is now the whole reason the owner chain is walked
+        // at all: these three files sit in one directory, so the directories reach App and
+        // stop. On a mirror written today they would be App/clsLight/Bright/Get.xml and the
+        // path would say it — see The_directories_are_the_whole_chain_from_schema_9.
         var plan = CodesysImportPlanner.Plan(
-            Manifest(
-                Obj("App/clsLight.xml", "clsLight", "POU", "NATIVE", guid: "pou"),
-                Obj("App/clsLight.Bright.xml", "Bright", "PROPERTY", "NATIVE",
+            LegacyManifest(
+                Obj("App/clsLight.st", "clsLight", "POU", "ST_FULL", guid: "pou"),
+                Obj("App/clsLight.Bright.st", "Bright", "PROPERTY", "ST_DECL",
                     guid: "prop", parent: "pou"),
-                Obj("App/clsLight.Bright.Get.xml", "Get", "PROPERTY_METHOD", "NATIVE",
+                Obj("App/clsLight.Bright.Get.st", "Get", "PROPERTY_METHOD", "ST_FULL",
                     guid: "get", parent: "prop")),
 
+            // TEXTUAL, and that is not incidental. These were NATIVE until 2026-08-18, which
+            // is a manifest the exporter cannot produce — a POU whose payload is the node
+            // alone, with its members in separate files, is exactly the shape that loses those
+            // members on import, and the planner refuses it now. The chain being asserted is
+            // the same either way; the forms were never the point.
+            //
             // All three files, not just the one being resolved. The listing used to carry
             // only the accessor, which is a mirror that cannot exist — and once deletions
             // were planned it stopped being harmless: the two absent ancestors read as
             // objects somebody had removed. Every test here describes a real directory now.
-            [File("App/clsLight.xml"),
-             File("App/clsLight.Bright.xml"),
-             File("App/clsLight.Bright.Get.xml")]);
+            [File("App/clsLight.st"),
+             File("App/clsLight.Bright.st"),
+             File("App/clsLight.Bright.Get.st")]);
 
         Assert.Equal(["App", "clsLight", "Bright", "Get"],
-                     One(plan, "App/clsLight.Bright.Get.xml").Resolve);
+                     One(plan, "App/clsLight.Bright.Get.st").Resolve);
         Assert.Empty(plan.Warnings);
         Assert.Empty(plan.Deletions);
     }
@@ -164,10 +197,132 @@ public class CodesysImportPlannerTests
     }
 
     [Fact]
+    public void The_directories_are_the_whole_chain_from_schema_9()
+    {
+        // The same three objects as the legacy test above, in the layout the exporter writes
+        // now. The owner chain must NOT be re-applied here: the directories already name
+        // clsLight and Bright, and adding them again resolves to
+        // App/clsLight/Bright/clsLight/Bright/Get, which exists nowhere.
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(
+                Obj("App/clsLight.st", "clsLight", "POU", "ST_FULL", guid: "pou"),
+                Obj("App/clsLight/Bright.st", "Bright", "PROPERTY", "ST_DECL",
+                    guid: "prop", parent: "pou"),
+                Obj("App/clsLight/Bright/Get.st", "Get", "PROPERTY_METHOD", "ST_FULL",
+                    guid: "get", parent: "prop")),
+            [File("App/clsLight.st", "PROGRAM clsLight"),
+             File("App/clsLight/Bright.st", "VAR Bright : BOOL; END_VAR"),
+             File("App/clsLight/Bright/Get.st", "METHOD Get")]);
+
+        Assert.Equal(["App", "clsLight", "Bright", "Get"],
+                     One(plan, "App/clsLight/Bright/Get.st").Resolve);
+        Assert.Equal(["App", "clsLight", "Bright"],
+                     One(plan, "App/clsLight/Bright.st").Resolve);
+        Assert.Empty(plan.Warnings);
+        Assert.Empty(plan.Deletions);
+    }
+
+    [Fact]
+    public void A_native_payload_that_would_take_the_objects_members_with_it_is_refused()
+    {
+        // The measured loss: a graphical POU owning a textual method. import_native replaces,
+        // and this payload is the node alone, so applying it removes the method — export 26,
+        // import, re-export 25. See PlannedSkip.WouldDestroyMembers.
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(
+                Obj("App/PLC_PRG.xml", "PLC_PRG", "POU", "NATIVE", guid: "pou"),
+                Obj("App/PLC_PRG/M_Test.st", "M_Test", "METHOD", "ST_FULL",
+                    guid: "m", parent: "pou")),
+            [File("App/PLC_PRG.xml"),
+             File("App/PLC_PRG/M_Test.st", "METHOD M_Test")]);
+
+        var owner = One(plan, "App/PLC_PRG.xml");
+        Assert.Equal(PlannedAction.Skip, owner.Action);
+        Assert.Equal(PlannedSkip.WouldDestroyMembers, owner.Skip);
+
+        // The warning NAMES the member, because "this file was not applied" leaves somebody
+        // hunting for which of an object's parts was at risk.
+        Assert.Contains(plan.Warnings, w => w.Contains("M_Test", StringComparison.Ordinal));
+
+        // And the member is untouched by the refusal — it is the owner's payload that cannot
+        // be applied, not the member's. Refusing both would make an edit to the method
+        // silently do nothing, which is the failure this is preventing, inverted.
+        Assert.Equal(PlannedAction.ApplyText, One(plan, "App/PLC_PRG/M_Test.st").Action);
+    }
+
+    [Fact]
+    public void A_recursive_native_payload_carries_its_members_and_is_applied()
+    {
+        // The other half, or "never import a native file" would be the real behaviour and the
+        // test above would pass for the wrong reason. NATIVE_R exports the subtree, so
+        // replacing with it puts the members back — a PROPERTY and its accessors are exactly
+        // this, and refusing them would make every property in every project read-only.
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(
+                Obj("App/FB.st", "FB", "POU", "ST_FULL", guid: "pou"),
+                Obj("App/FB/Speed.xml", "Speed", "PROPERTY", "NATIVE_R",
+                    guid: "prop", parent: "pou"),
+                Obj("App/FB/Speed/Get.xml", "Get", "PROPERTY_METHOD", "NATIVE_R",
+                    guid: "get", parent: "prop")),
+            [File("App/FB.st", "FUNCTION_BLOCK FB"),
+             File("App/FB/Speed.xml"),
+             File("App/FB/Speed/Get.xml")]);
+
+        Assert.Equal(PlannedAction.ApplyNative, One(plan, "App/FB/Speed.xml").Action);
+        Assert.Empty(plan.Warnings);
+    }
+
+    [Fact]
+    public void A_native_object_with_no_members_is_applied_as_it_always_was()
+    {
+        // The floor. Most native files are a visualisation or a graphical POU with nothing
+        // inside, and a refusal that caught those would stop imports working at all.
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(Obj("App/Live_Visu.vis.xml", "Live_Visu", "VISUALISATION", "NATIVE",
+                         guid: "v")),
+            [File("App/Live_Visu.vis.xml")]);
+
+        Assert.Equal(PlannedAction.ApplyNative, One(plan, "App/Live_Visu.vis.xml").Action);
+        Assert.Empty(plan.Warnings);
+    }
+
+    [Fact]
+    public void A_member_inside_a_folder_inside_its_owner_resolves_through_the_folder()
+    {
+        // The case that started all of this: FB_Alarm's method grouped into a folder called
+        // Private. On schema 9 the folder is a directory, so the chain simply reads off the
+        // path — folder included, which is what the IDE shows and what the import has to walk.
+        //
+        // The owner GUID is still recorded and still ignored for the path. It answers the
+        // question the path cannot: whether FB_Alarm/Private/_M_Reset is the POU's method or
+        // an object sitting in folders that happen to be named that way.
+        var plan = CodesysImportPlanner.Plan(
+            Manifest(
+                Obj("App/FB_Alarm.st", "FB_Alarm", "POU", "ST_FULL", guid: "pou"),
+                Obj("App/FB_Alarm/M_Reset.st", "M_Reset", "METHOD", "ST_FULL",
+                    guid: "m", parent: "pou"),
+                Obj("App/FB_Alarm/Private/_M_Reset.st", "_M_Reset", "METHOD", "ST_FULL",
+                    guid: "p", parent: "pou")),
+            [File("App/FB_Alarm.st", "FUNCTION_BLOCK FB_Alarm"),
+             File("App/FB_Alarm/M_Reset.st", "METHOD M_Reset"),
+             File("App/FB_Alarm/Private/_M_Reset.st", "METHOD _M_Reset")]);
+
+        Assert.Equal(["App", "FB_Alarm", "Private", "_M_Reset"],
+                     One(plan, "App/FB_Alarm/Private/_M_Reset.st").Resolve);
+        Assert.Equal(["App", "FB_Alarm", "M_Reset"],
+                     One(plan, "App/FB_Alarm/M_Reset.st").Resolve);
+        Assert.Empty(plan.Warnings);
+        Assert.Empty(plan.Deletions);
+    }
+
+    [Fact]
     public void A_member_whose_owner_left_the_manifest_falls_back_to_the_stem_and_warns()
     {
+        // Pre-schema-9 again: the stem split is the fallback for a layout that encoded
+        // ownership in the file name. A schema-9 mirror has nothing to fall back to and
+        // needs nothing — its directories are the chain whether the owner is recorded or not.
         var plan = CodesysImportPlanner.Plan(
-            Manifest(Obj("App/clsLight.Light.xml", "Light", "METHOD", "NATIVE",
+            LegacyManifest(Obj("App/clsLight.Light.xml", "Light", "METHOD", "NATIVE",
                          parent: "gone")),
             [File("App/clsLight.Light.xml")]);
 
@@ -1318,7 +1473,22 @@ public class CodesysImportPlannerTests
 
         var plan = CodesysImportPlanner.Plan(manifest, mirror);
 
-        Assert.Empty(plan.Warnings);
+        // THE ONLY WARNING THIS FIXTURE MAY EARN is the members refusal — a graphical POU
+        // that owns a method, whose .xml holds the node alone, so applying it would replace
+        // the POU and take the method with it (measured; see PlannedSkip.WouldDestroyMembers).
+        //
+        // Whether the fixture HAS such a POU depends on what the owner is building this week:
+        // it had one on 2026-08-18 and not by the afternoon. So the assertion is that nothing
+        // else warns — as strict as `Empty` for every other kind, and it does not go red
+        // because somebody moved a method. The refusal itself is pinned synthetically by
+        // A_native_payload_that_would_take_the_objects_members_with_it_is_refused, where the
+        // manifest is this file's to control.
+        Assert.All(plan.Warnings,
+            w => Assert.Contains("would replace the object", w, StringComparison.Ordinal));
+
+        Assert.All(plan.Files.Where(f => f.Skip == PlannedSkip.WouldDestroyMembers),
+            f => Assert.Equal(PlannedAction.Skip, f.Action));
+
         Assert.Empty(plan.MissingFromMirror);
         Assert.Null(plan.StructuralChangesUnavailable);
         Assert.DoesNotContain(plan.Files, f => f.Skip == PlannedSkip.Stray);

@@ -342,18 +342,81 @@ public static class ProjectTreeBuilder
                 return leaf.Node;
             }
 
-            var children = members[guid]
-                .Select(Attach)
-                .OrderBy(n => n.Name, StringComparer.OrdinalIgnoreCase)
+            // A member's own folders, rebuilt inside its owner.
+            //
+            // FROM SCHEMA 9 a member lives in a directory named after its owner, so anything
+            // BELOW that directory is a folder the engineer made inside the POU —
+            // `FB_Alarm/Private/_M_Reset.st` is FB_Alarm's method, shown in its folder
+            // `Private`. Attaching by GUID alone drew both of FB_Alarm's folders' contents as
+            // if they were loose methods, which is the half of the owner's report that the
+            // export fix did not answer.
+            //
+            // Counted from the owner rather than parsed: the member's directory minus the
+            // owner's, minus one more for the owner's own directory. A pre-schema-9 mirror
+            // puts the member in the SAME directory as its owner, so the count comes out zero
+            // or negative and this is exactly what it was before — no folders, no change.
+            var placed = members[guid]
+                .Select(m => m with
+                {
+                    Node = Attach(m),
+                    Folders = FoldersInsideOwner(leaf, m),
+                })
                 .ToList();
 
-            return children.Count == 0 ? leaf.Node : WithChildren(leaf.Node, children);
+            if (placed.Count == 0)
+            {
+                return leaf.Node;
+            }
+
+            return WithChildren(leaf.Node, ChildrenOf(placed, OwnerDirectory(leaf, placed)));
         }
 
         return leaves
             .Where(l => l.Parent.Length == 0 || !owners.ContainsKey(l.Parent))
             .Select(l => l with { Node = Attach(l) })
             .ToList();
+    }
+
+    /// <summary>
+    /// The folder segments between an owner's own directory and one of its members.
+    /// </summary>
+    /// <remarks>
+    /// Empty for a member sitting beside its owner, which is every mirror below schema 9 and
+    /// every member that is in no folder. The <c>+ 1</c> is the owner's own directory —
+    /// <c>FB_Alarm/</c> — which is not a folder anybody made and must not become a row.
+    /// </remarks>
+    private static string[] FoldersInsideOwner(Leaf owner, Leaf member)
+    {
+        var below = member.Folders.Length - (owner.Folders.Length + 1);
+        return below <= 0 ? [] : member.Folders[^below..];
+    }
+
+    /// <summary>
+    /// The directory an owner's members live in, for naming the folder rows inside it.
+    /// </summary>
+    /// <remarks>
+    /// Trimmed off a member's real path rather than built from the owner's name, because the
+    /// directory on disk is a percent-encoded stem and this file has no business re-deriving
+    /// that: <see cref="ProjectObject.Path"/> is what the exporter actually wrote. Any member
+    /// gives the same answer once its own folders are trimmed away.
+    /// </remarks>
+    private static string OwnerDirectory(Leaf owner, IReadOnlyList<Leaf> placed)
+    {
+        var first = placed[0];
+        var path = DirectoryPart(first.Node.Path);
+
+        for (var i = 0; i < first.Folders.Length; i++)
+        {
+            path = DirectoryPart(path);
+        }
+
+        return path.Length == 0 ? DirectoryPart(owner.Node.Path) : path;
+    }
+
+    private static string DirectoryPart(string path)
+    {
+        var slash = path.LastIndexOf('/');
+        return slash < 0 ? string.Empty : path[..slash];
     }
 
     /// <summary>An object node that owns others, with its badges counted over them.</summary>
@@ -719,8 +782,23 @@ public static class ProjectTreeBuilder
                     : string.Empty;
     }
 
-    /// <summary>Hang every leaf off its folder chain, then roll the badges up.</summary>
-    private static ProjectTreeNode Assemble(IReadOnlyList<Leaf> leaves, string name, string path)
+    /// <summary>
+    /// One level of the tree: the folders under it, then the objects in it.
+    /// </summary>
+    /// <remarks>
+    /// <b>Folders first, which is what the IDE does</b> — measured against CODESYS 3.5.22.20,
+    /// where <c>FB_Alarm</c> shows <c>Private</c> and <c>Protected</c> above its methods. It
+    /// is not what <c>get_children()</c> returns, which is storage order: that hands back
+    /// <c>M_Reset, Private, Protected, P_Faulted</c> and puts <c>FB_Alarm</c> eleventh of the
+    /// application's twelve children where the IDE shows it second. So the order here is the
+    /// panel's own rule rather than a recording of the toolchain's.
+    /// <para>
+    /// Shared with <see cref="Nest"/> so that a folder <i>inside</i> an owner is built the
+    /// same way as one at project level. Before that they were different code paths and only
+    /// one of them existed.
+    /// </para>
+    /// </remarks>
+    private static List<ProjectTreeNode> ChildrenOf(IReadOnlyList<Leaf> leaves, string path)
     {
         var children = new List<ProjectTreeNode>();
 
@@ -740,6 +818,14 @@ public static class ProjectTreeBuilder
             .Where(l => l.Folders.Length == 0)
             .Select(l => l.Node)
             .OrderBy(n => n.Name, StringComparer.OrdinalIgnoreCase));
+
+        return children;
+    }
+
+    /// <summary>Hang every leaf off its folder chain, then roll the badges up.</summary>
+    private static ProjectTreeNode Assemble(IReadOnlyList<Leaf> leaves, string name, string path)
+    {
+        var children = ChildrenOf(leaves, path);
 
         return new ProjectTreeNode
         {

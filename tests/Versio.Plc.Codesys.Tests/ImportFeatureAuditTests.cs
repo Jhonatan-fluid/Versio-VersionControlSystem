@@ -1094,14 +1094,14 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
 
         // THE ACTION — ST_IMPL. Its file is the body and nothing else, so an edit here has
         // nowhere to hide: there is no declaration for the importer to fall back on.
-        var action = Path.Combine(pumps, "FB_Pump.Stop.action.st");
+        var action = Path.Combine(pumps, "FB_Pump", "Stop.action.st");
         var actionText = await File.ReadAllTextAsync(action);
         Assert.DoesNotContain("audit_action", actionText, StringComparison.Ordinal);
         await WriteAsync(action, actionText.TrimEnd() + "\nspeed := 0; (* audit_action *)\n");
 
         // THE METHOD — ST_FULL, on a member. Both halves edited, so a run that applied the
         // declaration and dropped the implementation is caught.
-        var method = Path.Combine(pumps, "FB_Pump.Start.st");
+        var method = Path.Combine(pumps, "FB_Pump", "Start.st");
         var methodText = await File.ReadAllTextAsync(method);
         await WriteAsync(method, methodText
             .Replace("target : INT;", "target : INT; (* audit_decl *)", StringComparison.Ordinal)
@@ -1131,12 +1131,12 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
         var verifyPumps = Path.Combine(verify, "Device", "Plc Logic", "Application", "Pumps");
 
         var reAction = await File.ReadAllTextAsync(
-            Path.Combine(verifyPumps, "FB_Pump.Stop.action.st"));
+            Path.Combine(verifyPumps, "FB_Pump", "Stop.action.st"));
         output.WriteLine(reAction);
         Assert.Contains("audit_action", reAction, StringComparison.Ordinal);
 
         var reMethod = await File.ReadAllTextAsync(
-            Path.Combine(verifyPumps, "FB_Pump.Start.st"));
+            Path.Combine(verifyPumps, "FB_Pump", "Start.st"));
         output.WriteLine(reMethod);
         Assert.Contains("audit_decl", reMethod, StringComparison.Ordinal);
         Assert.Contains("audit_impl", reMethod, StringComparison.Ordinal);
@@ -1145,14 +1145,14 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
         // the two above and the reason NATIVE_R is in this test at all: it is imported
         // recursively, so a mistake takes its Get and Set with it rather than reporting
         // anything. The accessors are inside the payload and never appear as records.
-        var property = Path.Combine(verifyPumps, "FB_Pump.Speed.xml");
+        var property = Path.Combine(verifyPumps, "FB_Pump", "Speed.xml");
         Assert.True(File.Exists(property), "the property left the project");
 
         var manifest = ProjectManifest.Parse(
             await File.ReadAllTextAsync(Path.Combine(verify, "_manifest.json")));
 
         Assert.Equal("NATIVE_R", Assert.Single(
-            manifest.Objects, o => o.Path.EndsWith("FB_Pump.Speed.xml", StringComparison.Ordinal))
+            manifest.Objects, o => o.Path.EndsWith("FB_Pump/Speed.xml", StringComparison.Ordinal))
             .Form);
 
         // The owner chain is still recorded after an import, not just after the export that
