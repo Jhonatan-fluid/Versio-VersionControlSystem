@@ -150,6 +150,23 @@ public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) 
         Assert.True(manifest.Schema >= ExportCoverage.ReportingSchema);
         Assert.NotEmpty(manifest.Skipped);
 
+        // WHICH TOOLCHAIN WROTE IT, from schema 10 — and only a real export can prove this
+        // one, because the string comes from inside CODESYS. `sys.version` there is not the
+        // CPython version it is anywhere else: IronPython hosted by CODESYS answers with the
+        // host and the ScriptEngine plug-in, which is exactly the fact the project card had
+        // no way to state.
+        //
+        // Asserted by SHAPE, not by the version on this machine — pinning "SP22 Patch 2"
+        // would fail on the next service pack and teach nobody anything. What must hold is
+        // that something was recorded and that it names the toolchain.
+        output.WriteLine($"toolchainVersion: {manifest.ToolchainVersion}");
+
+        Assert.False(string.IsNullOrWhiteSpace(manifest.ToolchainVersion),
+            "schema 10 records the toolchain that produced the mirror, and this export "
+            + "recorded nothing — the card cannot say which CODESYS wrote it");
+
+        Assert.Contains("CODESYS", manifest.ToolchainVersion, StringComparison.OrdinalIgnoreCase);
+
         Assert.All(manifest.Skipped, s =>
         {
             Assert.False(string.IsNullOrWhiteSpace(s.Type), "a skip record has no type");

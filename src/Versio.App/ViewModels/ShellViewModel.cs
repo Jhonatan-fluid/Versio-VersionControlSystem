@@ -5426,6 +5426,21 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             Sync.ToolchainAvailable
                 ? "installed — version under Settings → System information"
                 : "not installed on this machine"));
+
+        // WHICH TOOLCHAIN WROTE THIS MIRROR, which is a different question from whether one
+        // is installed here — a colleague's export, a CI machine's, or an older CODESYS on
+        // this one all read the same on the row above and differently on this one. That was
+        // the gap: the card could say "Codesys" and never which CODESYS.
+        //
+        // Verbatim, because the manifest recorded it verbatim and shortening it here would be
+        // this file inventing a parse of somebody else's version string. Absent on any mirror
+        // exported before schema 10, and the row is simply not drawn — "not recorded" is what
+        // an empty field means, and a row saying "unknown" would claim more than that.
+        if (manifest?.ToolchainVersion is { Length: > 0 } producedBy)
+        {
+            facts.Add(new FactRow("Exported by", producedBy));
+        }
+
         facts.Add(new FactRow("Sync state",
             node.Detail.Length > 0 ? node.Detail : "tracked"));
 

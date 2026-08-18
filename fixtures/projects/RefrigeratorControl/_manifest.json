@@ -605,7 +605,7 @@
     }
   ], 
   "project": "RefrigeratorControl.project", 
-  "schema": 9, 
+  "schema": 10, 
   "skipped": [
     {
       "name": "Visualization Manager", 
@@ -632,6 +632,7 @@
       "type": "VISUALISATION_STYLE"
     }
   ], 
+  "toolchainVersion": "CODESYS.exe CODESYS V3.5 SP22 Patch 2, ScriptEngine.plugin 4.2.0.0", 
   "vendor": "Codesys", 
   "warnings": [
     {

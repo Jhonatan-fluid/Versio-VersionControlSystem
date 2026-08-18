@@ -264,6 +264,58 @@ public sealed class RenderedPaneFlowTests
     }
 
     [Fact]
+    public async Task The_card_names_the_toolchain_that_wrote_the_mirror()
+    {
+        // A DIFFERENT QUESTION from "is CODESYS installed here", which the Toolchain row
+        // above it answers. A colleague's export, a CI machine's, or an older CODESYS on this
+        // one all read identically there and differently here — and until schema 10 the card
+        // could say "Codesys" and never which CODESYS.
+        using var repo = new TempRepo();
+        GivenATrackedProject(repo);
+
+        var manifestPath = Path.Combine(repo.Path, "plc", "Machine", "_manifest.json");
+        await File.WriteAllTextAsync(manifestPath,
+            (await File.ReadAllTextAsync(manifestPath)).Replace(
+                "\"schema\": 4,",
+                "\"schema\": 10, \"toolchainVersion\": "
+                + "\"CODESYS.exe CODESYS V3.5 SP22 Patch 2, ScriptEngine.plugin 4.2.0.0\",",
+                StringComparison.Ordinal));
+
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+
+        shell.Sync.SelectedNode = await Row(shell, "Machine.project");
+
+        var card = Assert.IsType<ProjectSummaryRender>(shell.RenderedContent);
+
+        // Verbatim. Shortening it in the panel would be the app inventing a parse of somebody
+        // else's version string, and the plug-in version is part of the answer.
+        Assert.Contains(card.Facts,
+            f => f.Label == "Exported by"
+                 && f.Value == "CODESYS.exe CODESYS V3.5 SP22 Patch 2, ScriptEngine.plugin 4.2.0.0");
+    }
+
+    [Fact]
+    public async Task A_mirror_from_before_the_field_existed_draws_no_row_at_all()
+    {
+        // "Not recorded" is what an empty field means, and a row reading "unknown" would
+        // claim more than that. Every mirror below schema 10 is in this state until it is
+        // next exported — the same reading `vendor` needed at schema 8.
+        using var repo = new TempRepo();
+        GivenATrackedProject(repo);
+
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+
+        shell.Sync.SelectedNode = await Row(shell, "Machine.project");
+
+        var card = Assert.IsType<ProjectSummaryRender>(shell.RenderedContent);
+
+        Assert.DoesNotContain(card.Facts, f => f.Label == "Exported by");
+        Assert.Contains(card.Facts, f => f.Label == "Vendor");
+    }
+
+    [Fact]
     public async Task The_project_row_renders_as_the_card()
     {
         using var repo = new TempRepo();

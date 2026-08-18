@@ -249,15 +249,17 @@ the panel showing `FB_Alarm` with four loose members under it.
   `FB_Alarm` eleventh of twelve where the IDE shows it second. Folders-first is what both
   screenshots agreed on and is what shipped. If this is ever reopened, the within-group rule
   still has not been measured, and two cropped screenshots are not enough to derive it.
-- **Still not recorded: which CODESYS version the project was exported by** — and the answer
-  to "what would it take" is now known rather than guessed. **It is already in the export.**
-  Inside CODESYS, `sys.version` returns
-  `CODESYS.exe CODESYS V3.5 SP22 Patch 2, ScriptEngine.plugin 4.2.0.0`, and
-  `versio_export.py` already emits it in its `start` event on every run — it simply never
-  reaches the manifest. So this is one field written, one field read on the card, and a
-  schema bump because an absent field must not read as "unknown version" on an old mirror.
-  No probe needed. Note it is the version that *performed the export*, not necessarily the
-  one that last saved the project; the two are the same whenever Versio did the export.
+- ~~**Still not recorded: which CODESYS version the project was exported by**~~ — **done,
+  2026-08-18, schema 10.** It was already in the export and being thrown away: inside CODESYS
+  `sys.version` returns `CODESYS.exe CODESYS V3.5 SP22 Patch 2, ScriptEngine.plugin 4.2.0.0`
+  — not the CPython string it is anywhere else — and `versio_export.py` had emitted it in its
+  `start` event since the first export, where it reached the log and stopped. It is now
+  `toolchainVersion` in the manifest and an **Exported by** row on the project card.
+  Recorded verbatim: parsing `3.5.22.20` out of it would discard the plug-in version and the
+  patch wording, and answer the question only until the wording changes. Absent on any mirror
+  below schema 10, where the row is simply not drawn — "not recorded" is what empty means,
+  and a row reading "unknown" would claim more. It is the toolchain that *performed the
+  export*, which is the one that last saved the project whenever Versio did the exporting.
 - ~~**A graphical member inside an in-POU folder imports into the POU root**~~ — **parked by
   the owner, 2026-08-18: "I don't care about graphical members, won't be working with those
   for now, they are just part of a sample project".** The textual case — the normal one — is
