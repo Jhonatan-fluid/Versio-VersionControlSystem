@@ -1,5 +1,6 @@
 using Versio.Core.Diff;
 using Versio.Core.Git;
+using Versio.Core.Logging;
 using Versio.Infrastructure.Git;
 using Versio.TestSupport;
 using Xunit.Abstractions;
@@ -168,6 +169,59 @@ public sealed class GitSurfaceTests(ITestOutputHelper output) : IDisposable
         Write("mine.st", "my change\n");
         await RunRawAsync("add", "-A");
         await RunRawAsync("commit", "-m", "my commit");
+    }
+
+    [SkippableFact]
+    public async Task A_branch_whose_upstream_ref_is_gone_is_listed_without_a_warning()
+    {
+        // Found by launching the app and reading its own log: two WRN lines at every start,
+        // one per local branch whose configured upstream no longer has a remote-tracking ref.
+        // %(upstream:short) reports the CONFIGURED upstream, which outlives the ref — a branch
+        // pushed and later pruned still has one — and rev-list then exits 128 on it. Nobody
+        // can act on that, and a warning nobody can act on is what teaches people to read past
+        // the line that eventually matters.
+        //
+        // Asserted on the LOG, not on the counts, because the counts were always right. This
+        // is the first test in the repository to assert on what was logged rather than on what
+        // was done; TestLogger.Entries exists for it.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        Write("shared.st", "root\n");
+        await RunRawAsync("add", "-A");
+        await RunRawAsync("commit", "-m", "root");
+
+        // A configured upstream whose remote-tracking ref does not exist: exactly the state a
+        // prune leaves behind, reached without a second repository.
+        //
+        // The remote has to be REGISTERED, not merely named in branch.main.remote. Without a
+        // url and the fetch refspec that comes with it, git cannot map refs/heads/main onto a
+        // remote-tracking ref at all and %(upstream:short) comes back EMPTY — which is the
+        // already-handled case, and made the first version of this test pass its silence
+        // assertion while proving nothing. Nothing is ever fetched, so the url is never dialled.
+        await RunRawAsync("remote", "add", "origin", "https://example.invalid/versio.git");
+        await RunRawAsync("config", "branch.main.remote", "origin");
+        await RunRawAsync("config", "branch.main.merge", "refs/heads/main");
+
+        var log = new TestLogger(output);
+        var client = new GitCliClient(_repo, logger: log);
+
+        var branches = await client.BranchesAsync(CancellationToken.None);
+
+        // The branch is still listed, with its upstream named and no divergence claimed —
+        // silencing the warning must not cost the row.
+        var main = Assert.Single(branches, b => b.Name == "main");
+        Assert.Equal("origin/main", main.Upstream);
+        Assert.Equal(0, main.Ahead);
+        Assert.Equal(0, main.Behind);
+
+        Assert.DoesNotContain(log.Entries,
+            e => e.Level >= LogLevel.Warning && e.Message.Contains("rev-list"));
+
+        // And it is demoted rather than swallowed: a command that ran and failed leaving no
+        // trace at all is the shape of bug the log rule exists to prevent.
+        Assert.Contains(log.Entries,
+            e => e.Level == LogLevel.Debug && e.Message.Contains("rev-list"));
     }
 
     [SkippableFact]

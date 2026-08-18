@@ -22,7 +22,37 @@ namespace Versio.TestSupport;
 /// </remarks>
 public sealed class TestLogger(ITestOutputHelper output) : IVersioLogger
 {
+    private readonly List<LogEvent> _entries = [];
+    private readonly Lock _gate = new();
     private string? _operationId;
+
+    /// <summary>
+    /// Everything logged so far, so a test can assert on it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>"Anything that runs must say so in the log" had no test support at all</b> until
+    /// 2026-08-17, which is why every rule about log volume in <c>CLAUDE.md</c> — quiet when
+    /// idle, loud when working, a refused sync says nothing — was enforced by reading log
+    /// files by hand. The first thing it caught was a <c>WRN</c> per branch at every launch
+    /// for a state that is not a fault.
+    /// </para>
+    /// <para>
+    /// A snapshot, and locked, because the components under test log from timers and process
+    /// callbacks on other threads — enumerating the live list would throw in the middle of an
+    /// assertion for reasons having nothing to do with the assertion.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<LogEvent> Entries
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return [.. _entries];
+            }
+        }
+    }
 
     public void Log(LogLevel level, string category, string message,
                     Exception? exception = null, bool isHeartbeat = false)
@@ -37,6 +67,11 @@ public sealed class TestLogger(ITestOutputHelper output) : IVersioLogger
             IsHeartbeat = isHeartbeat,
             Exception = exception,
         };
+
+        lock (_gate)
+        {
+            _entries.Add(entry);
+        }
 
         try
         {
