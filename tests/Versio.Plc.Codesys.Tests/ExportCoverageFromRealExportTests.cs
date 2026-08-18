@@ -400,15 +400,33 @@ public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) 
 
         output.WriteLine(string.Join("\n", gvl.Select(o => $"{o.Form,-12} {o.Path}")));
 
-        Assert.Equal(2, gvl.Count);
-        Assert.Single(gvl.Select(o => o.Guid).Distinct(StringComparer.Ordinal));
+        // PER GVL, however many the project has. This assumed exactly one — two records, one
+        // GUID — and broke when the corpus gained PersistentVars. The claim was never about
+        // the count: it is that each GVL writes a pair whose native half is one-way.
+        var byGuid = gvl
+            .GroupBy(o => o.Guid, StringComparer.Ordinal)
+            .ToList();
 
-        var xml = Assert.Single(gvl, o => o.Path.EndsWith(".gvl.xml", StringComparison.Ordinal));
-        var st = Assert.Single(gvl, o => o.Path.EndsWith(".gvl.st", StringComparison.Ordinal));
+        Assert.NotEmpty(byGuid);
+        Assert.All(byGuid, g => Assert.Equal(2, g.Count()));
 
-        Assert.Equal(ExportCoverage.GvlNativeForm, xml.Form);
-        Assert.True(ExportCoverage.IsExportOnly(xml.Form));
-        Assert.False(ExportCoverage.IsExportOnly(st.Form));
+        foreach (var one in byGuid)
+        {
+            var half = Assert.Single(one, o => o.Path.EndsWith(".gvl.xml", StringComparison.Ordinal));
+            Assert.Equal(ExportCoverage.GvlNativeForm, half.Form);
+            Assert.True(ExportCoverage.IsExportOnly(half.Form));
+
+            var readable = Assert.Single(one, o => o.Path.EndsWith(".gvl.st", StringComparison.Ordinal));
+            Assert.False(ExportCoverage.IsExportOnly(readable.Form));
+        }
+
+        // ONE GVL's pair, for the coverage sentence below. The forms were asserted for every
+        // GVL in the loop above; these two lines pick a subject rather than repeat the claim,
+        // and they are scoped to that GUID because scanning all of them matched two .gvl.st
+        // files the moment the corpus gained a second GVL.
+        var pair = byGuid[0];
+        var xml = Assert.Single(pair, o => o.Path.EndsWith(".gvl.xml", StringComparison.Ordinal));
+        var st = Assert.Single(pair, o => o.Path.EndsWith(".gvl.st", StringComparison.Ordinal));
 
         // And the remedy names the file somebody is meant to edit, rather than sending them
         // to the IDE. The exporter finds it by GUID, so this sentence costs nothing per form.

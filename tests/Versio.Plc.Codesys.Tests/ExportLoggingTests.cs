@@ -181,7 +181,12 @@ public sealed class ExportLoggingTests(ITestOutputHelper output) : IDisposable
         // should have to state", which is exactly the ceremony a derived number removes. The
         // file count in this same test has been derived from the tree on disk since the day
         // it broke for the same reason; this one just took longer to learn it.
-        var walked = lines.Single(l => l.StartsWith("walked ", StringComparison.Ordinal));
+        // LAST, not Single. This test exports twice on purpose — the second run is the one
+        // with a directory to replace — so there are two `walked` lines, and the derived
+        // version of this assertion threw `Sequence contains more than one matching element`
+        // the first time the whole gate ran after it. Deriving a number removed one hazard
+        // and introduced another in the same line.
+        var walked = lines.Last(l => l.StartsWith("walked ", StringComparison.Ordinal));
         var reached = int.Parse(walked["walked ".Length..].Split(',')[0]);
 
         output.WriteLine($"{walked}  (against {manifest.Objects.Count} record(s))");

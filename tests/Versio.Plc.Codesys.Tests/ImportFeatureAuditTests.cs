@@ -1166,8 +1166,23 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
             .Form);
 
         // The owner chain is still recorded after an import, not just after the export that
-        // built the fixture — three members, each pointing at FB_Pump.
-        Assert.Equal(3, manifest.Objects.Count(o => !string.IsNullOrEmpty(o.Parent)));
+        // built the fixture. BY OBJECT, not by record: it read `3` until 2026-08-18, when a
+        // property began writing readable text beside its payload — same three members, more
+        // records, and a count of records made a correct export look wrong.
+        // FB_Pump's OWN three members. Counting every owned object in the manifest gave 5
+        // once a property's accessors became objects in their own right — correct, and not
+        // what this line is about. The claim is that the import did not lose the owner chain
+        // on the three members this fixture was built for.
+        var pump = Assert.Single(manifest.Objects, o => o.Name == "FB_Pump" && o.Parent == "");
+
+        var members = manifest.Objects
+            .Where(o => string.Equals(o.Parent, pump.Guid, StringComparison.OrdinalIgnoreCase))
+            .Select(o => o.Name)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.Equal(["Speed", "Start", "Stop"], members);
     }
 
     // ── A folder inside a POU, all the way there and back ───────────────────────────
