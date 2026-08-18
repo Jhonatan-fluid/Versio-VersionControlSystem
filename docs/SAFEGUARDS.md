@@ -912,11 +912,43 @@ and `state.json`.
 → Implement the read-only mode the sentence already promises, or a single-instance-per-repository
 guard. A sentence that describes behaviour nothing implements is worse than no sentence.
 
-### H. The repository disappears while it is open
+### H. The repository disappears while it is open — **costed 2026-08-17, deliberately not built**
 
 Network share drops, folder renamed or deleted. `RepositoryKind.Inaccessible` is evaluated at *open*
 time only; a live repository going away leaves a dead watcher and every git call failing with a raw
 message in the status bar. Needs a detected-and-explained state.
+
+> **The costing PHASE2 item 6 asked for.** The open-time half already exists — a recent
+> repository that has gone prompts *forget / clone again* through `MissingRepositoryPrompt` —
+> so this entry is only about the live window.
+>
+> **What it takes, in order of difficulty:**
+>
+> 1. **Detection — cheap.** One `Directory.Exists(root)` per refresh, probed twice before
+>    believing (a share hiccup that lasts one poll must not tear the session down), plus
+>    classifying a failed git spawn as "root gone" rather than "git broke". A stat per
+>    refresh is noise next to the `git status` beside it.
+> 2. **The suspended state — moderate.** Stop the watcher, the remote poller and the deferred
+>    tick; one banner in the first-class style §12's git-missing banner already has: what
+>    vanished, why that usually happens, and that Versio will reconnect by itself. Every
+>    piece exists (`Detach` stops all three today); the work is a state between "open" and
+>    "closed" that the shell currently has no word for.
+> 3. **Reconnection — moderate.** A periodic existence probe, then the ordinary open path:
+>    through the §5.G presence marker again — the marker on the share vanished with the
+>    share, and somebody else may have claimed the repository while it was away.
+> 4. **The genuinely hard part — failure classification.** A CODESYS export mid-run against a
+>    vanished share fails on its own; if that failure marks the binding failed and feeds the
+>    circuit breaker, the share coming back finds every binding stuck behind
+>    "acknowledge the failure" for an outage that was nobody's fault and is already over.
+>    Environmental failures have to be told apart from real ones at the orchestrator level,
+>    which touches the most safety-critical classification in the engine.
+>
+> Roughly a day for 1–3; item 4 is the reason this is not an afternoon and the reason to do it
+> deliberately rather than in passing. **Not built now, with the reasoning recorded:** the
+> failure mode is loud (nothing about it is silent — every surface reports errors), recovery
+> by restart already works, and the touchy half sits on the engine's failure classification,
+> which should not be reshaped as a side quest of a UI phase. It moves up the queue the first
+> time a real share drop bites somebody.
 
 ### I. A tracked project file is deleted or renamed outside Versio
 

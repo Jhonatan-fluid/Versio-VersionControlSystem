@@ -154,23 +154,32 @@ because its only known trigger (G11) was removed. Both are labelled where they l
 ([`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md), checklist and honesty-fix 1) and neither can
 be manufactured — they close when reality produces a specimen, not before.
 
-### 6. Small, real, and unowned
+### 6. Small, real, and unowned — **all four owned items closed 2026-08-17**
 
-- **`SAFEGUARDS.md` §5.H** — the repository vanishing while it is open. Nobody has costed it.
-- **`OrphanScanner.cs:194`** — states "never deleted automatically because it is committed
-  history" unconditionally; wrong for an export tree under an ignored path (`STATUS.md`,
-  *Known loose ends*).
-- **Stash UI** — withdrawn, not finished. The plumbing (`StashPushAsync` etc.) is kept and
-  tested; six permanent controls in the narrowest column was the wrong design, and a better
-  one is owed (`STATUS.md` §2).
-- **The UI eyeball pass** — everything the UI audit landed is verified by geometry and
-  automation tests, in both palettes, **by nothing that can see a screen**. A human pass is
-  owed (`STATUS.md`, *Handoff — the UI pass*).
-- **Five copies of the CPython-runner plumbing** — `PythonFileNameTests` holds four and
-  `PythonLibraryRecordTests` a fifth, each writing three temp files (and each leaking the
-  `GetTempFileName` base file its `.py` name is derived from). The fifth copy's own comment
-  says consolidating them is its own change; it is, and it belongs to whoever next touches the
-  parity project.
+- ~~**`SAFEGUARDS.md` §5.H** — the repository vanishing while it is open. Nobody has costed
+  it.~~ — **costed, in §5.H itself, and deliberately not built**: detection and the suspended
+  state are roughly a day; the hard part is classifying a mid-run toolchain failure against a
+  vanished share as environmental rather than feeding it to the circuit breaker, which
+  touches the engine's most safety-critical classification and should not be reshaped as a
+  side quest. Moves up the first time a real share drop bites somebody.
+- ~~**`OrphanScanner.cs:194`**~~ — **reworded.** The finding claimed "because it is committed
+  history", which a pure scan cannot know and which was false for an export tree under an
+  ignored path. The behaviour was always right for a simpler reason, and the message says
+  that now: never deleted automatically, what it is worth is a person's call, and it *may*
+  be committed history.
+- ~~**Stash UI** — withdrawn, not finished~~ — **rebuilt as the inversion of what was
+  withdrawn**: zero permanent controls, a section that exists only while `git stash list`
+  has rows (the conflicts section's own rule), Apply that keeps and Drop that confirms and
+  re-resolves the positional ref by SHA. No save button — the auto-stash owns taking, and
+  the deliberate case belongs to a terminal.
+- **The UI eyeball pass** — still owed to a human, and this session added to what it covers:
+  library and task rows, the layer chips, the context menu (and its newly themed
+  ContextMenu style), the ahead/behind previews, the clean-tree line, the coloured subject
+  counter, the emphasis colours and the split view, and the stash section.
+- ~~**Five copies of the CPython-runner plumbing**~~ — **one now**: `CPythonHarness`, with
+  the deadlock-avoiding stream drain every copy should have had, one temp directory deleted
+  whole (closing the `GetTempFileName` base-file leak), and the python probe cached per
+  process. The parity suite dropped from ~15 s to ~8 s with it.
 
 ### 7. A second vendor — deliberately last (decided 2026-08-17)
 

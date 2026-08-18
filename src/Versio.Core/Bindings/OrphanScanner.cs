@@ -208,8 +208,17 @@ public sealed class OrphanScanner
 
         foreach (var exp in orphanExports)
         {
+            // The old wording justified never deleting with "because it is committed
+            // history" — a claim this method cannot make. The scan is pure and works from a
+            // snapshot; whether the tree is committed, gitignored scratch, or somebody's
+            // uncommitted afternoon is a question only git can answer, and an export tree
+            // under an ignored path is exactly the case where the old sentence was false.
+            // The behaviour was always right for a simpler reason: deleting files on a
+            // guess about what they are is the failure mode this application exists to
+            // prevent, whatever the files turn out to be.
             findings.Add(new ScanFinding(BindingHealth.OrphanedExport, exp, null,
-                "export directory with no bound project; never deleted automatically because it is committed history"));
+                "export directory with no bound project; never deleted automatically — " +
+                "what it is worth is a person's call, and it may be committed history"));
         }
 
         return findings;

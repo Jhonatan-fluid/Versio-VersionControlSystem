@@ -329,88 +329,9 @@ public sealed class PythonLibraryRecordTests(ITestOutputHelper output)
             Assert.Single(doc.RootElement.GetProperty("errors").EnumerateArray()).GetString());
     }
 
-    private static string Run(string body, object? payload = null)
-    {
-        // Same shape as PythonFileNameParityTests' runner and deliberately not shared with it:
-        // that one deserialises into List<string> for a corpus of names, this one returns the
-        // raw text so a record can be read as JSON. Four copies of this plumbing already live
-        // in that file; consolidating them is its own change.
-        var input = Path.GetTempFileName();
-        var result = Path.GetTempFileName();
-        var script = Path.GetTempFileName() + ".py";
-        var utf8 = new System.Text.UTF8Encoding(false);
+    private static string Run(string body, object? payload = null) =>
+        CPythonHarness.RunJson(
+            JsonSerializer.Serialize(payload ?? new { }), body, jsonOut: false);
 
-        try
-        {
-            File.WriteAllText(input, JsonSerializer.Serialize(payload ?? new { }), utf8);
-            File.WriteAllText(script,
-                "# -*- coding: utf-8 -*-\n" +
-                "import io, json, sys\n" +
-                $"sys.path.insert(0, r\"{TestPaths.Scripts}\")\n" +
-                $"payload = json.load(io.open(r\"{input}\", encoding=\"utf-8\"))\n" +
-                string.Join("\n", body.Replace("\r\n", "\n").Split('\n')) + "\n" +
-                $"io.open(r\"{result}\", \"w\", encoding=\"utf-8\").write(out)\n",
-                utf8);
-
-            using var python = Process.Start(new ProcessStartInfo
-            {
-                FileName = "python",
-                Arguments = $"\"{script}\"",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                StandardOutputEncoding = System.Text.Encoding.UTF8,
-            });
-
-            // BOTH streams are drained before WaitForExit, and that is not tidiness. A
-            // redirected stream nobody reads fills its pipe buffer and the child blocks
-            // writing to it while the parent blocks waiting for the child — a deadlock that
-            // appears the first time a snippet prints more than a few KB, which is exactly
-            // the day somebody adds a print() to debug one of these.
-            var stdout = python!.StandardOutput.ReadToEndAsync();
-            var stderr = python.StandardError.ReadToEnd();
-            python.WaitForExit();
-            Assert.True(python.ExitCode == 0, stderr + stdout.Result);
-
-            return File.ReadAllText(result, utf8);
-        }
-        finally
-        {
-            foreach (var path in new[] { input, result, script })
-            {
-                try
-                {
-                    File.Delete(path);
-                }
-                catch (IOException)
-                {
-                    // A leftover temp file is not worth failing a test over.
-                }
-            }
-        }
-    }
-
-    private static bool PythonIsAvailable()
-    {
-        try
-        {
-            using var python = Process.Start(new ProcessStartInfo
-            {
-                FileName = "python",
-                Arguments = "--version",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            });
-
-            python!.WaitForExit();
-            return python.ExitCode == 0;
-        }
-        catch (Exception)
-        {
-            return false;
-        }
-    }
+    private static bool PythonIsAvailable() => CPythonHarness.PythonIsAvailable();
 }

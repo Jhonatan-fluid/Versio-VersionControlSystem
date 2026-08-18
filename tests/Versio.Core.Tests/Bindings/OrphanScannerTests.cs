@@ -164,7 +164,12 @@ public class OrphanScannerTests
 
         var f = Assert.Single(findings);
         Assert.Equal(BindingHealth.OrphanedExport, f.Health);
-        Assert.Contains("committed history", f.Explanation);
+
+        // The explanation must not CLAIM the tree is committed history — the scan cannot
+        // know, and for an export tree under an ignored path it was simply false. "May be"
+        // is the most the snapshot can honestly say.
+        Assert.Contains("never deleted automatically", f.Explanation);
+        Assert.Contains("may be committed history", f.Explanation);
     }
 
     [Fact]
