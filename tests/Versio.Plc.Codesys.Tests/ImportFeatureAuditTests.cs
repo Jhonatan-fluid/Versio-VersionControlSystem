@@ -1160,6 +1160,202 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
         Assert.Equal(3, manifest.Objects.Count(o => !string.IsNullOrEmpty(o.Parent)));
     }
 
+    // ── A folder inside a POU, all the way there and back ───────────────────────────
+
+    /// <summary>
+    /// A method grouped into a folder inside its POU: edited in the mirror, imported, and the
+    /// project re-exported <b>identical apart from that one file</b>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The case the owner reported, proven end to end.</b> Everything else about the
+    /// schema-9 layout was measured: the round trip is byte-identical with nothing edited
+    /// (<c>An_import_and_a_re_export_leave_the_mirror_byte_identical</c>), and an edited member
+    /// in its owner's directory reaches the project (<c>An_action_a_method_and_a_property…</c>).
+    /// Neither touches a member one level deeper, inside a folder the engineer made — and that
+    /// is the shape the whole change started from.
+    /// </para>
+    /// <para>
+    /// <b>Both halves of "it stays the same", because either alone is worthless.</b> That the
+    /// edit arrives says the chain resolved through the folder; that <i>nothing else moved</i>
+    /// says the import did not pay for it out of sight. An <c>import_native</c> replacing an
+    /// owner takes its members with it and reports nothing — measured 2026-08-18, see
+    /// <see cref="PlannedSkip.WouldDestroyMembers"/> — so a test asserting only the arrival
+    /// would have passed on the very run that lost an object.
+    /// </para>
+    /// <para>
+    /// <b>The member is DISCOVERED, not named.</b> Three tests were pinned to <c>_M_Reset</c>,
+    /// <c>PLC_PRG.xml</c> and a walk count, and all three went red within a day because the
+    /// fixture is a project somebody works in. What must hold is that <i>whichever</i> member
+    /// is inside a folder round-trips; which one it happens to be is not the specification.
+    /// </para>
+    /// </remarks>
+    [SkippableFact]
+    public async Task A_member_inside_a_folder_round_trips_and_moves_nothing_else()
+    {
+        var install = Install;
+        Skip.If(install is null, "no CODESYS installation with a profile");
+
+        var fixture = TestPaths.Project("RefrigeratorControl.project");
+        Skip.If(!File.Exists(fixture), "fixture project missing");
+
+        Directory.CreateDirectory(Path.Combine(_repo, "plc"));
+        var project = Path.Combine(_repo, "plc", "RefrigeratorControl.project");
+        File.Copy(fixture, project);
+
+        var mirror = Path.Combine(_repo, "plc", "RefrigeratorControl");
+        var runner = new LocalCodesysRunner(
+            install!.ExecutablePath, new ScriptExtractor(), new TestLogger(output));
+
+        CodesysJob Job(CodesysOperation operation, string path) => new()
+        {
+            Operation = operation,
+            Profile = install.Profiles[0],
+            Projects = [new ProjectJob
+            {
+                BindingId = "foldered", ProjectPath = project, Path = path,
+            }],
+            Timeout = TimeSpan.FromMinutes(5),
+        };
+
+        Assert.True((await runner.RunAsync(
+            Job(CodesysOperation.Export, mirror), null, CancellationToken.None)).Succeeded);
+
+        var manifest = ProjectManifest.Parse(
+            await File.ReadAllTextAsync(Path.Combine(mirror, "_manifest.json")));
+
+        Assert.True(manifest.Schema >= ExportCoverage.PathIsChainSchema);
+
+        var byGuid = manifest.Objects
+            .GroupBy(o => o.Guid, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+
+        // A textual member with a folder between its owner's directory and its own file.
+        var target = manifest.Objects.FirstOrDefault(o =>
+            o.Form == "ST_FULL"
+            && !string.IsNullOrEmpty(o.Parent)
+            && byGuid.TryGetValue(o.Parent, out var owner)
+            && o.Path.StartsWith(OwnerDirectory(owner) + "/", StringComparison.Ordinal)
+            && o.Path[(OwnerDirectory(owner).Length + 1)..].Contains('/'));
+
+        Skip.If(target is null, "the fixture has no member inside a folder inside a POU");
+
+        var ownerRecord = byGuid[target!.Parent];
+        var folder = target.Path[(OwnerDirectory(ownerRecord).Length + 1)..].Split('/')[0];
+        output.WriteLine($"{ownerRecord.Name} / {folder} / {target.Name}   {target.Path}");
+
+        var before = Fingerprint(mirror);
+
+        // A comment, so the method still compiles and the change is unmistakable in whichever
+        // half of the .st it lands in.
+        var file = Path.Combine(mirror, target.Path.Replace('/', Path.DirectorySeparatorChar));
+        var text = await File.ReadAllTextAsync(file);
+        Assert.DoesNotContain("folder_round_trip", text, StringComparison.Ordinal);
+        await WriteAsync(file, text.TrimEnd() + "\n(* folder_round_trip *)\n");
+
+        var import = await runner.RunAsync(
+            Job(CodesysOperation.Import, mirror), null, CancellationToken.None);
+
+        foreach (var w in import.Output.Warnings)
+        {
+            output.WriteLine($"warning: {w.String("code")} {w.String("path")} {w.String("detail")}");
+        }
+
+        Assert.True(import.Succeeded, import.FailureReason ?? "the import failed");
+
+        // Nothing said about the owner or the member. A chain that failed to resolve through
+        // the folder lands here as PARENT_NOT_FOUND or CANNOT_IDENTIFY_DECLARATION.
+        Assert.DoesNotContain(import.Output.Warnings,
+            w => (w.String("path") ?? string.Empty)
+                .Contains(ownerRecord.Name, StringComparison.Ordinal));
+
+        // Read the PROJECT back, into a different directory so this compares against what
+        // CODESYS now holds rather than against the files we just wrote.
+        var after = Path.Combine(_repo, "verify-foldered");
+        Assert.True((await runner.RunAsync(
+            Job(CodesysOperation.Export, after), null, CancellationToken.None)).Succeeded);
+
+        // ── one: the edit arrived, at the right object ───────────────────────────────
+        var reExported = Path.Combine(after, target.Path.Replace('/', Path.DirectorySeparatorChar));
+        Assert.True(File.Exists(reExported),
+            $"{target.Path} is not in the re-export — the member moved or was lost");
+        Assert.Contains("folder_round_trip", await File.ReadAllTextAsync(reExported),
+                        StringComparison.Ordinal);
+
+        // ── two: and nothing else moved ──────────────────────────────────────────────
+        //
+        // The same set of files first: an object that left, arrived or changed path shows up
+        // here before any content is compared.
+        var afterPrints = Fingerprint(after);
+
+        Assert.Equal(before.Keys.OrderBy(k => k, StringComparer.Ordinal),
+                     afterPrints.Keys.OrderBy(k => k, StringComparer.Ordinal));
+
+        // Then the content — and for a NATIVE payload the standard is EQUIVALENCE, not bytes.
+        //
+        // A byte comparison fails on a correct import, and the first version of this test did:
+        // Live_Visu.vis.xml, Visualization.vis.xml and GlobalTextList.xml came back different
+        // with nothing about them edited. That is P7's measurement — CODESYS re-mints
+        // UniqueIdGenerator and reference GUIDs on every export, climbing 44 -> 47 -> 50 -> 53
+        // across three round trips and never settling — and it is the whole reason
+        // NativeXmlNormalizer and the manifest's `nhash` exist.
+        //
+        // THE MIRROR DOES NOT CHURN IN REAL USE: an export writes over the previous one and
+        // preserve_equivalent keeps the old bytes when the new payload means the same thing.
+        // This verify export goes to a fresh directory precisely so that it reads the PROJECT
+        // rather than the files we just wrote — which switches that suppression off and makes
+        // the volatility visible again. So the comparison does here what preserve_equivalent
+        // does there: mask what CODESYS invents, compare what is left.
+        //
+        // The claim stays exact rather than weakened. Every file is either the one that was
+        // edited, byte-identical, or a native payload differing only in fields nobody wrote.
+        // An object that actually changed still fails.
+        var moved = new List<string>();
+
+        foreach (var (path, print) in before.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+        {
+            if (afterPrints[path] == print
+                || path.EndsWith("_manifest.json", StringComparison.Ordinal)
+                || path.EndsWith("_coverage.md", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var relative = path.Replace('/', Path.DirectorySeparatorChar);
+
+            if (path.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)
+                && NativeXmlNormalizer.AreEquivalent(
+                        await File.ReadAllTextAsync(Path.Combine(mirror, relative)),
+                        await File.ReadAllTextAsync(Path.Combine(after, relative))))
+            {
+                output.WriteLine($"equivalent, volatile fields only: {path}");
+                continue;
+            }
+
+            output.WriteLine($"changed: {path}");
+            moved.Add(path);
+        }
+
+        Assert.Equal([target.Path], moved);
+    }
+
+    /// <summary>An object's directory: its own path with the suffix cut off.</summary>
+    private static string OwnerDirectory(ProjectObject owner)
+    {
+        var slash = owner.Path.LastIndexOf('/');
+        var dot = owner.Path.IndexOf('.', slash + 1);
+        return dot < 0 ? owner.Path : owner.Path[..dot];
+    }
+
+    /// <summary>Every file under a mirror, by mirror-relative path, hashed.</summary>
+    private static Dictionary<string, string> Fingerprint(string root) =>
+        Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+            .ToDictionary(
+                p => Path.GetRelativePath(root, p).Replace('\\', '/'),
+                p => Convert.ToHexString(
+                    System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(p))),
+                StringComparer.Ordinal);
+
     // ── E4: the digest-tail stem, through a real round trip ─────────────────────────
 
     /// <summary>

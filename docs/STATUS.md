@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,491 across seven
+**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,492 across seven
 projects, 0 skipped — re-derived by running each, not carried forward
 
 | Project | Tests | Time | Needs |
@@ -11,7 +11,7 @@ projects, 0 skipped — re-derived by running each, not carried forward
 | `Versio.Arch.Tests` | 14 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 259 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 91 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
-| `Versio.Plc.Codesys.Tests` | 53 | **~30 min** | **real CODESYS** |
+| `Versio.Plc.Codesys.Tests` | 54 | **~30 min** | **real CODESYS** |
 
 *The first six are the loop to work in — about thirty seconds plus the UI suite. The last is
 the gate before a commit. Until 2026-08-17 the fast/slow split was a `--filter` expression over

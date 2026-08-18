@@ -166,6 +166,13 @@ explicit `encoding='utf-8', newline='\n'`, or the editing tools.
 **Never edit source through a shell heredoc.** Python-in-bash eats backslashes and backticks
 silently. Write the script to a file and run it.
 
+**And in that script, build the whole new text first, write it to a temp file, then
+`os.replace`.** `io.open(path, "w")` **truncates before it validates its own arguments** — a
+bad `newline=` value emptied a 1,495-line test file on 2026-08-18 and raised `ValueError`
+afterwards, so the traceback said nothing about the file being gone. It came back from git
+because it was committed; an uncommitted edit would not have. The same shape as the two rules
+above: the damage happens before the thing that reports it.
+
 **The python scripts are EMBEDDED in `Versio.Plc.Codesys.Infrastructure.dll`.** Editing
 `src/Versio.Plc.Codesys.Infrastructure/Scripts/*.py` and then running `dotnet test --no-build`
 tests the script that was embedded at the last build, not the one on disk. It looks exactly like a change that
@@ -220,7 +227,7 @@ stays that way.
 | `Versio.App.Tests` | 546 | ~50 s, STA, no window shown | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 259 | under a second | nothing — the planner, the codecs, the protocol |
 | `Versio.Plc.Codesys.Parity.Tests` | 91 | ~15 s | `python` on PATH — **skips cleanly without it, so check the count, not the colour** |
-| `Versio.Plc.Codesys.Tests` | 53 | **~30 min** | **real CODESYS** — every test launches it, which is the whole cost |
+| `Versio.Plc.Codesys.Tests` | 54 | **~30 min** | **real CODESYS** — every test launches it, which is the whole cost |
 
 **The loop to work in is everything except the last one:**
 
