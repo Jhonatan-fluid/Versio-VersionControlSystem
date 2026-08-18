@@ -1,13 +1,13 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,437 across seven
+**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,441 across seven
 projects, 0 skipped — re-derived by running each, not carried forward
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
 | `Versio.Core.Tests` | 1,361 | under a second | nothing |
 | `Versio.Integration.Tests` | 146 | ~10 s | real git |
-| `Versio.App.Tests` | 527 | ~50 s | nothing |
+| `Versio.App.Tests` | 531 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 14 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 254 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 82 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
@@ -336,7 +336,6 @@ statement from "not worth doing".
 | | Why it waits | What would bring it back |
 |---|---|---|
 | **Word-level diff** (§5) | The colours exist and are contrast-checked; `DiffView` tints whole rows. A readability gain on something already correct. | Somebody reading generated XML or ST diffs daily and saying so. It is the strongest candidate of the four. |
-| **Retry when the IDE closes** (§3) | Every path already recovers — the next save, and reopening the repository. This closes the gap in between. Convenience, not correctness. | A user noticing the wait, or the vendor lock file turning out to be cheap to watch. |
 | **Code signing** (open decision #2) | Nothing external is distributed yet. | **Start this before it is needed, not when.** It is procurement lead time rather than engineering time, and it is the only item on this page that gets worse purely by waiting. |
 
 **Also decided, and more firmly: the code-shape queue is closed.** Staging, the repository

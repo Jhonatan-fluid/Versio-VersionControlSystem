@@ -1508,6 +1508,20 @@ public sealed class SyncViewModel : ObservableObject
             // The export tree may not exist yet on a freshly adopted project; the watcher
             // says so and carries on, and the first export creates it.
             _watcher.WatchTree(AbsolutePath(binding.ExportPath));
+
+            // The vendor's own open-project marker, so that CLOSING the IDE becomes the
+            // retry (PHASE2 item 3). An import refused because the IDE held the project used
+            // to wait for the next save or the next open; the marker vanishing is the same
+            // fact arriving the moment it becomes true. Through the format so Sync/ never
+            // learns a vendor's spelling, and through the same watcher as everything else —
+            // the marker is rewritten every few seconds while the IDE holds the project, and
+            // the settle handler tells that storm from a release by looking for the file.
+            if (PlcFormats.ForVendor(binding.Vendor)
+                    ?.OccupancyMarkerFor(AbsolutePath(binding.ProjectPath)) is { } marker)
+            {
+                _occupancyMarkers[marker] = binding;
+                _watcher.WatchFile(marker);
+            }
         }
 
         _logger.Info(LogCategory.Watch,
@@ -1518,6 +1532,7 @@ public sealed class SyncViewModel : ObservableObject
     {
         _deferredTick?.Stop();
         _deferredTick = null;
+        _occupancyMarkers.Clear();
 
         if (_watcher is null)
         {
@@ -1528,6 +1543,20 @@ public sealed class SyncViewModel : ObservableObject
         _watcher.Dispose();
         _watcher = null;
     }
+
+    /// <summary>Occupancy marker path, absolute, to the binding whose project it guards.</summary>
+    private readonly Dictionary<string, ProjectBinding> _occupancyMarkers =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The markers being watched, for the test that proves the watch is wired.</summary>
+    /// <remarks>
+    /// Internal for <c>IgnoredPaths()</c>'s reason: trusting that a dictionary populated in
+    /// this file is consulted by a handler in this file is the assumption that has been
+    /// wrong here before, and the end-to-end test that would catch it instead has to wait on
+    /// real filesystem timers.
+    /// </remarks>
+    internal IReadOnlyDictionary<string, ProjectBinding> WatchedOccupancyMarkers =>
+        _occupancyMarkers;
 
     /// <summary>
     /// Ask the engine whether a throttled change is now due, and run it if so.
@@ -1590,7 +1619,62 @@ public sealed class SyncViewModel : ObservableObject
         _logger.Debug(LogCategory.Watch,
             $"settled: {change.Path} (tier {change.Tier})");
 
+        // The vendor's open-project marker is not a side of any binding — Locate would
+        // shrug at it — so it is routed before the ordinary flow. Most of these events are
+        // the IDE rewriting the marker while it works; the handler is what tells that storm
+        // from the release this watch exists for.
+        if (_occupancyMarkers.TryGetValue(change.Path, out var released))
+        {
+            OnUi(() => _ = RetryAfterIdeReleaseAsync(released, change.Path));
+            return;
+        }
+
         OnUi(() => _ = SyncSettledChangeAsync(change));
+    }
+
+    /// <summary>
+    /// The vendor's open-project marker settled. If it is gone, the IDE let go — retry what
+    /// waited for it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Closing CODESYS is the retry now</b> (PHASE2 item 3): an import refused with "close
+    /// it and the import will run" used to sit until the next save or the next repository
+    /// open, with the panel saying so and nothing listening. The marker vanishing is that
+    /// same fact as a filesystem event.
+    /// </para>
+    /// <para>
+    /// <b>Both directions are submitted, through every gate a save goes through.</b> The
+    /// retry must not become a second door around the direction lock, the hash gate or the
+    /// import confirmation — so it does not decide what waited, it asks: each side runs
+    /// <c>HandleChangeAsync</c> exactly as if the user had saved, and a side with nothing
+    /// pending is refused quietly by the same gates that refuse an echoed export. The
+    /// blocked import comes back as <c>AwaitingConfirmation</c>, which re-raises the offer
+    /// on the project's row — a person still confirms it; the IDE closing merely stopped
+    /// being the thing everybody was waiting on.
+    /// </para>
+    /// <para>
+    /// <b>A marker that still exists is the rewrite storm, not a release.</b> CODESYS
+    /// replaces the marker through a transient sibling every few seconds for as long as it
+    /// holds the project, so most settles of this path mean "still open". Quiet on that
+    /// path, deliberately: it fires all day while an engineer works, and nothing happened.
+    /// </para>
+    /// </remarks>
+    internal async Task RetryAfterIdeReleaseAsync(ProjectBinding binding, string markerPath)
+    {
+        if (File.Exists(markerPath))
+        {
+            return;
+        }
+
+        _logger.Info(LogCategory.Sync,
+            $"{System.IO.Path.GetFileName(binding.ProjectPath)}: the IDE released the " +
+            "project; retrying what waited for it");
+
+        await RunSettledJobAsync(binding, ChangeSource.Project,
+            "the IDE released the project").ConfigureAwait(true);
+        await RunSettledJobAsync(binding, ChangeSource.ExportedText,
+            "the IDE released the project").ConfigureAwait(true);
     }
 
     /// <summary>
@@ -2581,6 +2665,24 @@ public sealed class SyncViewModel : ObservableObject
         _logger.Debug(LogCategory.Sync,
             $"{binding.Id}: {source} change settled at {path}");
 
+        await RunSettledJobAsync(binding, source, $"automatic, {source}").ConfigureAwait(true);
+    }
+
+    /// <summary>Submit one side of one binding to the orchestrator, gates and all.</summary>
+    /// <remarks>
+    /// The tail of <see cref="SyncSettledChangeAsync"/>, extracted so the IDE-release retry
+    /// submits through the same door rather than growing a parallel one — a second path into
+    /// <c>HandleChangeAsync</c> with its own cancellation or its own confirmation answer is
+    /// exactly how the import gate was once answered on the user's behalf.
+    /// </remarks>
+    private async Task RunSettledJobAsync(
+        ProjectBinding binding, ChangeSource source, string reason)
+    {
+        if (_orchestrator is null || _repositoryRoot is null)
+        {
+            return;
+        }
+
         // The run's own token, registered before the call so the progress scope opened from
         // inside the orchestrator can find and adopt it. Without this the automatic export -
         // by far the most common thing to be running when somebody switches branch or closes
@@ -2609,7 +2711,7 @@ public sealed class SyncViewModel : ObservableObject
                 // "review the diff and confirm", and a dialog thrown up the instant a file
                 // settles is a dialog that arrives before the review. See ConfirmImportAsync.
                 Confirmed = false,
-                Reason = $"automatic, {source}",
+                Reason = reason,
             }, cancel.Token).ConfigureAwait(true);
 
             var sentence = SyncNarrative.Describe(outcome);

@@ -106,11 +106,20 @@ turned out to be already built:
   branch has had its own standing headline since GP-B's eleven-state machine — the archived
   plan's §10 predated both.
 
-### 3. Retry automatically when the IDE closes — deferred 2026-08-15, still the smallest item
+### 3. ~~Retry automatically when the IDE closes — deferred 2026-08-15, still the smallest item~~ — **done, 2026-08-17**
 
-The vendor's lock file vanishing is a watchable filesystem event; seeing it would make closing
-CODESYS the retry, with no button. Nothing is broken while it waits — every path recovers on
-the next save or on reopen — so it buys convenience, not correctness. `STATUS.md` §3.
+~~The vendor's lock file vanishing is a watchable filesystem event; seeing it would make closing
+CODESYS the retry, with no button.~~ It does now, and with no button: the occupancy marker —
+resolved through `IPlcProjectFormat`, so `Sync/` never learns a vendor's spelling — is watched
+by the same `FileChangeWatcher` as everything else, and its deletion re-submits **both
+directions through the ordinary gates**, exactly as if the user had saved. Deliberately not a
+second door: the direction lock, hash gate and import confirmation all still answer, so a
+side with nothing waiting is refused quietly and a blocked import comes back as the same
+`AwaitingConfirmation` offer a person still confirms. The marker's rewrite storm — CODESYS
+replaces it every few seconds while it holds the project — is told from a release by one
+`File.Exists`, and stays silent, because it fires all day and nothing happened. Proven end to
+end through the real watcher: create the marker, delete it, and the retry announces itself
+with nothing but the filesystem in between.
 
 ### 4. Diff view: side-by-side and word-level intra-line — deferred 2026-08-15
 
