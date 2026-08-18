@@ -145,6 +145,81 @@ public sealed class GitSurfaceTests(ITestOutputHelper output) : IDisposable
         Assert.Empty(await Client.RecentCommitsAsync(10, 0, CancellationToken.None));
     }
 
+    /// <summary>Two branches diverged from one root — the shape every range question is about.</summary>
+    /// <remarks>
+    /// A local branch stands in for the upstream: a range neither knows nor cares whether
+    /// the ref after the dots is <c>origin/main</c> or <c>other</c>, and a second repository
+    /// would buy nothing but setup.
+    /// </remarks>
+    private async Task GivenDivergedBranchesAsync()
+    {
+        await InitAsync();
+
+        Write("shared.st", "root\n");
+        await RunRawAsync("add", "-A");
+        await RunRawAsync("commit", "-m", "root");
+
+        await RunRawAsync("checkout", "-q", "-b", "other");
+        Write("theirs.st", "their change\n");
+        await RunRawAsync("add", "-A");
+        await RunRawAsync("commit", "-m", "their commit");
+
+        await RunRawAsync("checkout", "-q", "main");
+        Write("mine.st", "my change\n");
+        await RunRawAsync("add", "-A");
+        await RunRawAsync("commit", "-m", "my commit");
+    }
+
+    [SkippableFact]
+    public async Task A_range_lists_only_its_own_sides_commits()
+    {
+        // The two shapes are mirror images and both plausible — which is exactly why a
+        // preview that ran the wrong one would be read and believed. GitRevisionRange owns
+        // the convention; this proves git agrees with it.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await GivenDivergedBranchesAsync();
+
+        var outgoing = await Client.CommitsInRangeAsync(
+            GitRevisionRange.Outgoing("other")!, 10, CancellationToken.None);
+        var incoming = await Client.CommitsInRangeAsync(
+            GitRevisionRange.Incoming("other")!, 10, CancellationToken.None);
+
+        Assert.Equal("my commit", Assert.Single(outgoing).Subject);
+        Assert.Equal("their commit", Assert.Single(incoming).Subject);
+    }
+
+    [SkippableFact]
+    public async Task The_incoming_diff_does_not_count_this_sides_own_edits_as_arriving()
+    {
+        // The three-dot property, proven on a real divergence: mine.st changed on HEAD's
+        // side only, and a two-dot diff would list it as incoming — an object "about to be
+        // imported" that nobody else touched.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await GivenDivergedBranchesAsync();
+
+        var files = await Client.RangeFilesAsync(
+            GitRevisionRange.IncomingDiff("other")!, CancellationToken.None);
+
+        var file = Assert.Single(files);
+        Assert.Equal("theirs.st", file.Path);
+        Assert.Equal(ChangeKind.Added, file.Kind);
+    }
+
+    [SkippableFact]
+    public async Task An_unresolvable_range_answers_empty_rather_than_throwing()
+    {
+        // The upstream can be deleted on the remote between the status read and the click.
+        // The preview is a glance; taking the panel down over a vanished ref is the wrong
+        // trade, and the empty answer's title says the count may be stale.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await GivenDivergedBranchesAsync();
+
+        Assert.Empty(await Client.CommitsInRangeAsync(
+            "HEAD..refs/remotes/origin/vanished", 10, CancellationToken.None));
+        Assert.Empty(await Client.RangeFilesAsync(
+            "HEAD...refs/remotes/origin/vanished", CancellationToken.None));
+    }
+
     [SkippableFact]
     public async Task A_commits_patch_parses_as_a_diff()
     {

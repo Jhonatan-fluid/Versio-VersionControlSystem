@@ -79,11 +79,32 @@ What the panel needs, from `STATUS.md` §4 (*Finish the project tree*):
   its own theme style: a ContextMenu is a popup with its own HWND, the ToolTip lesson one
   control along, and Aero's white slab was what appeared until it got one
 
-### 2. The git panel's last phase — GP-K/GP-L
+### 2. ~~The git panel's last phase — GP-K/GP-L~~ — **done, 2026-08-17. Twelve of twelve.**
 
-Eleven of twelve phases are built ([`phase1/GIT-PANEL-PLAN.md`](phase1/GIT-PANEL-PLAN.md)).
-What is left: the **ahead/behind previews** and the small-UX list. The plan document ranks and
-scopes them; nothing else depends on them.
+~~Eleven of twelve phases are built ([`phase1/GIT-PANEL-PLAN.md`](phase1/GIT-PANEL-PLAN.md)).
+What is left: the **ahead/behind previews** and the small-UX list.~~ What landed, and what
+turned out to be already built:
+
+- **§9d, the previews.** The ↑/↓ glyph split into two buttons, each opening its own list —
+  what a push would send, what a pull would bring. The incoming half also names the objects
+  the pull touches, through the same `ObjectIndex` and sentence the commit summary uses, and
+  its diff range is **three dots on purpose**: two would count this machine's own unpushed
+  edits as "arriving" on a diverged branch. Direction proven against real git on a real
+  divergence; the strip follows the counts it explains — reloaded when they move, closed
+  when its direction reaches zero.
+- **§9h, the large-file preflight.** Asked at the last cheap moment — after the gate's own
+  staging, before the commit — over a fresh `git status`. `LargeFilePreflight` is a stated
+  subset of gitattributes semantics; a rule without `filter=lfs` deliberately does not count,
+  because `binary -diff -merge` stops merge corruption and does nothing for a host's size
+  limit. A question, never a refusal.
+- **§10: items 2, 3, 5, 6 built** — the clean-tree sentence instead of two empty boxes, the
+  remote's name in the branch card (`origin · host/org/repo`, parsed so a credential in an
+  https URL can never reach a label), the subject counter coloured at 50 and 72, and
+  Ctrl+Shift+P with both shortcuts in tooltips — on the *live* explanation only, because a
+  key advertised at the moment it does nothing is noise, which the chrome test caught.
+  **Items 1 and 4 were already built**: path trimming shipped with GP-J, and the unborn
+  branch has had its own standing headline since GP-B's eleven-state machine — the archived
+  plan's §10 predated both.
 
 ### 3. Retry automatically when the IDE closes — deferred 2026-08-15, still the smallest item
 

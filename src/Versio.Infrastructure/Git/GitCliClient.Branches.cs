@@ -251,6 +251,40 @@ public sealed partial class GitCliClient
     /// scrolling, and hiding it would make the list disagree with the branch it describes.
     /// Its patch is the thing that cannot be shown, and that is said when it is asked for.
     /// </remarks>
+    /// <summary>Newest commits in one range, for the ahead/behind previews.</summary>
+    /// <remarks>
+    /// A failed run — the upstream ref deleted since the caller read its status — comes back
+    /// as an empty list rather than a throw: the preview is a glance, and taking the panel
+    /// down over a ref that vanished mid-glance would be the wrong trade.
+    /// </remarks>
+    public async Task<IReadOnlyList<CommitEntry>> CommitsInRangeAsync(
+        string range, int count, CancellationToken ct)
+    {
+        var result = await RunAsync(
+            ["log", $"--max-count={Math.Max(1, count)}", range, GitLogParser.CommitFormat],
+            null, ct)
+            .ConfigureAwait(false);
+
+        return result.Success ? GitLogParser.ParseCommits(result.StdOut) : [];
+    }
+
+    /// <summary>The files one range touches — <c>diff --name-status</c> over it.</summary>
+    /// <remarks>
+    /// <c>-z</c> for the same reason every name-status caller here uses it: git quotes
+    /// non-ASCII paths otherwise, and this repository's own fixtures carry umlauts.
+    /// <c>--find-renames</c> so an incoming rename previews as the move it is rather than as
+    /// a delete and an add — the same courtesy the status parser extends to the working tree.
+    /// </remarks>
+    public async Task<IReadOnlyList<CommitFile>> RangeFilesAsync(
+        string range, CancellationToken ct)
+    {
+        var result = await RunAsync(
+            ["diff", "--name-status", "--find-renames", "-z", range], null, ct)
+            .ConfigureAwait(false);
+
+        return result.Success ? GitNameStatusParser.Parse(result.StdOut) : [];
+    }
+
     public async Task<IReadOnlyList<CommitEntry>> RecentCommitsAsync(
         int count, int skip, CancellationToken ct)
     {

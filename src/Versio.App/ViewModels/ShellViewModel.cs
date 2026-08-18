@@ -998,6 +998,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         // Both are about a repository that is no longer open.
         Remote.Reset();
+        RemoteDisplay = string.Empty;
+        OnPropertyChanged(nameof(IsWorkingTreeClean));
 
         // These notifications are about a repository that is no longer open. Keeping them
         // would attach a failed push to whatever is opened next.
@@ -1852,6 +1854,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // When it is wanted - offering to clone a vanished repository back - there is no
         // .git left to ask. Empty for a repository with no remote, which is ordinary.
         var remoteUrl = await client.RemoteUrlAsync("origin", busy.Token).ConfigureAwait(true);
+        RemoteDisplay = DescribeRemote(remoteUrl);
 
         await RememberAsync(path, remoteUrl).ConfigureAwait(true);
 
@@ -2086,8 +2089,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             hasConflicts: HasConflicts);
 
     /// <summary>What the commit button will do, live or not.</summary>
+    /// <remarks>
+    /// The shortcut rides on the live explanation only (GP-L §10.6) — a key nobody can find
+    /// is a key nobody has, and the tooltip is where the button already explains itself. It
+    /// stays OFF the blocked reason, because "Nothing to commit. (Ctrl+Enter)" advertises a
+    /// key at the one moment it does nothing — the chrome test that pins the blocked wording
+    /// caught exactly that.
+    /// </remarks>
     public string CommitExplanation =>
-        CommitBlockedReason.Length > 0 ? CommitBlockedReason : Commit.Explanation;
+        CommitBlockedReason.Length > 0
+            ? CommitBlockedReason
+            : $"{Commit.Explanation} (Ctrl+Enter)";
 
     /// <summary>
     /// True while git reports an unmerged path.
@@ -2371,6 +2383,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             if (SetProperty(ref _commitMessage, value))
             {
                 OnPropertyChanged(nameof(CommitSubjectLength));
+                OnPropertyChanged(nameof(CommitSubjectBrushKey));
                 RaiseCommitState();
                 CommitCommand.RaiseCanExecuteChanged();
 
@@ -2384,6 +2397,68 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// <summary>Length of the subject line, for the 50/72 guide.</summary>
     public int CommitSubjectLength =>
         (_commitMessage.Split('\n').FirstOrDefault() ?? string.Empty).TrimEnd('\r').Length;
+
+    /// <summary>
+    /// The counter's colour, which is what makes the bare number decodable (GP-L §10.5).
+    /// </summary>
+    /// <remarks>
+    /// The tooltip already explains the 50/72 convention to whoever hovers; the colour is
+    /// for everyone who does not. Quiet within the convention, the modified amber over it,
+    /// and the deleted red past git's own hard wrap — the same escalation the rest of the
+    /// panel uses, so it reads without being learned.
+    /// </remarks>
+    public string CommitSubjectBrushKey =>
+        CommitSubjectLength <= 50 ? "Brush.Text.Disabled"
+        : CommitSubjectLength <= 72 ? "Brush.Status.Modified"
+        : "Brush.Status.Deleted";
+
+    /// <summary>
+    /// Where a push goes — <c>origin · github.com/org/repo</c> — in the branch card
+    /// (GP-L §10.3).
+    /// </summary>
+    /// <remarks>
+    /// The word "push" is meaningless without it, and on a machine with several remotes it
+    /// is a real question. Empty when the repository has no origin, and the card hides the
+    /// line: "no remote" is the standing sentence's job, said once.
+    /// </remarks>
+    public string RemoteDisplay
+    {
+        get => _remoteDisplay;
+        private set => SetProperty(ref _remoteDisplay, value);
+    }
+
+    private string _remoteDisplay = string.Empty;
+
+    private static string DescribeRemote(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return string.Empty;
+        }
+
+        // The parsed form rather than the raw URL, because the raw one answers a different
+        // question: ssh://git@host:2222/org/repo.git says how to reach it, host/org/repo
+        // says where it is — and the credential in an https URL must never reach a label.
+        var parsed = RemoteUrl.Parse(url);
+        var where =
+            parsed is { Owner.Length: > 0, Repository.Length: > 0 }
+                ? $"{parsed.Authority}/{parsed.Owner}/{parsed.Repository}"
+                : parsed.Authority.Length > 0
+                    ? parsed.Authority
+                    : url;
+
+        return $"origin · {where}";
+    }
+
+    /// <summary>One line instead of two empty boxes (GP-L §10.2).</summary>
+    /// <remarks>
+    /// Two boxes labelled STAGED and NOT STAGED with nothing in them say less than a
+    /// sentence and take four times the height. Conflicts count as not-clean even though
+    /// they sit in neither list, because "clean" over a merge in progress would be a lie.
+    /// </remarks>
+    public bool IsWorkingTreeClean =>
+        RepositoryPath is not null
+        && Staged.Count == 0 && Unstaged.Count == 0 && Conflicted.Count == 0;
 
     private string _changeSummary = string.Empty;
 
@@ -2912,6 +2987,18 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             var staged = await StageExportedTreesAsync().ConfigureAwait(true);
             _logger.Info(LogCategory.Git,
                 $"staged {staged} export path(s) before committing");
+        }
+
+        // The last cheap moment (GP-K §9h). A host rejects a large binary at the PUSH, by
+        // which time the object is in history and removing it is a rewrite — so the
+        // question is asked here, over what is actually staged after the gate's own
+        // staging, not over the lists the button was pressed against.
+        if (!await ConfirmLargeFilesAsync().ConfigureAwait(true))
+        {
+            _logger.Info(LogCategory.Git, "commit cancelled at the large-file preflight");
+            Notifications.Warning("Nothing was committed.",
+                "A large file without an LFS rule was declined.");
+            return;
         }
 
         using var busy = Busy.Begin(WorkKind.GitWrite, "Committing…");
@@ -4006,6 +4093,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(ConflictHeadline));
 
         _treeIsDirty = Staged.Count > 0 || Unstaged.Count > 0 || Conflicted.Count > 0;
+        OnPropertyChanged(nameof(IsWorkingTreeClean));
 
         // Named from the index the last tree refresh left behind, which is current except on
         // the first refresh after a repository opens. The pass after RefreshTreeAsync catches
@@ -4318,6 +4406,76 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
 
         await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// True when the commit may proceed: nothing large and unprotected is staged, or the
+    /// user saw the list and said so.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A fresh <c>git status</c> rather than the panel's lists, because the gate stages
+    /// export trees between the button and here — the lists describe the panel as it was,
+    /// and the commit records the index as it is. One extra process spawn on an operation
+    /// that already runs several.
+    /// </para>
+    /// <para>
+    /// The prompt is a question, not a refusal: LFS may be genuinely unavailable, the file
+    /// may be a one-off, and a hard block would send somebody to the command line where no
+    /// preflight exists at all. Sizes are shown per file, because "large" is an argument
+    /// and a number is a fact.
+    /// </para>
+    /// </remarks>
+    private async Task<bool> ConfirmLargeFilesAsync()
+    {
+        if (_git is null || RepositoryPath is not { } root)
+        {
+            return true;
+        }
+
+        var status = await _git.StatusAsync(CancellationToken.None).ConfigureAwait(true);
+
+        var sized = new List<(string Path, long Bytes)>();
+        foreach (var change in status.Changes.Where(c => c.IsStaged))
+        {
+            // A staged deletion has no file to weigh, and a file deleted between the
+            // status and here weighs nothing either way.
+            var info = new FileInfo(Path.Combine(
+                root, change.Path.Replace('/', Path.DirectorySeparatorChar)));
+            if (info.Exists)
+            {
+                sized.Add((change.Path, info.Length));
+            }
+        }
+
+        var attributesPath = Path.Combine(root, ".gitattributes");
+        var offenders = LargeFilePreflight.Unprotected(
+            sized,
+            File.Exists(attributesPath) ? File.ReadAllText(attributesPath) : string.Empty);
+
+        if (offenders.Count == 0)
+        {
+            return true;
+        }
+
+        var bySize = sized.ToDictionary(f => f.Path, f => f.Bytes, StringComparer.OrdinalIgnoreCase);
+        var named = string.Join("\n", offenders.Select(p =>
+            $"{p} ({bySize[p] / (1024.0 * 1024.0):0.#} MB)"));
+
+        _logger.Warn(LogCategory.Git,
+            $"large-file preflight: {offenders.Count} staged file(s) over " +
+            $"{LargeFilePreflight.DefaultThreshold / (1024 * 1024)} MB with no LFS rule");
+
+        using var asking = AskingSomething();
+        return Prompts.ConfirmDestructive(new DestructivePrompt(
+            "Commit a large file without LFS?",
+            $"{named}\n\n" +
+            "No LFS rule in .gitattributes matches " +
+            (offenders.Count == 1 ? "this file" : "these files") + ". " +
+            "Once committed it is in the repository's history for good — many hosts refuse " +
+            "large pushes, and taking a file back out of history means rewriting it.\n\n" +
+            "Adding an LFS rule for it first is usually the better answer.",
+            Confirm: "Commit anyway"));
     }
 
     /// <summary>

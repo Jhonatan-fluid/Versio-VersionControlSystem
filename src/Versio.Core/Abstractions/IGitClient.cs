@@ -409,6 +409,23 @@ public interface IGitClient
     /// </param>
     Task<IReadOnlyList<CommitEntry>> RecentCommitsAsync(int count, int skip, CancellationToken ct);
 
+    /// <summary>Newest commits in one revision range — <c>@{u}..HEAD</c> and its mirror.</summary>
+    /// <remarks>
+    /// The ranges come from <see cref="GitRevisionRange"/>; an unresolvable one — the
+    /// upstream deleted on the remote since the status was read — answers empty rather than
+    /// throwing, because the preview it feeds is a glance, not a transaction.
+    /// </remarks>
+    Task<IReadOnlyList<CommitEntry>> CommitsInRangeAsync(
+        string range, int count, CancellationToken ct);
+
+    /// <summary>Every file one revision range touches, with what happened to each.</summary>
+    /// <remarks>
+    /// For the incoming preview this is the safety-relevant half: files arriving under an
+    /// export tree will be imported into a <c>.project</c>, and which objects are about to
+    /// move is worth knowing <i>before</i> the pull rather than after.
+    /// </remarks>
+    Task<IReadOnlyList<CommitFile>> RangeFilesAsync(string range, CancellationToken ct);
+
     /// <summary>
     /// The commits on this branch that no remote has, newest first.
     /// </summary>

@@ -1,13 +1,13 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,401 across seven
+**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,437 across seven
 projects, 0 skipped — re-derived by running each, not carried forward
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,346 | under a second | nothing |
-| `Versio.Integration.Tests` | 143 | ~10 s | real git |
-| `Versio.App.Tests` | 509 | ~50 s | nothing |
+| `Versio.Core.Tests` | 1,361 | under a second | nothing |
+| `Versio.Integration.Tests` | 146 | ~10 s | real git |
+| `Versio.App.Tests` | 527 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 14 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 254 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 82 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
@@ -336,7 +336,6 @@ statement from "not worth doing".
 | | Why it waits | What would bring it back |
 |---|---|---|
 | **Word-level diff** (§5) | The colours exist and are contrast-checked; `DiffView` tints whole rows. A readability gain on something already correct. | Somebody reading generated XML or ST diffs daily and saying so. It is the strongest candidate of the four. |
-| **Ahead/behind previews** (GP-K, §9d) | The badge already says *how many*; this says *which*. `RecentCommitsAsync` already takes a count and a skip, so it is the smallest thing left in the git plan. | An hour, whenever the git panel is next open on the bench. |
 | **Retry when the IDE closes** (§3) | Every path already recovers — the next save, and reopening the repository. This closes the gap in between. Convenience, not correctness. | A user noticing the wait, or the vendor lock file turning out to be cheap to watch. |
 | **Code signing** (open decision #2) | Nothing external is distributed yet. | **Start this before it is needed, not when.** It is procurement lead time rather than engineering time, and it is the only item on this page that gets worse purely by waiting. |
 
@@ -426,8 +425,14 @@ unless something changes.
 > per-file staging, the one commit button, conflicts and the way out of a divergence, branches
 > and their deletion, and — both on 2026-08-14 — **PLC-aware naming**, which is the item that
 > document itself ranks highest and the one no generic git client can have, and the
-> **merge-request button** across five forges. **What is left** is GP-K/GP-L: the ahead/behind
-> previews and the rest of the small UX list.
+> **merge-request button** across five forges. ~~**What is left** is GP-K/GP-L: the ahead/behind
+> previews and the rest of the small UX list~~ — **built 2026-08-17, which closes the plan at
+> twelve of twelve**: the ↑/↓ badges are buttons opening commit previews (the incoming one
+> naming the objects a pull would touch, through the same index the summary uses), a large
+> staged file with no LFS rule is asked about before the commit rather than at the push that
+> rejects it, a clean tree is one sentence instead of two empty boxes, the branch card names
+> where push goes, the subject counter colours itself at 50 and 72, and Ctrl+Shift+P pushes.
+> See PHASE2.md item 2 — including the two §10 items that turned out to be already built.
 >
 > *This paragraph said "nothing in it is built" for a day and a half after nine phases had
 > shipped, because it was written once and the header above it was re-derived without it. The

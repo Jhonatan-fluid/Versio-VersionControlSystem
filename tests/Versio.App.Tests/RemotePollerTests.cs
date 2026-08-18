@@ -126,6 +126,8 @@ public sealed class RemotePollerTests
         public Task<IReadOnlyDictionary<string, string>> DetectRenamesAsync(CancellationToken ct) => throw new NotSupportedException();
         public Task<string> HeadCommitAsync(CancellationToken ct) => throw new NotSupportedException();
         public Task<IReadOnlyList<CommitEntry>> RecentCommitsAsync(int c, int s, CancellationToken ct) => throw new NotSupportedException();
+        public Task<IReadOnlyList<CommitEntry>> CommitsInRangeAsync(string r, int c, CancellationToken ct) => throw new NotSupportedException();
+        public Task<IReadOnlyList<CommitFile>> RangeFilesAsync(string r, CancellationToken ct) => throw new NotSupportedException();
         public Task<IReadOnlySet<string>> UnpushedCommitIdsAsync(CancellationToken ct) => throw new NotSupportedException();
         public Task<string> CommitPatchAsync(string c, CancellationToken ct, int l = 3) => throw new NotSupportedException();
         public Task<IReadOnlyList<CommitFile>> CommitFilesAsync(string c, CancellationToken ct) => throw new NotSupportedException();
