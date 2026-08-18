@@ -281,6 +281,8 @@ public static class ProjectTreeBuilder
             }
         }
 
+        placed = GroupPoolObjects(placed);
+
         var tree = Assemble(placed, name: RootName(manifest, exportPath), path: root);
 
         return opts.ChangedOnly ? PruneUnchanged(tree) ?? EmptyRoot(tree) : tree;
@@ -437,6 +439,53 @@ public static class ProjectTreeBuilder
             // Taken from the first record because every layer of one object has the same
             // owner — a GVL's .st and .xml cannot belong to different function blocks.
             first.Parent);
+    }
+
+    /// <summary>The group project-level objects sit under, when there are any.</summary>
+    /// <remarks>
+    /// "POUs" is the IEC standard's own word — Program Organization Units — and it is also
+    /// the name of the pane CODESYS shows these objects in, which is what makes the label
+    /// legible to the person this exists for. Kept in the neutral builder rather than behind
+    /// the vendor seam on that IEC ground; a vendor with no project-level pool simply never
+    /// exports a root-level object beside foldered ones, and the group never appears.
+    /// </remarks>
+    public const string PoolGroupName = "POUs";
+
+    /// <summary>
+    /// Put project-level objects under an explicit <see cref="PoolGroupName"/> node.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// An object at the mirror's root is a <b>pool</b> object — the project-level Library
+    /// Manager, a GlobalTextList — and CODESYS itself never shows those beside the device
+    /// tree: they live in a pane of their own, named POUs. Rendered flat at the root, the
+    /// pool's Library Manager read as a duplicate of the application's; the product owner
+    /// read it exactly that way, twice, before the CODESYS comparison settled it. The group
+    /// is the same statement CODESYS makes, made where Versio's one tree can make it.
+    /// </para>
+    /// <para>
+    /// <b>Only when foldered objects exist beside them.</b> A manifest from before schema 4
+    /// is flat — every object at the root — and grouping those would file the entire
+    /// project under POUs. Mixed depth is what says the flat ones are genuinely pool-level
+    /// rather than merely unplaced.
+    /// </para>
+    /// <para>
+    /// The node's path is the root's <c>POUs</c>, which a real export directory of that
+    /// name would collide with — accepted and stated: the exporter writes objects into the
+    /// CODESYS folder structure, and a CODESYS folder named POUs at the project root would
+    /// be an object folder whose contents belong in exactly this group anyway.
+    /// </para>
+    /// </remarks>
+    private static List<Leaf> GroupPoolObjects(List<Leaf> placed)
+    {
+        if (!placed.Any(l => l.Folders.Length > 0) || !placed.Any(l => l.Folders.Length == 0))
+        {
+            return placed;
+        }
+
+        return placed
+            .Select(l => l.Folders.Length == 0 ? l with { Folders = [PoolGroupName] } : l)
+            .ToList();
     }
 
     /// <summary>Hang each catalog's references under the manager that owns them.</summary>
