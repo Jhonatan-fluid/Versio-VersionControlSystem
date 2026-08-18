@@ -208,6 +208,71 @@
                     </StackPanel>
                 </Border>
 
+                <!-- STASHES, ONLY WHILE THERE ARE ANY.
+
+                     The design the withdrawn one owed. The first version was six
+                     permanent controls in the panel's narrowest column for
+                     something reached a few times a month; this is the inversion —
+                     ZERO permanent controls, a section that exists exactly while
+                     `git stash list` has rows, the same rule the conflicts section
+                     follows one border up. No "save" button: the auto-stash takes
+                     stashes where Versio's flows need one, and the deliberate case
+                     belongs to a terminal. See StashRow for the rest. -->
+                <Border DockPanel.Dock="Top"
+                        Background="{DynamicResource Brush.Surface.Sunken}"
+                        CornerRadius="{DynamicResource Radius.Control}"
+                        Padding="10,8" Margin="0,0,0,10"
+                        Visibility="{Binding HasStashes,
+                            Converter={StaticResource BoolToVisibility}}">
+                    <StackPanel>
+                        <TextBlock Text="STASHES"
+                                   Style="{StaticResource SectionLabel}" />
+
+                        <ItemsControl ItemsSource="{Binding Stashes}" Margin="0,6,0,0">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Title}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding Title}"
+                                                       FontFamily="{DynamicResource Font.UI}"
+                                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                                       Foreground="{DynamicResource Brush.Text.Primary}" />
+                                            <TextBlock Text="{Binding Detail}"
+                                                       FontFamily="{DynamicResource Font.Mono}"
+                                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                                       Foreground="{DynamicResource Brush.Text.Disabled}" />
+                                        </StackPanel>
+
+                                        <Button Grid.Column="1" Content="Apply" Padding="8,2"
+                                                Margin="8,0,0,0"
+                                                Height="{DynamicResource Size.Control.Compact}"
+                                                Style="{StaticResource GhostButton}"
+                                                ToolTipService.ShowOnDisabled="True"
+                                                ToolTip="Put these changes back into the working tree. The stash stays until you drop it."
+                                                Command="{Binding ApplyCommand}" />
+                                        <Button Grid.Column="2" Content="Drop" Padding="8,2"
+                                                Margin="6,0,0,0"
+                                                Height="{DynamicResource Size.Control.Compact}"
+                                                Style="{StaticResource GhostButton}"
+                                                Foreground="{DynamicResource Brush.Status.Deleted}"
+                                                ToolTipService.ShowOnDisabled="True"
+                                                ToolTip="Delete this stash, after a confirmation naming it"
+                                                Command="{Binding DropCommand}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
                 <!-- THE DIVERGED BRANCH'S ONLY EXIT.
 
                      Until this existed the panel's own badge said "diverged, pull

@@ -987,11 +987,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             Staged.Clear();
             Unstaged.Clear();
             Branches.Clear();
+            Stashes.Clear();
 
             SelectedStaged = null;
             SelectedUnstaged = null;
             SelectedBranch = null;
         });
+        OnPropertyChanged(nameof(HasStashes));
 
         BranchName = "—";
         Auth.Reset();
@@ -5013,6 +5015,135 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
             SelectedBranch = Branches.FirstOrDefault(b => b.IsCurrent);
         });
+
+        // Rides the branch cadence rather than the status refresh: a stash moves only on a
+        // git write, and a `git stash list` per working-tree save would be a spawn to learn
+        // nothing — the same argument as the branch list one paragraph up.
+        await LoadStashesAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>The stashes this repository holds. Empty is the ordinary state.</summary>
+    /// <remarks>
+    /// See <see cref="StashRow"/> for the design and its history — the section this fills
+    /// exists only while there is something in it, which is the whole correction to the
+    /// withdrawn six-permanent-controls version.
+    /// </remarks>
+    public System.Collections.ObjectModel.ObservableCollection<StashRow> Stashes { get; } = [];
+
+    public bool HasStashes => Stashes.Count > 0;
+
+    private async Task LoadStashesAsync()
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        var entries = await _git.StashListAsync(CancellationToken.None).ConfigureAwait(true);
+
+        Stashes.Clear();
+        foreach (var entry in entries)
+        {
+            Stashes.Add(new StashRow(entry, ApplyStashAsync, DropStashAsync,
+                                     () => Ready, ReportError));
+        }
+
+        OnPropertyChanged(nameof(HasStashes));
+    }
+
+    /// <summary>Apply one stash, keeping it.</summary>
+    /// <remarks>
+    /// Apply by SHA, which names the same stash however the list has shifted, and never
+    /// <c>pop</c>: pop deletes on success and leaves a half-applied tree on conflict, so
+    /// apply-then-drop is two decisions, each reversible until the second is taken.
+    /// </remarks>
+    private async Task ApplyStashAsync(StashEntry entry)
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        _logger.Click("Git.StashApply");
+        using var busy = Busy.Begin(WorkKind.GitWrite, "Applying the stash…");
+
+        var result = await _git.StashApplyAsync(entry.CommitId, drop: false, busy.Token)
+            .ConfigureAwait(true);
+
+        if (!result.Success)
+        {
+            // Usually a conflict with the working tree, and git's own words say which file.
+            Notifications.Failure("Could not apply the stash.",
+                                  result.FailureReason ?? string.Empty);
+        }
+        else
+        {
+            Notifications.Success("Stash applied. It stays in the list until you drop it.");
+        }
+
+        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+    }
+
+    /// <summary>Drop one stash, after a confirmation naming it.</summary>
+    /// <remarks>
+    /// The ref is re-resolved by SHA at the moment of the drop — <see cref="StashEntry.Ref"/>
+    /// is positional and renumbers under deletions, so a ref held since the last refresh can
+    /// name a different stash than the row the user pressed. The same rule the auto-stash's
+    /// own drop follows, for the same measured reason.
+    /// </remarks>
+    private async Task DropStashAsync(StashEntry entry)
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        using var asking = AskingSomething();
+        var confirmed = Prompts.ConfirmDestructive(new DestructivePrompt(
+            "Drop this stash?",
+            $"{entry.Message}\n\n" +
+            "The stashed changes are deleted. If they are applied to the working tree " +
+            "already, nothing else is lost; if not, this is the only copy.",
+            Confirm: "Drop"));
+
+        if (!confirmed)
+        {
+            _logger.Info(LogCategory.Git, "stash drop cancelled");
+            return;
+        }
+
+        _logger.Click("Git.StashDrop");
+        using var busy = Busy.Begin(WorkKind.GitWrite, "Dropping the stash…");
+
+        var fresh = await _git.StashListAsync(busy.Token).ConfigureAwait(true);
+        var current = fresh.FirstOrDefault(s =>
+            string.Equals(s.CommitId, entry.CommitId, StringComparison.OrdinalIgnoreCase));
+
+        if (current is null)
+        {
+            // Dropped from a terminal since the list was drawn. The refresh below removes
+            // the row; deleting whatever now sits at its old position would be the
+            // positional-ref trap this method exists to avoid.
+            Notifications.Warning("That stash is already gone.",
+                                  "The list was refreshed.");
+        }
+        else
+        {
+            var result = await _git.StashDropAsync(current.Ref, busy.Token)
+                .ConfigureAwait(true);
+
+            if (!result.Success)
+            {
+                Notifications.Failure("Could not drop the stash.",
+                                      result.FailureReason ?? string.Empty);
+            }
+            else
+            {
+                Notifications.Success("Stash dropped.");
+            }
+        }
+
+        await LoadStashesAsync().ConfigureAwait(true);
     }
 
     /// <summary>
