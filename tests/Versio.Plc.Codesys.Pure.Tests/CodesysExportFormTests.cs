@@ -1,4 +1,5 @@
 using Versio.Plc.Codesys;
+using Versio.Core.Projects;
 using Versio.Core.Serialization;
 using Xunit;
 
@@ -61,10 +62,46 @@ public class ExportFormRulesTests
     }
 
     [Fact]
-    public void A_property_is_exported_recursively_because_it_owns_its_accessors()
+    public void A_property_writes_its_payload_and_its_readable_text()
     {
+        // BOTH HALVES, and which one imports is the whole point. The owner asked for
+        // properties as text — "properties are still getting rendered as xml only" — and a
+        // PROPERTY really does carry a textual declaration (29–64 characters, pragma
+        // included) with its accessor holding a real implementation (17–40).
+        //
+        // Exporting them as plain StDeclaration + StImplementation was tried on 2026-08-18.
+        // The export was perfect and the round trip came back with all seven accessor bodies
+        // EMPTY — silent destruction of every property in the project. So the text is written
+        // and never applied back, and the recursive payload stays the importable half exactly
+        // as it always was. See the Finding in STATUS.md.
+        Assert.Equal(ExportForm.PropertyBoth,
+            ExportFormRules.Decide(CodesysObjectType.Property,
+                                   hasTextualImplementation: false, hasTextualDeclaration: true));
+
+        Assert.Equal(ExportForm.PropertyText,
+            ExportFormRules.Decide(CodesysObjectType.PropertyMethod,
+                                   hasTextualImplementation: true, hasTextualDeclaration: true));
+
+        // The text half is export-only; the payload half is not. If these two ever answered
+        // the same way, either a property would stop importing or its text would start.
+        Assert.True(ExportCoverage.IsExportOnly(ExportCoverage.PropertyTextForm));
+        Assert.False(ExportCoverage.IsExportOnly("NATIVE_R"));
+    }
+
+    [Fact]
+    public void A_graphical_property_is_the_payload_alone()
+    {
+        // The safety valve. A property drawn in CFC has no header to write, so it degrades to
+        // exactly what it was before the readable half existed; an accessor with no textual
+        // body is already inside that payload, so it is skipped rather than written twice —
+        // the double representation G7 and G12 were both about.
         Assert.Equal(ExportForm.NativeRecursive,
-            ExportFormRules.Decide(CodesysObjectType.Property, false, false));
+            ExportFormRules.Decide(CodesysObjectType.Property,
+                                   hasTextualImplementation: false, hasTextualDeclaration: false));
+
+        Assert.Equal(ExportForm.Skip,
+            ExportFormRules.Decide(CodesysObjectType.PropertyMethod,
+                                   hasTextualImplementation: false, hasTextualDeclaration: true));
     }
 
     [Theory]

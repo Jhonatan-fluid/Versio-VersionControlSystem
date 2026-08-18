@@ -987,17 +987,21 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             Staged.Clear();
             Unstaged.Clear();
             Branches.Clear();
+            Stashes.Clear();
 
             SelectedStaged = null;
             SelectedUnstaged = null;
             SelectedBranch = null;
         });
+        OnPropertyChanged(nameof(HasStashes));
 
         BranchName = "—";
         Auth.Reset();
 
         // Both are about a repository that is no longer open.
         Remote.Reset();
+        RemoteDisplay = string.Empty;
+        OnPropertyChanged(nameof(IsWorkingTreeClean));
 
         // These notifications are about a repository that is no longer open. Keeping them
         // would attach a failed push to whatever is opened next.
@@ -1014,6 +1018,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         _shownCommit = null;
         _selectedDiffStaged = false;
         ShowFullFile = false;
+        DiffLayers = [];
+        ClearRendered();
 
         // Handed back if this repository has one waiting. Empty otherwise, which is the point:
         // a message typed for one project must not be sitting in another project's box next to
@@ -1514,6 +1520,27 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>Old file on the left, new on the right, instead of one interleaved column.</summary>
+    /// <remarks>
+    /// Render-only, unlike <see cref="ShowFullFile"/>: the split is a fold of the diff the
+    /// pane already holds, so flipping it re-reads nothing — the view rebuilds its rows from
+    /// the same text. Not persisted, deliberately, for now: which mode reads better depends
+    /// on the file in front of you, not on the person.
+    /// </remarks>
+    public bool DiffSideBySide
+    {
+        get => _diffSideBySide;
+        set
+        {
+            if (SetProperty(ref _diffSideBySide, value))
+            {
+                _logger.Click($"Diff.SideBySide={value}");
+            }
+        }
+    }
+
+    private bool _diffSideBySide;
+
     public bool IsBusy
     {
         get => _isBusy;
@@ -1851,6 +1878,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // When it is wanted - offering to clone a vanished repository back - there is no
         // .git left to ask. Empty for a repository with no remote, which is ordinary.
         var remoteUrl = await client.RemoteUrlAsync("origin", busy.Token).ConfigureAwait(true);
+        RemoteDisplay = DescribeRemote(remoteUrl);
 
         await RememberAsync(path, remoteUrl).ConfigureAwait(true);
 
@@ -2085,8 +2113,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             hasConflicts: HasConflicts);
 
     /// <summary>What the commit button will do, live or not.</summary>
+    /// <remarks>
+    /// The shortcut rides on the live explanation only (GP-L §10.6) — a key nobody can find
+    /// is a key nobody has, and the tooltip is where the button already explains itself. It
+    /// stays OFF the blocked reason, because "Nothing to commit. (Ctrl+Enter)" advertises a
+    /// key at the one moment it does nothing — the chrome test that pins the blocked wording
+    /// caught exactly that.
+    /// </remarks>
     public string CommitExplanation =>
-        CommitBlockedReason.Length > 0 ? CommitBlockedReason : Commit.Explanation;
+        CommitBlockedReason.Length > 0
+            ? CommitBlockedReason
+            : $"{Commit.Explanation} (Ctrl+Enter)";
 
     /// <summary>
     /// True while git reports an unmerged path.
@@ -2370,6 +2407,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             if (SetProperty(ref _commitMessage, value))
             {
                 OnPropertyChanged(nameof(CommitSubjectLength));
+                OnPropertyChanged(nameof(CommitSubjectBrushKey));
                 RaiseCommitState();
                 CommitCommand.RaiseCanExecuteChanged();
 
@@ -2383,6 +2421,68 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// <summary>Length of the subject line, for the 50/72 guide.</summary>
     public int CommitSubjectLength =>
         (_commitMessage.Split('\n').FirstOrDefault() ?? string.Empty).TrimEnd('\r').Length;
+
+    /// <summary>
+    /// The counter's colour, which is what makes the bare number decodable (GP-L §10.5).
+    /// </summary>
+    /// <remarks>
+    /// The tooltip already explains the 50/72 convention to whoever hovers; the colour is
+    /// for everyone who does not. Quiet within the convention, the modified amber over it,
+    /// and the deleted red past git's own hard wrap — the same escalation the rest of the
+    /// panel uses, so it reads without being learned.
+    /// </remarks>
+    public string CommitSubjectBrushKey =>
+        CommitSubjectLength <= 50 ? "Brush.Text.Disabled"
+        : CommitSubjectLength <= 72 ? "Brush.Status.Modified"
+        : "Brush.Status.Deleted";
+
+    /// <summary>
+    /// Where a push goes — <c>origin · github.com/org/repo</c> — in the branch card
+    /// (GP-L §10.3).
+    /// </summary>
+    /// <remarks>
+    /// The word "push" is meaningless without it, and on a machine with several remotes it
+    /// is a real question. Empty when the repository has no origin, and the card hides the
+    /// line: "no remote" is the standing sentence's job, said once.
+    /// </remarks>
+    public string RemoteDisplay
+    {
+        get => _remoteDisplay;
+        private set => SetProperty(ref _remoteDisplay, value);
+    }
+
+    private string _remoteDisplay = string.Empty;
+
+    private static string DescribeRemote(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return string.Empty;
+        }
+
+        // The parsed form rather than the raw URL, because the raw one answers a different
+        // question: ssh://git@host:2222/org/repo.git says how to reach it, host/org/repo
+        // says where it is — and the credential in an https URL must never reach a label.
+        var parsed = RemoteUrl.Parse(url);
+        var where =
+            parsed is { Owner.Length: > 0, Repository.Length: > 0 }
+                ? $"{parsed.Authority}/{parsed.Owner}/{parsed.Repository}"
+                : parsed.Authority.Length > 0
+                    ? parsed.Authority
+                    : url;
+
+        return $"origin · {where}";
+    }
+
+    /// <summary>One line instead of two empty boxes (GP-L §10.2).</summary>
+    /// <remarks>
+    /// Two boxes labelled STAGED and NOT STAGED with nothing in them say less than a
+    /// sentence and take four times the height. Conflicts count as not-clean even though
+    /// they sit in neither list, because "clean" over a merge in progress would be a lie.
+    /// </remarks>
+    public bool IsWorkingTreeClean =>
+        RepositoryPath is not null
+        && Staged.Count == 0 && Unstaged.Count == 0 && Conflicted.Count == 0;
 
     private string _changeSummary = string.Empty;
 
@@ -2911,6 +3011,18 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             var staged = await StageExportedTreesAsync().ConfigureAwait(true);
             _logger.Info(LogCategory.Git,
                 $"staged {staged} export path(s) before committing");
+        }
+
+        // The last cheap moment (GP-K §9h). A host rejects a large binary at the PUSH, by
+        // which time the object is in history and removing it is a rewrite — so the
+        // question is asked here, over what is actually staged after the gate's own
+        // staging, not over the lists the button was pressed against.
+        if (!await ConfirmLargeFilesAsync().ConfigureAwait(true))
+        {
+            _logger.Info(LogCategory.Git, "commit cancelled at the large-file preflight");
+            Notifications.Warning("Nothing was committed.",
+                "A large file without an LFS rule was declined.");
+            return;
         }
 
         using var busy = Busy.Begin(WorkKind.GitWrite, "Committing…");
@@ -3872,6 +3984,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         SelectedDiffPath = caption;
         _shownCommit = (commitId, shortId, caption, null);
         _selectedDiffStaged = false;
+        DiffLayers = [];
+        ClearRendered();
 
         // A commit is history: it is already staged, already committed, and there is nothing
         // to move in or out of the index. Offering to stage a hunk of it would be offering
@@ -3907,6 +4021,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         _shownCommit = (commitId, shortId, SelectedDiffPath, path);
         _selectedDiffStaged = false;
         CanStageHunks = false;
+        DiffLayers = [];
+        ClearRendered();
 
         var patch = await _git
             .CommitFileDiffAsync(commitId, path, CancellationToken.None, DiffContext)
@@ -4003,6 +4119,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(ConflictHeadline));
 
         _treeIsDirty = Staged.Count > 0 || Unstaged.Count > 0 || Conflicted.Count > 0;
+        OnPropertyChanged(nameof(IsWorkingTreeClean));
 
         // Named from the index the last tree refresh left behind, which is current except on
         // the first refresh after a repository opens. The pass after RefreshTreeAsync catches
@@ -4174,25 +4291,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// Throw away the working-tree changes to the selected unstaged file.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// <b>The one button in this application that destroys work nothing else has a copy of.</b>
-    /// Not the index, not a stash, not a commit — the content is simply gone. So it is per-file
-    /// rather than per-list, it names the file in the confirmation, and it is unreachable
-    /// without a selection.
-    /// </para>
-    /// <para>
-    /// An <b>untracked</b> file is refused rather than attempted. <c>git restore --worktree</c>
-    /// has nothing to restore it from and fails with "pathspec did not match any file(s) known
-    /// to git", which reads like a bug in Versio rather than like the answer to the question
-    /// that was asked. Deleting it instead would be a different operation, more destructive
-    /// than the one on the button, and not one to perform because the wording happened to fit.
-    /// </para>
-    /// <para>
-    /// Discarding inside an export tree also <b>releases that binding's direction lock</b>
-    /// (plan §6.5). The lock exists because one side holds work the other has not seen; once
-    /// that work is thrown away there is nothing left to guard, and a lock left held would
-    /// block the next export for a reason nobody could find from the UI.
-    /// </para>
+    /// The git panel's entrance into <see cref="DiscardRowsAsync"/>, which carries the
+    /// reasoning — per-file, named in the confirmation, untracked refused, direction lock
+    /// released. Unreachable without a selection, which is part of that design.
     /// </remarks>
     private async Task DiscardAsync()
     {
@@ -4201,21 +4302,93 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
-        if (row.Kind == ChangeKind.Untracked)
+        await DiscardRowsAsync([row]).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Throw away the working-tree changes to the tree row's own files, after the same
+    /// confirmation the git panel's button asks for.
+    /// </summary>
+    /// <remarks>
+    /// The row's files are resolved against the unstaged list rather than trusted as
+    /// changed: an object's two layers can differ one-and-not-the-other, and handing git a
+    /// file with nothing to restore turns "discard the .st edit" into an error about the
+    /// .xml beside it.
+    /// </remarks>
+    public async Task DiscardNodeAsync(TreeRow row)
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        var files = row.Node.Files.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var rows = Unstaged.Where(r => files.Contains(r.Path)).ToList();
+
+        if (rows.Count == 0)
+        {
+            StatusSummary = $"No working-tree changes to discard for {row.Name}.";
+            return;
+        }
+
+        await DiscardRowsAsync(rows).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// The one flow in this application that destroys work nothing else has a copy of.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Not the index, not a stash, not a commit — the content is simply gone. So it acts on
+    /// named files rather than a list's worth, it names every file in the confirmation, and
+    /// both of its entrances require a deliberate selection.
+    /// </para>
+    /// <para>
+    /// An <b>untracked</b> file is refused rather than attempted. <c>git restore --worktree</c>
+    /// has nothing to restore it from and fails with "pathspec did not match any file(s) known
+    /// to git", which reads like a bug in Versio rather than like the answer to the question
+    /// that was asked. Deleting it instead would be a different operation, more destructive
+    /// than the one on the button, and not one to perform because the wording happened to fit.
+    /// A mixed selection discards the tracked files and says the untracked one was left.
+    /// </para>
+    /// <para>
+    /// Discarding inside an export tree also <b>releases that binding's direction lock</b>
+    /// (plan §6.5). The lock exists because one side holds work the other has not seen; once
+    /// that work is thrown away there is nothing left to guard, and a lock left held would
+    /// block the next export for a reason nobody could find from the UI. Only the bindings
+    /// that owned a discarded file — a discarded README has nothing to do with the direction
+    /// lock, and releasing every lock because one unrelated file was restored would be the
+    /// more damaging kind of over-reach.
+    /// </para>
+    /// </remarks>
+    private async Task DiscardRowsAsync(IReadOnlyList<ChangeRow> rows)
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        var tracked = rows.Where(r => r.Kind != ChangeKind.Untracked).Select(r => r.Path).ToList();
+        var untracked = rows.Where(r => r.Kind == ChangeKind.Untracked).Select(r => r.Path).ToList();
+
+        if (tracked.Count == 0)
         {
             // Said in the status bar rather than done. The file is not in git at all, so
             // there is no version to go back to.
+            var refused = untracked[0];
             _logger.Warn(LogCategory.Git,
-                $"discard refused for the untracked file {row.Path}: git has no copy to restore");
-            StatusSummary = $"{row.Path} is not tracked by git yet — there is nothing to restore. " +
+                $"discard refused for the untracked file {refused}: git has no copy to restore");
+            StatusSummary = $"{refused} is not tracked by git yet — there is nothing to restore. " +
                             "Delete it in Explorer if that is what you meant.";
             return;
         }
 
+        var named = string.Join("\n", tracked);
         using var asking = AskingSomething();
         var confirmed = Prompts.ConfirmDestructive(new DestructivePrompt(
-            "Discard changes to this file?",
-            $"{row.Path}\n\n" +
+            tracked.Count == 1 ? "Discard changes to this file?"
+                               : $"Discard changes to these {tracked.Count} files?",
+            $"{named}\n\n" +
             "The changes are thrown away and cannot be recovered — they are not in a commit " +
             "or in the index.\n\n" +
             "Commit them on a scratch branch if you might want them back.",
@@ -4223,14 +4396,16 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         if (!confirmed)
         {
-            _logger.Info(LogCategory.Git, $"discard cancelled for {row.Path}");
+            _logger.Info(LogCategory.Git, $"discard cancelled for {named.Replace('\n', ' ')}");
             return;
         }
 
         _logger.Click("Git.Discard");
-        using var busy = Busy.Begin(WorkKind.GitWrite, $"Discarding {row.Path}…");
+        using var busy = Busy.Begin(WorkKind.GitWrite,
+            tracked.Count == 1 ? $"Discarding {tracked[0]}…"
+                               : $"Discarding {tracked.Count} files…");
 
-        var result = await _git.DiscardAsync([row.Path], busy.Token)
+        var result = await _git.DiscardAsync(tracked, busy.Token)
             .ConfigureAwait(true);
 
         if (!result.Success)
@@ -4241,18 +4416,195 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
-        Notifications.Success($"Discarded the changes to {row.Path}.");
+        Notifications.Success(
+            (tracked.Count == 1 ? $"Discarded the changes to {tracked[0]}."
+                                : $"Discarded the changes to {tracked.Count} files.")
+            + (untracked.Count == 0 ? string.Empty
+                : $" {untracked.Count} untracked file(s) were left — git has no copy to restore."));
 
-        // Only when the file was part of a mirror. A discarded README has nothing to do with
-        // the direction lock, and releasing every lock because one unrelated file was
-        // restored would be the more damaging kind of over-reach.
-        if (Sync.BindingOwning(row.Path) is { } bindingId)
+        foreach (var bindingId in tracked
+                     .Select(Sync.BindingOwning)
+                     .OfType<string>()
+                     .Distinct(StringComparer.Ordinal))
         {
             await Sync.ReleaseAfterDiscardAsync(bindingId, busy.Token)
                 .ConfigureAwait(true);
         }
 
         await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// True when the commit may proceed: nothing large and unprotected is staged, or the
+    /// user saw the list and said so.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A fresh <c>git status</c> rather than the panel's lists, because the gate stages
+    /// export trees between the button and here — the lists describe the panel as it was,
+    /// and the commit records the index as it is. One extra process spawn on an operation
+    /// that already runs several.
+    /// </para>
+    /// <para>
+    /// The prompt is a question, not a refusal: LFS may be genuinely unavailable, the file
+    /// may be a one-off, and a hard block would send somebody to the command line where no
+    /// preflight exists at all. Sizes are shown per file, because "large" is an argument
+    /// and a number is a fact.
+    /// </para>
+    /// </remarks>
+    private async Task<bool> ConfirmLargeFilesAsync()
+    {
+        if (_git is null || RepositoryPath is not { } root)
+        {
+            return true;
+        }
+
+        var status = await _git.StatusAsync(CancellationToken.None).ConfigureAwait(true);
+
+        var sized = new List<(string Path, long Bytes)>();
+        foreach (var change in status.Changes.Where(c => c.IsStaged))
+        {
+            // A staged deletion has no file to weigh, and a file deleted between the
+            // status and here weighs nothing either way.
+            var info = new FileInfo(Path.Combine(
+                root, change.Path.Replace('/', Path.DirectorySeparatorChar)));
+            if (info.Exists)
+            {
+                sized.Add((change.Path, info.Length));
+            }
+        }
+
+        var attributesPath = Path.Combine(root, ".gitattributes");
+        var offenders = LargeFilePreflight.Unprotected(
+            sized,
+            File.Exists(attributesPath) ? File.ReadAllText(attributesPath) : string.Empty);
+
+        if (offenders.Count == 0)
+        {
+            return true;
+        }
+
+        var bySize = sized.ToDictionary(f => f.Path, f => f.Bytes, StringComparer.OrdinalIgnoreCase);
+        var named = string.Join("\n", offenders.Select(p =>
+            $"{p} ({bySize[p] / (1024.0 * 1024.0):0.#} MB)"));
+
+        _logger.Warn(LogCategory.Git,
+            $"large-file preflight: {offenders.Count} staged file(s) over " +
+            $"{LargeFilePreflight.DefaultThreshold / (1024 * 1024)} MB with no LFS rule");
+
+        using var asking = AskingSomething();
+        return Prompts.ConfirmDestructive(new DestructivePrompt(
+            "Commit a large file without LFS?",
+            $"{named}\n\n" +
+            "No LFS rule in .gitattributes matches " +
+            (offenders.Count == 1 ? "this file" : "these files") + ". " +
+            "Once committed it is in the repository's history for good — many hosts refuse " +
+            "large pushes, and taking a file back out of history means rewriting it.\n\n" +
+            "Adding an LFS rule for it first is usually the better answer.",
+            Confirm: "Commit anyway"));
+    }
+
+    /// <summary>
+    /// Stage the tree row's own files, from the context menu.
+    /// </summary>
+    /// <remarks>
+    /// All of the row's files rather than only the changed ones: <c>git add</c> on an
+    /// unchanged path is a no-op, and filtering here would be a second answer to a question
+    /// git already answers. The commit gate still runs at commit time — staging early
+    /// changes when the mirror is recorded, not whether the gate sees it.
+    /// </remarks>
+    public async Task StageNodeAsync(TreeRow row)
+    {
+        if (_git is null || row.Node.Files.Count == 0)
+        {
+            return;
+        }
+
+        _logger.Click("Tree.Stage");
+        using var busy = Busy.Begin(WorkKind.GitWrite, $"Staging {row.Name}…");
+
+        var result = await _git.StageAsync(row.Node.Files, busy.Token).ConfigureAwait(true);
+
+        if (!result.Success)
+        {
+            _logger.Warn(LogCategory.Git, $"stage failed for {row.Name}: {result.FailureReason}");
+            Notifications.Failure("Could not stage.", result.FailureReason ?? string.Empty);
+        }
+
+        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Reveal the tree row's file in Explorer, from the context menu.
+    /// </summary>
+    /// <remarks>
+    /// The same launch shape as <see cref="OpenLogsFolder"/>, for the same reasons: explorer
+    /// by name so <c>/select,</c> works, the argument as one string because splitting it
+    /// makes Explorer open Documents, and failure put in the log and the status bar rather
+    /// than swallowed — a locked-down industrial machine really can refuse this.
+    /// </remarks>
+    public void RevealNode(TreeRow row)
+    {
+        if (RepositoryPath is not { } root)
+        {
+            return;
+        }
+
+        _logger.Click("Tree.Reveal");
+
+        var relative = (row.Node.Files.FirstOrDefault() ?? row.Node.Path)
+            .Replace('/', Path.DirectorySeparatorChar);
+        var absolute = Path.Combine(root, relative);
+
+        try
+        {
+            var argument = File.Exists(absolute)
+                ? "/select," + absolute
+                : Directory.Exists(absolute)
+                    ? absolute
+
+                    // A Deleted row's file is exactly the one that is not there; landing in
+                    // its folder is the honest nearest place.
+                    : Path.GetDirectoryName(absolute) ?? root;
+
+            Process.Start(new ProcessStartInfo("explorer.exe", argument)
+            {
+                UseShellExecute = true,
+            });
+
+            _logger.Info(LogCategory.App, $"revealed {relative} in Explorer");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                      or System.ComponentModel.Win32Exception)
+        {
+            _logger.Error(LogCategory.App, $"could not reveal {absolute}", ex);
+            StatusSummary = $"The file is at {absolute}";
+        }
+    }
+
+    /// <summary>
+    /// Put the tree row's repo-relative path on the clipboard, from the context menu.
+    /// </summary>
+    /// <remarks>
+    /// The mirror path rather than an absolute one, because it is the path that means the
+    /// same thing to every clone of the repository — a commit message, an issue, a chat
+    /// message. Clipboard access can be refused when another process holds it open; that is
+    /// worth a status-bar sentence, not a crash.
+    /// </remarks>
+    public void CopyNodePath(TreeRow row)
+    {
+        _logger.Click("Tree.CopyPath");
+
+        try
+        {
+            System.Windows.Clipboard.SetText(row.Node.Path);
+            StatusSummary = $"Copied {row.Node.Path}";
+        }
+        catch (System.Runtime.InteropServices.ExternalException ex)
+        {
+            _logger.Error(LogCategory.App, "could not reach the clipboard", ex);
+            StatusSummary = $"Could not reach the clipboard — the path is {row.Node.Path}";
+        }
     }
 
     /// <summary>
@@ -4666,6 +5018,135 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
             SelectedBranch = Branches.FirstOrDefault(b => b.IsCurrent);
         });
+
+        // Rides the branch cadence rather than the status refresh: a stash moves only on a
+        // git write, and a `git stash list` per working-tree save would be a spawn to learn
+        // nothing — the same argument as the branch list one paragraph up.
+        await LoadStashesAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>The stashes this repository holds. Empty is the ordinary state.</summary>
+    /// <remarks>
+    /// See <see cref="StashRow"/> for the design and its history — the section this fills
+    /// exists only while there is something in it, which is the whole correction to the
+    /// withdrawn six-permanent-controls version.
+    /// </remarks>
+    public System.Collections.ObjectModel.ObservableCollection<StashRow> Stashes { get; } = [];
+
+    public bool HasStashes => Stashes.Count > 0;
+
+    private async Task LoadStashesAsync()
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        var entries = await _git.StashListAsync(CancellationToken.None).ConfigureAwait(true);
+
+        Stashes.Clear();
+        foreach (var entry in entries)
+        {
+            Stashes.Add(new StashRow(entry, ApplyStashAsync, DropStashAsync,
+                                     () => Ready, ReportError));
+        }
+
+        OnPropertyChanged(nameof(HasStashes));
+    }
+
+    /// <summary>Apply one stash, keeping it.</summary>
+    /// <remarks>
+    /// Apply by SHA, which names the same stash however the list has shifted, and never
+    /// <c>pop</c>: pop deletes on success and leaves a half-applied tree on conflict, so
+    /// apply-then-drop is two decisions, each reversible until the second is taken.
+    /// </remarks>
+    private async Task ApplyStashAsync(StashEntry entry)
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        _logger.Click("Git.StashApply");
+        using var busy = Busy.Begin(WorkKind.GitWrite, "Applying the stash…");
+
+        var result = await _git.StashApplyAsync(entry.CommitId, drop: false, busy.Token)
+            .ConfigureAwait(true);
+
+        if (!result.Success)
+        {
+            // Usually a conflict with the working tree, and git's own words say which file.
+            Notifications.Failure("Could not apply the stash.",
+                                  result.FailureReason ?? string.Empty);
+        }
+        else
+        {
+            Notifications.Success("Stash applied. It stays in the list until you drop it.");
+        }
+
+        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+    }
+
+    /// <summary>Drop one stash, after a confirmation naming it.</summary>
+    /// <remarks>
+    /// The ref is re-resolved by SHA at the moment of the drop — <see cref="StashEntry.Ref"/>
+    /// is positional and renumbers under deletions, so a ref held since the last refresh can
+    /// name a different stash than the row the user pressed. The same rule the auto-stash's
+    /// own drop follows, for the same measured reason.
+    /// </remarks>
+    private async Task DropStashAsync(StashEntry entry)
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        using var asking = AskingSomething();
+        var confirmed = Prompts.ConfirmDestructive(new DestructivePrompt(
+            "Drop this stash?",
+            $"{entry.Message}\n\n" +
+            "The stashed changes are deleted. If they are applied to the working tree " +
+            "already, nothing else is lost; if not, this is the only copy.",
+            Confirm: "Drop"));
+
+        if (!confirmed)
+        {
+            _logger.Info(LogCategory.Git, "stash drop cancelled");
+            return;
+        }
+
+        _logger.Click("Git.StashDrop");
+        using var busy = Busy.Begin(WorkKind.GitWrite, "Dropping the stash…");
+
+        var fresh = await _git.StashListAsync(busy.Token).ConfigureAwait(true);
+        var current = fresh.FirstOrDefault(s =>
+            string.Equals(s.CommitId, entry.CommitId, StringComparison.OrdinalIgnoreCase));
+
+        if (current is null)
+        {
+            // Dropped from a terminal since the list was drawn. The refresh below removes
+            // the row; deleting whatever now sits at its old position would be the
+            // positional-ref trap this method exists to avoid.
+            Notifications.Warning("That stash is already gone.",
+                                  "The list was refreshed.");
+        }
+        else
+        {
+            var result = await _git.StashDropAsync(current.Ref, busy.Token)
+                .ConfigureAwait(true);
+
+            if (!result.Success)
+            {
+                Notifications.Failure("Could not drop the stash.",
+                                      result.FailureReason ?? string.Empty);
+            }
+            else
+            {
+                Notifications.Success("Stash dropped.");
+            }
+        }
+
+        await LoadStashesAsync().ConfigureAwait(true);
     }
 
     /// <summary>
@@ -4716,6 +5197,337 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     {
         get => _selectedDiffPath;
         private set => SetProperty(ref _selectedDiffPath, value);
+    }
+
+    private IReadOnlyList<DiffLayerChoice> _diffLayers = [];
+
+    /// <summary>
+    /// The layers of the object the pane is showing — <c>ST | native</c> — when it has more
+    /// than one. Empty otherwise, and the strip hides itself.
+    /// </summary>
+    /// <remarks>
+    /// Owned by the shown path, not by the tree selection: <see cref="ShowPathAsync"/>
+    /// reconciles it on every diff it opens, keeping the strip when the new path is one of
+    /// the current layers and clearing it for anything else. That one rule covers every
+    /// route into the pane — a changed-files row, a history file, a refresh — without each
+    /// of those callers having to remember the strip exists, which is exactly how the old
+    /// header showed the wrong file's name.
+    /// </remarks>
+    public IReadOnlyList<DiffLayerChoice> DiffLayers
+    {
+        get => _diffLayers;
+        private set
+        {
+            if (SetProperty(ref _diffLayers, value))
+            {
+                OnPropertyChanged(nameof(HasDiffLayers));
+            }
+        }
+    }
+
+    public bool HasDiffLayers => _diffLayers.Count > 1;
+
+    /// <summary>Offer one chip per layer, with <paramref name="shown"/> marked active.</summary>
+    private void OfferDiffLayers(IReadOnlyList<string> files, string shown) =>
+        DiffLayers = files.Count > 1
+            ? files
+                .Select(f => new DiffLayerChoice(
+                    f,
+                    isActive: string.Equals(f, shown, StringComparison.OrdinalIgnoreCase),
+                    show: () => _ = ShowPathAsync(f, staged: null)))
+                .ToList()
+            : [];
+
+    // ------------------------------------------------------ the rendered pane (Rendered | Raw)
+
+    private object? _renderedContent;
+    private bool _showRendered;
+    private string _paneNote = string.Empty;
+
+    /// <summary>
+    /// What the Rendered tab draws for the current selection, or null when there is only
+    /// the raw view.
+    /// </summary>
+    /// <remarks>
+    /// One object, dispatched by type through XAML data templates: a
+    /// <see cref="Versio.Core.Projects.LibraryCatalog"/> renders as the libraries table, a
+    /// <see cref="Versio.Core.Projects.TaskCatalog"/> as the task table,
+    /// <see cref="TaskDetailRender"/> as one task's facts, <see cref="SourceRender"/> as the
+    /// file's own highlighted content, and <see cref="ProjectSummaryRender"/> as the project
+    /// card. The data is parsed on the click, from the same readers the tree already trusts
+    /// — a second interpretation of a catalog would be a second answer to what it says.
+    /// </remarks>
+    public object? RenderedContent
+    {
+        get => _renderedContent;
+        private set
+        {
+            if (SetProperty(ref _renderedContent, value))
+            {
+                OnPropertyChanged(nameof(HasRenderedView));
+                OnPropertyChanged(nameof(ShowRenderedPane));
+            }
+        }
+    }
+
+    public bool HasRenderedView => _renderedContent is not null;
+
+    /// <summary>Which tab is showing. Defaults per selection, not sticky.</summary>
+    /// <remarks>
+    /// A changed file opens on Raw, because the diff is what review is; anything clean opens
+    /// on Rendered, because the diff of a clean file is nothing and the content is the
+    /// answer. A sticky choice was considered and dropped: which view reads better is a fact
+    /// about the file in front of you, not about the person.
+    /// </remarks>
+    public bool ShowRendered
+    {
+        get => _showRendered;
+        set
+        {
+            if (SetProperty(ref _showRendered, value))
+            {
+                OnPropertyChanged(nameof(ShowRenderedPane));
+                OnPropertyChanged(nameof(ShowRawTab));
+            }
+        }
+    }
+
+    /// <summary>The Raw chip's own state — WPF has no inverse TwoWay binding.</summary>
+    public bool ShowRawTab
+    {
+        get => !_showRendered;
+        set => ShowRendered = !value;
+    }
+
+    /// <summary>What the fill actually draws: the rendered host, or the diff under it.</summary>
+    public bool ShowRenderedPane => HasRenderedView && ShowRendered;
+
+    /// <summary>One sentence above the pane when it needs one — "no changes right now".</summary>
+    public string PaneNote
+    {
+        get => _paneNote;
+        private set => SetProperty(ref _paneNote, value);
+    }
+
+    private void ClearRendered()
+    {
+        RenderedContent = null;
+        ShowRendered = false;
+        PaneNote = string.Empty;
+    }
+
+    /// <summary>Build the rendered view for a tree row, or null when only raw makes sense.</summary>
+    private object? BuildRenderedContent(TreeRow row)
+    {
+        if (RepositoryPath is not { } root)
+        {
+            return null;
+        }
+
+        var node = row.Node;
+
+        string? CatalogFile(string suffix) => node.Files.FirstOrDefault(
+            f => f.EndsWith(suffix, StringComparison.OrdinalIgnoreCase));
+
+        string Absolute(string relative) =>
+            Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
+
+        string? ReadOrNull(string relative)
+        {
+            try
+            {
+                return File.ReadAllText(Absolute(relative));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                          or FileNotFoundException or DirectoryNotFoundException)
+            {
+                return null;
+            }
+        }
+
+        switch (node.Kind)
+        {
+            case ProjectNodeKind.Project:
+                return BuildProjectSummary(node);
+
+            // A reference or task row renders its whole catalog: the row's own facts are in
+            // the table, highlighted by being the thing the user just clicked at.
+            case ProjectNodeKind.Library
+                when CatalogFile(LibraryCatalog.FileSuffix) is { } yaml
+                     && ReadOrNull(yaml) is { } text
+                     && LibraryCatalog.Parse(text) is { IsValid: true } catalog:
+                return catalog;
+
+            case ProjectNodeKind.Task
+                when CatalogFile(TaskCatalog.FileSuffix) is { } yaml
+                     && ReadOrNull(yaml) is { } text
+                     && TaskCatalog.Parse(text).Tasks.FirstOrDefault(
+                            t => t.Name == node.Name) is { } task:
+                return new TaskDetailRender { Task = task };
+
+            case ProjectNodeKind.Object or ProjectNodeKind.File:
+                if (CatalogFile(LibraryCatalog.FileSuffix) is { } libraries
+                    && ReadOrNull(libraries) is { } libText
+                    && LibraryCatalog.Parse(libText) is { IsValid: true } libCatalog)
+                {
+                    return libCatalog;
+                }
+
+                if (CatalogFile(TaskCatalog.FileSuffix) is { } tasks
+                    && ReadOrNull(tasks) is { } taskText
+                    && TaskCatalog.Parse(taskText) is { IsValid: true } taskCatalog)
+                {
+                    return taskCatalog;
+                }
+
+                if (row.PrimaryFile is { } primary
+                    && SourceRender.Load(Absolute(primary), primary,
+                           noChanges: node.Status == ChangeKind.Unmodified) is { } source
+
+                    // A NUL says binary — an image or a compiled blob dropped into the
+                    // repository — and a code renderer fed one draws a wall of boxes.
+                    && !source.PseudoDiff.Contains('\0'))
+                {
+                    return source;
+                }
+
+                return null;
+
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>The project card: what a glance at the row should answer.</summary>
+    /// <remarks>
+    /// Everything here is already on this machine — the manifest, the catalogs, the
+    /// coverage, the file itself. The one fact people will look for and not find is which
+    /// CODESYS version last saved the project: the manifest does not record it, and saying
+    /// nothing beats guessing from the installed toolchain, which is a different question.
+    /// </remarks>
+    private ProjectSummaryRender BuildProjectSummary(Versio.Core.Projects.ProjectTreeNode node)
+    {
+        var facts = new List<FactRow>();
+        var manifest = Sync.ManifestFor(node.Path);
+
+        if (RepositoryPath is { } root)
+        {
+            var file = new FileInfo(Path.Combine(
+                root, node.Path.Replace('/', Path.DirectorySeparatorChar)));
+            if (file.Exists)
+            {
+                facts.Add(new FactRow("Project file",
+                    $"{file.Length / (1024.0 * 1024.0):0.##} MB · saved {file.LastWriteTime:g}"));
+            }
+        }
+
+        facts.Add(new FactRow("Vendor", (manifest?.Vendor ?? PlcVendor.Codesys).ToString()));
+        facts.Add(new FactRow("Toolchain",
+            Sync.ToolchainAvailable
+                ? "installed — version under Settings → System information"
+                : "not installed on this machine"));
+        facts.Add(new FactRow("Sync state",
+            node.Detail.Length > 0 ? node.Detail : "tracked"));
+
+        if (manifest is null)
+        {
+            facts.Add(new FactRow("Mirror", "never exported"));
+            return new ProjectSummaryRender { Name = node.Name, Facts = facts };
+        }
+
+        if (Sync.ManifestPathFor(node.Path) is { } manifestPath
+            && File.Exists(manifestPath))
+        {
+            facts.Add(new FactRow("Last export",
+                $"{File.GetLastWriteTime(manifestPath):g}"));
+        }
+
+        facts.Add(new FactRow("Mirror",
+            $"{manifest.Objects.Count} exported file(s) · manifest schema {manifest.Schema}"));
+
+        // One entry per OBJECT, not per file — a GVL is two files and one object, and a
+        // summary that counted it twice would disagree with the panel beside it.
+        var counts = manifest.Objects
+            .Where(o => !string.IsNullOrEmpty(o.Path))
+            .GroupBy(o => string.IsNullOrEmpty(o.Guid) ? o.Path : o.Guid, StringComparer.Ordinal)
+            .GroupBy(g => g.First().Type, StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(g => g.Count())
+            .Select(g => Versio.Core.Projects.ObjectTypeNames.Counted(
+                manifest.Vendor, g.Key, g.Count()));
+        facts.Add(new FactRow("Objects", string.Join(", ", counts)));
+
+        var references = manifest.Objects
+            .Where(o => o.Form == Versio.Core.Projects.ExportCoverage.LibrariesForm)
+            .Select(o => Sync.ExportPathFor(node.Path) is { } export
+                ? LibraryCatalog.Parse(
+                      ReadRepoFileOrNull($"{export.TrimEnd('/')}/{o.Path}") ?? string.Empty)
+                : LibraryCatalog.Empty)
+            .Where(c => c.IsValid)
+            .ToList();
+        if (references.Count > 0)
+        {
+            facts.Add(new FactRow("Libraries",
+                $"{references.Sum(c => c.References.Count)} reference(s) in " +
+                $"{references.Count} manager(s)"));
+        }
+
+        if (manifest.Objects.FirstOrDefault(
+                o => o.Form == Versio.Core.Projects.ExportCoverage.TaskBothForm) is { } taskRecord
+            && Sync.ExportPathFor(node.Path) is { } exportRoot
+            && ReadRepoFileOrNull($"{exportRoot.TrimEnd('/')}/{taskRecord.Path}") is { } taskYaml
+            && TaskCatalog.Parse(taskYaml) is { IsValid: true } taskCatalog)
+        {
+            facts.Add(new FactRow("Tasks", string.Join(", ",
+                taskCatalog.Tasks.Select(t => $"{t.Name} ({t.DisplaySchedule})"))));
+        }
+
+        facts.Add(new FactRow("Coverage",
+            Sync.CoverageFor(node.Path) is { HasGaps: true } report
+                ? report.Describe()
+                : "complete — every object the exporter understands is in the mirror"));
+
+        if (manifest.Warnings.Count > 0)
+        {
+            facts.Add(new FactRow("Warnings", $"{manifest.Warnings.Count} — see the log"));
+        }
+
+        return new ProjectSummaryRender { Name = node.Name, Facts = facts };
+    }
+
+    private string? ReadRepoFileOrNull(string repoRelative)
+    {
+        if (RepositoryPath is not { } root)
+        {
+            return null;
+        }
+
+        try
+        {
+            var absolute = Path.Combine(
+                root, repoRelative.Replace('/', Path.DirectorySeparatorChar));
+            return File.Exists(absolute) ? File.ReadAllText(absolute) : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Keep the strip when the new path is one of its layers; clear it otherwise.</summary>
+    private void ReconcileDiffLayers(string path)
+    {
+        if (_diffLayers.Count == 0)
+        {
+            return;
+        }
+
+        if (!_diffLayers.Any(l => string.Equals(l.Path, path, StringComparison.OrdinalIgnoreCase)))
+        {
+            DiffLayers = [];
+            return;
+        }
+
+        OfferDiffLayers(_diffLayers.Select(l => l.Path).ToList(), path);
     }
 
     private bool _canStageHunks;
@@ -4803,6 +5615,14 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             _shownCommit = null;
             _selectedDiffStaged = false;
             CanStageHunks = false;
+            DiffLayers = [];
+
+            // The card is the project's rendered view, and it is the DEFAULT: the raw half
+            // of a binary compound document is the explanation below, which is worth
+            // reading once, not on every click.
+            RenderedContent = BuildProjectSummary(row.Node);
+            ShowRendered = true;
+            PaneNote = string.Empty;
 
             var coverage = Sync.CoverageFor(row.Node.Path);
 
@@ -4832,8 +5652,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
+        // The rendered half, beside whatever the raw half loads below. Defaulted per
+        // selection: a changed file opens on its diff, a clean one on its content —
+        // see ShowRendered's remark.
+        RenderedContent = BuildRenderedContent(row);
+        ShowRendered = HasRenderedView && row.Node.Status == ChangeKind.Unmodified;
+
         if (row.PrimaryFile is { } path)
         {
+            // Offered here because only the tree knows an object's sibling layers;
+            // ShowPathAsync then keeps or clears the strip on every later navigation.
+            OfferDiffLayers(row.Node.Files, path);
             _ = ShowPathAsync(path, staged: null);
         }
     }
@@ -4853,6 +5682,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
+        ReconcileDiffLayers(path);
         SelectedDiffPath = path;
         _shownCommit = null;
 
@@ -4875,8 +5705,26 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             HunkAction = fromIndex ? "Unstage hunk" : "Stage hunk";
 
             // Untracked files arrive here as a real all-additions diff, so the only things
-            // left with nothing to show are genuinely binary or genuinely unchanged. Saying
-            // which beats a catch-all that blames untracked files for a gap that was ours.
+            // left with nothing to show are genuinely binary or genuinely unchanged. An
+            // unchanged file now shows ITSELF — a clean object used to render as a shrug,
+            // and "here is the file, nothing has changed in it" answers the question the
+            // click asked. The note rides in the pane header, not the text, because the
+            // header is where a fact about the whole view belongs. Binary stays a sentence:
+            // a code renderer fed an image draws a wall of boxes.
+            if (string.IsNullOrWhiteSpace(diff)
+                && RepositoryPath is { } root
+                && SourceRender.Load(
+                       Path.Combine(root, path.Replace('/', Path.DirectorySeparatorChar)),
+                       path, noChanges: true) is { } content
+                && !content.PseudoDiff.Contains('\0'))
+            {
+                SelectedDiff = content.PseudoDiff;
+                PaneNote = "No changes right now — showing the whole file.";
+                CanStageHunks = false;
+                return;
+            }
+
+            PaneNote = string.Empty;
             SelectedDiff = string.IsNullOrWhiteSpace(diff)
                 ? path + Environment.NewLine + Environment.NewLine +
                   "Nothing to compare: this file is unchanged, or git reports it as binary."

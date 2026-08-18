@@ -1,0 +1,85 @@
+<ExportFile>
+  <StructuredView Guid="{d9b2b2cc-ea99-4c3b-aa42-1e5c49e65b84}">
+<Single xml:space="preserve" Type="{3daac5e4-660e-42e4-9cea-3711b98bfb63}" Method="IArchivable">
+  <Null Name="Profile" />
+  <List2 Name="EntryList">
+    <Single Type="{6198ad31-4b98-445c-927f-3258a0e82fe3}" Method="IArchivable">
+      <Single Name="IsRoot" Type="bool">True</Single>
+      <Single Name="MetaObject" Type="{81297157-7ec9-45ce-845e-84cab2b88ade}" Method="IArchivable">
+        <Single Name="Guid" Type="System.Guid">c961baf2-a4e1-43d8-ae01-0c6ca4b6e63f</Single>
+        <Single Name="ParentGuid" Type="System.Guid">6e8ed404-aa7c-4874-90d7-74d820d6423c</Single>
+        <Single Name="Name" Type="string">P_ClassName</Single>
+        <Dictionary Type="{2c41fa04-1834-41c1-816e-303c7aa2c05b}" Name="Properties" />
+        <Single Name="TypeGuid" Type="System.Guid">5a3b8626-d3e9-4f37-98b5-66420063d91e</Single>
+        <Array Name="EmbeddedTypeGuids" Type="System.Guid">
+          <Single Type="System.Guid">a9ed5b7e-75c5-4651-af16-d2c27e98cb94</Single>
+        </Array>
+        <Single Name="Timestamp" Type="long">0</Single>
+      </Single>
+      <Single Name="Object" Type="{5a3b8626-d3e9-4f37-98b5-66420063d91e}" Method="IArchivable">
+        <Single Name="Interface" Type="{a9ed5b7e-75c5-4651-af16-d2c27e98cb94}" Method="IArchivable">
+          <Single Name="TextDocument" Type="{f3878285-8e4f-490b-bb1b-9acbb7eb04db}" Method="IArchivable">
+            <Single Name="TextBlobForSerialisation" Type="string">PROPERTY P_ClassName : STRING</Single>
+            <Single Name="LineInfoPersistence" Type="string">c961baf2-a4e1-43d8-ae01-0c6ca4b6e63f_Decl_LineIds</Single>
+          </Single>
+        </Single>
+        <Single Name="UniqueIdGenerator" Type="string">1</Single>
+      </Single>
+      <Single Name="ParentSVNodeGuid" Type="System.Guid">6e8ed404-aa7c-4874-90d7-74d820d6423c</Single>
+      <Array Name="Path" Type="string">
+        <Single Type="string">Device</Single>
+        <Single Type="string">PLC Logic</Single>
+        <Single Type="string">Application</Single>
+        <Single Type="string">Library</Single>
+        <Single Type="string">Alarm</Single>
+        <Single Type="string">POUs</Single>
+        <Single Type="string">FB_Alarm</Single>
+      </Array>
+      <Single Name="Index" Type="int">-1</Single>
+    </Single>
+    <Single Type="{6198ad31-4b98-445c-927f-3258a0e82fe3}" Method="IArchivable">
+      <Single Name="IsRoot" Type="bool">False</Single>
+      <Single Name="MetaObject" Type="{81297157-7ec9-45ce-845e-84cab2b88ade}" Method="IArchivable">
+        <Single Name="Guid" Type="System.Guid">36aff580-4992-4a90-8485-4536776c53dc</Single>
+        <Single Name="ParentGuid" Type="System.Guid">c961baf2-a4e1-43d8-ae01-0c6ca4b6e63f</Single>
+        <Single Name="Name" Type="string">Get</Single>
+        <Dictionary Type="{2c41fa04-1834-41c1-816e-303c7aa2c05b}" Name="Properties" />
+        <Single Name="TypeGuid" Type="System.Guid">792f2eb6-721e-4e64-ba20-bc98351056db</Single>
+        <Array Name="EmbeddedTypeGuids" Type="System.Guid">
+          <Single Type="System.Guid">a9ed5b7e-75c5-4651-af16-d2c27e98cb94</Single>
+          <Single Type="System.Guid">3b83b776-fb25-43b8-99f2-3c507c9143fc</Single>
+        </Array>
+        <Single Name="Timestamp" Type="long">0</Single>
+      </Single>
+      <Single Name="Object" Type="{792f2eb6-721e-4e64-ba20-bc98351056db}" Method="IArchivable">
+        <Single Name="Implementation" Type="{3b83b776-fb25-43b8-99f2-3c507c9143fc}" Method="IArchivable">
+          <Single Name="TextDocument" Type="{f3878285-8e4f-490b-bb1b-9acbb7eb04db}" Method="IArchivable">
+            <Single Name="TextBlobForSerialisation" Type="string">P_ClassName := 'FB_Alarm';</Single>
+            <Single Name="LineInfoPersistence" Type="string">36aff580-4992-4a90-8485-4536776c53dc_Impl_LineIds</Single>
+          </Single>
+        </Single>
+        <Single Name="Interface" Type="{a9ed5b7e-75c5-4651-af16-d2c27e98cb94}" Method="IArchivable">
+          <Single Name="TextDocument" Type="{f3878285-8e4f-490b-bb1b-9acbb7eb04db}" Method="IArchivable">
+            <Single Name="TextBlobForSerialisation" Type="string"></Single>
+            <Single Name="LineInfoPersistence" Type="string">36aff580-4992-4a90-8485-4536776c53dc_Decl_LineIds</Single>
+          </Single>
+        </Single>
+        <Single Name="IsGet" Type="bool">True</Single>
+      </Single>
+      <Single Name="ParentSVNodeGuid" Type="System.Guid">c961baf2-a4e1-43d8-ae01-0c6ca4b6e63f</Single>
+      <Array Name="Path" Type="string">
+        <Single Type="string">Device</Single>
+        <Single Type="string">PLC Logic</Single>
+        <Single Type="string">Application</Single>
+        <Single Type="string">Library</Single>
+        <Single Type="string">Alarm</Single>
+        <Single Type="string">POUs</Single>
+        <Single Type="string">FB_Alarm</Single>
+        <Single Type="string">P_ClassName</Single>
+      </Array>
+      <Single Name="Index" Type="int">-1</Single>
+    </Single>
+  </List2>
+  <Null Name="ProfileName" />
+</Single>  </StructuredView>
+</ExportFile>

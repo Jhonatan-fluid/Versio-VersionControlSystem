@@ -183,11 +183,31 @@ public sealed class TreeRow : ObservableObject
     /// The one phrase shown to the right of the name.
     /// </summary>
     /// <remarks>
-    /// A project reports its export state; an object reports its CODESYS type, so a POU and a
-    /// visualisation with the same name are told apart. One property rather than two columns
-    /// competing for the same space, since no row ever has both.
+    /// A project reports its export state; a library its version and a task its schedule,
+    /// which are the facts a reviewer opens the catalog to check; an object reports its
+    /// CODESYS type, so a POU and a visualisation with the same name are told apart. One
+    /// property rather than several columns competing for the same space, since no row ever
+    /// has more than one.
     /// </remarks>
-    public string Annotation => IsProject ? Detail : TypeLabel;
+    public string Annotation => Node.Kind switch
+    {
+        ProjectNodeKind.Project or ProjectNodeKind.Library or ProjectNodeKind.Task => Detail,
+        _ => TypeLabel,
+    };
+
+    /// <summary>
+    /// Whether the context menu offers Stage and Discard for this row.
+    /// </summary>
+    /// <remarks>
+    /// Only for a row that stands for files of its own with changes of its own — an object
+    /// or a loose file. A library or task row shares its catalog's file, and staging "one
+    /// reference" would silently stage every change in the file beside it; the manager's
+    /// own row is where that operation honestly lives. Folders and projects group things,
+    /// and per-file is the discard rule everywhere else in the app.
+    /// </remarks>
+    public bool CanStageOrDiscard =>
+        Node.Kind is ProjectNodeKind.Object or ProjectNodeKind.File
+        && Node.Status != ChangeKind.Unmodified;
 
     public bool IsExpanded
     {
@@ -235,8 +255,9 @@ public sealed class TreeRow : ObservableObject
     /// <para>
     /// The readable layer wins. An object exporting to both <c>.st</c> and <c>.xml</c> opens
     /// the Structured Text, because that is the one somebody can review; the native XML is
-    /// there for completeness and reads like a machine wrote it, which it did. A proper layer
-    /// switcher belongs in the diff pane and is not built yet.
+    /// there for completeness and reads like a machine wrote it, which it did. This is only
+    /// the <i>default</i>: the diff pane's header offers the other layers as chips
+    /// (<see cref="DiffLayerChoice"/>), so the native half stopped being unreachable.
     /// </para>
     /// <para>
     /// Null for a project row. A <c>.project</c> is a binary compound document - git can store

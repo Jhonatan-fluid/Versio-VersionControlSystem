@@ -122,7 +122,17 @@ public class CodesysRunnerTests(ITestOutputHelper output)
         Assert.NotNull(summary);
         output.WriteLine($"summary: {summary!.Raw}");
         Assert.True(summary.Int("written") > 0);
-        Assert.Equal(0, summary.Int("warnings"));
+        // NOT ZERO WARNINGS — no warning that LOSES anything. The corpus gained an EtherCAT
+        // master on 2026-08-18 whose slot objects carry a type GUID the table does not know,
+        // and UNKNOWN_TYPE_GUID is the one warning that is followed by a form rather than by
+        // a return: the object is exported natively and recorded, which is the whole design
+        // for a CODESYS that adds a type. Pinning zero made an export that behaved correctly
+        // look broken, and would have gone on doing so for every device anybody added.
+        //
+        // ExportCoverage.LosesAnObject is the same classification the coverage report uses,
+        // so this cannot drift from what the panel says.
+        Assert.Equal(0, summary.Int("gaps"));
+        Assert.True(summary.Int("written") > summary.Int("skipped"));
 
         // The export actually landed on disk, with both GVL forms present.
         var files = Directory.GetFiles(outDir, "*", SearchOption.AllDirectories);

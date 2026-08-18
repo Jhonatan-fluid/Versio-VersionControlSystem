@@ -69,6 +69,31 @@ public enum PlannedSkip
     /// that walk was deleted to end.
     /// </remarks>
     RenameTarget,
+
+    /// <summary>
+    /// Applying this native payload would <b>destroy the object's members</b>, because the
+    /// payload holds the node alone and the toolchain replaces rather than merges.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Measured on CODESYS 3.5.22.20, 2026-08-18, by a round trip that lost an object: a
+    /// graphical <c>PLC_PRG</c> with one textual method exported to <c>PLC_PRG.xml</c> plus
+    /// <c>PLC_PRG/M_Test.st</c>; importing the <c>.xml</c> replaced the POU and took the
+    /// method with it, and the re-export walked one object fewer. The textual phase runs
+    /// first, so the method was written and then destroyed — nothing warned, and the summary
+    /// said <c>7 native, 0 warnings</c>.
+    /// </para>
+    /// <para>
+    /// <b>Refused rather than worked around.</b> Exporting such a POU recursively would keep
+    /// the round trip whole and cost the members their reviewable text, which is the thing
+    /// Versio exists to produce. Re-creating the members afterwards is not available either:
+    /// a <c>METHOD</c> header is not a declaration the create path can identify. So the
+    /// unsafe write is the thing that goes, and the member's own file stays importable —
+    /// only the owner's graphical body becomes read-only, and a graphical body is not
+    /// reviewable text anyway.
+    /// </para>
+    /// </remarks>
+    WouldDestroyMembers,
 }
 
 /// <summary>One file's planned treatment.</summary>

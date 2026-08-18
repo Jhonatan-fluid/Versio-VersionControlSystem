@@ -91,6 +91,37 @@ public sealed record LibraryReference
         !string.IsNullOrEmpty(Version) ? Version
         : !string.IsNullOrEmpty(Redirection) ? Redirection
         : DefaultResolution;
+
+    /// <summary>Whether two references record the same facts.</summary>
+    /// <remarks>
+    /// <para>
+    /// Not <c>Equals</c>, because the generated record equality compares
+    /// <see cref="Parameters"/> by reference — two references with identical parameter pairs
+    /// read as different, and every fresh parse allocates a fresh dictionary.
+    /// </para>
+    /// <para>
+    /// Written as record equality over clones whose dictionaries are swapped for one shared
+    /// instance, rather than as a field-by-field comparison, so that a field added to this
+    /// type later is compared without anyone remembering to extend a list here. A hand-written
+    /// comparison that silently ignored a new field would mark a changed library as unchanged,
+    /// which is the failure this method exists to report.
+    /// </para>
+    /// </remarks>
+    public bool ContentEquals(LibraryReference other)
+    {
+        if (this with { Parameters = NoParameters } != other with { Parameters = NoParameters })
+        {
+            return false;
+        }
+
+        return Parameters.Count == other.Parameters.Count &&
+               Parameters.All(p =>
+                   other.Parameters.TryGetValue(p.Key, out var value) &&
+                   string.Equals(p.Value, value, StringComparison.Ordinal));
+    }
+
+    private static readonly IReadOnlyDictionary<string, string> NoParameters =
+        new Dictionary<string, string>(StringComparer.Ordinal);
 }
 
 /// <summary>
@@ -107,6 +138,18 @@ public sealed record LibraryReference
 /// </remarks>
 public sealed record LibraryCatalog
 {
+    /// <summary>
+    /// What every catalog file's name ends with, whichever vendor exported it.
+    /// </summary>
+    /// <remarks>
+    /// Part of the neutral format, not a vendor detail: the file is
+    /// <c>&lt;manager&gt;.libraries.yaml</c> for the same reason its fields are vendor-neutral,
+    /// and the shell needs the suffix to know which changed files have a HEAD copy worth
+    /// fetching <i>before</i> any manifest has been parsed. The CODESYS path mapper carries
+    /// the same string on the writing side; a parity test pins the two together.
+    /// </remarks>
+    public const string FileSuffix = ".libraries.yaml";
+
     /// <summary>
     /// Document format version, so an older file is not mistaken for a complete one.
     /// </summary>
@@ -200,7 +243,7 @@ public sealed record LibraryCatalog
                 itemIndent = indent;
             }
 
-            if (!Split(text, out var key, out var value))
+            if (!CatalogYaml.Split(text, out var key, out var value))
             {
                 continue;
             }
@@ -234,7 +277,7 @@ public sealed record LibraryCatalog
             // stays in the mapping instead of opening another one.
             if (nested is not null && indent > itemIndent)
             {
-                nested[Unquote(key)] = Unquote(value);
+                nested[CatalogYaml.Unquote(key)] = CatalogYaml.Unquote(value);
                 continue;
             }
 
@@ -258,13 +301,13 @@ public sealed record LibraryCatalog
 
         Flush(item, nestedMaps, references);
 
-        var schema = int.TryParse(Value(top, "schema"), out var s) ? s : 0;
+        var schema = int.TryParse(CatalogYaml.Value(top, "schema"), out var s) ? s : 0;
         return new LibraryCatalog
         {
             Schema = schema,
-            Vendor = Value(top, "vendor"),
-            Manager = Value(top, "manager"),
-            Path = Value(top, "path"),
+            Vendor = CatalogYaml.Value(top, "vendor"),
+            Manager = CatalogYaml.Value(top, "manager"),
+            Path = CatalogYaml.Value(top, "path"),
             References = references,
         };
     }
@@ -287,7 +330,7 @@ public sealed record LibraryCatalog
                 ? read
                 : new Dictionary<string, string>(StringComparer.Ordinal);
 
-        var name = Value(item, "name");
+        var name = CatalogYaml.Value(item, "name");
         if (string.IsNullOrEmpty(name))
         {
             // A reference with no name is not a reference. Dropping it is better than
@@ -299,106 +342,18 @@ public sealed record LibraryCatalog
         into.Add(new LibraryReference
         {
             Name = name,
-            Namespace = Value(item, "namespace"),
-            Placeholder = Value(item, "placeholder"),
-            DefaultResolution = Value(item, "defaultResolution"),
-            Redirection = Value(item, "redirection"),
-            Version = Value(item, "version"),
-            Company = Value(item, "company"),
-            Title = Value(item, "title"),
-            SystemLibrary = Flag(item, "systemLibrary"),
-            Optional = Flag(item, "optional"),
-            QualifiedOnly = Flag(item, "qualifiedOnly"),
-            PublishSymbols = Flag(item, "publishSymbols"),
+            Namespace = CatalogYaml.Value(item, "namespace"),
+            Placeholder = CatalogYaml.Value(item, "placeholder"),
+            DefaultResolution = CatalogYaml.Value(item, "defaultResolution"),
+            Redirection = CatalogYaml.Value(item, "redirection"),
+            Version = CatalogYaml.Value(item, "version"),
+            Company = CatalogYaml.Value(item, "company"),
+            Title = CatalogYaml.Value(item, "title"),
+            SystemLibrary = CatalogYaml.Flag(item, "systemLibrary"),
+            Optional = CatalogYaml.Flag(item, "optional"),
+            QualifiedOnly = CatalogYaml.Flag(item, "qualifiedOnly"),
+            PublishSymbols = CatalogYaml.Flag(item, "publishSymbols"),
             Parameters = parameters,
         });
-    }
-
-    /// <summary>Split <c>key: value</c> at the first colon.</summary>
-    /// <remarks>
-    /// A colon inside a quoted <b>value</b> is safe, because the split happens before the
-    /// value is unquoted — <c>"Standard, * (System)"</c> and friends survive. A colon inside a
-    /// quoted <b>key</b> would not, and is not defended against: the keys are this format's own
-    /// field names plus library parameter names, and a parameter name is an IEC identifier,
-    /// which cannot contain one. Stated rather than silently assumed, because it is the kind
-    /// of bound that stops being true when somebody reuses the reader for another file.
-    /// </remarks>
-    private static bool Split(string text, out string key, out string value)
-    {
-        key = string.Empty;
-        value = string.Empty;
-
-        var colon = text.IndexOf(':');
-        if (colon <= 0)
-        {
-            return false;
-        }
-
-        key = Unquote(text[..colon].Trim());
-        value = text[(colon + 1)..].Trim();
-        return key.Length > 0;
-    }
-
-    private static string Value(IReadOnlyDictionary<string, string> map, string key) =>
-        map.TryGetValue(key, out var v) ? Unquote(v) : string.Empty;
-
-    private static bool Flag(IReadOnlyDictionary<string, string> map, string key) =>
-        map.TryGetValue(key, out var v) &&
-        string.Equals(v.Trim(), "true", StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// Inverse of the emitter's quoting.
-    /// </summary>
-    /// <remarks>
-    /// Only the escapes <c>versio_yaml.quote</c> can produce are recognised, and anything
-    /// else is left as written. A reader that invented escapes the writer never emits would
-    /// eventually corrupt a library name containing a backslash, and library names really do
-    /// contain punctuation — <c>"Standard, * (System)"</c> is why quoting exists here at all.
-    /// </remarks>
-    internal static string Unquote(string text)
-    {
-        if (text.Length < 2 || text[0] != '"' || text[^1] != '"')
-        {
-            return text;
-        }
-
-        var body = text[1..^1];
-        if (!body.Contains('\\'))
-        {
-            return body;
-        }
-
-        var sb = new System.Text.StringBuilder(body.Length);
-        for (var i = 0; i < body.Length; i++)
-        {
-            if (body[i] != '\\' || i == body.Length - 1)
-            {
-                sb.Append(body[i]);
-                continue;
-            }
-
-            var next = body[++i];
-            switch (next)
-            {
-                case 'n': sb.Append('\n'); break;
-                case 'r': sb.Append('\r'); break;
-                case 't': sb.Append('\t'); break;
-                case '"': sb.Append('"'); break;
-                case '\\': sb.Append('\\'); break;
-                case 'x' when i + 2 < body.Length &&
-                              int.TryParse(body.Substring(i + 1, 2),
-                                  System.Globalization.NumberStyles.HexNumber,
-                                  System.Globalization.CultureInfo.InvariantCulture,
-                                  out var code):
-                    sb.Append((char)code);
-                    i += 2;
-                    break;
-                default:
-                    sb.Append('\\').Append(next);
-                    break;
-            }
-        }
-
-        return sb.ToString();
     }
 }

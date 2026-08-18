@@ -46,48 +46,15 @@ public sealed class PythonFileNameTests(ITestOutputHelper output)
     /// output is one — the same file-passing argument as <see cref="Stem"/>, since a
     /// <c>rel_dir</c> is exactly the thing that carries backslashes.
     /// </remarks>
-    private string ObjectPath(string relDir, string? name)
-    {
-        var input = Path.GetTempFileName();
-        var result = Path.GetTempFileName();
-        var script = Path.GetTempFileName() + ".py";
-
-        try
-        {
-            File.WriteAllText(input, relDir + "\t" + name, new System.Text.UTF8Encoding(false));
-            File.WriteAllText(script, $"""
-                import io, sys
-                sys.path.insert(0, r"{Scripts}")
-                import versio_text
-                rel_dir, name = io.open(r"{input}", encoding="utf-8").read().split("\t")
-                out = versio_text.object_path(rel_dir, name)
-                io.open(r"{result}", "w", encoding="utf-8").write(out)
-                """);
-
-            using var python = Process.Start(new ProcessStartInfo
-            {
-                FileName = "python",
-                Arguments = $"\"{script}\"",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                StandardOutputEncoding = System.Text.Encoding.UTF8,
-            });
-
-            var stderr = python!.StandardError.ReadToEnd();
-            python.WaitForExit();
-            Assert.True(python.ExitCode == 0, stderr);
-
-            return File.ReadAllText(result, new System.Text.UTF8Encoding(false));
-        }
-        finally
-        {
-            File.Delete(input);
-            File.Delete(result);
-            File.Delete(script);
-        }
-    }
+    private string ObjectPath(string relDir, string? name) =>
+        CPythonHarness.Run(relDir + "	" + name, (input, result) => $"""
+            import io, sys
+            sys.path.insert(0, r"{Scripts}")
+            import versio_text
+            rel_dir, name = io.open(r"{input}", encoding="utf-8").read().split("	")
+            out = versio_text.object_path(rel_dir, name)
+            io.open(r"{result}", "w", encoding="utf-8").write(out)
+            """);
 
     [SkippableFact]
     public void An_object_at_the_project_root_has_no_leading_slash()
@@ -115,48 +82,15 @@ public sealed class PythonFileNameTests(ITestOutputHelper output)
     }
 
     /// <summary>Run one of the two G9 path guards and return what it said.</summary>
-    private string Guard(string function, string path)
-    {
-        var input = Path.GetTempFileName();
-        var result = Path.GetTempFileName();
-        var script = Path.GetTempFileName() + ".py";
-
-        try
-        {
-            File.WriteAllText(input, path, new System.Text.UTF8Encoding(false));
-            File.WriteAllText(script, $"""
-                import io, sys
-                sys.path.insert(0, r"{Scripts}")
-                import versio_text
-                path = io.open(r"{input}", encoding="utf-8").read()
-                out = versio_text.{function}(path) or u""
-                io.open(r"{result}", "w", encoding="utf-8").write(out)
-                """);
-
-            using var python = Process.Start(new ProcessStartInfo
-            {
-                FileName = "python",
-                Arguments = $"\"{script}\"",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                StandardOutputEncoding = System.Text.Encoding.UTF8,
-            });
-
-            var stderr = python!.StandardError.ReadToEnd();
-            python.WaitForExit();
-            Assert.True(python.ExitCode == 0, stderr);
-
-            return File.ReadAllText(result, new System.Text.UTF8Encoding(false));
-        }
-        finally
-        {
-            File.Delete(input);
-            File.Delete(result);
-            File.Delete(script);
-        }
-    }
+    private string Guard(string function, string path) =>
+        CPythonHarness.Run(path, (input, result) => $"""
+            import io, sys
+            sys.path.insert(0, r"{Scripts}")
+            import versio_text
+            path = io.open(r"{input}", encoding="utf-8").read()
+            out = versio_text.{function}(path) or u""
+            io.open(r"{result}", "w", encoding="utf-8").write(out)
+            """);
 
     [SkippableFact]
     public void An_ordinary_mirror_path_passes_both_guards_without_a_word()
@@ -237,82 +171,28 @@ public sealed class PythonFileNameTests(ITestOutputHelper output)
     }
 
     /// <summary>Run <c>safe_file_stem</c> over one name and return what it produced.</summary>
+    /// <remarks>
+    /// Through files at both ends — the names contain quotes, backslashes and pipes, and
+    /// the encoding trap on stdout is the harness's own remark.
+    /// </remarks>
     private string Stem(string name)
     {
-        // Passed through a file rather than the command line: these names contain quotes,
-        // backslashes and pipes, and arguing with two levels of shell quoting is how a test
-        // ends up asserting against something it did not send.
-        var input = Path.GetTempFileName();
-        var result = Path.GetTempFileName();
-        var script = Path.GetTempFileName() + ".py";
+        var produced = CPythonHarness.Run(name, (input, result) => $"""
+            import io, sys
+            sys.path.insert(0, r"{Scripts}")
+            import versio_text
+            name = io.open(r"{input}", encoding="utf-8").read()
+            out = versio_text.safe_file_stem(name)
+            io.open(r"{result}", "w", encoding="utf-8").write(out)
+            """);
 
-        try
-        {
-            File.WriteAllText(input, name, new System.Text.UTF8Encoding(false));
-            File.WriteAllText(script, $"""
-                import io, sys
-                sys.path.insert(0, r"{Scripts}")
-                import versio_text
-                name = io.open(r"{input}", encoding="utf-8").read()
-                out = versio_text.safe_file_stem(name)
-                io.open(r"{result}", "w", encoding="utf-8").write(out)
-                """);
-
-            using var python = Process.Start(new ProcessStartInfo
-            {
-                FileName = "python",
-                Arguments = $"\"{script}\"",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                StandardOutputEncoding = System.Text.Encoding.UTF8,
-            });
-
-            var stderr = python!.StandardError.ReadToEnd();
-            python.WaitForExit();
-
-            Assert.True(python.ExitCode == 0, stderr);
-
-            // Through a file, not stdout. Python on Windows writes stdout in the console
-            // codepage, which turns "Kühlschrank Regelung" into "K?hlschrank Regelung" -
-            // the same finding the README records for the C# side of this boundary, arriving
-            // from the other direction.
-            var produced = File.ReadAllText(result, new System.Text.UTF8Encoding(false));
-            output.WriteLine($"{name} -> {produced}");
-            return produced;
-        }
-        finally
-        {
-            File.Delete(input);
-            File.Delete(result);
-            File.Delete(script);
-        }
+        output.WriteLine($"{name} -> {produced}");
+        return produced;
     }
 
     /// <summary>Shared with <see cref="PythonFileNameParityTests"/>, which skips on the same
     /// condition for the same reason.</summary>
-    internal static bool PythonIsAvailable()
-    {
-        try
-        {
-            using var python = Process.Start(new ProcessStartInfo
-            {
-                FileName = "python",
-                Arguments = "--version",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-            });
-
-            python!.WaitForExit();
-            return python.ExitCode == 0;
-        }
-        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
-        {
-            return false;
-        }
-    }
+    internal static bool PythonIsAvailable() => CPythonHarness.PythonIsAvailable();
 
     [SkippableTheory]
     [InlineData("clsLight")]
@@ -589,6 +469,8 @@ public sealed class PythonFileNameParityTests(ITestOutputHelper output)
         ExportForm.NativeWithChildren => "NATIVE_WITH_CHILDREN",
         ExportForm.TaskBoth => "TASK_BOTH",
         ExportForm.ExternalNative => "EXTERNAL_NATIVE",
+        ExportForm.PropertyBoth => "PROPERTY_BOTH",
+        ExportForm.PropertyText => "PROPERTY_TEXT",
         _ => throw new ArgumentOutOfRangeException(nameof(form), form, "unmapped export form"),
     };
 
@@ -605,6 +487,38 @@ public sealed class PythonFileNameParityTests(ITestOutputHelper output)
                                             c["impl"], c["decl"], c["children"])
                    for c in payload]
             """);
+    }
+
+    [SkippableFact]
+    public void The_walk_descends_into_a_property_now_that_its_accessors_are_files()
+    {
+        // THE HALF WITH NO C# TWIN. ExportFormRules decides a property's own form and stops
+        // there; whether the exporter then WALKS its accessors is decided only here, and the
+        // two answers have to agree or the accessors are never written at all.
+        //
+        // NATIVE_R and TASK_BOTH are excluded because their children are already inside
+        // what they write — a property's accessors in its recursive payload, a task
+        // configuration's tasks in its .tasks.yaml. Walking either would write a second copy.
+        //
+        // PROPERTY is in this list because it moved twice on 2026-08-18: off NATIVE_R to
+        // plain text, back when the round trip emptied every getter, and then to
+        // PROPERTY_BOTH — which descends, because the accessors' readable bodies are files of
+        // their own even though nothing applies them back. Each move changed the walk in one
+        // language only, and this is what says so.
+        Skip.IfNot(PythonFileNameTests.PythonIsAvailable(), "python is not on PATH");
+
+        var answers = RunPython(
+            JsonSerializer.Serialize(
+                new[] { "PROPERTY", "PROPERTY_METHOD", "TASK_CONFIGURATION", "POU", "FOLDER" }),
+            """
+            import versio_types
+            out = ["%s=%s" % (t, versio_types.descends_into_children(t)) for t in payload]
+            """);
+
+        Assert.Equal(
+            ["PROPERTY=True", "PROPERTY_METHOD=True", "TASK_CONFIGURATION=False",
+             "POU=True", "FOLDER=True"],
+            answers);
     }
 
     [SkippableFact]
@@ -738,13 +652,21 @@ public sealed class PythonFileNameParityTests(ITestOutputHelper output)
             output.WriteLine(line);
         }
 
+        // The header's own count, so adding a task to the project does not fail this. What
+        // is being checked is that the reader returns as many tasks as the emitter declared —
+        // a reader that dropped one fails, and a third task does not. It read `count=2` until
+        // 2026-08-18, when the owner added one.
+        var declaredTasks = File.ReadAllLines(path)
+            .First(l => l.StartsWith("taskCount:", StringComparison.Ordinal))
+            .Split(':')[1].Trim();
+
         Assert.Equal(
             [
                 "key=tasks",
                 "schema=1",
                 "vendor=codesys",
-                "count=2",
-                "items=2",
+                $"count={declaredTasks}",
+                $"items={declaredTasks}",
 
                 // Every value is TEXT, including coreBinding, which CODESYS wants as an int
                 // on the way back. The reader never infers a type, because priority wants a
@@ -754,10 +676,23 @@ public sealed class PythonFileNameParityTests(ITestOutputHelper output)
                 // interval is the reason the values are verbatim: "t#20ms" on one task and
                 // "100" on the other, in one project. A normaliser would rewrite one of them
                 // and put a diff in front of somebody that they did not make.
-                "MainTask|1|t#20ms|-2|PLC_PRG,Simulation",
-                "VISU_TASK|31|100|-1|VisuElems.Visu_Prg",
+                //
+                // These two are asserted by CONTAINMENT below rather than by listing every
+                // row, because the project gained a third task on 2026-08-18 and will gain
+                // more. What must not change is that these two arrive verbatim.
             ],
-            lines);
+            lines.Take(5));
+
+        Assert.Contains("MainTask|1|t#20ms|-2|PLC_PRG,Simulation", lines);
+        Assert.Contains("VISU_TASK|31|100|-1|VisuElems.Visu_Prg", lines);
+
+        // And every row is five verbatim fields — a reader that inferred a type or dropped a
+        // field shows up here whichever tasks the project happens to hold.
+        foreach (var row in lines.Skip(5))
+        {
+            Assert.Equal(5, row.Split('|').Length);
+            Assert.False(string.IsNullOrWhiteSpace(row.Split('|')[0]), $"nameless task: {row}");
+        }
     }
 
     [SkippableFact]
@@ -1475,51 +1410,7 @@ public sealed class PythonFileNameParityTests(ITestOutputHelper output)
         return corpus;
     }
 
-    private static IReadOnlyList<string> RunPython(string payloadJson, string body)
-    {
-        var input = Path.GetTempFileName();
-        var result = Path.GetTempFileName();
-        var script = Path.GetTempFileName() + ".py";
-        var utf8 = new System.Text.UTF8Encoding(false);
-
-        // The snippet is indented to sit inside the generated file's top level, so it must
-        // arrive with no leading indentation of its own.
-        var indented = string.Join("\n", body.Replace("\r\n", "\n").Split('\n'));
-
-        try
-        {
-            File.WriteAllText(input, payloadJson, utf8);
-            File.WriteAllText(script,
-                "# -*- coding: utf-8 -*-\n" +
-                "import io, json, sys\n" +
-                $"sys.path.insert(0, r\"{Scripts}\")\n" +
-                $"payload = json.load(io.open(r\"{input}\", encoding=\"utf-8\"))\n" +
-                indented + "\n" +
-                $"io.open(r\"{result}\", \"w\", encoding=\"utf-8\").write(json.dumps(out))\n",
-                utf8);
-
-            using var python = Process.Start(new ProcessStartInfo
-            {
-                FileName = "python",
-                Arguments = $"\"{script}\"",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                StandardOutputEncoding = System.Text.Encoding.UTF8,
-            });
-
-            var stderr = python!.StandardError.ReadToEnd();
-            python.WaitForExit();
-            Assert.True(python.ExitCode == 0, stderr);
-
-            return JsonSerializer.Deserialize<List<string>>(File.ReadAllText(result, utf8))!;
-        }
-        finally
-        {
-            File.Delete(input);
-            File.Delete(result);
-            File.Delete(script);
-        }
-    }
+    private static IReadOnlyList<string> RunPython(string payloadJson, string body) =>
+        JsonSerializer.Deserialize<List<string>>(
+            CPythonHarness.RunJson(payloadJson, body, jsonOut: true))!;
 }

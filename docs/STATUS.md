@@ -1,17 +1,17 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,319 across seven
+**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,494 across seven
 projects, 0 skipped — re-derived by running each, not carried forward
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,296 | under a second | nothing |
-| `Versio.Integration.Tests` | 141 | ~10 s | real git |
-| `Versio.App.Tests` | 480 | ~50 s | nothing |
+| `Versio.Core.Tests` | 1,381 | under a second | nothing |
+| `Versio.Integration.Tests` | 147 | ~10 s | real git |
+| `Versio.App.Tests` | 546 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 14 | instant | nothing |
-| `Versio.Plc.Codesys.Pure.Tests` | 253 | under a second | nothing |
-| `Versio.Plc.Codesys.Parity.Tests` | 82 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
-| `Versio.Plc.Codesys.Tests` | 53 | **~30 min** | **real CODESYS** |
+| `Versio.Plc.Codesys.Pure.Tests` | 260 | under a second | nothing |
+| `Versio.Plc.Codesys.Parity.Tests` | 92 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
+| `Versio.Plc.Codesys.Tests` | 54 | **~30 min** | **real CODESYS** |
 
 *The first six are the loop to work in — about thirty seconds plus the UI suite. The last is
 the gate before a commit. Until 2026-08-17 the fast/slow split was a `--filter` expression over
@@ -308,17 +308,17 @@ projects are reported as unsupported rather than silently ignored. Both registri
 
 | | |
 |---|---|
-| **Project view** | **One panel.** Every project *with something to review* — a change, a mirror behind, a lock held, a failure, or never exported — carrying its full CODESYS-shaped object tree, with every other changed file beside them. A project whose mirror is clean is not listed, and the empty state says so rather than going blank. Search still reaches into a clean project, because the box searches the project and not the diff |
-| **Git panel** | **Per-file staging** — a checkbox on every row, tri-state headers, and labels that say what will happen (`Stage 3`, `Stage all`); both panes scroll and a splitter divides them. **One commit button with three behaviours** — it stages what you ticked, or everything, or nothing at all when you have staged deliberately, and the caption says which before you press. Commit message with a 50/72 guide and Ctrl+Enter. **Where the branch stands, in words** rather than two arrows — eleven states covering unborn, detached, no remote, never published, ahead, behind and diverged, each naming its remedy. **Publish** for a branch with no upstream, which a plain push cannot do. Fetch / pull / push / discard. **Branches show where they live** — local only, remote only, or both — and remote-only ones are listed at all for the first time. A delete dialog removes them from this machine and optionally the remote, naming what is not merged and reporting per branch when one refuses. **Conflicts get their own section** with keep-mine / keep-theirs and an abandon, and a diverged branch is offered a rebase or a merge by name — before this, the badge said "pull first" and a fast-forward-only pull refuses a diverged branch, so the only way out was a terminal. **Notifications** that survive the status refresh, with failures sticky until dismissed and git's own words on them. **Credentials**: detected at open, handed off to the engineer's own helper, never stored — and a *forget credential* for the expired token no git GUI lets you clear. **The remote is watched in the background**, by `ls-remote` rather than by fetching, so a colleague's push shows up without a click. **Git's own health**: a launch probe that names PATH when git is missing, and an identity preflight so a commit is refused before a 17–31 s export rather than after it. One operation at a time across every button — a shared counted flag. **Changed files are named as objects** — `FB_Motor` with a `POU` chip and the path beneath, resolved through the export manifest, with a lock glyph on a file whose edits cannot reach the project; a file the manifest does not describe stays a path and is never guessed at. **A change summary and a drafted commit subject** — *"1 GVL and 1 POU changed in RefrigeratorControl"*, and a **Draft** button that writes `Modify FB_Motor, Glob_Var`, both counting objects rather than files and both describing exactly what the commit button will record. **A merge-request button** for GitHub, GitLab, Azure DevOps, Bitbucket and Gitea: it opens the forge's own page pre-filled and submits nothing, upgrades itself to *Go to* when the forge's hidden refs say one already exists — no API token, nothing stored — and shows **nothing at all** for a host it cannot identify. **No stash controls**: removed pending a different design; the auto-stash drives the client operations. See [`phase1/GIT-PANEL-PLAN.md`](phase1/GIT-PANEL-PLAN.md) |
+| **Project view** | **One panel.** Every project *with something to review* — a change, a mirror behind, a lock held, a failure, or never exported — carrying its full CODESYS-shaped object tree, with every other changed file beside them. A project whose mirror is clean is not listed, and the empty state says so rather than going blank. Search still reaches into a clean project, because the box searches the project and not the diff. **Rows carry a context menu** (2026-08-17) — Stage, Discard through the git panel's own confirmed flow, Reveal in Explorer, Copy path — and **expansion survives the window now**, not only the refresh: `.versio/local/tree.json`, written when the repository detaches, defaults when unreadable |
+| **Git panel** | **Per-file staging** — a checkbox on every row, tri-state headers, and labels that say what will happen (`Stage 3`, `Stage all`); both panes scroll and a splitter divides them. **One commit button with three behaviours** — it stages what you ticked, or everything, or nothing at all when you have staged deliberately, and the caption says which before you press. Commit message with a 50/72 guide and Ctrl+Enter. **Where the branch stands, in words** rather than two arrows — eleven states covering unborn, detached, no remote, never published, ahead, behind and diverged, each naming its remedy. **Publish** for a branch with no upstream, which a plain push cannot do. Fetch / pull / push / discard. **Branches show where they live** — local only, remote only, or both — and remote-only ones are listed at all for the first time. A delete dialog removes them from this machine and optionally the remote, naming what is not merged and reporting per branch when one refuses. **Conflicts get their own section** with keep-mine / keep-theirs and an abandon, and a diverged branch is offered a rebase or a merge by name — before this, the badge said "pull first" and a fast-forward-only pull refuses a diverged branch, so the only way out was a terminal. **Notifications** that survive the status refresh, with failures sticky until dismissed and git's own words on them. **Credentials**: detected at open, handed off to the engineer's own helper, never stored — and a *forget credential* for the expired token no git GUI lets you clear. **The remote is watched in the background**, by `ls-remote` rather than by fetching, so a colleague's push shows up without a click. **Git's own health**: a launch probe that names PATH when git is missing, and an identity preflight so a commit is refused before a 17–31 s export rather than after it. One operation at a time across every button — a shared counted flag. **Changed files are named as objects** — `FB_Motor` with a `POU` chip and the path beneath, resolved through the export manifest, with a lock glyph on a file whose edits cannot reach the project; a file the manifest does not describe stays a path and is never guessed at. **A change summary and a drafted commit subject** — *"1 GVL and 1 POU changed in RefrigeratorControl"*, and a **Draft** button that writes `Modify FB_Motor, Glob_Var`, both counting objects rather than files and both describing exactly what the commit button will record. **A merge-request button** for GitHub, GitLab, Azure DevOps, Bitbucket and Gitea: it opens the forge's own page pre-filled and submits nothing, upgrades itself to *Go to* when the forge's hidden refs say one already exists — no API token, nothing stored — and shows **nothing at all** for a host it cannot identify. **Stashes are a section that exists only while there are any** (2026-08-17, replacing the withdrawn six-permanent-controls design): Apply keeps the stash, Drop confirms by name and re-resolves the positional ref by SHA, and there is no save button — the auto-stash owns taking, and the deliberate case belongs to a terminal. See [`phase1/GIT-PANEL-PLAN.md`](phase1/GIT-PANEL-PLAN.md) |
 | **History panel** | **Its own rail button**, not a strip inside the git panel. Every commit with its hash, local date and time, author and subject; expand one for the files it touched; click a file for what that commit did to it, in the shared diff pane. Lazy at four levels — the log is not walked until the panel is first shown, then one page of 50 at a time; a commit's files are read when it is expanded and cached for the session, because a commit's contents cannot change; a patch is read only when a file is clicked, and never cached. A merge says so rather than showing an empty list |
 | **PLC state** | **No card, and no buttons.** Toolchain, version and profile were environment rather than repository state and moved to Settings → Help → System information. "Export now" is gone because a stale mirror needs no decision — it is exported when the repository opens. "Acknowledge failure" is gone as a panel-wide control: a failure belongs to one project, so it is reported on that project's row with the reason and a *Try again* beside it. What is left in the panel is transient and hides itself: the coverage warning and the live heartbeat |
 | **Branch and clone** | Create a branch from HEAD and switch to it, with the name checked against git's rules while it is typed; clone a repository after verifying the remote, then open it. Both are modal dialogs built from the one stylesheet, and both are covered by tests that construct them against the real theme |
 | **Commit gate** | A stale mirror is exported *and staged* before the commit. Push releases the direction locks; commit does not, and the panel says so |
-| **Diff view** | Eleven languages, new files rendered entirely green, *Show full file*, rows built only when realised, **per-hunk stage and unstage** |
+| **Diff view** | Eleven languages, new files rendered entirely green, *Show full file*, rows built only when realised, **per-hunk stage and unstage** — **word-level emphasis inside a changed pair and a side-by-side mode** (2026-08-17): the changed identifier lights up inside the row tint, computed as a token-aligned prefix/suffix trim because the corpus is generated XML where a long line differs by one identifier; the split view folds the same parsed diff rather than computing a second one, so the two modes cannot disagree — and a **layer switcher** in the header (2026-08-17): one chip per layer of the shown object (`ST | native`, `tasks`, `libraries`), following the shown path rather than the tree selection, so the native half of a GVL and the export-only XML of a task configuration stopped being unreachable |
 | **Open in the IDE** | Export runs anyway, from a copy; import waits and names who has the project. Neither marks the binding failed, and the breaker is never fed |
 | **Adoption writes `.gitignore`** | Created when absent, appended when present, never overriding an existing decision. Covers `.versio/local/` — locks, backups, scratch copies — and the toolchain's `-AllUsers.opt` and `-<user>-<machine>.opt`, the second of which carries a username and machine name in its filename |
 | **Export coverage** | What the export does *not* carry, said out loud: `_coverage.md` in the tree, every skip in the manifest with a stable reason, and a sentence in the panel naming what cannot be relied on. A gap is distinguished from a deliberate omission, from a file that is exported one way, and an old manifest reports "unknown" rather than "complete" |
-| **Library references** | One `<manager>.libraries.yaml` per library manager, beside the object that owns it — what the project asks for, never how it resolved here. Hand-written YAML on both sides, no dependency added to either. **Export-only**, and stated where a reader will meet it: the file's own header, `_coverage.md`, the manifest's `form`, **and now the panel** — the changed-files row carries a lock glyph and a tooltip saying the edit does not reach the project. It went there rather than on the tree row (§9.3) because the row somebody is about to *stage* is where the warning has to be. `CoverageSummary` still speaks only when there are gaps, deliberately |
+| **Library references** | One `<manager>.libraries.yaml` per library manager, beside the object that owns it — what the project asks for, never how it resolved here. Hand-written YAML on both sides, no dependency added to either. **Export-only**, and stated where a reader will meet it: the file's own header, `_coverage.md`, the manifest's `form`, **and now the panel** — the changed-files row carries a lock glyph and a tooltip saying the edit does not reach the project. It went there rather than on the tree row (§9.3) because the row somebody is about to *stage* is where the warning has to be. `CoverageSummary` still speaks only when there are gaps, deliberately. **And the tree draws one row per reference** (2026-08-17): under its manager, version beside the name, chosen libraries before system ones — and against HEAD's copy of a changed catalog, the mark lands on the reference that moved, so a version bump reads as *that library*. **The task configuration gets the same treatment** the same day, through `TaskCatalog.cs` — one row per task in the configuration's own order, schedule and priority beside the name, a priority edit marked on that task — with the difference that the `.tasks.yaml` those rows read is the importable half, so the row is exactly what the next import applies |
 | **Chrome** | One app-wide progress bar with a caption, maximized on open, log console collapsed, heartbeat during long runs. **The title bar follows the theme** — painted with `Color.Surface.Base` through DWM, on every window the app opens and again on every theme switch, so the caption and the top bar are one surface rather than two. Tooltips are themed too, by an implicit style, because there are dozens of them and not one named a style |
 | **Saying it is working** | A toolchain run announces itself the moment it passes the last gate, and three surfaces answer three different questions: the **bar** that the app is busy, the **row** which project it is busy with (`exporting…`, in the accent colour), and the **heartbeat** that it is still alive and how far along. A refused, coalesced or throttled save announces nothing, because it is not working |
 | **Log panel** | Level as four chips (click to drop, click to restore) and category as a multi-select dropdown carrying a live count each, because the counts are what say where the volume is. **Pause freezes the feed** rather than the scroll, says so in the header, and shows what is queued behind it. The controls appear with the list they filter: collapsed, the strip is a chevron, a count and the paused pill |
@@ -335,9 +335,6 @@ statement from "not worth doing".
 
 | | Why it waits | What would bring it back |
 |---|---|---|
-| **Word-level diff** (§5) | The colours exist and are contrast-checked; `DiffView` tints whole rows. A readability gain on something already correct. | Somebody reading generated XML or ST diffs daily and saying so. It is the strongest candidate of the four. |
-| **Ahead/behind previews** (GP-K, §9d) | The badge already says *how many*; this says *which*. `RecentCommitsAsync` already takes a count and a skip, so it is the smallest thing left in the git plan. | An hour, whenever the git panel is next open on the bench. |
-| **Retry when the IDE closes** (§3) | Every path already recovers — the next save, and reopening the repository. This closes the gap in between. Convenience, not correctness. | A user noticing the wait, or the vendor lock file turning out to be cheap to watch. |
 | **Code signing** (open decision #2) | Nothing external is distributed yet. | **Start this before it is needed, not when.** It is procurement lead time rather than engineering time, and it is the only item on this page that gets worse purely by waiting. |
 
 **Also decided, and more firmly: the code-shape queue is closed.** Staging, the repository
@@ -418,7 +415,10 @@ unless something changes.
 > second Versio can no longer open a repository the first one has, which is what
 > `LockRecovery.HeldByLiveSession` had been promising in a sentence since it was written.
 > **Phase 9 is complete**; what is left in §5 is §5.H, the repository vanishing while it is
-> open, which nobody has costed. §0 is the handover note.
+> open — **costed 2026-08-17, in §5.H itself, and deliberately not built**: the hard part is
+> classifying a mid-run toolchain failure against a vanished share as environmental rather
+> than feeding the circuit breaker, and that classification should not be reshaped in
+> passing. §0 is the handover note.
 >
 > **[`phase1/GIT-PANEL-PLAN.md`](phase1/GIT-PANEL-PLAN.md)** — the git panel's functionality and UX.
 > **Eleven of its twelve phases are built**: the git presence probe and identity preflight,
@@ -426,8 +426,14 @@ unless something changes.
 > per-file staging, the one commit button, conflicts and the way out of a divergence, branches
 > and their deletion, and — both on 2026-08-14 — **PLC-aware naming**, which is the item that
 > document itself ranks highest and the one no generic git client can have, and the
-> **merge-request button** across five forges. **What is left** is GP-K/GP-L: the ahead/behind
-> previews and the rest of the small UX list.
+> **merge-request button** across five forges. ~~**What is left** is GP-K/GP-L: the ahead/behind
+> previews and the rest of the small UX list~~ — **built 2026-08-17, which closes the plan at
+> twelve of twelve**: the ↑/↓ badges are buttons opening commit previews (the incoming one
+> naming the objects a pull would touch, through the same index the summary uses), a large
+> staged file with no LFS rule is asked about before the commit rather than at the push that
+> rejects it, a clean tree is one sentence instead of two empty boxes, the branch card names
+> where push goes, the subject counter colours itself at 50 and 72, and Ctrl+Shift+P pushes.
+> See PHASE2.md item 2 — including the two §10 items that turned out to be already built.
 >
 > *This paragraph said "nothing in it is built" for a day and a half after nine phases had
 > shipped, because it was written once and the header above it was re-derived without it. The
@@ -449,16 +455,20 @@ fixture: two library managers, **both exported now**, and `_coverage.md` reports
   `config/libraries.yaml` was reversed: a real project has two managers, see §5)
 - ~~A YAML writer by hand~~ — `versio_yaml.py` writes it, `LibraryCatalog` reads it, neither
   side has a dependency. About 350 lines for both halves, and the format is deliberately tiny
-- **Still open:** one tree node **per library**, so a version bump reads as *that library*
-  rather than as "the library manager changed". The data exists and parses now; this is a tree
-  feature rather than an exporter one
+- ~~**Still open:** one tree node **per library**, so a version bump reads as *that library*
+  rather than as "the library manager changed"~~ — **done, 2026-08-17, first item of PHASE2's
+  queue.** One row per reference under its manager, chosen libraries sorted before system
+  ones, and — because the shell fetches HEAD's copy of a changed catalog through
+  `ShowAtHeadAsync` — the mark lands on exactly the reference whose pin moved: bumped is `M`,
+  added is `A`, and a reference deleted from the catalog still gets a row, marked `D`, from
+  the baseline's copy of it
 
 ### 2. ~~Finish the git surface~~ — **done**
 
 - ~~Recent commits with click-to-diff~~, ~~per-hunk staging~~ — **done**. History has since
   moved to a **panel of its own** with per-file diffs and lazy loading throughout; see the
   finding on what the old list cost on every refresh
-- **Stash is withdrawn from the UI**, not finished. `StashPushAsync` / `StashApplyAsync` /
+- ~~**Stash is withdrawn from the UI**, not finished~~ — **rebuilt 2026-08-17** as a section that exists only while `git stash list` has rows; see the git panel row above. The record below stands as what was withdrawn and why. `StashPushAsync` / `StashApplyAsync` /
   `StashDropAsync` and the list parser are kept, tested and unused: what was wrong was six
   permanent controls in the narrowest column for something reached a few times a month. A
   different design is owed
@@ -544,6 +554,60 @@ does not record them has to be run again.
     *projects* and not orphaned *export trees*, so every ignored project's mirror was still
     reported. See the Finding: half a rule, and nothing in the suite could have caught it because
     the existing test only ever supplied `ProjectFiles`.
+- **`RefrigeratorControl.project` is both the gate's fixture and the owner's daily working
+  project, and the gate cannot survive that.** Three consecutive 32-minute runs on 2026-08-18
+  each measured a *different* project: it went from 26 objects to 45 to 48 while the runs were
+  in flight, `FB_Alarm` moved into `Library/Alarm/POUs`, and a method the tests named by hand
+  was renamed between two of them. Six tests went red and not one of them was a regression.
+  - **Half the answer is already applied**: those tests now assert rules over the whole
+    manifest rather than named paths and counts — `EveryMemberLivesInsideItsOwner` checks the
+    invariant over every recorded member and insists there are some, and the export-only count
+    is derived from the manifest instead of typed in. That is better testing regardless of
+    who is editing what.
+  - ~~**The other half is a decision nobody has taken**~~ — **taken by the owner, 2026-08-18:
+    the fixture stays where it is.** *"Fixture is fine, I started adding more things to test
+    more thoroughly but this is not an every day project."* So the churn was deliberate
+    corpus-building rather than daily work, and it is finished. The gate is believable when
+    the IDE is closed, which is how it was run today, by asking.
+  - ~~**What that decision leaves owed**: the literals that rot~~ — **paid off, 2026-08-18.
+    The full gate passes 54/54 in one sweep**, which it had not done once all session.
+    Thirteen assertions stopped measuring the corpus and started measuring the exporter: the
+    library reference count and the task count read each file's own header, the export-only
+    and library-manager counts come from the manifest, `walked N` is derived, the GVL pair is
+    asserted per GVL, and the objects two deletion tests need are *discovered* — a
+    single-file, unowned, non-export-only object — rather than named.
+  - **The lesson, because it cost the most.** A literal about the corpus is a true statement
+    about a Tuesday: eight false failures in one day, not one of them a regression. But a rule
+    written in a hurry is still a guess — replacing `walked 26` with a derived number
+    introduced `Single()` into a test that exports **twice**, and only the 35-minute gate
+    caught it. The fast loop cannot stand in for that gate on any change that touches the
+    exporter.
+- **Regenerating the committed fixture mirror by hand has three arguments that are all easy
+  to get wrong, and no coverage.** It is done through `tools/codesys/Run-Codesys.ps1` when the
+  exporter's output shape changes, and on 2026-08-17 the third one was got wrong and shipped:
+  1. `-Profile` is mandatory (`--noUI` refuses without it) and **its name is not the install
+     folder's** — read it from `…\CODESYS <ver>\CODESYS\Profiles\*.profile.xml`.
+  2. `out` must be the **real mirror path**, not a temp directory. `preserve_equivalent`
+     compares against the bytes already there to suppress the native-XML churn that never
+     settles otherwise; exporting elsewhere and copying back puts a diff nobody made into
+     several `.xml` files.
+  3. `bindingId` must be **the id `.versio/repo.json` actually binds that directory with**
+     (`6d3f8855e205`), not a readable placeholder. Passing `"fixture"` produced a
+     `ManifestMismatch` finding on the next launch — which is the safeguard working exactly as
+     intended, and was the *only* thing that caught it: the whole suite was green, because
+     every test builds its own binding and none reads the committed `repo.json`.
+
+  The owner usually has the project open in CODESYS, so the export must run against a **copy**
+  of the `.project` — into the real `out` above — rather than closing their IDE.
+- **A *graphical* member inside an in-POU folder is imported into the POU's root, not back
+  into the folder.** Found on 2026-08-17 while fixing the foldered-member export, by reading
+  `handle_native` rather than by any test. The textual path is fully covered — it resolves
+  the object itself, folder-blind, and updates it in place — but `handle_native` imports into
+  the *owner* it computed from the chain, which is the POU, and `import_native` both replaces
+  and creates. Whether CODESYS matches the incoming GUID across the folder boundary and
+  replaces in place, or pastes a second copy, is **unmeasured**. Narrow (a method is normally
+  ST, and a duplicate would be visible rather than silent), so it is written down rather than
+  fixed on an unverified guess. Measuring it needs one probe and a gate run.
 - **Cancelling a running toolchain job is not implemented.** A change arriving mid-run is
   queued, which is correct and cheap; restarting instead would be better when the run has
   barely begun, and needs process cancellation plus cleanup of the staging folder a killed
@@ -949,6 +1013,13 @@ actually do.
 
 The full list, newest first:
 
+- [Properties are readable now: the payload imports, the text is for people](FINDINGS.md#properties-are-readable-now-the-payload-imports-the-text-is-for-people)
+- [An import destroyed a method, and the summary said seven native, zero warnings](FINDINGS.md#an-import-destroyed-a-method-and-the-summary-said-seven-native-zero-warnings)
+- [Ownership was spelled three ways in one tree, and the panel could only read one](FINDINGS.md#ownership-was-spelled-three-ways-in-one-tree-and-the-panel-could-only-read-one)
+- [A folder inside a POU stripped the owner off every method in it](FINDINGS.md#a-folder-inside-a-pou-stripped-the-owner-off-every-method-in-it)
+- [A process parked inside the mirror made every export fail at the swap](FINDINGS.md#a-process-parked-inside-the-mirror-made-every-export-fail-at-the-swap)
+- [The project row stuck on "exporting…", and the await that widened a race until it hit](FINDINGS.md#the-project-row-stuck-on-exporting-and-the-await-that-widened-a-race-until-it-hit)
+- [The expansion default missed the correction the pruner already carried](FINDINGS.md#the-expansion-default-missed-the-correction-the-pruner-already-carried)
 - [`import_native` duplicates an external-file object instead of replacing it](FINDINGS.md#import_native-duplicates-an-external-file-object-instead-of-replacing-it)
 - [The probe that caught two of its own lies was carrying a third, and three documents believed it](FINDINGS.md#the-probe-that-caught-two-of-its-own-lies-was-carrying-a-third-and-three-documents-believed-it)
 - [`move()` declines three moves of nine, raises for none, and the destination is not what decides](FINDINGS.md#move-declines-three-moves-of-nine-raises-for-none-and-the-destination-is-not-what-decides)

@@ -13,7 +13,7 @@ schema: 1
 vendor: codesys
 manager: "Library Manager"
 path: "Device/Plc Logic/Application/Library Manager"
-referenceCount: 21
+referenceCount: 23
 references:
   - name: "#Standard"
     namespace: Standard
@@ -187,6 +187,22 @@ references:
     namespace: BPLog
     placeholder: BreakpointLogging
     defaultResolution: "Breakpoint Logging Functions, * (3S - Smart Software Solutions GmbH)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+  - name: "#IODrvEtherCAT"
+    namespace: IoDrvEthercatLib
+    placeholder: IODrvEtherCAT
+    defaultResolution: "IoDrvEtherCAT, 4.1.0.0 (3S - Smart Software Solutions GmbH)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+  - name: "#IoDrvBallufIOL"
+    namespace: IoDrvBallufIOL
+    placeholder: IoDrvBallufIOL
+    defaultResolution: "IoDrvBallufIOL, 4.9.0.0 (CODESYS)"
     systemLibrary: true
     optional: false
     qualifiedOnly: false

@@ -9,11 +9,13 @@
 #   CODESYS.exe --profile="..." --noUI --runscript=versio_export.py --scriptargs:"<job.json>"
 # job.json: { "project": "...", "out": "<export root>", "bindingId": "b-xxxx" }
 
+import errno
 import io
 import json
 import os
 import shutil
 import sys
+import time
 import traceback
 
 import scriptengine  # type: ignore
@@ -26,6 +28,7 @@ from versio_text import (content_hash, join_st, normalize_decl_only,  # noqa: E4
                          too_long_for_this_machine)
 from versio_types import (EXPORT_ONLY_FORMS, FORM_CONTAINER,  # noqa: E402
                           FORM_EXTERNAL_NATIVE, FORM_GVL_BOTH, FORM_GVL_NATIVE,
+                          FORM_PROPERTY_BOTH, FORM_PROPERTY_TEXT,
                           FORM_LIBRARIES, FORM_NATIVE, FORM_NATIVE_R,
                           FORM_NATIVE_WITH_CHILDREN, FORM_SKIP, FORM_ST_DECL,
                           FORM_ST_FULL, FORM_ST_IMPL, FORM_TASK_BOTH,
@@ -472,18 +475,24 @@ class Exporter(object):
         emit({"t": "tasks", "path": rel_path.replace("\\", "/"), "count": len(tasks)})
         return text
 
-    def handle(self, obj, rel_dir, parent_name, parent_guid=None):
+    def handle(self, obj, rel_dir, parent_guid=None):
         """Export one object and recurse into its children.
 
-        `rel_dir` is the folder mirroring this object's place in the CODESYS tree.
-        `parent_name` is set only for sub-POU members - methods, actions,
-        transitions, properties - whose filenames are prefixed with their owner so
-        a flat folder can still reconstruct ownership on import.
+        `rel_dir` is the directory mirroring this object's place in the CODESYS tree,
+        and from schema 9 that is the WHOLE of where an object goes: a container
+        makes a directory, an object with children makes one named after itself, and
+        a member goes inside its owner's. The mirror path is the path the IDE shows.
 
-        `parent_guid` is the same relationship written down for a reader rather
-        than for the importer: it goes into the manifest, and it is what the panel
-        nests by. Both are passed because they answer different questions - the
-        name shapes the file on disk, the GUID survives that file being renamed.
+        `parent_guid` is the owner of a sub-POU member - a method, action, transition
+        or property - and absent for everything else. It is not how the file is
+        placed any more; it answers the question the path cannot, which is whether
+        `FB_Alarm/M_Reset.st` is the POU's method or an object that happens to sit
+        in a folder of the same name. It survives a rename, as a name never could.
+
+        There used to be a `parent_name` beside it, because a member's FILE was
+        prefixed with its owner (`FB_Alarm.M_Reset.st`) to reconstruct ownership out
+        of a flat directory. The directory does that now, and a prefix as well would
+        say the same thing twice - `FB_Alarm/FB_Alarm.M_Reset.st`.
 
         Unmapped type GUIDs are exported natively and warned about, never dropped:
         a newer CODESYS adding a type must not silently lose objects.
@@ -547,14 +556,18 @@ class Exporter(object):
             return
 
         if form == FORM_CONTAINER:
+            # A folder is a directory, wherever it sits - including inside a POU, where
+            # `parent_guid` carries the OWNER through it so the members below still record
+            # whose they are. The two facts are independent: the directory says where the
+            # object is shown, the owner GUID says what it belongs to, and a method grouped
+            # into `Private` needs both said.
             child_dir = os.path.join(rel_dir, safe_file_stem(name))
             for child in children:
-                self.handle(child, child_dir, None)
+                self.handle(child, child_dir, parent_guid)
             return
 
         stem_name = safe_file_stem(name)
-        parent_stem = safe_file_stem(parent_name) if parent_name else None
-        fname = file_name_for(stem_name, obj_type, form, parent_stem)
+        fname = file_name_for(stem_name, obj_type, form)
         rel_path = os.path.join(rel_dir, fname)
         abs_path = os.path.join(self.out_root, rel_path)
 
@@ -638,6 +651,35 @@ class Exporter(object):
                 write_text(abs_path, text)
                 self.record(obj, obj_type, form, rel_path, text, parent_guid)
 
+            elif form == FORM_PROPERTY_BOTH:
+                # Two files, one object, one GUID - the GVL_BOTH shape with the halves
+                # swapped. The recursive .xml is the importable one and is byte for byte what
+                # this object exported before the readable half existed; the .st beside it is
+                # the property's header, written for a reader and never applied back.
+                #
+                # Recorded NATIVE_R, not PROPERTY_BOTH: the form is what tells the planner
+                # this file is the importable half, and it is the same payload as always, so
+                # nothing about the import changes. The accessors are walked separately below
+                # and write their bodies as PROPERTY_TEXT.
+                xml_path = os.path.join(rel_dir, stem_name + ".xml")
+                xml_abs = os.path.join(self.out_root, xml_path)
+                self.check_path_length(xml_path, xml_abs)
+                xml_text, _ = self.export_native(obj, xml_abs, True)
+                self.record(obj, obj_type, FORM_NATIVE_R, xml_path, xml_text, parent_guid)
+
+                decl = normalize_decl_only(obj.textual_declaration.text)
+                write_text(abs_path, decl)
+                self.record(obj, obj_type, FORM_PROPERTY_TEXT, rel_path, decl, parent_guid)
+
+            elif form == FORM_PROPERTY_TEXT:
+                # An accessor's body, for reading. Its declaration is empty on every property
+                # measured - CODESYS reports has_textual_declaration true with zero characters
+                # - so there is nothing to join, and this is the implementation alone exactly
+                # as an ACTION's is.
+                text = normalize_decl_only(obj.textual_implementation.text)
+                write_text(abs_path, text)
+                self.record(obj, obj_type, form, rel_path, text, parent_guid)
+
             elif form == FORM_LIBRARIES:
                 obj_path = object_path(rel_dir, name)
                 text = self.export_libraries(obj, obj_path, rel_path)
@@ -663,17 +705,40 @@ class Exporter(object):
             return
 
         if form == FORM_NATIVE_WITH_CHILDREN:
-            # An unmapped type that turned out to be structural. Its children are objects in
-            # their own right, not members of it, so they go into a SUBDIRECTORY named after
-            # it and are not prefixed with its name - exactly what FORM_CONTAINER does. The
-            # difference is only that this node also had a payload worth writing.
+            # An unmapped type that turned out to be structural. Its children are objects
+            # in their own right rather than members, so they go into a subdirectory named
+            # after it and record NO owner GUID - which is the only thing separating this
+            # from the member recursion below, now that both write into a directory named
+            # after this object. The other difference is that this node also had a payload
+            # worth writing, which is why it is here and not in the FORM_CONTAINER branch.
             child_dir = os.path.join(rel_dir, stem_name)
             for child in children:
-                self.handle(child, child_dir, None)
+                self.handle(child, child_dir)
             return
 
-        # Children of a leaf object (methods, actions, properties on a POU) live
-        # alongside it in the same folder, prefixed with the parent name.
+        # Children of a leaf object - methods, actions, transitions, properties - live in a
+        # DIRECTORY NAMED AFTER IT, so the mirror path is the path the IDE shows.
+        #
+        # THE RULE THIS REPLACED, and why one rule is worth a rename of every mirror.
+        # Ownership used to be spelled three different ways in one tree: a directory for a
+        # container, a `FB_Alarm.` prefix on a member's file name, and - for a folder inside
+        # a POU - nothing at all, the folder erased and its members flattened up. Three
+        # encodings meant three things to get right, and each had already been got wrong: the
+        # flattening lost the folder (fixed 2026-08-17), and before that the prefix was the
+        # only record of ownership, which a name containing a dot defeats.
+        #
+        # Now there is one: `Device/Plc Logic/Application/FB_Alarm/Private/_M_Reset.st` is
+        # what CODESYS shows, segment for segment. The importer resolves it by splitting the
+        # path, the panel draws it by reading the path, and neither needs to know what a
+        # member is. `parent` stays in the manifest because it answers a question the path
+        # cannot: whether `FB_Alarm/M_Reset.st` is the POU's method or an object that happens
+        # to sit in a folder of the same name.
+        #
+        # THE COST, stated because somebody will meet it: every file in every mirror written
+        # before schema 9 is at a different path, so the first export after this renames the
+        # lot. Content is untouched, so git pairs them as renames and history survives; the
+        # planner reads both layouts and branches on the schema number, so an un-re-exported
+        # mirror keeps importing correctly until it is.
         #
         # TASK_BOTH does not recurse, for the same reason NATIVE_R does not: its recursive
         # .xml already contains every task, and its .tasks.yaml lists them again. Walking
@@ -684,8 +749,9 @@ class Exporter(object):
         # precisely the divergence that function's docstring says cannot happen.
         if form not in (FORM_NATIVE_R, FORM_TASK_BOTH):
             own_guid = safe(lambda: str(obj.guid), "")
+            child_dir = os.path.join(rel_dir, stem_name)
             for child in children:
-                self.handle(child, rel_dir, name, own_guid)
+                self.handle(child, child_dir, own_guid)
 
 
 def count_objects(obj, depth=0):
@@ -726,6 +792,61 @@ def count_files(path):
     for _dir_path, _dir_names, file_names in os.walk(path):
         total += len(file_names)
     return total
+
+
+def rename_retrying(src, dst):
+    """os.rename with a short retry on Windows' access-denied.
+
+    Errno 13 on a rename is very often transient here: git hashing the tree for a
+    status, a virus scanner, a directory enumeration - each holds a handle for
+    milliseconds, and one millisecond is all a rename needs to lose. Five attempts
+    over a second outlives all of those; what it does NOT outlive is a process
+    PARKED in the tree, which is the caller's fallback to handle.
+    """
+    for attempt in range(5):
+        try:
+            os.rename(src, dst)
+            return
+        except OSError as err:
+            if err.errno != errno.EACCES or attempt == 4:
+                raise
+            time.sleep(0.2)
+
+
+def replace_contents(out_root, staging):
+    """Replace the mirror's files without renaming any directory it already has.
+
+    The degraded swap, for the day a process is parked inside the mirror: renaming
+    a directory needs every handle in the tree gone, but renaming and deleting the
+    FILES needs nothing of the sort - measured on the live repository that hit
+    this, where every file renamed freely while two directories refused.
+
+    Old files are removed first and new ones moved in after, per directory, so the
+    mixed-content window is as small as file operations allow. Directories the old
+    tree had and the new one does not are removed only if they empty out - one
+    that refuses is exactly the held one, and it is left standing, empty, for the
+    next full swap to take.
+    """
+    for base, _dirs, files in os.walk(out_root, topdown=False):
+        for name in files:
+            os.remove(os.path.join(base, name))
+
+    for base, _dirs, files in os.walk(staging):
+        rel = os.path.relpath(base, staging)
+        target = out_root if rel == "." else os.path.join(out_root, rel)
+        if not os.path.isdir(target):
+            os.makedirs(target)
+        for name in files:
+            os.rename(os.path.join(base, name), os.path.join(target, name))
+
+    for base, _dirs, files in os.walk(out_root, topdown=False):
+        if base != out_root and not os.listdir(base):
+            try:
+                os.rmdir(base)
+            except OSError:
+                pass
+
+    shutil.rmtree(staging)
 
 
 def coverage_markdown(project, records, skips, warnings):
@@ -898,7 +1019,7 @@ def main():
     ex = Exporter(staging, expected,
                   previous=out_root if os.path.isdir(out_root) else None)
     for child in roots:
-        ex.handle(child, "", None)
+        ex.handle(child, "")
 
     manifest = {
         # 2: adds "skipped". A schema-1 manifest is not a manifest with nothing
@@ -944,7 +1065,16 @@ def main():
         # CODESYS's own tree vocabulary - PLC_LOGIC, CALL_TO_POU, GVL_PERSISTENT - and a
         # reader that has to guess whose vocabulary it is holding cannot translate them
         # for display without guessing at the same time.
-        "schema": 8,
+        # 9: THE PATH IS THE PROJECT PATH. A member lives in a directory named after its
+        # owner - Application/FB_Alarm/M_Reset.st - where before it sat beside it as
+        # Application/FB_Alarm.M_Reset.st, and a folder inside a POU is a directory rather
+        # than being erased. This is the one bump that is not additive: the same object is
+        # at a different path than it was, so a reader must know which layout it is holding
+        # before it can resolve anything. On schema 8 and below the owner chain has to be
+        # re-applied on top of the directories to reach the object; on 9 doing that would
+        # name FB_Alarm twice. CodesysImportPlanner branches on exactly this number, which
+        # is why an un-re-exported mirror keeps importing correctly.
+        "schema": 9,
         "vendor": VENDOR,
         "bindingId": job.get("bindingId", ""),
         "project": os.path.basename(job["project"]),
@@ -999,10 +1129,33 @@ def main():
     # mirror is either the old tree or the new one. What a crash can leave behind now is a
     # .versio_trash directory holding the previous export - recoverable by hand, cleared
     # and announced by the next run - instead of nothing.
+    #
+    # AND A FALLBACK, because on Windows a directory rename is refused (errno 13) while
+    # ANY process holds a handle on any directory inside the tree - and a process's
+    # CURRENT WORKING DIRECTORY is such a handle. Measured on a live repository: an IDE
+    # whose cwd had landed inside the mirror made every export fail at this exact line,
+    # twice, while every FILE in the tree renamed freely. Somebody browsing their own
+    # export in a file dialog must not be able to break the export - so when the rename
+    # is refused after retries, the mirror is replaced CONTENT-first instead: files
+    # removed and moved one by one, directories left standing. The trade is stated: the
+    # atomic either-old-or-new guarantee becomes a brief mixed-content window, which is
+    # still strictly better than the alternative on offer, no export at all.
+    renamed = True
     if os.path.isdir(out_root):
-        os.rename(out_root, trash)
+        try:
+            rename_retrying(out_root, trash)
+        except OSError as err:
+            if err.errno != errno.EACCES:
+                raise
+            renamed = False
+            emit({"t": "swap-fallback", "out": out_root, "error": str(err)})
+            replace_contents(out_root, staging)
 
-    os.rename(staging, out_root)
+    if renamed:
+        # Retried as well: with the old mirror already in the trash, a refusal HERE is
+        # the no-mirror window the three renames exist to prevent, so this one is worth
+        # being stubborn about.
+        rename_retrying(staging, out_root)
 
     emit({"t": "swapped", "out": out_root, "files": count_files(out_root)})
 

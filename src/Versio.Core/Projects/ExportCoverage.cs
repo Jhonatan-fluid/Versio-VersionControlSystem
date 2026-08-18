@@ -66,7 +66,27 @@ public static class ExportCoverage
     /// the silent drift <c>CODESYS.md</c> §9 already counts four of.
     /// </remarks>
     /// <seealso cref="ProjectManifest.Schema"/>
-    public const int CurrentSchema = 8;
+    public const int CurrentSchema = 9;
+
+    /// <summary>
+    /// From this schema, a recorded path <b>is</b> the chain of names to the object.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A threshold rather than the current version, and the only one of these that changes
+    /// how an existing file is <i>read</i> rather than what a new one contains. Before 9 a
+    /// member sat beside its owner as <c>FB_Alarm.M_Reset.st</c>, so reaching the object meant
+    /// taking the directories and then re-applying the owner chain from the GUIDs on top. From
+    /// 9 the member is at <c>FB_Alarm/M_Reset.st</c> and the directories already say it —
+    /// doing both would name <c>FB_Alarm</c> twice and resolve to nothing.
+    /// </para>
+    /// <para>
+    /// <b>So it cannot be inferred from the path.</b> Both layouts are legal file names and
+    /// neither is recognisable on sight; the schema number is the only thing that tells them
+    /// apart, which is what keeps a mirror exported last year importing correctly today.
+    /// </para>
+    /// </remarks>
+    public const int PathIsChainSchema = 9;
 
     /// <summary>The exporter's code for a skip that loses something.</summary>
     public const string GapReason = "NOT_IMPLEMENTED";
@@ -180,6 +200,19 @@ public static class ExportCoverage
     public const string LibrariesForm = "LIBRARIES";
 
     /// <summary>
+    /// The manifest's <c>form</c> for the importable <c>.tasks.yaml</c> half of a task
+    /// configuration.
+    /// </summary>
+    /// <remarks>
+    /// The name is the pair's: the object exports as "both" — this YAML plus the
+    /// <see cref="TaskNativeForm"/> XML beside it — and this record is the half a typed
+    /// import applies. The vendor's planner carries the same string privately; this constant
+    /// exists so the neutral side (the shell finding catalogs to parse) never has to know a
+    /// vendor to recognise one.
+    /// </remarks>
+    public const string TaskBothForm = "TASK_BOTH";
+
+    /// <summary>
     /// The manifest's <c>form</c> for the native <c>.xml</c> half of a task configuration.
     /// </summary>
     /// <remarks>
@@ -245,6 +278,27 @@ public static class ExportCoverage
     public const string ExternalNativeForm = "EXTERNAL_NATIVE";
 
     /// <summary>
+    /// A property's readable text — its header, or one accessor's body — written for a
+    /// reader and never applied back.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The importable half is the property's recursive <c>.xml</c>, recorded as
+    /// <c>NATIVE_R</c> exactly as it always was. This is the half beside it, and it is
+    /// export-only for a measured reason rather than a cautious one: exporting properties as
+    /// ordinary <c>ST_DECL</c> + <c>ST_IMPL</c> was tried on 2026-08-18 and the round trip
+    /// came back with every accessor body empty. The text is written so a property can be
+    /// read and diffed; the payload is what survives a trip through CODESYS.
+    /// </para>
+    /// <para>
+    /// So a property edited in the mirror does not flow back, and the import says so per
+    /// file. That is the same bargain <see cref="GvlNativeForm"/> and
+    /// <see cref="TaskNativeForm"/> already make, pointing the other way.
+    /// </para>
+    /// </remarks>
+    public const string PropertyTextForm = "PROPERTY_TEXT";
+
+    /// <summary>
     /// True for a manifest <c>form</c> whose file is written for review and never applied back.
     /// </summary>
     /// <remarks>
@@ -267,7 +321,8 @@ public static class ExportCoverage
         string.Equals(form, LibrariesForm, StringComparison.Ordinal)
         || string.Equals(form, TaskNativeForm, StringComparison.Ordinal)
         || string.Equals(form, GvlNativeForm, StringComparison.Ordinal)
-        || string.Equals(form, ExternalNativeForm, StringComparison.Ordinal);
+        || string.Equals(form, ExternalNativeForm, StringComparison.Ordinal)
+        || string.Equals(form, PropertyTextForm, StringComparison.Ordinal);
 
     /// <summary>What an export covers, from its manifest alone.</summary>
     public static CoverageReport Of(ProjectManifest? manifest)

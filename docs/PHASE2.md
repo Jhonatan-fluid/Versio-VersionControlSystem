@@ -33,43 +33,125 @@ Items 1–6 are the order the evidence argues for. Items 7 and 8 sit last **by t
 decision** (2026-08-17): no second vendor and no packaging until everything above them is
 complete.
 
+> **Items 1–4 and 6 are DONE, all on 2026-08-17, in one session on branch `Phase2_Begin`** —
+> each struck through below with what actually happened. What remains open in this file:
+> **item 5** (corpus rows that wait on reality producing a specimen — C5 and `native_partial`
+> cannot be manufactured), the **human eyeball pass** (item 6's one unownable entry, now with
+> a session's worth of new UI to look at), and **items 7–8**, which the owner sequenced last
+> on purpose. The gate before believing any of it: the CODESYS suite, run at the end of the
+> session over the Core changes it can see.
+
 ### 1. The project tree panel — the next piece of work, and the largest user-visible value
 
-Two finished readers are idling with no consumer: `LibraryCatalog.Parse` has parsed the
-exported `.libraries.yaml` for weeks, and the import plan's last blocked item —
-`TaskCatalog.cs`, the C# reader for `.tasks.yaml` — is deliberately **not built until this
-panel exists to consume it** ([`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md), *What is left*,
-item 3; note its warning that `LibraryCatalog` already broke the "no reader without a consumer"
-rule, so build `TaskCatalog` *with* the panel change, not before it).
+~~Two finished readers are idling with no consumer~~ — **both consumed as of 2026-08-17**:
+`LibraryCatalog.Parse` feeds one row per reference, and `TaskCatalog.cs` — the import plan's
+last blocked item, deliberately not built until the panel existed to consume it
+([`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md), *What is left*, item 3) — was built *with*
+its rows in one change, honouring that document's warning that `LibraryCatalog` had already
+broken the "no reader without a consumer" rule.
 
 What the panel needs, from `STATUS.md` §4 (*Finish the project tree*):
 
-- **One node per library**, under its manager — the data exists and parses; a version bump
-  should read as *that library*, not "the library manager changed"
-- One node per task, once `TaskCatalog.cs` exists
-- A **layer switcher** in the diff pane (`ST | native`) — objects already carry both layers
-  and there is no way to see the other one
-- Context menu; expansion state persisted per repository (it survives a refresh, not a window
-  close)
+- ~~**One node per library**, under its manager — the data exists and parses; a version bump
+  should read as *that library*, not "the library manager changed"~~ — **done, 2026-08-17.**
+  One row per reference, chosen before system, version beside the name; the shell pairs a
+  changed catalog with HEAD's copy via `ShowAtHeadAsync`, so the mark lands on the reference
+  that moved — bumped `M`, added `A`, and a removed reference keeps a row marked `D` from the
+  baseline. Guarded end to end: Core builder tests, an integration test over the committed
+  fixture's two real catalogs, and an App flow test proven by deleting the shell's forwarding
+- ~~One node per task, once `TaskCatalog.cs` exists~~ — **done, 2026-08-17, and the reader
+  landed WITH its consumer**, as the warning above demanded. `TaskCatalog.cs` parses the
+  emitter's one shape `LibraryCatalog` cannot — a nested scalar list, where a naive walk
+  would read one task per POU — and the tree hangs one row per task under the two-file
+  configuration leaf, in the catalog's own order, marked against HEAD the same way libraries
+  are. A task deleted from the YAML keeps a `D` row deliberately: the import leaves the live
+  task alone, so the reviewer needs to know the project still runs it
+- ~~A **layer switcher** in the diff pane (`ST | native`) — objects already carry both layers
+  and there is no way to see the other one~~ — **done, 2026-08-17.** Chips in the pane's
+  header, one per layer of the shown object, labelled by what the file is (`ST`, `native`,
+  `tasks`, `libraries`). Owned by the *shown path* rather than the tree selection —
+  `ShowPathAsync` keeps the strip when the new diff is one of its layers and clears it for
+  anything else, so every route into the pane behaves without knowing the strip exists.
+  Proven by mutation: removing that reconcile turns exactly the two ownership tests red
+- ~~Context menu; expansion state persisted per repository (it survives a refresh, not a window
+  close)~~ — **done, 2026-08-17, and item 1 closes with it.** The menu carries Stage, Discard,
+  Reveal in Explorer and Copy path — Stage and Discard only on rows with changed files of
+  their own, because a library or task row shares its catalog's file and "stage this
+  reference" would silently stage everything beside it. Discard reuses the git panel's own
+  confirmed flow, generalised to name every file it will touch and only the ones that
+  actually changed. History and Open-in-CODESYS from the original plan's menu are deliberately
+  not here: per-file history filtering and launching the vendor IDE are their own features,
+  not menu items. Expansion now survives the window via `.versio/local/tree.json`, written in
+  `Detach` — the one funnel switching, closing and disposing all pass through — and restored
+  before the first build, because rows take their expansion at construction. The menu needed
+  its own theme style: a ContextMenu is a popup with its own HWND, the ToolTip lesson one
+  control along, and Aero's white slab was what appeared until it got one
 
-### 2. The git panel's last phase — GP-K/GP-L
+### 2. ~~The git panel's last phase — GP-K/GP-L~~ — **done, 2026-08-17. Twelve of twelve.**
 
-Eleven of twelve phases are built ([`phase1/GIT-PANEL-PLAN.md`](phase1/GIT-PANEL-PLAN.md)).
-What is left: the **ahead/behind previews** and the small-UX list. The plan document ranks and
-scopes them; nothing else depends on them.
+~~Eleven of twelve phases are built ([`phase1/GIT-PANEL-PLAN.md`](phase1/GIT-PANEL-PLAN.md)).
+What is left: the **ahead/behind previews** and the small-UX list.~~ What landed, and what
+turned out to be already built:
 
-### 3. Retry automatically when the IDE closes — deferred 2026-08-15, still the smallest item
+- **§9d, the previews.** The ↑/↓ glyph split into two buttons, each opening its own list —
+  what a push would send, what a pull would bring. The incoming half also names the objects
+  the pull touches, through the same `ObjectIndex` and sentence the commit summary uses, and
+  its diff range is **three dots on purpose**: two would count this machine's own unpushed
+  edits as "arriving" on a diverged branch. Direction proven against real git on a real
+  divergence; the strip follows the counts it explains — reloaded when they move, closed
+  when its direction reaches zero.
+- **§9h, the large-file preflight.** Asked at the last cheap moment — after the gate's own
+  staging, before the commit — over a fresh `git status`. `LargeFilePreflight` is a stated
+  subset of gitattributes semantics; a rule without `filter=lfs` deliberately does not count,
+  because `binary -diff -merge` stops merge corruption and does nothing for a host's size
+  limit. A question, never a refusal.
+- **§10: items 2, 3, 5, 6 built** — the clean-tree sentence instead of two empty boxes, the
+  remote's name in the branch card (`origin · host/org/repo`, parsed so a credential in an
+  https URL can never reach a label), the subject counter coloured at 50 and 72, and
+  Ctrl+Shift+P with both shortcuts in tooltips — on the *live* explanation only, because a
+  key advertised at the moment it does nothing is noise, which the chrome test caught.
+  **Items 1 and 4 were already built**: path trimming shipped with GP-J, and the unborn
+  branch has had its own standing headline since GP-B's eleven-state machine — the archived
+  plan's §10 predated both.
 
-The vendor's lock file vanishing is a watchable filesystem event; seeing it would make closing
-CODESYS the retry, with no button. Nothing is broken while it waits — every path recovers on
-the next save or on reopen — so it buys convenience, not correctness. `STATUS.md` §3.
+### 3. ~~Retry automatically when the IDE closes — deferred 2026-08-15, still the smallest item~~ — **done, 2026-08-17**
 
-### 4. Diff view: side-by-side and word-level intra-line — deferred 2026-08-15
+~~The vendor's lock file vanishing is a watchable filesystem event; seeing it would make closing
+CODESYS the retry, with no button.~~ It does now, and with no button: the occupancy marker —
+resolved through `IPlcProjectFormat`, so `Sync/` never learns a vendor's spelling — is watched
+by the same `FileChangeWatcher` as everything else, and its deletion re-submits **both
+directions through the ordinary gates**, exactly as if the user had saved. Deliberately not a
+second door: the direction lock, hash gate and import confirmation all still answer, so a
+side with nothing waiting is refused quietly and a blocked import comes back as the same
+`AwaitingConfirmation` offer a person still confirms. The marker's rewrite storm — CODESYS
+replaces it every few seconds while it holds the project — is told from a release by one
+`File.Exists`, and stays silent, because it fires all day and nothing happened. Proven end to
+end through the real watcher: create the marker, delete it, and the retry announces itself
+with nothing but the filesystem in between.
 
-The strongest case among the deferrals for being picked up first: the colours exist and are
-contrast-checked, and the diffs being read are generated XML and ST where a long line often
-differs by one identifier. A readability improvement to something already correct. `STATUS.md`
-§5, and the original design in [`phase1/PLAN.md`](phase1/PLAN.md).
+### 4. ~~Diff view: side-by-side and word-level intra-line — deferred 2026-08-15~~ — **done, 2026-08-17**
+
+~~The strongest case among the deferrals for being picked up first: the colours exist and are
+contrast-checked~~ — they did, `Brush.Diff.AddedWord`/`DeletedWord` in both palettes, unused
+since the day they were checked — and both halves are built:
+
+- **Word-level emphasis.** Within a changed pair, the part that moved gets the word brush on
+  top of the row tint and the syntax colours. A token-aligned common prefix/suffix trim,
+  deliberately not an LCS: linear where LCS is quadratic, on inputs whose longest lines are
+  exactly where the feature matters most, and identical for the corpus's own shape — one
+  identifier changed in a long generated line. `Counter1 → Counter2` lights the whole
+  identifier, because half a name is not a shorter version of it; a pair with nothing in
+  common lights nothing, because painting every character says less than the tint already
+  does.
+- **Side-by-side.** A fold of the same parsed unified diff, never a second diff computation —
+  the parser's own rule, extended: two view modes disagreeing about one file would be worse
+  than one mode. Spanning rows keep the hunk header whole (and its stage button); a pure
+  insertion is blank on the left rather than padded with a fake pairing. Split rows stretch
+  to the viewport and clip long lines, with unified mode one click away — the trade is stated
+  on the checkbox. Copy from the split view pastes the unified excerpt, markers on.
+- `DiffView` is unsealed for one stated reason: a ListBox outside a window never realises a
+  container, so the only honest test of what a row *paints* is a subclass that calls the row
+  builder — the paint proven by mutation against the emphasis pass.
 
 ### 5. Corpus breadth, and the rows nobody can reach yet
 
@@ -80,23 +162,32 @@ because its only known trigger (G11) was removed. Both are labelled where they l
 ([`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md), checklist and honesty-fix 1) and neither can
 be manufactured — they close when reality produces a specimen, not before.
 
-### 6. Small, real, and unowned
+### 6. Small, real, and unowned — **all four owned items closed 2026-08-17**
 
-- **`SAFEGUARDS.md` §5.H** — the repository vanishing while it is open. Nobody has costed it.
-- **`OrphanScanner.cs:194`** — states "never deleted automatically because it is committed
-  history" unconditionally; wrong for an export tree under an ignored path (`STATUS.md`,
-  *Known loose ends*).
-- **Stash UI** — withdrawn, not finished. The plumbing (`StashPushAsync` etc.) is kept and
-  tested; six permanent controls in the narrowest column was the wrong design, and a better
-  one is owed (`STATUS.md` §2).
-- **The UI eyeball pass** — everything the UI audit landed is verified by geometry and
-  automation tests, in both palettes, **by nothing that can see a screen**. A human pass is
-  owed (`STATUS.md`, *Handoff — the UI pass*).
-- **Five copies of the CPython-runner plumbing** — `PythonFileNameTests` holds four and
-  `PythonLibraryRecordTests` a fifth, each writing three temp files (and each leaking the
-  `GetTempFileName` base file its `.py` name is derived from). The fifth copy's own comment
-  says consolidating them is its own change; it is, and it belongs to whoever next touches the
-  parity project.
+- ~~**`SAFEGUARDS.md` §5.H** — the repository vanishing while it is open. Nobody has costed
+  it.~~ — **costed, in §5.H itself, and deliberately not built**: detection and the suspended
+  state are roughly a day; the hard part is classifying a mid-run toolchain failure against a
+  vanished share as environmental rather than feeding it to the circuit breaker, which
+  touches the engine's most safety-critical classification and should not be reshaped as a
+  side quest. Moves up the first time a real share drop bites somebody.
+- ~~**`OrphanScanner.cs:194`**~~ — **reworded.** The finding claimed "because it is committed
+  history", which a pure scan cannot know and which was false for an export tree under an
+  ignored path. The behaviour was always right for a simpler reason, and the message says
+  that now: never deleted automatically, what it is worth is a person's call, and it *may*
+  be committed history.
+- ~~**Stash UI** — withdrawn, not finished~~ — **rebuilt as the inversion of what was
+  withdrawn**: zero permanent controls, a section that exists only while `git stash list`
+  has rows (the conflicts section's own rule), Apply that keeps and Drop that confirms and
+  re-resolves the positional ref by SHA. No save button — the auto-stash owns taking, and
+  the deliberate case belongs to a terminal.
+- **The UI eyeball pass** — still owed to a human, and this session added to what it covers:
+  library and task rows, the layer chips, the context menu (and its newly themed
+  ContextMenu style), the ahead/behind previews, the clean-tree line, the coloured subject
+  counter, the emphasis colours and the split view, and the stash section.
+- ~~**Five copies of the CPython-runner plumbing**~~ — **one now**: `CPythonHarness`, with
+  the deadlock-avoiding stream drain every copy should have had, one temp directory deleted
+  whole (closing the `GetTempFileName` base-file leak), and the python probe cached per
+  process. The parity suite dropped from ~15 s to ~8 s with it.
 
 ### 7. A second vendor — deliberately last (decided 2026-08-17)
 
@@ -113,6 +204,64 @@ Same call as the second vendor: not until the rest is complete. `third_party/` v
 SHA-256 pinning; Velopack (`Setup.exe`, MSI, delta updates); **code signing — procurement lead
 time, so it is the one piece worth starting early once the queue above is nearly done**.
 `STATUS.md` §7.
+
+---
+
+## Added by the owner after the queue closed — 2026-08-17 evening, all built
+
+The eyeball pass produced these, which is the pass doing its job:
+
+- **Project-level objects under an explicit POUs node.** The pool Library Manager flat at
+  the root read as a duplicate of the application's; CODESYS hides the pool behind its own
+  pane, Versio groups it under the pane's own name. Flat pre-schema-4 manifests are exempt,
+  or the whole project would file under POUs.
+- **The pane grew a Rendered | Raw split.** Rendered: a library manager is its references as
+  a table, the task configuration a task table, one task its facts, a `.st` its highlighted
+  content, and the project row a card — file size, vendor, toolchain presence, sync state,
+  last export, objects by type, libraries, tasks, coverage. Raw stays the diff. The default
+  follows the selection: changed files open on Raw because the diff is what review is;
+  clean ones on Rendered, because the diff of a clean file is nothing.
+- **A clean file renders as itself now**, in both tabs, with "no changes right now" said in
+  the pane header — a clean object used to render as a shrug.
+- **Known gap, recorded not guessed:** the card cannot say which CODESYS version last saved
+  the project — the manifest does not record it. Adding it means touching the exporter
+  (python + the half-hour gate), queued for the next exporter change rather than done in
+  passing.
+
+## Added by the owner — 2026-08-18, built
+
+Both came from the same two screenshots: Explorer with seventeen files in one directory, and
+the panel showing `FB_Alarm` with four loose members under it.
+
+- **The mirror path is the project path.** A container makes a directory, an object with
+  exported children makes a directory named after itself, and members go inside it —
+  `…/Library/Alarm/POUs/FB_Alarm/Private/_M_Reset.st`. Three encodings of ownership became
+  one, schema 9, and every mirror renames once. The owner chose it over the alternative
+  (keep the flat mirror and record the tree shape as metadata) because that leaves two
+  representations to keep in sync forever.
+- **Folders are rows again, and they come first.** Free, once an in-POU folder is a real
+  directory: the tree builder already emitted directory groups before objects.
+- ~~**Ordering inside a group is still alphabetical**~~ — **accepted as it is by the owner,
+  2026-08-18: "group sort order is fine as it is right now".** Worth keeping the measurement
+  that stopped the wrong fix: recording `get_children()` order and sorting by it would have
+  been wrong, because that is *creation* order — it returns `M_Reset, Private, Protected,
+  P_Faulted` where the IDE shows `Private, Protected, M_Reset, P_Faulted`, and places
+  `FB_Alarm` eleventh of twelve where the IDE shows it second. Folders-first is what both
+  screenshots agreed on and is what shipped. If this is ever reopened, the within-group rule
+  still has not been measured, and two cropped screenshots are not enough to derive it.
+- **Still not recorded: which CODESYS version the project was exported by** — and the answer
+  to "what would it take" is now known rather than guessed. **It is already in the export.**
+  Inside CODESYS, `sys.version` returns
+  `CODESYS.exe CODESYS V3.5 SP22 Patch 2, ScriptEngine.plugin 4.2.0.0`, and
+  `versio_export.py` already emits it in its `start` event on every run — it simply never
+  reaches the manifest. So this is one field written, one field read on the card, and a
+  schema bump because an absent field must not read as "unknown version" on an old mirror.
+  No probe needed. Note it is the version that *performed the export*, not necessarily the
+  one that last saved the project; the two are the same whenever Versio did the export.
+- ~~**A graphical member inside an in-POU folder imports into the POU root**~~ — **parked by
+  the owner, 2026-08-18: "I don't care about graphical members, won't be working with those
+  for now, they are just part of a sample project".** The textual case — the normal one — is
+  covered end to end by `A_member_inside_a_folder_round_trips_and_moves_nothing_else`.
 
 ---
 

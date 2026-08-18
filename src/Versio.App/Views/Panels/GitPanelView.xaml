@@ -29,6 +29,17 @@
         </ResourceDictionary>
     </UserControl.Resources>
 
+    <!-- Ctrl+Shift+P pushes (GP-L §10.6), from anywhere in the panel — including the commit
+         box, whose own KeyDown handler takes Ctrl+Enter and lets everything else bubble.
+         Scoped to this panel rather than the window: push is this panel's verb, and a
+         shortcut that fired while somebody was typing in the log filter would be spooky.
+         The command's own CanExecute still gates it, so the key does nothing a dead button
+         would not. -->
+    <UserControl.InputBindings>
+        <KeyBinding Modifiers="Ctrl+Shift" Key="P"
+                    Command="{Binding Remote.PushCommand}" />
+    </UserControl.InputBindings>
+
     <Border Padding="14,0,12,12">
             <DockPanel>
                 <!-- GIT ITSELF IS MISSING.
@@ -197,6 +208,71 @@
                     </StackPanel>
                 </Border>
 
+                <!-- STASHES, ONLY WHILE THERE ARE ANY.
+
+                     The design the withdrawn one owed. The first version was six
+                     permanent controls in the panel's narrowest column for
+                     something reached a few times a month; this is the inversion —
+                     ZERO permanent controls, a section that exists exactly while
+                     `git stash list` has rows, the same rule the conflicts section
+                     follows one border up. No "save" button: the auto-stash takes
+                     stashes where Versio's flows need one, and the deliberate case
+                     belongs to a terminal. See StashRow for the rest. -->
+                <Border DockPanel.Dock="Top"
+                        Background="{DynamicResource Brush.Surface.Sunken}"
+                        CornerRadius="{DynamicResource Radius.Control}"
+                        Padding="10,8" Margin="0,0,0,10"
+                        Visibility="{Binding HasStashes,
+                            Converter={StaticResource BoolToVisibility}}">
+                    <StackPanel>
+                        <TextBlock Text="STASHES"
+                                   Style="{StaticResource SectionLabel}" />
+
+                        <ItemsControl ItemsSource="{Binding Stashes}" Margin="0,6,0,0">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Title}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding Title}"
+                                                       FontFamily="{DynamicResource Font.UI}"
+                                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                                       Foreground="{DynamicResource Brush.Text.Primary}" />
+                                            <TextBlock Text="{Binding Detail}"
+                                                       FontFamily="{DynamicResource Font.Mono}"
+                                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                                       Foreground="{DynamicResource Brush.Text.Disabled}" />
+                                        </StackPanel>
+
+                                        <Button Grid.Column="1" Content="Apply" Padding="8,2"
+                                                Margin="8,0,0,0"
+                                                Height="{DynamicResource Size.Control.Compact}"
+                                                Style="{StaticResource GhostButton}"
+                                                ToolTipService.ShowOnDisabled="True"
+                                                ToolTip="Put these changes back into the working tree. The stash stays until you drop it."
+                                                Command="{Binding ApplyCommand}" />
+                                        <Button Grid.Column="2" Content="Drop" Padding="8,2"
+                                                Margin="6,0,0,0"
+                                                Height="{DynamicResource Size.Control.Compact}"
+                                                Style="{StaticResource GhostButton}"
+                                                Foreground="{DynamicResource Brush.Status.Deleted}"
+                                                ToolTipService.ShowOnDisabled="True"
+                                                ToolTip="Delete this stash, after a confirmation naming it"
+                                                Command="{Binding DropCommand}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
                 <!-- THE DIVERGED BRANCH'S ONLY EXIT.
 
                      Until this existed the panel's own badge said "diverged, pull
@@ -322,11 +398,53 @@
                                        FontSize="{DynamicResource Font.Size.Body}"
                                        FontWeight="{DynamicResource Font.Weight.Medium}"
                                        Foreground="{DynamicResource Brush.Text.Primary}" />
-                            <TextBlock Text="{Binding Remote.AheadBehind}" Margin="10,0,0,0"
-                                       FontFamily="{DynamicResource Font.Mono}"
-                                       FontSize="{DynamicResource Font.Size.Caption}"
-                                       Foreground="{DynamicResource Brush.Accent.Default}" />
+                            <!-- One button per direction, because each opens its own
+                                 preview: what a push would send, what a pull would
+                                 bring. The combined "↑1 ↓2" glyph survives in the
+                                 branch dropdown, where compact is right; here each
+                                 half answers a different question. -->
+                            <Button Content="{Binding Remote.AheadLabel}" Margin="10,0,0,0"
+                                    Style="{StaticResource GhostButton}" Padding="6,0"
+                                    Height="18" FontFamily="{DynamicResource Font.Mono}"
+                                    FontSize="{DynamicResource Font.Size.Caption}"
+                                    Foreground="{DynamicResource Brush.Accent.Default}"
+                                    ToolTipService.ShowOnDisabled="True"
+                                    ToolTip="See the commits a push would send"
+                                    Command="{Binding Remote.ShowOutgoingCommand}"
+                                    Visibility="{Binding Remote.HasAhead,
+                                        Converter={StaticResource BoolToVisibility}}" />
+                            <Button Content="{Binding Remote.BehindLabel}" Margin="4,0,0,0"
+                                    Style="{StaticResource GhostButton}" Padding="6,0"
+                                    Height="18" FontFamily="{DynamicResource Font.Mono}"
+                                    FontSize="{DynamicResource Font.Size.Caption}"
+                                    Foreground="{DynamicResource Brush.Accent.Default}"
+                                    ToolTipService.ShowOnDisabled="True"
+                                    ToolTip="See the commits a pull would bring, and which objects they touch"
+                                    Command="{Binding Remote.ShowIncomingCommand}"
+                                    Visibility="{Binding Remote.HasBehind,
+                                        Converter={StaticResource BoolToVisibility}}" />
                         </StackPanel>
+
+                        <!-- WHERE PUSH GOES (GP-L §10.3). "origin · github.com/org/repo",
+                             because the word "push" is meaningless without it and on a
+                             machine with several remotes it is a real question. Hidden
+                             with no remote — that is the standing sentence's line. -->
+                        <TextBlock Text="{Binding RemoteDisplay}" Margin="0,2,0,0"
+                                   FontFamily="{DynamicResource Font.Mono}"
+                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                   Foreground="{DynamicResource Brush.Text.Disabled}"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding RemoteDisplay}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding RemoteDisplay}" Value="">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
 
                         <!-- BRANCH HOUSEKEEPING, ON THE BRANCH LINE.
 
@@ -367,6 +485,81 @@
                                    Foreground="{Binding Remote.Standing.BrushKey,
                                        Converter={StaticResource ResourceKey}}" />
 
+                        <!-- WHAT THE ARROWS STAND FOR, LISTED (GP-K §9d).
+
+                             Opened by the ↑/↓ buttons above, closed by clicking the
+                             same one again, and it follows the counts: reloaded when
+                             they move, gone when its direction reaches zero. The
+                             objects line above the commits is the pull side's whole
+                             point — changes arriving under an export tree will be
+                             imported into a .project, and which objects are about to
+                             move is a question for BEFORE the pull.
+
+                             Capped and scrolling: fifty commits behind is real on a
+                             branch someone left for a month, and an uncapped list
+                             would push the staging lists off the panel. -->
+                        <Border Margin="0,6,0,0" Padding="8,6"
+                                Background="{DynamicResource Brush.Surface.Base}"
+                                CornerRadius="{DynamicResource Radius.Control}"
+                                Visibility="{Binding Remote.IsPreviewOpen,
+                                    Converter={StaticResource BoolToVisibility}}">
+                            <StackPanel>
+                                <TextBlock Text="{Binding Remote.PreviewTitle}"
+                                           TextWrapping="Wrap"
+                                           FontFamily="{DynamicResource Font.UI}"
+                                           FontSize="{DynamicResource Font.Size.Caption}"
+                                           Foreground="{DynamicResource Brush.Text.Secondary}" />
+
+                                <TextBlock Text="{Binding Remote.PreviewObjects}"
+                                           TextWrapping="Wrap" Margin="0,4,0,0"
+                                           FontFamily="{DynamicResource Font.UI}"
+                                           FontSize="{DynamicResource Font.Size.Caption}"
+                                           FontWeight="{DynamicResource Font.Weight.Semibold}"
+                                           Foreground="{DynamicResource Brush.Text.Primary}">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Remote.PreviewObjects}"
+                                                             Value="">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+
+                                <ScrollViewer MaxHeight="150" Margin="0,4,0,0"
+                                              VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Disabled">
+                                    <ItemsControl ItemsSource="{Binding Remote.PreviewCommits}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <DockPanel Margin="0,1">
+                                                    <TextBlock DockPanel.Dock="Left"
+                                                               Text="{Binding ShortId}"
+                                                               Margin="0,0,8,0"
+                                                               FontFamily="{DynamicResource Font.Mono}"
+                                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                                               Foreground="{DynamicResource Brush.Text.Disabled}" />
+                                                    <TextBlock Text="{Binding Age}"
+                                                               DockPanel.Dock="Right"
+                                                               Margin="8,0,0,0"
+                                                               FontFamily="{DynamicResource Font.UI}"
+                                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                                               Foreground="{DynamicResource Brush.Text.Disabled}" />
+                                                    <TextBlock Text="{Binding Subject}"
+                                                               FontFamily="{DynamicResource Font.UI}"
+                                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                                               Foreground="{DynamicResource Brush.Text.Primary}"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                </DockPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </StackPanel>
+                        </Border>
+
                         <!-- Compact: three buttons inside a card that is itself
                              inside a 380 px panel. At the full 32 px they set the
                              height of the whole card and pushed the file lists
@@ -400,7 +593,7 @@
                                     Style="{StaticResource GhostButton}"
                                     Height="{DynamicResource Size.Control.Compact}"
                                     ToolTipService.ShowOnDisabled="True"
-                                    ToolTip="{Binding Remote.Standing.Headline}"
+                                    ToolTip="{Binding Remote.PushTooltip}"
                                     Command="{Binding Remote.PushCommand}"
                                     Visibility="{Binding Remote.ShowPush,
                                         Converter={StaticResource BoolToVisibility}}" />
@@ -461,11 +654,16 @@
                                    VerticalAlignment="Center"
                                    TextTrimming="CharacterEllipsis"
                                    Style="{StaticResource SectionLabel}" />
+                        <!-- Coloured at 50 and 72 (GP-L §10.5): quiet inside the
+                             convention, amber over it, red past git's own wrap.
+                             The bare number was undecodable to anyone who did not
+                             hover it. -->
                         <TextBlock Grid.Column="1" Margin="8,0,0,0"
                                    Text="{Binding CommitSubjectLength}"
                                    FontFamily="{DynamicResource Font.Mono}"
                                    FontSize="{DynamicResource Font.Size.Caption}"
-                                   Foreground="{DynamicResource Brush.Text.Disabled}"
+                                   Foreground="{Binding CommitSubjectBrushKey,
+                                       Converter={StaticResource ResourceKey}}"
                                    ToolTip="Subject length. The convention is 50 characters, hard limit 72." />
                     </Grid>
 
@@ -595,6 +793,30 @@
                     mostly reviewing what is staged give it the room.
                 -->
                 <Grid>
+                    <!-- ONE LINE INSTEAD OF TWO EMPTY BOXES (GP-L §10.2). Two
+                         boxes labelled STAGED and NOT STAGED with nothing in them
+                         say less than this sentence and take four times its
+                         height. The lists collapse under it rather than sitting
+                         empty beside it. -->
+                    <TextBlock Text="Working tree clean — nothing to commit."
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               FontFamily="{DynamicResource Font.UI}"
+                               FontSize="{DynamicResource Font.Size.Body}"
+                               Foreground="{DynamicResource Brush.Text.Disabled}"
+                               Visibility="{Binding IsWorkingTreeClean,
+                                   Converter={StaticResource BoolToVisibility}}" />
+
+                    <Grid>
+                        <Grid.Style>
+                            <Style TargetType="Grid">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsWorkingTreeClean}"
+                                                 Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Grid.Style>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" MinHeight="60" />
@@ -725,6 +947,7 @@
                              ItemTemplate="{StaticResource StageRowTemplate}"
                              VirtualizingStackPanel.IsVirtualizing="True"
                              VirtualizingStackPanel.VirtualizationMode="Recycling" />
+                    </Grid>
                 </Grid>
             </DockPanel>
     </Border>

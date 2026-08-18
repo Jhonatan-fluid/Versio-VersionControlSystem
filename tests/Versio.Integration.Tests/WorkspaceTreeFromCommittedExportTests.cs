@@ -237,7 +237,20 @@ public sealed class WorkspaceTreeFromCommittedExportTests(ITestOutputHelper outp
         // fixture makes a true assertion protect a dead specification, and nothing about it
         // looks stale from here. The mirror was regenerated with the G12 fix for exactly that
         // reason.
-        Assert.Equal(4, report.ExportOnlyFiles);
+        //
+        // DERIVED, not typed. It read `Assert.Equal(4, …)` until 2026-08-18 and went red when
+        // the owner added a second GVL to the real project — a true statement about a Tuesday.
+        // What the number has to do is agree with the manifest beside it, which is a stronger
+        // claim than any literal and survives the fixture being worked in. The same argument
+        // ExportLoggingTests' file count already makes one suite over.
+        Assert.Equal(
+            manifest.Objects.Count(o => ExportCoverage.IsExportOnly(o.Form)),
+            report.ExportOnlyFiles);
+
+        // And there really are some, or the agreement above is between two zeroes.
+        Assert.True(report.ExportOnlyFiles >= 4,
+                    $"only {report.ExportOnlyFiles} one-way file(s) — the fixture must carry "
+                    + "the two library managers, the task XML and the GVL XML");
         Assert.Equal(2, manifest.Objects.Count(o => o.Type == "LIBRARY_MANAGER"));
 
         // The two that are not library managers, named rather than left as arithmetic — and
@@ -277,6 +290,121 @@ public sealed class WorkspaceTreeFromCommittedExportTests(ITestOutputHelper outp
         Assert.Equal("codesys", catalog.Vendor);
         Assert.NotEmpty(catalog.References);
         Assert.All(catalog.References, r => Assert.False(string.IsNullOrWhiteSpace(r.Name)));
+    }
+
+    [SkippableFact]
+    public void The_committed_catalogs_hang_their_references_under_both_managers()
+    {
+        // The unit tests hand the builder catalogs a test wrote; this hands it the two
+        // CODESYS actually produced — including the quoting that exists because library
+        // names really contain commas and parentheses — and checks the full path from
+        // committed bytes to rows. The fixture has two managers on purpose: a snapshot
+        // joined to the wrong one would put the application's 21 references under the
+        // project's manager, and no single-manager test can notice that.
+        Skip.If(!File.Exists(ManifestPath), "the fixture's export is not committed");
+
+        var manifest = ProjectManifest.Parse(File.ReadAllText(ManifestPath));
+        var snapshots = manifest.Objects
+            .Where(o => o.Form == ExportCoverage.LibrariesForm)
+            .Select(o => new LibrarySnapshot
+            {
+                Path = $"{ExportPath}/{o.Path}",
+                Current = LibraryCatalog.Parse(File.ReadAllText(Path.Combine(
+                    TestPaths.Root,
+                    ExportPath.Replace('/', Path.DirectorySeparatorChar),
+                    o.Path.Replace('/', Path.DirectorySeparatorChar)))),
+            })
+            .ToList();
+
+        Assert.Equal(2, snapshots.Count);
+
+        var roots = WorkspaceTreeBuilder.Build(
+            [Fixture() with { Libraries = snapshots }], [], KeepClean);
+
+        var managers = Flatten(Assert.Single(roots))
+            .Where(n => n.Type == "LIBRARY_MANAGER")
+            .ToList();
+
+        Assert.Equal(2, managers.Count);
+        foreach (var manager in managers)
+        {
+            var snapshot = snapshots.Single(s =>
+                string.Equals(s.Path, manager.Path, StringComparison.OrdinalIgnoreCase));
+
+            output.WriteLine($"{manager.Path}: {manager.Children.Count} references");
+            Assert.Equal(snapshot.Current.References.Count, manager.Children.Count);
+            Assert.All(manager.Children, c => Assert.Equal(ProjectNodeKind.Library, c.Kind));
+
+            // Chosen before system — the three somebody picked must not be lost among the
+            // eighteen the visualisation plug-in pulled in.
+            var firstSystem = manager.Children.ToList()
+                .FindIndex(c => c.Detail.EndsWith("· system", StringComparison.Ordinal));
+            var lastChosen = manager.Children.ToList()
+                .FindLastIndex(c => !c.Detail.EndsWith("· system", StringComparison.Ordinal));
+            if (firstSystem >= 0 && lastChosen >= 0)
+            {
+                Assert.True(lastChosen < firstSystem,
+                    "a chosen library is sorted among the system ones");
+            }
+        }
+
+        // And one known row, with the pin a reviewer would look for.
+        var application = managers.Single(m => m.Path.Contains("/Application/"));
+        var standard = application.Children.Single(c => c.Name == "Standard");
+        Assert.StartsWith("Standard, 3.5.", standard.Detail);
+    }
+
+    [SkippableFact]
+    public void The_committed_task_catalog_hangs_its_tasks_under_the_configuration()
+    {
+        // The two halves of one file format never meet in the same process — versio_tasks.py
+        // writes, TaskCatalog reads — and the committed export is where they are checked
+        // against each other for free. The configuration is also the tree's one two-file
+        // leaf, so this is the join proven against the real pair rather than a manifest a
+        // test wrote.
+        Skip.If(!File.Exists(ManifestPath), "the fixture's export is not committed");
+
+        var manifest = ProjectManifest.Parse(File.ReadAllText(ManifestPath));
+        var record = manifest.Objects.Single(o => o.Form == ExportCoverage.TaskBothForm);
+
+        var catalog = TaskCatalog.Parse(File.ReadAllText(Path.Combine(
+            TestPaths.Root,
+            ExportPath.Replace('/', Path.DirectorySeparatorChar),
+            record.Path.Replace('/', Path.DirectorySeparatorChar))));
+
+        Assert.True(catalog.IsValid);
+        Assert.Equal("codesys", catalog.Vendor);
+
+        var roots = WorkspaceTreeBuilder.Build(
+            [Fixture() with
+            {
+                Tasks =
+                [
+                    new TaskSnapshot
+                    {
+                        Path = $"{ExportPath}/{record.Path}",
+                        Current = catalog,
+                    },
+                ],
+            }],
+            [], KeepClean);
+
+        var configuration = Flatten(Assert.Single(roots))
+            .First(n => n.Name == "Task Configuration");
+
+        foreach (var task in configuration.Children)
+        {
+            output.WriteLine($"{task.Name}  [{task.Detail}]");
+        }
+
+        // Two files, one node, and the catalog's tasks beneath it — the fixture's two
+        // real tasks with their real verbatim schedules.
+        Assert.Equal(2, configuration.Files.Count);
+        Assert.Equal(catalog.Tasks.Count, configuration.Children.Count);
+        Assert.Contains(configuration.Children,
+            t => t.Name == "MainTask" && t.Detail == "t#20ms · prio 1");
+        Assert.Contains(configuration.Children,
+            t => t.Name == "VISU_TASK" && t.Detail == "100 ms · prio 31");
     }
 
     [SkippableFact]

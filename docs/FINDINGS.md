@@ -17,6 +17,406 @@ produce a diff touching everything else.
 
 ---
 
+### Properties are readable now: the payload imports, the text is for people
+
+**Asked for by the product owner on 2026-08-18**, looking at the panel: *"properties are still
+getting rendered as xml only, all the properties on the project only have a getter — needs to
+render the same way"*. Seven properties on one function block, seven opaque XML blobs, and
+every getter inside them is ordinary Structured Text.
+
+**The shape is genuinely there.** A probe of the live project:
+
+```
+P_Active         PROPERTY         decl 59 chars      impl none
+Get              PROPERTY_METHOD  decl 0 chars       impl 40 chars
+```
+
+A property is its header, an accessor is its body — exactly `ST_DECL` and `ST_IMPL`, the two
+forms a DUT and an ACTION already take. So the table was changed, `PROPERTY_METHOD` was added
+beside it, and **the export half worked on the first run**:
+
+```
+P_Active.st        {attribute 'monitoring' := 'call'}
+                   PROPERTY P_Active : BOOL
+P_Active/Get.st    P_Active := State = E_AlarmState.Active;
+```
+
+Readable, reviewable, pragma intact, and the accessor sitting inside the property's directory
+exactly as schema 9 says it should.
+
+**Then the round trip emptied all seven.** Export, import, re-export with nothing edited:
+
+```
+BEFORE >>P_Active := State = E_AlarmState.Active;<<
+AFTER  >><<
+```
+
+That is not churn, it is **silent destruction of every property body in the project** — the
+failure this repository exists to prevent, found by the gate on the same run that proved the
+export was right. Reverted the same hour.
+
+**Which half does it is not yet measured, and that is the whole of the remaining work.** Two
+candidates, and the fix differs completely between them:
+
+- **Replacing the property's declaration resets its accessors.** `apply_st` calls
+  `textual_declaration.replace` on the PROPERTY, and CODESYS may regenerate the Get/Set
+  underneath it. Ordering does not explain it away: `P_Active.st` sorts before
+  `P_Active/Get.st` (`.` is 46, `/` is 47), so the accessor is applied *after* the property
+  and still ends up empty.
+- **Applying the accessor's own EMPTY declaration wipes the implementation beside it.** A
+  PROPERTY_METHOD reports `has_textual_declaration` true with **zero characters**, which is a
+  shape nothing else in the table has — every other `ST_IMPL` object (an ACTION, a TRANSITION)
+  has no declaration at all rather than an empty one.
+
+**The recursive payload survives because nothing is reassembled**: the accessors travel inside
+the property's own XML, so no write ever touches them individually. That is why `NATIVE_R` is
+the form again, and the comment in both form tables now says so rather than implying it was
+never questioned.
+
+**Shipped as two halves instead, which is the shape this repository already had for exactly
+this problem.** A GVL writes a readable `.st` that imports and an `.xml` that does not; a task
+configuration writes a `.tasks.yaml` that imports and an `.xml` that does not. A property is
+the same bargain pointing the other way:
+
+```
+P_Active.xml       NATIVE_R        importable — byte for byte what it always was
+P_Active.st        PROPERTY_TEXT   export-only — the header, with its pragma
+P_Active/Get.st    PROPERTY_TEXT   export-only — the accessor's body
+```
+
+The text is what the owner asked for — a property that can be read in the panel and reviewed
+in a diff — and it is never applied back, which removes the step that emptied them. The round
+trip is byte-identical again, proven on the same test that rejected the first attempt.
+
+**What it costs, stated because somebody will meet it:** a property edited in the mirror does
+not flow back. The import announces it per file and the panel says to change it in the IDE,
+exactly as it already does for a `.gvl.xml` and a task configuration's `.xml`.
+
+**Three homes for "export-only", and the test knew all three.** `versio_types.EXPORT_ONLY_FORMS`,
+`ExportCoverage.IsExportOnly`, and `tools/codesys/New-ImportPlan.ps1` — which refuses a form it
+does not recognise rather than guessing, and which was left behind once before when
+`GVL_NATIVE` was added. `Python_and_csharp_agree_on_which_forms_are_never_applied_back` caught
+the omission on the first run.
+
+**Still open, and now the only part that is:** which half empties an accessor when the text
+*is* applied. Answering it would let a property become editable rather than merely readable.
+It needs one experiment against CODESYS — replace a property's declaration, read the accessor
+back — not a guess.
+
+---
+
+### An import destroyed a method, and the summary said seven native, zero warnings
+
+**Found 2026-08-18 by the CODESYS gate**, on a round trip nobody had been able to run before:
+the product owner added `M_Test` to `PLC_PRG` that morning, and `PLC_PRG` is a **graphical**
+POU. Export, import, re-export — and the mirror came back with a file missing:
+
+```
+export     walked 26, wrote 19    …/PLC_PRG.xml, …/PLC_PRG/M_Test.st
+import     7 native, 8 unchanged, 0 warning(s)
+re-export  walked 25, wrote 18    …/PLC_PRG.xml
+```
+
+**`import_native` replaces, and a non-recursive payload is the node alone.** `PLC_PRG` exports
+as `NATIVE` — its body is graphical, so there is nothing textual to write — and its method
+exports separately as ST. Handing the `.xml` back replaces the POU with a payload that has no
+method in it, and the method goes. The textual phase runs *first*, so `M_Test` was written to
+the project and then destroyed a few seconds later by the phase after it.
+
+**Nothing said so.** `import: 7 native, 8 unchanged, 4 not applied — 0 warning(s)` is the whole
+report of a run that lost an object. The count of files applied was correct; there is no count
+of objects that stopped existing.
+
+**Pre-existing, and it needed one specific shape to fire**: an owner whose payload is
+non-recursive *and* a member exported to a file of its own. Neither fixture had one until that
+morning — `MachineWithMembers` gives its members to a **textual** `FB_Pump`, and
+`RefrigeratorControl` had no members at all until the day before. It is not related to the
+layout change landing beside it: the same three lines run whichever directory the member's
+file sits in.
+
+**Refused rather than worked around**, in the planner, because that is where the manifest can
+be read — the script sees one file at a time and cannot know what else belongs to the object.
+A native file whose object owns recorded members is now `PlannedSkip.WouldDestroyMembers`, with
+a warning naming them. The two alternatives were both worse:
+
+- **Export such a POU recursively.** The round trip becomes whole and the members lose their
+  reviewable text, which is the thing Versio exists to produce.
+- **Re-create the members afterwards.** Not available: a `METHOD` header is not a declaration
+  `create_textual` can identify, so the create path refuses it — which is *why* the loss was
+  silent rather than a crash.
+
+What it costs is real and small: a graphical POU's body stops being importable once it owns a
+member. Its members' own files still import, and a graphical body was never reviewable text.
+The warning says which members, and to change the body in the IDE.
+
+**It is the rule `PlanDeletions` already applies, one operation along** — never remove the
+thing that others live inside. That rule was written for deletions after P3 measured
+`remove()` taking a class's property with it; this is the same destruction reached through
+`import_native` instead, and it went unnoticed because the deletion path had a test corpus and
+this one had no fixture that could produce it.
+
+---
+
+### Ownership was spelled three ways in one tree, and the panel could only read one
+
+**Raised 2026-08-18 by the product owner, looking at two screens at once** — Explorer with
+seventeen files in one directory, and the panel showing `FB_Alarm` with four loose members
+under it. Two observations, one cause: *"having things flat on the export side will get really
+messy"*, and *"folders for private and protected are not shown, and P_Faulted is shown in the
+middle, while these are usually last in the CODESYS IDE"*.
+
+**The mirror encoded ownership three different ways.** A directory for a container, a
+`FB_Alarm.` prefix on a member's file name, and — for a folder inside a POU — nothing at all,
+the folder erased and its members flattened up beside the owner. All three had already been
+got wrong once each. The prefix was the only record of ownership until manifest schema 4, and
+a name containing a dot defeats it. The erasure was the finding below, fixed the previous day.
+
+**So the fix was to delete two of the three.** From schema 9 a container makes a directory, an
+object with exported children makes a directory named after itself, and a member goes inside
+it: `Device/Plc Logic/Application/FB_Alarm/Private/_M_Reset.st` is what CODESYS shows, segment
+for segment. The importer splits the path, the panel reads the path, and neither needs to know
+what a member is. `ResolveKnown`'s owner-chain walk and stem-split fallback survive for older
+mirrors and are dead code for new ones.
+
+**`parent` stays, because a path cannot say everything.** It answers whether
+`FB_Alarm/M_Reset.st` is the POU's method or an object that happens to sit in a folder of that
+name — and it is what the panel nests by, so a member still hangs off its owner rather than
+off a directory that merely shares its name.
+
+**Not everything with children gets a directory**, and the rule is "children exported as
+*files*". A task configuration's tasks are rows inside its `.tasks.yaml` — writing them
+separately produced a third copy of every task, which was its own defect — and a GVL's two
+files are two layers of one object. So `FB_Alarm/` and `PLC_PRG/` exist and
+`Task Configuration/` does not.
+
+**The measurement that stopped the wrong fix being built.** The panel sorted alphabetically
+and the IDE does not, so the obvious answer was "record the order CODESYS gives us and sort by
+it". A probe of the live project says that would have been wrong:
+
+```
+get_children()   M_Reset,  Private,  Protected,  P_Faulted     ← storage order
+CODESYS IDE      Private,  Protected,  M_Reset,  P_Faulted     ← what the owner sees
+```
+
+At application level it is starker: the probe returns `FB_Alarm` eleventh of twelve where the
+IDE shows it second. `get_children()` is **creation order**, and sorting by it would have
+shipped an ordering that looks authoritative and matches nothing. What the two screenshots do
+agree on is **folders first** — so that is the rule the panel now applies, and it costs no
+recorded data at all, because the tree builder already emitted directory groups before
+objects. Making the in-POU folder a directory was the whole fix. The rule *within* a group is
+still alphabetical and still unmeasured; it is not inferred from two cropped screenshots.
+
+**The one-time cost, stated where somebody will meet it.** Every file in every mirror written
+before schema 9 is at a different path, so the first export after upgrading renames the lot.
+Content is untouched, so git pairs them as renames and history survives, and the planner
+branches on `ExportCoverage.PathIsChainSchema` so an un-re-exported mirror keeps importing
+correctly. Both layouts are legal file names and neither is recognisable on sight — the schema
+number is the only thing that can tell them apart, which is why it is read rather than the
+path sniffed.
+
+Covered on both sides. `ProjectTreeMembersTests` gains three cases — folders as rows inside
+the POU with the right paths, roll-up through two levels, and a pre-schema-9 member gaining no
+folder — and three mutations each fail exactly one of them: never rebuilding the folders,
+counting the owner's own directory as one, and putting objects before folders.
+`CodesysImportPlannerTests` now names which layout each test describes, with the flat ones
+moved to a `LegacyManifest` helper that is *one below the threshold* rather than a literal 8.
+The export half rides on `ProjectTreeFromRealExportTests`, against a fixture that now carries
+two folders, a property with accessors, and a member on a natively-exported POU.
+
+---
+
+### A folder inside a POU stripped the owner off every method in it
+
+**Found 2026-08-17 by the product owner reading the panel** — the eighth found that way, in
+the same hour as the swap failure above and from the same edit. They had grouped one of
+`FB_Alarm`'s methods into a folder called `Private` in the CODESYS tree, and Versio drew
+`Private > _M_Reset` as a **sibling of FB_Alarm** under the application: *"private `_M_Reset`
+belongs to FB_Alarm"*.
+
+**The manifest said it plainly, one record apart:**
+
+```
+METHOD  M_Reset   Device/Plc Logic/Application/FB_Alarm.M_Reset.st        parent 6e8ed404-…
+METHOD  _M_Reset  Device/Plc Logic/Application/Private/_M_Reset.st        parent null
+```
+
+**The walk dropped the chain at the folder.** `Exporter.handle` passes `parent_name` and
+`parent_guid` down when it recurses into a POU's children — that is what writes
+`FB_Alarm.M_Reset.st` and records the owner GUID. The `FORM_CONTAINER` branch recursed with
+`None` for both, unconditionally, because a container had only ever meant a *project-level*
+folder, where that is exactly right.
+
+**The visible half was the cheap half.** A member with no recorded owner is resolved by the
+planner through its **directory**, so the import chain for that file came out
+`Device/Plc Logic/Application/Private/_M_Reset` — and there is no `Private` under
+`Application`; it is inside `FB_Alarm`. Editing that file in the mirror would therefore have
+been **refused and dropped**: `PARENT_NOT_FOUND`, one warning, nothing written. The mirror
+would show the change as applied and the project would never have received it. Worse if the
+name had been an ordinary one — a project-level folder called `Private` would make that owner
+chain resolve, and the method would be created in a **different part of the project**. Nobody
+had reached either yet, and nothing in the suite was watching.
+
+*(The first draft of this entry said the import would create a duplicate. It would not, and
+the difference was found by re-reading `create_textual` rather than by any test: an
+unresolvable owner is reported, not approximated. The duplicate is real but belongs to the
+shape below.)*
+
+**A folder inside a POU is a view, not a place** — that is the whole fix, and it is why the
+mirror shape gets *simpler* rather than gaining a case. The grouping is organisation in the
+IDE tree and nothing else: the method is `FB_Alarm._M_Reset` to every caller, its name is
+unique across the POU whichever folder holds it, and dragging it between folders changes no
+code and no reference. So the ownership carries straight through the folder and the folder
+leaves no directory behind. `FB_Alarm._M_Reset.st` now sits beside `FB_Alarm.M_Reset.st`,
+foldered and unfoldered members are **indistinguishable on disk**, and re-organising the IDE
+tree produces no mirror diff at all. The C# planner needed no change whatsoever, which is the
+strongest evidence the shape is right.
+
+**And the new shape needs the importer's half, or it trades one defect for another.** The
+chain is now `…/Application/FB_Alarm/_M_Reset` — correct, and *the live project still has the
+folder in the middle of it*. A strict walk finds `FB_Alarm` and then fails on its last
+segment, which is the dangerous outcome rather than the safe one: the owner resolved, so the
+importer is holding a valid parent and a file it was told to apply. The textual path stops at
+`CANNOT_IDENTIFY_DECLARATION` (a `METHOD` header is not a creatable kind, which is luck rather
+than design), and **the native path does not stop** — `import_native` both replaces and
+creates, and it would paste the member into the POU's root beside the folder holding the
+original.
+
+So a resolve chain names objects, a folder is not one of the things it names, and
+`find_by_path` now looks through them — `versio_tree.find_child_folder_blind`, extracted to a
+pure module so it can be driven under CPython. Three rules in it, each one a refusal:
+
+- **only folders are walked past**, never a POU, or a chain naming a program could be
+  answered by somebody's method;
+- **a direct child outranks one found inside a folder**, because the direct child is what the
+  chain literally says and a fallback that can outrank the literal reading is not a fallback;
+- **an ambiguous name returns nothing**, which is precisely today's behaviour rather than a
+  coin toss — CODESYS will not compile two objects of one name, and "cannot happen" is what
+  every silent overwrite was called beforehand.
+
+Covered on both sides, at very different prices. The importer's half is
+`PythonTreeWalkTests` — seven cases against a stand-in object answering `get_children`,
+`get_name` and `is_folder`, under a second. The exporter's half **cannot** be tested without
+CODESYS, because the walk needs `scriptengine`, so it rides on the export
+`ProjectTreeFromRealExportTests` already pays for: the fixture carries `FB_Alarm` with
+`M_Reset` beside it and `_M_Reset` in a folder, and the test asserts the recorded owner, the
+shared directory, the prefixed file name, that no `Private/` survives anywhere in the mirror,
+and that the drawn tree hangs both methods off the POU.
+
+---
+
+### A process parked inside the mirror made every export fail at the swap
+
+**Found 2026-08-17 by the product owner running the app** — the seventh found that way —
+minutes after adding methods to `FB_Alarm`: the export wrote all 18 files including the new
+ones, then died at the swap with `[Errno 13] Access is denied`, twice, leaving a
+`.versio_staging` beside the mirror (which the next run correctly cleared and re-created,
+and which the orphan scanner correctly reported in the meantime).
+
+**The diagnosis was a rename probe, not a guess.** The mirror directory refused to rename
+even with Versio killed — so not the watcher, not a transient git race. Probing each child
+one at a time drew the map: `Device` refused, `Device/Plc Logic` refused, **`Application` and
+every file renamed freely**. That is the signature of a directory *handle* held on
+`Plc Logic` — most likely a process's current working directory, which on Windows blocks
+renaming every ancestor while blocking no file. An IDE's file dialog browsed into the
+mirror is enough to set one.
+
+**The swap was atomic-or-nothing, and "nothing" was the outcome on offer.** The
+three-rename swap exists so a crash never leaves a project without a mirror — but
+`os.rename` of the tree's root needs every directory handle in it gone, and a parked
+process never lets go. Somebody browsing their own export must not be able to break the
+export.
+
+**Fixed in two layers, the trade stated in the script:**
+
+1. `rename_retrying` — five attempts over a second, which outlives the genuinely transient
+   holders (git hashing a status, a virus scanner, a directory enumeration) that were
+   always a millisecond-window risk on every swap.
+2. `replace_contents` — when the rename is still refused, the mirror is replaced file by
+   file, directories left standing: old files removed, new ones moved in, old-only
+   directories removed only if they empty out — the one that refuses is exactly the held
+   one, and it stays, empty, for the next full swap to take. The atomic either-old-or-new
+   guarantee narrows to a brief mixed-content window on this path only, and the C# side
+   logs it as a warning naming the cause, because until the parked process moves every
+   export takes the slower path.
+
+Proven under CPython against a real squatter — a child process parked by cwd inside a
+scratch mirror — asserting the refusal, the retry timing, the file-level replacement with
+the directory still held, and the ordinary path resuming once the squatter exits. The
+CODESYS gate re-run in full for the normal path, python being embedded and this being
+exactly the kind of edit that looks like it did nothing without a rebuild.
+
+---
+
+### The project row stuck on "exporting…", and the await that widened a race until it hit
+
+**Found 2026-08-17 by the product owner running the app** — the sixth defect in three
+branches found that way and by nothing else. They added `FB_Alarm` in CODESYS; the automatic
+export ran and finished cleanly ("exported 14 object(s) in 20.7s", `ExportSucceeded`,
+`ProjectAuthoritative`) — and the project row said **"exporting…" forever**.
+
+**The race was two refreshes finishing out of order.** `RefreshTreeAsync` captures its
+sources — including each row's busy flag — at entry, then awaits before applying. A refresh
+captured *mid-export* (busy, "exporting…") could therefore apply **after** the refresh that
+saw the export complete, landing the stale snapshot last. And the signature gate then made it
+permanent: the stale refresh had already recorded its signature as "shown", so every later
+refresh with unchanged inputs returned early while the tree displayed the superseded build.
+
+**The window was always there; the catalog-baseline work widened it from microseconds to a
+git spawn.** Before, the only await between the gate and the apply was the `Task.Run` build —
+milliseconds. The per-library HEAD fetch added `ShowAtHeadAsync` — a process spawn, tens of
+milliseconds per changed catalog — into exactly that window, on exactly the refreshes that
+follow an export (which is when the manifest and catalogs have just changed). The feature
+that made the tree say *which library moved* is what let the export's completion lose the
+race to its own beginning.
+
+**Fixed with the pattern the codebase already had**: `DiffView.Rebuild`'s generation guard,
+carried over with its reasoning — the last call to enter owns the tree, everything older
+abandons at the checkpoint after the awaits — plus the second half `DiffView` never needed:
+the signature is recorded only when a build is **applied**, because a signature claimed by a
+refresh that then abandoned is a claim about something nobody is seeing.
+
+**No deterministic regression test, stated rather than papered over.** The inversion needs
+the older refresh's awaits to outlast the newer one's, which on the test dispatcher resolves
+FIFO — a test of the interleaving would pass with the fix deleted on almost every run, and a
+sometimes-red test is the suite's most expensive kind. The guard is structural, the pattern
+is the one `DiffView` has carried untested for the same reason, and the reasoning sits on
+the field, the entry and the checkpoint.
+
+---
+
+### The expansion default missed the correction the pruner already carried
+
+**Found 2026-08-17, building the library reference rows** — PHASE2's first queue item, and the
+first time a node that is not a folder acquired children whose *changes* mattered more than
+their existence.
+
+`TreeExpansion.DefaultFor` answered "open when there is a change under it" with
+`node.IsFolder && node.HasChanges`. That rule was written when only folders had children. Then
+manifest schema 4 nested members under their owners, and `PruneUnchanged` in the same builder
+was corrected for exactly that — its remark says so: *tested on `Children` rather than on
+`IsFolder`, because an object owns objects now*. The expansion default was the same rule in a
+second place, and it was not corrected. Consequence: **an edited method inside a function
+block, and now a bumped library version inside a manager, sat behind a closed chevron** with
+only the roll-up badge hinting that anything was there — while a folder in the identical
+situation opened itself.
+
+Two things worth keeping from it:
+
+- **When a correction lands, grep for the rule it corrects, not only the site it fixes.** The
+  folder-only assumption existed in two methods; the fix in the member-nesting work found one.
+  The same phrase — "an object owns objects now" — was already in the codebase naming the
+  trap, one file away from a second instance of it.
+- **The fallback and the default had quietly diverged.** `TreeRow`'s constructor falls back to
+  `ChangedDescendants > 0` when no `TreeExpansion` is supplied — the corrected shape — so the
+  behaviour differed depending on whether an expansion tracker happened to be attached, which
+  is the kind of difference nothing ever looks at.
+
+Fixed as `node.Children.Count > 0 && node.HasChanges`, with the reasoning moved into the
+remark, and proven by mutation: reverting to the folder-only rule turns
+`TreeRowLibraryTests.A_manager_with_a_bumped_library_opens_itself` red and nothing else.
+
+---
+
 ### `import_native` duplicates an external-file object instead of replacing it
 
 **Found 2026-08-17 by the first E2E run of E4** — the first time an `EXTERNAL_FILE` payload was

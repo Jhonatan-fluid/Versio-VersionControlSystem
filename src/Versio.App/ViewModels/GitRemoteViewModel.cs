@@ -3,6 +3,7 @@ using Versio.Core.Abstractions;
 using Versio.Core.Git;
 using Versio.Core.Guarding;
 using Versio.Core.Logging;
+using Versio.Core.Projects;
 using Versio.Infrastructure.Git;
 using Versio.Infrastructure.Logging;
 
@@ -59,6 +60,12 @@ public sealed class GitRemoteViewModel : ObservableObject, IDisposable
     private RemoteStanding _standing = RemoteStanding.None;
     private bool _hasRemote;
     private string _aheadBehind = string.Empty;
+    private BranchInfo? _branch;
+    private bool _previewOpen;
+    private bool _previewIncoming;
+    private string _previewTitle = string.Empty;
+    private string _previewObjects = string.Empty;
+    private IReadOnlyList<CommitEntry> _previewCommits = [];
 
     /// <param name="client">
     /// Read on each use rather than captured, because the shell replaces it every time a
@@ -134,6 +141,14 @@ public sealed class GitRemoteViewModel : ObservableObject, IDisposable
 
         PublishCommand = new AsyncCommand(
             PublishAsync, () => ready() && Standing.CanPublish, reportError);
+
+        // Gated on the client alone, not on the counts: the chips are hidden when a count
+        // is zero, and a canExecute over state this class recomputes per status would need
+        // its own RaiseCanExecuteChanged wiring for a button nobody can see when it is off.
+        ShowOutgoingCommand = new AsyncCommand(
+            () => TogglePreviewAsync(incoming: false), () => _client() is not null, reportError);
+        ShowIncomingCommand = new AsyncCommand(
+            () => TogglePreviewAsync(incoming: true), () => _client() is not null, reportError);
     }
 
     /// <summary>
@@ -164,6 +179,7 @@ public sealed class GitRemoteViewModel : ObservableObject, IDisposable
             {
                 OnPropertyChanged(nameof(PushLabel));
                 OnPropertyChanged(nameof(PullLabel));
+                OnPropertyChanged(nameof(PushTooltip));
                 OnPropertyChanged(nameof(ShowPublish));
                 OnPropertyChanged(nameof(ShowPush));
                 Changed?.Invoke();
@@ -188,6 +204,13 @@ public sealed class GitRemoteViewModel : ObservableObject, IDisposable
 
     public string PullLabel => "Pull" + _standing.PullCountSuffix;
 
+    /// <summary>The push button's tooltip: the standing, plus the shortcut (GP-L §10.6).</summary>
+    /// <remarks>
+    /// The discoverability is most of the shortcut's value — a key nobody can find is a key
+    /// nobody has — and the tooltip is where every other button already explains itself.
+    /// </remarks>
+    public string PushTooltip => $"{_standing.Headline} (Ctrl+Shift+P)".TrimStart();
+
     public AsyncCommand PullCommand { get; }
 
     public AsyncCommand PushCommand { get; }
@@ -195,6 +218,144 @@ public sealed class GitRemoteViewModel : ObservableObject, IDisposable
     public AsyncCommand FetchCommand { get; }
 
     public AsyncCommand PublishCommand { get; }
+
+    public AsyncCommand ShowOutgoingCommand { get; }
+
+    public AsyncCommand ShowIncomingCommand { get; }
+
+    // ------------------------------------------------------------ the previews (GP-K §9d)
+
+    /// <summary>The two badges, split so each can be a button of its own.</summary>
+    /// <remarks>
+    /// <see cref="AheadBehind"/> was one string because it was one glyph; a preview per
+    /// direction needs a click per direction, and a single control meaning "which half did
+    /// you mean?" is the Push/Publish lesson over again.
+    /// </remarks>
+    public bool HasAhead => _branch is { Ahead: > 0 };
+
+    public bool HasBehind => _branch is { Behind: > 0 };
+
+    public string AheadLabel => _branch is { } b ? $"↑{b.Ahead}" : string.Empty;
+
+    public string BehindLabel => _branch is { } b ? $"↓{b.Behind}" : string.Empty;
+
+    public bool IsPreviewOpen
+    {
+        get => _previewOpen;
+        private set => SetProperty(ref _previewOpen, value);
+    }
+
+    public string PreviewTitle
+    {
+        get => _previewTitle;
+        private set => SetProperty(ref _previewTitle, value);
+    }
+
+    /// <summary>Which objects the incoming commits touch, as one sentence. Empty otherwise.</summary>
+    public string PreviewObjects
+    {
+        get => _previewObjects;
+        private set => SetProperty(ref _previewObjects, value);
+    }
+
+    public IReadOnlyList<CommitEntry> PreviewCommits
+    {
+        get => _previewCommits;
+        private set => SetProperty(ref _previewCommits, value);
+    }
+
+    /// <summary>Open the preview for one direction, or close it if it is the one showing.</summary>
+    private async Task TogglePreviewAsync(bool incoming)
+    {
+        if (IsPreviewOpen && _previewIncoming == incoming)
+        {
+            ClosePreview();
+            return;
+        }
+
+        await LoadPreviewAsync(incoming).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Read the range and show it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The incoming half also reads <b>which files</b> the pull would touch and names them as
+    /// objects, because that is the safety-relevant question: changes arriving under an
+    /// export tree will be imported into a <c>.project</c>, and "which objects are about to
+    /// move" deserves an answer before the pull rather than after. The outgoing half skips
+    /// it — those changes were made here, and the commit subjects already name them.
+    /// </para>
+    /// <para>
+    /// An empty answer stays open and says so: the badge the user clicked was drawn from the
+    /// last fetch, and "nothing to push — the count may be stale" is more useful than a strip
+    /// that flashes shut as though the click misfired.
+    /// </para>
+    /// </remarks>
+    private async Task LoadPreviewAsync(bool incoming)
+    {
+        var upstream = _branch?.Upstream;
+        var range = incoming
+            ? GitRevisionRange.Incoming(upstream)
+            : GitRevisionRange.Outgoing(upstream);
+
+        if (_client() is not { } git || range is null)
+        {
+            return;
+        }
+
+        _logger.Click(incoming ? "Git.PreviewIncoming" : "Git.PreviewOutgoing");
+
+        var commits = await git.CommitsInRangeAsync(range, PreviewPage, CancellationToken.None)
+            .ConfigureAwait(true);
+
+        var objects = string.Empty;
+        if (incoming && GitRevisionRange.IncomingDiff(upstream) is { } diffRange)
+        {
+            var files = await git.RangeFilesAsync(diffRange, CancellationToken.None)
+                .ConfigureAwait(true);
+
+            // Through the same index and the same sentence-builder the commit summary uses,
+            // so the preview and the panel can never disagree about what an object is called.
+            objects = ChangeSummary.Sentence(
+                files.Select(f => new FileChange
+                {
+                    Path = f.Path,
+                    Staged = ChangeKind.Unmodified,
+                    Unstaged = f.Kind,
+                }).ToList(),
+                _sync.Objects);
+        }
+
+        _previewIncoming = incoming;
+        PreviewCommits = commits;
+        PreviewObjects = objects;
+        PreviewTitle = (incoming, commits.Count) switch
+        {
+            (true, 0) => "Nothing to pull — the count may be stale. Fetch refreshes it.",
+            (false, 0) => "Nothing to push — the count may be stale. Fetch refreshes it.",
+            (true, 1) => "1 commit a pull would bring:",
+            (false, 1) => "1 commit a push would send:",
+            (true, var n) => $"{n} commits a pull would bring:",
+            (false, var n) => $"{n} commits a push would send:",
+        };
+        IsPreviewOpen = true;
+
+        _logger.Info(LogCategory.Git,
+            $"previewed {commits.Count} {(incoming ? "incoming" : "outgoing")} commit(s) ({range})");
+    }
+
+    private void ClosePreview()
+    {
+        IsPreviewOpen = false;
+        PreviewCommits = [];
+        PreviewObjects = string.Empty;
+        PreviewTitle = string.Empty;
+    }
+
+    /// <summary>One page. More than this is a code review, and the history panel is there.</summary>
+    private const int PreviewPage = 50;
 
     /// <summary>The remote watch, so a test can assert what this shell wired into it.</summary>
     /// <remarks>
@@ -233,6 +394,36 @@ public sealed class GitRemoteViewModel : ObservableObject, IDisposable
             ? string.Empty
             : $"↑{branch.Ahead} ↓{branch.Behind}";
 
+        var countsMoved = _branch is null
+                          || _branch.Ahead != branch.Ahead
+                          || _branch.Behind != branch.Behind;
+        _branch = branch;
+
+        if (countsMoved)
+        {
+            OnPropertyChanged(nameof(HasAhead));
+            OnPropertyChanged(nameof(HasBehind));
+            OnPropertyChanged(nameof(AheadLabel));
+            OnPropertyChanged(nameof(BehindLabel));
+
+            // An open preview follows the counts it explains. Closed when its direction hits
+            // zero — after the very push it previewed, staying open would show yesterday's
+            // list under a badge that is gone — and reloaded when the count changes, so a
+            // fetch that finds one more commit does not leave a preview quietly one short.
+            if (IsPreviewOpen)
+            {
+                var current = _previewIncoming ? branch.Behind : branch.Ahead;
+                if (current == 0)
+                {
+                    ClosePreview();
+                }
+                else
+                {
+                    _ = LoadPreviewAsync(_previewIncoming);
+                }
+            }
+        }
+
         Standing = RemoteStanding.For(branch, _hasRemote);
     }
 
@@ -253,6 +444,10 @@ public sealed class GitRemoteViewModel : ObservableObject, IDisposable
         AheadBehind = string.Empty;
         Standing = RemoteStanding.None;
         _hasRemote = false;
+        _branch = null;
+        ClosePreview();
+        OnPropertyChanged(nameof(HasAhead));
+        OnPropertyChanged(nameof(HasBehind));
 
         _poller.Stop();
         _poller.Resume();

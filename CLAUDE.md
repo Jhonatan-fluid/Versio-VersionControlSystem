@@ -48,7 +48,7 @@ questions about "why is this like this" are already answered there.
 |---|---|
 | `docs/PHASE2.md` | **The forward queue** — what is left, in order, and the decisions already taken with their why. Start here for "what next" |
 | `docs/STATUS.md` | Where the project is, and **Known loose ends** — an audit of the repository |
-| `docs/FINDINGS.md` | **Every defect written up with its evidence**, newest first. 109 of them. Search it rather than reading it; `STATUS.md` carries the index |
+| `docs/FINDINGS.md` | **Every defect written up with its evidence**, newest first. 116 of them. Search it rather than reading it; `STATUS.md` carries the index |
 | `docs/SAFEGUARDS.md` | What Versio refuses, asks about, or waits for |
 | `docs/vendors/codesys/DRIVING.md` | **One vendor's docs**, beside its two projects. How CODESYS is driven end to end, and the audit of it |
 | `docs/phase1/` | **The Phase 1 archive** — four completed plans, marked done, kept for reasoning and evidence: `PLAN.md` (the founding architecture), `IMPORT-PLAN.md` (thirteen gaps, the feature checklist, and the measurements — its raw probe logs are in `probes/`), `GIT-PANEL-PLAN.md`, `PHASE0-FINDINGS.md`. Read them for why, never for state |
@@ -166,6 +166,13 @@ explicit `encoding='utf-8', newline='\n'`, or the editing tools.
 **Never edit source through a shell heredoc.** Python-in-bash eats backslashes and backticks
 silently. Write the script to a file and run it.
 
+**And in that script, build the whole new text first, write it to a temp file, then
+`os.replace`.** `io.open(path, "w")` **truncates before it validates its own arguments** — a
+bad `newline=` value emptied a 1,495-line test file on 2026-08-18 and raised `ValueError`
+afterwards, so the traceback said nothing about the file being gone. It came back from git
+because it was committed; an uncommitted edit would not have. The same shape as the two rules
+above: the damage happens before the thing that reports it.
+
 **The python scripts are EMBEDDED in `Versio.Plc.Codesys.Infrastructure.dll`.** Editing
 `src/Versio.Plc.Codesys.Infrastructure/Scripts/*.py` and then running `dotnet test --no-build`
 tests the script that was embedded at the last build, not the one on disk. It looks exactly like a change that
@@ -214,13 +221,13 @@ stays that way.
 
 | Suite | Count | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,296 | under a second | nothing |
-| `Versio.Integration.Tests` | 141 | ~10 s | real git |
+| `Versio.Core.Tests` | 1,381 | under a second | nothing |
+| `Versio.Integration.Tests` | 147 | ~10 s | real git |
 | `Versio.Arch.Tests` | 14 | instant | nothing — it reads assembly metadata, IL and the `.csproj` files |
-| `Versio.App.Tests` | 480 | ~50 s, STA, no window shown | nothing |
-| `Versio.Plc.Codesys.Pure.Tests` | 253 | under a second | nothing — the planner, the codecs, the protocol |
-| `Versio.Plc.Codesys.Parity.Tests` | 82 | ~15 s | `python` on PATH — **skips cleanly without it, so check the count, not the colour** |
-| `Versio.Plc.Codesys.Tests` | 53 | **~30 min** | **real CODESYS** — every test launches it, which is the whole cost |
+| `Versio.App.Tests` | 546 | ~50 s, STA, no window shown | nothing |
+| `Versio.Plc.Codesys.Pure.Tests` | 260 | under a second | nothing — the planner, the codecs, the protocol |
+| `Versio.Plc.Codesys.Parity.Tests` | 92 | ~15 s | `python` on PATH — **skips cleanly without it, so check the count, not the colour** |
+| `Versio.Plc.Codesys.Tests` | 54 | **~30 min** | **real CODESYS** — every test launches it, which is the whole cost |
 
 **The loop to work in is everything except the last one:**
 

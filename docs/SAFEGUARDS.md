@@ -912,11 +912,43 @@ and `state.json`.
 → Implement the read-only mode the sentence already promises, or a single-instance-per-repository
 guard. A sentence that describes behaviour nothing implements is worse than no sentence.
 
-### H. The repository disappears while it is open
+### H. The repository disappears while it is open — **costed 2026-08-17, deliberately not built**
 
 Network share drops, folder renamed or deleted. `RepositoryKind.Inaccessible` is evaluated at *open*
 time only; a live repository going away leaves a dead watcher and every git call failing with a raw
 message in the status bar. Needs a detected-and-explained state.
+
+> **The costing PHASE2 item 6 asked for.** The open-time half already exists — a recent
+> repository that has gone prompts *forget / clone again* through `MissingRepositoryPrompt` —
+> so this entry is only about the live window.
+>
+> **What it takes, in order of difficulty:**
+>
+> 1. **Detection — cheap.** One `Directory.Exists(root)` per refresh, probed twice before
+>    believing (a share hiccup that lasts one poll must not tear the session down), plus
+>    classifying a failed git spawn as "root gone" rather than "git broke". A stat per
+>    refresh is noise next to the `git status` beside it.
+> 2. **The suspended state — moderate.** Stop the watcher, the remote poller and the deferred
+>    tick; one banner in the first-class style §12's git-missing banner already has: what
+>    vanished, why that usually happens, and that Versio will reconnect by itself. Every
+>    piece exists (`Detach` stops all three today); the work is a state between "open" and
+>    "closed" that the shell currently has no word for.
+> 3. **Reconnection — moderate.** A periodic existence probe, then the ordinary open path:
+>    through the §5.G presence marker again — the marker on the share vanished with the
+>    share, and somebody else may have claimed the repository while it was away.
+> 4. **The genuinely hard part — failure classification.** A CODESYS export mid-run against a
+>    vanished share fails on its own; if that failure marks the binding failed and feeds the
+>    circuit breaker, the share coming back finds every binding stuck behind
+>    "acknowledge the failure" for an outage that was nobody's fault and is already over.
+>    Environmental failures have to be told apart from real ones at the orchestrator level,
+>    which touches the most safety-critical classification in the engine.
+>
+> Roughly a day for 1–3; item 4 is the reason this is not an afternoon and the reason to do it
+> deliberately rather than in passing. **Not built now, with the reasoning recorded:** the
+> failure mode is loud (nothing about it is silent — every surface reports errors), recovery
+> by restart already works, and the touchy half sits on the engine's failure classification,
+> which should not be reshaped as a side quest of a UI phase. It moves up the queue the first
+> time a real share drop bites somebody.
 
 ### I. A tracked project file is deleted or renamed outside Versio
 
@@ -935,6 +967,26 @@ The five-second `_deferredTick` (`SyncViewModel.cs:966`) can release a throttled
 a commit lands, dirtying the tree that was just committed. The commit gate exports first, so this is
 not a correctness bug — but *"I committed and it immediately went dirty again"* reads as one.
 Suppress deferred work for the duration of a git write.
+
+### M. An import replaces an object and takes its members with it — **BUILT 2026-08-18**
+
+`import_native` **replaces** rather than merges, and a non-recursive payload holds the node
+alone. So handing back a graphical POU's `.xml` destroys every method, action and property
+inside it — measured by a round trip that exported 26 objects, imported, and re-exported 25.
+The textual phase runs first, so the member was written to the project and then destroyed by
+the phase after it, and the summary read `7 native, 0 warning(s)`.
+
+**Refused in the planner**, which is the only place that can see it: the script is handed one
+file at a time and cannot know what else belongs to the object. A native file whose object owns
+recorded members becomes `PlannedSkip.WouldDestroyMembers`, warning with their names. This is
+the rule `PlanDeletions` already applies to an owner whose children are still in the mirror —
+never remove the thing that others live inside — reached through a different door.
+
+**What it costs**, stated because somebody will meet it: a graphical POU's body stops being
+importable once it owns a member. Editing the members still works, and a graphical body was
+never reviewable text, so the loss is smaller than either alternative — exporting the POU
+recursively would take its members' readable ST away, and re-creating them afterwards is not
+possible at all, since a `METHOD` header is not a declaration the create path can identify.
 
 ### L. The toolchain is probed once per repository
 

@@ -483,6 +483,10 @@ public sealed class SyncViewModel : ObservableObject
         _repositoryRoot = repositoryRoot;
         _git = git;
 
+        // Before the first tree build, because rows read their expansion at construction:
+        // a state restored after the build would apply to nothing until the next refresh.
+        LoadTreeExpansion();
+
         // Armed for this repository. Set before any of the loading below, so a second
         // AttachAsync - reopening the same repository, say - gets a fresh sweep.
         _caughtUp = false;
@@ -693,9 +697,17 @@ public sealed class SyncViewModel : ObservableObject
     /// <summary>Clear state when the repository closes, so a stale scan is never shown.</summary>
     public void Detach()
     {
-        // Before anything else: a FileSystemWatcher holds a handle on the directory, and
-        // leaking one keeps the folder locked against rename or delete for the life of the
-        // process - on a repository somebody is trying to move, a visible bug.
+        // First, because it needs _repositoryRoot and this method's whole job is to null
+        // that out. It sat lower once — beside the Clear() it protects against, which reads
+        // better — and wrote nothing, because the root was already gone; the persistence
+        // test caught the file not existing. Detach is the one funnel every way out of a
+        // repository goes through — switching, closing, disposing — so saving here covers
+        // all of them without any caller knowing the file exists.
+        SaveTreeExpansion();
+
+        // A FileSystemWatcher holds a handle on the directory, and leaking one keeps the
+        // folder locked against rename or delete for the life of the process - on a
+        // repository somebody is trying to move, a visible bug.
         StopWatching();
 
         // The orchestrator's events, before the reference to it is dropped. Without this the
@@ -738,7 +750,8 @@ public sealed class SyncViewModel : ObservableObject
 
         // The expanded set is keyed by repo-relative path, and two repositories share those
         // freely - "docs" is open in both. Carrying it across would open folders in the new
-        // repository because of a click in the old one.
+        // repository because of a click in the old one. Persisted at the top of this method,
+        // while the root still said where.
         _expansion.Clear();
         _treeSignature = string.Empty;
         _coverage.Clear();
@@ -1495,6 +1508,20 @@ public sealed class SyncViewModel : ObservableObject
             // The export tree may not exist yet on a freshly adopted project; the watcher
             // says so and carries on, and the first export creates it.
             _watcher.WatchTree(AbsolutePath(binding.ExportPath));
+
+            // The vendor's own open-project marker, so that CLOSING the IDE becomes the
+            // retry (PHASE2 item 3). An import refused because the IDE held the project used
+            // to wait for the next save or the next open; the marker vanishing is the same
+            // fact arriving the moment it becomes true. Through the format so Sync/ never
+            // learns a vendor's spelling, and through the same watcher as everything else —
+            // the marker is rewritten every few seconds while the IDE holds the project, and
+            // the settle handler tells that storm from a release by looking for the file.
+            if (PlcFormats.ForVendor(binding.Vendor)
+                    ?.OccupancyMarkerFor(AbsolutePath(binding.ProjectPath)) is { } marker)
+            {
+                _occupancyMarkers[marker] = binding;
+                _watcher.WatchFile(marker);
+            }
         }
 
         _logger.Info(LogCategory.Watch,
@@ -1505,6 +1532,7 @@ public sealed class SyncViewModel : ObservableObject
     {
         _deferredTick?.Stop();
         _deferredTick = null;
+        _occupancyMarkers.Clear();
 
         if (_watcher is null)
         {
@@ -1515,6 +1543,20 @@ public sealed class SyncViewModel : ObservableObject
         _watcher.Dispose();
         _watcher = null;
     }
+
+    /// <summary>Occupancy marker path, absolute, to the binding whose project it guards.</summary>
+    private readonly Dictionary<string, ProjectBinding> _occupancyMarkers =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The markers being watched, for the test that proves the watch is wired.</summary>
+    /// <remarks>
+    /// Internal for <c>IgnoredPaths()</c>'s reason: trusting that a dictionary populated in
+    /// this file is consulted by a handler in this file is the assumption that has been
+    /// wrong here before, and the end-to-end test that would catch it instead has to wait on
+    /// real filesystem timers.
+    /// </remarks>
+    internal IReadOnlyDictionary<string, ProjectBinding> WatchedOccupancyMarkers =>
+        _occupancyMarkers;
 
     /// <summary>
     /// Ask the engine whether a throttled change is now due, and run it if so.
@@ -1577,7 +1619,62 @@ public sealed class SyncViewModel : ObservableObject
         _logger.Debug(LogCategory.Watch,
             $"settled: {change.Path} (tier {change.Tier})");
 
+        // The vendor's open-project marker is not a side of any binding — Locate would
+        // shrug at it — so it is routed before the ordinary flow. Most of these events are
+        // the IDE rewriting the marker while it works; the handler is what tells that storm
+        // from the release this watch exists for.
+        if (_occupancyMarkers.TryGetValue(change.Path, out var released))
+        {
+            OnUi(() => _ = RetryAfterIdeReleaseAsync(released, change.Path));
+            return;
+        }
+
         OnUi(() => _ = SyncSettledChangeAsync(change));
+    }
+
+    /// <summary>
+    /// The vendor's open-project marker settled. If it is gone, the IDE let go — retry what
+    /// waited for it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Closing CODESYS is the retry now</b> (PHASE2 item 3): an import refused with "close
+    /// it and the import will run" used to sit until the next save or the next repository
+    /// open, with the panel saying so and nothing listening. The marker vanishing is that
+    /// same fact as a filesystem event.
+    /// </para>
+    /// <para>
+    /// <b>Both directions are submitted, through every gate a save goes through.</b> The
+    /// retry must not become a second door around the direction lock, the hash gate or the
+    /// import confirmation — so it does not decide what waited, it asks: each side runs
+    /// <c>HandleChangeAsync</c> exactly as if the user had saved, and a side with nothing
+    /// pending is refused quietly by the same gates that refuse an echoed export. The
+    /// blocked import comes back as <c>AwaitingConfirmation</c>, which re-raises the offer
+    /// on the project's row — a person still confirms it; the IDE closing merely stopped
+    /// being the thing everybody was waiting on.
+    /// </para>
+    /// <para>
+    /// <b>A marker that still exists is the rewrite storm, not a release.</b> CODESYS
+    /// replaces the marker through a transient sibling every few seconds for as long as it
+    /// holds the project, so most settles of this path mean "still open". Quiet on that
+    /// path, deliberately: it fires all day while an engineer works, and nothing happened.
+    /// </para>
+    /// </remarks>
+    internal async Task RetryAfterIdeReleaseAsync(ProjectBinding binding, string markerPath)
+    {
+        if (File.Exists(markerPath))
+        {
+            return;
+        }
+
+        _logger.Info(LogCategory.Sync,
+            $"{System.IO.Path.GetFileName(binding.ProjectPath)}: the IDE released the " +
+            "project; retrying what waited for it");
+
+        await RunSettledJobAsync(binding, ChangeSource.Project,
+            "the IDE released the project").ConfigureAwait(true);
+        await RunSettledJobAsync(binding, ChangeSource.ExportedText,
+            "the IDE released the project").ConfigureAwait(true);
     }
 
     /// <summary>
@@ -1666,6 +1763,13 @@ public sealed class SyncViewModel : ObservableObject
     /// regression the changed-files list was reconciled in place to avoid.
     /// </remarks>
     private string _treeSignature = string.Empty;
+
+    /// <summary>Which call to <see cref="RefreshTreeAsync(GitStatus)"/> owns the tree.</summary>
+    /// <remarks>
+    /// Bumped at entry, checked after the awaits. UI-thread only, so a plain int — the
+    /// interleaving is of continuations, not of threads.
+    /// </remarks>
+    private int _treeGeneration;
     private GitStatus? _lastStatus;
 
     /// <summary>What each project's export covers, keyed by its repo-relative path.</summary>
@@ -1835,6 +1939,168 @@ public sealed class SyncViewModel : ObservableObject
 
     private void AnnounceIgnoredPaths() => IgnoredPathsChanged?.Invoke(IgnoredPaths());
 
+    /// <summary>
+    /// Parse every catalog the manifest names — library and task — each paired with its
+    /// HEAD copy when one was fetched.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The manifest decides what is a catalog — <c>form == LIBRARIES</c> or
+    /// <c>TASK_BOTH</c> — rather than a directory listing deciding by suffix, because the
+    /// manifest is the authority on what the export wrote and a stray YAML somebody dropped
+    /// into the mirror must not grow rows.
+    /// </para>
+    /// <para>
+    /// A file the manifest names but the disk lacks is skipped without a word here: the
+    /// coverage report already owns the job of saying what the mirror is missing, and a
+    /// second voice would say it twice. Neither parser throws on a torn or half-written
+    /// file, for the same reason the manifest parser does not — this runs on every refresh,
+    /// and an export mid-swap is a moment, not an error.
+    /// </para>
+    /// </remarks>
+    private (IReadOnlyList<LibrarySnapshot> Libraries, IReadOnlyList<TaskSnapshot> Tasks)
+        ReadCatalogs(
+            ProjectManifest? manifest,
+            string exportPath,
+            IReadOnlyDictionary<string, string> baselines)
+    {
+        if (manifest is null)
+        {
+            return ([], []);
+        }
+
+        List<LibrarySnapshot>? libraries = null;
+        List<TaskSnapshot>? tasks = null;
+        var root = exportPath.Replace('\\', '/').Trim('/');
+
+        foreach (var record in manifest.Objects)
+        {
+            var isLibraries = string.Equals(
+                record.Form, ExportCoverage.LibrariesForm, StringComparison.Ordinal);
+            var isTasks = string.Equals(
+                record.Form, ExportCoverage.TaskBothForm, StringComparison.Ordinal);
+
+            if ((!isLibraries && !isTasks) || record.Path.Length == 0)
+            {
+                continue;
+            }
+
+            var absolute = System.IO.Path.Combine(AbsolutePath(exportPath), record.Path);
+            if (!File.Exists(absolute))
+            {
+                continue;
+            }
+
+            var text = File.ReadAllText(absolute);
+            var repoPath = $"{root}/{record.Path.Replace('\\', '/')}";
+            var old = baselines.TryGetValue(repoPath, out var head) && head.Length > 0
+                ? head
+                : null;
+
+            if (isLibraries)
+            {
+                var current = LibraryCatalog.Parse(text);
+                if (current.IsValid)
+                {
+                    (libraries ??= []).Add(new LibrarySnapshot
+                    {
+                        Path = repoPath,
+                        Current = current,
+                        Baseline = old is null ? null : LibraryCatalog.Parse(old),
+                    });
+                }
+            }
+            else
+            {
+                var current = TaskCatalog.Parse(text);
+                if (current.IsValid)
+                {
+                    (tasks ??= []).Add(new TaskSnapshot
+                    {
+                        Path = repoPath,
+                        Current = current,
+                        Baseline = old is null ? null : TaskCatalog.Parse(old),
+                    });
+                }
+            }
+        }
+
+        return (libraries ?? [], tasks ?? []);
+    }
+
+    /// <summary>Where this repository's expansion state lives: machine-local, gitignored.</summary>
+    /// <remarks>
+    /// Beside the locks and the auto-stash record, because it is the same kind of thing —
+    /// true in this clone, on this machine, meaningless in any other.
+    /// </remarks>
+    private string? TreeExpansionPath =>
+        _repositoryRoot is null
+            ? null
+            : System.IO.Path.Combine(_repositoryRoot, ".versio", "local", "tree.json");
+
+    private static readonly System.Text.Json.JsonSerializerOptions TreeStateJson = new()
+    {
+        WriteIndented = true,
+        PropertyNameCaseInsensitive = true,
+        PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+    };
+
+    /// <summary>
+    /// Restore which rows a previous session had open. A missing or unreadable file is the
+    /// defaults, not an error — expansion state is the one kind of state that is always safe
+    /// to lose.
+    /// </summary>
+    private void LoadTreeExpansion()
+    {
+        if (TreeExpansionPath is not { } path || !File.Exists(path))
+        {
+            return;
+        }
+
+        try
+        {
+            var state = System.Text.Json.JsonSerializer.Deserialize<TreeExpansion.State>(
+                File.ReadAllText(path), TreeStateJson);
+
+            if (state is not null)
+            {
+                _expansion.Restore(state);
+                _logger.Debug(LogCategory.App,
+                    $"restored tree expansion ({state.Opened.Count} open, " +
+                    $"{state.Closed.Count} closed) from {path}");
+            }
+        }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or IOException
+                                      or UnauthorizedAccessException)
+        {
+            _logger.Warn(LogCategory.App,
+                $"the tree expansion state at {path} is unreadable and was ignored: {ex.Message}");
+        }
+    }
+
+    /// <summary>Persist the expansion state for the repository that is closing.</summary>
+    private void SaveTreeExpansion()
+    {
+        if (TreeExpansionPath is not { } path)
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
+            File.WriteAllText(path,
+                System.Text.Json.JsonSerializer.Serialize(_expansion.Snapshot(), TreeStateJson));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Worth a line, not a dialog: the cost of losing this file is a tree that opens
+            // to its defaults once.
+            _logger.Warn(LogCategory.App,
+                $"could not persist the tree expansion state to {path}: {ex.Message}");
+        }
+    }
+
     /// <summary>Rebuild the tree, reading git's status first.</summary>
     /// <remarks>
     /// For the callers inside this class, which have just changed the working tree and have no
@@ -1885,6 +2151,16 @@ public sealed class SyncViewModel : ObservableObject
         // "exporting…" until the next backstop, up to twenty seconds into a run that only
         // lasts seventeen.
         _lastStatus = status;
+
+        // The same guard DiffView.Rebuild carries, for the same race arrived at the same
+        // way. This method captures the sources — including each row's "exporting…" state —
+        // and then AWAITS twice before applying: the baseline fetch and the background
+        // build. A refresh captured mid-export can therefore finish AFTER the refresh that
+        // saw the export complete, and apply its stale snapshot last — observed as a project
+        // row stuck on "exporting…" forever, because the signature gate below then refused
+        // every later rebuild as already-shown. The last call to enter owns the tree;
+        // everything older abandons at the next checkpoint.
+        var generation = ++_treeGeneration;
 
         if (_repositoryRoot is null)
         {
@@ -1949,12 +2225,39 @@ public sealed class SyncViewModel : ObservableObject
                 .Select(c => $"{c.Path}|{c.Effective}|{c.IsStaged}"),
         ]);
 
+        // Compared against the signature of what was APPLIED, and recorded only when a
+        // build lands — never up front. Recording it before the awaits below was the second
+        // half of the stuck-row race: the superseded refresh had already claimed its
+        // signature as shown, so every later refresh with the same inputs returned early
+        // while the tree displayed something older.
         if (signature == _treeSignature && Tree.Count > 0)
         {
             return;
         }
 
-        _treeSignature = signature;
+        // HEAD's copy of every changed catalog — library or task — fetched here because it
+        // needs git and the build below deliberately does not. The pair is what lets the
+        // tree mark WHICH library or task moved instead of only that the catalog's file
+        // did. Added and untracked files are skipped — HEAD has no copy, and asking would
+        // spawn a process to learn what the status already said. Sitting after the
+        // signature gate, so a refresh that rebuilds nothing fetches nothing.
+        var baselines = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (_git is not null)
+        {
+            foreach (var change in status.Changes)
+            {
+                var path = change.Path.Replace('\\', '/');
+                var isCatalog =
+                    path.EndsWith(LibraryCatalog.FileSuffix, StringComparison.OrdinalIgnoreCase)
+                    || path.EndsWith(TaskCatalog.FileSuffix, StringComparison.OrdinalIgnoreCase);
+                if (isCatalog
+                    && change.Effective is not (ChangeKind.Added or ChangeKind.Untracked))
+                {
+                    baselines[path] = await _git.ShowAtHeadAsync(path, CancellationToken.None)
+                        .ConfigureAwait(true);
+                }
+            }
+        }
 
         var built = await Task.Run(() =>
         {
@@ -1985,11 +2288,15 @@ public sealed class SyncViewModel : ObservableObject
                 var report = ExportCoverage.Of(manifest);
                 coverage[source.ProjectPath] = report;
 
+                var catalogs = ReadCatalogs(manifest, source.ExportPath, baselines);
+
                 projects.Add(new WorkspaceProject
                 {
                     ProjectPath = source.ProjectPath,
                     ExportPath = source.ExportPath,
                     Manifest = manifest,
+                    Libraries = catalogs.Libraries,
+                    Tasks = catalogs.Tasks,
 
                     // A project with no manifest has never been exported. Git reports nothing
                     // about it, because there is nothing on disk to report on - and it is
@@ -2018,6 +2325,16 @@ public sealed class SyncViewModel : ObservableObject
                     // itself was written to end.
                     Objects: ObjectIndex.Of(projects));
         }).ConfigureAwait(true);
+
+        // The checkpoint. A newer refresh entered while this one was fetching or building;
+        // its snapshot is fresher than this one on every axis that matters — the busy flag
+        // above all — so this one abandons rather than applying stale rows last.
+        if (generation != _treeGeneration)
+        {
+            return;
+        }
+
+        _treeSignature = signature;
 
         foreach (var problem in built.Unreadable)
         {
@@ -2096,6 +2413,50 @@ public sealed class SyncViewModel : ObservableObject
     }
 
     /// <summary>What a project's export covers, or null when it is not a tracked project.</summary>
+    /// <summary>The manifest of one tracked project, freshly read, or null without one.</summary>
+    /// <remarks>
+    /// Read on demand for the project summary rather than cached: it is one small file, the
+    /// summary is built on a click, and a cached copy would be one more thing the export has
+    /// to invalidate.
+    /// </remarks>
+    public ProjectManifest? ManifestFor(string projectPath)
+    {
+        if (ManifestPathFor(projectPath) is not { } path || !File.Exists(path))
+        {
+            return null;
+        }
+
+        return ProjectManifest.Parse(File.ReadAllText(path));
+    }
+
+    /// <summary>Absolute path of a tracked project's manifest, or null when untracked.</summary>
+    public string? ManifestPathFor(string projectPath)
+    {
+        if (_repositoryRoot is null)
+        {
+            return null;
+        }
+
+        var normalized = Normalize(projectPath);
+        var binding = _config.Bindings.FirstOrDefault(b =>
+            string.Equals(Normalize(b.ProjectPath), normalized, StringComparison.OrdinalIgnoreCase));
+
+        return binding is null
+            ? null
+            : System.IO.Path.Combine(
+                AbsolutePath(binding.ExportPath), BindingConventions.ManifestFileName);
+    }
+
+    /// <summary>Repo-relative export root of one tracked project, or null when untracked.</summary>
+    public string? ExportPathFor(string projectPath)
+    {
+        var normalized = Normalize(projectPath);
+        return _config.Bindings.FirstOrDefault(b =>
+                string.Equals(Normalize(b.ProjectPath), normalized,
+                              StringComparison.OrdinalIgnoreCase))
+            ?.ExportPath;
+    }
+
     public CoverageReport? CoverageFor(string projectPath) =>
         _coverage.TryGetValue(Normalize(projectPath), out var report) ? report : null;
 
@@ -2378,6 +2739,24 @@ public sealed class SyncViewModel : ObservableObject
         _logger.Debug(LogCategory.Sync,
             $"{binding.Id}: {source} change settled at {path}");
 
+        await RunSettledJobAsync(binding, source, $"automatic, {source}").ConfigureAwait(true);
+    }
+
+    /// <summary>Submit one side of one binding to the orchestrator, gates and all.</summary>
+    /// <remarks>
+    /// The tail of <see cref="SyncSettledChangeAsync"/>, extracted so the IDE-release retry
+    /// submits through the same door rather than growing a parallel one — a second path into
+    /// <c>HandleChangeAsync</c> with its own cancellation or its own confirmation answer is
+    /// exactly how the import gate was once answered on the user's behalf.
+    /// </remarks>
+    private async Task RunSettledJobAsync(
+        ProjectBinding binding, ChangeSource source, string reason)
+    {
+        if (_orchestrator is null || _repositoryRoot is null)
+        {
+            return;
+        }
+
         // The run's own token, registered before the call so the progress scope opened from
         // inside the orchestrator can find and adopt it. Without this the automatic export -
         // by far the most common thing to be running when somebody switches branch or closes
@@ -2406,7 +2785,7 @@ public sealed class SyncViewModel : ObservableObject
                 // "review the diff and confirm", and a dialog thrown up the instant a file
                 // settles is a dialog that arrives before the review. See ConfirmImportAsync.
                 Confirmed = false,
-                Reason = $"automatic, {source}",
+                Reason = reason,
             }, cancel.Token).ConfigureAwait(true);
 
             var sentence = SyncNarrative.Describe(outcome);

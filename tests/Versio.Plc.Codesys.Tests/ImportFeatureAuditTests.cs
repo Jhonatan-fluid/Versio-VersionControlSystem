@@ -427,8 +427,13 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
 
         // And nothing else went with it. remove() dangles referenced objects silently (P3),
         // and the POUs in this fixture read from this GVL.
-        Assert.True(File.Exists(Path.Combine(after, RelApp, "Simulation.st")));
-        Assert.True(File.Exists(Path.Combine(after, RelApp, "PLC_PRG.xml")));
+        // BY OBJECT, NOT BY FILE NAME. `PLC_PRG.xml` was pinned here until 2026-08-18, when
+        // the owner rewrote PLC_PRG in Structured Text — it exports as `PLC_PRG.st` now, the
+        // object was never in danger, and the test reported a deletion taking more than it
+        // was asked to. An object's FORM is the owner's choice; that it still exists is the
+        // claim.
+        Assert.NotEmpty(Directory.GetFiles(Path.Combine(after, RelApp), "Simulation.*"));
+        Assert.NotEmpty(Directory.GetFiles(Path.Combine(after, RelApp), "PLC_PRG.*"));
 
         // The mirror still holds the orphaned one-way file, which the next export removes.
         Assert.True(File.Exists(Path.Combine(app, "Glob_Var.gvl.xml")),
@@ -464,13 +469,12 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
         var mirror = Path.Combine(_repo, "plc", "RefrigeratorControl");
         var app = Path.Combine(mirror, RelApp.Replace('/', Path.DirectorySeparatorChar));
 
-        // Diagnosis is a single-file NATIVE object, so its fate turns on nothing else.
         var manifestPath = Path.Combine(mirror, "_manifest.json");
         var manifest = await File.ReadAllTextAsync(manifestPath);
-        Assert.Contains("Diagnosis.vis.xml", manifest, StringComparison.Ordinal);
+        var subject = SingleFileNative(manifest);
 
-        await WriteAsync(manifestPath, StripNormalizedHashFor(manifest, "Diagnosis.vis.xml"));
-        File.Delete(Path.Combine(app, "Diagnosis.vis.xml"));
+        await WriteAsync(manifestPath, StripNormalizedHashFor(manifest, subject));
+        File.Delete(Path.Combine(mirror, subject.Replace('/', Path.DirectorySeparatorChar)));
 
         var outcome = await TextChanged(orchestrator, binding.Id);
         output.WriteLine($"import — {outcome.Verdict}: {SyncNarrative.Describe(outcome)}");
@@ -484,8 +488,9 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
             w => w.Contains("DELETE_UNVERIFIABLE", StringComparison.Ordinal));
 
         var after = await ReExport(install!, binding.Id, "verify-unverifiable");
-        Assert.True(File.Exists(Path.Combine(after, RelApp, "Diagnosis.vis.xml")),
-                    "a deletion nothing could check went ahead anyway");
+        Assert.True(
+            File.Exists(Path.Combine(after, subject.Replace('/', Path.DirectorySeparatorChar))),
+            "a deletion nothing could check went ahead anyway");
     }
 
     // ── C9: no manifest, no structural change ────────────────────────────────────────
@@ -968,11 +973,15 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
         var manifestPath = Path.Combine(mirror, "_manifest.json");
         var manifest = await File.ReadAllTextAsync(manifestPath);
 
-        // An owner GUID no record in this manifest carries.
-        await WriteAsync(manifestPath, GiveParent(
-            manifest, "Diagnosis.vis.xml", "00000000-dead-beef-0000-000000000000"));
+        // An owner GUID no record in this manifest carries, given to whichever single-file
+        // native object the fixture happens to have — see SingleFileNative for why it is
+        // discovered rather than named.
+        var subject = SingleFileNative(manifest);
 
-        File.Delete(Path.Combine(app, "Diagnosis.vis.xml"));
+        await WriteAsync(manifestPath, GiveParent(
+            manifest, subject, "00000000-dead-beef-0000-000000000000"));
+
+        File.Delete(Path.Combine(mirror, subject.Replace('/', Path.DirectorySeparatorChar)));
 
         var outcome = await TextChanged(orchestrator, binding.Id);
         output.WriteLine($"import — {outcome.Verdict}: {SyncNarrative.Describe(outcome)}");
@@ -985,8 +994,9 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
             l => l.Contains("can only be guessed at", StringComparison.Ordinal));
 
         var after = await ReExport(install!, binding.Id, "verify-guessed-chain");
-        Assert.True(File.Exists(Path.Combine(after, RelApp, "Diagnosis.vis.xml")),
-                    "an object was deleted at a location that could only be guessed at");
+        Assert.True(
+            File.Exists(Path.Combine(after, subject.Replace('/', Path.DirectorySeparatorChar))),
+            "an object was deleted at a location that could only be guessed at");
     }
 
     // ── D8: an ambiguous pairing ─────────────────────────────────────────────────────
@@ -1094,14 +1104,14 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
 
         // THE ACTION — ST_IMPL. Its file is the body and nothing else, so an edit here has
         // nowhere to hide: there is no declaration for the importer to fall back on.
-        var action = Path.Combine(pumps, "FB_Pump.Stop.action.st");
+        var action = Path.Combine(pumps, "FB_Pump", "Stop.action.st");
         var actionText = await File.ReadAllTextAsync(action);
         Assert.DoesNotContain("audit_action", actionText, StringComparison.Ordinal);
         await WriteAsync(action, actionText.TrimEnd() + "\nspeed := 0; (* audit_action *)\n");
 
         // THE METHOD — ST_FULL, on a member. Both halves edited, so a run that applied the
         // declaration and dropped the implementation is caught.
-        var method = Path.Combine(pumps, "FB_Pump.Start.st");
+        var method = Path.Combine(pumps, "FB_Pump", "Start.st");
         var methodText = await File.ReadAllTextAsync(method);
         await WriteAsync(method, methodText
             .Replace("target : INT;", "target : INT; (* audit_decl *)", StringComparison.Ordinal)
@@ -1131,12 +1141,12 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
         var verifyPumps = Path.Combine(verify, "Device", "Plc Logic", "Application", "Pumps");
 
         var reAction = await File.ReadAllTextAsync(
-            Path.Combine(verifyPumps, "FB_Pump.Stop.action.st"));
+            Path.Combine(verifyPumps, "FB_Pump", "Stop.action.st"));
         output.WriteLine(reAction);
         Assert.Contains("audit_action", reAction, StringComparison.Ordinal);
 
         var reMethod = await File.ReadAllTextAsync(
-            Path.Combine(verifyPumps, "FB_Pump.Start.st"));
+            Path.Combine(verifyPumps, "FB_Pump", "Start.st"));
         output.WriteLine(reMethod);
         Assert.Contains("audit_decl", reMethod, StringComparison.Ordinal);
         Assert.Contains("audit_impl", reMethod, StringComparison.Ordinal);
@@ -1145,20 +1155,231 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
         // the two above and the reason NATIVE_R is in this test at all: it is imported
         // recursively, so a mistake takes its Get and Set with it rather than reporting
         // anything. The accessors are inside the payload and never appear as records.
-        var property = Path.Combine(verifyPumps, "FB_Pump.Speed.xml");
+        var property = Path.Combine(verifyPumps, "FB_Pump", "Speed.xml");
         Assert.True(File.Exists(property), "the property left the project");
 
         var manifest = ProjectManifest.Parse(
             await File.ReadAllTextAsync(Path.Combine(verify, "_manifest.json")));
 
         Assert.Equal("NATIVE_R", Assert.Single(
-            manifest.Objects, o => o.Path.EndsWith("FB_Pump.Speed.xml", StringComparison.Ordinal))
+            manifest.Objects, o => o.Path.EndsWith("FB_Pump/Speed.xml", StringComparison.Ordinal))
             .Form);
 
         // The owner chain is still recorded after an import, not just after the export that
-        // built the fixture — three members, each pointing at FB_Pump.
-        Assert.Equal(3, manifest.Objects.Count(o => !string.IsNullOrEmpty(o.Parent)));
+        // built the fixture. BY OBJECT, not by record: it read `3` until 2026-08-18, when a
+        // property began writing readable text beside its payload — same three members, more
+        // records, and a count of records made a correct export look wrong.
+        // FB_Pump's OWN three members. Counting every owned object in the manifest gave 5
+        // once a property's accessors became objects in their own right — correct, and not
+        // what this line is about. The claim is that the import did not lose the owner chain
+        // on the three members this fixture was built for.
+        var pump = Assert.Single(manifest.Objects, o => o.Name == "FB_Pump" && o.Parent == "");
+
+        var members = manifest.Objects
+            .Where(o => string.Equals(o.Parent, pump.Guid, StringComparison.OrdinalIgnoreCase))
+            .Select(o => o.Name)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.Equal(["Speed", "Start", "Stop"], members);
     }
+
+    // ── A folder inside a POU, all the way there and back ───────────────────────────
+
+    /// <summary>
+    /// A method grouped into a folder inside its POU: edited in the mirror, imported, and the
+    /// project re-exported <b>identical apart from that one file</b>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The case the owner reported, proven end to end.</b> Everything else about the
+    /// schema-9 layout was measured: the round trip is byte-identical with nothing edited
+    /// (<c>An_import_and_a_re_export_leave_the_mirror_byte_identical</c>), and an edited member
+    /// in its owner's directory reaches the project (<c>An_action_a_method_and_a_property…</c>).
+    /// Neither touches a member one level deeper, inside a folder the engineer made — and that
+    /// is the shape the whole change started from.
+    /// </para>
+    /// <para>
+    /// <b>Both halves of "it stays the same", because either alone is worthless.</b> That the
+    /// edit arrives says the chain resolved through the folder; that <i>nothing else moved</i>
+    /// says the import did not pay for it out of sight. An <c>import_native</c> replacing an
+    /// owner takes its members with it and reports nothing — measured 2026-08-18, see
+    /// <see cref="PlannedSkip.WouldDestroyMembers"/> — so a test asserting only the arrival
+    /// would have passed on the very run that lost an object.
+    /// </para>
+    /// <para>
+    /// <b>The member is DISCOVERED, not named.</b> Three tests were pinned to <c>_M_Reset</c>,
+    /// <c>PLC_PRG.xml</c> and a walk count, and all three went red within a day because the
+    /// fixture is a project somebody works in. What must hold is that <i>whichever</i> member
+    /// is inside a folder round-trips; which one it happens to be is not the specification.
+    /// </para>
+    /// </remarks>
+    [SkippableFact]
+    public async Task A_member_inside_a_folder_round_trips_and_moves_nothing_else()
+    {
+        var install = Install;
+        Skip.If(install is null, "no CODESYS installation with a profile");
+
+        var fixture = TestPaths.Project("RefrigeratorControl.project");
+        Skip.If(!File.Exists(fixture), "fixture project missing");
+
+        Directory.CreateDirectory(Path.Combine(_repo, "plc"));
+        var project = Path.Combine(_repo, "plc", "RefrigeratorControl.project");
+        File.Copy(fixture, project);
+
+        var mirror = Path.Combine(_repo, "plc", "RefrigeratorControl");
+        var runner = new LocalCodesysRunner(
+            install!.ExecutablePath, new ScriptExtractor(), new TestLogger(output));
+
+        CodesysJob Job(CodesysOperation operation, string path) => new()
+        {
+            Operation = operation,
+            Profile = install.Profiles[0],
+            Projects = [new ProjectJob
+            {
+                BindingId = "foldered", ProjectPath = project, Path = path,
+            }],
+            Timeout = TimeSpan.FromMinutes(5),
+        };
+
+        Assert.True((await runner.RunAsync(
+            Job(CodesysOperation.Export, mirror), null, CancellationToken.None)).Succeeded);
+
+        var manifest = ProjectManifest.Parse(
+            await File.ReadAllTextAsync(Path.Combine(mirror, "_manifest.json")));
+
+        Assert.True(manifest.Schema >= ExportCoverage.PathIsChainSchema);
+
+        var byGuid = manifest.Objects
+            .GroupBy(o => o.Guid, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+
+        // A textual member with a folder between its owner's directory and its own file.
+        var target = manifest.Objects.FirstOrDefault(o =>
+            o.Form == "ST_FULL"
+            && !string.IsNullOrEmpty(o.Parent)
+            && byGuid.TryGetValue(o.Parent, out var owner)
+            && o.Path.StartsWith(OwnerDirectory(owner) + "/", StringComparison.Ordinal)
+            && o.Path[(OwnerDirectory(owner).Length + 1)..].Contains('/'));
+
+        Skip.If(target is null, "the fixture has no member inside a folder inside a POU");
+
+        var ownerRecord = byGuid[target!.Parent];
+        var folder = target.Path[(OwnerDirectory(ownerRecord).Length + 1)..].Split('/')[0];
+        output.WriteLine($"{ownerRecord.Name} / {folder} / {target.Name}   {target.Path}");
+
+        var before = Fingerprint(mirror);
+
+        // A comment, so the method still compiles and the change is unmistakable in whichever
+        // half of the .st it lands in.
+        var file = Path.Combine(mirror, target.Path.Replace('/', Path.DirectorySeparatorChar));
+        var text = await File.ReadAllTextAsync(file);
+        Assert.DoesNotContain("folder_round_trip", text, StringComparison.Ordinal);
+        await WriteAsync(file, text.TrimEnd() + "\n(* folder_round_trip *)\n");
+
+        var import = await runner.RunAsync(
+            Job(CodesysOperation.Import, mirror), null, CancellationToken.None);
+
+        foreach (var w in import.Output.Warnings)
+        {
+            output.WriteLine($"warning: {w.String("code")} {w.String("path")} {w.String("detail")}");
+        }
+
+        Assert.True(import.Succeeded, import.FailureReason ?? "the import failed");
+
+        // Nothing said about the owner or the member. A chain that failed to resolve through
+        // the folder lands here as PARENT_NOT_FOUND or CANNOT_IDENTIFY_DECLARATION.
+        Assert.DoesNotContain(import.Output.Warnings,
+            w => (w.String("path") ?? string.Empty)
+                .Contains(ownerRecord.Name, StringComparison.Ordinal));
+
+        // Read the PROJECT back, into a different directory so this compares against what
+        // CODESYS now holds rather than against the files we just wrote.
+        var after = Path.Combine(_repo, "verify-foldered");
+        Assert.True((await runner.RunAsync(
+            Job(CodesysOperation.Export, after), null, CancellationToken.None)).Succeeded);
+
+        // ── one: the edit arrived, at the right object ───────────────────────────────
+        var reExported = Path.Combine(after, target.Path.Replace('/', Path.DirectorySeparatorChar));
+        Assert.True(File.Exists(reExported),
+            $"{target.Path} is not in the re-export — the member moved or was lost");
+        Assert.Contains("folder_round_trip", await File.ReadAllTextAsync(reExported),
+                        StringComparison.Ordinal);
+
+        // ── two: and nothing else moved ──────────────────────────────────────────────
+        //
+        // The same set of files first: an object that left, arrived or changed path shows up
+        // here before any content is compared.
+        var afterPrints = Fingerprint(after);
+
+        Assert.Equal(before.Keys.OrderBy(k => k, StringComparer.Ordinal),
+                     afterPrints.Keys.OrderBy(k => k, StringComparer.Ordinal));
+
+        // Then the content — and for a NATIVE payload the standard is EQUIVALENCE, not bytes.
+        //
+        // A byte comparison fails on a correct import, and the first version of this test did:
+        // Live_Visu.vis.xml, Visualization.vis.xml and GlobalTextList.xml came back different
+        // with nothing about them edited. That is P7's measurement — CODESYS re-mints
+        // UniqueIdGenerator and reference GUIDs on every export, climbing 44 -> 47 -> 50 -> 53
+        // across three round trips and never settling — and it is the whole reason
+        // NativeXmlNormalizer and the manifest's `nhash` exist.
+        //
+        // THE MIRROR DOES NOT CHURN IN REAL USE: an export writes over the previous one and
+        // preserve_equivalent keeps the old bytes when the new payload means the same thing.
+        // This verify export goes to a fresh directory precisely so that it reads the PROJECT
+        // rather than the files we just wrote — which switches that suppression off and makes
+        // the volatility visible again. So the comparison does here what preserve_equivalent
+        // does there: mask what CODESYS invents, compare what is left.
+        //
+        // The claim stays exact rather than weakened. Every file is either the one that was
+        // edited, byte-identical, or a native payload differing only in fields nobody wrote.
+        // An object that actually changed still fails.
+        var moved = new List<string>();
+
+        foreach (var (path, print) in before.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+        {
+            if (afterPrints[path] == print
+                || path.EndsWith("_manifest.json", StringComparison.Ordinal)
+                || path.EndsWith("_coverage.md", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var relative = path.Replace('/', Path.DirectorySeparatorChar);
+
+            if (path.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)
+                && NativeXmlNormalizer.AreEquivalent(
+                        await File.ReadAllTextAsync(Path.Combine(mirror, relative)),
+                        await File.ReadAllTextAsync(Path.Combine(after, relative))))
+            {
+                output.WriteLine($"equivalent, volatile fields only: {path}");
+                continue;
+            }
+
+            output.WriteLine($"changed: {path}");
+            moved.Add(path);
+        }
+
+        Assert.Equal([target.Path], moved);
+    }
+
+    /// <summary>An object's directory: its own path with the suffix cut off.</summary>
+    private static string OwnerDirectory(ProjectObject owner)
+    {
+        var slash = owner.Path.LastIndexOf('/');
+        var dot = owner.Path.IndexOf('.', slash + 1);
+        return dot < 0 ? owner.Path : owner.Path[..dot];
+    }
+
+    /// <summary>Every file under a mirror, by mirror-relative path, hashed.</summary>
+    private static Dictionary<string, string> Fingerprint(string root) =>
+        Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+            .ToDictionary(
+                p => Path.GetRelativePath(root, p).Replace('\\', '/'),
+                p => Convert.ToHexString(
+                    System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(p))),
+                StringComparer.Ordinal);
 
     // ── E4: the digest-tail stem, through a real round trip ─────────────────────────
 
@@ -1436,6 +1657,44 @@ public sealed class ImportFeatureAuditTests(ITestOutputHelper output) : IDisposa
     /// comes before <c>path</c>. Searching forward finds the NEXT object's and edits a record
     /// the test never meant to touch.
     /// </remarks>
+    /// <summary>
+    /// The mirror path of an object that writes ONE file and owns nothing — the simplest
+    /// possible subject for a deletion test.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Discovered rather than named.</b> Two tests said <c>Diagnosis.vis.xml</c> until
+    /// 2026-08-18 and both went red when the owner deleted that visualisation while building
+    /// out the corpus. What they need is not that object — it is <i>an</i> object whose fate
+    /// turns on nothing else, so that a refusal or a deletion can be attributed to the rule
+    /// under test rather than to something the object was entangled with.
+    /// </para>
+    /// <para>
+    /// One file per GUID rules out a two-file form, where the halves vote together; no
+    /// recorded parent rules out a member, whose owner could veto on its behalf; and a
+    /// non-export-only form is required because the deletion path ignores the others.
+    /// </para>
+    /// </remarks>
+    private static string SingleFileNative(string manifestJson)
+    {
+        var manifest = ProjectManifest.Parse(manifestJson);
+
+        var candidate = manifest.Objects
+            .Where(o => !string.IsNullOrEmpty(o.Guid)
+                        && string.IsNullOrEmpty(o.Parent)
+                        && !ExportCoverage.IsExportOnly(o.Form)
+                        && manifest.Objects.Count(x => x.Guid == o.Guid) == 1
+                        && o.Path.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(o => o.Path, StringComparer.Ordinal)
+            .FirstOrDefault();
+
+        Assert.True(candidate is not null,
+            "the fixture has no single-file native object, so this test has no subject whose "
+            + "fate turns on nothing else");
+
+        return candidate!.Path;
+    }
+
     private static string StripNormalizedHashFor(string manifest, string fileName)
     {
         const string key = "\"nhash\": \"";

@@ -226,7 +226,28 @@
 
                     <TreeView.ItemTemplate>
                         <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-                            <Grid Margin="0,1">
+                            <Grid Margin="0,1" Background="Transparent">
+                                <!-- The menu's DataContext is this row, inherited from the
+                                     grid it is placed on; the handlers reach the shell
+                                     through the panel's DataContext, the same route the
+                                     selection handler already takes. Background is set
+                                     because a Grid with none is transparent to hit-testing
+                                     everywhere its children are not — a right-click in the
+                                     gap between name and annotation opened nothing. -->
+                                <Grid.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Stage" Click="OnStageNode"
+                                                  Visibility="{Binding CanStageOrDiscard,
+                                                      Converter={StaticResource BoolToVisibility}}" />
+                                        <MenuItem Header="Discard changes…" Click="OnDiscardNode"
+                                                  Visibility="{Binding CanStageOrDiscard,
+                                                      Converter={StaticResource BoolToVisibility}}" />
+                                        <Separator Visibility="{Binding CanStageOrDiscard,
+                                                       Converter={StaticResource BoolToVisibility}}" />
+                                        <MenuItem Header="Reveal in Explorer" Click="OnRevealNode" />
+                                        <MenuItem Header="Copy path" Click="OnCopyNodePath" />
+                                    </ContextMenu>
+                                </Grid.ContextMenu>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="14" />
                                     <ColumnDefinition Width="*" />

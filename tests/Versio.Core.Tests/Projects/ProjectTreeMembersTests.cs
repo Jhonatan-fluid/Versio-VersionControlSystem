@@ -198,4 +198,90 @@ public sealed class ProjectTreeMembersTests
         Assert.Equal("clsCellarRoom", cellar.Name);
         Assert.Equal("InitRoom", Assert.Single(cellar.Children).Name);
     }
+
+    /// <summary>
+    /// A schema-9 owner: its members are in a directory named after it, and the folders the
+    /// engineer made inside the POU are directories below that.
+    /// </summary>
+    /// <remarks>
+    /// The shape the owner reported on 2026-08-18 — <c>FB_Alarm</c> with <c>Private</c> and
+    /// <c>Protected</c> holding one method each, a plain method beside them and a property.
+    /// </remarks>
+    private static ProjectManifest FoldersInsideAPou() =>
+        new()
+        {
+            Schema = 9,
+            Project = "Machine.project",
+            Objects =
+            [
+                Obj("FB_Alarm", "FB_Alarm.st", "fb"),
+                Obj("M_Reset", "FB_Alarm/M_Reset.st", "m", "METHOD", "fb"),
+                Obj("_M_Reset", "FB_Alarm/Private/_M_Reset.st", "p1", "METHOD", "fb"),
+                Obj("_M_Protected", "FB_Alarm/Protected/_M_Protected.st", "p2", "METHOD", "fb"),
+                Obj("P_Faulted", "FB_Alarm/P_Faulted.xml", "prop", "PROPERTY", "fb"),
+            ],
+        };
+
+    [Fact]
+    public void A_folder_inside_a_pou_is_a_row_inside_the_pou()
+    {
+        // What the owner asked for by name: "folders for private and protected are not shown".
+        // Attaching members by GUID alone drew all four as loose methods of FB_Alarm, because
+        // ownership and folder membership are different facts and only the first was read.
+        var fb = Find(Build(FoldersInsideAPou()), "FB_Alarm");
+
+        // FOLDERS FIRST, then the objects — the IDE's own order, measured on 3.5.22.20.
+        Assert.Equal(["Private", "Protected", "M_Reset", "P_Faulted"],
+                     fb.Children.Select(c => c.Name));
+
+        var private_ = fb.Children[0];
+        Assert.Equal(ProjectNodeKind.Folder, private_.Kind);
+        Assert.Equal("_M_Reset", Assert.Single(private_.Children).Name);
+        Assert.Equal("_M_Protected", Assert.Single(fb.Children[1].Children).Name);
+
+        // The folder is a real path under the owner's directory, not a synthetic label: the
+        // panel keys expansion state on it, so a made-up path collapses on every refresh.
+        Assert.Equal($"{Export}/{Folder}/FB_Alarm/Private", private_.Path);
+    }
+
+    [Fact]
+    public void A_change_inside_a_folder_inside_a_pou_still_raises_the_pou()
+    {
+        // Two levels of roll-up, which is the whole reason a badge exists. An edited method
+        // two chevrons deep that left FB_Alarm quiet is a change nobody would find.
+        var tree = Build(
+            FoldersInsideAPou(),
+            [Change("FB_Alarm/Private/_M_Reset.st", ChangeKind.Modified)]);
+
+        var fb = Find(tree, "FB_Alarm");
+
+        Assert.Equal(1, fb.ChangedDescendants);
+        Assert.Equal(ChangeKind.Modified, fb.RollUp);
+        Assert.Equal(ChangeKind.Modified, Find(tree, "Private").RollUp);
+        Assert.Equal(ChangeKind.Modified, Find(tree, "Application").RollUp);
+    }
+
+    [Fact]
+    public void A_pre_schema_9_member_beside_its_owner_gains_no_folder()
+    {
+        // The layout every committed mirror is in until it is next exported: the member sits
+        // in the SAME directory as its owner, so there is nothing below it and the count of
+        // folders comes out zero rather than negative. A tree that invented a folder here
+        // would put every existing project behind a chevron that is not in the IDE.
+        var tree = Build(new ProjectManifest
+        {
+            Schema = 8,
+            Project = "Machine.project",
+            Objects =
+            [
+                Obj("clsLight", "clsLight.st", "c"),
+                Obj("Light", "clsLight.Light.xml", "l", "METHOD", "c"),
+            ],
+        });
+
+        var light = Find(tree, "clsLight");
+        Assert.Equal("Light", Assert.Single(light.Children).Name);
+        Assert.DoesNotContain(Flatten(tree), n => n.Kind == ProjectNodeKind.Folder
+                                                  && n.Name == "clsLight");
+    }
 }

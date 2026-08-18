@@ -123,11 +123,28 @@ public sealed partial class GitCliClient(
         return branches;
     }
 
+    /// <summary>How far a branch has diverged from its upstream, or (0, 0).</summary>
+    /// <remarks>
+    /// <b>Quiet on failure, because the ordinary failure here is not a fault.</b>
+    /// <c>%(upstream:short)</c> names the upstream a branch is <i>configured</i> with, which
+    /// outlives the remote-tracking ref itself: a branch pushed and later pruned, or one
+    /// cloned with a config the remote never had, both report an upstream that
+    /// <c>rev-list</c> then exits 128 on. This is asked of every local branch on every
+    /// refresh, so it produced a <c>WRN</c> per such branch at every launch — two of them on
+    /// this repository — for a state nobody can act on. The generic failure line is exactly
+    /// right for the commands it was written for and wrong for this one; the same argument
+    /// <see cref="RemoteUrlAsync"/> makes by choosing a command form that exits 0.
+    /// <para>
+    /// Not silenced, demoted: the line is still there at Debug, where somebody asking why a
+    /// count reads zero will find it.
+    /// </para>
+    /// </remarks>
     private async Task<(int Ahead, int Behind)> AheadBehindAsync(
         string branch, string upstream, CancellationToken ct)
     {
         var result = await RunAsync(
-            ["rev-list", "--left-right", "--count", $"{upstream}...{branch}"], null, ct)
+            ["rev-list", "--left-right", "--count", $"{upstream}...{branch}"], null, ct,
+            quietFailure: true)
             .ConfigureAwait(false);
 
         if (!result.Success)
@@ -533,7 +550,8 @@ public sealed partial class GitCliClient(
     /// </param>
     private async Task<GitResult> RunAsync(
         string[] args, IProgress<GitProgress>? progress, CancellationToken ct,
-        TimeSpan? timeout = null, string? stdin = null, bool allowPrompt = false)
+        TimeSpan? timeout = null, string? stdin = null, bool allowPrompt = false,
+        bool quietFailure = false)
     {
         var psi = new ProcessStartInfo
         {
@@ -699,7 +717,12 @@ public sealed partial class GitCliClient(
         {
             // The stderr tail is the whole diagnosis for a failed git command — "not a git
             // repository", "rejected, non-fast-forward", an auth prompt that could not open.
-            _log.Warn(LogCategory.Git,
+            //
+            // At Debug for the one caller whose failure is an ordinary answer rather than
+            // news. See AheadBehindAsync: the alternative is to say nothing at all, and a
+            // command that ran and failed leaving no trace is the shape of bug this whole
+            // line exists to prevent.
+            _log.Log(quietFailure ? LogLevel.Debug : LogLevel.Warning, LogCategory.Git,
                 $"{display} exited {exitCode} in {stopwatch.Elapsed.TotalSeconds:F1}s" +
                 $"{Tail(errText)}");
         }

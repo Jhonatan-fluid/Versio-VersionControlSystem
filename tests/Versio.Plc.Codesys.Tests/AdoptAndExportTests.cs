@@ -658,10 +658,14 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
 
         // And nothing else went with it. remove() dangles referenced objects silently (P3),
         // so "the right object left" and "only the right object left" are two claims.
-        Assert.True(File.Exists(Path.Combine(afterDelete, RelApp, "PLC_PRG.xml")),
-            "PLC_PRG went missing — the deletion took more than it was asked to");
-        Assert.True(File.Exists(Path.Combine(afterDelete, RelApp, "Glob_Var.gvl.st")),
-            "Glob_Var went missing — the deletion took more than it was asked to");
+        //
+        // BY OBJECT, NOT BY FILE NAME. This asserted `PLC_PRG.xml` until 2026-08-18 and went
+        // red when the owner rewrote PLC_PRG in Structured Text — it exports as `PLC_PRG.st`
+        // now, the object was never in danger, and the test reported a deletion taking more
+        // than it was asked to. An object's FORM is the owner's choice and can change any
+        // afternoon; that it still exists is what this line is about.
+        StillThere(afterDelete, "PLC_PRG");
+        StillThere(afterDelete, "Glob_Var");
 
         // ── three: a two-file object goes only when BOTH halves check out ────────────
         //
@@ -978,6 +982,27 @@ public sealed class AdoptAndExportTests(ITestOutputHelper output) : IDisposable
 
     /// <summary>Where the fixture's objects live, relative to a mirror root.</summary>
     private static string RelApp => Path.Combine("Device", "Plc Logic", "Application");
+
+    /// <summary>
+    /// An object of this name still reaches the mirror, whatever form it takes.
+    /// </summary>
+    /// <remarks>
+    /// <b>The form is the owner's choice and it changes.</b> <c>PLC_PRG</c> was a graphical POU
+    /// exporting to <c>PLC_PRG.xml</c> and became Structured Text exporting to
+    /// <c>PLC_PRG.st</c> on 2026-08-18, which turned an assertion about a file name into a
+    /// false report that a deletion had taken the object with it. Searched recursively as well,
+    /// because from schema 9 an object with members sits beside a directory of its own and
+    /// could legitimately be found deeper than the application folder.
+    /// </remarks>
+    private static void StillThere(string mirror, string name)
+    {
+        var found = Directory
+            .EnumerateFiles(mirror, $"{name}.*", SearchOption.AllDirectories)
+            .ToList();
+
+        Assert.True(found.Count > 0,
+            $"{name} went missing — the deletion took more than it was asked to");
+    }
 
     /// <summary>
     /// Export the project into a scratch directory, through the runner.

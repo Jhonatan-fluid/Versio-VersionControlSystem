@@ -19,6 +19,19 @@ public sealed record WorkspaceProject
     /// <summary>The export's manifest, or null when it has never been exported.</summary>
     public ProjectManifest? Manifest { get; init; }
 
+    /// <summary>
+    /// The project's parsed library catalogs, one per manager. Empty when none were read.
+    /// </summary>
+    /// <remarks>
+    /// Same contract as <see cref="Manifest"/>: parsed by the caller, because reading them is
+    /// IO. Empty draws the managers without reference rows, which is what every mirror showed
+    /// before the catalogs existed — a degraded view, never an error.
+    /// </remarks>
+    public IReadOnlyList<LibrarySnapshot> Libraries { get; init; } = [];
+
+    /// <summary>The project's parsed task catalogs. Same contract as <see cref="Libraries"/>.</summary>
+    public IReadOnlyList<TaskSnapshot> Tasks { get; init; } = [];
+
     /// <summary>Export state in a few words, shown on the project row instead of a diff.</summary>
     public string ExportState { get; init; } = string.Empty;
 
@@ -149,7 +162,8 @@ public static class WorkspaceTreeBuilder
         claimed.Add(projectPath);
 
         var manifest = project.Manifest ?? ProjectManifest.Empty;
-        var tree = ProjectTreeBuilder.Build(manifest, exportRoot, changes, options);
+        var tree = ProjectTreeBuilder.Build(
+            manifest, exportRoot, changes, options, project.Libraries, project.Tasks);
 
         // Everything the manifest accounted for is now represented by an object node.
         foreach (var file in manifest.Objects

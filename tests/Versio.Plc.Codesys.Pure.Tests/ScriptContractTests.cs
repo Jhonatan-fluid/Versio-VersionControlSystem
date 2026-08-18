@@ -273,8 +273,11 @@ public sealed class ScriptContractTests(ITestOutputHelper output)
 
         output.WriteLine($"second-file writes: {secondFiles}, path checks: {checks}");
 
-        // Non-vacuous: there really are two-file forms to miss.
-        Assert.Equal(2, secondFiles);
+        // Non-vacuous: there really are two-file forms to miss. THREE of them since
+        // 2026-08-18, when PROPERTY_BOTH joined GVL_BOTH and TASK_BOTH — a property writes
+        // its recursive .xml and its readable .st, and the .xml is built the same way the
+        // other two build theirs, which is why this count moves rather than the pattern.
+        Assert.Equal(3, secondFiles);
 
         // One for the primary path, one for each second file. Counting rather than matching
         // positions because the two branches build their paths differently and a positional

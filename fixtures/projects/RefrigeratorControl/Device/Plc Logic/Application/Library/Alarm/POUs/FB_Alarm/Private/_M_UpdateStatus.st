@@ -1,0 +1,7 @@
+METHOD PRIVATE _M_UpdateStatus : BOOL
+VAR_INPUT
+END_VAR
+
+// --- BEGIN IMPLEMENTATION ---
+
+

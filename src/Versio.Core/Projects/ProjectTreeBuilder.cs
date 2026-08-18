@@ -28,6 +28,28 @@ public enum ProjectNodeKind
 
     /// <summary>A changed file that is not part of any export tree.</summary>
     File,
+
+    /// <summary>
+    /// One library reference, read from an exported catalog and drawn under its manager.
+    /// </summary>
+    /// <remarks>
+    /// Not an <see cref="Object"/>: it has no GUID, no files of its own and no diff — its
+    /// facts live inside the manager's one YAML file, which is what selecting it opens. It
+    /// exists as a row so a version bump reads as <i>that library</i> rather than as "the
+    /// library manager changed".
+    /// </remarks>
+    Library,
+
+    /// <summary>
+    /// One task, read from an exported task catalog and drawn under its configuration.
+    /// </summary>
+    /// <remarks>
+    /// Same construction as <see cref="Library"/>, one file over: the facts live in the
+    /// configuration's <c>.tasks.yaml</c> — which, unlike a library catalog, is the
+    /// importable half, so the row a reviewer reads here is exactly what the next import
+    /// applies.
+    /// </remarks>
+    Task,
 }
 
 /// <summary>One node of the project as the engineer thinks about it.</summary>
@@ -99,6 +121,62 @@ public sealed record ProjectTreeNode
     public bool HasChanges => Status != ChangeKind.Unmodified || ChangedDescendants > 0;
 }
 
+/// <summary>
+/// One exported library catalog, with the copy to compare it against.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The catalogs are handed in already parsed rather than read here, for the same reason the
+/// manifest is: reading them is IO and this assembly does none. Whoever builds the tree reads
+/// each <c>*.libraries.yaml</c> the manifest names and, when git reports that file changed,
+/// fetches HEAD's copy too — that pair is what lets the tree say <i>which</i> library moved
+/// instead of only that the manager's file did.
+/// </para>
+/// <para>
+/// <see cref="Baseline"/> is null when there is nothing to compare against: the file is
+/// unchanged, or HEAD has no copy. Null means "mark nothing", not "everything is new" — a
+/// first export adds the manager's file, and drawing its twenty references as twenty additions
+/// would bury the one line git actually has to say about it.
+/// </para>
+/// </remarks>
+public sealed record LibrarySnapshot
+{
+    /// <summary>Repo-relative path of the catalog's YAML file, forward slashes.</summary>
+    /// <remarks>
+    /// The join key: it matches the manager object's own file path in the tree, which is how
+    /// the references find the node they hang under. The catalog's <c>path</c> header names
+    /// the manager's position instead of its file and cannot serve here.
+    /// </remarks>
+    public required string Path { get; init; }
+
+    /// <summary>The catalog as the working tree has it.</summary>
+    public required LibraryCatalog Current { get; init; }
+
+    /// <summary>The catalog as HEAD has it, or null when there is nothing to compare.</summary>
+    public LibraryCatalog? Baseline { get; init; }
+}
+
+/// <summary>
+/// One exported task catalog, with the copy to compare it against.
+/// </summary>
+/// <remarks>
+/// <see cref="LibrarySnapshot"/>'s twin, with the same contract throughout: parsed by the
+/// caller because this assembly does no IO, joined to its configuration by the YAML file's
+/// repo-relative path, and a null <see cref="Baseline"/> means "mark nothing", never
+/// "everything is new".
+/// </remarks>
+public sealed record TaskSnapshot
+{
+    /// <summary>Repo-relative path of the catalog's YAML file, forward slashes.</summary>
+    public required string Path { get; init; }
+
+    /// <summary>The catalog as the working tree has it.</summary>
+    public required TaskCatalog Current { get; init; }
+
+    /// <summary>The catalog as HEAD has it, or null when there is nothing to compare.</summary>
+    public TaskCatalog? Baseline { get; init; }
+}
+
 /// <summary>What to include when building the tree.</summary>
 public sealed record ProjectTreeOptions
 {
@@ -156,11 +234,17 @@ public static class ProjectTreeBuilder
     /// <param name="exportPath">Repo-relative export root, so manifest paths can be matched
     /// against git's repo-relative ones.</param>
     /// <param name="changes">What git reports for the working tree.</param>
+    /// <param name="libraries">Parsed library catalogs, one per manager, keyed by their file's
+    /// repo-relative path. Empty is the ordinary state of a project whose catalogs have not
+    /// been read, not an error.</param>
+    /// <param name="tasks">Parsed task catalogs, same contract.</param>
     public static ProjectTreeNode Build(
         ProjectManifest manifest,
         string exportPath,
         IReadOnlyList<FileChange> changes,
-        ProjectTreeOptions? options = null)
+        ProjectTreeOptions? options = null,
+        IReadOnlyList<LibrarySnapshot>? libraries = null,
+        IReadOnlyList<TaskSnapshot>? tasks = null)
     {
         var opts = options ?? new ProjectTreeOptions();
         var root = exportPath.Replace('\\', '/').Trim('/');
@@ -179,6 +263,9 @@ public static class ProjectTreeBuilder
             .Select(g => BuildLeaf(g.ToList(), root, status))
             .ToList();
 
+        objects = AttachLibraries(objects, libraries);
+        objects = AttachTasks(objects, tasks);
+
         // Members hung off their owner before anything is placed in a folder, because a
         // method's folder is its owner's folder — the export writes clsLight.Light.xml beside
         // clsLight.st — so placing by path alone is what made them siblings.
@@ -193,6 +280,8 @@ public static class ProjectTreeBuilder
                 placed.Add(leaf with { Node = kept });
             }
         }
+
+        placed = GroupPoolObjects(placed);
 
         var tree = Assemble(placed, name: RootName(manifest, exportPath), path: root);
 
@@ -253,18 +342,81 @@ public static class ProjectTreeBuilder
                 return leaf.Node;
             }
 
-            var children = members[guid]
-                .Select(Attach)
-                .OrderBy(n => n.Name, StringComparer.OrdinalIgnoreCase)
+            // A member's own folders, rebuilt inside its owner.
+            //
+            // FROM SCHEMA 9 a member lives in a directory named after its owner, so anything
+            // BELOW that directory is a folder the engineer made inside the POU —
+            // `FB_Alarm/Private/_M_Reset.st` is FB_Alarm's method, shown in its folder
+            // `Private`. Attaching by GUID alone drew both of FB_Alarm's folders' contents as
+            // if they were loose methods, which is the half of the owner's report that the
+            // export fix did not answer.
+            //
+            // Counted from the owner rather than parsed: the member's directory minus the
+            // owner's, minus one more for the owner's own directory. A pre-schema-9 mirror
+            // puts the member in the SAME directory as its owner, so the count comes out zero
+            // or negative and this is exactly what it was before — no folders, no change.
+            var placed = members[guid]
+                .Select(m => m with
+                {
+                    Node = Attach(m),
+                    Folders = FoldersInsideOwner(leaf, m),
+                })
                 .ToList();
 
-            return children.Count == 0 ? leaf.Node : WithChildren(leaf.Node, children);
+            if (placed.Count == 0)
+            {
+                return leaf.Node;
+            }
+
+            return WithChildren(leaf.Node, ChildrenOf(placed, OwnerDirectory(leaf, placed)));
         }
 
         return leaves
             .Where(l => l.Parent.Length == 0 || !owners.ContainsKey(l.Parent))
             .Select(l => l with { Node = Attach(l) })
             .ToList();
+    }
+
+    /// <summary>
+    /// The folder segments between an owner's own directory and one of its members.
+    /// </summary>
+    /// <remarks>
+    /// Empty for a member sitting beside its owner, which is every mirror below schema 9 and
+    /// every member that is in no folder. The <c>+ 1</c> is the owner's own directory —
+    /// <c>FB_Alarm/</c> — which is not a folder anybody made and must not become a row.
+    /// </remarks>
+    private static string[] FoldersInsideOwner(Leaf owner, Leaf member)
+    {
+        var below = member.Folders.Length - (owner.Folders.Length + 1);
+        return below <= 0 ? [] : member.Folders[^below..];
+    }
+
+    /// <summary>
+    /// The directory an owner's members live in, for naming the folder rows inside it.
+    /// </summary>
+    /// <remarks>
+    /// Trimmed off a member's real path rather than built from the owner's name, because the
+    /// directory on disk is a percent-encoded stem and this file has no business re-deriving
+    /// that: <see cref="ProjectObject.Path"/> is what the exporter actually wrote. Any member
+    /// gives the same answer once its own folders are trimmed away.
+    /// </remarks>
+    private static string OwnerDirectory(Leaf owner, IReadOnlyList<Leaf> placed)
+    {
+        var first = placed[0];
+        var path = DirectoryPart(first.Node.Path);
+
+        for (var i = 0; i < first.Folders.Length; i++)
+        {
+            path = DirectoryPart(path);
+        }
+
+        return path.Length == 0 ? DirectoryPart(owner.Node.Path) : path;
+    }
+
+    private static string DirectoryPart(string path)
+    {
+        var slash = path.LastIndexOf('/');
+        return slash < 0 ? string.Empty : path[..slash];
     }
 
     /// <summary>An object node that owns others, with its badges counted over them.</summary>
@@ -352,8 +504,301 @@ public static class ProjectTreeBuilder
             first.Parent);
     }
 
-    /// <summary>Hang every leaf off its folder chain, then roll the badges up.</summary>
-    private static ProjectTreeNode Assemble(IReadOnlyList<Leaf> leaves, string name, string path)
+    /// <summary>The group project-level objects sit under, when there are any.</summary>
+    /// <remarks>
+    /// "POUs" is the IEC standard's own word — Program Organization Units — and it is also
+    /// the name of the pane CODESYS shows these objects in, which is what makes the label
+    /// legible to the person this exists for. Kept in the neutral builder rather than behind
+    /// the vendor seam on that IEC ground; a vendor with no project-level pool simply never
+    /// exports a root-level object beside foldered ones, and the group never appears.
+    /// </remarks>
+    public const string PoolGroupName = "POUs";
+
+    /// <summary>
+    /// Put project-level objects under an explicit <see cref="PoolGroupName"/> node.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// An object at the mirror's root is a <b>pool</b> object — the project-level Library
+    /// Manager, a GlobalTextList — and CODESYS itself never shows those beside the device
+    /// tree: they live in a pane of their own, named POUs. Rendered flat at the root, the
+    /// pool's Library Manager read as a duplicate of the application's; the product owner
+    /// read it exactly that way, twice, before the CODESYS comparison settled it. The group
+    /// is the same statement CODESYS makes, made where Versio's one tree can make it.
+    /// </para>
+    /// <para>
+    /// <b>Only when foldered objects exist beside them.</b> A manifest from before schema 4
+    /// is flat — every object at the root — and grouping those would file the entire
+    /// project under POUs. Mixed depth is what says the flat ones are genuinely pool-level
+    /// rather than merely unplaced.
+    /// </para>
+    /// <para>
+    /// The node's path is the root's <c>POUs</c>, which a real export directory of that
+    /// name would collide with — accepted and stated: the exporter writes objects into the
+    /// CODESYS folder structure, and a CODESYS folder named POUs at the project root would
+    /// be an object folder whose contents belong in exactly this group anyway.
+    /// </para>
+    /// </remarks>
+    private static List<Leaf> GroupPoolObjects(List<Leaf> placed)
+    {
+        if (!placed.Any(l => l.Folders.Length > 0) || !placed.Any(l => l.Folders.Length == 0))
+        {
+            return placed;
+        }
+
+        return placed
+            .Select(l => l.Folders.Length == 0 ? l with { Folders = [PoolGroupName] } : l)
+            .ToList();
+    }
+
+    /// <summary>Hang each catalog's references under the manager that owns them.</summary>
+    /// <remarks>
+    /// Joined on the manager's file path rather than on its name or GUID, because the snapshot
+    /// was produced by reading a file and the file's path is the one fact both sides hold. A
+    /// snapshot whose path matches no leaf is dropped silently: the manifest is the authority
+    /// on what exists, and a stray catalog must not conjure a manager the export never wrote.
+    /// </remarks>
+    private static List<Leaf> AttachLibraries(
+        List<Leaf> leaves, IReadOnlyList<LibrarySnapshot>? libraries)
+    {
+        if (libraries is null || libraries.Count == 0)
+        {
+            return leaves;
+        }
+
+        var byPath = new Dictionary<string, LibrarySnapshot>(StringComparer.OrdinalIgnoreCase);
+        foreach (var snapshot in libraries)
+        {
+            byPath[snapshot.Path.Replace('\\', '/').Trim('/')] = snapshot;
+        }
+
+        return leaves
+            .Select(l =>
+                byPath.TryGetValue(l.Node.Path, out var snapshot) &&
+                snapshot.Current.IsValid &&
+                LibraryNodes(l.Node, snapshot) is { Count: > 0 } children
+                    ? l with { Node = WithChildren(l.Node, children) }
+                    : l)
+            .ToList();
+    }
+
+    /// <summary>One row per library reference, marked against the baseline when there is one.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A null or unreadable baseline marks nothing.</b> The manager's own row already
+    /// carries the file's git state; without an old copy to compare against, per-library marks
+    /// would be guesses, and a fresh export's twenty references drawn as twenty additions
+    /// would bury the one thing that happened.
+    /// </para>
+    /// <para>
+    /// <b>A reference deleted from the catalog still gets a row</b>, from the baseline's copy
+    /// of it — a library that silently vanished from the panel is indistinguishable from one
+    /// that was never referenced, and removal is exactly the change a reviewer must see.
+    /// </para>
+    /// <para>
+    /// <b>Chosen libraries sort before system ones.</b> On the fixture, 18 of 21 references
+    /// are system libraries pulled in by the visualisation plug-in; listed alphabetically
+    /// beside them, the three somebody actually chose are lost in the middle of the list.
+    /// </para>
+    /// </remarks>
+    private static List<ProjectTreeNode> LibraryNodes(
+        ProjectTreeNode manager, LibrarySnapshot snapshot)
+    {
+        var baseline = snapshot.Baseline is { IsValid: true } b
+            ? b.References
+                .GroupBy(r => r.Name, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal)
+            : null;
+
+        var rows = new List<(LibraryReference Reference, ChangeKind Status)>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var reference in snapshot.Current.References)
+        {
+            if (!seen.Add(reference.Name))
+            {
+                continue;
+            }
+
+            var status =
+                baseline is null ? ChangeKind.Unmodified
+                : !baseline.TryGetValue(reference.Name, out var old) ? ChangeKind.Added
+                : reference.ContentEquals(old) ? ChangeKind.Unmodified
+                : ChangeKind.Modified;
+
+            rows.Add((reference, status));
+        }
+
+        if (baseline is not null)
+        {
+            rows.AddRange(baseline.Values
+                .Where(old => !seen.Contains(old.Name))
+                .Select(old => (old, ChangeKind.Deleted)));
+        }
+
+        return rows
+            .OrderBy(r => r.Reference.SystemLibrary)
+            .ThenBy(r => DisplayName(r.Reference), StringComparer.OrdinalIgnoreCase)
+            .Select(r => new ProjectTreeNode
+            {
+                Name = DisplayName(r.Reference),
+
+                // Identity for the row across rebuilds, never shown and never a file. The
+                // raw reference name, not the display name, because the display name is
+                // free to change its mind about which field reads best.
+                Path = $"{manager.Path}::{r.Reference.Name}",
+                Kind = ProjectNodeKind.Library,
+                Detail = Describe(r.Reference),
+
+                // The manager's own file: a library has no file of its own, and selecting
+                // it opens the one place its facts are recorded.
+                Files = manager.Files,
+                Status = r.Status,
+            })
+            .ToList();
+    }
+
+    /// <summary>What the row is called: the name a person chose, not the toolchain's spelling.</summary>
+    private static string DisplayName(LibraryReference reference) =>
+        !string.IsNullOrEmpty(reference.Placeholder) ? reference.Placeholder
+        : !string.IsNullOrEmpty(reference.Title) ? reference.Title
+        : reference.Name;
+
+    /// <summary>The version phrase beside the name, with the system flag when it applies.</summary>
+    private static string Describe(LibraryReference reference) =>
+        reference.SystemLibrary && reference.DisplayVersion.Length > 0
+            ? $"{reference.DisplayVersion} · system"
+            : reference.SystemLibrary
+                ? "system"
+                : reference.DisplayVersion;
+
+    /// <summary>Hang each task catalog's tasks under the configuration that owns them.</summary>
+    /// <remarks>
+    /// The same join as <see cref="AttachLibraries"/> — the YAML's path against the leaf's —
+    /// with one wrinkle inherited from the export: a task configuration is TWO files sharing
+    /// one GUID, so its leaf's <see cref="ProjectTreeNode.Path"/> is whichever file sorts
+    /// first. That is the <c>.tasks.yaml</c> today by ordinal accident of the suffixes, so
+    /// the match is made against every file of the leaf rather than its path — the accident
+    /// is not load-bearing.
+    /// </remarks>
+    private static List<Leaf> AttachTasks(
+        List<Leaf> leaves, IReadOnlyList<TaskSnapshot>? tasks)
+    {
+        if (tasks is null || tasks.Count == 0)
+        {
+            return leaves;
+        }
+
+        var byPath = new Dictionary<string, TaskSnapshot>(StringComparer.OrdinalIgnoreCase);
+        foreach (var snapshot in tasks)
+        {
+            byPath[snapshot.Path.Replace('\\', '/').Trim('/')] = snapshot;
+        }
+
+        return leaves
+            .Select(l =>
+                l.Node.Files.Select(f => byPath.TryGetValue(f, out var s) ? s : null)
+                        .FirstOrDefault(s => s is not null) is { } snapshot &&
+                snapshot.Current.IsValid &&
+                TaskNodes(l.Node, snapshot) is { Count: > 0 } children
+                    ? l with { Node = WithChildren(l.Node, children) }
+                    : l)
+            .ToList();
+    }
+
+    /// <summary>One row per task, marked against the baseline when there is one.</summary>
+    /// <remarks>
+    /// The marking rules are <see cref="LibraryNodes"/>'s — a null or unreadable baseline
+    /// marks nothing, a task deleted from the catalog still gets a row from the baseline's
+    /// copy — but the order is not: tasks keep the catalog's order, which is the
+    /// configuration's own, because that is how the IDE shows them and two tasks have no
+    /// alphabet a reviewer would expect. Removed tasks are appended at the end, where a row
+    /// that no longer exists reads as an afterthought rather than as the schedule.
+    /// </remarks>
+    private static List<ProjectTreeNode> TaskNodes(
+        ProjectTreeNode configuration, TaskSnapshot snapshot)
+    {
+        var baseline = snapshot.Baseline is { IsValid: true } b
+            ? b.Tasks
+                .GroupBy(t => t.Name, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal)
+            : null;
+
+        var rows = new List<(TaskRecord Task, ChangeKind Status)>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var task in snapshot.Current.Tasks)
+        {
+            if (!seen.Add(task.Name))
+            {
+                continue;
+            }
+
+            var status =
+                baseline is null ? ChangeKind.Unmodified
+                : !baseline.TryGetValue(task.Name, out var old) ? ChangeKind.Added
+                : task.ContentEquals(old) ? ChangeKind.Unmodified
+                : ChangeKind.Modified;
+
+            rows.Add((task, status));
+        }
+
+        if (baseline is not null)
+        {
+            rows.AddRange(baseline.Values
+                .Where(old => !seen.Contains(old.Name))
+                .OrderBy(old => old.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(old => (old, ChangeKind.Deleted)));
+        }
+
+        return rows
+            .Select(r => new ProjectTreeNode
+            {
+                Name = r.Task.Name,
+                Path = $"{configuration.Path}::{r.Task.Name}",
+                Kind = ProjectNodeKind.Task,
+                Detail = Describe(r.Task),
+                Files = configuration.Files,
+                Status = r.Status,
+            })
+            .ToList();
+    }
+
+    /// <summary>The schedule phrase beside the task's name.</summary>
+    /// <remarks>
+    /// Interval and priority, because they are the two numbers a reviewer checks a schedule
+    /// for. The watchdog and the core binding stay in the YAML the row opens — a row phrase
+    /// that carried four facts would carry none of them legibly.
+    /// </remarks>
+    private static string Describe(TaskRecord task)
+    {
+        var schedule = task.DisplaySchedule;
+        return schedule.Length > 0 && task.Priority.Length > 0
+            ? $"{schedule} · prio {task.Priority}"
+            : schedule.Length > 0
+                ? schedule
+                : task.Priority.Length > 0
+                    ? $"prio {task.Priority}"
+                    : string.Empty;
+    }
+
+    /// <summary>
+    /// One level of the tree: the folders under it, then the objects in it.
+    /// </summary>
+    /// <remarks>
+    /// <b>Folders first, which is what the IDE does</b> — measured against CODESYS 3.5.22.20,
+    /// where <c>FB_Alarm</c> shows <c>Private</c> and <c>Protected</c> above its methods. It
+    /// is not what <c>get_children()</c> returns, which is storage order: that hands back
+    /// <c>M_Reset, Private, Protected, P_Faulted</c> and puts <c>FB_Alarm</c> eleventh of the
+    /// application's twelve children where the IDE shows it second. So the order here is the
+    /// panel's own rule rather than a recording of the toolchain's.
+    /// <para>
+    /// Shared with <see cref="Nest"/> so that a folder <i>inside</i> an owner is built the
+    /// same way as one at project level. Before that they were different code paths and only
+    /// one of them existed.
+    /// </para>
+    /// </remarks>
+    private static List<ProjectTreeNode> ChildrenOf(IReadOnlyList<Leaf> leaves, string path)
     {
         var children = new List<ProjectTreeNode>();
 
@@ -373,6 +818,14 @@ public static class ProjectTreeBuilder
             .Where(l => l.Folders.Length == 0)
             .Select(l => l.Node)
             .OrderBy(n => n.Name, StringComparer.OrdinalIgnoreCase));
+
+        return children;
+    }
+
+    /// <summary>Hang every leaf off its folder chain, then roll the badges up.</summary>
+    private static ProjectTreeNode Assemble(IReadOnlyList<Leaf> leaves, string name, string path)
+    {
+        var children = ChildrenOf(leaves, path);
 
         return new ProjectTreeNode
         {

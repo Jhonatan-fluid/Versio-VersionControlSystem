@@ -48,6 +48,14 @@ internal sealed class CountingGitClient : IGitClient
         return Task.FromResult<IReadOnlySet<string>>(Unpushed);
     }
 
+    public Task<IReadOnlyList<CommitEntry>> CommitsInRangeAsync(
+        string range, int count, CancellationToken ct) =>
+        throw new NotSupportedException();
+
+    public Task<IReadOnlyList<CommitFile>> RangeFilesAsync(
+        string range, CancellationToken ct) =>
+        throw new NotSupportedException();
+
     public Task<IReadOnlyList<CommitEntry>> RecentCommitsAsync(
         int count, int skip, CancellationToken ct)
     {

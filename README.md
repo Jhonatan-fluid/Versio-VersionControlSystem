@@ -45,7 +45,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | Open-project detection, behind the vendor seam | ✅ `IPlcProjectFormat` answers where the marker is and what it says; a stale one from a crashed IDE is ignored, one from another machine is believed |
 | **Export while the project is open in the CODESYS IDE** | ✅ exports a copy — the vendor lock is a sidecar on the path. Proven against a real CODESYS holding the original |
 | **Import while it is open** — waits and names who has it | ✅ it cannot be made to work: the IDE would revert it on the next save. Neither direction marks the binding failed, and the breaker is never fed |
-| Retry automatically when the IDE closes | ⛔ the lock file vanishing is a watchable event; today the next save retries |
+| **Retry automatically when the IDE closes** | ✅ the vendor's open-project marker is watched, so its deletion — the IDE letting go — re-submits both directions through the ordinary gates. Closing CODESYS *is* the retry; a marker rewrite while the IDE works stays silent |
 | Sync orchestrator — locks, loop defences, commit gate | ✅ 46 scenario tests |
 | **The app says when it is working** — progress bar, live heartbeat, and the row reading `exporting…` | ✅ a run announces itself when it passes the last gate, so a refused or coalesced save never flashes a bar |
 | Change detection — watcher + safety poll + overflow rescan | ✅ `FileChangeWatcher`, driving the sync engine |
@@ -180,17 +180,17 @@ Versio.sln
 ├─ tests/
 │  ├─ Versio.TestSupport/       not a test project: the three helpers more than one suite
 │  │                            needs (TestPaths, TestLogger, VendorSeamScanner)
-│  ├─ Versio.Core.Tests/        1,296 unit tests — pure, no IO, under a second
-│  ├─ Versio.Integration.Tests/ 141 tests against real git and the real filesystem, ~10 s.
+│  ├─ Versio.Core.Tests/        1,381 unit tests — pure, no IO, under a second
+│  ├─ Versio.Integration.Tests/ 147 tests against real git and the real filesystem, ~10 s.
 │  │                            NO CODESYS: that is a different project now, so this one
 │  │                            needs no filter and cannot accidentally cost half an hour
-│  ├─ Versio.App.Tests/         480 tests that build the real windows and panels against
+│  ├─ Versio.App.Tests/         546 tests that build the real windows and panels against
 │  │                            the real stylesheet on an STA thread — none is ever shown
-│  ├─ Versio.Plc.Codesys.Pure.Tests/ 253 pure vendor tests — the planner, the codecs, the
+│  ├─ Versio.Plc.Codesys.Pure.Tests/ 260 pure vendor tests — the planner, the codecs, the
 │  │                            protocol — under a second, needing nothing
-│  ├─ Versio.Plc.Codesys.Parity.Tests/ 82 CPython parity tests over the vendor's python,
+│  ├─ Versio.Plc.Codesys.Parity.Tests/ 92 CPython parity tests over the vendor's python,
 │  │                            ~15 s, no CODESYS — python on PATH, skips cleanly without
-│  └─ Versio.Plc.Codesys.Tests/ 53 tests against real CODESYS, ~30 min. The gate before a
+│  └─ Versio.Plc.Codesys.Tests/ 54 tests against real CODESYS, ~30 min. The gate before a
 │                               commit, and the only suite that needs a toolchain installed
 ├─ tools/                       PowerShell and python harnesses. Seven of the nine are
 │                               CODESYS-specific probes; New-VersioIcon.ps1 generates the
@@ -338,13 +338,13 @@ dotnet test tests/Versio.Core.Tests
 
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,296 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
-| `Versio.Integration.Tests` | 141 | a real `git.exe` and the real filesystem | ~10 s |
+| `Versio.Core.Tests` | 1,381 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
+| `Versio.Integration.Tests` | 147 | a real `git.exe` and the real filesystem | ~10 s |
 | `Versio.Arch.Tests` | 14 | nothing — it reads assembly metadata, IL, and the project files | instant |
-| `Versio.App.Tests` | 480 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
-| `Versio.Plc.Codesys.Pure.Tests` | 253 | nothing — the vendor's planner, codecs and protocol, pure | under a second |
-| `Versio.Plc.Codesys.Parity.Tests` | 82 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
-| `Versio.Plc.Codesys.Tests` | 53 | **a real CODESYS**, and **skips cleanly** without one | **~30 min** |
+| `Versio.App.Tests` | 546 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
+| `Versio.Plc.Codesys.Pure.Tests` | 260 | nothing — the vendor's planner, codecs and protocol, pure | under a second |
+| `Versio.Plc.Codesys.Parity.Tests` | 92 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
+| `Versio.Plc.Codesys.Tests` | 54 | **a real CODESYS**, and **skips cleanly** without one | **~30 min** |
 
 The first six are the loop to work in. The last is the gate before a commit — and it is a
 separate project precisely so that running the loop cannot cost you half an hour by accident.

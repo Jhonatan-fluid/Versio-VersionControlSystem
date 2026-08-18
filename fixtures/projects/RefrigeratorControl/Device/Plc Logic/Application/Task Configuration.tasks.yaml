@@ -15,7 +15,7 @@ schema: 1
 vendor: codesys
 configuration: "Task Configuration"
 path: "Device/Plc Logic/Application/Task Configuration"
-taskCount: 2
+taskCount: 3
 tasks:
   - name: MainTask
     priority: "1"
@@ -35,3 +35,9 @@ tasks:
     watchdogEnabled: false
     pous:
       - VisuElems.Visu_Prg
+  - name: EtherCAT_Task
+    priority: "1"
+    interval: "t#4ms"
+    intervalUnit: ms
+    coreBinding: -1
+    watchdogEnabled: false
