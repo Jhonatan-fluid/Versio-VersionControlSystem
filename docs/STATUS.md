@@ -1,11 +1,11 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,472 across seven
+**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,473 across seven
 projects, 0 skipped — re-derived by running each, not carried forward
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,377 | under a second | nothing |
+| `Versio.Core.Tests` | 1,378 | under a second | nothing |
 | `Versio.Integration.Tests` | 146 | ~10 s | real git |
 | `Versio.App.Tests` | 546 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 14 | instant | nothing |
@@ -959,6 +959,7 @@ actually do.
 
 The full list, newest first:
 
+- [A process parked inside the mirror made every export fail at the swap](FINDINGS.md#a-process-parked-inside-the-mirror-made-every-export-fail-at-the-swap)
 - [The project row stuck on "exporting…", and the await that widened a race until it hit](FINDINGS.md#the-project-row-stuck-on-exporting-and-the-await-that-widened-a-race-until-it-hit)
 - [The expansion default missed the correction the pruner already carried](FINDINGS.md#the-expansion-default-missed-the-correction-the-pruner-already-carried)
 - [`import_native` duplicates an external-file object instead of replacing it](FINDINGS.md#import_native-duplicates-an-external-file-object-instead-of-replacing-it)

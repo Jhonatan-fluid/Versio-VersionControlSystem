@@ -46,7 +46,7 @@ public sealed class SwapDirectoryTests
         var source = Exporter();
 
         var swap = source[source.IndexOf("THREE RENAMES", StringComparison.Ordinal)..];
-        var rename = swap.IndexOf("os.rename(staging, out_root)", StringComparison.Ordinal);
+        var rename = swap.IndexOf("rename_retrying(staging, out_root)", StringComparison.Ordinal);
         var delete = swap.IndexOf("shutil.rmtree(trash)", StringComparison.Ordinal);
 
         Assert.True(rename > 0, "the staging rename should still be in the swap");
@@ -55,6 +55,35 @@ public sealed class SwapDirectoryTests
 
         // And the old tree is moved aside rather than removed.
         Assert.DoesNotContain("shutil.rmtree(out_root)", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_fallback_that_narrows_that_guarantee_says_so_where_it_is_taken()
+    {
+        // THE ONE PLACE §5.D DOES NOT HOLD, and the reason this test exists rather than the
+        // rule simply being relaxed. A directory rename is refused on Windows while any
+        // process holds a handle inside the tree — a file dialog's working directory is
+        // enough — and the answer to that is to replace the mirror file by file, which means
+        // a real window where the mirror is half old and half new.
+        //
+        // That is a genuine narrowing of the guarantee the test above pins, so it must be
+        // reachable ONLY from the refusal and must be visible when it happens. An operator
+        // reading "exported 18 objects" has no way to know their mirror was rebuilt the slow
+        // way unless the script says so, and it will keep taking that path on every export
+        // until the parked process moves.
+        var source = Exporter();
+
+        Assert.Contains("replace_contents(out_root, staging)", source, StringComparison.Ordinal);
+        Assert.Contains("swap-fallback", source, StringComparison.Ordinal);
+
+        // Guarded by the errno rather than by any refusal: a rename failing for some other
+        // reason must still throw, because the fallback is only correct for a held handle.
+        var swap = source[source.IndexOf("THREE RENAMES", StringComparison.Ordinal)..];
+        var guard = swap.IndexOf("err.errno != errno.EACCES", StringComparison.Ordinal);
+        var fallback = swap.IndexOf("replace_contents(out_root, staging)", StringComparison.Ordinal);
+
+        Assert.True(guard > 0, "the fallback must be reached only on an access refusal");
+        Assert.True(fallback > guard, "the errno check must come before the fallback");
     }
 
     [Fact]

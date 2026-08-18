@@ -507,6 +507,21 @@ public sealed class LocalCodesysRunner(
                         $"export directory now holds {evt.Int("files")} file(s)");
                     break;
 
+                case "swap-fallback":
+                    // Some process is parked inside the mirror — a cwd or a directory
+                    // handle — so the atomic rename was refused and the export replaced
+                    // the tree file by file instead. Warn rather than Info, because the
+                    // parked process is worth finding: until it moves, every export takes
+                    // this path, and the either-old-or-new crash guarantee is narrower
+                    // on it.
+                    _log.Warn(CodesysLog.Category,
+                        $"the export directory {evt.String("out")} could not be renamed " +
+                        $"({evt.String("error")}); another process is holding a directory " +
+                        "inside it, so the mirror was replaced file by file instead. The " +
+                        "export is complete and correct — but until that process lets go, " +
+                        "every export takes this slower path");
+                    break;
+
                 case "staging-cleared":
                     // A staging folder that survived means a previous export was killed.
                     _log.Warn(CodesysLog.Category,

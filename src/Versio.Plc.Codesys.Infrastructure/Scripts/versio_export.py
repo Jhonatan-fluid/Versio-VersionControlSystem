@@ -9,11 +9,13 @@
 #   CODESYS.exe --profile="..." --noUI --runscript=versio_export.py --scriptargs:"<job.json>"
 # job.json: { "project": "...", "out": "<export root>", "bindingId": "b-xxxx" }
 
+import errno
 import io
 import json
 import os
 import shutil
 import sys
+import time
 import traceback
 
 import scriptengine  # type: ignore
@@ -728,6 +730,61 @@ def count_files(path):
     return total
 
 
+def rename_retrying(src, dst):
+    """os.rename with a short retry on Windows' access-denied.
+
+    Errno 13 on a rename is very often transient here: git hashing the tree for a
+    status, a virus scanner, a directory enumeration - each holds a handle for
+    milliseconds, and one millisecond is all a rename needs to lose. Five attempts
+    over a second outlives all of those; what it does NOT outlive is a process
+    PARKED in the tree, which is the caller's fallback to handle.
+    """
+    for attempt in range(5):
+        try:
+            os.rename(src, dst)
+            return
+        except OSError as err:
+            if err.errno != errno.EACCES or attempt == 4:
+                raise
+            time.sleep(0.2)
+
+
+def replace_contents(out_root, staging):
+    """Replace the mirror's files without renaming any directory it already has.
+
+    The degraded swap, for the day a process is parked inside the mirror: renaming
+    a directory needs every handle in the tree gone, but renaming and deleting the
+    FILES needs nothing of the sort - measured on the live repository that hit
+    this, where every file renamed freely while two directories refused.
+
+    Old files are removed first and new ones moved in after, per directory, so the
+    mixed-content window is as small as file operations allow. Directories the old
+    tree had and the new one does not are removed only if they empty out - one
+    that refuses is exactly the held one, and it is left standing, empty, for the
+    next full swap to take.
+    """
+    for base, _dirs, files in os.walk(out_root, topdown=False):
+        for name in files:
+            os.remove(os.path.join(base, name))
+
+    for base, _dirs, files in os.walk(staging):
+        rel = os.path.relpath(base, staging)
+        target = out_root if rel == "." else os.path.join(out_root, rel)
+        if not os.path.isdir(target):
+            os.makedirs(target)
+        for name in files:
+            os.rename(os.path.join(base, name), os.path.join(target, name))
+
+    for base, _dirs, files in os.walk(out_root, topdown=False):
+        if base != out_root and not os.listdir(base):
+            try:
+                os.rmdir(base)
+            except OSError:
+                pass
+
+    shutil.rmtree(staging)
+
+
 def coverage_markdown(project, records, skips, warnings):
     """Render the coverage report.
 
@@ -999,10 +1056,33 @@ def main():
     # mirror is either the old tree or the new one. What a crash can leave behind now is a
     # .versio_trash directory holding the previous export - recoverable by hand, cleared
     # and announced by the next run - instead of nothing.
+    #
+    # AND A FALLBACK, because on Windows a directory rename is refused (errno 13) while
+    # ANY process holds a handle on any directory inside the tree - and a process's
+    # CURRENT WORKING DIRECTORY is such a handle. Measured on a live repository: an IDE
+    # whose cwd had landed inside the mirror made every export fail at this exact line,
+    # twice, while every FILE in the tree renamed freely. Somebody browsing their own
+    # export in a file dialog must not be able to break the export - so when the rename
+    # is refused after retries, the mirror is replaced CONTENT-first instead: files
+    # removed and moved one by one, directories left standing. The trade is stated: the
+    # atomic either-old-or-new guarantee becomes a brief mixed-content window, which is
+    # still strictly better than the alternative on offer, no export at all.
+    renamed = True
     if os.path.isdir(out_root):
-        os.rename(out_root, trash)
+        try:
+            rename_retrying(out_root, trash)
+        except OSError as err:
+            if err.errno != errno.EACCES:
+                raise
+            renamed = False
+            emit({"t": "swap-fallback", "out": out_root, "error": str(err)})
+            replace_contents(out_root, staging)
 
-    os.rename(staging, out_root)
+    if renamed:
+        # Retried as well: with the old mirror already in the trash, a refusal HERE is
+        # the no-mirror window the three renames exist to prevent, so this one is worth
+        # being stubborn about.
+        rename_retrying(staging, out_root)
 
     emit({"t": "swapped", "out": out_root, "files": count_files(out_root)})
 

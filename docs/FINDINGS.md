@@ -17,6 +17,49 @@ produce a diff touching everything else.
 
 ---
 
+### A process parked inside the mirror made every export fail at the swap
+
+**Found 2026-08-17 by the product owner running the app** — the seventh found that way —
+minutes after adding methods to `FB_Alarm`: the export wrote all 18 files including the new
+ones, then died at the swap with `[Errno 13] Access is denied`, twice, leaving a
+`.versio_staging` beside the mirror (which the next run correctly cleared and re-created,
+and which the orphan scanner correctly reported in the meantime).
+
+**The diagnosis was a rename probe, not a guess.** The mirror directory refused to rename
+even with Versio killed — so not the watcher, not a transient git race. Probing each child
+one at a time drew the map: `Device` refused, `Device/Plc Logic` refused, **`Application` and
+every file renamed freely**. That is the signature of a directory *handle* held on
+`Plc Logic` — most likely a process's current working directory, which on Windows blocks
+renaming every ancestor while blocking no file. An IDE's file dialog browsed into the
+mirror is enough to set one.
+
+**The swap was atomic-or-nothing, and "nothing" was the outcome on offer.** The
+three-rename swap exists so a crash never leaves a project without a mirror — but
+`os.rename` of the tree's root needs every directory handle in it gone, and a parked
+process never lets go. Somebody browsing their own export must not be able to break the
+export.
+
+**Fixed in two layers, the trade stated in the script:**
+
+1. `rename_retrying` — five attempts over a second, which outlives the genuinely transient
+   holders (git hashing a status, a virus scanner, a directory enumeration) that were
+   always a millisecond-window risk on every swap.
+2. `replace_contents` — when the rename is still refused, the mirror is replaced file by
+   file, directories left standing: old files removed, new ones moved in, old-only
+   directories removed only if they empty out — the one that refuses is exactly the held
+   one, and it stays, empty, for the next full swap to take. The atomic either-old-or-new
+   guarantee narrows to a brief mixed-content window on this path only, and the C# side
+   logs it as a warning naming the cause, because until the parked process moves every
+   export takes the slower path.
+
+Proven under CPython against a real squatter — a child process parked by cwd inside a
+scratch mirror — asserting the refusal, the retry timing, the file-level replacement with
+the directory still held, and the ordinary path resuming once the squatter exits. The
+CODESYS gate re-run in full for the normal path, python being embedded and this being
+exactly the kind of edit that looks like it did nothing without a rebuild.
+
+---
+
 ### The project row stuck on "exporting…", and the await that widened a race until it hit
 
 **Found 2026-08-17 by the product owner running the app** — the sixth defect in three
