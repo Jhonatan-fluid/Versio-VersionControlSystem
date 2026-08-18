@@ -33,6 +33,14 @@ Items 1–6 are the order the evidence argues for. Items 7 and 8 sit last **by t
 decision** (2026-08-17): no second vendor and no packaging until everything above them is
 complete.
 
+> **Items 1–4 and 6 are DONE, all on 2026-08-17, in one session on branch `Phase2_Begin`** —
+> each struck through below with what actually happened. What remains open in this file:
+> **item 5** (corpus rows that wait on reality producing a specimen — C5 and `native_partial`
+> cannot be manufactured), the **human eyeball pass** (item 6's one unownable entry, now with
+> a session's worth of new UI to look at), and **items 7–8**, which the owner sequenced last
+> on purpose. The gate before believing any of it: the CODESYS suite, run at the end of the
+> session over the Core changes it can see.
+
 ### 1. The project tree panel — the next piece of work, and the largest user-visible value
 
 ~~Two finished readers are idling with no consumer~~ — **both consumed as of 2026-08-17**:
