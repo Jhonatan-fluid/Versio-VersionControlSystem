@@ -96,7 +96,43 @@ public sealed class RenderedPaneFlowTests
         File.WriteAllText(Path.Combine(export, "Task Configuration.xml"), "<tasks />\n");
     }
 
-    private static TreeRow FindRow(IEnumerable<TreeRow> rows, string name)
+    /// <summary>
+    /// The row by name, waiting for it the way a person looking at the panel would.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>It waited for nothing until 2026-08-17, and that is the only difference.</b>
+    /// <c>A_clean_file_shows_itself_and_says_nothing_changed</c> failed twice in a row in the
+    /// full suite while passing alone every time, and then went green five runs running —
+    /// including one deliberately loaded with two other suites — so the message was never
+    /// captured and the failing assertion is genuinely not known. What is known: both red runs
+    /// were the slow ones (62 s and 66 s against 54–60 s green), which is the signature of a
+    /// race rather than a wrong expectation.
+    /// </para>
+    /// <para>
+    /// This test is the only one in the class that <i>commits</i> before opening — it has to,
+    /// because a clean file is what it is about — so it is the only one whose tree is rebuilt
+    /// against a changed git status while the test is reading it. Reaching into
+    /// <c>shell.Sync.Tree</c> the instant <c>OpenAsync</c> returns assumed that rebuild had
+    /// already landed.
+    /// </para>
+    /// <para>
+    /// So the lookup waits, bounded. It cannot hide a row that never appears — the deadline
+    /// still fails the test, naming the row — and it is what the panel does anyway.
+    /// </para>
+    /// </remarks>
+    private static async Task<TreeRow> Row(ShellViewModel shell, string name)
+    {
+        TreeRow? found = null;
+
+        await Eventually.Until(
+            () => (found = Find(shell.Sync.Tree, name)) is not null,
+            $"a row named '{name}' appeared in the tree");
+
+        return found!;
+    }
+
+    private static TreeRow? Find(IEnumerable<TreeRow> rows, string name)
     {
         foreach (var row in rows)
         {
@@ -111,7 +147,7 @@ public sealed class RenderedPaneFlowTests
             }
         }
 
-        throw new InvalidOperationException($"no row named '{name}' in the tree");
+        return null;
     }
 
     private static TreeRow? Search(TreeRow row, string name)
@@ -141,7 +177,7 @@ public sealed class RenderedPaneFlowTests
         using var shell = Shell();
         await shell.OpenAsync(repo.Path);
 
-        shell.Sync.SelectedNode = FindRow(shell.Sync.Tree, "Library Manager");
+        shell.Sync.SelectedNode = await Row(shell, "Library Manager");
 
         var catalog = Assert.IsType<LibraryCatalog>(shell.RenderedContent);
         Assert.Equal("Standard", Assert.Single(catalog.References).Placeholder);
@@ -156,7 +192,7 @@ public sealed class RenderedPaneFlowTests
         using var shell = Shell();
         await shell.OpenAsync(repo.Path);
 
-        shell.Sync.SelectedNode = FindRow(shell.Sync.Tree, "MainTask");
+        shell.Sync.SelectedNode = await Row(shell, "MainTask");
 
         var detail = Assert.IsType<TaskDetailRender>(shell.RenderedContent);
         Assert.Equal("MainTask", detail.Task.Name);
@@ -172,7 +208,7 @@ public sealed class RenderedPaneFlowTests
         using var shell = Shell();
         await shell.OpenAsync(repo.Path);
 
-        shell.Sync.SelectedNode = FindRow(shell.Sync.Tree, "Task Configuration");
+        shell.Sync.SelectedNode = await Row(shell, "Task Configuration");
 
         var catalog = Assert.IsType<TaskCatalog>(shell.RenderedContent);
         Assert.Equal("MainTask", Assert.Single(catalog.Tasks).Name);
@@ -191,7 +227,7 @@ public sealed class RenderedPaneFlowTests
         using var shell = Shell();
         await shell.OpenAsync(repo.Path);
 
-        shell.Sync.SelectedNode = FindRow(shell.Sync.Tree, "FB_Motor");
+        shell.Sync.SelectedNode = await Row(shell, "FB_Motor");
 
         var source = Assert.IsType<SourceRender>(shell.RenderedContent);
         Assert.True(source.NoChanges);
@@ -219,7 +255,7 @@ public sealed class RenderedPaneFlowTests
         using var shell = Shell();
         await shell.OpenAsync(repo.Path);
 
-        shell.Sync.SelectedNode = FindRow(shell.Sync.Tree, "FB_Motor");
+        shell.Sync.SelectedNode = await Row(shell, "FB_Motor");
 
         // The rendered view exists — the user can flip to it — but the diff is what
         // review is, so it opens underneath.
@@ -236,7 +272,7 @@ public sealed class RenderedPaneFlowTests
         using var shell = Shell();
         await shell.OpenAsync(repo.Path);
 
-        shell.Sync.SelectedNode = FindRow(shell.Sync.Tree, "Machine.project");
+        shell.Sync.SelectedNode = await Row(shell, "Machine.project");
 
         var card = Assert.IsType<ProjectSummaryRender>(shell.RenderedContent);
         Assert.True(shell.ShowRendered);
