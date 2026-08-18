@@ -554,6 +554,23 @@ does not record them has to be run again.
     *projects* and not orphaned *export trees*, so every ignored project's mirror was still
     reported. See the Finding: half a rule, and nothing in the suite could have caught it because
     the existing test only ever supplied `ProjectFiles`.
+- **Regenerating the committed fixture mirror by hand has three arguments that are all easy
+  to get wrong, and no coverage.** It is done through `tools/codesys/Run-Codesys.ps1` when the
+  exporter's output shape changes, and on 2026-08-17 the third one was got wrong and shipped:
+  1. `-Profile` is mandatory (`--noUI` refuses without it) and **its name is not the install
+     folder's** — read it from `…\CODESYS <ver>\CODESYS\Profiles\*.profile.xml`.
+  2. `out` must be the **real mirror path**, not a temp directory. `preserve_equivalent`
+     compares against the bytes already there to suppress the native-XML churn that never
+     settles otherwise; exporting elsewhere and copying back puts a diff nobody made into
+     several `.xml` files.
+  3. `bindingId` must be **the id `.versio/repo.json` actually binds that directory with**
+     (`6d3f8855e205`), not a readable placeholder. Passing `"fixture"` produced a
+     `ManifestMismatch` finding on the next launch — which is the safeguard working exactly as
+     intended, and was the *only* thing that caught it: the whole suite was green, because
+     every test builds its own binding and none reads the committed `repo.json`.
+
+  The owner usually has the project open in CODESYS, so the export must run against a **copy**
+  of the `.project` — into the real `out` above — rather than closing their IDE.
 - **A *graphical* member inside an in-POU folder is imported into the POU's root, not back
   into the folder.** Found on 2026-08-17 while fixing the foldered-member export, by reading
   `handle_native` rather than by any test. The textual path is fully covered — it resolves
