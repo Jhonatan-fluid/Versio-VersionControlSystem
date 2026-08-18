@@ -17,7 +17,7 @@ produce a diff touching everything else.
 
 ---
 
-### Properties export as readable text perfectly, and the round trip empties every one
+### Properties are readable now: the payload imports, the text is for people
 
 **Asked for by the product owner on 2026-08-18**, looking at the panel: *"properties are still
 getting rendered as xml only, all the properties on the project only have a getter — needs to
@@ -73,11 +73,35 @@ the property's own XML, so no write ever touches them individually. That is why 
 the form again, and the comment in both form tables now says so rather than implying it was
 never questioned.
 
-**What this cost and what it bought.** One CODESYS probe, one export, one gate round trip, and
-a revert — perhaps forty minutes. It bought the measurement that the export side is solved and
-the import side is one experiment away, which is a much better position than the guess it
-replaced. Reopening it means driving CODESYS directly: replace a property's declaration, read
-its accessor back, and see whether the body is still there.
+**Shipped as two halves instead, which is the shape this repository already had for exactly
+this problem.** A GVL writes a readable `.st` that imports and an `.xml` that does not; a task
+configuration writes a `.tasks.yaml` that imports and an `.xml` that does not. A property is
+the same bargain pointing the other way:
+
+```
+P_Active.xml       NATIVE_R        importable — byte for byte what it always was
+P_Active.st        PROPERTY_TEXT   export-only — the header, with its pragma
+P_Active/Get.st    PROPERTY_TEXT   export-only — the accessor's body
+```
+
+The text is what the owner asked for — a property that can be read in the panel and reviewed
+in a diff — and it is never applied back, which removes the step that emptied them. The round
+trip is byte-identical again, proven on the same test that rejected the first attempt.
+
+**What it costs, stated because somebody will meet it:** a property edited in the mirror does
+not flow back. The import announces it per file and the panel says to change it in the IDE,
+exactly as it already does for a `.gvl.xml` and a task configuration's `.xml`.
+
+**Three homes for "export-only", and the test knew all three.** `versio_types.EXPORT_ONLY_FORMS`,
+`ExportCoverage.IsExportOnly`, and `tools/codesys/New-ImportPlan.ps1` — which refuses a form it
+does not recognise rather than guessing, and which was left behind once before when
+`GVL_NATIVE` was added. `Python_and_csharp_agree_on_which_forms_are_never_applied_back` caught
+the omission on the first run.
+
+**Still open, and now the only part that is:** which half empties an accessor when the text
+*is* applied. Answering it would let a property become editable rather than merely readable.
+It needs one experiment against CODESYS — replace a property's declaration, read the accessor
+back — not a guess.
 
 ---
 

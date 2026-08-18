@@ -256,7 +256,8 @@ public static partial class PathMapper
     /// </remarks>
     public static string SuffixFor(ExportForm form) => form switch
     {
-        ExportForm.StFull or ExportForm.StDeclaration or ExportForm.StImplementation => ".st",
+        ExportForm.StFull or ExportForm.StDeclaration or ExportForm.StImplementation
+            or ExportForm.PropertyBoth or ExportForm.PropertyText => ".st",
         ExportForm.Libraries => ".libraries.yaml",
         _ => ".xml",
     };

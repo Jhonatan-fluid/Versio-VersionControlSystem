@@ -140,6 +140,26 @@ FORM_EXTERNAL_NATIVE = "EXTERNAL_NATIVE"
 # unchanged.
 FORM_GVL_NATIVE = "GVL_NATIVE"
 
+# A PROPERTY WRITES ITS PAYLOAD AND ITS READABLE TEXT, and only the payload comes back.
+#
+# The owner asked for properties as text - seven on one function block, every one an opaque
+# XML blob whose getter is ordinary Structured Text. Exporting them AS ST_DECL + ST_IMPL was
+# tried on 2026-08-18 and produced beautiful files; the round trip then came back with all
+# seven accessor bodies EMPTY, which is silent destruction of every property in the project.
+# See the Finding in STATUS.md.
+#
+# So this is the GVL_BOTH shape with the halves swapped. A GVL's readable .st is the half
+# that imports and its .xml is export-only; a property's recursive .xml is the half that
+# imports - unchanged, still the only thing ever applied back - and its text is export-only.
+# Reviewable in a diff, readable in the panel, and never reassembled, which is precisely the
+# step that emptied them.
+#
+# The cost is stated rather than hidden: a property EDITED IN THE MIRROR does not flow back.
+# That is the same bargain the .gvl.xml and the task configuration's .xml already make, the
+# import announces it per file, and the panel says "change this in the IDE".
+FORM_PROPERTY_BOTH = "PROPERTY_BOTH"
+FORM_PROPERTY_TEXT = "PROPERTY_TEXT"
+
 # Forms whose file is written for review and never applied back.
 #
 # ONE list, because the rule has to be in one place: it is read by the coverage report
@@ -148,7 +168,7 @@ FORM_GVL_NATIVE = "GVL_NATIVE"
 # here and not there means the file is announced in _coverage.md and still looks editable
 # in the app, which is half a warning and worse than none.
 EXPORT_ONLY_FORMS = (FORM_LIBRARIES, FORM_TASK_NATIVE, FORM_GVL_NATIVE,
-                     FORM_EXTERNAL_NATIVE)
+                     FORM_EXTERNAL_NATIVE, FORM_PROPERTY_TEXT)
 
 # NATIVE_WITH_CHILDREN - export the node itself natively, non-recursively, AND descend into
 # a subdirectory for its children.
@@ -259,7 +279,8 @@ TYPE_FORM = {
     # accessors, or applying an accessor's EMPTY declaration may wipe the implementation
     # beside it. Until that is known, the recursive payload is the only form that survives
     # the trip: the accessors travel inside it and nothing is reassembled.
-    "PROPERTY": FORM_NATIVE_R,    # carries getter/setter children
+    "PROPERTY": FORM_PROPERTY_BOTH,   # importable .xml + readable .st beside it
+    "PROPERTY_METHOD": FORM_PROPERTY_TEXT,
     "ACTION": FORM_ST_IMPL,
     "TRANSITION": FORM_ST_IMPL,
 
@@ -367,6 +388,12 @@ SKIP_REASON = {
 
     "TASK": SKIP_ELSEWHERE,          # inside TASK_CONFIGURATION's recursive export
     "CALL_TO_POU": SKIP_ELSEWHERE,   # ditto
+
+    # A GRAPHICAL accessor only. One with a textual body is exported as readable text
+    # (FORM_PROPERTY_TEXT); this reason is reached through decide_form when there is no body
+    # to write, and it is COVERED_ELSEWHERE rather than a gap because the accessor is already
+    # inside its property's recursive payload either way.
+    "PROPERTY_METHOD": SKIP_ELSEWHERE,
 }
 
 # One sentence per code, for _coverage.md and for anyone reading the manifest.
@@ -416,6 +443,8 @@ SUFFIX = {
     FORM_EXTERNAL_NATIVE: ".xml",
     FORM_LIBRARIES: ".libraries.yaml",
     FORM_TASK_BOTH: ".tasks.yaml",
+    FORM_PROPERTY_BOTH: ".st",
+    FORM_PROPERTY_TEXT: ".st",
 }
 
 # Types whose file name gets an infix to avoid colliding with a same-named sibling
@@ -456,6 +485,18 @@ def decide_form(obj_type, has_textual_impl, has_textual_decl, has_children=False
         return FORM_NATIVE
     if form == FORM_GVL_BOTH and not has_textual_decl:
         return FORM_NATIVE
+
+    # A graphical property has no header to write, so it is the recursive payload alone -
+    # exactly what it was before the readable half existed.
+    if form == FORM_PROPERTY_BOTH and not has_textual_decl:
+        return FORM_NATIVE_R
+
+    # An accessor with no textual body is already inside its property's recursive payload,
+    # so there is nothing to add and nothing is lost by saying so. SKIP rather than NATIVE:
+    # a second native file for the same object is the double representation that G12 and G7
+    # were both about.
+    if form == FORM_PROPERTY_TEXT and not has_textual_impl:
+        return FORM_SKIP
     return form
 
 

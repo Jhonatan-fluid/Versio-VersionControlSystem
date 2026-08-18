@@ -100,6 +100,38 @@ public enum ExportForm
     /// Recorded as <see cref="Versio.Core.Projects.ExportCoverage.ExternalNativeForm"/>.
     /// </remarks>
     ExternalNative,
+
+    /// <summary>
+    /// A property: its recursive <c>.xml</c>, which imports, plus its header as readable
+    /// <c>.st</c>, which does not.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The <see cref="GvlBoth"/> shape with the halves swapped.</b> A GVL's readable
+    /// <c>.st</c> is the authoritative one and its <c>.xml</c> is export-only; a property is
+    /// the other way round. The <c>.xml</c> is byte for byte the payload that was always
+    /// exported, so nothing about importing a property changes.
+    /// </para>
+    /// <para>
+    /// <b>Why the text cannot be the importable half, measured rather than assumed.</b>
+    /// Exporting properties as ordinary <see cref="StDeclaration"/> + <see cref="StImplementation"/>
+    /// was tried on 2026-08-18. The export was perfect — header with its pragma, accessor
+    /// body as plain ST. The round trip then came back with all seven accessor bodies
+    /// <b>empty</b>: silent destruction of every property in the project. Writing the text
+    /// and never applying it back keeps the readability and removes the mechanism.
+    /// </para>
+    /// </remarks>
+    PropertyBoth,
+
+    /// <summary>
+    /// One readable piece of a property — its header, or one accessor's body. Export-only.
+    /// </summary>
+    /// <remarks>
+    /// Recorded as <see cref="Versio.Core.Projects.ExportCoverage.PropertyTextForm"/>, which
+    /// is what makes it export-only anywhere but this comment — the same lesson
+    /// <see cref="TaskBoth"/> records, where the claim lived only in prose until 2026-08-15.
+    /// </remarks>
+    PropertyText,
 }
 
 /// <summary>
@@ -123,7 +155,8 @@ public static class ExportFormRules
         [CodesysObjectType.Evc] = ExportForm.Native,
         [CodesysObjectType.Method] = ExportForm.StFull,
         [CodesysObjectType.MethodNoReturn] = ExportForm.StFull,
-        // A PROPERTY STAYS RECURSIVE, AND IT IS NOT FOR WANT OF TRYING.
+        // A PROPERTY WRITES ITS PAYLOAD AND ITS READABLE TEXT, and only the payload
+        // comes back. The full argument is on ExportForm.PropertyBoth.
         //
         // The owner asked for properties as readable text — "properties are still getting
         // rendered as xml only" — and the shape is genuinely there. Measured on their project
@@ -140,12 +173,17 @@ public static class ExportFormRules
         // this repository exists to prevent — and the gate caught it, on the same run that
         // proved the export was right.
         //
-        // What is NOT yet known is which half does it: whether replacing the property's
-        // declaration resets its accessors, or whether applying an empty declaration to a
-        // PROPERTY_METHOD wipes the implementation beside it. Until that is measured, the
-        // recursive payload is the only form that survives the trip — the accessors travel
-        // inside it and nothing has to be reassembled. See the Finding in STATUS.md.
-        [CodesysObjectType.Property] = ExportForm.NativeRecursive,
+        // What is NOT yet known is which half empties them: whether replacing the
+        // property's declaration resets its accessors, or whether applying an empty
+        // declaration to a PROPERTY_METHOD wipes the implementation beside it. Until that is
+        // measured, nothing textual is applied back — the recursive payload is the only form
+        // that survives the trip, because the accessors travel inside it and nothing is
+        // reassembled. See the Finding in STATUS.md.
+        //
+        // The text is written anyway, export-only, which is what the owner actually asked
+        // for: a property that can be read in the panel and reviewed in a diff.
+        [CodesysObjectType.Property] = ExportForm.PropertyBoth,
+        [CodesysObjectType.PropertyMethod] = ExportForm.PropertyText,
         [CodesysObjectType.Action] = ExportForm.StImplementation,
         [CodesysObjectType.Transition] = ExportForm.StImplementation,
 
@@ -206,6 +244,16 @@ public static class ExportFormRules
             ExportForm.StDeclaration when !hasTextualDeclaration => ExportForm.Native,
             ExportForm.StImplementation when !hasTextualImplementation => ExportForm.Native,
             ExportForm.GvlBoth when !hasTextualDeclaration => ExportForm.Native,
+
+            // A graphical property has no header to write, so it is the recursive payload
+            // alone — exactly what every property was before the readable half existed.
+            ExportForm.PropertyBoth when !hasTextualDeclaration => ExportForm.NativeRecursive,
+
+            // An accessor with no textual body is already inside its property's payload, so
+            // there is nothing to add. SKIPPED rather than written natively: a second native
+            // file for the same object is the double representation G7 and G12 were about.
+            ExportForm.PropertyText when !hasTextualImplementation => ExportForm.Skip,
+
             _ => form,
         };
     }

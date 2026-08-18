@@ -1,6 +1,6 @@
 {
   "bindingId": "6d3f8855e205", 
-  "objectCount": 45, 
+  "objectCount": 59, 
   "objects": [
     {
       "bytes": 9768, 
@@ -196,6 +196,16 @@
       "type": "METHOD"
     }, 
     {
+      "bytes": 60, 
+      "form": "PROPERTY_TEXT", 
+      "guid": "01bf9639-d5d4-441c-a341-fcf52c1878b6", 
+      "hash": "sha256:a3c91200ff406fc2ec68e2594853d9b49bf64854dbd6ce5d0bc0f690eed22dad", 
+      "name": "P_Active", 
+      "parent": "6e8ed404-aa7c-4874-90d7-74d820d6423c", 
+      "path": "Device/Plc Logic/Application/Library/Alarm/POUs/FB_Alarm/P_Active.st", 
+      "type": "PROPERTY"
+    }, 
+    {
       "bytes": 5119, 
       "form": "NATIVE_R", 
       "guid": "01bf9639-d5d4-441c-a341-fcf52c1878b6", 
@@ -204,6 +214,26 @@
       "nhash": "sha256:89856e69e9f70ff9b70f09f78798ae0ffd16eb3ee3970195faef476575efe8de", 
       "parent": "6e8ed404-aa7c-4874-90d7-74d820d6423c", 
       "path": "Device/Plc Logic/Application/Library/Alarm/POUs/FB_Alarm/P_Active.xml", 
+      "type": "PROPERTY"
+    }, 
+    {
+      "bytes": 41, 
+      "form": "PROPERTY_TEXT", 
+      "guid": "27d95739-7462-4cdc-b221-4283a2d18604", 
+      "hash": "sha256:ba99e7d6889f0cb7e8a250b6e2535e034dee7c12a2c6098a5a604ff2300f93f9", 
+      "name": "Get", 
+      "parent": "01bf9639-d5d4-441c-a341-fcf52c1878b6", 
+      "path": "Device/Plc Logic/Application/Library/Alarm/POUs/FB_Alarm/P_Active/Get.st", 
+      "type": "PROPERTY_METHOD"
+    }, 
+    {
+      "bytes": 30, 
+      "form": "PROPERTY_TEXT", 
+      "guid": "c961baf2-a4e1-43d8-ae01-0c6ca4b6e63f", 
+      "hash": "sha256:f21ad799cdc25e5767f93535708901e9389b85d9c75f91880e1634461b19d718", 
+      "name": "P_ClassName", 
+      "parent": "6e8ed404-aa7c-4874-90d7-74d820d6423c", 
+      "path": "Device/Plc Logic/Application/Library/Alarm/POUs/FB_Alarm/P_ClassName.st", 
       "type": "PROPERTY"
     }, 
     {
@@ -218,6 +248,26 @@
       "type": "PROPERTY"
     }, 
     {
+      "bytes": 27, 
+      "form": "PROPERTY_TEXT", 
+      "guid": "36aff580-4992-4a90-8485-4536776c53dc", 
+      "hash": "sha256:4177cbab61e4093547818b484f8712fbb08623cd1a7ff79b357cdf0e85968ac8", 
+      "name": "Get", 
+      "parent": "c961baf2-a4e1-43d8-ae01-0c6ca4b6e63f", 
+      "path": "Device/Plc Logic/Application/Library/Alarm/POUs/FB_Alarm/P_ClassName/Get.st", 
+      "type": "PROPERTY_METHOD"
+    }, 
+    {
+      "bytes": 65, 
+      "form": "PROPERTY_TEXT", 
+      "guid": "8449ce07-b547-4d1f-926e-50c57fea9052", 
+      "hash": "sha256:d0790263ec542b47c67e2253df9fe73fdc7f80dc24de94e063342b1267bb2d32", 
+      "name": "P_Configuration", 
+      "parent": "6e8ed404-aa7c-4874-90d7-74d820d6423c", 
+      "path": "Device/Plc Logic/Application/Library/Alarm/POUs/FB_Alarm/P_Configuration.st", 
+      "type": "PROPERTY"
+    }, 
+    {
       "bytes": 5133, 
       "form": "NATIVE_R", 
       "guid": "8449ce07-b547-4d1f-926e-50c57fea9052", 
@@ -226,6 +276,26 @@
       "nhash": "sha256:32dfab25876280b6ca420a7f9a79b50ecbe562332e23caf8189fd766128601b8", 
       "parent": "6e8ed404-aa7c-4874-90d7-74d820d6423c", 
       "path": "Device/Plc Logic/Application/Library/Alarm/POUs/FB_Alarm/P_Configuration.xml", 
+      "type": "PROPERTY"
+    }, 
+    {
+      "bytes": 36, 
+      "form": "PROPERTY_TEXT", 
+      "guid": "0581ae7f-b576-4b30-9348-e52e10a30e1c", 
+      "hash": "sha256:d496307bfccf96abcba98cf818eacb173abaf9ace32778dd47e74bdb29376681", 
+      "name": "Get", 
+      "parent": "8449ce07-b547-4d1f-926e-50c57fea9052", 
+      "path": "Device/Plc Logic/Application/Library/Alarm/POUs/FB_Alarm/P_Configuration/Get.st", 
+      "type": "PROPERTY_METHOD"
+    }, 
+    {
+      "bytes": 33, 
+      "form": "PROPERTY_TEXT", 
+      "guid": "46ca14f6-3ca5-4852-aedb-93aa1ea9118f", 
+      "hash": "sha256:df068303e4012485f048c180bd155bac1524493bd57cd9aa34a201de8e8c7cdf", 
+      "name": "P_InstanceName", 
+      "parent": "6e8ed404-aa7c-4874-90d7-74d820d6423c", 
+      "path": "Device/Plc Logic/Application/Library/Alarm/POUs/FB_Alarm/P_InstanceName.st", 
       "type": "PROPERTY"
     }, 
     {
@@ -240,6 +310,26 @@
       "type": "PROPERTY"
     }, 
     {
+      "bytes": 32, 
+      "form": "PROPERTY_TEXT", 
+      "guid": "9682beac-9af3-4e88-82c3-03bcc77c1599", 
+      "hash": "sha256:088ad2fc9157e44231cdb0dc2937c9e41c8a52f16e1e5e3fb598fe4a24541c62", 
+      "name": "Get", 
+      "parent": "46ca14f6-3ca5-4852-aedb-93aa1ea9118f", 
+      "path": "Device/Plc Logic/Application/Library/Alarm/POUs/FB_Alarm/P_InstanceName/Get.st", 
+      "type": "PROPERTY_METHOD"
+    }, 
+    {
+      "bytes": 33, 
+      "form": "PROPERTY_TEXT", 
+      "guid": "39d39d66-184b-4979-8087-76f8504515d0", 
+      "hash": "sha256:e3fd10dcc40aa6ad0e3c5a40793e33d12f6ddc9d7969ccecd3a23d329153f013", 
+      "name": "P_InstancePath", 
+      "parent": "6e8ed404-aa7c-4874-90d7-74d820d6423c", 
+      "path": "Device/Plc Logic/Application/Library/Alarm/POUs/FB_Alarm/P_InstancePath.st", 
+      "type": "PROPERTY"
+    }, 
+    {
       "bytes": 5095, 
       "form": "NATIVE_R", 
       "guid": "39d39d66-184b-4979-8087-76f8504515d0", 
@@ -248,6 +338,26 @@
       "nhash": "sha256:0971145050671555c8da0d1c6898d1efa9ef6a15f05e84a373afd021f0dbf3e6", 
       "parent": "6e8ed404-aa7c-4874-90d7-74d820d6423c", 
       "path": "Device/Plc Logic/Application/Library/Alarm/POUs/FB_Alarm/P_InstancePath.xml", 
+      "type": "PROPERTY"
+    }, 
+    {
+      "bytes": 32, 
+      "form": "PROPERTY_TEXT", 
+      "guid": "d0ee1ebe-746c-4798-8452-3ce0da74d092", 
+      "hash": "sha256:08400a1e540ef87955e89209a2b2f43374132c14de092bc77377d977783069d5", 
+      "name": "Get", 
+      "parent": "39d39d66-184b-4979-8087-76f8504515d0", 
+      "path": "Device/Plc Logic/Application/Library/Alarm/POUs/FB_Alarm/P_InstancePath/Get.st", 
+      "type": "PROPERTY_METHOD"
+    }, 
+    {
+      "bytes": 52, 
+      "form": "PROPERTY_TEXT", 
+      "guid": "1bc03eb6-a6f7-4bd2-afde-a58565ac7d60", 
+      "hash": "sha256:76b2f322035eefa8a8fc4a1c713942e14074717ef73bd7d77527dbdbc7311b69", 
+      "name": "P_Settings", 
+      "parent": "6e8ed404-aa7c-4874-90d7-74d820d6423c", 
+      "path": "Device/Plc Logic/Application/Library/Alarm/POUs/FB_Alarm/P_Settings.st", 
       "type": "PROPERTY"
     }, 
     {
@@ -262,6 +372,26 @@
       "type": "PROPERTY"
     }, 
     {
+      "bytes": 26, 
+      "form": "PROPERTY_TEXT", 
+      "guid": "d7f3076c-c968-4786-9a6d-01cb075b2642", 
+      "hash": "sha256:2245026b4a261c135e9113f9af4f592cd130b968b6ae2d5b14c1bdd7d44583cb", 
+      "name": "Get", 
+      "parent": "1bc03eb6-a6f7-4bd2-afde-a58565ac7d60", 
+      "path": "Device/Plc Logic/Application/Library/Alarm/POUs/FB_Alarm/P_Settings/Get.st", 
+      "type": "PROPERTY_METHOD"
+    }, 
+    {
+      "bytes": 40, 
+      "form": "PROPERTY_TEXT", 
+      "guid": "e1516824-a9c5-4c82-a74a-b81d9e036384", 
+      "hash": "sha256:615ebc249310986c069407c3af71a6914332ce4d7919316111cfa95a6e3c2352", 
+      "name": "P_State", 
+      "parent": "6e8ed404-aa7c-4874-90d7-74d820d6423c", 
+      "path": "Device/Plc Logic/Application/Library/Alarm/POUs/FB_Alarm/P_State.st", 
+      "type": "PROPERTY"
+    }, 
+    {
       "bytes": 5074, 
       "form": "NATIVE_R", 
       "guid": "e1516824-a9c5-4c82-a74a-b81d9e036384", 
@@ -271,6 +401,16 @@
       "parent": "6e8ed404-aa7c-4874-90d7-74d820d6423c", 
       "path": "Device/Plc Logic/Application/Library/Alarm/POUs/FB_Alarm/P_State.xml", 
       "type": "PROPERTY"
+    }, 
+    {
+      "bytes": 18, 
+      "form": "PROPERTY_TEXT", 
+      "guid": "42d9741e-0cef-4676-88f7-0a89cc22d6ff", 
+      "hash": "sha256:13377c009e7b25f48d45710687576e92b06f93bfc7b95689571cbc55a0d5b3fd", 
+      "name": "Get", 
+      "parent": "e1516824-a9c5-4c82-a74a-b81d9e036384", 
+      "path": "Device/Plc Logic/Application/Library/Alarm/POUs/FB_Alarm/P_State/Get.st", 
+      "type": "PROPERTY_METHOD"
     }, 
     {
       "bytes": 280, 

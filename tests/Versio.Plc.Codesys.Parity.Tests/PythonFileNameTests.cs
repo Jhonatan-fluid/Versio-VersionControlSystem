@@ -469,6 +469,8 @@ public sealed class PythonFileNameParityTests(ITestOutputHelper output)
         ExportForm.NativeWithChildren => "NATIVE_WITH_CHILDREN",
         ExportForm.TaskBoth => "TASK_BOTH",
         ExportForm.ExternalNative => "EXTERNAL_NATIVE",
+        ExportForm.PropertyBoth => "PROPERTY_BOTH",
+        ExportForm.PropertyText => "PROPERTY_TEXT",
         _ => throw new ArgumentOutOfRangeException(nameof(form), form, "unmapped export form"),
     };
 
@@ -498,10 +500,11 @@ public sealed class PythonFileNameParityTests(ITestOutputHelper output)
         // what they write — a property's accessors in its recursive payload, a task
         // configuration's tasks in its .tasks.yaml. Walking either would write a second copy.
         //
-        // PROPERTY is in this list because it moved OFF NATIVE_R on 2026-08-18 and back on
-        // the same day: the export was right and the round trip emptied every getter. This
-        // line is what would have to change first if that is ever revisited, and it is here
-        // so that the change cannot be made in one language only.
+        // PROPERTY is in this list because it moved twice on 2026-08-18: off NATIVE_R to
+        // plain text, back when the round trip emptied every getter, and then to
+        // PROPERTY_BOTH — which descends, because the accessors' readable bodies are files of
+        // their own even though nothing applies them back. Each move changed the walk in one
+        // language only, and this is what says so.
         Skip.IfNot(PythonFileNameTests.PythonIsAvailable(), "python is not on PATH");
 
         var answers = RunPython(
@@ -513,7 +516,7 @@ public sealed class PythonFileNameParityTests(ITestOutputHelper output)
             """);
 
         Assert.Equal(
-            ["PROPERTY=False", "PROPERTY_METHOD=True", "TASK_CONFIGURATION=False",
+            ["PROPERTY=True", "PROPERTY_METHOD=True", "TASK_CONFIGURATION=False",
              "POU=True", "FOLDER=True"],
             answers);
     }

@@ -186,7 +186,7 @@ Versio.sln
 │  │                            needs no filter and cannot accidentally cost half an hour
 │  ├─ Versio.App.Tests/         546 tests that build the real windows and panels against
 │  │                            the real stylesheet on an STA thread — none is ever shown
-│  ├─ Versio.Plc.Codesys.Pure.Tests/ 259 pure vendor tests — the planner, the codecs, the
+│  ├─ Versio.Plc.Codesys.Pure.Tests/ 260 pure vendor tests — the planner, the codecs, the
 │  │                            protocol — under a second, needing nothing
 │  ├─ Versio.Plc.Codesys.Parity.Tests/ 92 CPython parity tests over the vendor's python,
 │  │                            ~15 s, no CODESYS — python on PATH, skips cleanly without
@@ -342,7 +342,7 @@ dotnet test tests/Versio.Core.Tests
 | `Versio.Integration.Tests` | 147 | a real `git.exe` and the real filesystem | ~10 s |
 | `Versio.Arch.Tests` | 14 | nothing — it reads assembly metadata, IL, and the project files | instant |
 | `Versio.App.Tests` | 546 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
-| `Versio.Plc.Codesys.Pure.Tests` | 259 | nothing — the vendor's planner, codecs and protocol, pure | under a second |
+| `Versio.Plc.Codesys.Pure.Tests` | 260 | nothing — the vendor's planner, codecs and protocol, pure | under a second |
 | `Versio.Plc.Codesys.Parity.Tests` | 92 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
 | `Versio.Plc.Codesys.Tests` | 54 | **a real CODESYS**, and **skips cleanly** without one | **~30 min** |
 

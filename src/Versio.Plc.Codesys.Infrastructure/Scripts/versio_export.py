@@ -28,6 +28,7 @@ from versio_text import (content_hash, join_st, normalize_decl_only,  # noqa: E4
                          too_long_for_this_machine)
 from versio_types import (EXPORT_ONLY_FORMS, FORM_CONTAINER,  # noqa: E402
                           FORM_EXTERNAL_NATIVE, FORM_GVL_BOTH, FORM_GVL_NATIVE,
+                          FORM_PROPERTY_BOTH, FORM_PROPERTY_TEXT,
                           FORM_LIBRARIES, FORM_NATIVE, FORM_NATIVE_R,
                           FORM_NATIVE_WITH_CHILDREN, FORM_SKIP, FORM_ST_DECL,
                           FORM_ST_FULL, FORM_ST_IMPL, FORM_TASK_BOTH,
@@ -647,6 +648,35 @@ class Exporter(object):
 
                 obj_path = object_path(rel_dir, name)
                 text = self.export_tasks(obj, obj_path, rel_path)
+                write_text(abs_path, text)
+                self.record(obj, obj_type, form, rel_path, text, parent_guid)
+
+            elif form == FORM_PROPERTY_BOTH:
+                # Two files, one object, one GUID - the GVL_BOTH shape with the halves
+                # swapped. The recursive .xml is the importable one and is byte for byte what
+                # this object exported before the readable half existed; the .st beside it is
+                # the property's header, written for a reader and never applied back.
+                #
+                # Recorded NATIVE_R, not PROPERTY_BOTH: the form is what tells the planner
+                # this file is the importable half, and it is the same payload as always, so
+                # nothing about the import changes. The accessors are walked separately below
+                # and write their bodies as PROPERTY_TEXT.
+                xml_path = os.path.join(rel_dir, stem_name + ".xml")
+                xml_abs = os.path.join(self.out_root, xml_path)
+                self.check_path_length(xml_path, xml_abs)
+                xml_text, _ = self.export_native(obj, xml_abs, True)
+                self.record(obj, obj_type, FORM_NATIVE_R, xml_path, xml_text, parent_guid)
+
+                decl = normalize_decl_only(obj.textual_declaration.text)
+                write_text(abs_path, decl)
+                self.record(obj, obj_type, FORM_PROPERTY_TEXT, rel_path, decl, parent_guid)
+
+            elif form == FORM_PROPERTY_TEXT:
+                # An accessor's body, for reading. Its declaration is empty on every property
+                # measured - CODESYS reports has_textual_declaration true with zero characters
+                # - so there is nothing to join, and this is the implementation alone exactly
+                # as an ACTION's is.
+                text = normalize_decl_only(obj.textual_implementation.text)
                 write_text(abs_path, text)
                 self.record(obj, obj_type, form, rel_path, text, parent_guid)
 

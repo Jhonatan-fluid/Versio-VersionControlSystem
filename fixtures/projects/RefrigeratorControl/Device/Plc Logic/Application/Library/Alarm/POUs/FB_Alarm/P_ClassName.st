@@ -1,0 +1,1 @@
+PROPERTY P_ClassName : STRING

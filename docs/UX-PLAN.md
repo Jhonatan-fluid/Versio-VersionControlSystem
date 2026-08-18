@@ -21,10 +21,74 @@ knows the mirror and the project are the same edit, it is ranked high.
 
 ---
 
+## ⚠ Found by the second pass, and it is not a UX finding
+
+**A merge may commit a project and a mirror that disagree, and re-baseline so that nothing ever
+reports it. This is in shipped code today — `ReconcileCommand` — not only in UX-1.**
+
+Auditing UX-1 meant reading what happens *after* git rewrites the tree, and the chain reads
+end to end as follows. Every link is quoted from the code; only the conclusion is inference.
+
+1. `ReconcileAsync` runs its merge inside `Sync.WhileGitRewritesTheTreeAsync("merge", …)`
+   ([`ShellViewModel.cs:3232`](../src/Versio.App/ViewModels/ShellViewModel.cs)).
+2. That helper calls `AdoptExternalStateAsync` **unconditionally** once the operation returns,
+   success or failure ([`SyncViewModel.cs:1180`](../src/Versio.App/ViewModels/SyncViewModel.cs)).
+3. Adopt overwrites `Baseline` **and** `LastSynced` with whatever the project and mirror hash to
+   right now ([`SyncOrchestrator.cs:679–691`](../src/Versio.Core/Sync/SyncOrchestrator.cs)).
+4. The commit gate decides whether to export by comparing the project's hash against
+   `LastSynced.ProjectHash` — stated in that file's own comment
+   ([`SyncOrchestrator.cs:448`](../src/Versio.Core/Sync/SyncOrchestrator.cs)). After step 3 they
+   are equal, so **nothing is stale and no export runs**.
+5. The `.project` is written `binary -diff -merge`
+   ([`GitAttributesPlan.cs:101`](../src/Versio.Core/Git/GitAttributesPlan.cs)), so git **cannot**
+   merge it. It conflicts, and whichever side is kept is that side *verbatim* — while the mirror
+   beside it gets a real three-way merge of both branches.
+
+**So the project holds one branch's work and the mirror holds both, and step 3 recorded that
+disagreement as the synced truth.**
+
+**The invariant this breaks is written down, in the method that relies on it.**
+`AdoptExternalStateAsync`'s own remarks say: *"After a checkout or a pull, the project and its
+mirror are both whatever the new commit says — and they agree with each other, because the commit
+gate refuses to let a commit record one without the other."* That is exactly right **for a
+checkout and a pull**, where both sides arrive from a single commit that the gate already
+vetted. A merge is the one operation that produces a working tree which came from *no* commit,
+and it is the one case the sentence does not cover. The method is not wrong; its precondition is
+narrower than its callers.
+
+**Why it has not been noticed.** It needs a diverged branch *and* both sides to have touched the
+same project — and `--ff-only` is the default everywhere else precisely so that auto-merging
+generated files does not happen. `ReconcileCommand` is the one door out of that default, it is
+shown only in the diverged state, and the diverged state is rare.
+
+**This is a prediction, not a measurement, and it must not be written up as a cause until it is
+run.** This document's own house rule applies — a story that fits the evidence is not a cause,
+and `phase1/`'s probe log has one entry recorded as a cause before it was tested that turned out
+wrong. Two probes settle it, and neither needs new code:
+
+- **P-M1.** On the fixture, diverge a branch with an edit to the same project on both sides.
+  Press *Merge*. Resolve the `.project` conflict. Commit. Then export the committed project and
+  compare it against the committed mirror. **Predicted:** they differ, and one branch's edit is
+  in the mirror and absent from the project.
+- **P-M2.** The same run, reading the log: assert whether the commit gate exported. **Predicted:**
+  it did not, because adopt had already moved `LastSynced`.
+
+If P-M1 comes back clean, this whole section is wrong and should be struck through with what
+actually happened — and UX-1's step 3 drops back to a convenience. If it comes back as predicted,
+it is a **Finding** at the top of `FINDINGS.md` before any of UX-1 is built, and the fix is the
+same one UX-1 needs: after a merge, the mirror is the truth and the project is regenerated from
+it by an import, rather than both being adopted as though a commit had vetted them.
+
+**It also changes UX-1's cost and its order.** UX-1 must not ship on top of an unmeasured
+`AdoptExternalStateAsync`, because it would make a rare path into a routine one.
+
+---
+
 ## The queue, ranked
 
 | | Finding | Cost | Why it ranks there |
 |---|---|---|---|
+| **P-M1/2** | **Probe first: does a merge commit a project and a mirror that disagree?** | two probes, no new code | Above the queue because it is a correctness question in **shipped** code, and UX-1 must not be built on an unmeasured answer |
 | **UX-1** | **Merging a branch into the current one is not implemented at all** | medium | The one missing *verb*. And the one place Versio can beat a terminal outright |
 | **UX-2** | The rail carries no counts, so the app is blind from two of its three panels | small | Cheapest large win; the user asked for it by name |
 | **UX-3** | The rare branch actions have no container, so each one lands as furniture | small | The fix is a shape, not a move — and it is where UX-1 lives |
@@ -72,28 +136,45 @@ panel plan — *the reason to use Versio instead of a generic git client*.
 **Proposal.**
 
 - `Task<GitResult> MergeBranchAsync(string branch, bool noFastForward, IProgress<GitProgress>?, CancellationToken)`
-  on `IGitClient`, implemented in `GitCliClient.Branches.cs` beside the merge and rebase that
-  already exist there.
+  on `IGitClient`, implemented in **`GitCliClient.Conflicts.cs`** beside `MergeUpstreamAsync`
+  (`:47`), `RebaseOntoUpstreamAsync` (`:55`) and `AbortMergeOrRebaseAsync` (`:68`). *The first
+  draft said `Branches.cs`, which holds the read-only branch and log queries and none of the
+  three — corrected by the second pass.*
 - A **`Merge a branch into <current>…`** entry in the branch overflow UX-3 proposes, opening a
   picker with the shape `BranchDeleteWindow` already has: local and remote branches, a
   `WhereText` column, and — free, because `MergedBranchesAsync` already exists and the delete
   dialog already calls it ([`IGitClient.cs:253`](../src/Versio.Core/Abstractions/IGitClient.cs)) —
   an *already merged* marker, so nobody merges a branch that is a no-op.
-- Through **the existing guard**, not around it. `GuardIntent.Pull` already covers uncommitted
-  work, the direction lock and IDE occupancy; a merge is the same class of event arriving from
-  the same direction, and giving it its own path is how two answers to one question appear.
+- Through **the existing guard**, not around it — and there is precedent to copy rather than a
+  decision to take. `ReconcileAsync` already reuses `GuardIntent.Pull` for its own merge, with
+  the comment saying why: *"both rewrite the project and its mirror together"*
+  ([`ShellViewModel.cs:3223`](../src/Versio.App/ViewModels/ShellViewModel.cs)). Reuse it again.
+  **One consequence to accept knowingly:** `GuardNarrative` maps that intent to the literal word
+  *"pull"* ([`GuardNarrative.cs:50`](../src/Versio.Core/Guarding/GuardNarrative.cs)), so the
+  guard dialog will say *pull* during a merge. It already does today for reconcile. Either add a
+  `GuardIntent.Merge` — which then also has to be added to `InterruptionGuard.RewritesWorkingTree`
+  ([`InterruptionGuard.cs:147`](../src/Versio.Core/Guarding/InterruptionGuard.cs)), and forgetting
+  that is a silent hole in the guard — or accept the wording. **Do not leave it unnoticed**,
+  which is what the first draft's one-line "existing guard" would have done.
 - The conflict section is **already built** and will pick the result up unchanged: `MergeState`,
   the conflicted list, `Keep mine` / `Keep theirs` / `Abandon`
   ([`GitPanelView.xaml:145–209`](../src/Versio.App/Views/Panels/GitPanelView.xaml)). Nothing new
   is needed there.
-- **The new piece is step 3**, and it is where the care goes: after a merge that resolved a
-  `.project` conflict, the project is stale against a mirror nobody imported. The existing
-  pending-import banner is the right surface — it already says *"review the diff and confirm
-  before importing"* — so the work is making a merge that touched a project raise it, rather
-  than inventing a second confirmation.
+- **The new piece is step 3, and the second pass found its real reason.** The first draft called
+  it a convenience — the project left stale against a merged mirror. It is worse than that, and
+  the argument is in the box at the top of this document: `WhileGitRewritesTheTreeAsync` calls
+  `AdoptExternalStateAsync`, which **re-baselines both hashes as though a commit had vetted
+  them** — an invariant that holds for a checkout and a pull and does not hold for a merge. So
+  the disagreement is not merely unimported; it is recorded as synced, and the commit gate then
+  has no reason to export. **Answer P-M1 and P-M2 before designing this bullet**, because if the
+  prediction holds, step 3 is not "raise the pending-import banner" but "a merge must not go
+  through the adopt path at all". The banner is still the right surface for the confirmation;
+  what changes is whether the path leading to it is the one that already exists.
 
-**Cost:** medium. One git call, one dialog reusing an existing one, one guard wiring, and one
-real decision about the post-merge import. **Value:** highest here.
+**Cost:** medium, and **revised upward by the second pass** — the post-merge import is not a
+banner to raise but a question about which sync path a merge takes, and it is gated on two
+probes. One git call, one dialog reusing an existing one, one guard reuse to make deliberate,
+and one design decision that P-M1 has to answer first. **Value:** highest here.
 
 **Tests.** Core: the merge picker's rows mark an already-merged branch and refuse the current
 branch. Integration, against real git: a merge that conflicts leaves `MergeState` mid-merge and
@@ -506,9 +587,38 @@ written down, so a future session finds the decision instead of re-deriving it.
 
 ---
 
+## UX-13 · A doc comment says a member is unwired, and it has been wired twice
+
+**Found by the second pass, while checking UX-1's guard claim.** `GuardIntent.Pull`'s remarks
+read *"**Implemented and deliberately not yet wired.** … wiring it now would offer a button that
+cannot do what it says"* ([`GuardVerdict.cs:40`](../src/Versio.Core/Guarding/GuardVerdict.cs)).
+
+It has two callers: [`GitRemoteViewModel.cs:497`](../src/Versio.App/ViewModels/GitRemoteViewModel.cs)
+and [`ShellViewModel.cs:3223`](../src/Versio.App/ViewModels/ShellViewModel.cs). Both carry their
+own comments saying it *is* wired now — the pull one even opens *"Guarded at last"* and
+recounts the history the enum's comment is still telling in the present tense.
+
+**Why it is worth a numbered item rather than a quiet edit.** This repository's rule is that
+every member has a caller **or says why it does not**, and that reasoning moves with the code.
+Here the reasoning stayed put while the code moved: three comments now describe the same fact,
+one of them backwards, and the stale one sits on the declaration — the first place anybody
+reads. It cost this audit a detour to establish which was true, which is precisely the tax a
+stale comment charges.
+
+**Proposal.** Rewrite the remarks to say it is wired, by whom, and keep the *why it waited*
+as history rather than as a present-tense claim. **Cost:** trivial. **No test** — and worth
+saying so: this is a comment, and a test asserting on comment text would be worse than the
+defect. The defence is the double-pass rule, which is what caught it.
+
+---
+
 ## Suggested order
 
-**UX-4 first, on its own**, and it has been promoted out of the cheap-counts group since the
+**P-M1 and P-M2 first, before anything is built**, and they can be run today: they need no new
+code, and they decide whether UX-1 is a feature or a fix on top of a defect. If the prediction
+holds, the Finding is written and `ReconcileCommand` is dealt with before UX-1 starts.
+
+**UX-4 next**, and it has been promoted out of the cheap-counts group since the
 first draft: it is the only item here reported from the running app rather than read out of the
 markup, it is a live layout fault a user is hitting today, and its fixture work has to happen
 before any of it can be shown working. Start by making
@@ -524,9 +634,40 @@ pays for itself once there are two things in it, so land the overflow and the me
 together, as two commits and one change of shape.
 
 **UX-5, UX-6, UX-7** are an interaction pass and can go in any order after that. **UX-8, UX-9,
-UX-10** are small and independent. **UX-12** is a question before it is a task.
+UX-10, UX-13** are small and independent. **UX-12** is a question before it is a task.
 
 Nothing here touches `Sync/`, `Git/`, `Locking/`, `Watching/`, `Projects/` or `Diff/` in a way
-that carries vendor knowledge, and nothing here needs CODESYS — **except UX-1's step 3**, which
-raises the existing pending-import banner and therefore ends up in the half-hour suite before it
-can be believed.
+that carries vendor knowledge, and nothing here needs CODESYS — **except UX-1's step 3 and the
+two probes above it**, which reach into `Sync/` and run the real toolchain, and therefore end up
+in the half-hour suite before any of it can be believed.
+
+---
+
+## What the second pass checked, and what it changed
+
+Re-audited **2026-08-18**, reading the code again as if the plan had been written by somebody
+else. Recorded because a double pass that finds things and does not say what it covered has to
+be run again.
+
+**Verified unchanged** — every citation in UX-2, UX-5, UX-6, UX-7, UX-8, UX-9, UX-10, UX-11 and
+UX-12 re-read at its line and correct. Specifically re-confirmed: no `ContextMenu` or
+`MouseDoubleClick` anywhere in `GitPanelView.xaml`; the project tree's menu is exactly Stage /
+Discard changes… / Reveal in Explorer / Copy path; `HistoryPanelView.xaml` contains no `TextBox`
+and no command but `LoadMoreCommand`; `CommitAsync` takes `(string message, CancellationToken)`
+and nothing else; `IsUnpushed` is computed and bound; the notification overflow pill is a
+`Border` with a `TextBlock` and no `Command`.
+
+**Corrected.**
+
+| | What the first draft said | What the code says |
+|---|---|---|
+| UX-1 | Implement `MergeBranchAsync` in `GitCliClient.Branches.cs` | The merge, rebase and abort all live in `GitCliClient.Conflicts.cs`; `Branches.cs` holds read-only branch and log queries |
+| UX-1 | "Through the existing guard" — one line, no consequence | Reuse is precedented by `ReconcileAsync`, **and** `GuardNarrative` renders that intent as the word *"pull"*, and a new intent would also have to be added to `InterruptionGuard.RewritesWorkingTree` or the guard has a silent hole |
+| UX-1 | Step 3 is a convenience: raise the pending-import banner | Step 3 is gated on a correctness question about `AdoptExternalStateAsync` — see the box at the top — and the cost is revised upward |
+
+**Added.** The `AdoptExternalStateAsync` box and probes P-M1/P-M2, above the queue because they
+concern shipped code rather than this plan; and **UX-13**, a stale doc comment found while
+checking UX-1's guard claim.
+
+**Still owed to a person**, unchanged from the first draft: everything visual. This pass read
+markup and view models. It did not see the screen.
