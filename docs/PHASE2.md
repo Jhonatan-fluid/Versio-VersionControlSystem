@@ -228,6 +228,34 @@ The eyeball pass produced these, which is the pass doing its job:
   (python + the half-hour gate), queued for the next exporter change rather than done in
   passing.
 
+## Added by the owner — 2026-08-18, built
+
+Both came from the same two screenshots: Explorer with seventeen files in one directory, and
+the panel showing `FB_Alarm` with four loose members under it.
+
+- **The mirror path is the project path.** A container makes a directory, an object with
+  exported children makes a directory named after itself, and members go inside it —
+  `…/Library/Alarm/POUs/FB_Alarm/Private/_M_Reset.st`. Three encodings of ownership became
+  one, schema 9, and every mirror renames once. The owner chose it over the alternative
+  (keep the flat mirror and record the tree shape as metadata) because that leaves two
+  representations to keep in sync forever.
+- **Folders are rows again, and they come first.** Free, once an in-POU folder is a real
+  directory: the tree builder already emitted directory groups before objects.
+- **Ordering inside a group is still alphabetical, and that is not finished.** The obvious
+  fix — record `get_children()` order and sort by it — was measured and rejected: it is
+  *creation* order, returning `M_Reset, Private, Protected, P_Faulted` where the IDE shows
+  `Private, Protected, M_Reset, P_Faulted`, and placing `FB_Alarm` eleventh of twelve where
+  the IDE shows it second. **What the IDE's within-group rule actually is has not been
+  measured**, and two cropped screenshots are not enough to derive it. It needs one wide
+  screenshot of an expanded Application node, or a probe that reads whatever the IDE sorts
+  by. Until then the panel sorts by name, which is right for methods and wrong for at least
+  `Library Manager`.
+- **Still not recorded: which CODESYS version last saved the project.** The gap above says
+  this was "queued for the next exporter change" — and the next exporter change happened
+  today without taking it. Deliberately: that commit already carried a schema bump and a
+  rename of every file in every mirror, and bundling an unrelated manifest field into it
+  would have made one commit answer two questions. Still owed, still one line plus a bump.
+
 ---
 
 ## Decisions taken, and why — the part a newcomer must not re-litigate

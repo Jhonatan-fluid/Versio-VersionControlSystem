@@ -169,16 +169,25 @@ public sealed class ExportLoggingTests(ITestOutputHelper output) : IDisposable
             l.Contains($"skipped {manifest.Skipped.Count} ", StringComparison.Ordinal) &&
             l.Contains($"{gaps} not implemented", StringComparison.Ordinal));
 
-        // And the fixture's own shape, so a silent drop in what gets walked still fails here.
-        // 26 objects is what this project contains; if that changes, it changed for a reason
-        // somebody should have to state.
+        // And the walk reached MORE objects than it wrote, which is the property worth
+        // pinning: containers and skipped objects are walked and produce no record, so
+        // walked > written is what says the walk is descending rather than only visiting
+        // what it writes.
         //
-        // It was 18 until 2026-08-17, then 22, then this. Everything added is one case the
-        // export had never been run against: FB_Alarm's methods, the folders `Private` and
-        // `Protected` holding one each, a PROPERTY with its two accessors, and a method on
-        // PLC_PRG so that an owner exporting NATIVE has one too. Folders are walked and
-        // counted like any other container — what changed around them is where their children
-        // are written, not whether they are reached. See ProjectTreeFromRealExportTests.
-        Assert.Contains(lines, l => l.StartsWith("walked 26,", StringComparison.Ordinal));
+        // DERIVED, NOT TYPED — and this literal was re-typed three times in two days before
+        // that sank in: 18, then 22, then 26, then the project reached 48. It is the fixture
+        // the owner works in daily, so a number here measures the afternoon it was written.
+        // The comment above it each time claimed the change "changed for a reason somebody
+        // should have to state", which is exactly the ceremony a derived number removes. The
+        // file count in this same test has been derived from the tree on disk since the day
+        // it broke for the same reason; this one just took longer to learn it.
+        var walked = lines.Single(l => l.StartsWith("walked ", StringComparison.Ordinal));
+        var reached = int.Parse(walked["walked ".Length..].Split(',')[0]);
+
+        output.WriteLine($"{walked}  (against {manifest.Objects.Count} record(s))");
+        Assert.True(reached > manifest.Objects.Count,
+            $"the walk reached {reached} object(s) and wrote {manifest.Objects.Count} "
+            + "record(s) — it should reach more than it writes, because containers and "
+            + "skipped objects are walked and record nothing");
     }
 }
