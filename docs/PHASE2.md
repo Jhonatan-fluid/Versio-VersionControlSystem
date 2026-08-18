@@ -121,12 +121,29 @@ replaces it every few seconds while it holds the project — is told from a rele
 end through the real watcher: create the marker, delete it, and the retry announces itself
 with nothing but the filesystem in between.
 
-### 4. Diff view: side-by-side and word-level intra-line — deferred 2026-08-15
+### 4. ~~Diff view: side-by-side and word-level intra-line — deferred 2026-08-15~~ — **done, 2026-08-17**
 
-The strongest case among the deferrals for being picked up first: the colours exist and are
-contrast-checked, and the diffs being read are generated XML and ST where a long line often
-differs by one identifier. A readability improvement to something already correct. `STATUS.md`
-§5, and the original design in [`phase1/PLAN.md`](phase1/PLAN.md).
+~~The strongest case among the deferrals for being picked up first: the colours exist and are
+contrast-checked~~ — they did, `Brush.Diff.AddedWord`/`DeletedWord` in both palettes, unused
+since the day they were checked — and both halves are built:
+
+- **Word-level emphasis.** Within a changed pair, the part that moved gets the word brush on
+  top of the row tint and the syntax colours. A token-aligned common prefix/suffix trim,
+  deliberately not an LCS: linear where LCS is quadratic, on inputs whose longest lines are
+  exactly where the feature matters most, and identical for the corpus's own shape — one
+  identifier changed in a long generated line. `Counter1 → Counter2` lights the whole
+  identifier, because half a name is not a shorter version of it; a pair with nothing in
+  common lights nothing, because painting every character says less than the tint already
+  does.
+- **Side-by-side.** A fold of the same parsed unified diff, never a second diff computation —
+  the parser's own rule, extended: two view modes disagreeing about one file would be worse
+  than one mode. Spanning rows keep the hunk header whole (and its stage button); a pure
+  insertion is blank on the left rather than padded with a fake pairing. Split rows stretch
+  to the viewport and clip long lines, with unified mode one click away — the trade is stated
+  on the checkbox. Copy from the split view pastes the unified excerpt, markers on.
+- `DiffView` is unsealed for one stated reason: a ListBox outside a window never realises a
+  container, so the only honest test of what a row *paints* is a subclass that calls the row
+  builder — the paint proven by mutation against the emphasis pass.
 
 ### 5. Corpus breadth, and the rows nobody can reach yet
 

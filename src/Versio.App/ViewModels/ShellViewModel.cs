@@ -1517,6 +1517,27 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>Old file on the left, new on the right, instead of one interleaved column.</summary>
+    /// <remarks>
+    /// Render-only, unlike <see cref="ShowFullFile"/>: the split is a fold of the diff the
+    /// pane already holds, so flipping it re-reads nothing — the view rebuilds its rows from
+    /// the same text. Not persisted, deliberately, for now: which mode reads better depends
+    /// on the file in front of you, not on the person.
+    /// </remarks>
+    public bool DiffSideBySide
+    {
+        get => _diffSideBySide;
+        set
+        {
+            if (SetProperty(ref _diffSideBySide, value))
+            {
+                _logger.Click($"Diff.SideBySide={value}");
+            }
+        }
+    }
+
+    private bool _diffSideBySide;
+
     public bool IsBusy
     {
         get => _isBusy;

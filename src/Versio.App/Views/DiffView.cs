@@ -32,7 +32,10 @@ namespace Versio.App.Views;
 /// enough to drop frames, and the work has no reason to be on the dispatcher.
 /// </para>
 /// </remarks>
-public sealed class DiffView : ListBox
+// Unsealed for one reason: the row builder runs from PrepareContainerForItemOverride, and a
+// ListBox outside a window never realises a container — so the only honest way to test what
+// a row PAINTS is a test subclass that calls the builder. See DiffModeTests.Openable.
+public class DiffView : ListBox
 {
     public static readonly DependencyProperty DiffTextProperty =
         DependencyProperty.Register(nameof(DiffText), typeof(string), typeof(DiffView),
@@ -56,6 +59,11 @@ public sealed class DiffView : ListBox
     public static readonly DependencyProperty HunkActionLabelProperty =
         DependencyProperty.Register(nameof(HunkActionLabel), typeof(string), typeof(DiffView),
             new PropertyMetadata("Stage hunk", OnInputChanged));
+
+    /// <summary>Old file on the left, new on the right, instead of one interleaved column.</summary>
+    public static readonly DependencyProperty SideBySideProperty =
+        DependencyProperty.Register(nameof(SideBySide), typeof(bool), typeof(DiffView),
+            new PropertyMetadata(false, OnInputChanged));
 
     public string DiffText
     {
@@ -85,6 +93,12 @@ public sealed class DiffView : ListBox
     {
         get => (string)GetValue(HunkActionLabelProperty);
         set => SetValue(HunkActionLabelProperty, value);
+    }
+
+    public bool SideBySide
+    {
+        get => (bool)GetValue(SideBySideProperty);
+        set => SetValue(SideBySideProperty, value);
     }
 
     public DiffView()
@@ -140,15 +154,33 @@ public sealed class DiffView : ListBox
     /// </remarks>
     private void OnCopy(object sender, ExecutedRoutedEventArgs e)
     {
-        if (ItemsSource is not IReadOnlyList<DiffLine> lines || SelectedItems.Count == 0)
+        if (SelectedItems.Count == 0)
         {
             return;
         }
 
-        var picked = SelectedItems.OfType<DiffLine>().ToHashSet();
-        var text = string.Join(
-            Environment.NewLine,
-            lines.Where(picked.Contains).Select(line => line.Marker + line.Text));
+        // Split rows paste as the unified excerpt they stand for: a context row once, an
+        // edited pair as its − line then its + line. The pasted text is still a diff —
+        // reconstructing the two-column layout in a chat message helps nobody.
+        var text = ItemsSource switch
+        {
+            IReadOnlyList<DiffLine> lines => CopyText(
+                lines.Where(SelectedItems.OfType<DiffLine>().ToHashSet().Contains)),
+
+            IReadOnlyList<SideBySideRow> rows => CopyText(
+                rows.Where(SelectedItems.OfType<SideBySideRow>().ToHashSet().Contains)
+                    .SelectMany(row =>
+                        row.Spanning is { } spanning ? new[] { spanning }
+                        : ReferenceEquals(row.Left, row.Right) ? new[] { row.Left! }
+                        : new[] { row.Left, row.Right }.OfType<DiffLine>().ToArray())),
+
+            _ => null,
+        };
+
+        if (text is null)
+        {
+            return;
+        }
 
         try
         {
@@ -163,6 +195,10 @@ public sealed class DiffView : ListBox
         e.Handled = true;
     }
 
+    /// <summary>Document order and the marker on every line — the excerpt is still a diff.</summary>
+    private static string CopyText(IEnumerable<DiffLine> lines) =>
+        string.Join(Environment.NewLine, lines.Select(line => line.Marker + line.Text));
+
     private static void OnInputChanged(DependencyObject d, DependencyPropertyChangedEventArgs e) =>
         ((DiffView)d).Rebuild();
 
@@ -176,9 +212,20 @@ public sealed class DiffView : ListBox
     {
         var text = DiffText;
         var path = FilePath;
+        var split = SideBySide;
         var generation = ++_generation;
 
         _language = LanguageCatalog.ForPath(path);
+
+        // Rows own their width in split mode. Unified rows are content-sized and the list
+        // scrolls sideways; split rows stretch to the viewport and give each file half,
+        // because two independently content-sized columns would land at a different split
+        // on every row.
+        ScrollViewer.SetHorizontalScrollBarVisibility(
+            this, split ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Auto);
+        HorizontalContentAlignment = split
+            ? HorizontalAlignment.Stretch
+            : HorizontalAlignment.Left;
 
         if (string.IsNullOrEmpty(text))
         {
@@ -188,7 +235,13 @@ public sealed class DiffView : ListBox
 
         // Off the dispatcher. Parsing is linear and quick per line, but a 2.5 MB diff is
         // still tens of thousands of them, and none of that work needs the UI thread.
-        var document = await Task.Run(() => UnifiedDiffParser.Parse(text)).ConfigureAwait(true);
+        // The emphasis pass and the split fold ride along: both are linear too, and both
+        // exist so a row can be BUILT cheaply when it is realised.
+        var (document, rows) = await Task.Run(() =>
+        {
+            var parsed = IntralineEmphasis.Annotate(UnifiedDiffParser.Parse(text));
+            return (parsed, split ? SideBySideDiff.Build(parsed) : null);
+        }).ConfigureAwait(true);
 
         // A user clicking down a list faster than the parses complete would otherwise see
         // an earlier, slower file win and replace the one they are looking at.
@@ -197,7 +250,9 @@ public sealed class DiffView : ListBox
             return;
         }
 
-        ItemsSource = document.IsEmpty ? null : document.Lines;
+        ItemsSource = document.IsEmpty
+            ? null
+            : rows is not null ? rows : document.Lines;
     }
 
     /// <summary>
@@ -213,10 +268,92 @@ public sealed class DiffView : ListBox
     {
         base.PrepareContainerForItemOverride(element, item);
 
-        if (element is ContentControl container && item is DiffLine line)
+        if (element is not ContentControl container)
         {
-            container.Content = BuildRow(line, _language);
+            return;
         }
+
+        container.Content = item switch
+        {
+            DiffLine line => BuildRow(line, _language),
+            SideBySideRow row => BuildSplitRow(row, _language),
+            _ => container.Content,
+        };
+    }
+
+    /// <summary>One split row: the old file's cell, a divider, the new file's cell.</summary>
+    /// <remarks>
+    /// A spanning line — header, hunk marker — keeps the unified row builder, buttons and
+    /// all, because splitting a hunk header in two would be two half-sentences. A blank
+    /// cell keeps its side's tint off entirely: a deletion has no counterpart on the right,
+    /// and tinting the void green would claim an addition that never happened.
+    /// </remarks>
+    private UIElement BuildSplitRow(SideBySideRow row, SyntaxLanguage language)
+    {
+        if (row.Spanning is { } spanning)
+        {
+            return BuildRow(spanning, language);
+        }
+
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition
+        {
+            Width = new GridLength(1, GridUnitType.Star),
+        });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition
+        {
+            Width = new GridLength(1, GridUnitType.Star),
+        });
+
+        var divider = new Border
+        {
+            Width = 1,
+            Background = Resolve("Brush.Border.Subtle"),
+        };
+        Grid.SetColumn(divider, 1);
+        grid.Children.Add(divider);
+
+        var left = SplitCell(row.Left, old: true, language);
+        Grid.SetColumn(left, 0);
+        grid.Children.Add(left);
+
+        var right = SplitCell(row.Right, old: false, language);
+        Grid.SetColumn(right, 2);
+        grid.Children.Add(right);
+
+        return grid;
+    }
+
+    private UIElement SplitCell(DiffLine? line, bool old, SyntaxLanguage language)
+    {
+        var cell = new Grid
+        {
+            Background = line is null ? Brushes.Transparent : BackgroundFor(line),
+        };
+        cell.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(46) });
+        cell.ColumnDefinitions.Add(new ColumnDefinition
+        {
+            Width = new GridLength(1, GridUnitType.Star),
+        });
+
+        if (line is null)
+        {
+            return cell;
+        }
+
+        cell.Children.Add(Gutter(old ? line.OldLine : line.NewLine, 0));
+
+        var content = Highlighted(line.Text, language, line.Emphasis, EmphasisBrush(line));
+
+        // Clipped rather than scrolled: the two halves share the viewport, and a long line
+        // is what the unified mode is one click away for.
+        content.TextTrimming = TextTrimming.CharacterEllipsis;
+        content.Margin = new Thickness(6, 0, 12, 0);
+        Grid.SetColumn(content, 1);
+        cell.Children.Add(content);
+
+        return cell;
     }
 
     private UIElement BuildRow(DiffLine line, SyntaxLanguage language)
@@ -240,7 +377,7 @@ public sealed class DiffView : ListBox
             DiffLineKind.HunkHeader => HunkHeaderContent(line),
             DiffLineKind.FileHeader or DiffLineKind.NoNewline =>
                 Mono(line.Text, Resolve("Brush.Text.Disabled")),
-            _ => Highlighted(line.Text, language),
+            _ => Highlighted(line.Text, language, line.Emphasis, EmphasisBrush(line)),
         };
 
         content.Margin = new Thickness(6, 0, 12, 0);
@@ -301,7 +438,17 @@ public sealed class DiffView : ListBox
     }
 
     /// <summary>Build one code line as coloured runs.</summary>
-    private TextBlock Highlighted(string text, SyntaxLanguage language)
+    /// <remarks>
+    /// Emphasis is a background on the runs inside it — the syntax colours stay, because
+    /// the change and the code are two facts about the same characters and losing either
+    /// to show the other would be a regression. A syntax token that straddles an emphasis
+    /// boundary is split at it: WPF backgrounds are per-run, so the boundary has to be one.
+    /// </remarks>
+    private TextBlock Highlighted(
+        string text,
+        SyntaxLanguage language,
+        IReadOnlyList<TextSpan>? emphasis = null,
+        Brush? emphasisBrush = null)
     {
         var block = Mono(string.Empty, Resolve("Brush.Text.Primary"));
 
@@ -315,14 +462,65 @@ public sealed class DiffView : ListBox
 
         foreach (var span in SyntaxTokenizer.Tokenize(text, language))
         {
-            block.Inlines.Add(new Run(text.Substring(span.Start, span.Length))
+            foreach (var (start, length, emphasised) in
+                     SplitAtEmphasis(span.Start, span.Length, emphasis))
             {
-                Foreground = TokenBrush(span.Kind),
-            });
+                block.Inlines.Add(new Run(text.Substring(start, length))
+                {
+                    Foreground = TokenBrush(span.Kind),
+                    Background = emphasised && emphasisBrush is not null
+                        ? emphasisBrush
+                        : null,
+                });
+            }
         }
 
         return block;
     }
+
+    /// <summary>Cut one syntax token at the emphasis boundaries crossing it.</summary>
+    private static IEnumerable<(int Start, int Length, bool Emphasised)> SplitAtEmphasis(
+        int start, int length, IReadOnlyList<TextSpan>? emphasis)
+    {
+        if (emphasis is not { Count: > 0 })
+        {
+            yield return (start, length, false);
+            yield break;
+        }
+
+        var at = start;
+        var end = start + length;
+
+        foreach (var span in emphasis)
+        {
+            if (span.End <= at || span.Start >= end)
+            {
+                continue;
+            }
+
+            if (span.Start > at)
+            {
+                yield return (at, span.Start - at, false);
+                at = span.Start;
+            }
+
+            var stop = Math.Min(span.End, end);
+            yield return (at, stop - at, true);
+            at = stop;
+        }
+
+        if (at < end)
+        {
+            yield return (at, end - at, false);
+        }
+    }
+
+    private Brush? EmphasisBrush(DiffLine line) => line.Kind switch
+    {
+        DiffLineKind.Added => Resolve("Brush.Diff.AddedWord"),
+        DiffLineKind.Removed => Resolve("Brush.Diff.DeletedWord"),
+        _ => null,
+    };
 
     private TextBlock Gutter(int? number, int column)
     {

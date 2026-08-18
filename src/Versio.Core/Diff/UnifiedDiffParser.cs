@@ -40,6 +40,17 @@ public sealed record DiffLine
     /// </remarks>
     public int HunkIndex { get; init; } = -1;
 
+    /// <summary>
+    /// The part of this line that actually changed, when a changed pair could say.
+    /// </summary>
+    /// <remarks>
+    /// Filled by <see cref="IntralineEmphasis.Annotate"/>, not by the parser: the parser's
+    /// job is to repeat what git said, and which characters moved is a comparison git's
+    /// unified output does not carry. Empty means "no emphasis", which is the ordinary
+    /// state of context lines, unpaired lines, and pairs with nothing in common.
+    /// </remarks>
+    public IReadOnlyList<TextSpan> Emphasis { get; init; } = [];
+
     public string Marker => Kind switch
     {
         DiffLineKind.Added => "+",

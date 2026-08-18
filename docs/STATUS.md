@@ -1,13 +1,13 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,441 across seven
+**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,458 across seven
 projects, 0 skipped — re-derived by running each, not carried forward
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,361 | under a second | nothing |
+| `Versio.Core.Tests` | 1,374 | under a second | nothing |
 | `Versio.Integration.Tests` | 146 | ~10 s | real git |
-| `Versio.App.Tests` | 531 | ~50 s | nothing |
+| `Versio.App.Tests` | 535 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 14 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 254 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 82 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
@@ -314,7 +314,7 @@ projects are reported as unsupported rather than silently ignored. Both registri
 | **PLC state** | **No card, and no buttons.** Toolchain, version and profile were environment rather than repository state and moved to Settings → Help → System information. "Export now" is gone because a stale mirror needs no decision — it is exported when the repository opens. "Acknowledge failure" is gone as a panel-wide control: a failure belongs to one project, so it is reported on that project's row with the reason and a *Try again* beside it. What is left in the panel is transient and hides itself: the coverage warning and the live heartbeat |
 | **Branch and clone** | Create a branch from HEAD and switch to it, with the name checked against git's rules while it is typed; clone a repository after verifying the remote, then open it. Both are modal dialogs built from the one stylesheet, and both are covered by tests that construct them against the real theme |
 | **Commit gate** | A stale mirror is exported *and staged* before the commit. Push releases the direction locks; commit does not, and the panel says so |
-| **Diff view** | Eleven languages, new files rendered entirely green, *Show full file*, rows built only when realised, **per-hunk stage and unstage** — and a **layer switcher** in the header (2026-08-17): one chip per layer of the shown object (`ST | native`, `tasks`, `libraries`), following the shown path rather than the tree selection, so the native half of a GVL and the export-only XML of a task configuration stopped being unreachable |
+| **Diff view** | Eleven languages, new files rendered entirely green, *Show full file*, rows built only when realised, **per-hunk stage and unstage** — **word-level emphasis inside a changed pair and a side-by-side mode** (2026-08-17): the changed identifier lights up inside the row tint, computed as a token-aligned prefix/suffix trim because the corpus is generated XML where a long line differs by one identifier; the split view folds the same parsed diff rather than computing a second one, so the two modes cannot disagree — and a **layer switcher** in the header (2026-08-17): one chip per layer of the shown object (`ST | native`, `tasks`, `libraries`), following the shown path rather than the tree selection, so the native half of a GVL and the export-only XML of a task configuration stopped being unreachable |
 | **Open in the IDE** | Export runs anyway, from a copy; import waits and names who has the project. Neither marks the binding failed, and the breaker is never fed |
 | **Adoption writes `.gitignore`** | Created when absent, appended when present, never overriding an existing decision. Covers `.versio/local/` — locks, backups, scratch copies — and the toolchain's `-AllUsers.opt` and `-<user>-<machine>.opt`, the second of which carries a username and machine name in its filename |
 | **Export coverage** | What the export does *not* carry, said out loud: `_coverage.md` in the tree, every skip in the manifest with a stable reason, and a sentence in the panel naming what cannot be relied on. A gap is distinguished from a deliberate omission, from a file that is exported one way, and an old manifest reports "unknown" rather than "complete" |
@@ -335,7 +335,6 @@ statement from "not worth doing".
 
 | | Why it waits | What would bring it back |
 |---|---|---|
-| **Word-level diff** (§5) | The colours exist and are contrast-checked; `DiffView` tints whole rows. A readability gain on something already correct. | Somebody reading generated XML or ST diffs daily and saying so. It is the strongest candidate of the four. |
 | **Code signing** (open decision #2) | Nothing external is distributed yet. | **Start this before it is needed, not when.** It is procurement lead time rather than engineering time, and it is the only item on this page that gets worse purely by waiting. |
 
 **Also decided, and more firmly: the code-shape queue is closed.** Staging, the repository

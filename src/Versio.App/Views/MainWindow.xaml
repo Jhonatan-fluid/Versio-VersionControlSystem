@@ -554,6 +554,16 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
+                            <!-- Old left, new right. Render-only — the same diff, folded —
+                                 so unlike its neighbour it re-reads nothing. -->
+                            <CheckBox Content="Side by side" VerticalAlignment="Center"
+                                      Margin="0,0,14,0"
+                                      IsChecked="{Binding DiffSideBySide}"
+                                      Foreground="{DynamicResource Brush.Text.Secondary}"
+                                      FontFamily="{DynamicResource Font.UI}"
+                                      FontSize="{DynamicResource Font.Size.Caption}"
+                                      ToolTip="Show the old file on the left and the new on the right. Long lines are clipped; unified mode scrolls." />
+
                             <!-- Three lines of context is enough for a typo and not enough
                                  for a POU, where whether an edit is safe depends on
                                  declarations well above it. Still a diff either way: the
@@ -691,6 +701,7 @@
 
                     <views:DiffView DiffText="{Binding SelectedDiff}"
                                     FilePath="{Binding SelectedDiffPath}"
+                                    SideBySide="{Binding DiffSideBySide}"
                                     HunkCommand="{Binding HunkCommand}"
                                     ShowHunkActions="{Binding CanStageHunks}"
                                     HunkActionLabel="{Binding HunkAction}"
