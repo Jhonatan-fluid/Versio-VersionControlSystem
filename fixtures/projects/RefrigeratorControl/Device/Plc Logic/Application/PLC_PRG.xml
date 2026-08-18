@@ -1244,11 +1244,13 @@ PROGRAM PLC_PRG
 VAR
 	SR_0: SR;
 	Hysteresis: REAL:=1.0;
+	
+	Alarm : FB_Alarm; 
 END_VAR</Single>
             <Single Name="LineInfoPersistence" Type="string">6247544f-164d-4cdc-b8f8-6177e40d8dd8_Decl_LineIds</Single>
           </Single>
         </Single>
-        <Single Name="UniqueIdGenerator" Type="string">347</Single>
+        <Single Name="UniqueIdGenerator" Type="string">349</Single>
         <Single Name="POULevel" Type="{8e575c5b-1d37-49c6-941b-5c0ec7874787}">Standard</Single>
         <List Name="ChildObjectGuids" Type="System.Collections.ArrayList" />
         <Single Name="AddAttributeSubsequent" Type="bool">False</Single>

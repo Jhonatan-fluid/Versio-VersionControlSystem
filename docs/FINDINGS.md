@@ -17,6 +17,85 @@ produce a diff touching everything else.
 
 ---
 
+### A folder inside a POU stripped the owner off every method in it
+
+**Found 2026-08-17 by the product owner reading the panel** — the eighth found that way, in
+the same hour as the swap failure above and from the same edit. They had grouped one of
+`FB_Alarm`'s methods into a folder called `Private` in the CODESYS tree, and Versio drew
+`Private > _M_Reset` as a **sibling of FB_Alarm** under the application: *"private `_M_Reset`
+belongs to FB_Alarm"*.
+
+**The manifest said it plainly, one record apart:**
+
+```
+METHOD  M_Reset   Device/Plc Logic/Application/FB_Alarm.M_Reset.st        parent 6e8ed404-…
+METHOD  _M_Reset  Device/Plc Logic/Application/Private/_M_Reset.st        parent null
+```
+
+**The walk dropped the chain at the folder.** `Exporter.handle` passes `parent_name` and
+`parent_guid` down when it recurses into a POU's children — that is what writes
+`FB_Alarm.M_Reset.st` and records the owner GUID. The `FORM_CONTAINER` branch recursed with
+`None` for both, unconditionally, because a container had only ever meant a *project-level*
+folder, where that is exactly right.
+
+**The visible half was the cheap half.** A member with no recorded owner is resolved by the
+planner through its **directory**, so the import chain for that file came out
+`Device/Plc Logic/Application/Private/_M_Reset` — and there is no `Private` under
+`Application`; it is inside `FB_Alarm`. Editing that file in the mirror would therefore have
+been **refused and dropped**: `PARENT_NOT_FOUND`, one warning, nothing written. The mirror
+would show the change as applied and the project would never have received it. Worse if the
+name had been an ordinary one — a project-level folder called `Private` would make that owner
+chain resolve, and the method would be created in a **different part of the project**. Nobody
+had reached either yet, and nothing in the suite was watching.
+
+*(The first draft of this entry said the import would create a duplicate. It would not, and
+the difference was found by re-reading `create_textual` rather than by any test: an
+unresolvable owner is reported, not approximated. The duplicate is real but belongs to the
+shape below.)*
+
+**A folder inside a POU is a view, not a place** — that is the whole fix, and it is why the
+mirror shape gets *simpler* rather than gaining a case. The grouping is organisation in the
+IDE tree and nothing else: the method is `FB_Alarm._M_Reset` to every caller, its name is
+unique across the POU whichever folder holds it, and dragging it between folders changes no
+code and no reference. So the ownership carries straight through the folder and the folder
+leaves no directory behind. `FB_Alarm._M_Reset.st` now sits beside `FB_Alarm.M_Reset.st`,
+foldered and unfoldered members are **indistinguishable on disk**, and re-organising the IDE
+tree produces no mirror diff at all. The C# planner needed no change whatsoever, which is the
+strongest evidence the shape is right.
+
+**And the new shape needs the importer's half, or it trades one defect for another.** The
+chain is now `…/Application/FB_Alarm/_M_Reset` — correct, and *the live project still has the
+folder in the middle of it*. A strict walk finds `FB_Alarm` and then fails on its last
+segment, which is the dangerous outcome rather than the safe one: the owner resolved, so the
+importer is holding a valid parent and a file it was told to apply. The textual path stops at
+`CANNOT_IDENTIFY_DECLARATION` (a `METHOD` header is not a creatable kind, which is luck rather
+than design), and **the native path does not stop** — `import_native` both replaces and
+creates, and it would paste the member into the POU's root beside the folder holding the
+original.
+
+So a resolve chain names objects, a folder is not one of the things it names, and
+`find_by_path` now looks through them — `versio_tree.find_child_folder_blind`, extracted to a
+pure module so it can be driven under CPython. Three rules in it, each one a refusal:
+
+- **only folders are walked past**, never a POU, or a chain naming a program could be
+  answered by somebody's method;
+- **a direct child outranks one found inside a folder**, because the direct child is what the
+  chain literally says and a fallback that can outrank the literal reading is not a fallback;
+- **an ambiguous name returns nothing**, which is precisely today's behaviour rather than a
+  coin toss — CODESYS will not compile two objects of one name, and "cannot happen" is what
+  every silent overwrite was called beforehand.
+
+Covered on both sides, at very different prices. The importer's half is
+`PythonTreeWalkTests` — seven cases against a stand-in object answering `get_children`,
+`get_name` and `is_folder`, under a second. The exporter's half **cannot** be tested without
+CODESYS, because the walk needs `scriptengine`, so it rides on the export
+`ProjectTreeFromRealExportTests` already pays for: the fixture carries `FB_Alarm` with
+`M_Reset` beside it and `_M_Reset` in a folder, and the test asserts the recorded owner, the
+shared directory, the prefixed file name, that no `Private/` survives anywhere in the mirror,
+and that the drawn tree hangs both methods off the POU.
+
+---
+
 ### A process parked inside the mirror made every export fail at the swap
 
 **Found 2026-08-17 by the product owner running the app** — the seventh found that way —

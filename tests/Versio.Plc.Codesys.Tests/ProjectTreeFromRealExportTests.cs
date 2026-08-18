@@ -138,6 +138,62 @@ public sealed class ProjectTreeFromRealExportTests(ITestOutputHelper output) : I
         // Every object is untracked, so every folder must roll that up.
         Assert.Equal(objects.Count, tree.ChangedDescendants);
         Assert.Equal(ChangeKind.Untracked, tree.RollUp);
+
+        AMemberInAFolderStillBelongsToItsPou(manifest, all);
+    }
+
+    /// <summary>
+    /// A method the IDE shows inside a folder inside a POU is exported as that POU's member.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The fixture carries the case on purpose</b>: <c>FB_Alarm</c> has <c>M_Reset</c>
+    /// directly and <c>_M_Reset</c> inside a folder called <c>Private</c>, which is how the
+    /// defect was reported. Removing either from <c>RefrigeratorControl.project</c> makes this
+    /// fail rather than pass quietly, which is the point of naming them.
+    /// </para>
+    /// <para>
+    /// <b>Only a real export can prove this half.</b> The rule lives in the walk inside
+    /// <c>versio_export.py</c>, which cannot run without <c>scriptengine</c> — so unlike the
+    /// importer's side (<c>PythonTreeWalkTests</c>, under a second) this one costs a CODESYS
+    /// launch and there is no cheaper substitute. It rides along on the export this test has
+    /// already paid for.
+    /// </para>
+    /// </remarks>
+    private void AMemberInAFolderStillBelongsToItsPou(
+        ProjectManifest manifest, IReadOnlyList<ProjectTreeNode> all)
+    {
+        var owner = manifest.Objects.Single(o => o.Name == "FB_Alarm");
+        var foldered = manifest.Objects.Single(o => o.Name == "_M_Reset");
+        var plain = manifest.Objects.Single(o => o.Name == "M_Reset");
+
+        output.WriteLine($"owner    {owner.Guid} {owner.Path}");
+        output.WriteLine($"foldered {foldered.Parent} {foldered.Path}");
+
+        // The manifest records the owner, so the panel nests it and the planner resolves it
+        // through the owner chain rather than through its directory.
+        Assert.Equal(owner.Guid, foldered.Parent);
+
+        // And it sits BESIDE its owner, named after it — the same shape as the unfoldered
+        // member next to it, so re-organising the IDE tree produces no mirror diff at all.
+        Assert.Equal(DirectoryOf(plain.Path), DirectoryOf(foldered.Path));
+        Assert.Equal("FB_Alarm._M_Reset.st", Path.GetFileName(foldered.Path));
+
+        // The folder leaves nothing behind. A `Private` directory in the mirror would mean
+        // the walk still wrote it somewhere, whatever the manifest says.
+        Assert.DoesNotContain(manifest.Objects, o => o.Path.Contains("/Private/", StringComparison.Ordinal));
+
+        // And the drawn tree agrees, which is what the owner actually looked at.
+        var pou = all.Single(n => n.Name == "FB_Alarm");
+        Assert.Contains(pou.Children, c => c.Name == "_M_Reset");
+        Assert.Contains(pou.Children, c => c.Name == "M_Reset");
+    }
+
+    /// <summary>Not <c>System.IO</c>'s: a mirror path is forward-slashed, always.</summary>
+    private static string DirectoryOf(string path)
+    {
+        var slash = path.LastIndexOf('/');
+        return slash < 0 ? string.Empty : path[..slash];
     }
 
     private static IEnumerable<ProjectTreeNode> Flatten(ProjectTreeNode node)

@@ -1,6 +1,6 @@
 {
-  "bindingId": "6d3f8855e205", 
-  "objectCount": 14, 
+  "bindingId": "fixture", 
+  "objectCount": 16, 
   "objects": [
     {
       "bytes": 217759, 
@@ -11,6 +11,30 @@
       "nhash": "sha256:477d88255087f102da068c4f9febc94929fa040fa17f3fb0e80efa4ab87c0912", 
       "path": "Device/Plc Logic/Application/Diagnosis.vis.xml", 
       "type": "VISUALISATION"
+    }, 
+    {
+      "bytes": 75, 
+      "form": "ST_FULL", 
+      "guid": "3d32724a-fdac-4121-8e14-72e1e9de4668", 
+      "hash": "sha256:1eea96fc51038d9d3c924e877321a2aed9f482dfd098a166a99e82c43da987ed", 
+      "ihash": "sha256:9c230a17726dcf6a2ac62db6c43d4495a34c807a7da23698b6f1b5c4edf2e0e7", 
+      "name": "M_Reset", 
+      "parent": "6e8ed404-aa7c-4874-90d7-74d820d6423c", 
+      "path": "Device/Plc Logic/Application/FB_Alarm.M_Reset.st", 
+      "shash": "3d3336fd,9c230a17,ea14e64c", 
+      "type": "METHOD"
+    }, 
+    {
+      "bytes": 89, 
+      "form": "ST_FULL", 
+      "guid": "db1cec44-8ffa-4d54-b737-010adaca0db5", 
+      "hash": "sha256:38c4c0402ae2e21d3a1b77c34410f65fac3ff7fe267285f5927b665f3a67b56f", 
+      "ihash": "sha256:ad34512c0398e1d9eaa5338ae2d84ffcb8d74d93c8720d8ad6755c47c7f7acc7", 
+      "name": "_M_Reset", 
+      "parent": "6e8ed404-aa7c-4874-90d7-74d820d6423c", 
+      "path": "Device/Plc Logic/Application/FB_Alarm._M_Reset.st", 
+      "shash": "02015fdc,3d3336fd,ad34512c", 
+      "type": "METHOD"
     }, 
     {
       "bytes": 154, 
@@ -61,12 +85,12 @@
       "type": "VISUALISATION"
     }, 
     {
-      "bytes": 80028, 
+      "bytes": 80050, 
       "form": "NATIVE", 
       "guid": "6247544f-164d-4cdc-b8f8-6177e40d8dd8", 
-      "hash": "sha256:11363315357e57973f91cca9562f02864b703390ef5ece6e606093e97343c5f6", 
+      "hash": "sha256:3c0ce87f977570c055a9451ffba13d57c61ff64154e325b144754212dc3eebaf", 
       "name": "PLC_PRG", 
-      "nhash": "sha256:74872099bf9fdf35ee712b374d8fda8c0213a5217712e655d9394975fdf2df0a", 
+      "nhash": "sha256:8bbf41a022f882ee8e0410a53e29ed3474d31d70add38d95ab7c27fd690b84c7", 
       "path": "Device/Plc Logic/Application/PLC_PRG.xml", 
       "type": "POU"
     }, 

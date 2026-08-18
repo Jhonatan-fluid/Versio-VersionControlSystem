@@ -49,6 +49,7 @@ from versio_text import (WS, content_hash, join_st, normalize_decl_only,  # noqa
 from versio_types import (FORM_NATIVE_R, NATIVE_FORMS, can_verify,  # noqa: E402
                           is_versio_file)
 from versio_native_equiv import normalize  # noqa: E402
+import versio_tree  # noqa: E402
 import versio_yaml  # noqa: E402
 
 
@@ -128,21 +129,14 @@ def _same(current, wanted):
     return (u"%s" % (current,)) == (u"%s" % (wanted,))
 
 
-def find_child(parent, name):
-    for child in safe(lambda: parent.get_children(), []) or []:
-        if safe(lambda: child.get_name(), None) == name:
-            return child
-    return None
-
-
 def find_by_path(proj, parts):
-    """Navigate the object tree by name. Returns None when any segment is missing."""
-    node = proj
-    for part in parts:
-        node = find_child(node, part)
-        if node is None:
-            return None
-    return node
+    """Navigate the object tree by name. Returns None when any segment is missing.
+
+    Folder-blind, and that is the load-bearing part: a chain from the manifest names
+    objects, and a folder is not one of the things it names. versio_tree carries the
+    argument.
+    """
+    return versio_tree.find_by_path(proj, parts, safe)
 
 
 class ReplaceHandler(scriptengine.NativeImportHandler):  # type: ignore

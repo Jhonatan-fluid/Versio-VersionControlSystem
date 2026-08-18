@@ -549,6 +549,43 @@ class Exporter(object):
             return
 
         if form == FORM_CONTAINER:
+            # A FOLDER INSIDE A POU IS A VIEW, NOT A PLACE - so the ownership carries
+            # straight through it and the folder leaves no directory behind.
+            #
+            # CODESYS lets a function block's methods be grouped into folders. That grouping
+            # is organisation in the IDE tree and nothing else: `_M_Reset` is still
+            # FB_Alarm's method, its name is unique across the whole POU whichever folder
+            # holds it, and dragging it between folders changes no code and no reference.
+            # A member written beside its owner as `FB_Alarm._M_Reset.st` therefore says
+            # everything true about it, and says it the same way for every member of that
+            # POU - foldered or not - so re-organising the IDE tree produces no mirror diff.
+            #
+            # It passed None for both until 2026-08-17, which stripped the owner off every
+            # foldered member. The visible half was the panel: `Private/_M_Reset.st` with no
+            # parent recorded, drawn as a sibling of FB_Alarm instead of as its method, which
+            # is what the owner reported. The half nobody had reached was the import - the
+            # planner resolves a member with no recorded parent by its DIRECTORY, so the chain
+            # came out Application/Private/_M_Reset, and there is no `Private` under
+            # Application. An edit to that file was refused with PARENT_NOT_FOUND and dropped:
+            # the mirror showing a change the project never received. Had the folder shared a
+            # name with one that does exist at project level, the owner would have resolved
+            # and the method would have been created somewhere else entirely.
+            #
+            # The chain is right now, and the live project STILL HAS THE FOLDER in the middle
+            # of it - so versio_tree.find_child_folder_blind is the other half of this fix
+            # rather than a tidy-up. Without it the walk finds FB_Alarm, fails on the last
+            # segment while holding a valid owner, and import_native pastes the member into
+            # the POU's root beside the folder holding the original.
+            #
+            # A folder at PROJECT level is the opposite case and keeps its directory: there
+            # the nesting IS where the object lives, the mirror mirrors it, and the resolve
+            # chain walks those folder names as segments. `parent_guid` is what tells the two
+            # apart - it is set only inside a member chain, which only a POU starts.
+            if parent_guid:
+                for child in children:
+                    self.handle(child, rel_dir, parent_name, parent_guid)
+                return
+
             child_dir = os.path.join(rel_dir, safe_file_stem(name))
             for child in children:
                 self.handle(child, child_dir, None)

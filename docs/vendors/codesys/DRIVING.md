@@ -503,6 +503,25 @@ visualisation and a `Main` POU are a common real collision:
 and a **sub-POU member is prefixed with its owner** (`clsLight.Light.xml`), because methods,
 actions, transitions and properties live in the same folder as the POU that owns them.
 
+> **A folder *inside* a POU is a view, not a place.** CODESYS lets a function block's methods
+> be grouped into folders. That grouping is organisation in the IDE tree and nothing else —
+> `_M_Reset` is FB_Alarm's method whichever folder shows it, its name is unique across the
+> whole POU either way, and dragging it between folders changes no code and no reference. So
+> the walk carries the ownership straight through and the folder leaves **no directory
+> behind**: `FB_Alarm._M_Reset.st` sits beside `FB_Alarm.M_Reset.st`, and re-organising the
+> IDE tree produces no mirror diff at all.
+>
+> A folder at **project** level is the opposite and keeps its directory, because there the
+> nesting *is* where the object lives. What tells the two apart in `handle()` is whether an
+> owner GUID is already in play, which only a POU starts.
+>
+> The importer's half of this is `versio_tree.find_child_folder_blind`: a resolve chain names
+> objects and a folder is not one of the things it names, so the walk looks through folders —
+> refusing an ambiguous answer rather than guessing — and a direct child always outranks one
+> found inside a folder. Finding **nothing** is the dangerous outcome, not the safe one: an
+> import that cannot find the object it was told to update *creates* it. See the Finding in
+> [`STATUS.md`](../../STATUS.md).
+
 > **The bug this table caused once.** `FORM_GVL_BOTH` was missing from the Python `SUFFIX`
 > table, so `file_name_for()` fell through to the `.xml` default. A GVL writes two files; both
 > resolved to the same path, and the ST write **destroyed the native export**, leaving a file

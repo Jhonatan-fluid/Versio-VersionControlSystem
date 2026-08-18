@@ -16,9 +16,10 @@ namespace Versio.Integration.Tests;
 /// </para>
 /// <para>
 /// <b>The count is asserted, not just "more than none".</b> A glob that matched one file would
-/// satisfy a non-empty check and still break every export, and the twelve modules are a set that
-/// changes rarely and deliberately: if this number moves, somebody added or removed a script and
-/// should say which in the same commit.
+/// satisfy a non-empty check and still break every export, and the thirteen modules are a set
+/// that changes rarely and deliberately: if this number moves, somebody added or removed a script
+/// and should say which in the same commit. <c>versio_tree.py</c> is the newest, split out on
+/// 2026-08-17 so the folder-blind name walk could be driven under CPython.
 /// </para>
 /// <para>
 /// No CODESYS, no python interpreter, no git — it reads the manifest resources of an assembly
@@ -40,6 +41,7 @@ public sealed class EmbeddedScriptTests
         "versio_probe_native_import.py",
         "versio_tasks.py",
         "versio_text.py",
+        "versio_tree.py",
         "versio_types.py",
         "versio_yaml.py",
     ];

@@ -188,7 +188,7 @@ Versio.sln
 │  │                            the real stylesheet on an STA thread — none is ever shown
 │  ├─ Versio.Plc.Codesys.Pure.Tests/ 254 pure vendor tests — the planner, the codecs, the
 │  │                            protocol — under a second, needing nothing
-│  ├─ Versio.Plc.Codesys.Parity.Tests/ 82 CPython parity tests over the vendor's python,
+│  ├─ Versio.Plc.Codesys.Parity.Tests/ 91 CPython parity tests over the vendor's python,
 │  │                            ~15 s, no CODESYS — python on PATH, skips cleanly without
 │  └─ Versio.Plc.Codesys.Tests/ 53 tests against real CODESYS, ~30 min. The gate before a
 │                               commit, and the only suite that needs a toolchain installed
@@ -343,7 +343,7 @@ dotnet test tests/Versio.Core.Tests
 | `Versio.Arch.Tests` | 14 | nothing — it reads assembly metadata, IL, and the project files | instant |
 | `Versio.App.Tests` | 546 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
 | `Versio.Plc.Codesys.Pure.Tests` | 254 | nothing — the vendor's planner, codecs and protocol, pure | under a second |
-| `Versio.Plc.Codesys.Parity.Tests` | 82 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
+| `Versio.Plc.Codesys.Parity.Tests` | 91 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
 | `Versio.Plc.Codesys.Tests` | 53 | **a real CODESYS**, and **skips cleanly** without one | **~30 min** |
 
 The first six are the loop to work in. The last is the gate before a commit — and it is a

@@ -1,6 +1,6 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,473 across seven
+**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,482 across seven
 projects, 0 skipped — re-derived by running each, not carried forward
 
 | Project | Tests | Time | Needs |
@@ -10,7 +10,7 @@ projects, 0 skipped — re-derived by running each, not carried forward
 | `Versio.App.Tests` | 546 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 14 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 254 | under a second | nothing |
-| `Versio.Plc.Codesys.Parity.Tests` | 82 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
+| `Versio.Plc.Codesys.Parity.Tests` | 91 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
 | `Versio.Plc.Codesys.Tests` | 53 | **~30 min** | **real CODESYS** |
 
 *The first six are the loop to work in — about thirty seconds plus the UI suite. The last is
@@ -554,6 +554,15 @@ does not record them has to be run again.
     *projects* and not orphaned *export trees*, so every ignored project's mirror was still
     reported. See the Finding: half a rule, and nothing in the suite could have caught it because
     the existing test only ever supplied `ProjectFiles`.
+- **A *graphical* member inside an in-POU folder is imported into the POU's root, not back
+  into the folder.** Found on 2026-08-17 while fixing the foldered-member export, by reading
+  `handle_native` rather than by any test. The textual path is fully covered — it resolves
+  the object itself, folder-blind, and updates it in place — but `handle_native` imports into
+  the *owner* it computed from the chain, which is the POU, and `import_native` both replaces
+  and creates. Whether CODESYS matches the incoming GUID across the folder boundary and
+  replaces in place, or pastes a second copy, is **unmeasured**. Narrow (a method is normally
+  ST, and a duplicate would be visible rather than silent), so it is written down rather than
+  fixed on an unverified guess. Measuring it needs one probe and a gate run.
 - **Cancelling a running toolchain job is not implemented.** A change arriving mid-run is
   queued, which is correct and cheap; restarting instead would be better when the run has
   barely begun, and needs process cancellation plus cleanup of the staging folder a killed
@@ -959,6 +968,7 @@ actually do.
 
 The full list, newest first:
 
+- [A folder inside a POU stripped the owner off every method in it](FINDINGS.md#a-folder-inside-a-pou-stripped-the-owner-off-every-method-in-it)
 - [A process parked inside the mirror made every export fail at the swap](FINDINGS.md#a-process-parked-inside-the-mirror-made-every-export-fail-at-the-swap)
 - [The project row stuck on "exporting…", and the await that widened a race until it hit](FINDINGS.md#the-project-row-stuck-on-exporting-and-the-await-that-widened-a-race-until-it-hit)
 - [The expansion default missed the correction the pruner already carried](FINDINGS.md#the-expansion-default-missed-the-correction-the-pruner-already-carried)
