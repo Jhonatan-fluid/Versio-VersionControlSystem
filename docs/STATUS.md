@@ -569,11 +569,19 @@ does not record them has to be run again.
     more thoroughly but this is not an every day project."* So the churn was deliberate
     corpus-building rather than daily work, and it is finished. The gate is believable when
     the IDE is closed, which is how it was run today, by asking.
-  - **What that decision leaves owed**: the literals that rot. `walked N` in
-    `ExportLoggingTests` was re-typed three times in two days, and five gate tests still name
-    objects the corpus-building removed. Deriving them beats re-typing them — three already
-    were, on 2026-08-18: the library reference count and the task count now read each file's
-    own header, and the committed task rows are asserted by containment.
+  - ~~**What that decision leaves owed**: the literals that rot~~ — **paid off, 2026-08-18.
+    The full gate passes 54/54 in one sweep**, which it had not done once all session.
+    Thirteen assertions stopped measuring the corpus and started measuring the exporter: the
+    library reference count and the task count read each file's own header, the export-only
+    and library-manager counts come from the manifest, `walked N` is derived, the GVL pair is
+    asserted per GVL, and the objects two deletion tests need are *discovered* — a
+    single-file, unowned, non-export-only object — rather than named.
+  - **The lesson, because it cost the most.** A literal about the corpus is a true statement
+    about a Tuesday: eight false failures in one day, not one of them a regression. But a rule
+    written in a hurry is still a guess — replacing `walked 26` with a derived number
+    introduced `Single()` into a test that exports **twice**, and only the 35-minute gate
+    caught it. The fast loop cannot stand in for that gate on any change that touches the
+    exporter.
 - **Regenerating the committed fixture mirror by hand has three arguments that are all easy
   to get wrong, and no coverage.** It is done through `tools/codesys/Run-Codesys.ps1` when the
   exporter's output shape changes, and on 2026-08-17 the third one was got wrong and shipped:
