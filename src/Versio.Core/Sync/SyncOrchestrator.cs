@@ -2057,6 +2057,14 @@ public sealed class SyncOrchestrator
     /// <c>LastSynced</c> already recorded: nothing outstanding, nothing to lose by letting go.
     /// </para>
     /// </remarks>
+    /// <para>
+    /// <b>Restarting is already handled and needs nothing from here.</b> <c>LockRecovery</c>
+    /// compares against <c>Baseline</c>, which <see cref="ApplyAsync"/> deliberately leaves
+    /// alone for any transition that is not to <c>Clean</c> — so a merge-created lock reopens
+    /// as <c>ReadoptedAfterRestart</c> while the import is still owed, and if somebody abandons
+    /// the merge in a terminal instead, the mirror returns to that baseline and recovery
+    /// releases the lock on its own. Checked on 2026-08-18 rather than assumed.
+    /// </para>
     /// <returns>True when the lock was released.</returns>
     public async Task<bool> ReleaseIfNothingOutstandingAsync(
         string bindingId, CancellationToken ct)
