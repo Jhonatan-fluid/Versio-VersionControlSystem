@@ -227,14 +227,14 @@ stays that way.
 
 | Suite | Count | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,388 | under a second | nothing |
+| `Versio.Core.Tests` | 1,392 | under a second | nothing |
 | `Versio.Integration.Tests` | 147 | ~10 s | real git |
 | `Versio.Arch.Tests` | 14 | instant | nothing — it reads assembly metadata, IL and the `.csproj` files |
-| `Versio.App.Tests` | 546 | ~50 s, STA, no window shown | nothing |
+| `Versio.App.Tests` | 547 | ~50 s, STA, no window shown | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 260 | under a second | nothing — the planner, the codecs, the protocol |
 | `Versio.Plc.Codesys.Parity.Tests` | 92 | ~15 s | `python` on PATH — **skips cleanly without it, so check the count, not the colour** |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 13 | instant | nothing — format, planner, protocol |
-| `Versio.Plc.TiaPortal.Tests` | 3 | seconds when skipped; ~45 s when Portal opens | **real TIA Portal** — skips cleanly without Openness membership or LFS content |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 15 | instant | nothing — format, planner, protocol |
+| `Versio.Plc.TiaPortal.Tests` | 4 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips cleanly without Openness membership or LFS content. Import Fact is red: generate does not overwrite |
 | `Versio.Plc.Codesys.Tests` | 54 | **~30 min** | **real CODESYS** — every test launches it, which is the whole cost |
 
 The TIA gate fixture is `fixtures/projects/CleaningStation_V20_V21/` (Git LFS). Never the

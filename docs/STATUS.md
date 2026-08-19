@@ -2,7 +2,8 @@
 
 **Date:** 2026-08-19 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,525 across nine
 projects — re-derived by running each, not carried forward. TIA Portal gate: 4 tests; the
-import/re-export Fact copies the fixture and can run many minutes when Portal is present.
+import/re-export Fact is **red** (generate does not overwrite). The CODESYS gate (54) was
+not re-run this session.
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
@@ -198,6 +199,32 @@ which is also what `TaskCatalog.cs` and `LibraryCatalog.cs` are waiting for.
   Desktop shell       ███████████████████░  full git surface, diff, and a UI audit applied
   Packaging           ██░░░░░░░░░░░░░░░░░░  icon and publish profile only
 ```
+
+### Handoff — 2026-08-19 afternoon (TIA session seam)
+
+The **session** now follows the pack split: `SyncOrchestrator` takes `runnerFor`, the App
+probes every registered vendor, `RepoSetup` uses `ForPath`, orphans ask `format.IsTemplate`,
+watch uses `PayloadPathFor`. The Host finds UDTs and tag tables, emits `progress`, and is
+split (`HostApp` / `HostExport` / `HostImport` / `HostReflection`). Hygiene: `TiaPortalJob`
+/ `TiaPortalProtocol` / `TiaPortalSclHeader`; `Versio.Core.Guarding` is in the seam scan.
+
+**The next build is TIA SCL apply, not another seam pass.** Locator / probe / export are
+green on this machine. `Import_then_reexport_keeps_textual_bytes` is **red**: import
+reports success, re-export does not carry the mutation. Evidence in Findings. Work only
+on a copy of `fixtures/projects/CleaningStation_V20_V21/` — never the OneDrive original.
+A host rebuild changes the exe hash; click **Yes to all** on Openness access, do not
+dismiss the dialog (that is the ~9 minute timeout).
+
+Ordered next, then the rest of [`PHASE2.md`](PHASE2.md) item 7:
+
+1. Make `GenerateBlocksFromSource()` overwrite the live block so a mutated `.scl` is
+   present on re-export (the Fact above is the gate).
+2. `tools/tia/Measure-ImportStability.ps1` on a copy under `.versio/local/tia/` (P7 SETTLES).
+3. Two textual exports of an unchanged project, byte-identical.
+4. Eyeball the app on a TIA project this repo is allowed to adopt.
+5. Occupancy with a Portal window, not only Openness `Projects.Open`.
+
+Fast suites were re-derived this session (2,525). `Versio.Plc.Codesys.Tests` was not run.
 
 ### Proven by measurement, not assertion
 
@@ -551,10 +578,10 @@ does not record them has to be run again.
   `fixtures/projects/CleaningStation_V20_V21/` (LFS; ignored by this repo's adoption so
   opening Versio here does not export it).
   - **What is still open is not this bullet.** Item 7's remaining queue is in
-    [`PHASE2.md`](PHASE2.md): export textual determinism, the app loop on an adopted TIA
-    project, GUI occupancy. The session pin on `PlcFormats.All[0]` is closed (see
-    Findings). Host import finds UDTs and tag tables; the C# gate has a mutating
-    import/re-export. AllowList after a host rebuild is friction, not a gap.
+    [`PHASE2.md`](PHASE2.md). The session pin on `PlcFormats.All[0]` is closed. Host
+    import finds UDTs and tag tables. **The mutating import/re-export Fact is red** —
+    `GenerateBlocksFromSource` does not put the edited SCL back (see Findings). AllowList
+    after a host rebuild is friction: **Yes to all**, never dismiss.
 
 - ~~**Launching the app against this repository adopts the 21 `phase0/` scratch projects and
   starts exporting all of them.**~~ — **closed 2026-08-17, and the closing found a defect.**
@@ -1016,8 +1043,8 @@ would have gone on passing while checking one fewer every time a panel moved out
 ## Findings
 
 Every defect worth understanding, written down with its evidence, lives in
-**[`FINDINGS.md`](FINDINGS.md)** — 121 of them, newest first. (Said 111 until 2026-08-19,
-when it was re-derived rather than incremented.)
+**[`FINDINGS.md`](FINDINGS.md)** — 122 of them, newest first. (Said 121 until 2026-08-19
+afternoon, when the TIA generate finding was added.)
 
 It moved out on 2026-08-17. It was 3,681 lines of this document's 4,782, so the file that
 answers *where is the project now* was 77% engineering log, and `CLAUDE.md`'s opening
@@ -1026,6 +1053,7 @@ actually do.
 
 The full list, newest first:
 
+- [TIA GenerateBlocksFromSource does not put a mutated SCL back on re-export](FINDINGS.md#tia-generateblocksfromsource-does-not-put-a-mutated-scl-back-on-re-export)
 - [The App session treated every repository as the first vendor](FINDINGS.md#the-app-session-treated-every-repository-as-the-first-vendor)
 - [SimaticML UId is a document-local integer, not a project identity](FINDINGS.md#simaticml-uid-is-a-document-local-integer-not-a-project-identity)
 - [TIA occupancy is a .info sidecar, measured while Openness held the project](FINDINGS.md#tia-occupancy-is-a-info-sidecar-measured-while-openness-held-the-project)

@@ -183,7 +183,7 @@ review and are not imported.
 | `obj.Name = newName` | rename | Identity is name+number, so this is the rename |
 | `obj.Delete()` via `TryDelete` | delete | Refused when `cannotVerify` is set. If `Delete()` is missing or throws, emit a warning and **keep** the object — same class of refusal as an unverifiable delete. No second API is invented |
 | `ExternalSourceGroup.CreateFromFile` / `CreateFrom` | SCL apply / create | Existing source of the same file name is deleted first |
-| `externalSource.GenerateBlocksFromSource(Overwrite)` | SCL apply / create | Overload hunting: Openness versions disagree on the option enum |
+| `externalSource.GenerateBlocksFromSource()` | SCL apply / create | V21: zero-arg only. `GenerateBlockOptions` is `None \| KeepOnError` — there is no `Overwrite`. KeepOnError created `*_1` clones; zero-arg then dropped `Level.scl` from the next export. See Findings. Do not invent a second API |
 | `BlockGroup.Blocks.Import` / `TypeGroup.Types.Import` / `TagTableGroup.TagTables.Import` | native XML | Chosen from the identity (`…/UDT/…`, `…/TAG_TABLE/…`, else blocks). Handing a tag table to `Blocks.Import` fails "out of context" — measured 2026-08-19. SimaticML marked `XML_REVIEW` is **never** this path |
 
 G12: one object, one importable file. SCL (or `.udt`) imports; the SimaticML beside it is
@@ -356,8 +356,10 @@ passes vacuously.
 
 The C# gate is `tests/Versio.Plc.TiaPortal.Tests` (4 tests, `[Collection("tia-portal")]`).
 Skip is the success path when Portal, Openness membership, AllowList, or LFS content is
-missing. The fourth Fact copies the committed fixture aside, mutates one `.scl`, imports
-the planner's plan, re-exports, and asserts textual bytes — never native XML.
+missing. Probe and export Facts are green on this machine. The fourth Fact copies the
+committed fixture aside, mutates one `.scl`, imports the planner's plan, re-exports, and
+asserts the mutation in **textual** files — never native XML. **It is red:** generate
+does not put the body back (Findings).
 
 ---
 
@@ -369,13 +371,16 @@ have to re-derive it.
 
 ### Next (PLC-program parity with the first vendor)
 
-1. ~~**Import has not been run against live Portal.**~~ — **gated 2026-08-19.** The C#
-   gate copies the fixture, mutates one `.scl`, imports, re-exports, asserts textual
-   bytes. Still run `Measure-ImportStability.ps1` (P7 SETTLES) on a copy under
-   `.versio/local/tia/`. Never the OneDrive original.
+1. **`GenerateBlocksFromSource` does not overwrite.** The C# Fact ran against live
+   Portal and failed: KeepOnError cloned `BoolToDigVal_1`; zero-arg dropped `Level.scl`
+   from the re-export while reporting success. Fix that, then
+   `Measure-ImportStability.ps1` (P7 SETTLES) on a copy under `.versio/local/tia/`.
+   Never the OneDrive original. A host rebuild needs **Yes to all** on Openness access.
 2. ~~**The host's import only finds blocks.**~~ — **done 2026-08-19.** `FindObject`
-   walks `TypeGroup` and `TagTableGroup` as well as `BlockGroup`. `TryDelete` keeps the
-   object and warns when `Delete()` is missing or throws. Export emits `progress`.
+   walks `TypeGroup` and `TagTableGroup` as well as `BlockGroup`. Native apply routes
+   tag tables to `TagTables.Import` (`Blocks.Import` was "out of context"). `TryDelete`
+   keeps the object and warns when `Delete()` is missing or throws. Export emits
+   `progress`. Host is split along those methods.
 3. **Two unchanged textual exports have not been shown byte-identical.** Native XML is
    expected to differ (G12: SimaticML beside SCL is `XML_REVIEW` and is never applied).
 4. **The app has not been eyeballed against a TIA project it is allowed to adopt.** This

@@ -17,6 +17,39 @@ produce a diff touching everything else.
 
 ---
 
+### TIA GenerateBlocksFromSource does not put a mutated SCL back on re-export
+
+**Found 2026-08-19**, `TiaPortalGateTests.Import_then_reexport_keeps_textual_bytes` on a
+copy of CleaningStation. Locator, probe and export are green. The Fact copies the LFS
+fixture, exports, mutates one `.scl`, imports the planner's ApplyText for that file,
+re-exports, and looks for the mutation in textual files. Native XML is not compared.
+
+Import reports success (`ChangedPaths` names the file). Re-export does not carry the
+edit. Measured in order:
+
+- Header comment, extra `VAR`, `REGION`, then `IF FALSE THEN (* ident *)` in `BEGIN` —
+  none survived.
+- `GenerateBlockOptions` is `None | KeepOnError` on V21, not `Overwrite`. Falling back
+  to enum value 1 called `KeepOnError` and created `BoolToDigVal_1.scl` beside the live
+  block; the original was missing from the next export.
+- Zero-argument `GenerateBlocksFromSource()` — V21's documented overwrite — applied
+  `Level.scl` without throwing, then **Level was absent from the re-export**.
+  `BoolToDigVal.scl` was back. The object was not renamed; it simply did not generate
+  source.
+
+Header comments and extra interface members were already the wrong mutation: generate
+rebuilds the interface from the object. A body statement should have been the right
+one. It still did not round-trip.
+
+**Still open.** The next session starts here. Scratch copy only; never the OneDrive
+original. A host rebuild needs **Yes to all** on Openness access.
+
+**What was rejected:** asserting the whole textual tree byte-identical (that is item 7.3,
+and the file *set* already differed); treating AllowList as the failure (runs finished in
+~90 s, not the 9-minute unanswered-dialog timeout).
+
+---
+
 ### The App session treated every repository as the first vendor
 
 **Found 2026-08-19**, audit of the second pack. The pack split was already right: Core has

@@ -5,7 +5,8 @@
 A PLC project file is a binary compound document. Git can store it, but it cannot diff it, merge it, or tell you what changed — so version control degrades to "upload a zip with a date in the name". Versio keeps a **textual mirror** of the project inside the same repository, kept in sync automatically, so git becomes genuinely useful for PLC work: line diffs, blame, history, review.
 
 **CODESYS 3.5 is implemented today. TIA Portal is the second pack** — seen, probed, and
-round-tripped for PLC software once Openness membership is granted. Rockwell Studio 5000 and
+exported for PLC software once Openness membership is granted; SCL import generate is
+the remaining hole (`PHASE2.md` item 7). Rockwell Studio 5000 and
 Beckhoff TwinCAT remain intended next vendors. The code is organised so adding one is additive
 — a rule enforced by a test that reads assembly metadata, not by a paragraph here.
 
@@ -89,7 +90,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | **Export coverage stated, not assumed** — `_coverage.md` + every skip in the manifest | ✅ a gap is distinguished from a deliberate omission; an old manifest reports "unknown", never "complete"; and **an object the export could not write at all is reported rather than counted as covered** — it reaches neither the records nor the skips, so until 2026-08-16 a lost object left a verdict of "everything reaches the mirror" |
 | **Library references exported** (`<manager>.libraries.yaml`) | ✅ **the gap is closed.** One file per library manager, beside the object that owns it — 21 references on the fixture's application, 13 on its project, **all 34 placeholders**. Hand-written YAML on both sides, no third-party dependency. Export-only: change libraries in the IDE. A **fixed-version** reference records its version, company and title parsed from its own name, which is project state — reading them off `managed_library` reports what the exporting machine has *installed*, and answers nothing at all for a library it does not have |
 | Template generation | ⛔ needs a new operation and script — not assembly |
-| A second vendor — TIA Portal | ✅ the second pack; PLC software round-trips once Openness membership is granted. TwinCAT / Studio 5000 are not started |
+| A second vendor — TIA Portal | ✅ the second pack; probe and export are gated. **SCL import generate does not yet overwrite** — see `PHASE2.md` item 7. TwinCAT / Studio 5000 are not started |
 | **Git side panel** — staging, commit message, fetch/pull/push | ✅ one operation at a time across every button |
 | **Changed files named as objects** — `FB_Motor · POU`, not `src/…/POU/FB_Motor.st` | ✅ resolved through the export manifest, so it costs no extra read. A file the manifest does not describe stays a path and is **never** guessed at. A library-reference file carries a lock: editing it does not reach the project |
 | **Change summary and drafted commit subject** — *"1 GVL and 1 POU changed in RefrigeratorControl"*, and a **Draft** button that writes `Modify FB_Motor, Glob_Var` | ✅ counted by object, not by file — one GVL is two files and one edit. Both describe exactly what the commit button will record, and Draft refuses to overwrite anything you have typed |

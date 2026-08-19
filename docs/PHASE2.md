@@ -205,22 +205,24 @@ safety are coverage skips. The gate fixture is committed at
 adoption). Driving notes — setup, Openness members, occupancy, identity — live in
 [`docs/vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md).
 
-**What is left, in order** — the pack and the directory seam are measured; the session
-used to pin `PlcFormats.All[0]` (see Findings). Import has a skippable C# gate. What
-remains:
+**What is left, in order** — the pack, the directory seam, and the App session pin are
+done (see Findings). Import has a skippable C# gate that is **red on generate**. Work
+only on a copy of the LFS fixture. Click **Yes to all** after a host rebuild.
 
-1. ~~**A mutating round-trip against a copy**~~ — **gated 2026-08-19.**
-   `TiaPortalGateTests.Import_then_reexport_keeps_textual_bytes` copies the committed
-   fixture aside, exports, mutates one `.scl`, imports the planner's plan, re-exports,
-   and asserts **textual** bytes. Native XML is not compared. Still: run
-   `Measure-ImportStability.ps1` for P7 SETTLES; never the OneDrive original.
+1. **`GenerateBlocksFromSource` does not overwrite the live SCL block.** The Fact
+   `Import_then_reexport_keeps_textual_bytes` is the gate. KeepOnError created
+   `*_1` clones; the documented zero-arg call dropped `Level.scl` from the next
+   export. See Findings. Then `Measure-ImportStability.ps1` on `.versio/local/tia/`
+   (P7 SETTLES). Never the OneDrive original.
 2. ~~**Host import that is not only `BlockGroup`.**~~ — **done 2026-08-19.**
    `FindObject` walks `BlockGroup`, `TypeGroup` (`…/UDT/{name}`) and `TagTableGroup`
-   (`…/TAG_TABLE/{name}`), the same identity strings export writes. Delete is
-   `Delete()` when present; a missing method or a throw keeps the object and warns.
-   Export emits `progress` (`phase` + `detail`). `HostApp` is split along those methods.
+   (`…/TAG_TABLE/{name}`). `TryDelete` keeps the object and warns when `Delete()` is
+   missing or throws. Native apply routes by identity (tag tables to `TagTables.Import`
+   — `Blocks.Import` failed "out of context"). Export emits `progress`. `HostApp` is
+   split along those methods.
 3. **Export determinism** — two textual exports of an unchanged project, byte-identical.
-   Native XML is expected to differ (G12).
+   Native XML is expected to differ (G12). The import Fact already saw the textual *set*
+   differ after a generate; do not fold that into this item until generate is honest.
 4. **The app loop on a TIA project that is not this repository's ignored fixture** —
    adopt, first export, panel, direction lock, confirmed import, restore of a ~500 MB
    tree. Neutral code should do it; it has not been eyeballed.
@@ -328,10 +330,13 @@ listed here even though every one lives in an archived document.
 
 1. Read `CLAUDE.md` end to end — the rules are load-bearing and each one names what it cost.
 2. Read `STATUS.md` *Where the project actually is* and *Known loose ends*.
-3. Pick from the queue above — item 1 unless something changed.
+3. Pick from the queue above — **item 7.1** (TIA `GenerateBlocksFromSource` overwrite)
+   unless the owner says otherwise. Items 1–6 are done except the eyeball pass.
 4. The loop: `Versio.Core.Tests` + `Versio.Integration.Tests` + `Versio.Arch.Tests` +
-   `Versio.Plc.Codesys.Pure.Tests` + `Versio.Plc.Codesys.Parity.Tests`, about thirty seconds;
-   `Versio.App.Tests` when the UI is in play; `Versio.Plc.Codesys.Tests` is the gate before a
-   commit — half an hour, every test launches real CODESYS.
+   `Versio.Plc.Codesys.Pure.Tests` + `Versio.Plc.Codesys.Parity.Tests` +
+   `Versio.Plc.TiaPortal.Pure.Tests`, about thirty seconds; `Versio.App.Tests` when the
+   UI is in play. Item 7.1 is gated by `Versio.Plc.TiaPortal.Tests` (live Portal, copy
+   of the LFS fixture, **Yes to all** after a host rebuild). `Versio.Plc.Codesys.Tests`
+   is the CODESYS gate before a commit — half an hour.
 5. When something surprises you, search `FINDINGS.md` before deriving it from scratch — an
    audit once re-derived, over an hour, what was already written there by name.
