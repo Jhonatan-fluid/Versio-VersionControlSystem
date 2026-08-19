@@ -92,7 +92,7 @@ it by an import, rather than both being adopted as though a commit had vetted th
 | **UX-1** | **Merging a branch into the current one is not implemented at all** | medium | The one missing *verb*. And the one place Versio can beat a terminal outright |
 | **UX-2** | The rail carries no counts, so the app is blind from two of its three panels | small | Cheapest large win; the user asked for it by name |
 | **UX-3** | The rare branch actions have no container, so each one lands as furniture | small | The fix is a shape, not a move — and it is where UX-1 lives |
-| **UX-4** | The two list headers say no count, and run into each other once there is one to say | small | A live layout defect, **and a test named for it that cannot reach the failing state** |
+| ~~**UX-4**~~ | ~~The two list headers say no count, and run into each other once there is one to say~~ — **done 2026-08-18** | small | A live layout defect, **and a test named for it that cannot reach the failing state** |
 | **UX-5** | The git panel's lists have no context menu and no double-click | small | The project tree got one this session; the panel about those same files did not |
 | **UX-6** | Nothing in the git panel or the history can be searched | small | The project panel has a find box. The list with four hundred rows does not |
 | **UX-7** | The keyboard reaches three things | small | Panel switching is the most frequent act in the app and has no key |
@@ -299,11 +299,48 @@ third and fourth rare verb are covered by it too.
 
 ---
 
-## UX-4 · The two list headers say no count, and run into each other once there is one to say
+## ~~UX-4 · The two list headers say no count, and run into each other once there is one to say~~ — **done, 2026-08-18**, `9e7f598`
 
 Two halves of one row, and they must be fixed together — because **fixing the first alone makes
 the second worse.** Adding a count to a header that already overflows widens the thing that
 overflows.
+
+> **What actually happened**, kept because three things came out differently from the plan.
+>
+> **The diagnosis was wrong about the trigger.** This document blamed the growing button labels.
+> Measured: the `NOT STAGED` row overflows at 260 px **with the short labels too** — 317 px
+> against a 304 px edge — and the three-digit counts only take it to 330. The narrow column is
+> the cause; the labels are an aggravator. And it never overflows at 380 px, ticked or not, so
+> the "reported from the running app" case was only ever reachable on a panel somebody had
+> dragged narrower — which is persisted, so it stays that way.
+>
+> **The sequencing claim was right, and the mutation proved it harder than expected.** Putting
+> the rigid column back with the *new* longer header fails at **380 px as well** (435 against
+> 424), where the old bare label passed. UX-4a shipped alone would have broken the default
+> width.
+>
+> **There was a fourth reason the test could not fail**, on top of the three written up here:
+> its `PanelWidth = 380` constant was never read by anything. The width came only from the
+> XAML's own `Width="380"`, so the constant documented the test's premise and enforced nothing.
+>
+> **And one correction to this document's own proposal.** It said to drop the `ActualWidth > 0`
+> filter. Dropping it outright is wrong: a child of a *collapsed* parent still reports
+> `Visibility.Visible` for itself, so the conflict section's buttons — not on screen — began
+> reporting as the widest thing in the panel. The width clause had been doing ancestor
+> filtering by accident. It is an explicit ancestor walk now, and deliberately not
+> `UIElement.IsVisible`, which needs a presentation source these tests never create and would
+> make the whole assertion vacuous.
+>
+> **Not built:** the button-label ceiling and the bare-verb fallback. The header merge alone
+> brought both widths inside the panel, so the fallback had nothing left to fix — and a rule
+> with no reachable case is a rule with no caller. It stays described here rather than
+> implemented, and comes back if a fourth button or a longer verb ever needs it.
+>
+> **Also landed with it**, unplanned and found by the double pass: `OnStagingListChanged` now
+> raises the whole selection state rather than only the commit button. A header carrying the
+> list's own total would otherwise have frozen at its first value — it happened to work only
+> because `UpdateStagingLists` raises it too, which left the `CollectionChanged` funnel and one
+> of its callers jointly responsible for a rule only one of them stated.
 
 ### 4a · The headers do not say how many
 

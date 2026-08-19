@@ -24,6 +24,17 @@ suite is seven projects, 2,319 tests, split by need — the half-hour CODESYS ga
 | [`FINDINGS.md`](FINDINGS.md) | Every defect with its evidence, newest first — search it |
 | [`SAFEGUARDS.md`](SAFEGUARDS.md) | What Versio refuses, asks about or waits for |
 | [`vendors/codesys/DRIVING.md`](vendors/codesys/DRIVING.md) | How CODESYS is driven — API traps, forms, events, manifest schema |
+| [`UX-PLAN.md`](UX-PLAN.md) | **A plan, and the one live one** — thirteen UX findings over the running shell, ranked, each with its evidence. Opened 2026-08-18. Item 6's human eyeball pass is still owed and this is not it |
+
+**`UX-PLAN.md` is where the shell's remaining UX work lives, and it is not copied here** — one
+claim in one place, which is the defect the Phase 1 documents caught in themselves five separate
+times. What it carries that this file should know about: **two probes, `P-M1`/`P-M2`, ranked
+above its own queue**, because they are a correctness question about *shipped* code rather than
+about the plan. A merge resolves the `binary -diff -merge` `.project` to one side verbatim while
+the mirror beside it gets a real three-way merge, and `AdoptExternalStateAsync` then re-baselines
+both as though a commit had vetted them — an invariant its own remarks state, which holds for a
+checkout and a pull and not for a merge. Predicted, not measured. **Do not build the merge verb
+on top of it unmeasured.**
 
 ---
 

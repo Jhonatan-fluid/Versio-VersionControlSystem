@@ -17,6 +17,70 @@ produce a diff touching everything else.
 
 ---
 
+### A test named for the overflow it was watching could not reach the overflowing state
+
+**Reported by the product owner on 2026-08-18**, from the running app: *"the staged and not
+staged lists get cluttered, when there are multiple changes the labels start overlapping"*.
+
+**The layout defect is ordinary.** Both list headers were `Auto | Auto | * | Auto` — checkbox,
+label, caption, buttons. A WPF `Grid` measures every `Auto` column against infinity and hands
+each its full desired width; the star column takes the remainder, floored at zero and never
+negative. So once the `Auto` columns together wanted more than the row had, the star collapsed
+to nothing, the `Auto`s kept their width regardless, and the row arranged **past** the panel —
+over the splitter and the diff pane, because nothing in that chain clips. `NOT STAGED` sat in
+one of those `Auto` columns in the letter-spaced `SectionLabel` face, rigid, while
+`StagingSelection.Label` grew the buttons beside it into `Discard 127` and `Stage 127`.
+
+**What is worth recording is not that. It is that the test existed.**
+`GitPanelGeometryTests.Nothing_overflows_the_panel_sideways` walks every visible child of the
+panel and asserts that none crosses its right edge. It is named for this failure, it was written
+for this failure, and it passed — **for four independent reasons**, each of which is available
+to any fixture:
+
+1. **It measured one width.** `PanelWidth = 380`, which the class comment called *"the panel's
+   real column width"*. It is the **default**. `PanelColumn` is `Width="380" MinWidth="260"`,
+   and the chosen width is **persisted** — so a panel dragged narrow once is narrow on every
+   later launch, and 120 px of the budget can be gone before a single row is drawn.
+2. **That constant was never read by anything.** The 380 arrived only from the XAML's own
+   `Width="380"`. The constant documented the test's premise and enforced none of it — so a
+   reader checking "does this measure the narrow case?" would find a named width and a comment
+   saying yes, and both were decoration.
+3. **Nothing in the fixture was ever ticked.** It added 4 staged and 12 unstaged rows and never
+   set `IsSelected`, so every button rendered its short `"{verb} all"` caption and **both header
+   captions were the empty string**. Twelve rows also caps every count at two digits. The widest
+   state the header can reach was not merely untested — it could not be constructed.
+4. **And the assertion then filtered it out anyway.** It ran on
+   `Visibility == Visible && ActualWidth > 0`. An empty `TextBlock` measures zero wide, so the
+   one control in each row *designed to absorb the slack* was excluded from the only test
+   watching the row.
+
+**Measured, once the fixture could reach it.** At 260 px the `NOT STAGED` row — two buttons
+where `STAGED` has one — reached 317 px against a 304 px edge with the short labels, and 330 px
+with three-digit counts. **The plan's diagnosis was wrong about the trigger**: it blamed the
+growing labels, and the row overflows with the short ones too. The narrow column is the cause;
+the labels are an aggravator. At 380 px it never overflowed at all, ticked or not.
+
+**The fix and its own trap.** Label and count became one trimming run in the star column, which
+removes the rigid `Auto` outright. The mutation check — restore the rigid column — fails at
+**380 px as well** (435 against 424), because the header text is longer now. That is the
+evidence for the sequencing rule this was planned under: **adding the count alone, without the
+column merge, would have broken the default width too.**
+
+**And one correction made during the work.** The first attempt simply deleted the
+`ActualWidth > 0` filter. That is wrong: a child of a **collapsed** parent still reports
+`Visibility.Visible` for itself, so the conflict section's buttons — not on screen — immediately
+began reporting as the widest thing in the panel. The width clause had been doing
+ancestor-visibility filtering *by accident*. It is an explicit ancestor walk now, and
+deliberately not `UIElement.IsVisible`, which additionally requires a presentation source these
+tests never create and would have made the whole assertion vacuous.
+
+**The lesson, which is the reason this is here.** A test that cannot construct the failing state
+is indistinguishable from a test that passes, and this one carried a name, a comment and a
+constant all asserting it covered the case it could not reach. Green was never evidence. The
+question that found it was not *"is this tested?"* but *"can this test fail?"*.
+
+---
+
 ### Properties are readable now: the payload imports, the text is for people
 
 **Asked for by the product owner on 2026-08-18**, looking at the panel: *"properties are still
