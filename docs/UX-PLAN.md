@@ -82,6 +82,27 @@ it by an import, rather than both being adopted as though a commit had vetted th
 **It also changes UX-1's cost and its order.** UX-1 must not ship on top of an unmeasured
 `AdoptExternalStateAsync`, because it would make a rare path into a routine one.
 
+> ### Probe run, 2026-08-18 — and step 5 above was wrong
+>
+> **Attempting P-M1 disproved its own premise before reaching the question.** Step 5 says the
+> `.project` is written `binary -diff -merge` so git *cannot* merge it. Asked directly,
+> `git check-attr merge` on the fixture answered **`lfs`, not `unset`**: `GitAttributesPlan`
+> appended `filter=lfs diff=lfs merge=lfs` to the same line, later attributes win, and
+> `merge=lfs` cancelled the `-merge` six tokens earlier — on every machine with LFS installed,
+> which is exactly the machines those tokens were added for. `merge=lfs` also names a driver
+> git-lfs does not install, so git fell back to a three-way **text** merge of the pointer file
+> and produced an LFS pointer with `<<<<<<< HEAD` inside it.
+>
+> Written up in full in `FINDINGS.md`, measured on two throwaway repositories differing only in
+> that line, and **fixed** — one token deleted, plus this repository's own committed
+> `.gitattributes`.
+>
+> **P-M1 itself has still not run.** The prediction above is neither confirmed nor refuted: it
+> remains true that resolving a `.project` conflict by picking a side leaves one branch's
+> project against a three-way-merged mirror, and `AdoptExternalStateAsync` still re-baselines
+> both. What changed is that the first link was broken in a different way and had to be repaired
+> before the rest could be measured at all. **UX-1 stays gated.**
+
 ---
 
 ## The queue, ranked

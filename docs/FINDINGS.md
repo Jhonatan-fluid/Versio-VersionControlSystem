@@ -17,6 +17,81 @@ produce a diff touching everything else.
 
 ---
 
+### `merge=lfs` quietly cancelled the `-merge` two tokens to its left
+
+**Found on 2026-08-18** while trying to run probe P-M1 — the question of what a merge does to a
+`.project` and its mirror. The probe never got that far, because its first step disproved the
+premise everything above it rested on.
+
+**`GitAttributesPlan` writes one line per project pattern:**
+
+```
+*.project        binary -diff -merge filter=lfs diff=lfs merge=lfs
+```
+
+and its own comment calls `-diff -merge` *"the part that matters"* — without it "git will attempt
+a line merge on a binary compound document and produce a file that opens in neither CODESYS nor
+a text editor". **Later attributes win.** `merge=lfs`, six tokens along the same line, overrode
+it. Asked directly:
+
+```
+$ git check-attr merge fixtures/projects/RefrigeratorControl.project
+fixtures/projects/RefrigeratorControl.project: merge: lfs
+```
+
+`lfs`, not `unset`. On every machine with LFS installed — which is precisely the machines the LFS
+tokens were added for.
+
+**And `merge=lfs` names a driver that does not exist.** git-lfs installs `filter.lfs.*` and
+`diff.lfs.*`; it does **not** install a `merge.lfs.driver`, and nothing in Versio writes one. Git
+falls back to the built-in three-way **text** merge — applied to the LFS pointer file.
+
+**Measured on two throwaway repositories differing only in that line**, each with a base commit
+and two branches editing the same binary:
+
+| line | git says | working tree afterwards |
+|---|---|---|
+| `binary -diff -merge` | `warning: Cannot merge binary files` | the **intact binary**, conflict raised |
+| `… -merge filter=lfs diff=lfs merge=lfs` | `Auto-merging App.project` | an **LFS pointer with `<<<<<<< HEAD` inside it** |
+
+git-lfs itself noticed and complained on the second: *"Encountered 1 file that should have been
+a pointer, but wasn't"*. A pointer carrying conflict markers no longer resolves to any object —
+commit it and the binary is unreachable from that commit.
+
+**How exposed Versio actually was.** Narrower than it looks, and worth stating precisely rather
+than dramatising. The conflict is still *raised*, so nothing is silently wrong; and Versio's own
+conflict section resolves through `git checkout --ours/--theirs`
+(`ResolveWithSideAsync`), which replaces the file wholesale and restores a clean pointer. The
+danger is the paths that do not go through it: resolving in a text editor, or staging and
+committing the marker-laden pointer because the panel reported a conflict and the file "looked
+like text".
+
+**The fix is to delete one token.** `filter=lfs diff=lfs` stay — they name real, installed
+behaviours and are what make the binary stored and displayed sensibly. Only `merge` goes, and
+`check-attr` then answers `merge: unset`. This repository's own committed `.gitattributes` was
+rewritten the same way, on the four project patterns that carry `-merge`; the `third_party/**`
+lines keep theirs, because they never had a `-merge` to protect.
+
+**The test that should have caught it pinned the defect instead.** `GitAttributesTests` asserted
+
+```csharp
+Assert.Contains("filter=lfs diff=lfs merge=lfs", with.Content);
+```
+
+— the literal string the code emitted, which is a test that the code does what the code does. It
+asserts the *rule* now: `-merge` present, `merge=lfs` absent, `filter` and `diff` still there.
+The general shape is the same one this log recorded twice already this week: a test written
+against the implementation rather than against the behaviour cannot fail when the implementation
+is the thing that is wrong.
+
+**What it means for the merge verb (UX-1).** The original prediction — that a merge leaves the
+project and its mirror disagreeing — is *not* disproved; it is still true that resolving a
+`.project` conflict by picking a side gives you one branch's project against a three-way-merged
+mirror. What changed is that the first link in that chain was worse than described, and had to be
+fixed before the rest could be measured at all. P-M1 proper still has to run.
+
+---
+
 ### Two rail buttons lit at once, because grouping was a property of the nesting
 
 **Reported by the product owner on 2026-08-18**, with a screenshot, against a change made

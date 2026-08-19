@@ -45,8 +45,35 @@ public sealed class GitAttributesTests
         Assert.DoesNotContain("lfs", without.Content, StringComparison.OrdinalIgnoreCase);
         Assert.False(without.UsesLfs);
 
-        Assert.Contains("filter=lfs diff=lfs merge=lfs", with.Content);
+        Assert.Contains("filter=lfs diff=lfs", with.Content);
         Assert.True(with.UsesLfs);
+    }
+
+    [Fact]
+    public void The_lfs_tokens_never_hand_the_merge_back_to_git()
+    {
+        // THIS IS THE ONE THAT WAS MISSING, AND ITS ABSENCE SHIPPED.
+        //
+        // The line used to end "filter=lfs diff=lfs merge=lfs", which is what every LFS
+        // tutorial prints. Later attributes win, so merge=lfs silently overrode the -merge
+        // two tokens earlier: `git check-attr merge` answered `lfs` rather than `unset` on
+        // every machine with LFS installed. And merge=lfs names a driver git-lfs does not
+        // install, so git fell back to a three-way TEXT merge - of the pointer file.
+        //
+        // Measured on two throwaway repositories differing only in this line: with -merge in
+        // force git says "Cannot merge binary files" and leaves the binary intact; with
+        // merge=lfs it silently writes an LFS pointer with <<<<<<< inside it.
+        //
+        // The test that was here asserted the literal string "filter=lfs diff=lfs merge=lfs",
+        // so it pinned the defect rather than the rule. This asserts the rule.
+        var plan = GitAttributes.Plan(string.Empty, ["*.project"], lfsAvailable: true);
+
+        Assert.Contains("-merge", plan.Content);
+        Assert.DoesNotContain("merge=lfs", plan.Content);
+
+        // filter and diff stay: those name real, installed behaviours. Only merge goes.
+        Assert.Contains("filter=lfs", plan.Content);
+        Assert.Contains("diff=lfs", plan.Content);
     }
 
     [Fact]

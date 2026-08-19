@@ -97,9 +97,32 @@ public static class GitAttributes
 
         var width = missing.Concat(missingMirrors).Max(p => p.Length);
 
+        // NO merge=lfs, AND THAT OMISSION IS THE WHOLE POINT OF THIS LINE.
+        //
+        // It used to read "filter=lfs diff=lfs merge=lfs", which is what every LFS tutorial
+        // prints - and later attributes win, so merge=lfs SILENTLY OVERRODE the -merge two
+        // tokens earlier. `git check-attr merge` on a .project answered `lfs`, not `unset`,
+        // on every machine with LFS installed: precisely the machines the LFS tokens were
+        // added for.
+        //
+        // What that cost, measured on two throwaway repositories differing only in this line:
+        //
+        //   -diff -merge                    warning: Cannot merge binary files
+        //                                   working tree keeps the intact binary, conflict raised
+        //
+        //   -merge ... merge=lfs            no warning, git text-merges the POINTER
+        //                                   working tree gets an LFS pointer with <<<<<<< in it
+        //
+        // merge=lfs names a driver that git-lfs does not install - there is no
+        // merge.lfs.driver in anybody's config - so git falls back to the built-in three-way
+        // text merge. Naming a driver that does not exist is worse than naming none, because
+        // it is what disables the protection that does.
+        //
+        // filter=lfs and diff=lfs stay: those name real, installed behaviours and are what
+        // make the binary stored and shown sensibly. Only the merge token goes.
         var rules = missing.Select(p =>
             $"{p.PadRight(width)} binary -diff -merge" +
-            (lfsAvailable ? " filter=lfs diff=lfs merge=lfs" : string.Empty));
+            (lfsAvailable ? " filter=lfs diff=lfs" : string.Empty));
 
         // The opposite rule, for the opposite reason: the mirror exists to be diffed and
         // merged, and it has to arrive byte-identical on every machine that clones it.

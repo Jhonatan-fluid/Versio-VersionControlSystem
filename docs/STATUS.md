@@ -1,11 +1,11 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,521 across seven
+**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,522 across seven
 projects, 0 skipped — re-derived by running each, not carried forward
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,392 | under a second | nothing |
+| `Versio.Core.Tests` | 1,393 | under a second | nothing |
 | `Versio.Integration.Tests` | 147 | ~10 s | real git |
 | `Versio.App.Tests` | 562 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 14 | instant | nothing |
@@ -1013,6 +1013,7 @@ actually do.
 
 The full list, newest first:
 
+- [`merge=lfs` quietly cancelled the `-merge` two tokens to its left](FINDINGS.md#mergelfs-quietly-cancelled-the--merge-two-tokens-to-its-left)
 - [Two rail buttons lit at once, because grouping was a property of the nesting](FINDINGS.md#two-rail-buttons-lit-at-once-because-grouping-was-a-property-of-the-nesting)
 - [A test named for the overflow it was watching could not reach the overflowing state](FINDINGS.md#a-test-named-for-the-overflow-it-was-watching-could-not-reach-the-overflowing-state)
 - [Properties are readable now: the payload imports, the text is for people](FINDINGS.md#properties-are-readable-now-the-payload-imports-the-text-is-for-people)
