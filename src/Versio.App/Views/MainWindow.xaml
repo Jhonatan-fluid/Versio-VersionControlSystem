@@ -426,7 +426,7 @@
                              IsChecked="True" Tag="Project" GroupName="Rail"
                              Content="{DynamicResource Icon.Document}"
                              Checked="OnRailChanged"
-                             ToolTip="Project — the repository as CODESYS structures it, with every change marked" />
+                             ToolTip="Project — the repository as CODESYS structures it, with every change marked (Ctrl+1)" />
                 <!-- THE COUNT LIVES HERE, NOT IN A PANEL TITLE.
 
                      It used to be a pill in the panel header that the shell drew on the
@@ -451,7 +451,7 @@
                                  Tag="Git" GroupName="Rail"
                                  Content="{DynamicResource Icon.Link}"
                                  Checked="OnRailChanged"
-                                 ToolTip="Git — staging, commit, pull and push" />
+                                 ToolTip="Git — staging, commit, pull and push (Ctrl+2)" />
 
                     <!-- NO BACKGROUND, DELIBERATELY, AND IT USED TO HAVE ONE.
 
@@ -490,7 +490,7 @@
                              Tag="History" GroupName="Rail"
                              Content="{DynamicResource Icon.History}"
                              Checked="OnRailChanged"
-                             ToolTip="History — commits, the files in each, and their diffs" />
+                             ToolTip="History — commits, the files in each, and their diffs (Ctrl+3)" />
             </StackPanel>
         </Border>
 

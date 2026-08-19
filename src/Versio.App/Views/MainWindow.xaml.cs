@@ -69,6 +69,42 @@ public partial class MainWindow : Window
         SyncThemeRadios();
 
         InputBindings.Add(new KeyBinding(shell.RefreshCommand, Key.F5, ModifierKeys.None));
+
+        // CTRL+1/2/3 FOR THE RAIL.
+        //
+        // Switching panels is the most frequent thing anybody does in this window and cost a
+        // mouse trip every time. On the WINDOW rather than the rail, because the point is to
+        // reach it from wherever you are - reading a diff, typing a commit message, filtering
+        // the log - and a binding scoped to the rail would only work once the rail had focus,
+        // which is the moment you no longer need a shortcut.
+        //
+        // Through the rail buttons rather than by setting ActivePanel, because OnRailChanged
+        // is what actually shows the panel and tells the history it is being looked at. A
+        // shortcut that set the property directly would light the wrong button and leave the
+        // panel where it was — and it would be the second thing deciding which panel shows,
+        // which is the defect this file's own comments warn about twice.
+        Bind(Key.D1, "RailProject");
+        Bind(Key.D2, "RailGit");
+        Bind(Key.D3, "RailHistory");
+
+        // NumPad as well as the number row. A full-size keyboard on a workshop desk is exactly
+        // where this application runs, and Ctrl+NumPad1 doing nothing is the kind of small
+        // wrongness nobody reports.
+        Bind(Key.NumPad1, "RailProject");
+        Bind(Key.NumPad2, "RailGit");
+        Bind(Key.NumPad3, "RailHistory");
+
+        void Bind(Key key, string rail) =>
+            InputBindings.Add(new KeyBinding(
+                new RelayCommand(() =>
+                {
+                    if (FindName(rail) is RadioButton button)
+                    {
+                        button.IsChecked = true;
+                    }
+                }),
+                key,
+                ModifierKeys.Control));
     }
 
     /// <summary>

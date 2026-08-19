@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Media;
 using Versio.App.ViewModels;
 using Versio.Core.Git;
@@ -357,6 +358,69 @@ public sealed class MainWindowTests
                 // measures through it.
                 popup.IsOpen = false;
             }
+        });
+    }
+
+    /// <summary>
+    /// Ctrl+1/2/3 reach the rail, and say so where somebody would look.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Both halves, because the second is most of the value.</b> A key nobody can find is a
+    /// key nobody has — the rule §10.6 established when Ctrl+Shift+P went into the push
+    /// button's own tooltip. The binding without the advertisement is a feature only its author
+    /// uses.
+    /// </para>
+    /// <para>
+    /// The command is invoked rather than a keystroke synthesised: WPF's input plumbing needs a
+    /// focused, presented window, and this one is never shown. What is being checked is that
+    /// the gesture is bound to something that switches the panel — not that Windows delivers
+    /// keys, which is not this application's to prove.
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [InlineData(Key.D1, "ProjectPanel", "Ctrl+1")]
+    [InlineData(Key.D2, "GitPanel", "Ctrl+2")]
+    [InlineData(Key.D3, "HistoryPanel", "Ctrl+3")]
+    [InlineData(Key.NumPad1, "ProjectPanel", "Ctrl+1")]
+    [InlineData(Key.NumPad2, "GitPanel", "Ctrl+2")]
+    [InlineData(Key.NumPad3, "HistoryPanel", "Ctrl+3")]
+    public void The_rail_is_reachable_from_the_keyboard(Key key, string panel, string advertised)
+    {
+        StaHarness.Run(() =>
+        {
+            var window = Build();
+
+            var binding = window.InputBindings
+                .OfType<KeyBinding>()
+                .SingleOrDefault(b => b.Key == key && b.Modifiers == ModifierKeys.Control);
+
+            Assert.True(binding is not null, $"nothing is bound to Ctrl+{key}");
+
+            binding!.Command.Execute(null);
+
+            var shown = Assert.IsAssignableFrom<FrameworkElement>(window.FindName(panel));
+            Assert.Equal(Visibility.Visible, shown.Visibility);
+
+            // And every other panel went away with it — the shortcut goes through the rail
+            // button, so the exclusion the rail already guarantees applies here too.
+            foreach (var other in new[] { "ProjectPanel", "GitPanel", "HistoryPanel" }
+                         .Where(p => p != panel))
+            {
+                var hidden = Assert.IsAssignableFrom<FrameworkElement>(window.FindName(other));
+                Assert.Equal(Visibility.Collapsed, hidden.Visibility);
+            }
+
+            // Advertised where somebody would look for it.
+            var rail = Assert.IsType<RadioButton>(window.FindName(
+                panel.Replace("Panel", string.Empty) switch
+                {
+                    "Project" => "RailProject",
+                    "Git" => "RailGit",
+                    _ => "RailHistory",
+                }));
+
+            Assert.Contains(advertised, rail.ToolTip?.ToString() ?? string.Empty);
         });
     }
 

@@ -155,7 +155,7 @@ it by an import, rather than both being adopted as though a commit had vetted th
 | ~~**UX-4**~~ | ~~The two list headers say no count, and run into each other once there is one to say~~ — **done 2026-08-18** | small | A live layout defect, **and a test named for it that cannot reach the failing state** |
 | ~~**UX-5**~~ | ~~The git panel's lists have no context menu and no double-click~~ — **done 2026-08-18** | small | The project tree got one this session; the panel about those same files did not |
 | **UX-6** | Nothing in the git panel or the history can be searched | small | The project panel has a find box. The list with four hundred rows does not |
-| **UX-7** | The keyboard reaches three things | small | Panel switching is the most frequent act in the app and has no key |
+| ~~**UX-7**~~ | ~~The keyboard reaches three things~~ — **partly done 2026-08-18**: the rail has keys; the find boxes and Escape do not | small | Panel switching is the most frequent act in the app and has no key |
 | **UX-8** | A commit in the history cannot be acted on, or even copied | small | Read-only by design is a decision; *un-copyable* is not |
 | **UX-9** | `+2 more` is a dead end | trivial | A count with nothing behind it |
 | **UX-10** | Detached HEAD says the sentence and does not offer the exit | trivial | §9e is built except for the half that was its point |
@@ -640,7 +640,19 @@ would take — the trap, and the reason the filter must never touch the ticks.
 
 ---
 
-## UX-7 · The keyboard reaches three things
+## UX-7 · The keyboard reaches three things — **partly done, 2026-08-18**
+
+> **Done:** `Ctrl+1/2/3` for the rail, on the window rather than the rail so it works from
+> wherever focus is, and **NumPad 1/2/3 as well** — a full-size keyboard on a workshop desk is
+> exactly where this runs. Routed through the rail buttons rather than `ActivePanel`, so
+> `OnRailChanged` stays the one thing deciding which panel shows. Advertised in each rail
+> tooltip, per §10.6: a key nobody can find is a key nobody has, and both halves are
+> mutation-checked.
+>
+> **Not done:** `Ctrl+F` to the active panel's find box — it waits on UX-6, which is what
+> creates two of the three boxes — and `Escape` to close the settings popup and the
+> ahead/behind preview. Both popups already close on a click outside (`StaysOpen="False"`), so
+> Escape is a refinement rather than a gap.
 
 **Today.** `F5` refresh ([`MainWindow.xaml.cs:71`](../src/Versio.App/Views/MainWindow.xaml.cs)),
 `Ctrl+Enter` commit, `Ctrl+Shift+P` push
