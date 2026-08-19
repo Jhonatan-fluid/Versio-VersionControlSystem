@@ -879,6 +879,54 @@ public sealed class GitPanelChromeTests : IDisposable
         });
     }
 
+    /// <summary>
+    /// The detached-HEAD escape is on the card, and hidden everywhere else (UX-10).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>§9e's own words were "the create-branch action sits in the badge, pre-filled, because
+    /// that is the only route out and making the user find it in a menu is the whole
+    /// problem."</b> The sentence shipped; the button did not, leaving the remedy in the top
+    /// bar's <c>+</c> — the menu that argument was against.
+    /// </para>
+    /// <para>
+    /// <b>Collapsed rather than absent is the assertion.</b> With no repository open the
+    /// standing is <c>NoRepository</c>, so this proves the visibility binding is doing the
+    /// gating: a button hard-coded visible would be on screen right here, beside a card with no
+    /// branch on it, offering to rescue work that does not exist.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void The_way_off_a_detached_head_is_on_the_card_and_hidden_until_it_applies()
+    {
+        StaHarness.Run(() =>
+        {
+            var (window, shell) = Build();
+            var (panel, _) = ShowGitPanel(window);
+
+            var escape = Assert.IsType<Button>(panel.FindName("PutOnBranchButton"));
+
+            Assert.Equal(
+                nameof(ShellViewModel.PutOnBranchCommand),
+                BindingOperations.GetBinding(escape, ButtonBase.CommandProperty)?.Path.Path);
+
+            Assert.Equal(
+                "Remote.Standing.IsDetached",
+                BindingOperations.GetBinding(escape, UIElement.VisibilityProperty)?.Path.Path);
+
+            Assert.False(shell.Remote.Standing.IsDetached);
+            Assert.Equal(Visibility.Collapsed, escape.Visibility);
+
+            // It is the branch card's own child, not a second card bolted underneath: the whole
+            // argument is that the remedy sits beside the sentence describing the trap.
+            var sentences = AllOf<TextBlock>(panel)
+                .Select(t => BindingOperations.GetBinding(t, TextBlock.TextProperty)?.Path.Path)
+                .ToList();
+
+            Assert.Contains("Remote.Standing.Headline", sentences);
+        });
+    }
+
     private static IEnumerable<T> AllOf<T>(DependencyObject root)
         where T : DependencyObject
     {

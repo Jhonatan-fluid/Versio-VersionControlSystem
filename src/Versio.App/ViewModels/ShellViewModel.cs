@@ -2857,7 +2857,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         DiscardCommand = new AsyncCommand(
             DiscardAsync, () => Ready && SelectedUnstaged is not null, ReportError);
 
-        CreateBranchCommand = new AsyncCommand(CreateBranchAsync, () => Ready, ReportError);
+        CreateBranchCommand = new AsyncCommand(
+            () => CreateBranchAsync("TopBar.CreateBranch"), () => Ready, ReportError);
+
+        // THE SAME ACTION, AND DELIBERATELY NOT THE SAME COMMAND.
+        //
+        // It could bind CreateBranchCommand directly and behave identically — the difference is
+        // one string in the log. That string is the point: this button exists on a bet that
+        // people reach a detached HEAD and cannot find the way out, and the only way to know
+        // whether the bet paid is to be able to tell the two routes apart afterwards.
+        PutOnBranchCommand = new AsyncCommand(
+            () => CreateBranchAsync("Standing.PutOnBranch"), () => Ready, ReportError);
 
         // Cloning needs no open repository — it is how you get one — so it is enabled
         // whenever nothing else is running, unlike every other command here.
@@ -2972,6 +2982,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         HunkCommand.RaiseCanExecuteChanged();
         DiscardCommand.RaiseCanExecuteChanged();
         CreateBranchCommand.RaiseCanExecuteChanged();
+        PutOnBranchCommand.RaiseCanExecuteChanged();
         CloneCommand.RaiseCanExecuteChanged();
 
         // Every input the plan reads — branch, standing, trunk, dirtiness — has just moved or
@@ -3820,8 +3831,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// <summary>Throw away the working-tree changes to the selected unstaged file.</summary>
     public AsyncCommand DiscardCommand { get; private set; } = null!;
 
-    /// <summary>Create a branch and switch to it.</summary>
+    /// <summary>Create a branch and switch to it. The top bar's <c>+</c>.</summary>
     public AsyncCommand CreateBranchCommand { get; private set; } = null!;
+
+    /// <summary>The same thing, offered inside the detached-HEAD sentence as the way out.</summary>
+    public AsyncCommand PutOnBranchCommand { get; private set; } = null!;
 
     /// <summary>Clone a repository, then open it.</summary>
     public AsyncCommand CloneCommand { get; private set; } = null!;
@@ -5084,14 +5098,14 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// branches — so the failure is reported rather than assumed away.
     /// </para>
     /// </remarks>
-    private async Task CreateBranchAsync()
+    private async Task CreateBranchAsync(string source)
     {
         if (_git is null)
         {
             return;
         }
 
-        _logger.Click("TopBar.CreateBranch");
+        _logger.Click(source);
 
         using var asking = AskingSomething();
         if (Prompts.PromptForBranchName() is not { } name)

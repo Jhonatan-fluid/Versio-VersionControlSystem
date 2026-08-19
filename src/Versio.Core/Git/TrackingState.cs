@@ -116,6 +116,22 @@ public sealed record RemoteStanding
     /// </remarks>
     public bool IsDiverged => State == TrackingState.Diverged;
 
+    /// <summary>True when HEAD is on no branch at all, and the way out has to be offered.</summary>
+    /// <remarks>
+    /// <b>The one state whose sentence is not enough on its own.</b> Every other standing either
+    /// needs no action or has its action on the card already — push, publish, pull, reconcile.
+    /// This one names a trap (work committed here is reachable only from the reflog) and the
+    /// only escape is creating a branch, which lived in the top bar's <c>+</c> — a menu, which is
+    /// what somebody who arrived here by clicking a commit in the history has no reason to open.
+    /// <para>
+    /// So the panel puts the escape inside the sentence that describes the trap. Exposed as a
+    /// predicate rather than compared against <see cref="TrackingState.Detached"/> in the XAML
+    /// for the same reason <see cref="IsDiverged"/> is: a binding cannot compare an enum without
+    /// a converter, and the rule belongs beside the state machine that decides it.
+    /// </para>
+    /// </remarks>
+    public bool IsDetached => State == TrackingState.Detached;
+
     /// <summary>
     /// True whenever there is an upstream at all.
     /// </summary>

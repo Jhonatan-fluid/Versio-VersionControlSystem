@@ -555,6 +555,35 @@
                                    Foreground="{Binding Remote.Standing.BrushKey,
                                        Converter={StaticResource ResourceKey}}" />
 
+                        <!-- THE WAY OUT, BESIDE THE SENTENCE THAT DESCRIBES THE TRAP (UX-10).
+
+                             §9e argued for exactly this and only half of it was built: the
+                             amber sentence landed, the escape did not. A detached HEAD is
+                             normally reached by ACCIDENT - clicking a commit in the history -
+                             so the reader is somebody who did not mean to be here and does not
+                             know the vocabulary. Telling them their next commit is reachable
+                             only from the reflog and then leaving the remedy in the top bar's
+                             "+" is the menu §9e was arguing against.
+
+                             It is the only standing whose action is not already on this card.
+                             Push, publish, pull and the divergence pair all have their buttons
+                             above; this one had a warning and no door.
+
+                             The name is not pre-filled. Worth a moment's thought and not worth
+                             blocking on: any default good enough to accept unread would have to
+                             know what the work IS, and a wrong-but-plausible branch name is
+                             harder to notice than an empty box. -->
+                        <Button Content="Put this on a branch…"
+                                x:Name="PutOnBranchButton"
+                                HorizontalAlignment="Left" Margin="0,8,0,0"
+                                Style="{StaticResource AccentButton}"
+                                Height="{DynamicResource Size.Control.Compact}"
+                                ToolTipService.ShowOnDisabled="True"
+                                ToolTip="Create a branch here and switch to it, so this work is kept"
+                                Command="{Binding PutOnBranchCommand}"
+                                Visibility="{Binding Remote.Standing.IsDetached,
+                                    Converter={StaticResource BoolToVisibility}}" />
+
                         <!-- WHAT THE ARROWS STAND FOR, LISTED (GP-K §9d).
 
                              Opened by the ↑/↓ buttons above, closed by clicking the
