@@ -90,7 +90,7 @@ it by an import, rather than both being adopted as though a commit had vetted th
 |---|---|---|---|
 | **P-M1/2** | **Probe first: does a merge commit a project and a mirror that disagree?** | two probes, no new code | Above the queue because it is a correctness question in **shipped** code, and UX-1 must not be built on an unmeasured answer |
 | **UX-1** | **Merging a branch into the current one is not implemented at all** | medium | The one missing *verb*. And the one place Versio can beat a terminal outright |
-| **UX-2** | The rail carries no counts, so the app is blind from two of its three panels | small | Cheapest large win; the user asked for it by name |
+| ~~**UX-2**~~ | ~~The rail carries no counts~~ — **done 2026-08-18**, with UX-11 folded in | small | Cheapest large win; the user asked for it by name |
 | **UX-3** | The rare branch actions have no container, so each one lands as furniture | small | The fix is a shape, not a move — and it is where UX-1 lives |
 | ~~**UX-4**~~ | ~~The two list headers say no count, and run into each other once there is one to say~~ — **done 2026-08-18** | small | A live layout defect, **and a test named for it that cannot reach the failing state** |
 | **UX-5** | The git panel's lists have no context menu and no double-click | small | The project tree got one this session; the panel about those same files did not |
@@ -99,7 +99,7 @@ it by an import, rather than both being adopted as though a commit had vetted th
 | **UX-8** | A commit in the history cannot be acted on, or even copied | small | Read-only by design is a decision; *un-copyable* is not |
 | **UX-9** | `+2 more` is a dead end | trivial | A count with nothing behind it |
 | **UX-10** | Detached HEAD says the sentence and does not offer the exit | trivial | §9e is built except for the half that was its point |
-| **UX-11** | The change badge renders `0` on a clean tree | trivial | Furniture |
+| ~~**UX-11**~~ | ~~The change badge renders `0` on a clean tree~~ — **done 2026-08-18**, by deleting the control | trivial | Furniture |
 | **UX-12** | The last commit cannot be amended | small | Declined-or-built decision, not a gap to leave unstated |
 
 ---
@@ -185,7 +185,36 @@ justifies the whole feature is unwatched.
 
 ---
 
-## UX-2 · The rail carries no counts, so the app is blind from two of its three panels
+## ~~UX-2 · The rail carries no counts, so the app is blind from two of its three panels~~ — **done, 2026-08-18**, `1767957`, and **UX-11 with it**
+
+> **What actually happened.**
+>
+> **UX-11 dissolved into this one rather than being fixed.** The plan proposed keeping the
+> panel-title pill and adding zero-suppression to it. With the rail carrying the count from
+> everywhere, a second control saying the same number whenever Project happened to be showing
+> is two things describing one fact — so the pill is **deleted**. "Renders `0` on a clean tree"
+> is fixed by removing the control that did it, not by adding a rule to it.
+>
+> **No attached property**, which this document proposed. Exactly one rail button has a badge,
+> and building `Rail.Badge`/`Rail.BadgeKind` into the template for a single consumer is the
+> mistake this repository keeps catching. It is a `Border` overlaid in a `Grid`. If a second
+> badge ever appears, that is when the template earns it.
+>
+> **And that nesting cost a shipped regression**, written up in `FINDINGS.md`: a `RadioButton`
+> with no `GroupName` groups by its **visual parent**, so wrapping one rail button made it a
+> group of one — two buttons lit at once and the git panel would not open. All three carry
+> `GroupName="Rail"` now. The plan did not foresee it and could not have; what it does change
+> is the rule below.
+>
+> **A rule this document should have carried from the start, learned the hard way:** a test that
+> sets `IsChecked = true` on each of three buttons in turn **never exercises exclusion**, because
+> nothing is ever asked to turn anything off. Every rail test in the suite did that, including
+> the one added with the badge. Assert the negative.
+>
+> **Not built:** a History badge. The plan already ruled it out and the reasoning held — the
+> behind-count belongs to the branch card, which has two buttons explaining it.
+
+### The finding as first written
 
 **Today.** The only count on screen is a pill in the **panel title**
 ([`MainWindow.xaml:465–478`](../src/Versio.App/Views/MainWindow.xaml)), and code-behind shows it
@@ -592,7 +621,11 @@ state.
 
 ---
 
-## UX-11 · The change badge renders `0` on a clean tree
+## ~~UX-11 · The change badge renders `0` on a clean tree~~ — **done, 2026-08-18**, folded into UX-2
+
+> Fixed by **deleting** the pill rather than adding a visibility rule to it. The count moved to
+> the rail, where it is visible from every panel; a second control repeating it on the Project
+> panel alone had nothing left to add. See UX-2.
 
 **Today.** The pill has no zero-suppression of any kind
 ([`MainWindow.xaml:465–478`](../src/Versio.App/Views/MainWindow.xaml)) — on the Project panel

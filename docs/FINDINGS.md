@@ -17,6 +17,57 @@ produce a diff touching everything else.
 
 ---
 
+### Two rail buttons lit at once, because grouping was a property of the nesting
+
+**Reported by the product owner on 2026-08-18**, with a screenshot, against a change made
+minutes earlier: *"cant even click on the git button, is stuck and highlighting 2 buttons at
+once, git panel doesnt open"*. Project and Git both showed selected.
+
+**Cause.** A `RadioButton` with no `GroupName` groups by its **visual parent**. The three rail
+buttons were bare siblings in one `StackPanel`, so mutual exclusion worked — by accident, and
+only for as long as nothing came between them. Adding the change badge wrapped the git button in
+a `Grid` so the badge could be overlaid on its tile, and that made it a group of one: checking
+it never cleared Project, and the panel could not switch.
+
+**The nesting is not the defect.** Unwrapping the badge would have restored the accident, and
+left the same trap for whoever wraps a rail button next — for a second badge, a tooltip host,
+anything. `GroupName="Rail"` on all three makes exclusion a property of the buttons rather than
+of how they happen to be arranged. The theme radios in the settings popup have carried an
+explicit group since they were written; the rail was the odd one out, and the accident had held
+long enough to look like a decision.
+
+**What makes this worth an entry is that the suite was blind to it in a way that generalises.**
+Every rail test in `Versio.App.Tests` — `ShellLayoutTests`, `MainWindowTests`,
+`PanelCodeBehindTests`, `HistoryRowChromeTests`, and the one added with the badge itself, which
+deliberately walks all three buttons — does this:
+
+```csharp
+Assert.IsType<RadioButton>(window.FindName(rail)).IsChecked = true;
+```
+
+**Setting a bool on three objects one after another does not exercise exclusion.** Nothing is
+ever asked to turn anything *off*. Each test then asserts that the panel it just selected is
+visible, which is true in both the working and the broken build. They were doing exactly what a
+user does and checking exactly the thing the user was about to complain about.
+
+**Measured, by putting the bug back.** With `GroupName` removed, exactly one test fails — the
+new `Selecting_one_rail_button_clears_the_others`, on its `RailGit` case — while **28 others,
+every pre-existing rail and panel test among them, stay green.**
+
+**The rule this leaves behind.** For any mutually exclusive control, assert the **negative**:
+after selecting one, the others are off. A test that only checks "the thing I selected is on"
+cannot tell a working group from three independent toggles — and neither can a reviewer reading
+it, which is why five separate test classes contained the same blind spot without anyone
+noticing.
+
+**And a second-order note on the badge itself.** The plan proposed plumbing it through
+`RailButton`'s `ControlTemplate` with attached properties. That was rejected — one consumer does
+not justify the mechanism — and the rejection stands, but it is worth recording that the cheaper
+route carried a cost the plan did not price: overlaying in a `Grid` changes the visual tree, and
+in WPF the visual tree is load-bearing for more than layout.
+
+---
+
 ### A test named for the overflow it was watching could not reach the overflowing state
 
 **Reported by the product owner on 2026-08-18**, from the running app: *"the staged and not
