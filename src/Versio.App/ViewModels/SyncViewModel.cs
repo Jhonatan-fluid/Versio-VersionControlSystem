@@ -1188,10 +1188,47 @@ public sealed class SyncViewModel : ObservableObject
                 .Where(b => b.Enabled)
                 .Select(b => new TrackedRoot
                 {
+                    BindingId = b.Id,
                     Name = System.IO.Path.GetFileNameWithoutExtension(b.ProjectPath),
                     ProjectPath = b.ProjectPath.Replace('\\', '/'),
                     MirrorPath = b.ExportPath.Replace('\\', '/').TrimEnd('/'),
                 })];
+
+    /// <summary>
+    /// A merge has landed and left these projects' mirrors ahead of them.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Instead of adopting, not as well as.</b> <c>AdoptExternalStateAsync</c> takes the
+    /// project and the mirror as jointly true, which is right after a checkout or a pull — both
+    /// arrive from one commit the gate already vetted — and wrong after a merge, where the
+    /// binary project keeps one side and the mirror keeps both. Adopting there records the
+    /// disagreement as synced; see <c>MergePreflight</c> for the measurement.
+    /// </para>
+    /// <para>
+    /// Two things happen per project, and the order does not matter because neither can run the
+    /// toolchain: the lock is moved so the export gate will be refused before it can touch the
+    /// mirror, and the import is raised so the panel offers the way out.
+    /// </para>
+    /// </remarks>
+    public async Task NoteMergedTextAsync(IReadOnlyList<string> bindingIds)
+    {
+        if (_orchestrator is null || bindingIds.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var id in bindingIds)
+        {
+            await _orchestrator.NoteMergedTextAsync(id, CancellationToken.None)
+                .ConfigureAwait(true);
+
+            NotePendingImport(id);
+        }
+
+        await RescanAsync().ConfigureAwait(true);
+        await RefreshStalenessAsync().ConfigureAwait(true);
+    }
 
     public async Task WhileGitRewritesTheTreeAsync(string what, Func<Task> operation)
     {

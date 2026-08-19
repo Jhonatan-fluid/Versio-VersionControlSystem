@@ -3449,15 +3449,27 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             // FAILURE, NOT WARNING, AND THE REASON IS THE LIFETIME RATHER THAN THE SEVERITY.
             //
             // Only a Failure is sticky - NotificationLog gives Success and Warning an expiry
-            // and Failure none - and this explanation is several sentences that name a project
-            // and say what to do instead. On a Warning's timer it would be gone before it had
-            // been read, which is the exact failure the log's own remarks describe for a push
-            // result. It also gets the Copy button, so the sentence can be pasted into a
-            // message asking somebody about it.
+            // and Failure none - and this explanation is several sentences that say what to do
+            // instead. On a Warning's timer it would be gone before it had been read, which is
+            // the exact failure the log's own remarks describe for a push result. It also gets
+            // the Copy button, so the sentence can be pasted into a message asking about it.
             //
             // The first version of this used Warning and carried a comment claiming it was
             // sticky. It was not.
             Notifications.Failure($"Did not merge {chosen}.", plan.Explanation);
+            return;
+        }
+
+        // ASKED BEFORE THE MERGE, NOT REPORTED AFTER IT.
+        //
+        // A merge that reaches a tracked project is allowed now, and it leaves the project a
+        // branch behind its own text until an import puts both sides back. That is a real
+        // consequence and it is cheap to decline BEFORE the tree has been rewritten - after it
+        // the only way back is `git merge --abort`, which this panel does offer but which is a
+        // worse place to make the decision from.
+        if (plan.NeedsImport && !AskToMerge(chosen, plan))
+        {
+            _logger.Info(LogCategory.Git, $"merge of {chosen} declined at the import warning");
             return;
         }
 
@@ -3480,9 +3492,35 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 .ConfigureAwait(true))
             .ConfigureAwait(true);
 
+        // THE MIRROR IS IN CHARGE NOW, AND THIS RUNS WHETHER OR NOT THE MERGE CONFLICTED.
+        //
+        // A conflicted merge has still rewritten the mirror - git three-way merges the text
+        // cleanly and stops only on the binary project - so the window in which the commit
+        // gate could export over it opens the moment the merge command returns, not when the
+        // user finishes resolving. Marking it here closes that window; the lock is released
+        // by the import, or by a push, or by discarding.
+        //
+        // Before the refresh, deliberately: RunRefreshAsync re-reads the tree and re-evaluates
+        // the gate, and it must find the lock already moved.
+        if (plan.NeedsImport)
+        {
+            await Sync.NoteMergedTextAsync([.. plan.Affected.Select(a => a.BindingId)])
+                .ConfigureAwait(true);
+        }
+
         if (result.Success)
         {
-            Notifications.Success($"Merged {chosen}.");
+            if (plan.NeedsImport)
+            {
+                Notifications.Warning(
+                    $"Merged {chosen}. The project still needs the merged text.",
+                    "Review the changes and press Review and import. Exports are held off " +
+                    "until you do, so nothing overwrites them.");
+            }
+            else
+            {
+                Notifications.Success($"Merged {chosen}.");
+            }
         }
         else
         {
@@ -3493,6 +3531,20 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
 
         await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+    }
+
+    /// <summary>The one question a merge into a tracked project has to ask first.</summary>
+    /// <remarks>
+    /// Through <c>AskingSomething</c> like every other prompt in this file: it is what stops a
+    /// background refresh landing under an open dialog and moving what the user is reading.
+    /// </remarks>
+    private bool AskToMerge(string branch, MergePlan plan)
+    {
+        using (AskingSomething())
+        {
+            return Prompts.ConfirmDestructive(
+                new DestructivePrompt($"Merge {branch}?", plan.Explanation, "Merge"));
+        }
     }
 
     private async Task DeleteBranchesAsync()

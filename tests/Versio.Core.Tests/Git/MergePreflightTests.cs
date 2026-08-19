@@ -4,17 +4,20 @@ using Xunit;
 namespace Versio.Core.Tests.Git;
 
 /// <summary>
-/// Whether merging a branch into the current one is something Versio can finish.
+/// Whether merging a branch into the current one is something Versio can finish, and what it
+/// owes afterwards.
 /// </summary>
 /// <remarks>
-/// The refusal this encodes is measured, not cautious — probe P-M1 committed a project holding
-/// one branch's work beside a mirror holding both, and neither of the two things Versio could
-/// do next preserves the difference. See <see cref="MergePreflight"/> for the whole argument.
+/// What this encodes is measured, not cautious — probe P-M1 committed a project holding one
+/// branch's work beside a mirror holding both. The merge is allowed; what the measurement
+/// decides is which projects must then be regenerated from the merged text. See
+/// <see cref="MergePreflight"/> for the whole argument.
 /// </remarks>
 public sealed class MergePreflightTests
 {
     private static readonly TrackedRoot Refrigerator = new()
     {
+        BindingId = "6d3f8855e205",
         Name = "RefrigeratorControl",
         ProjectPath = "fixtures/projects/RefrigeratorControl.project",
         MirrorPath = "fixtures/projects/RefrigeratorControl",
@@ -30,10 +33,14 @@ public sealed class MergePreflightTests
 
         Assert.Equal(MergeVerdict.Proceed, plan.Verdict);
         Assert.True(plan.CanProceed);
+
+        // Nothing tracked, so nothing owed afterwards. The distinction matters: CanProceed
+        // alone no longer means "and there is nothing to do".
+        Assert.False(plan.NeedsImport);
     }
 
     [Fact]
-    public void A_merge_reaching_the_project_file_is_refused_by_name()
+    public void A_merge_reaching_the_project_file_is_allowed_and_owes_an_import()
     {
         var plan = MergePreflight.For(
             "feature/alarms",
@@ -41,25 +48,34 @@ public sealed class MergePreflightTests
             [Refrigerator]);
 
         Assert.Equal(MergeVerdict.TouchesTrackedProject, plan.Verdict);
-        Assert.False(plan.CanProceed);
+
+        // ALLOWED, AND OWING AN IMPORT. This was a refusal while Versio had no way to order
+        // the import ahead of the export gate; NoteMergedTextAsync is that way, so the merge
+        // runs and the mirror is put in charge afterwards.
+        Assert.True(plan.CanProceed);
+        Assert.True(plan.NeedsImport);
 
         // Named rather than counted: the name is what tells somebody whether it is the project
-        // they care about, without going to look.
+        // they care about, without going to look. The binding id comes with it, because the
+        // caller has to mark that exact project once the merge lands.
         Assert.Contains("RefrigeratorControl", plan.Explanation);
-        Assert.Equal(["RefrigeratorControl"], plan.AffectedProjects);
+        Assert.Equal(["RefrigeratorControl"], plan.Affected.Select(a => a.Name));
+        Assert.Equal(["6d3f8855e205"], plan.Affected.Select(a => a.BindingId));
     }
 
     [Fact]
-    public void A_merge_reaching_only_the_mirror_is_refused_too()
+    public void A_merge_reaching_only_the_mirror_owes_one_too()
     {
         // The mirror alone is enough. Merged text still has to reach the project through an
-        // import, and that is the half Versio cannot yet order safely against the export gate.
+        // import - the project has not changed yet, and the next export would overwrite the
+        // merged text with what the project still says.
         var plan = MergePreflight.For(
             "feature/alarms",
             ["fixtures/projects/RefrigeratorControl/Device/Plc Logic/Application/PLC_PRG.st"],
             [Refrigerator]);
 
         Assert.Equal(MergeVerdict.TouchesTrackedProject, plan.Verdict);
+        Assert.True(plan.NeedsImport);
     }
 
     [Fact]
@@ -93,6 +109,7 @@ public sealed class MergePreflightTests
     {
         var second = new TrackedRoot
         {
+            BindingId = "aa11bb22cc33",
             Name = "MachineWithMembers",
             ProjectPath = "fixtures/projects/MachineWithMembers.project",
             MirrorPath = "fixtures/projects/MachineWithMembers",
@@ -106,7 +123,7 @@ public sealed class MergePreflightTests
             ],
             [Refrigerator, second]);
 
-        Assert.Equal(2, plan.AffectedProjects.Count);
+        Assert.Equal(2, plan.Affected.Count);
         Assert.Contains("RefrigeratorControl", plan.Explanation);
         Assert.Contains("MachineWithMembers", plan.Explanation);
     }

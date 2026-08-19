@@ -150,7 +150,7 @@ it by an import, rather than both being adopted as though a commit had vetted th
 |---|---|---|---|
 | ~~**P-M1**~~ | ~~Does a merge commit a project and a mirror that disagree?~~ — **run 2026-08-18. Yes.** | done | It did, and it turned up a live `.gitattributes` defect on the way |
 | **P-M2** | Does the commit gate then skip the export? | one run, needs real CODESYS | Still **inferred from reading the gate**, not measured. Deliberately not run — no vendor code has changed |
-| **LOCK-1** | **The import-after-merge path** — the work UX-1 stopped short of | large | Now the top of this queue. See UX-1 and `MergePreflight` for the whole argument |
+| ~~**LOCK-1**~~ | ~~The import-after-merge path~~ — **done 2026-08-18**, and UX-1's refusal became a confirmation | large | It needed no new lock state: `TextAuthoritative` already meant this |
 | ~~**UX-1**~~ | ~~Merging a branch into the current one is not implemented at all~~ — **done 2026-08-18, with a measured refusal in it** | medium | The one missing *verb*. And the one place Versio can beat a terminal outright |
 | ~~**UX-2**~~ | ~~The rail carries no counts~~ — **done 2026-08-18**, with UX-11 folded in | small | Cheapest large win; the user asked for it by name |
 | ~~**UX-3**~~ | ~~The rare branch actions have no container~~ — **done 2026-08-18**, with UX-1 | small | The fix is a shape, not a move — and it is where UX-1 lives |
@@ -188,9 +188,9 @@ it by an import, rather than both being adopted as though a commit had vetted th
 > is a worse feature and not a worse outcome, and it is stated as a stopping point rather than
 > left to be discovered.
 >
-> **Still to do, and now the top of the queue:** the import-after-merge path. `MergePreflight`
-> is where the refusal is written down, and its remarks carry the whole argument for whoever
-> picks it up.
+> **The refusal is gone, 2026-08-18 — `LOCK-1` closed it the same day.** The merge now runs,
+> asks first, and puts the mirror in charge afterwards. What follows is kept because it is the
+> reasoning the refusal was built on and it is still why the confirmation exists.
 
 **Today.** `IGitClient` has `MergeUpstreamAsync` and `RebaseOntoUpstreamAsync`
 ([`IGitClient.cs:212`](../src/Versio.Core/Abstractions/IGitClient.cs), `:220`), and both are
@@ -923,3 +923,44 @@ Each now has a test that fails when the fix is removed.
 Everything visual, unchanged. The rail badge's placement, the overflow's popup, the merge
 dialog's layout, and whether the trimmed header reads well at 260 px have all been asserted
 arithmetically and **not one of them has been looked at**.
+
+---
+
+## LOCK-1 — the import after a merge — **done, 2026-08-18**
+
+**It needed no new lock state.** `SyncDirection.TextAuthoritative` has meant exactly this since
+the state machine was written — *"The exported text changed. Imports allowed; exports blocked"* —
+and `(TextAuthoritative, ProjectChanged)` was already a **blocked** transition with a sentence
+attached. The whole of the work was putting a binding into that state after a merge, which is one
+call to the existing `ApplyAsync` funnel.
+
+**The ordering is what makes it safe, and it was already right.** `AttemptAsync` asks
+`SyncStateMachine.Next` and turns a refusal into `BlockedByLock` **before** it opens the project,
+so the commit gate's export is turned away with the mirror untouched. A check made after the
+export would have left the mirror overwritten and the lock unchanged — the exact loss, with a red
+test and the work gone anyway. That is asserted directly: the test drives the gate's own job
+shape and requires the toolchain fake to have received **no job at all**.
+
+**What changed in UX-1.** The refusal became a **confirmation asked before the merge**, and a
+warning plus a raised import afterwards. Asked before, deliberately: after the merge the only way
+back is `git merge --abort`, and that is a worse place to make the decision from.
+
+**Found on the way, and written up separately:** `ExportAllowed` and `ImportAllowed` — the two
+predicates that state what the lock is *for* — **have no callers in `src/` at all**. This work
+designed its ordering around calling one of them before checking whether anything already did.
+They are kept, with remarks that now point at the real enforcement.
+
+### The one gap, stated rather than hidden
+
+**The App-level wiring from `plan.Affected` to `Sync.NoteMergedTextAsync` has no test.** The Core
+mechanism is covered four ways and mutation-checked; the merge flow tests run against a temp
+repository with **no tracked project**, so `NeedsImport` is false and that branch never executes.
+Covering it needs a temp repo carrying a real binding and orchestrator, which `TempRepo` does not
+build. **It is the one part of this feature resting on a read rather than a run.**
+
+### And this change is on the wrong side of the CODESYS rule
+
+The standing rule is to skip the half-hour gate for changes that touch no vendor code. **This one
+touches `SyncOrchestrator` and the direction lock — the sync path that drives the toolchain**,
+which that rule names explicitly as the case where the gate does apply. It has **not** been run.
+It should be, before this ships.

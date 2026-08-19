@@ -17,6 +17,49 @@ produce a diff touching everything else.
 
 ---
 
+### The two predicates that name the lock's whole purpose have no callers
+
+**Found on 2026-08-18**, while building the import-after-merge path, at the moment of relying on
+one of them.
+
+`SyncState.cs` ends with three predicates:
+
+```csharp
+public static bool ImportAllowed(SyncDirection state) => …
+public static bool ExportAllowed(SyncDirection state) => …
+public static bool HoldsLock(SyncDirection state)     => …
+```
+
+`HoldsLock` has callers. **`ExportAllowed` and `ImportAllowed` have none in `src/` at all** —
+their only references anywhere are two lines of `SyncStateMachineTests`, which asserts they
+return what they return.
+
+**Why that is worth an entry rather than a delete.** They are not obscure helpers. They are the
+sentences that state what the direction lock is *for* — "exports blocked", "imports allowed" —
+sitting in the file that defines the lock, next to a predicate that is used. Anyone reading the
+state machine to find out what enforces the lock finds them first and stops there. **This work
+did exactly that**, and designed the whole merge ordering around calling `ExportAllowed` before
+checking whether anything already did.
+
+**What actually enforces it** is `SyncStateMachine.Next` plus `DirectionLockForbids`
+([`SyncOrchestrator.cs:1096`](../src/Versio.Core/Sync/SyncOrchestrator.cs)), asked in
+`AttemptAsync` **before** the toolchain is opened. That ordering is the real protection and it is
+correct — but nothing named it, so it had to be established by reading the call chain rather than
+by reading the predicate that appears to say it.
+
+**The near-miss.** Had the enforcement been *after* the export instead of before, relying on
+`ExportAllowed` would have shipped a merge path that overwrote the merged mirror and then failed
+a transition — the mirror gone, the lock unchanged, and a green test suite. The reason it is not
+that is luck of an existing design, not anything this work checked first.
+
+**Deliberately not deleted.** The obvious move is to remove two members with no callers, and this
+repository's own rule says every member has a caller or says why it does not. They are kept and
+their remarks now name the enforcement instead — because the third option is worse than both: a
+future reader asking "what stops an export here" would otherwise find nothing at all in the file
+that defines the states, and go looking in the orchestrator on their own.
+
+---
+
 ### A new verb was live on a detached HEAD, where every old one is dead
 
 **Found on 2026-08-18**, on the third read of the merge work, before it reached a user.

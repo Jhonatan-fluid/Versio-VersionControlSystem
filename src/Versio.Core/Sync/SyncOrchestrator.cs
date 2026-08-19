@@ -1970,6 +1970,47 @@ public sealed class SyncOrchestrator
         };
     }
 
+    /// <summary>
+    /// Git has left this binding's mirror holding work the project does not have.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>For a merge, and deliberately not for a checkout or a pull.</b> Those two arrive from
+    /// a single commit that the commit gate already vetted, so the project and its mirror agree
+    /// and <see cref="AdoptExternalStateAsync"/> is right to take both as the truth. A merge is
+    /// the one operation whose working tree came from <i>no</i> commit: the <c>.project</c> is
+    /// <c>binary -diff -merge</c> so git conflicts on it and one side is kept whole, while the
+    /// mirror beside it three-way merges and ends up holding both sides.
+    /// </para>
+    /// <para>
+    /// <b>Measured, not assumed.</b> Probe P-M1 on 2026-08-18 committed exactly that state from
+    /// two real exports of the fixture: 41 mirror files, two of them carrying content the kept
+    /// project does not contain — a POU method body, and the manifest.
+    /// </para>
+    /// <para>
+    /// <b>What this buys is the ordering.</b> <c>TextChanged</c> moves a clean binding to
+    /// <see cref="SyncDirection.TextAuthoritative"/>, and the state machine refuses
+    /// <c>ProjectChanged</c> from there — which <c>AttemptAsync</c> asks <b>before</b> running
+    /// the toolchain, so the commit gate's export is turned away without the mirror being
+    /// touched. Without it the gate would see a project whose hash no longer matches
+    /// <c>LastSynced</c>, export, and regenerate the mirror from one branch's project, deleting
+    /// the other branch's work outright.
+    /// </para>
+    /// <para>
+    /// It moves the direction and nothing else: <c>LastSynced</c> and <c>Baseline</c> are left
+    /// alone, because nothing has been synced and nothing has been published. The way out is an
+    /// import, which is what the panel then offers.
+    /// </para>
+    /// </remarks>
+    public Task NoteMergedTextAsync(string bindingId, CancellationToken ct)
+    {
+        _log.Info(LogCategory.Lock,
+            $"{bindingId}: a merge left the exported text holding work the project does not; " +
+            "the text is authoritative until it has been imported");
+
+        return ApplyAsync(bindingId, SyncTrigger.TextChanged, string.Empty, ct);
+    }
+
     public Task AcknowledgeFailureAsync(string bindingId, CancellationToken ct)
     {
         // Worth recording that a human intervened: everything after this point happens

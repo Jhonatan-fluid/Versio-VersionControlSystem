@@ -134,9 +134,34 @@ public static class SyncStateMachine
     public static TransitionResult EnterConflict(string reason) =>
         TransitionResult.Ok(SyncDirection.Conflict, reason);
 
+    /// <summary>
+    /// Which states permit each direction — <b>as a statement, not as the enforcement.</b>
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Neither of these has a caller in <c>src/</c>, and that is a trap worth naming rather
+    /// than a pair of members to delete.</b> They sit in the file that defines the lock, beside
+    /// <see cref="HoldsLock"/> which <i>is</i> used, and they read like the thing that enforces
+    /// the rule. Work on the merge path in 2026-08 designed an entire ordering around calling
+    /// <c>ExportAllowed</c> before discovering that nothing else ever had.
+    /// </para>
+    /// <para>
+    /// <b>What actually enforces it</b> is <see cref="Next"/> — the transition table above —
+    /// consulted by <c>SyncOrchestrator.AttemptAsync</c> and turned into a refusal by
+    /// <c>DirectionLockForbids</c>, <b>before</b> the toolchain is opened. The ordering is the
+    /// protection: a check made after the export would leave the mirror already overwritten.
+    /// </para>
+    /// <para>
+    /// They are kept because deleting them would leave a reader asking "what stops an export
+    /// here" with nothing at all in this file to find, and send them into the orchestrator
+    /// unguided. Read them as documentation of the intent; read <see cref="Next"/> for what is
+    /// actually asked.
+    /// </para>
+    /// </remarks>
     public static bool ImportAllowed(SyncDirection state) =>
         state is SyncDirection.Clean or SyncDirection.TextAuthoritative;
 
+    /// <inheritdoc cref="ImportAllowed"/>
     public static bool ExportAllowed(SyncDirection state) =>
         state is SyncDirection.Clean or SyncDirection.ProjectAuthoritative;
 
