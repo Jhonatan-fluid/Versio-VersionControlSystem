@@ -842,7 +842,7 @@ public sealed class SyncViewModel : ObservableObject
             return;
         }
 
-        var store = new RepoConfigStore(_repositoryRoot);
+        var store = new RepoConfigStore(_repositoryRoot, _logger);
         _config = await store.LoadAsync(ct).ConfigureAwait(true);
         AnnounceIgnoredPaths();
 

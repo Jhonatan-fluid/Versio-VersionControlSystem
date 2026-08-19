@@ -586,7 +586,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             }
         };
 
-        History = new HistoryViewModel(logger);
+        History = new HistoryViewModel(logger, ReportError);
         Explorer = new ExplorerViewModel(logger, () => Sync.ReadProjectsForExplorer());
         _gitFactory = gitFactory ?? (path => new GitCliClient(path, logger: logger));
         _locator = new RepositoryLocator(probe ?? new FileSystemRepositoryProbe());

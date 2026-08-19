@@ -17,6 +17,40 @@ produce a diff touching everything else.
 
 ---
 
+### A corrupt `repo.json` opened as a repository that had never been adopted
+
+**Found on 2026-08-18 by an audit of silent paths, not by a failure.** `RepoConfigStore.LoadAsync`
+caught `JsonException` and returned `new RepoConfig()` — the same answer as a missing file.
+Opening the repository then showed no bindings, which is how a never-adopted clone looks, and
+nothing in the log named the file that had just been thrown away.
+
+The recovery is right: refusing to start over a malformed config leaves the user with no way
+in, and bindings can be re-adopted. The lock store already logged this shape as Error, because
+discarding a direction lock is a safety loss. Bindings were the one committed JSON file that
+could go bad and leave no trail.
+
+**A Warning, with the exception, and the path.** Empty bindings after a bad edit now have
+something to grep. Mutation: dropping the log line leaves the existing round-trip tests green
+and turns only the new one red.
+
+### The geometry tests measured a disposed shell
+
+**Found on 2026-08-18, the same defect `GitPanelChromeTests` already records, one file along.**
+`GitPanelGeometryTests.Loaded` used `using var shell = TestShell.Build()` inside a helper that
+**returns** the shell. When the helper returned, the shell was disposed, and every case in the
+file laid out a window bound to a torn-down instance.
+
+It passed throughout because none of those tests opens a repository, so disposal had almost
+nothing to release — until the shell began disposing its log console, which the window is
+bound to. Held in a list and released in `IDisposable.Dispose` on the STA thread, matching
+the chrome file.
+
+The suite staying green while measuring a dead instance is the inverted form of the
+fifty-six undisposed shells: that leak kept watchers alive against deleted directories; this
+one pretended to measure a panel that had already been torn down.
+
+---
+
 ### The log opened on the first line, fought the wheel, and copied nothing
 
 **Found on 2026-08-18 by using the panel.** Three defects, one list.

@@ -56,9 +56,21 @@ internal sealed class CountingGitClient : IGitClient
         string range, CancellationToken ct) =>
         throw new NotSupportedException();
 
+    /// <summary>
+    /// When set, <see cref="RecentCommitsAsync"/> throws once skip reaches this value.
+    /// The first page is skip 0, so this is how a test reaches the Load-more failure
+    /// without also failing the first read.
+    /// </summary>
+    public int? ThrowAtSkip { get; set; }
+
     public Task<IReadOnlyList<CommitEntry>> RecentCommitsAsync(
         int count, int skip, CancellationToken ct)
     {
+        if (ThrowAtSkip is { } at && skip >= at)
+        {
+            throw new InvalidOperationException("git log failed");
+        }
+
         LogCalls.Add((count, skip));
 
         IReadOnlyList<CommitEntry> page =
@@ -384,6 +396,25 @@ public class HistoryViewModelTests
         Assert.Equal(2, git.LogCalls.Count);
         Assert.Equal(HistoryViewModel.PageSize, git.LogCalls[1].Skip);
         Assert.Equal(HistoryViewModel.PageSize * 2, history.Commits.Count);
+    }
+
+    /// <summary>
+    /// A failed second page must surface. AsyncCommand swallows the exception unless
+    /// onError is passed, so a dead "Load older commits" used to look like a no-op.
+    /// </summary>
+    [Fact]
+    public async Task A_failed_load_more_is_reported_rather_than_swallowed()
+    {
+        var seen = new List<Exception>();
+        var git = new CountingGitClient { ThrowAtSkip = HistoryViewModel.PageSize };
+        var history = new HistoryViewModel(new VersioLogger(new SystemClock()), seen.Add);
+        history.Attach(git);
+        history.IsVisible = true;
+
+        await Eventually.Press(history.LoadMoreCommand, "load more");
+
+        var ex = Assert.Single(seen);
+        Assert.Equal("git log failed", ex.Message);
     }
 
     /// <summary>The end of the branch is how the panel knows to stop offering another page.</summary>

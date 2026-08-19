@@ -34,7 +34,7 @@ namespace Versio.App.Tests;
 /// </para>
 /// </remarks>
 [Collection("theme")]
-public sealed class GitPanelGeometryTests(ITestOutputHelper output)
+public sealed class GitPanelGeometryTests(ITestOutputHelper output) : IDisposable
 {
     /// <summary>The width the panel column opens at.</summary>
     private const double PanelWidth = 380;
@@ -54,6 +54,8 @@ public sealed class GitPanelGeometryTests(ITestOutputHelper output)
     private static ChangeRow Row(string path, ChangeKind staged, ChangeKind unstaged) =>
         new(new FileChange { Path = path, Staged = staged, Unstaged = unstaged });
 
+    private readonly List<ShellViewModel> _shells = [];
+
     /// <summary>A panel carrying about as much as it ever will.</summary>
     /// <remarks>
     /// <para>
@@ -70,14 +72,19 @@ public sealed class GitPanelGeometryTests(ITestOutputHelper output)
     /// widest state the headers can reach was not merely untested, it could not be built here.
     /// </para>
     /// </remarks>
-    private static (MainWindow Window, ShellViewModel Shell, FrameworkElement Panel,
+    private (MainWindow Window, ShellViewModel Shell, FrameworkElement Panel,
                     FrameworkElement Content) Loaded(
         double panelWidth = PanelWidth,
         int stagedRows = 4,
         int unstagedRows = 12,
         bool tickEverything = false)
     {
-        using var shell = TestShell.Build();
+        // NOT `using var` here. That used to dispose the shell at the closing brace of
+        // this helper, before any test measured the window it had just built — the same
+        // defect GitPanelChromeTests already records. Held until Dispose, on the STA
+        // thread that built it.
+        var shell = TestShell.Build();
+        _shells.Add(shell);
         var window = new MainWindow(shell);
         var content = (FrameworkElement)window.Content;
 
@@ -128,6 +135,15 @@ public sealed class GitPanelGeometryTests(ITestOutputHelper output)
 
         return (window, shell, (FrameworkElement)window.FindName("GitPanel")!, content);
     }
+
+    /// <summary>Release the shells this class built, on the thread that built them.</summary>
+    public void Dispose() => StaHarness.Run(() =>
+    {
+        foreach (var shell in _shells)
+        {
+            shell.Dispose();
+        }
+    });
 
     [Fact]
     public void Everything_in_the_panel_renders_at_a_usable_size()

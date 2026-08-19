@@ -480,6 +480,10 @@ public sealed class GitRemoteViewModel : ObservableObject, IDisposable
 
     // ------------------------------------------------------------------- the operations
 
+    // Pull, push and fetch open a correlation scope the way publish already did. Without
+    // one, a pull that auto-stashed then imported is three unconnected trails, and the
+    // git Debug lines have nothing to join them to the Click that started it.
+
     private async Task PullAsync()
     {
         if (_client() is not { } git)
@@ -488,6 +492,7 @@ public sealed class GitRemoteViewModel : ObservableObject, IDisposable
         }
 
         _logger.Click("Git.Pull");
+        using var scope = _logger.BeginOperation(LoggerExtensions.NewOperationId());
 
         // Guarded at last. GuardIntent.Pull has existed, been tested and been deliberately
         // unwired since the guard was written, because every verdict it produces resolves to
@@ -544,6 +549,7 @@ public sealed class GitRemoteViewModel : ObservableObject, IDisposable
             _logger.Click("Git.Push");
         }
 
+        using var scope = _logger.BeginOperation(LoggerExtensions.NewOperationId());
         using var busy = _busy.Begin(WorkKind.GitPush, "Pushing…");
         var result = await git.PushAsync(null, busy.Token).ConfigureAwait(true);
 
@@ -644,6 +650,7 @@ public sealed class GitRemoteViewModel : ObservableObject, IDisposable
         }
 
         _logger.Click("Git.Fetch");
+        using var scope = _logger.BeginOperation(LoggerExtensions.NewOperationId());
         using var busy = _busy.Begin(WorkKind.GitRead, "Fetching…");
 
         var result = await git.FetchAsync(null, busy.Token).ConfigureAwait(true);

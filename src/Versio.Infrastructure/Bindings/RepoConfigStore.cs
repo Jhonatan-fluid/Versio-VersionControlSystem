@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Versio.Core.Bindings;
+using Versio.Core.Logging;
 
 namespace Versio.Infrastructure.Bindings;
 
@@ -20,8 +21,10 @@ namespace Versio.Infrastructure.Bindings;
 /// half-written repo.json would be read back as a plausible but wrong set of bindings.
 /// </para>
 /// </remarks>
-public sealed class RepoConfigStore(string repositoryRoot)
+public sealed class RepoConfigStore(string repositoryRoot, IVersioLogger? logger = null)
 {
+    private readonly IVersioLogger _log = logger ?? NullLogger.Instance;
+
     private static readonly JsonSerializerOptions Options = new()
     {
         WriteIndented = true,
@@ -54,6 +57,14 @@ public sealed class RepoConfigStore(string repositoryRoot)
     /// A corrupt file returns empty rather than throwing. Versio must still open the
     /// repository so the user can see the problem and re-adopt their projects; refusing to
     /// start over a malformed config would leave them with no way in.
+    /// <para>
+    /// <b>The recovery is silent only in what it does, not in what it says.</b> Returning
+    /// empty looks identical to "this repository has never been adopted", which is a
+    /// lost-work class of bug if nothing in the log names the file that was unreadable.
+    /// The lock store logs the same shape as Error, because discarding a direction lock
+    /// is a safety loss. Bindings can be re-adopted, so this is a Warning — still loud
+    /// enough that an empty project list after a bad edit has a trail.
+    /// </para>
     /// </remarks>
     public async Task<RepoConfig> LoadAsync(CancellationToken ct)
     {
@@ -67,8 +78,13 @@ public sealed class RepoConfigStore(string repositoryRoot)
             var json = await File.ReadAllTextAsync(Path, Utf8NoBom, ct).ConfigureAwait(false);
             return JsonSerializer.Deserialize<RepoConfig>(json, Options) ?? new RepoConfig();
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
+            _log.Log(LogLevel.Warning, LogCategory.App,
+                $"repo.json at {Path} is corrupt and was ignored; this repository will " +
+                "open with no bindings until the file is repaired or the projects are " +
+                "adopted again",
+                ex);
             return new RepoConfig();
         }
     }

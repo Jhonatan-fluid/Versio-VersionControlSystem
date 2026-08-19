@@ -181,4 +181,29 @@ public sealed class RemoteStandingFlowTests
         await Eventually.Until(
             () => shell.PutOnBranchCommand.CanExecute(null), "the escape button went live");
     }
+
+    [Fact]
+    public async Task Fetch_stamps_one_operation_id_on_the_git_lines_that_follow()
+    {
+        // Publish already opened a scope; Pull and Push did not, so a pull that auto-stashed
+        // then imported could not be reconstructed from the log. Fetch is the cheapest of
+        // the three to drive, and they share the same wrap.
+        using var repo = new TempRepo(withRemote: true);
+        using var shell = TestShell.Build(out var sink);
+
+        await shell.OpenAsync(repo.Path);
+        var before = sink.Snapshot().Count;
+
+        await Eventually.Press(shell.Remote.FetchCommand, "fetch");
+
+        var after = sink.Snapshot().Skip(before).ToList();
+        Assert.Contains(after, e => e.Message.Contains("Click ▸ Git.Fetch", StringComparison.Ordinal));
+
+        var correlated = after
+            .Where(e => e.OperationId is not null)
+            .Where(e => e.Category == LogCategory.Git)
+            .ToList();
+        Assert.NotEmpty(correlated);
+        Assert.Single(correlated.Select(e => e.OperationId).Distinct());
+    }
 }

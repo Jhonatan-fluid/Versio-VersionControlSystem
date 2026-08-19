@@ -921,6 +921,17 @@ does not record them has to be run again.
   reading it as a regression.
 - **`Versio.App.Tests` shells must be disposed** — `using var shell = ...`. This is the rule the
   bullet above exists to keep; `TestShell` states it where the next test author will read it.
+  A helper that `using`-binds a shell and then **returns** it is the same defect inverted:
+  `GitPanelChromeTests` already records it, and `GitPanelGeometryTests` had it until
+  2026-08-18.
+- ~~**Pull, push and fetch logged a Click and then nothing to join the trail.**~~ — **closed
+  2026-08-18.** Publish already opened a correlation scope; the other three did not, so a
+  pull that auto-stashed then imported was three unconnected stories. They share one wrap
+  now, pinned on Fetch: dropping the scope leaves that test with Git lines and no id.
+- ~~**`History.LoadMoreCommand` swallowed its exceptions.**~~ — **closed 2026-08-18.**
+  `AsyncCommand.Execute` only calls `onError?.Invoke`; without it a failed `git log` looks
+  like a dead button. The shell passes `ReportError`. Deleting that argument turns one test
+  red.
 - **Hand-maintained counts in these documents drift.** The commit count was wrong by twelve,
   the project tree's test count by six, and the scenario suite's by twenty-two — all of them
   written once and never re-checked. Re-derive rather than trust: `git rev-list --count HEAD`,
@@ -1004,9 +1015,9 @@ would have gone on passing while checking one fewer every time a panel moved out
 ## Findings
 
 Every defect worth understanding, written down with its evidence, lives in
-**[`FINDINGS.md`](FINDINGS.md)** — 126 of them, newest first. (Said 107 until 2026-08-18,
-when it was re-derived rather than incremented: the number had gone stale after the split,
-which is the one edit that could not have been an oversight.)
+**[`FINDINGS.md`](FINDINGS.md)** — 128 of them, newest first. (Said 126 until 2026-08-18,
+when two silent-path defects from an audit were written up rather than left as a paragraph
+in a plan.)
 
 It moved out on 2026-08-17. It was 3,681 lines of this document's 4,782, so the file that
 answers *where is the project now* was 77% engineering log, and `CLAUDE.md`'s opening
@@ -1015,6 +1026,8 @@ actually do.
 
 The full list, newest first:
 
+- [A corrupt `repo.json` opened as a repository that had never been adopted](FINDINGS.md#a-corrupt-repojson-opened-as-a-repository-that-had-never-been-adopted)
+- [The geometry tests measured a disposed shell](FINDINGS.md#the-geometry-tests-measured-a-disposed-shell)
 - [The log opened on the first line, fought the wheel, and copied nothing](FINDINGS.md#the-log-opened-on-the-first-line-fought-the-wheel-and-copied-nothing)
 - [Turning a label into a button changed its typeface, and the setter that carried it left with the element](FINDINGS.md#turning-a-label-into-a-button-changed-its-typeface-and-the-setter-that-carried-it-left-with-the-element)
 - [One guard intent grew three verbs, and the dialog kept saying the first one](FINDINGS.md#one-guard-intent-grew-three-verbs-and-the-dialog-kept-saying-the-first-one)
