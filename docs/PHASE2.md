@@ -24,7 +24,7 @@ suite is seven projects, 2,319 tests, split by need — the half-hour CODESYS ga
 | [`FINDINGS.md`](FINDINGS.md) | Every defect with its evidence, newest first — search it |
 | [`SAFEGUARDS.md`](SAFEGUARDS.md) | What Versio refuses, asks about or waits for |
 | [`vendors/codesys/DRIVING.md`](vendors/codesys/DRIVING.md) | How CODESYS is driven — API traps, forms, events, manifest schema |
-| [`vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md) | How TIA Portal is driven — Openness, directory payload, occupancy is `<stem>.info` |
+| [`vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md) | How TIA Portal is driven — Openness, occupancy, identity. §12 is evidence; **the remaining order is item 7 in this file** |
 
 ---
 
@@ -204,6 +204,30 @@ safety are coverage skips. The gate fixture is committed at
 `fixtures/projects/CleaningStation_V20_V21/` (Git LFS; ignored by this repo's Versio
 adoption). Driving notes — setup, Openness members, occupancy, identity — live in
 [`docs/vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md).
+
+**What is left, in order** — export and the directory seam are measured; import is not.
+The measurements and the "never" list sit in DRIVING.md §12; the sequence lives here so it
+cannot be rediscovered from an unordered dump:
+
+1. **A mutating round-trip against a copy** (`tools/tia/Test-RoundTrip.ps1 -MutateFirst`
+   on `.versio/local/tia/`, never OneDrive, and not the committed LFS tree until that
+   dirtiness is accepted). Then `Measure-ImportStability.ps1` for P7 SETTLES. There is no
+   C# import gate yet; the three live tests are locator / probe / export.
+2. **Host import that is not only `BlockGroup`.** Apply/create uses `ExternalSourceGroup`;
+   native apply is `Blocks.Import`; rename/delete use `FindBlock` on blocks. UDTs and tag
+   tables export today and would be missed on the way back.
+3. **Export determinism** — two textual exports of an unchanged project, byte-identical.
+   Native XML is expected to differ (G12).
+4. **The app loop on a TIA project that is not this repository's ignored fixture** —
+   adopt, first export, panel, direction lock, confirmed import, restore of a ~500 MB
+   tree. Neutral code should do it; it has not been eyeballed.
+5. **Open-in-Portal.** Exclusive `Projects.Open`: no export-from-copy while the GUI holds
+   it. Occupancy was measured under Openness, not with a Portal window. Attach-to-running
+   is unused on purpose.
+
+Identity stays `device/plc/type/name#number` until a stable Siemens id appears. Folders
+are not recorded objects. Coverage skips (hardware, HMI, safety, technology,
+know-how-protected import, compile-after-import, VCI) are not this queue.
 
 The first vendor's rule still holds: nothing in `Sync/`, `Git/`, `Locking/`, `Watching/`,
 `Projects/` or `Diff/` may learn a vendor's name.

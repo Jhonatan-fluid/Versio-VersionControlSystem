@@ -355,12 +355,41 @@ missing.
 
 ---
 
-## 12. What is not done
+## 12. What is left
 
-- GUI occupancy (Portal holding the project with a window, no Openness session)
-- Attach-to-running
-- Hardware / HMI / safety / technology round-trip
-- Compile-after-import
-- A P7 SETTLES measurement on this fixture (`Measure-ImportStability.ps1` exists; it has not
-  been run to a recorded verdict)
-- Treating this fixture as a daily working project inside this repository (deliberately ignored)
+The ordered queue is [`PHASE2.md`](../../PHASE2.md) item 7. This section is the evidence
+that queue was derived from — next vs never vs friction — so a later session does not
+have to re-derive it.
+
+### Next (PLC-program parity with the first vendor)
+
+1. **Import has not been run against live Portal.** Planner and host exist; the C# gate
+   is locator / probe / export only. Run `Test-RoundTrip.ps1 -MutateFirst` on a copy
+   under `.versio/local/tia/`, then `Measure-ImportStability.ps1` (P7 SETTLES). Do not
+   start on the OneDrive original. The committed LFS tree is the gate fixture: mutating
+   it is a choice, not the default.
+2. **The host's import only finds blocks.** `FindBlock` / `ApplyNative` walk
+   `PlcSoftware.BlockGroup`. UDTs live on `TypeGroup`, tag tables on `TagTableGroup`.
+   They export; rename, delete and native apply would miss them. SCL apply via
+   `ExternalSourceGroup` is the path that might already cover `.udt` / `.scl` — unproven.
+3. **Two unchanged textual exports have not been shown byte-identical.** Native XML is
+   expected to differ (G12: SimaticML beside SCL is `XML_REVIEW` and is never applied).
+4. **The app has not been eyeballed against a TIA project it is allowed to adopt.** This
+   repository ignores the fixture on purpose. Directory payload, confirmation dialog and
+   tree backups are the neutral seam; they are unproven with a 500 MB TIA tree in the UI.
+5. **GUI occupancy and export-while-the-IDE-holds-it.** `.info` was measured under
+   Openness `Projects.Open`, not with a Portal window. Exclusive open: no sidecar copy
+   the way the first vendor exports while open. Attach-to-running is a different design
+   and is not used.
+
+### Not this queue (coverage skips)
+
+Hardware, HMI, safety (`F_*`), technology objects, know-how-protected import,
+compile-after-import, VCI, Project Server. Archives (`.alXX`) are seen and refused.
+
+### Friction that remains after the loop works
+
+AllowList after every host rebuild (path + hash). Ten tree backups × ~500 MB.
+Several Portal versions on one machine refuse rather than pick one (same reason as
+`OpenWithUpgrade`: a silent upgrade). Identity is name+number until a GUID-shaped
+SimaticML value appears; folders are not recorded objects.

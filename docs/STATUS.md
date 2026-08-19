@@ -549,8 +549,11 @@ does not record them has to be run again.
   export 37 s. Occupancy is `<stem>.info` while Openness holds the project. SimaticML
   `UId` is not a project identity — see the findings. The gate fixture is committed at
   `fixtures/projects/CleaningStation_V20_V21/` (LFS; ignored by this repo's adoption so
-  opening Versio here does not export it). Remaining live cost: Yes-to-all on AllowList
-  after a host rebuild, and GUI-open occupancy unmeasured.
+  opening Versio here does not export it).
+  - **What is still open is not this bullet.** Item 7's remaining queue is in
+    [`PHASE2.md`](PHASE2.md): mutating import on a copy, host import beyond `BlockGroup`,
+    textual determinism, the app loop on an adopted TIA project, GUI occupancy. AllowList
+    after a host rebuild is friction, not a gap.
 
 - ~~**Launching the app against this repository adopts the 21 `phase0/` scratch projects and
   starts exporting all of them.**~~ — **closed 2026-08-17, and the closing found a defect.**
