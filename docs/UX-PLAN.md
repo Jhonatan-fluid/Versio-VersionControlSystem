@@ -148,7 +148,9 @@ it by an import, rather than both being adopted as though a commit had vetted th
 
 | | Finding | Cost | Why it ranks there |
 |---|---|---|---|
-| **P-M1/2** | **Probe first: does a merge commit a project and a mirror that disagree?** | two probes, no new code | Above the queue because it is a correctness question in **shipped** code, and UX-1 must not be built on an unmeasured answer |
+| ~~**P-M1**~~ | ~~Does a merge commit a project and a mirror that disagree?~~ — **run 2026-08-18. Yes.** | done | It did, and it turned up a live `.gitattributes` defect on the way |
+| **P-M2** | Does the commit gate then skip the export? | one run, needs real CODESYS | Still **inferred from reading the gate**, not measured. Deliberately not run — no vendor code has changed |
+| **LOCK-1** | **The import-after-merge path** — the work UX-1 stopped short of | large | Now the top of this queue. See UX-1 and `MergePreflight` for the whole argument |
 | ~~**UX-1**~~ | ~~Merging a branch into the current one is not implemented at all~~ — **done 2026-08-18, with a measured refusal in it** | medium | The one missing *verb*. And the one place Versio can beat a terminal outright |
 | ~~**UX-2**~~ | ~~The rail carries no counts~~ — **done 2026-08-18**, with UX-11 folded in | small | Cheapest large win; the user asked for it by name |
 | ~~**UX-3**~~ | ~~The rare branch actions have no container~~ — **done 2026-08-18**, with UX-1 | small | The fix is a shape, not a move — and it is where UX-1 lives |
@@ -862,3 +864,62 @@ checking UX-1's guard claim.
 
 **Still owed to a person**, unchanged from the first draft: everything visual. This pass read
 markup and view models. It did not see the screen.
+
+---
+
+## Where this stands, 2026-08-18
+
+Seven of the thirteen items are closed, one is half closed, and the two most valuable things
+this document produced were not on its list at all.
+
+### Built
+
+| | What landed, where it differed from the plan |
+|---|---|
+| **UX-2 + UX-11** | The count moved to the git rail and the panel-title pill was **deleted**, not fixed — UX-11 dissolved rather than being done. No attached property: one consumer does not justify the mechanism |
+| **UX-4** | Header and count merged into one trimming column. The plan blamed the growing labels; measurement said the narrow column, with the labels only an aggravator |
+| **UX-5** | Two row templates rather than the planned shared menu — a file can be in both lists at once, so the flag would have described the list, not the row. `MouseDoubleClick` turned out not to bubble |
+| **UX-3 + UX-1** | The overflow, and the merge verb inside it — **with a refusal**. See below |
+| **UX-7** | Half: `Ctrl+1/2/3` (and NumPad) for the rail, advertised in the tooltips. `Ctrl+F` waits on UX-6; `Escape` is a refinement |
+
+### Not built, and why
+
+- **UX-1's second half — the import-after-merge path.** The verb refuses a merge that reaches a
+  tracked project, because P-M1 measured that both available behaviours lose work. Closing it
+  means pointing the direction lock at import so the export gate cannot win the race, which is
+  a change to the lock model. **It is now the top of the queue, as `LOCK-1`.**
+- **UX-6, UX-8, UX-9, UX-10, UX-12.** Untouched. UX-12 was approved by the owner and is still
+  owed.
+- **P-M2.** Needs a real export and therefore real CODESYS. Deliberately not run: the owner's
+  standing rule is that the half-hour gate does not run for changes that touch no vendor code,
+  and none of this does.
+
+### The two things worth more than the list
+
+**`merge=lfs` was cancelling the `-merge` on every project file** — a live defect in shipped
+`.gitattributes`, found while trying to run P-M1, measured on two throwaway repositories, and
+fixed. It made git text-merge an LFS pointer and write conflict markers into it.
+
+**P-M1 itself.** The merge really does commit a project its mirror disagrees with: 41 mirror
+files, two carrying content the kept project does not have. That measurement is what turned
+UX-1 from a feature into a feature with a stated stopping point.
+
+### Three defects this document's own work introduced, all caught by a later read
+
+Recorded because the pattern matters more than the bugs: **every one was green when it was
+written**, and each was found by re-reading rather than by running anything.
+
+1. **Two rail buttons lit at once** — a `RadioButton` groups by visual parent, and wrapping one
+   to carry a badge made it a group of one. Reported by the owner, not by the suite; five test
+   classes were structurally blind to it.
+2. **A refusal on a four-second timer** — the merge refusal was posted as a `Warning`, which
+   expires. Only a `Failure` is sticky.
+3. **A new verb live on a detached HEAD** — where every older remote verb is deliberately dead.
+
+Each now has a test that fails when the fix is removed.
+
+### What is still owed to a person
+
+Everything visual, unchanged. The rail badge's placement, the overflow's popup, the merge
+dialog's layout, and whether the trimmed header reads well at 260 px have all been asserted
+arithmetically and **not one of them has been looked at**.

@@ -17,6 +17,41 @@ produce a diff touching everything else.
 
 ---
 
+### A new verb was live on a detached HEAD, where every old one is dead
+
+**Found on 2026-08-18**, on the third read of the merge work, before it reached a user.
+
+`MergeBranchCommand` was gated `Ready && Branches.Count > 1`. Neither clause says anything about
+a **detached HEAD**, and on one the flow would have:
+
+1. read `BranchName`, which is the literal string `"(detached)"`
+   ([`ShellViewModel.cs:5158`](../src/Versio.App/ViewModels/ShellViewModel.cs));
+2. handed that to `git branch --merged "(detached)"`, where it resolves to nothing, so **every**
+   branch would have been offered as having new work;
+3. asked *"Choose a branch to merge into (detached)"*;
+4. and made a merge commit reachable from **no branch at all** — work that exists only in the
+   reflog.
+
+**What makes it worth an entry is the company it was keeping.** Every other verb that writes to
+the remote is already off in that state, and not by accident: `CanPush`, `CanPull` and
+`CanPublish` all read `HasUpstream`, and a detached `RemoteStanding` carries no upstream, so the
+whole remote row goes dead. `RemoteStanding`'s detached branch even spells out the hazard —
+*"New work here will be lost unless you put it on a branch."* The new command was the one live
+way to write history in a state the rest of the panel had carefully closed down.
+
+**The near-miss is the lesson, not the fix.** The fix is one clause. What nearly shipped it was
+adding a command by copying the shape of the one beside it: `DeleteBranchesCommand` requires
+`DefaultBranch.IsKnown`, which happens to keep it sane, and the new one dropped that requirement
+for a good reason — merging asks about the *current* branch, not the trunk — without asking what
+else that requirement had been doing. **A gate copied from a neighbour inherits its accidents as
+well as its intent, and dropping half of one needs its own argument.**
+
+Gated on `Remote.Standing.State != TrackingState.Detached` now, and covered by a test that
+detaches a real repository and asserts the command goes dead — verified by removing the clause,
+which fails exactly that case.
+
+---
+
 ### `merge=lfs` quietly cancelled the `-merge` two tokens to its left
 
 **Found on 2026-08-18** while trying to run probe P-M1 — the question of what a merge does to a

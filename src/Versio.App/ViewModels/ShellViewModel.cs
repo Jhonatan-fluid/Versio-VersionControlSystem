@@ -2821,10 +2821,21 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         // No DefaultBranch requirement, unlike deletion beside it: deleting needs a trunk to
         // ask "merged into what" and to fall back to, and merging asks that of the branch you
-        // are on. More than one branch is the only precondition.
+        // are on.
+        //
+        // DEAD WHILE DETACHED, and that is not tidiness. On a detached HEAD every other remote
+        // verb is already off - CanPush, CanPull and CanPublish all read HasUpstream, which is
+        // false - so this would have been the one live way to write history there. It would
+        // ask "merge into (detached)", hand that string to `git branch --merged` where it
+        // resolves to nothing, and then make a merge commit reachable from no branch at all:
+        // work that exists only in the reflog, which is the trap RemoteStanding's own detached
+        // sentence warns about.
         MergeBranchCommand = new AsyncCommand(
             MergeBranchAsync,
-            () => Ready && Branches.Count > 1, ReportError);
+            () => Ready
+                  && Branches.Count > 1
+                  && Remote.Standing.State != TrackingState.Detached,
+            ReportError);
 
         ResolveCommand = new AsyncCommand<bool>(
             ResolveSelectedAsync,

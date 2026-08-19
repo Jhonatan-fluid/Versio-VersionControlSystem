@@ -94,6 +94,39 @@ public sealed class MergeBranchFlowTests
     }
 
     [Fact]
+    public async Task A_detached_head_cannot_be_merged_into()
+    {
+        // FOUND ON A THIRD READ, AND IT IS THE ONE THAT COULD HAVE LOST WORK. On a detached
+        // HEAD every other remote verb is already dead - CanPush, CanPull and CanPublish all
+        // read HasUpstream, which is false - so this was the single live way to write history
+        // there. It would have asked "merge into (detached)", handed that literal string to
+        // `git branch --merged` where it resolves to nothing, and produced a merge commit
+        // reachable from no branch: work that exists only in the reflog.
+        using var repo = new TempRepo();
+        GiveItABranchToMerge(repo, "feature", "feature.md");
+
+        using var shell = TestShell.Build();
+        var asked = false;
+        shell.Prompts = new StubPrompts
+        {
+            BranchMerge = (_, _) => { asked = true; return "feature"; },
+        };
+
+        await shell.OpenAsync(repo.Path);
+        Assert.True(shell.MergeBranchCommand.CanExecute(null),
+                    "the merge verb is not available on an ordinary branch");
+
+        // Detach, exactly as clicking a commit in a git client would.
+        repo.Git("checkout -q --detach HEAD");
+        await shell.RefreshAsync();
+
+        Assert.False(shell.MergeBranchCommand.CanExecute(null),
+                     "the merge verb is live on a detached HEAD");
+
+        Assert.False(asked, "the picker was opened despite the command being unavailable");
+    }
+
+    [Fact]
     public async Task A_branch_already_in_this_one_is_marked_as_such()
     {
         // "already in" is what stops somebody running a merge that can do nothing. It is asked
