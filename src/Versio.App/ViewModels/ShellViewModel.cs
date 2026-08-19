@@ -3286,6 +3286,18 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
+        // THE LOCK THE MERGE TOOK HAS TO GO BACK TOO.
+        //
+        // A merge that reached a tracked project marked its mirror authoritative, and
+        // AdoptExternalStateAsync deliberately skips a binding holding a lock - so without
+        // this the abandon left it on, blocking exports over a mirror that no longer differs
+        // from anything, and leaving the import banner offering to import a mirror identical
+        // to the project. Neither way out applied: there was nothing left to push.
+        //
+        // Released only where nothing is outstanding, so a lock that predates the merge and
+        // still owes a real import survives untouched.
+        await Sync.ReleaseLocksWithNothingOutstandingAsync().ConfigureAwait(true);
+
         Notifications.Success($"The {what} was abandoned.", "The branch is back where it was.");
         await RunRefreshAsync(RefreshTrigger.GitMetadata, null).ConfigureAwait(true);
     }
@@ -3509,10 +3521,22 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         //
         // Before the refresh, deliberately: RunRefreshAsync re-reads the tree and re-evaluates
         // the gate, and it must find the lock already moved.
-        if (plan.NeedsImport)
+        var unprotected = plan.NeedsImport
+            ? await Sync.NoteMergedTextAsync([.. plan.Affected.Select(a => a.BindingId)])
+                .ConfigureAwait(true)
+            : [];
+
+        if (unprotected.Count > 0)
         {
-            await Sync.NoteMergedTextAsync([.. plan.Affected.Select(a => a.BindingId)])
-                .ConfigureAwait(true);
+            // LOUD, BECAUSE THE ONE GUARANTEE THIS PATH RESTS ON DID NOT HOLD. The state
+            // machine blocks TextChanged from ProjectAuthoritative - a project that already
+            // had unexported edits - so the merged text is open to the commit gate's export
+            // with nothing else on screen to say so. Sticky, like every other Failure.
+            Notifications.Failure(
+                "The merged text is not protected.",
+                $"{unprotected.Count} project(s) already had unsynced work, so Versio could " +
+                "not put the merged text in charge. Export or discard that work before " +
+                "committing, or the next export will overwrite what the merge brought in.");
         }
 
         if (result.Success)

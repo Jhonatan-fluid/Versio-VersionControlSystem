@@ -17,6 +17,46 @@ produce a diff touching everything else.
 
 ---
 
+### Abandoning a merge left the lock it took, with no way out
+
+**Found on 2026-08-18, on the third read of the same feature, before it reached a user.** Two
+earlier passes over the merge work missed it because both were looking at the merge and this is
+about the *undo*.
+
+`AbortMergeAsync` puts the tree back through `WhileGitRewritesTheTreeAsync`, which calls
+`AdoptExternalStateAsync` — and adopt **deliberately skips a binding that holds a lock**. So a
+merge that had just made the mirror authoritative left that lock on after the abandon:
+
+- exports blocked, over a mirror that no longer differed from anything;
+- the import banner still up, offering to import a mirror identical to the project;
+- and neither documented way out available, because the two releases are **push** and
+  **discard**, and an abandoned merge leaves nothing to push.
+
+The next project edit would then be refused by the commit gate, and the user would have no
+visible way to clear it.
+
+**A blanket release on abort would have been wrong**, which is the part worth recording. A
+`TextAuthoritative` lock can predate the merge — committed mirror edits nobody has imported —
+and undoing the merge does not undo those. Releasing there would drop the record of real work
+still owed to the project. So the release compares **both hashes against `LastSynced`** and lets
+go only when nothing is outstanding: a derived answer rather than remembered state, correct
+regardless of which operation created the lock.
+
+**And the same read found a silent no-op beside it.** `NoteMergedTextAsync` called `ApplyAsync`
+and ignored the result — but the state machine blocks `TextChanged` from `ProjectAuthoritative`,
+a project whose own edits have not been exported. In that case the merged mirror was left
+unprotected from the export gate and **nothing said so**: `ApplyAsync` logs a refused trigger at
+`Debug`, which is right for the ordinary case and far too quiet for this one. It returns whether
+the lock actually moved now, and the panel posts a sticky failure when it did not. Mutation
+found it: reporting `true` unconditionally left every other test in the file green.
+
+**Three passes, three defects, in one feature** — the adopt ordering, this, and the silent
+no-op — and none of them was catchable by running the suite. Each came from re-reading with a
+different question: *what does the comment claim*, *what happens on the undo*, *what does this
+return value mean*.
+
+---
+
 ### The two predicates that name the lock's whole purpose have no callers
 
 **Found on 2026-08-18**, while building the import-after-merge path, at the moment of relying on

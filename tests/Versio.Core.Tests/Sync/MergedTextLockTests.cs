@@ -24,6 +24,40 @@ namespace Versio.Core.Tests.Sync;
 /// </remarks>
 public sealed class MergedTextLockTests
 {
+    /// <summary>
+    /// A binding that has actually been synced once, then released — Clean, with a
+    /// <c>LastSynced</c> describing what is on disk.
+    /// </summary>
+    /// <remarks>
+    /// <b>A fresh harness will not do for the release tests.</b> It has never synced, so
+    /// <c>LastSynced</c> is empty and no hash on disk can ever match it — which makes
+    /// "nothing outstanding" unreachable and the assertion vacuous in the failing direction.
+    /// Exporting and then releasing is the shortest honest route to the state a merge really
+    /// arrives at.
+    /// </remarks>
+    private static async Task<SyncOrchestratorTests.Harness> SyncedAndCleanAsync()
+    {
+        var harness = new SyncOrchestratorTests.Harness();
+
+        harness.Codesys.EnqueueSuccess();
+        harness.SetProject("as the owner left it");
+
+        await harness.Orchestrator.HandleChangeAsync(
+            new SyncJob
+            {
+                BindingId = SyncOrchestratorTests.BindingId,
+                Source = ChangeSource.Project,
+            },
+            CancellationToken.None);
+
+        // A push is what releases a direction lock, and it is what leaves LastSynced holding
+        // the state both sides are actually in.
+        await harness.Orchestrator.ReleaseAfterPushAsync("head", CancellationToken.None);
+
+        Assert.Empty(harness.Orchestrator.CaptureLocks());
+        return harness;
+    }
+
     [Fact]
     public async Task A_merged_mirror_puts_the_text_in_charge()
     {
@@ -143,6 +177,90 @@ public sealed class MergedTextLockTests
         // record that was actually true. If these ever match, the parameter has stopped
         // meaning anything and the merge flow is adopting again.
         Assert.NotEqual(adopted, notAdopted);
+    }
+
+    [Fact]
+    public async Task Undoing_the_merge_lets_go_of_the_lock_it_took()
+    {
+        // THE TRAP THE THIRD READ FOUND, AND THIS WORK CREATED. Abandoning a merge puts the
+        // tree back - but AdoptExternalStateAsync deliberately skips a binding holding a lock,
+        // so the lock stayed on: exports blocked over a mirror that no longer differed from
+        // anything, and an import banner offering to import a mirror identical to the project.
+        // Neither documented way out applied, because after an abandoned merge there is
+        // nothing left to push.
+        var harness = await SyncedAndCleanAsync();
+
+        Assert.True(await harness.Orchestrator.NoteMergedTextAsync(
+            SyncOrchestratorTests.BindingId, CancellationToken.None));
+
+        Assert.Single(harness.Orchestrator.CaptureLocks());
+
+        // `git merge --abort` has put everything back, so both sides match what was last
+        // synced - which is exactly the condition for letting go.
+        var released = await harness.Orchestrator.ReleaseIfNothingOutstandingAsync(
+            SyncOrchestratorTests.BindingId, CancellationToken.None);
+
+        Assert.True(released);
+        Assert.Empty(harness.Orchestrator.CaptureLocks());
+    }
+
+    [Fact]
+    public async Task A_lock_that_still_owes_an_import_survives_the_undo()
+    {
+        // The other half, and the reason this is a hash comparison rather than a blanket
+        // release. A TextAuthoritative lock can predate the merge - committed mirror edits
+        // nobody has imported - and undoing the merge does not undo those. Releasing there
+        // would drop the record of real work waiting to reach the project.
+        var harness = await SyncedAndCleanAsync();
+
+        Assert.True(await harness.Orchestrator.NoteMergedTextAsync(
+            SyncOrchestratorTests.BindingId, CancellationToken.None));
+
+        // Something in the mirror genuinely differs from the last synced state.
+        harness.SetExportedText("an edit nobody has imported");
+
+        var released = await harness.Orchestrator.ReleaseIfNothingOutstandingAsync(
+            SyncOrchestratorTests.BindingId, CancellationToken.None);
+
+        Assert.False(released);
+
+        var held = Assert.Single(harness.Orchestrator.CaptureLocks());
+        Assert.Equal(SyncDirection.TextAuthoritative, held.Direction);
+    }
+
+    [Fact]
+    public async Task A_project_with_unexported_edits_refuses_and_says_so()
+    {
+        // THE SILENT NO-OP, CAUGHT BY MUTATION. The state machine blocks TextChanged from
+        // ProjectAuthoritative - a project whose own edits have not been exported - and
+        // ApplyAsync logs a refused trigger at Debug and returns. That is right for the
+        // ordinary case and far too quiet for this one: a false answer here means the merged
+        // mirror is NOT protected from the commit gate's export, and nothing would have said
+        // so. Reporting `true` unconditionally left every other test in this file green.
+        var harness = new SyncOrchestratorTests.Harness();
+
+        harness.Codesys.EnqueueSuccess();
+        harness.SetProject("edited and exported, never pushed");
+
+        await harness.Orchestrator.HandleChangeAsync(
+            new SyncJob
+            {
+                BindingId = SyncOrchestratorTests.BindingId,
+                Source = ChangeSource.Project,
+            },
+            CancellationToken.None);
+
+        var held = Assert.Single(harness.Orchestrator.CaptureLocks());
+        Assert.Equal(SyncDirection.ProjectAuthoritative, held.Direction);
+
+        var moved = await harness.Orchestrator.NoteMergedTextAsync(
+            SyncOrchestratorTests.BindingId, CancellationToken.None);
+
+        Assert.False(moved);
+
+        // And it did not quietly become something else on the way.
+        Assert.Equal(SyncDirection.ProjectAuthoritative,
+                     Assert.Single(harness.Orchestrator.CaptureLocks()).Direction);
     }
 
     [Fact]

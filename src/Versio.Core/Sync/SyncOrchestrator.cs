@@ -2002,13 +2002,91 @@ public sealed class SyncOrchestrator
     /// import, which is what the panel then offers.
     /// </para>
     /// </remarks>
-    public Task NoteMergedTextAsync(string bindingId, CancellationToken ct)
+    /// <returns>
+    /// True when the lock actually moved. <b>False is not a formality.</b> The state machine
+    /// blocks <c>TextChanged</c> from <c>ProjectAuthoritative</c> — a binding whose project
+    /// already had unexported edits — and from <c>Failed</c>, and a refusal there means the
+    /// merged mirror is <i>not</i> protected from the export gate. <c>ApplyAsync</c> logs a
+    /// refused trigger at Debug, which is right for the ordinary case and far too quiet for
+    /// this one, so the answer is handed back for the caller to say something about.
+    /// </returns>
+    public async Task<bool> NoteMergedTextAsync(string bindingId, CancellationToken ct)
     {
         _log.Info(LogCategory.Lock,
             $"{bindingId}: a merge left the exported text holding work the project does not; " +
             "the text is authoritative until it has been imported");
 
-        return ApplyAsync(bindingId, SyncTrigger.TextChanged, string.Empty, ct);
+        var before = _locks.TryGetValue(bindingId, out var had) ? had.Direction : (SyncDirection?)null;
+
+        await ApplyAsync(bindingId, SyncTrigger.TextChanged, string.Empty, ct)
+            .ConfigureAwait(false);
+
+        var moved = _locks.TryGetValue(bindingId, out var now)
+                    && now.Direction == SyncDirection.TextAuthoritative;
+
+        if (!moved)
+        {
+            _log.Error(LogCategory.Lock,
+                $"{bindingId}: the exported text could NOT be made authoritative from " +
+                $"{before?.ToString() ?? "an untracked binding"}; the merged text is not " +
+                "protected from the commit gate's export");
+        }
+
+        return moved;
+    }
+
+    /// <summary>
+    /// Release a held lock that has nothing left to protect.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>For undoing something that took a lock, and it exists because the merge work created
+    /// a trap.</b> A merge marks the mirror authoritative; abandoning that merge puts the tree
+    /// back where it was — and left the lock behind, because
+    /// <see cref="AdoptExternalStateAsync"/> deliberately skips a binding that holds one. The
+    /// result was a binding blocking exports over a mirror that no longer differed from
+    /// anything, with the import banner offering to import a mirror identical to the project.
+    /// The ways out were push and discard, and after an abandoned merge there is nothing to
+    /// push.
+    /// </para>
+    /// <para>
+    /// <b>The hash comparison is the whole safety of it, and a blanket release would be
+    /// wrong.</b> A <c>TextAuthoritative</c> lock can predate the merge — committed mirror
+    /// edits that were never imported — and that lock still has an import to protect once the
+    /// merge is undone. So this releases only when both sides are back to what
+    /// <c>LastSynced</c> already recorded: nothing outstanding, nothing to lose by letting go.
+    /// </para>
+    /// </remarks>
+    /// <returns>True when the lock was released.</returns>
+    public async Task<bool> ReleaseIfNothingOutstandingAsync(
+        string bindingId, CancellationToken ct)
+    {
+        if (!_locks.TryGetValue(bindingId, out var current)
+            || !SyncStateMachine.HoldsLock(current.Direction)
+            || !_bindings.TryGetValue(bindingId, out var binding))
+        {
+            return false;
+        }
+
+        var projectHash = await ProjectHashAsync(binding, ct).ConfigureAwait(false);
+        var mirrorHash = await ExportTreeHashAsync(binding, ct).ConfigureAwait(false);
+
+        if (projectHash != current.LastSynced.ProjectHash
+            || mirrorHash != current.LastSynced.MirrorHash)
+        {
+            _log.Debug(LogCategory.Lock,
+                $"{bindingId}: still {current.Direction}; something differs from the last " +
+                "synced state, so the lock is kept");
+            return false;
+        }
+
+        _log.Info(LogCategory.Lock,
+            $"{bindingId}: nothing outstanding after the undo; releasing the {current.Direction} lock");
+
+        await ApplyAsync(bindingId, SyncTrigger.ChangesDiscarded, projectHash, ct)
+            .ConfigureAwait(false);
+
+        return true;
     }
 
     public Task AcknowledgeFailureAsync(string bindingId, CancellationToken ct)

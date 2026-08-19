@@ -1215,23 +1215,77 @@ public sealed class SyncViewModel : ObservableObject
     /// mirror, and the import is raised so the panel offers the way out.
     /// </para>
     /// </remarks>
-    public async Task NoteMergedTextAsync(IReadOnlyList<string> bindingIds)
+    /// <summary>
+    /// An undo has put the tree back; let go of any lock that now protects nothing.
+    /// </summary>
+    /// <remarks>
+    /// <b>Abandoning a merge is the case this exists for.</b> The merge marked the mirror
+    /// authoritative, and <c>AdoptExternalStateAsync</c> skips a binding holding a lock — so
+    /// the abandon left the lock on, blocking exports over a mirror that no longer differed
+    /// from anything, with the import banner offering to import a mirror identical to the
+    /// project. The orchestrator compares both hashes against <c>LastSynced</c> and releases
+    /// only when nothing is outstanding, so a lock that predates the merge and still owes an
+    /// import is left exactly where it is.
+    /// <para>
+    /// The pending import goes with the lock. Leaving the banner up over a released binding
+    /// would offer a button whose whole job is already done.
+    /// </para>
+    /// </remarks>
+    public async Task ReleaseLocksWithNothingOutstandingAsync()
     {
-        if (_orchestrator is null || bindingIds.Count == 0)
+        if (_orchestrator is null || _config is null)
         {
             return;
         }
 
+        foreach (var binding in _config.Bindings.Where(b => b.Enabled))
+        {
+            if (await _orchestrator
+                    .ReleaseIfNothingOutstandingAsync(binding.Id, CancellationToken.None)
+                    .ConfigureAwait(true))
+            {
+                _pendingImports.Remove(binding.Id);
+            }
+        }
+
+        RefreshPendingImport();
+        await RescanAsync().ConfigureAwait(true);
+        await RefreshStalenessAsync().ConfigureAwait(true);
+    }
+
+    /// <returns>The bindings whose mirror could NOT be put in charge, for the caller to
+    /// report. Empty is the ordinary answer.</returns>
+    public async Task<IReadOnlyList<string>> NoteMergedTextAsync(IReadOnlyList<string> bindingIds)
+    {
+        if (_orchestrator is null || bindingIds.Count == 0)
+        {
+            return [];
+        }
+
+        var unprotected = new List<string>();
+
         foreach (var id in bindingIds)
         {
-            await _orchestrator.NoteMergedTextAsync(id, CancellationToken.None)
-                .ConfigureAwait(true);
-
-            NotePendingImport(id);
+            // The answer matters. A binding whose project already had unexported edits is
+            // ProjectAuthoritative, and the state machine blocks TextChanged from there - so
+            // the merged mirror would be left open to the commit gate's export with nothing
+            // on screen saying so. Loud rather than logged: this is the one guarantee the
+            // whole merge path rests on.
+            if (await _orchestrator.NoteMergedTextAsync(id, CancellationToken.None)
+                    .ConfigureAwait(true))
+            {
+                NotePendingImport(id);
+            }
+            else
+            {
+                unprotected.Add(id);
+            }
         }
 
         await RescanAsync().ConfigureAwait(true);
         await RefreshStalenessAsync().ConfigureAwait(true);
+
+        return unprotected;
     }
 
     /// <param name="adoptResult">
