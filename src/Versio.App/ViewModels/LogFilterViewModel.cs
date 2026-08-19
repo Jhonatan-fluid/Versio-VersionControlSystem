@@ -112,6 +112,7 @@ public sealed class LogFilterViewModel : ObservableObject
     ];
 
     private string _text = string.Empty;
+    private bool _batching;
 
     public LogFilterViewModel()
     {
@@ -242,16 +243,54 @@ public sealed class LogFilterViewModel : ObservableObject
         }
     }
 
-    private void SetAllCategories(bool enabled)
+    private void SetAllCategories(bool enabled) => AsOneChange(() =>
     {
         foreach (var category in Categories)
         {
             category.IsEnabled = enabled;
         }
+    });
+
+    /// <summary>
+    /// Run a batch of toggle changes and raise <see cref="Changed"/> once at the end.
+    /// </summary>
+    /// <remarks>
+    /// <b>Every raise costs a full rebuild</b> — <c>LogViewModel.Rebuild</c> clears the bound
+    /// collection and re-walks the whole sink, which holds up to ten thousand entries. Setting
+    /// ten toggles in a loop therefore did ten of them, on the UI thread, inside a click. That
+    /// The two callers today are "All categories" and "No categories", which have had this
+    /// defect since they were written - a wasted rebuild leaves no trace to notice.
+    /// <para>
+    /// A flag rather than a disposable scope: there is no re-entrancy to protect against — every
+    /// caller is a synchronous loop over toggles on the dispatcher — and a scope would invite
+    /// nesting that this does not handle.
+    /// </para>
+    /// </remarks>
+    private void AsOneChange(Action changes)
+    {
+        _batching = true;
+
+        try
+        {
+            changes();
+        }
+        finally
+        {
+            // In a finally so a throw mid-batch cannot leave the filter permanently mute,
+            // which would be a panel that silently stops responding to its own controls.
+            _batching = false;
+        }
+
+        Raise();
     }
 
     private void Raise()
     {
+        if (_batching)
+        {
+            return;
+        }
+
         OnPropertyChanged(nameof(CategorySummary));
         OnPropertyChanged(nameof(IsFiltering));
         Changed?.Invoke();
