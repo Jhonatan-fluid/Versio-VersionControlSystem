@@ -29,13 +29,19 @@ suite is seven projects, 2,319 tests, split by need — the half-hour CODESYS ga
 
 **`UX-PLAN.md` is where the shell's remaining UX work lives, and it is not copied here** — one
 claim in one place, which is the defect the Phase 1 documents caught in themselves five separate
-times. What it carries that this file should know about: **two probes, `P-M1`/`P-M2`, ranked
-above its own queue**, because they are a correctness question about *shipped* code rather than
-about the plan. A merge resolves the `binary -diff -merge` `.project` to one side verbatim while
-the mirror beside it gets a real three-way merge, and `AdoptExternalStateAsync` then re-baselines
-both as though a commit had vetted them — an invariant its own remarks state, which holds for a
-checkout and a pull and not for a merge. Predicted, not measured. **Do not build the merge verb
-on top of it unmeasured.**
+times.
+
+**That plan's own warning has since been answered and is kept here only as history.** It said a
+merge resolves the `binary -diff -merge` `.project` to one side while the mirror beside it gets a
+real three-way merge, that `AdoptExternalStateAsync` then re-baselines both as though a commit
+had vetted them, and that the merge verb must not be built on top of it unmeasured. **Probe P-M1
+ran on 2026-08-18 and confirmed it** — 41 mirror files, two carrying content the kept project did
+not have — and `LOCK-1` closed it the same day: a merge now puts the mirror in charge and the
+export gate is refused before the toolchain runs. **P-M2 is still open**, and needs a real export.
+
+All of that is on branch `UxPlan`, which is **not merged**. See
+[`HANDOFF-UxPlan.md`](HANDOFF-UxPlan.md) for the three things that must happen first — the
+real-CODESYS gate among them.
 
 ---
 
