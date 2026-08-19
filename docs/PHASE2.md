@@ -48,7 +48,8 @@ export gate is refused before the toolchain runs. **P-M2 is still open**, and ne
 `UxPlan` was merged into `Siemens` on 2026-08-19. The owner saw the merged window the same
 day (explorer on the rail, Fetch / Pull / Push, branch overflow). What
 [`HANDOFF-UxPlan.md`](HANDOFF-UxPlan.md) still owes: the real-CODESYS gate (running this
-session), a walk of the merge dialog, and the decision on UX-12. Not on `main`.
+session). What [`HANDOFF-UxPlan.md`](HANDOFF-UxPlan.md) still owes: a counted CODESYS gate
+for `LOCK-1`, a walk of the merge dialog, and the decision on UX-12. On `main` as of 2026-08-19.
 
 ---
 

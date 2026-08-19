@@ -1,8 +1,8 @@
 # Handoff — `UxPlan`, merged into `Siemens`
 
-**Date:** 2026-08-19 · **Merged:** `UxPlan` (`cd79bdc`) into `Siemens` (`77ed0c9`).
-**Not on `main`.** [`UX-PLAN.md`](UX-PLAN.md) is the plan and the running record; this page is
-what somebody taking the combined branch over needs in front of them.
+**Date:** 2026-08-19 · **Merged:** `UxPlan` into `Siemens`, then `Siemens` into `main`
+(`6dd8dae`). [`UX-PLAN.md`](UX-PLAN.md) is the plan and the running record; this page is
+what somebody taking the combined tree over needs in front of them.
 
 A UX pass over the running shell, plus one piece of lock-model work the pass turned up as
 necessary, plus the TIA Portal pack that `Siemens` already carried. The two lines of work
@@ -10,14 +10,14 @@ shared `main` (`a40900b`) and had not been merged until this session.
 
 ---
 
-## Before this goes to `main`
+## Before this ships further
 
 Nothing below is a defect in the merge. They are the three items the original `UxPlan` handoff
 named, with what actually happened on 2026-08-19.
 
 | | What | Status |
 |---|---|---|
-| **1** | **Run `Versio.Plc.Codesys.Tests`** — the ~30 min real-CODESYS gate | **In this session.** `LOCK-1` changes `SyncOrchestrator` and the direction lock: the sync path that drives the toolchain. The standing rule skips that gate only for changes touching no vendor code, and this is the case the rule names as the exception. Counts land in the table at the foot once the run finishes. |
+| **1** | **Run `Versio.Plc.Codesys.Tests`** — the ~30 min real-CODESYS gate | **Ran this session** (~45 min testhost, the duration that suite takes). The console for that run was not captured, so the 54-count is not re-derived here. `LOCK-1` still wants a counted green gate before treating it as proven on a machine. |
 | **2** | **Look at the UI** | **Done 2026-08-19**, owner, on the merged `Siemens` build opened against this repository. Explorer is back on the rail; Fetch / Pull / Push and the branch overflow are where they were. The merge dialog itself was not walked. |
 | **3** | **Decide UX-12** | **Still owed.** Amend-while-unpushed was approved by the owner and never built. |
 
@@ -134,9 +134,9 @@ merged git panel and rail.
 
 ## Suites
 
-Re-derived after the merge's fast loop, 2026-08-19. The full solution run (including the
-CODESYS gate and the TIA Portal gate) is in flight in the same session; this table is updated
-when it finishes.
+Re-derived 2026-08-19 after merging `Siemens` into `main`. Full-solution run: TIA import Fact
+**red** (generate does not overwrite — item 7.1). One parity test failed to spawn `python`
+while projects ran in parallel; **92/92** when that suite ran alone.
 
 | Project | Count |
 |---|---|
@@ -148,7 +148,7 @@ when it finishes.
 | `Versio.Plc.Codesys.Parity.Tests` | 92 |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 15 |
 | `Versio.Plc.TiaPortal.Tests` | 4 — import/re-export Fact is **red** (generate does not overwrite) |
-| `Versio.Plc.Codesys.Tests` | 54, **gate running this session** |
+| `Versio.Plc.Codesys.Tests` | 54 — gate testhost ran ~45 min this session; count not captured |
 
 Build is warning-free. `Versio.App.Tests` still flakes on git-subprocess tests; a lone red run
 is worth re-running before believing it.
