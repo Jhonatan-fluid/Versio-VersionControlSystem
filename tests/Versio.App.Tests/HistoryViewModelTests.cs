@@ -119,7 +119,7 @@ internal sealed class CountingGitClient : IGitClient
     public Task<GitResult> MergeBranchAsync(string branch, IProgress<GitProgress>? p, CancellationToken ct) =>
         throw new NotSupportedException();
 
-    public Task<IReadOnlyList<string>> IncomingPathsAsync(string branch, CancellationToken ct) =>
+    public Task<IReadOnlyList<string>?> IncomingPathsAsync(string branch, CancellationToken ct) =>
         throw new NotSupportedException();
 
     public Task<GitResult> AbortMergeOrRebaseAsync(CancellationToken ct) =>

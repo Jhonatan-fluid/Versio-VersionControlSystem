@@ -112,6 +112,32 @@ public sealed class MergePreflightTests
     }
 
     [Fact]
+    public void An_unanswerable_diff_is_not_an_empty_one()
+    {
+        // THE DEFECT THIS CLOSES, FOUND ON A SECOND READ. IncomingPathsAsync returned [] when
+        // git could not resolve the branch at all - a remote-only name, which has no local ref
+        // - and [] is what "brings nothing" looks like. So the preflight answered "already in
+        // this branch" about a branch it had never managed to look at: refusing while
+        // confidently stating the wrong reason, which is worse than refusing.
+        var plan = MergePreflight.For("origin-only", incomingPaths: null, [Refrigerator]);
+
+        Assert.Equal(MergeVerdict.CannotTell, plan.Verdict);
+        Assert.False(plan.CanProceed);
+
+        Assert.DoesNotContain("already in", plan.Explanation);
+        Assert.Contains("remote", plan.Explanation);
+    }
+
+    [Fact]
+    public void Nothing_incoming_still_means_already_merged()
+    {
+        // The other side of the distinction: an EMPTY list is a real answer and keeps its own
+        // verdict. If these two ever collapse back into one, one of these two tests fails.
+        Assert.Equal(MergeVerdict.AlreadyMerged,
+                     MergePreflight.For("done", [], [Refrigerator]).Verdict);
+    }
+
+    [Fact]
     public void A_repository_tracking_nothing_never_refuses()
     {
         // Versio on a plain repository is still a git client, and every merge in it is

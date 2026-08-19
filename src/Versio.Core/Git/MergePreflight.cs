@@ -14,6 +14,17 @@ public enum MergeVerdict
     /// safely.
     /// </summary>
     TouchesTrackedProject,
+
+    /// <summary>
+    /// Git could not say what the merge would bring, so nothing can be decided about it.
+    /// </summary>
+    /// <remarks>
+    /// Distinct from every other answer on purpose. The first version had no such case: an
+    /// unanswerable diff came back as an empty list, which is what "brings nothing" looks
+    /// like — so a branch git cannot even resolve was reported as <i>already in this
+    /// branch</i>. Refusing while claiming to know why is worse than refusing.
+    /// </remarks>
+    CannotTell,
 }
 
 /// <summary>The verdict, and the sentence to put in front of the user.</summary>
@@ -78,7 +89,8 @@ public static class MergePreflight
     /// <param name="branch">The branch being merged in, for the sentence.</param>
     /// <param name="incomingPaths">
     /// Repository-relative paths that differ between this branch and that one — what
-    /// <c>git diff --name-only HEAD...branch</c> reports.
+    /// <c>git diff --name-only HEAD...branch</c> reports. <b>Null when git could not answer</b>,
+    /// which is a different thing from an empty list and must not be flattened into one.
     /// </param>
     /// <param name="trackedRoots">
     /// One entry per tracked project: the project file's path and its mirror directory, both
@@ -86,9 +98,21 @@ public static class MergePreflight
     /// </param>
     public static MergePlan For(
         string branch,
-        IReadOnlyList<string> incomingPaths,
+        IReadOnlyList<string>? incomingPaths,
         IReadOnlyList<TrackedRoot> trackedRoots)
     {
+        if (incomingPaths is null)
+        {
+            return new MergePlan
+            {
+                Verdict = MergeVerdict.CannotTell,
+                Explanation =
+                    $"Git could not work out what merging {branch} would bring, so Versio " +
+                    "will not guess. The usual cause is a branch that only exists on the " +
+                    "remote: fetch it and check it out once, and it can be merged from then on.",
+            };
+        }
+
         if (incomingPaths.Count == 0)
         {
             return new MergePlan

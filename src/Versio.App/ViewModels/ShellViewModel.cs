@@ -3435,10 +3435,18 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         {
             _logger.Warn(LogCategory.Git, $"merge of {chosen} refused: {plan.Verdict}");
 
-            // A sticky failure card rather than the status bar: the explanation is several
-            // sentences and names what to do instead, and it is not an event that happened so
-            // much as a decision the user now has to make.
-            Notifications.Warning($"Did not merge {chosen}.", plan.Explanation);
+            // FAILURE, NOT WARNING, AND THE REASON IS THE LIFETIME RATHER THAN THE SEVERITY.
+            //
+            // Only a Failure is sticky - NotificationLog gives Success and Warning an expiry
+            // and Failure none - and this explanation is several sentences that name a project
+            // and say what to do instead. On a Warning's timer it would be gone before it had
+            // been read, which is the exact failure the log's own remarks describe for a push
+            // result. It also gets the Copy button, so the sentence can be pasted into a
+            // message asking somebody about it.
+            //
+            // The first version of this used Warning and carried a comment claiming it was
+            // sticky. It was not.
+            Notifications.Failure($"Did not merge {chosen}.", plan.Explanation);
             return;
         }
 

@@ -63,7 +63,14 @@ public sealed partial class GitCliClient
     }
 
     /// <summary>What merging that branch would bring, from the merge base.</summary>
-    public async Task<IReadOnlyList<string>> IncomingPathsAsync(
+    /// <remarks>
+    /// <b>Null when the question could not be answered, never an empty list.</b> The first
+    /// version returned <c>[]</c> on failure, which is indistinguishable from a genuinely empty
+    /// diff — so a branch git cannot resolve at all (a remote-only name with no local ref, the
+    /// common case) was reported to the preflight as "brings nothing" and refused with
+    /// <i>already in this branch</i>. Wrong, and confidently so.
+    /// </remarks>
+    public async Task<IReadOnlyList<string>?> IncomingPathsAsync(
         string branch, CancellationToken ct)
     {
         // Three dots: what THAT branch has done since the two parted, and not what this one
@@ -76,7 +83,7 @@ public sealed partial class GitCliClient
         {
             _log.Warn(LogCategory.Git,
                       $"could not list what {branch} would bring: {result.FailureReason}");
-            return [];
+            return null;
         }
 
         return [.. result.StdOut

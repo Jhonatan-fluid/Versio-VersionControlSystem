@@ -23,7 +23,19 @@ public sealed class BranchMergeRow(BranchCandidate candidate, bool alreadyIn)
     /// <summary>The current branch cannot be merged into itself.</summary>
     public bool IsCurrent => Candidate.IsCurrent;
 
-    public bool CanMerge => !AlreadyIn && !IsCurrent;
+    /// <summary>
+    /// On the remote only, so its short name resolves to nothing on this machine.
+    /// </summary>
+    /// <remarks>
+    /// <b>Offered but not selectable, rather than hidden.</b> Hiding it would make a branch
+    /// somebody can see in the branch dropdown vanish from the merge list with no explanation.
+    /// It cannot be merged by the name shown because there is no local ref for it —
+    /// <c>git diff HEAD...feature</c> simply fails — and merging it properly means naming its
+    /// remote ref, which is a small piece of work this dialog does not do yet.
+    /// </remarks>
+    public bool IsRemoteOnly => Candidate.Existence == BranchExistence.RemoteOnly;
+
+    public bool CanMerge => !AlreadyIn && !IsCurrent && !IsRemoteOnly;
 
     public string WhereText => Candidate.Existence switch
     {
@@ -41,7 +53,10 @@ public sealed class BranchMergeRow(BranchCandidate candidate, bool alreadyIn)
     /// spelled out rather than shown as a tick.
     /// </remarks>
     public string MergedText =>
-        IsCurrent ? "this branch" : AlreadyIn ? "already in" : "has new work";
+        IsCurrent ? "this branch"
+        : IsRemoteOnly ? "not here yet"
+        : AlreadyIn ? "already in"
+        : "has new work";
 
     public string MergedBrushKey =>
         CanMerge ? "Brush.Status.Added" : "Brush.Text.Disabled";
@@ -110,6 +125,9 @@ public partial class BranchMergeWindow : Window
         {
             null => "Nothing selected yet.",
             { IsCurrent: true } => $"{row.Name} is the branch you are on.",
+            { IsRemoteOnly: true } =>
+                $"{row.Name} is only on the remote. Check it out once so this machine has " +
+                "it, and it can be merged from then on.",
             { AlreadyIn: true } =>
                 $"{row.Name} is already in this branch — merging it would change nothing.",
             _ => string.Empty,

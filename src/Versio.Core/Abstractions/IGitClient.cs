@@ -243,7 +243,12 @@ public interface IGitClient
     /// as well, so a merge preflight would refuse on work that is already here. Three asks the
     /// question actually being posed: what would this merge <i>bring</i>?
     /// </remarks>
-    Task<IReadOnlyList<string>> IncomingPathsAsync(string branch, CancellationToken ct);
+    /// <returns>
+    /// The paths, or <c>null</c> when git could not answer — a branch with no resolvable ref,
+    /// most often a remote-only name. Deliberately not an empty list, which would be
+    /// indistinguishable from "brings nothing" and read as "already merged".
+    /// </returns>
+    Task<IReadOnlyList<string>?> IncomingPathsAsync(string branch, CancellationToken ct);
 
     /// <summary>
     /// Undo a merge or rebase that is part-way through, back to where it started.
