@@ -220,9 +220,31 @@ internal sealed class CountingGitClient : IGitClient
     public Task<GitResult> PushAsync(IProgress<GitProgress>? progress, CancellationToken ct) =>
         throw new NotSupportedException();
 
+    public IReadOnlyList<string> WorkingTree { get; set; } = [];
+
+    public Task<IReadOnlyList<string>> ListWorkingTreeAsync(CancellationToken ct) =>
+        Task.FromResult(WorkingTree);
+
+    /// <summary>How many working-tree diffs were asked for.</summary>
+    public int WorkingTreeDiffCalls { get; private set; }
+
+    /// <summary>When set, <see cref="DiffAsync"/> throws this instead of returning.</summary>
+    public Exception? DiffError { get; set; } = new NotSupportedException();
+
+    /// <summary>Returned when <see cref="DiffError"/> is null.</summary>
+    public string DiffText { get; set; } = string.Empty;
+
     public Task<string> DiffAsync(string path, bool staged, CancellationToken ct,
-                                  int contextLines = 3) =>
-        throw new NotSupportedException();
+                                  int contextLines = 3)
+    {
+        WorkingTreeDiffCalls++;
+        if (DiffError is not null)
+        {
+            throw DiffError;
+        }
+
+        return Task.FromResult(DiffText);
+    }
 
     public Task<IReadOnlyDictionary<string, string>> DetectRenamesAsync(CancellationToken ct) =>
         throw new NotSupportedException();

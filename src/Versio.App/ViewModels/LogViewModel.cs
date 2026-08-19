@@ -85,7 +85,6 @@ public sealed class LogViewModel : ObservableObject, IDisposable
     // window and reads as though something is wrong. The header, its count badge and the
     // chevron stay visible, so it is one click away and never hidden.
     private bool _isExpanded;
-    private bool _autoScroll = true;
     private bool _isPaused;
     private int _heldCount;
 
@@ -136,12 +135,6 @@ public sealed class LogViewModel : ObservableObject, IDisposable
     {
         get => _isExpanded;
         set => SetProperty(ref _isExpanded, value);
-    }
-
-    public bool AutoScroll
-    {
-        get => _autoScroll;
-        set => SetProperty(ref _autoScroll, value);
     }
 
     /// <summary>

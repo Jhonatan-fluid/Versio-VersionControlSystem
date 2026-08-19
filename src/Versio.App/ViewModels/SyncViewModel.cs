@@ -1897,6 +1897,46 @@ public sealed class SyncViewModel : ObservableObject
             repoRelative.Replace('/', System.IO.Path.DirectorySeparatorChar));
 
     /// <summary>
+    /// The tracked projects as the explorer needs them: every binding, full object tree,
+    /// no git status. The Project panel's own build still pairs catalogs with HEAD; this
+    /// one does not, because the explorer does not mark changes.
+    /// </summary>
+    public IReadOnlyList<WorkspaceProject> ReadProjectsForExplorer()
+    {
+        if (_repositoryRoot is null)
+        {
+            return [];
+        }
+
+        var projects = new List<WorkspaceProject>();
+        foreach (var binding in _config.Bindings.Where(b => b.Enabled))
+        {
+            var manifestPath = System.IO.Path.Combine(
+                AbsolutePath(binding.ExportPath), BindingConventions.ManifestFileName);
+            var manifest = File.Exists(manifestPath)
+                ? ProjectManifest.Parse(File.ReadAllText(manifestPath), out _)
+                : null;
+
+            var catalogs = ReadCatalogs(manifest, binding.ExportPath,
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+
+            projects.Add(new WorkspaceProject
+            {
+                ProjectPath = binding.ProjectPath,
+                ExportPath = binding.ExportPath,
+                Manifest = manifest,
+                Libraries = catalogs.Libraries,
+                Tasks = catalogs.Tasks,
+                ExportState = Projects.FirstOrDefault(p => p.BindingId == binding.Id)?.State
+                              ?? "tracked",
+                Busy = Projects.FirstOrDefault(p => p.BindingId == binding.Id)?.Busy ?? false,
+            });
+        }
+
+        return projects;
+    }
+
+    /// <summary>
     /// The whole working tree: every tracked project with its objects, and every other
     /// changed file beside them.
     /// </summary>

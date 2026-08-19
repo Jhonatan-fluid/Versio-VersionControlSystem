@@ -86,6 +86,7 @@ public partial class MainWindow : Window
         Bind(Key.D1, "RailProject");
         Bind(Key.D2, "RailGit");
         Bind(Key.D3, "RailHistory");
+        Bind(Key.D4, "RailExplorer");
 
         // NumPad as well as the number row. A full-size keyboard on a workshop desk is exactly
         // where this application runs, and Ctrl+NumPad1 doing nothing is the kind of small
@@ -93,6 +94,7 @@ public partial class MainWindow : Window
         Bind(Key.NumPad1, "RailProject");
         Bind(Key.NumPad2, "RailGit");
         Bind(Key.NumPad3, "RailHistory");
+        Bind(Key.NumPad4, "RailExplorer");
 
         void Bind(Key key, string rail) =>
             InputBindings.Add(new KeyBinding(
@@ -377,6 +379,7 @@ public partial class MainWindow : Window
         _shell.ActivePanel = panel;
 
         ProjectPanel.Visibility = Show(panel == ShellPanel.Project);
+        ExplorerPanel.Visibility = Show(panel == ShellPanel.Explorer);
         GitPanel.Visibility = Show(panel == ShellPanel.Git);
         HistoryPanel.Visibility = Show(panel == ShellPanel.History);
 

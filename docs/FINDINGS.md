@@ -17,6 +17,43 @@ produce a diff touching everything else.
 
 ---
 
+### The log opened on the first line, fought the wheel, and copied nothing
+
+**Found on 2026-08-18 by using the panel.** Three defects, one list.
+
+Opening the log after startup painted the *first* rows. Follow-the-tail lived only in
+`OnRowsAppended`, and `ScrollIntoView` on a collapsed `ListBox` is a no-op, so a console that
+already held the startup lines came back at offset 0. `ScrollIntoView` is still a no-op once
+the list is visible, on a virtualizing panel that has not placed the last row — the test that
+caught it saw extent 80, viewport 7, offset 0. The viewer itself has to be told
+`ScrollToBottom`. `ScrollToEnd` is the wrong call: it also jumps horizontally, and a long
+message would hide its own start.
+
+Wheel-up was overwritten by the next 100 ms drain. Pause existed, but only as a header button,
+and it already means freeze — the tooltip that used to say "pause auto-scroll" was rewritten
+because the list changing under the reader is exactly what pause is for. Scrolling away from
+the tail is the same request, made with the wheel, so it sets the same `IsPaused`. An unused
+`AutoScroll` flag on the view model had survived that rewrite with no readers.
+
+The list was a stock `ListBox`. `SelectionMode` defaulted to Single, the rows were
+`TextBlock`s, and no `ApplicationCommands.Copy` binding existed anywhere on it. Click,
+shift-click and Ctrl+C produced nothing a colleague could paste. The diff pane had already
+solved this shape: Extended selection, document order not pick order, `LogEvent.Format()` so
+a paste matches the file, and `ExternalException` swallowed so a busy clipboard cannot take
+the window down.
+
+Pinned in `LogPanelInteractionTests`. Deleting the expand-scroll left the list at offset 0
+with the chevron test still green. Deleting the Copy binding left `CanExecute` false with a
+row selected.
+
+**What was still wrong after that, found by using it.** Extended mode still needed Shift or
+Ctrl: a plain drag moved a single row with the mouse, so one line copied and a run of them
+did not. And arriving back at the newest line stayed frozen — Play was the only way out,
+which is not how a log you scrolled up to read should behave. A drag now paints a range;
+scrolling back to the tail unpauses and Drain delivers what was held.
+
+---
+
 ### Turning a label into a button changed its typeface, and the setter that carried it left with the element
 
 **Found on 2026-08-18 by re-reading a finished, green change.** UX-9 turned the notification

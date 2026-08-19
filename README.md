@@ -51,6 +51,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | Change detection — watcher + safety poll + overflow rescan | ✅ `FileChangeWatcher`, driving the sync engine |
 | Staleness stated, not implied — "2 projects not yet exported" | ✅ answered by the commit gate, so the two cannot disagree |
 | **The project view follows the repository by itself** | ✅ 18 policy tests + 9 against a real filesystem; rebuilt only when something it shows changed |
+| **Repo explorer** — the open clone as a folder tree, PLC projects grafted as the same object tree the Project panel uses | ✅ visualize only: no git diffs, no hunks; Ctrl+4 |
 | Design system tokens, light and dark | ✅ `src/Versio.App/Theme/`; switching at runtime repaints open windows, which it never did until it was measured |
 | Logging — ring buffer, correlation ids, heartbeat, rolling file | ✅ 21 tests; timestamps are local and the file rolls on the local day, so the panel and the file agree; "Open logs folder" selects today's file |
 | **The log panel filters** — level as four chips, category as a multi-select with live counts | ✅ a set rather than a minimum level, because "warnings and errors only" is the request a threshold cannot express |
@@ -180,11 +181,11 @@ Versio.sln
 ├─ tests/
 │  ├─ Versio.TestSupport/       not a test project: the three helpers more than one suite
 │  │                            needs (TestPaths, TestLogger, VendorSeamScanner)
-│  ├─ Versio.Core.Tests/        1,411 unit tests — pure, no IO, under a second
+│  ├─ Versio.Core.Tests/        1,421 unit tests — pure, no IO, under a second
 │  ├─ Versio.Integration.Tests/ 147 tests against real git and the real filesystem, ~10 s.
 │  │                            NO CODESYS: that is a different project now, so this one
 │  │                            needs no filter and cannot accidentally cost half an hour
-│  ├─ Versio.App.Tests/         589 tests that build the real windows and panels against
+│  ├─ Versio.App.Tests/         609 tests that build the real windows and panels against
 │  │                            the real stylesheet on an STA thread — none is ever shown
 │  ├─ Versio.Plc.Codesys.Pure.Tests/ 260 pure vendor tests — the planner, the codecs, the
 │  │                            protocol — under a second, needing nothing
@@ -338,10 +339,10 @@ dotnet test tests/Versio.Core.Tests
 
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,411 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
+| `Versio.Core.Tests` | 1,421 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
 | `Versio.Integration.Tests` | 147 | a real `git.exe` and the real filesystem | ~10 s |
 | `Versio.Arch.Tests` | 14 | nothing — it reads assembly metadata, IL, and the project files | instant |
-| `Versio.App.Tests` | 589 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
+| `Versio.App.Tests` | 609 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
 | `Versio.Plc.Codesys.Pure.Tests` | 260 | nothing — the vendor's planner, codecs and protocol, pure | under a second |
 | `Versio.Plc.Codesys.Parity.Tests` | 92 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
 | `Versio.Plc.Codesys.Tests` | 54 | **a real CODESYS**, and **skips cleanly** without one | **~30 min** |

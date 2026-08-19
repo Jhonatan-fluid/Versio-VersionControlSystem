@@ -74,6 +74,9 @@ public enum ShellPanel
     /// <summary>The repository as CODESYS structures it, plus every other changed file.</summary>
     Project,
 
+    /// <summary>The open clone as a folder tree. Visualize, not review.</summary>
+    Explorer,
+
     /// <summary>Staging, commit, and the remote operations.</summary>
     Git,
 
@@ -366,7 +369,7 @@ public sealed class ChangeRow(FileChange change) : ObservableObject
 public sealed class ShellViewModel : ObservableObject, IDisposable
 {
     private readonly VersioLogger _logger;
-    private readonly Func<string, GitCliClient> _gitFactory;
+    private readonly Func<string, IGitClient> _gitFactory;
     private readonly RepositoryLocator _locator;
     private readonly IClock _clock;
 
@@ -416,7 +419,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// </remarks>
     private AppSettings _stored = AppSettings.Empty;
 
-    private GitCliClient? _git;
+    private IGitClient? _git;
 
     /// <summary>True while a question is on screen waiting for an answer.</summary>
     /// <remarks>
@@ -461,7 +464,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     private ShellPanel _activePanel = ShellPanel.Project;
 
     public ShellViewModel(VersioLogger logger, LogViewModel log,
-                          Func<string, GitCliClient>? gitFactory = null,
+                          Func<string, IGitClient>? gitFactory = null,
                           IRepositoryProbe? probe = null,
                           IClock? clock = null,
                           Func<PlcVendor, IVersioLogger, IPlcToolchain?>? toolchains = null,
@@ -584,6 +587,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         };
 
         History = new HistoryViewModel(logger);
+        Explorer = new ExplorerViewModel(logger, () => Sync.ReadProjectsForExplorer());
         _gitFactory = gitFactory ?? (path => new GitCliClient(path, logger: logger));
         _locator = new RepositoryLocator(probe ?? new FileSystemRepositoryProbe());
         _policy = new StatusRefreshPolicy(_clock);
@@ -597,7 +601,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         // Picking a row in the project tree shows it in the diff pane. One pane, whichever
         // way the row was reached.
-        Sync.NodeSelected += ShowNode;
+        Sync.NodeSelected += row => ShowNode(row, visualizeOnly: false);
+        Explorer.NodeSelected += row => ShowNode(row, visualizeOnly: true);
 
         // A project adopted while the app is running writes new .gitignore rules, and its
         // toolchain starts rewriting a lock marker a second later. Without this the watcher
@@ -665,6 +670,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
     /// <summary>The commit history, in its own panel and loaded only when it is shown.</summary>
     public HistoryViewModel History { get; }
+
+    /// <summary>The open clone as a folder tree. Visualize, not review.</summary>
+    public ExplorerViewModel Explorer { get; }
 
     public ObservableCollection<ChangeRow> Changes { get; } = [];
 
@@ -1057,6 +1065,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // never called, and it already knew what to forget.
         Sync.Detach();
         History.Detach();
+        Explorer.Detach();
 
         RaiseGitCommandStates();
     }
@@ -1336,6 +1345,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             // that happens. Everything else here is already loaded by the time the rail
             // can switch to it.
             History.IsVisible = value == ShellPanel.History;
+            Explorer.IsVisible = value == ShellPanel.Explorer;
 
             // Somebody has come to look at the remote, so watch it closely again. The backoff
             // exists to stop polling for nobody; opening this panel is the clearest possible
@@ -1351,6 +1361,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     public string PanelTitle => _activePanel switch
     {
         ShellPanel.Project => "PROJECT",
+        ShellPanel.Explorer => "EXPLORER",
         ShellPanel.Git => "GIT",
         ShellPanel.History => "HISTORY",
         _ => string.Empty,
@@ -1979,6 +1990,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // The history is handed the client but reads nothing yet. Whether this repository's
         // log is ever walked is now the user's decision, made by clicking the rail.
         History.Attach(client);
+        Explorer.Attach(client, path);
 
         // Scan for PLC projects after the git state is up, so the sync panel is populated
         // by the time the user reaches for it.
@@ -5360,6 +5372,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             // `git status` per refresh is a process spawn for an answer we already have, and
             // two reads a moment apart can disagree.
             await Sync.RefreshTreeAsync(status).ConfigureAwait(true);
+            Explorer.Invalidate();
 
             // A project dropped into the repository while Versio is running is git's news
             // first: it appears here as an untracked file and nothing else happens, because
@@ -6144,8 +6157,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// A <c>.project</c> row reports its export instead of a diff. That is the whole premise
     /// of the tool stated in the one place somebody is most likely to test it: the binary
     /// file has nothing to compare, and the text beside it does.
+    /// <para>
+    /// <paramref name="visualizeOnly"/> is the explorer: same <see cref="BuildRenderedContent"/>,
+    /// never <see cref="ShowPathAsync"/>. An explorer click that asked git for a diff would
+    /// turn a browse into a review.
+    /// </para>
     /// </remarks>
-    private void ShowNode(TreeRow row)
+    private void ShowNode(TreeRow row, bool visualizeOnly)
     {
         if (row.IsProject)
         {
@@ -6192,9 +6210,40 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         // The rendered half, beside whatever the raw half loads below. Defaulted per
         // selection: a changed file opens on its diff, a clean one on its content —
-        // see ShowRendered's remark.
+        // see ShowRendered's remark. The explorer always visualizes.
         RenderedContent = BuildRenderedContent(row);
-        ShowRendered = HasRenderedView && row.Node.Status == ChangeKind.Unmodified;
+        ShowRendered = HasRenderedView && (visualizeOnly || row.Node.Status == ChangeKind.Unmodified);
+
+        if (visualizeOnly)
+        {
+            // Never DiffAsync. The explorer is a listing; a git patch would be a review.
+            CanStageHunks = false;
+            DiffLayers = [];
+            _shownCommit = null;
+            _selectedDiffStaged = false;
+            PaneNote = string.Empty;
+            SelectedDiffPath = row.PrimaryFile ?? row.Node.Path;
+
+            if (RenderedContent is SourceRender source)
+            {
+                SelectedDiff = source.PseudoDiff;
+            }
+            else if (row.PrimaryFile is { } visualizePath
+                     && RepositoryPath is { } root
+                     && SourceRender.Load(
+                            Path.Combine(root, visualizePath.Replace('/', Path.DirectorySeparatorChar)),
+                            visualizePath, noChanges: true) is { } fallback
+                     && !fallback.PseudoDiff.Contains('\0'))
+            {
+                SelectedDiff = fallback.PseudoDiff;
+            }
+            else
+            {
+                SelectedDiff = string.Empty;
+            }
+
+            return;
+        }
 
         if (row.PrimaryFile is { } path)
         {
@@ -6204,6 +6253,28 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             _ = ShowPathAsync(path, staged: null);
         }
     }
+
+    /// <summary>Drive the pane from a test the way the explorer panel does.</summary>
+    internal void ShowTreeRow(TreeRow row, bool visualizeOnly) => ShowNode(row, visualizeOnly);
+
+    /// <summary>
+    /// A repository root the pane can read files from, without opening a real clone.
+    /// </summary>
+    /// <param name="git">
+    /// Optional client so a test can prove explorer selection never calls
+    /// <see cref="IGitClient.DiffAsync"/>, while a Project-panel selection still does.
+    /// </param>
+    internal void PreviewRepository(string path, IGitClient? git = null)
+    {
+        RepositoryPath = path;
+        if (git is not null)
+        {
+            _git = git;
+        }
+    }
+
+    /// <summary>The Project-panel path into the pane: prefers a git diff.</summary>
+    internal Task ShowWorkingTreePathAsync(string path) => ShowPathAsync(path, staged: false);
 
     /// <summary>
     /// Load a diff for one path.

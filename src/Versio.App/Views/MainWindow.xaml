@@ -405,7 +405,7 @@
         <Border x:Name="Rail" Grid.Row="1" Grid.RowSpan="3" Grid.Column="0"
                 Width="{DynamicResource Size.Rail.Width}"
                 Background="{DynamicResource Brush.Surface.Base}">
-            <!-- GroupName="Rail" ON ALL THREE, AND IT IS NOT DECORATION.
+            <!-- GroupName="Rail" ON ALL FOUR, AND IT IS NOT DECORATION.
 
                  A RadioButton with no GroupName groups by its VISUAL PARENT. These three were
                  bare siblings in this StackPanel, so that worked by accident for as long as
@@ -427,6 +427,11 @@
                              Content="{DynamicResource Icon.Document}"
                              Checked="OnRailChanged"
                              ToolTip="Project — the repository as CODESYS structures it, with every change marked (Ctrl+1)" />
+                <RadioButton x:Name="RailExplorer" Style="{StaticResource RailButton}"
+                             Tag="Explorer" GroupName="Rail"
+                             Content="{DynamicResource Icon.Folder}"
+                             Checked="OnRailChanged"
+                             ToolTip="Explorer — the repository as files on disk, with PLC projects as object trees (Ctrl+4)" />
                 <!-- THE COUNT LIVES HERE, NOT IN A PANEL TITLE.
 
                      It used to be a pill in the panel header that the shell drew on the
@@ -505,11 +510,11 @@
             <!-- Left panel. One card; the rail swaps its contents.
                  A Grid, not a DockPanel, and that is the whole fix for a panel that used
                  only half its own card: DockPanel.Dock DEFAULTS TO LEFT, and only the last
-                 child fills. The three panels are listed git, history, project - so the
+                 child fills. The four panels are listed git, history, explorer, project - so the
                  project panel filled the card and the other two were docked left at
                  whatever width their content happened to want, leaving 200-odd pixels of
                  dead card to the right of every row in them.
-                 Both rows here are explicit, all three panels share row 1, and exactly one
+                 Both rows here are explicit, all four panels share row 1, and exactly one
                  of them is visible at a time. -->
             <Border Grid.Column="0" Background="{DynamicResource Brush.Surface.Base}"
                     Margin="8,8,0,8" CornerRadius="{DynamicResource Radius.Card}">
@@ -555,6 +560,9 @@
                          is showing, and OnRailChanged reaches this by name. -->
                     <panels:HistoryPanelView Grid.Row="1" x:Name="HistoryPanel"
                                              Visibility="Collapsed" />
+
+                    <panels:ExplorerPanelView Grid.Row="1" x:Name="ExplorerPanel"
+                                              Visibility="Collapsed" />
 
                     <!-- PROJECT: the one view. Every tracked project with its objects
                          underneath it, and every other changed file beside them. Its markup,

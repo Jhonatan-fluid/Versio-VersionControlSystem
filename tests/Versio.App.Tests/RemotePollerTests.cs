@@ -128,6 +128,8 @@ public sealed class RemotePollerTests
 
         public Task<IReadOnlyList<string>> RemotesAsync(CancellationToken ct) => throw new NotSupportedException();
         public Task<GitResult> PublishBranchAsync(string r, string b, IProgress<GitProgress>? p, CancellationToken ct) => throw new NotSupportedException();
+        public Task<IReadOnlyList<string>> ListWorkingTreeAsync(CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<string>>([]);
         public Task<string> DiffAsync(string p, bool s, CancellationToken ct, int c = 3) => throw new NotSupportedException();
         public Task<IReadOnlyDictionary<string, string>> DetectRenamesAsync(CancellationToken ct) => throw new NotSupportedException();
         public Task<string> HeadCommitAsync(CancellationToken ct) => throw new NotSupportedException();

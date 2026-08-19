@@ -195,7 +195,7 @@ public sealed class MainWindowTests
             // reintroduced by the thing that was supposed to be a pure move.
             var trees = new List<TreeView>();
 
-            foreach (var rail in new[] { "RailProject", "RailGit", "RailHistory" })
+            foreach (var rail in new[] { "RailProject", "RailExplorer", "RailGit", "RailHistory" })
             {
                 Assert.IsType<RadioButton>(window.FindName(rail)).IsChecked = true;
 
@@ -206,9 +206,9 @@ public sealed class MainWindowTests
                 trees.AddRange(AllOf<TreeView>(content).Except(trees));
             }
 
-            // The project tree and the history tree. If a third appears, it needs the same
-            // treatment, and this is where that gets noticed.
-            Assert.Equal(2, trees.Count);
+            // Project, history, and explorer. A fourth TreeView that skipped TreeRowItem
+            // would be Windows' highlight blue again, and this is where that gets noticed.
+            Assert.Equal(3, trees.Count);
 
             foreach (var tree in trees)
             {
@@ -362,7 +362,7 @@ public sealed class MainWindowTests
     }
 
     /// <summary>
-    /// Ctrl+1/2/3 reach the rail, and say so where somebody would look.
+    /// Ctrl+1/2/3/4 reach the rail, and say so where somebody would look.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -382,9 +382,11 @@ public sealed class MainWindowTests
     [InlineData(Key.D1, "ProjectPanel", "Ctrl+1")]
     [InlineData(Key.D2, "GitPanel", "Ctrl+2")]
     [InlineData(Key.D3, "HistoryPanel", "Ctrl+3")]
+    [InlineData(Key.D4, "ExplorerPanel", "Ctrl+4")]
     [InlineData(Key.NumPad1, "ProjectPanel", "Ctrl+1")]
     [InlineData(Key.NumPad2, "GitPanel", "Ctrl+2")]
     [InlineData(Key.NumPad3, "HistoryPanel", "Ctrl+3")]
+    [InlineData(Key.NumPad4, "ExplorerPanel", "Ctrl+4")]
     public void The_rail_is_reachable_from_the_keyboard(Key key, string panel, string advertised)
     {
         StaHarness.Run(() =>
@@ -404,7 +406,7 @@ public sealed class MainWindowTests
 
             // And every other panel went away with it — the shortcut goes through the rail
             // button, so the exclusion the rail already guarantees applies here too.
-            foreach (var other in new[] { "ProjectPanel", "GitPanel", "HistoryPanel" }
+            foreach (var other in new[] { "ProjectPanel", "ExplorerPanel", "GitPanel", "HistoryPanel" }
                          .Where(p => p != panel))
             {
                 var hidden = Assert.IsAssignableFrom<FrameworkElement>(window.FindName(other));
@@ -417,6 +419,7 @@ public sealed class MainWindowTests
                 {
                     "Project" => "RailProject",
                     "Git" => "RailGit",
+                    "Explorer" => "RailExplorer",
                     _ => "RailHistory",
                 }));
 
@@ -450,6 +453,7 @@ public sealed class MainWindowTests
     /// </remarks>
     [Theory]
     [InlineData("RailProject", "ProjectPanel")]
+    [InlineData("RailExplorer", "ExplorerPanel")]
     [InlineData("RailGit", "GitPanel")]
     [InlineData("RailHistory", "HistoryPanel")]
     public void Selecting_one_rail_button_clears_the_others(string rail, string panel)
@@ -461,6 +465,7 @@ public sealed class MainWindowTests
             var rails = new Dictionary<string, RadioButton>
             {
                 ["RailProject"] = Assert.IsType<RadioButton>(window.FindName("RailProject")),
+                ["RailExplorer"] = Assert.IsType<RadioButton>(window.FindName("RailExplorer")),
                 ["RailGit"] = Assert.IsType<RadioButton>(window.FindName("RailGit")),
                 ["RailHistory"] = Assert.IsType<RadioButton>(window.FindName("RailHistory")),
             };
@@ -469,6 +474,8 @@ public sealed class MainWindowTests
             {
                 ["ProjectPanel"] = Assert.IsAssignableFrom<FrameworkElement>(
                     window.FindName("ProjectPanel")),
+                ["ExplorerPanel"] = Assert.IsAssignableFrom<FrameworkElement>(
+                    window.FindName("ExplorerPanel")),
                 ["GitPanel"] = Assert.IsAssignableFrom<FrameworkElement>(
                     window.FindName("GitPanel")),
                 ["HistoryPanel"] = Assert.IsAssignableFrom<FrameworkElement>(
@@ -559,7 +566,7 @@ public sealed class MainWindowTests
             // From EVERY panel, which the pill could not do. Project last, because that is
             // the one the old behaviour did work on - ending there would let a regression
             // that only shows Project pass.
-            foreach (var rail in new[] { "RailGit", "RailHistory", "RailProject" })
+            foreach (var rail in new[] { "RailGit", "RailHistory", "RailExplorer", "RailProject" })
             {
                 Assert.IsType<RadioButton>(window.FindName(rail)).IsChecked = true;
                 Layout();

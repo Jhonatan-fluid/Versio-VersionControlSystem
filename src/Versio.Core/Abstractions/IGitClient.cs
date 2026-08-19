@@ -78,6 +78,22 @@ public interface IGitClient
 
     Task<GitStatus> StatusAsync(CancellationToken ct);
 
+    /// <summary>
+    /// Every tracked and untracked path git will show, gitignored files excluded.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>git ls-files -z -c -o --exclude-standard</c>. This is a repository listing, not a
+    /// disk walk: <c>bin/</c>, <c>obj/</c> and <c>.versio/local/</c> stay out because git
+    /// already ignores them, and <c>.git</c> is never a path git reports.
+    /// </para>
+    /// <para>
+    /// NUL-separated for the same reason status is: CODESYS object names contain spaces and
+    /// non-ASCII, and git quotes those without <c>-z</c>.
+    /// </para>
+    /// </remarks>
+    Task<IReadOnlyList<string>> ListWorkingTreeAsync(CancellationToken ct);
+
     Task<IReadOnlyList<BranchInfo>> BranchesAsync(CancellationToken ct);
 
     Task<GitResult> StageAsync(IReadOnlyList<string> paths, CancellationToken ct);

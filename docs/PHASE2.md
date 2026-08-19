@@ -13,7 +13,7 @@ plan-driven import that creates, updates, deletes, renames and moves objects, re
 everywhere it cannot act, and never applies anything a person did not confirm. Thirteen
 numbered gaps (G1–G13) were closed, guarded or decided; the feature checklist ran every import
 behaviour against a real project; and the last two reachable rows closed on 2026-08-17. The
-suite is seven projects, 2,567 tests, split by need — the half-hour CODESYS gate holds only the
+suite is seven projects, 2,597 tests, split by need — the half-hour CODESYS gate holds only the
 54 tests that actually launch the toolchain.
 
 **Documents that stay live** (not archived, because they are logs and references, not plans):
@@ -30,6 +30,11 @@ suite is seven projects, 2,567 tests, split by need — the half-hour CODESYS ga
 **`UX-PLAN.md` is where the shell's remaining UX work lives, and it is not copied here** — one
 claim in one place, which is the defect the Phase 1 documents caught in themselves five separate
 times.
+
+**Repo explorer landed 2026-08-18** on this branch: a fourth rail panel lists the open clone as a
+folder tree, grafting each tracked PLC project through the same `BuildProjectNode` the Project
+panel already uses. Clicks visualize — they never ask git for a diff. The Project panel remains
+the review surface. Not a second item in this queue; see `UX-PLAN.md`.
 
 **That plan's own warning has since been answered and is kept here only as history.** It said a
 merge resolves the `binary -diff -merge` `.project` to one side while the mirror beside it gets a

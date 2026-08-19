@@ -908,7 +908,8 @@ UX-12** — and `Ctrl+F` still waits on UX-6, which is what creates the boxes it
 | **UX-4** | Header and count merged into one trimming column. The plan blamed the growing labels; measurement said the narrow column, with the labels only an aggravator |
 | **UX-5** | Two row templates rather than the planned shared menu — a file can be in both lists at once, so the flag would have described the list, not the row. `MouseDoubleClick` turned out not to bubble |
 | **UX-3 + UX-1** | The overflow, and the merge verb inside it — **with a refusal**. See below |
-| **UX-7** | Half: `Ctrl+1/2/3` (and NumPad) for the rail, advertised in the tooltips. `Ctrl+F` waits on UX-6; `Escape` is a refinement |
+| **UX-7** | Half: `Ctrl+1/2/3/4` (and NumPad) for the rail, advertised in the tooltips. `Ctrl+F` waits on UX-6; `Escape` is a refinement |
+| **Repo explorer** | Fourth rail panel. Same `TreeRow` / `BuildProjectNode` / `ShowNode` as the Project panel; visualize only — never `DiffAsync`. Project panel remains the review surface |
 
 ### Not built, and why
 
