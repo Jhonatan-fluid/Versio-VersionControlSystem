@@ -25,8 +25,8 @@ suite is nine projects, 2,631 tests, split by need — the half-hour CODESYS gat
 | [`SAFEGUARDS.md`](SAFEGUARDS.md) | What Versio refuses, asks about or waits for |
 | [`vendors/codesys/DRIVING.md`](vendors/codesys/DRIVING.md) | How CODESYS is driven — API traps, forms, events, manifest schema |
 | [`vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md) | How TIA Portal is driven — Openness, occupancy, identity. §12 is evidence; **the remaining order is item 7 in this file** |
-| [`HANDOFF-UxPlan.md`](HANDOFF-UxPlan.md) | What `UxPlan` built and still owes. Merged into `Siemens` on 2026-08-19; the real-CODESYS gate and the eyeball pass are still owed |
-| [`UX-PLAN.md`](UX-PLAN.md) | **A plan, and the one live one** — thirteen UX findings over the running shell, ranked, each with its evidence. Opened 2026-08-18. Item 6's human eyeball pass is still owed and this is not it |
+| [`HANDOFF-UxPlan.md`](HANDOFF-UxPlan.md) | What `UxPlan` built, merged into `Siemens` on 2026-08-19. Owner saw the window; UX-12 and P-M2 remain. The CODESYS gate is this session's |
+| [`UX-PLAN.md`](UX-PLAN.md) | **A plan, and the one live one** — thirteen UX findings over the running shell, ranked, each with its evidence. Opened 2026-08-18. What is left: UX-6, UX-7's second half, UX-8, UX-12 |
 
 **`UX-PLAN.md` is where the shell's remaining UX work lives, and it is not copied here** — one
 claim in one place, which is the defect the Phase 1 documents caught in themselves five separate
@@ -45,9 +45,10 @@ ran on 2026-08-18 and confirmed it** — 41 mirror files, two carrying content t
 not have — and `LOCK-1` closed it the same day: a merge now puts the mirror in charge and the
 export gate is refused before the toolchain runs. **P-M2 is still open**, and needs a real export.
 
-`UxPlan` was merged into `Siemens` on 2026-08-19. The three items in
-[`HANDOFF-UxPlan.md`](HANDOFF-UxPlan.md) still stand: the real-CODESYS gate, a human eyeball of
-the rail/overflow/merge dialog, and the decision on UX-12.
+`UxPlan` was merged into `Siemens` on 2026-08-19. The owner saw the merged window the same
+day (explorer on the rail, Fetch / Pull / Push, branch overflow). What
+[`HANDOFF-UxPlan.md`](HANDOFF-UxPlan.md) still owes: the real-CODESYS gate (running this
+session), a walk of the merge dialog, and the decision on UX-12. Not on `main`.
 
 ---
 
@@ -204,10 +205,13 @@ be manufactured — they close when reality produces a specimen, not before.
   has rows (the conflicts section's own rule), Apply that keeps and Drop that confirms and
   re-resolves the positional ref by SHA. No save button — the auto-stash owns taking, and
   the deliberate case belongs to a terminal.
-- **The UI eyeball pass** — still owed to a human, and this session added to what it covers:
-  library and task rows, the layer chips, the context menu (and its newly themed
-  ContextMenu style), the ahead/behind previews, the clean-tree line, the coloured subject
-  counter, the emphasis colours and the split view, and the stash section.
+- **The UI eyeball pass** — the owner saw the merged `Siemens` + `UxPlan` window on
+  2026-08-19 and said it looks right (fourth rail button, Fetch / Pull / Push, overflow).
+  Still unwalked: the merge dialog, both themes on the rail badge, and the headers at
+  260 px. This session also added library and task rows, the layer chips, the context menu
+  (and its newly themed ContextMenu style), the ahead/behind previews, the clean-tree line,
+  the coloured subject counter, the emphasis colours and the split view, and the stash
+  section.
 - ~~**Five copies of the CPython-runner plumbing**~~ — **one now**: `CPythonHarness`, with
   the deadlock-avoiding stream drain every copy should have had, one temp directory deleted
   whole (closing the `GetTempFileName` base-file leak), and the python probe cached per
@@ -356,7 +360,8 @@ listed here even though every one lives in an archived document.
 1. Read `CLAUDE.md` end to end — the rules are load-bearing and each one names what it cost.
 2. Read `STATUS.md` *Where the project actually is* and *Known loose ends*.
 3. Pick from the queue above — **item 7.1** (TIA `GenerateBlocksFromSource` overwrite)
-   unless the owner says otherwise. Items 1–6 are done except the eyeball pass.
+   unless the owner says otherwise. Items 1–6 are done; the eyeball pass has been seen once
+   on the merged shell and still owes the merge dialog and a 260 px drag.
 4. The loop: `Versio.Core.Tests` + `Versio.Integration.Tests` + `Versio.Arch.Tests` +
    `Versio.Plc.Codesys.Pure.Tests` + `Versio.Plc.Codesys.Parity.Tests` +
    `Versio.Plc.TiaPortal.Pure.Tests`, about thirty seconds; `Versio.App.Tests` when the

@@ -10,11 +10,12 @@ was read out of the markup and the view models — `MainWindow.xaml`, the three 
 stylesheet, `IGitClient` — and every claim carries the file and line it came from, because a UX
 finding that cannot be pointed at is an opinion.
 
-**What it is not.** It is not the human eyeball pass that [`PHASE2.md`](PHASE2.md) item 6 still
-owes. Nothing here can see the screen. These are findings about *reachability, verbs and
+**What it is not.** It is not a screenshot. These are findings about *reachability, verbs and
 counts* — what the app can and cannot be asked to do, and where it puts the answer — which is
 the half a reader of the markup can settle. Colour, spacing and whether a card looks right
-remain owed to a person.
+need a person. The owner saw the merged `Siemens` window on 2026-08-19 and said it looks
+right; the merge dialog and a 260 px drag were not part of that look. See
+[`HANDOFF-UxPlan.md`](HANDOFF-UxPlan.md).
 
 **Two rules this list tries to keep.** Versio's git panel exists so that an engineer does not
 open a terminal; every finding below is measured against that, and *"you can do it in git bash"*
@@ -895,6 +896,11 @@ markup and view models. It did not see the screen.
 Ten of the thirteen items are closed, one is half closed, and the two most valuable things
 this document produced were not on its list at all.
 
+**Updated 2026-08-19.** `UxPlan` merged into `Siemens`. The owner saw the window. What is
+still left of the original thirteen is unchanged: **UX-6, UX-7's second half, UX-8 and
+UX-12**. The CODESYS gate for `LOCK-1` is this session's; see
+[`HANDOFF-UxPlan.md`](HANDOFF-UxPlan.md).
+
 **Updated 2026-08-18, second session.** UX-9, UX-10 and UX-13 landed, and `LOCK-1` grew a
 third pass — an abandoned merge was leaving the lock it took, with neither documented release
 available. **What is left of the original thirteen: UX-6, UX-7's second half, UX-8 and
@@ -955,9 +961,10 @@ Each now has a test that fails when the fix is removed.
 
 ### What is still owed to a person
 
-Everything visual, unchanged. The rail badge's placement, the overflow's popup, the merge
-dialog's layout, and whether the trimmed header reads well at 260 px have all been asserted
-arithmetically and **not one of them has been looked at**.
+The owner saw the merged window on 2026-08-19 (`Siemens` after `UxPlan`) and said it looks
+right — explorer on the rail, Fetch / Pull / Push, the overflow chevron. Still unwalked:
+the merge dialog, both themes on the rail badge, and the staged / not-staged headers
+dragged to 260 px. Those have been asserted arithmetically.
 
 ---
 
