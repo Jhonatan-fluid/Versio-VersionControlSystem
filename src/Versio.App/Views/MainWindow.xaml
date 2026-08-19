@@ -453,11 +453,23 @@
                                  Checked="OnRailChanged"
                                  ToolTip="Git — staging, commit, pull and push" />
 
+                    <!-- NO BACKGROUND, DELIBERATELY, AND IT USED TO HAVE ONE.
+
+                         A pill needs a backing only where it would otherwise collide with
+                         what is behind it, and there is no colour that works here: the tile
+                         is transparent over the rail at rest, Brush.Surface.Hover under the
+                         pointer, and Brush.Accent.Muted while the panel is showing. An opaque
+                         Brush.Surface.Base matched the rail in the first state and read as a
+                         differently-coloured blob in the other two - which is to say it was
+                         invisible exactly while it was correct.
+
+                         Nothing is behind it anyway. The glyph is 16 px centred in a 40 px
+                         tile, so the top-right corner it sits in is clear at every state, and
+                         the number carries its own meaning in its own colour. -->
                     <Border x:Name="RailGitBadge"
                             HorizontalAlignment="Right" VerticalAlignment="Top"
                             Margin="0,1,1,0" Padding="4,0" MinWidth="16"
                             CornerRadius="8" IsHitTestVisible="False"
-                            Background="{DynamicResource Brush.Surface.Base}"
                             Visibility="{Binding ChangeBadge.IsVisible,
                                 Converter={StaticResource BoolToVisibility}}">
                         <TextBlock Text="{Binding ChangeBadge.Text}"

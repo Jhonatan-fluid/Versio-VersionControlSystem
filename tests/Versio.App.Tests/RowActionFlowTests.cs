@@ -35,6 +35,8 @@ public sealed class RowActionFlowTests
         await shell.OpenAsync(repo.Path);
         Assert.Equal(4, shell.Unstaged.Count);
 
+        var tickedPaths = new[] { shell.Unstaged[0].Path, shell.Unstaged[1].Path };
+
         shell.Unstaged[0].IsSelected = true;
         shell.Unstaged[1].IsSelected = true;
 
@@ -44,12 +46,19 @@ public sealed class RowActionFlowTests
         await shell.StageRowAsync(clicked);
 
         // Exactly the row that was clicked.
-        Assert.Contains(shell.Staged, r => r.Path == clickedPath);
         Assert.Single(shell.Staged);
+        Assert.Equal(clickedPath, shell.Staged[0].Path);
 
-        // And the two that were ticked are still unstaged, still ticked.
+        // And the two that were ticked are still unstaged, and still ticked - named, rather
+        // than counted. `UnstagedSelectedCount == 2` would also pass if staging had cleared
+        // both ticks and set two others, which is not a state anybody would want either.
         Assert.Equal(2, shell.UnstagedSelectedCount);
-        Assert.DoesNotContain(shell.Staged, r => r.IsSelected && r.Path != clickedPath);
+
+        foreach (var path in tickedPaths)
+        {
+            var row = Assert.Single(shell.Unstaged, r => r.Path == path);
+            Assert.True(row.IsSelected, $"{path} lost its tick when another row was staged");
+        }
     }
 
     [Fact]

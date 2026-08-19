@@ -2387,8 +2387,18 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         return ticked.Count > 0 ? ticked : [.. rows];
     }
 
-    /// <summary>Recount after anything that could have changed a tick.</summary>
-    private void RaiseSelectionState()
+    /// <summary>
+    /// Everything that reads how many rows there are and how many are ticked.
+    /// </summary>
+    /// <remarks>
+    /// <b>Split out of <see cref="RaiseSelectionState"/> because the list funnel calls it per
+    /// row.</b> <c>OnStagingListChanged</c> fires once for every row added or removed, and
+    /// <c>ReconcileInto</c> mutates row by row — so on a four-hundred-file import anything
+    /// raised here is raised four hundred times. That is fine for these: they are counts, a
+    /// comparison and a string. It is not fine for the git command surface, which is why that
+    /// stayed behind. See <see cref="OnStagingListChanged"/>.
+    /// </remarks>
+    private void RaiseStagingCounts()
     {
         OnPropertyChanged(nameof(StagedSelectedCount));
         OnPropertyChanged(nameof(UnstagedSelectedCount));
@@ -2401,6 +2411,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(StageLabel));
         OnPropertyChanged(nameof(UnstageLabel));
         OnPropertyChanged(nameof(DiscardLabel));
+    }
+
+    /// <summary>Recount after anything that could have changed a tick.</summary>
+    private void RaiseSelectionState()
+    {
+        RaiseStagingCounts();
         RaiseCommitState();
         RaiseGitCommandStates();
     }
@@ -4259,19 +4275,28 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             row.SelectionChanged += RaiseSelectionState;
         }
 
-        // THE WHOLE SELECTION STATE, NOT ONLY THE COMMIT BUTTON.
+        // THE COUNTS, NOT THE WHOLE SELECTION STATE, AND THE DIFFERENCE IS MEASURED IN
+        // URL PARSES.
         //
         // This raised RaiseCommitState alone, which was enough while every count-bearing
         // caption depended only on the TICKS: with nothing ticked the captions were the empty
         // string before and after a list changed, so a missing notification looked like
         // agreement. The headers carry the list's own total now, so the same omission would
-        // freeze "STAGED · 3" on a list that had grown to forty.
+        // freeze "STAGED · 3" on a list that had grown to forty. This handler runs for every
+        // mutation of either list by definition, which is where that rule belongs - leaving it
+        // to UpdateStagingLists made the funnel and one of its callers jointly responsible for
+        // a rule only one of them stated.
         //
-        // It happened to work through UpdateStagingLists, which raises this itself once it has
-        // reconciled both lists - but that made the CollectionChanged funnel and one of its
-        // callers jointly responsible for a rule only one of them stated. This handler runs
-        // for every mutation of either list by definition, which is the place the rule belongs.
-        RaiseSelectionState();
+        // But NOT RaiseSelectionState, which was the first version and was too big a hammer.
+        // It ends in RaiseGitCommandStates - roughly twenty RaiseCanExecuteChanged calls plus
+        // a notification on MergeRequest, which is fully recomputed on every read and parses
+        // the remote's URL to do it. ReconcileInto mutates row by row, so a four-hundred-file
+        // import would have paid all of that four hundred times for a button whose enabled
+        // state cannot change until the batch is finished anyway. UpdateStagingLists still
+        // calls RaiseSelectionState once when it has reconciled both lists, which is where the
+        // command surface genuinely needs to be told.
+        RaiseStagingCounts();
+        RaiseCommitState();
     }
 
     /// <summary>
