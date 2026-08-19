@@ -100,6 +100,52 @@ public sealed class MergedTextLockTests
     }
 
     [Fact]
+    public async Task Adopting_first_would_record_an_agreement_that_never_existed()
+    {
+        // WHY THE MERGE FLOW PASSES adoptResult: false, asserted at the level where the
+        // difference is visible. Adopt writes LastSynced from whatever is on disk right now.
+        // After a merge that is one branch's project beside a mirror holding both, so the
+        // record would claim they agree - and on a merge that stopped on a conflict it would
+        // record the conflict markers themselves as the synced state.
+        //
+        // The lock still prevents the export either way, so this is about the RECORD rather
+        // than about loss. It is asserted because a false LastSynced is what the next reader
+        // of the lock file would take as truth.
+        // Two runs identical but for the adopt, because CaptureLocks reports only HELD locks -
+        // there is nothing to read before the marking, so the comparison has to be between the
+        // two orders rather than before and after one of them.
+        static async Task<string> HashRecordedAsync(bool adoptFirst)
+        {
+            var harness = new SyncOrchestratorTests.Harness();
+
+            // The merge lands: the project on disk is now one side of it.
+            harness.SetProject("the side the resolution kept");
+
+            if (adoptFirst)
+            {
+                await harness.Orchestrator.AdoptExternalStateAsync(CancellationToken.None);
+            }
+
+            await harness.Orchestrator.NoteMergedTextAsync(
+                SyncOrchestratorTests.BindingId, CancellationToken.None);
+
+            var held = Assert.Single(harness.Orchestrator.CaptureLocks());
+            Assert.Equal(SyncDirection.TextAuthoritative, held.Direction);
+
+            return held.ProjectHash;
+        }
+
+        var adopted = await HashRecordedAsync(adoptFirst: true);
+        var notAdopted = await HashRecordedAsync(adoptFirst: false);
+
+        // Adopting first rewrites LastSynced from what is on disk, so the record ends up
+        // asserting that this project and its mirror agree. Not adopting leaves the last
+        // record that was actually true. If these ever match, the parameter has stopped
+        // meaning anything and the merge flow is adopting again.
+        Assert.NotEqual(adopted, notAdopted);
+    }
+
+    [Fact]
     public async Task Marking_it_twice_is_not_an_escalation()
     {
         // Two projects in one merge, or a merge on top of a merge. TextChanged from

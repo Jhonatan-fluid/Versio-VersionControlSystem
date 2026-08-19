@@ -3486,10 +3486,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // The same hold a pull takes. Nothing tracked is involved - the preflight has just
         // established that - but the watcher does not know which paths a merge will touch
         // until it has touched them, and an unheld watcher would report the rewrite as edits.
+        // NOT ADOPTED WHEN AN IMPORT IS OWED, and that argument belongs here rather than in
+        // the helper. Adopting takes the project and the mirror as jointly true, which is
+        // right for a checkout or a pull - both arrive from one commit the gate vetted - and
+        // wrong for this merge, where the binary project keeps one side and the mirror keeps
+        // both. Adopting would write a LastSynced claiming they agree; on a merge that stopped
+        // on a conflict it would record the conflict markers themselves as the synced state.
         await Sync.WhileGitRewritesTheTreeAsync(
             "merge",
             async () => result = await _git.MergeBranchAsync(chosen, null, busy.Token)
-                .ConfigureAwait(true))
+                .ConfigureAwait(true),
+            adoptResult: !plan.NeedsImport)
             .ConfigureAwait(true);
 
         // THE MIRROR IS IN CHARGE NOW, AND THIS RUNS WHETHER OR NOT THE MERGE CONFLICTED.

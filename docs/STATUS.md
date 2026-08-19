@@ -1,11 +1,11 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-18 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,551 across seven
+**Date:** 2026-08-18 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,552 across seven
 projects, 0 skipped — re-derived by running each, not carried forward
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,406 | under a second | nothing |
+| `Versio.Core.Tests` | 1,407 | under a second | nothing |
 | `Versio.Integration.Tests` | 147 | ~10 s | real git |
 | `Versio.App.Tests` | 578 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 14 | instant | nothing |

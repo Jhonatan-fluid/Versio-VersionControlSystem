@@ -950,13 +950,25 @@ predicates that state what the lock is *for* — **have no callers in `src/` at 
 designed its ordering around calling one of them before checking whether anything already did.
 They are kept, with remarks that now point at the real enforcement.
 
-### The one gap, stated rather than hidden
+### One defect the double pass caught, and one gap now measured
 
-**The App-level wiring from `plan.Affected` to `Sync.NoteMergedTextAsync` has no test.** The Core
-mechanism is covered four ways and mutation-checked; the merge flow tests run against a temp
-repository with **no tracked project**, so `NeedsImport` is false and that branch never executes.
-Covering it needs a temp repo carrying a real binding and orchestrator, which `TempRepo` does not
-build. **It is the one part of this feature resting on a read rather than a run.**
+**The merge was adopting after all.** The first version routed through
+`WhileGitRewritesTheTreeAsync`, which calls `AdoptExternalStateAsync` — so adopt ran *first*,
+writing a `LastSynced` claiming the project and its mirror agreed, and only then was the mirror
+made authoritative. On a merge that stopped on a conflict it would have recorded the conflict
+markers themselves as the synced state. **The comment beside it said "Instead of adopting, not
+as well as" the whole time.** The helper takes `adoptResult` now, the merge passes
+`!plan.NeedsImport`, and a Core test compares the two orders directly. Nothing was ever at risk
+of loss — the lock still refused the export — but the lock file would have carried a false
+record until an import overwrote it.
+
+**And the App-level gap is measured, not merely suspected.** Mutating
+`adoptResult: !plan.NeedsImport` to `true` leaves **every suite green**. The Core mechanism is
+covered five ways and mutation-checked; the wiring from `plan.Affected` into it is not, because
+the merge flow tests run against a temp repository with no tracked project, so `NeedsImport` is
+false and the branch never executes. Covering it needs a temp repo carrying a real binding and
+orchestrator, which `TempRepo` does not build. **It is the part of this feature resting on a
+read rather than a run, and the mutation is the proof.**
 
 ### And this change is on the wrong side of the CODESYS rule
 

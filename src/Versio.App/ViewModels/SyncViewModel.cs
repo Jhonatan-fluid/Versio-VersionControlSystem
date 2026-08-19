@@ -1199,11 +1199,15 @@ public sealed class SyncViewModel : ObservableObject
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>Instead of adopting, not as well as.</b> <c>AdoptExternalStateAsync</c> takes the
-    /// project and the mirror as jointly true, which is right after a checkout or a pull — both
-    /// arrive from one commit the gate already vetted — and wrong after a merge, where the
-    /// binary project keeps one side and the mirror keeps both. Adopting there records the
-    /// disagreement as synced; see <c>MergePreflight</c> for the measurement.
+    /// <b>Instead of adopting, not as well as — and the caller is what makes that true.</b>
+    /// <c>AdoptExternalStateAsync</c> takes the project and the mirror as jointly true, which
+    /// is right after a checkout or a pull and wrong after a merge, where the binary project
+    /// keeps one side and the mirror keeps both. The merge flow therefore passes
+    /// <c>adoptResult: false</c> to <see cref="WhileGitRewritesTheTreeAsync"/> before calling
+    /// this. <b>The first version of this comment claimed the same thing while the merge was
+    /// still going through the adopting path</b>, so the lock briefly held a <c>LastSynced</c>
+    /// asserting an agreement that had never existed. See <c>MergePreflight</c> for the
+    /// measurement behind all of it.
     /// </para>
     /// <para>
     /// Two things happen per project, and the order does not matter because neither can run the
@@ -1230,7 +1234,26 @@ public sealed class SyncViewModel : ObservableObject
         await RefreshStalenessAsync().ConfigureAwait(true);
     }
 
-    public async Task WhileGitRewritesTheTreeAsync(string what, Func<Task> operation)
+    /// <param name="adoptResult">
+    /// Whether the state git leaves behind may be taken as the synced truth.
+    /// </param>
+    /// <remarks>
+    /// <b><paramref name="adoptResult"/> is false for exactly one caller, and it is the reason
+    /// this parameter exists.</b> Adopting is right after a checkout, a pull or a stash: all
+    /// three arrive from a single commit the gate already vetted, so the project and its mirror
+    /// agree. A <b>merge</b> is the one operation whose working tree came from no commit — the
+    /// binary project keeps one side while the mirror three-way merges and keeps both — so
+    /// adopting there writes a <c>LastSynced</c> that claims they agree when they do not. On a
+    /// merge that stopped on a conflict it is worse still: the mirror on disk holds conflict
+    /// markers at that moment, and adopt would record <i>those</i> as the synced state.
+    /// <para>
+    /// Nothing is lost either way, because the caller then makes the mirror authoritative and
+    /// the export gate is refused. What this avoids is a false record living in the lock file
+    /// until the import happens to overwrite it.
+    /// </para>
+    /// </remarks>
+    public async Task WhileGitRewritesTheTreeAsync(
+        string what, Func<Task> operation, bool adoptResult = true)
     {
         if (_orchestrator is null)
         {
@@ -1243,14 +1266,23 @@ public sealed class SyncViewModel : ObservableObject
             await operation().ConfigureAwait(true);
         }
 
-        var adopted = await _orchestrator
-            .AdoptExternalStateAsync(CancellationToken.None)
-            .ConfigureAwait(true);
+        if (adoptResult)
+        {
+            var adopted = await _orchestrator
+                .AdoptExternalStateAsync(CancellationToken.None)
+                .ConfigureAwait(true);
 
-        if (adopted.Count > 0)
+            if (adopted.Count > 0)
+            {
+                _logger.Info(LogCategory.Sync,
+                    $"{what}: adopted the state of {adopted.Count} binding(s) without syncing");
+            }
+        }
+        else
         {
             _logger.Info(LogCategory.Sync,
-                $"{what}: adopted the state of {adopted.Count} binding(s) without syncing");
+                $"{what}: the result is NOT adopted — the caller is making the exported text " +
+                "authoritative instead");
         }
 
         await RescanAsync().ConfigureAwait(true);
