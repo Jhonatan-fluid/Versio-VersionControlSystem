@@ -405,9 +405,25 @@
         <Border x:Name="Rail" Grid.Row="1" Grid.RowSpan="3" Grid.Column="0"
                 Width="{DynamicResource Size.Rail.Width}"
                 Background="{DynamicResource Brush.Surface.Base}">
+            <!-- GroupName="Rail" ON ALL THREE, AND IT IS NOT DECORATION.
+
+                 A RadioButton with no GroupName groups by its VISUAL PARENT. These three were
+                 bare siblings in this StackPanel, so that worked by accident for as long as
+                 nothing came between them - and the moment the git one was wrapped in a Grid
+                 to carry its badge, it became a group of one. Two rail buttons highlighted at
+                 once, and the panel would not switch.
+
+                 Naming the group makes the exclusion a property of the buttons rather than of
+                 how they happen to be nested, so the next person who wraps one - for a second
+                 badge, a tooltip host, anything - does not reintroduce it. The theme radios in
+                 the settings popup have always done this; the rail was the odd one out.
+
+                 RailExclusionTests drives it through IsChecked the way a click does, because
+                 setting IsChecked on each in turn - which is what every other test here does -
+                 never exercises exclusion at all and passed straight through the bug. -->
             <StackPanel Margin="2,10,2,0">
                 <RadioButton x:Name="RailProject" Style="{StaticResource RailButton}"
-                             IsChecked="True" Tag="Project"
+                             IsChecked="True" Tag="Project" GroupName="Rail"
                              Content="{DynamicResource Icon.Document}"
                              Checked="OnRailChanged"
                              ToolTip="Project — the repository as CODESYS structures it, with every change marked" />
@@ -432,7 +448,7 @@
                      inside the button's own target. -->
                 <Grid>
                     <RadioButton x:Name="RailGit" Style="{StaticResource RailButton}"
-                                 Tag="Git"
+                                 Tag="Git" GroupName="Rail"
                                  Content="{DynamicResource Icon.Link}"
                                  Checked="OnRailChanged"
                                  ToolTip="Git — staging, commit, pull and push" />
@@ -459,7 +475,7 @@
                      it. It is also what makes the log affordable: a panel nobody has
                      opened reads nothing at all. -->
                 <RadioButton x:Name="RailHistory" Style="{StaticResource RailButton}"
-                             Tag="History"
+                             Tag="History" GroupName="Rail"
                              Content="{DynamicResource Icon.History}"
                              Checked="OnRailChanged"
                              ToolTip="History — commits, the files in each, and their diffs" />

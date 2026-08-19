@@ -361,6 +361,82 @@ public sealed class MainWindowTests
     }
 
     /// <summary>
+    /// Selecting one rail button clears the other two, and shows only its own panel.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This is here because its absence shipped a broken rail.</b> A
+    /// <see cref="RadioButton"/> with no <c>GroupName</c> groups by its <i>visual parent</i>.
+    /// The three rail buttons were bare siblings in one StackPanel, so exclusion worked by
+    /// accident — and wrapping the git one in a Grid to carry its change badge made it a group
+    /// of one. Two buttons highlighted at once and the git panel would not open.
+    /// </para>
+    /// <para>
+    /// <b>Every existing test walked straight past it</b>, and for one reason worth stating:
+    /// they all set <c>IsChecked = true</c> on each rail in turn. Setting a bool on three
+    /// objects one after another does not exercise exclusion — nothing is asked to turn
+    /// anything else off. The tests that switch panels were doing exactly what a user does and
+    /// checking exactly the thing a user was not complaining about.
+    /// </para>
+    /// <para>
+    /// So this asserts the negative: after selecting one, the OTHER two are off, and their
+    /// panels are collapsed. That is the assertion the bug produces a failure on, and no
+    /// amount of "does the git panel show when I check RailGit" ever would.
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [InlineData("RailProject", "ProjectPanel")]
+    [InlineData("RailGit", "GitPanel")]
+    [InlineData("RailHistory", "HistoryPanel")]
+    public void Selecting_one_rail_button_clears_the_others(string rail, string panel)
+    {
+        StaHarness.Run(() =>
+        {
+            var window = Build();
+
+            var rails = new Dictionary<string, RadioButton>
+            {
+                ["RailProject"] = Assert.IsType<RadioButton>(window.FindName("RailProject")),
+                ["RailGit"] = Assert.IsType<RadioButton>(window.FindName("RailGit")),
+                ["RailHistory"] = Assert.IsType<RadioButton>(window.FindName("RailHistory")),
+            };
+
+            var panels = new Dictionary<string, FrameworkElement>
+            {
+                ["ProjectPanel"] = Assert.IsAssignableFrom<FrameworkElement>(
+                    window.FindName("ProjectPanel")),
+                ["GitPanel"] = Assert.IsAssignableFrom<FrameworkElement>(
+                    window.FindName("GitPanel")),
+                ["HistoryPanel"] = Assert.IsAssignableFrom<FrameworkElement>(
+                    window.FindName("HistoryPanel")),
+            };
+
+            rails[rail].IsChecked = true;
+
+            foreach (var (name, button) in rails)
+            {
+                if (name == rail)
+                {
+                    Assert.True(button.IsChecked, $"{name} did not select");
+                    continue;
+                }
+
+                // The assertion the grouping bug fails on.
+                Assert.False(button.IsChecked,
+                             $"{name} is still lit after {rail} was selected — the rail " +
+                             "buttons are not in one group");
+            }
+
+            foreach (var (name, element) in panels)
+            {
+                var expected = name == panel ? Visibility.Visible : Visibility.Collapsed;
+
+                Assert.Equal(expected, element.Visibility);
+            }
+        });
+    }
+
+    /// <summary>
     /// The rail's change count appears, counts, and survives switching panels.
     /// </summary>
     /// <remarks>
