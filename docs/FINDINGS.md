@@ -17,6 +17,69 @@ produce a diff touching everything else.
 
 ---
 
+### Turning a label into a button changed its typeface, and the setter that carried it left with the element
+
+**Found on 2026-08-18 by re-reading a finished, green change.** UX-9 turned the notification
+overflow pill from a `Border` holding a `TextBlock` into a `Button`, so that the "+2 more" count
+could actually be pressed. Everything about the conversion was correct except one property
+nobody named.
+
+The count was a `TextBlock` wearing the `PillText` style, which sets `FontFamily` to
+**`Font.Mono`** — deliberately, so that "+2 more" and "+12 more" do not shift the glyphs around
+them. The replacement `Button` was styled `BasedOn` `GhostButton`, which sets `Font.UI`, because
+its content is normally words on a button rather than a number.
+
+**So the face changed, and the setter that had been holding it disappeared along with the
+element it was set on.** Nothing in the diff of the call site shows a font: the old markup names
+`PillText`, the new markup names `PillButton`, and neither line says "mono". Nothing in the suite
+could see it either — 589 App tests, all green, before and after.
+
+**What makes this worth an entry is the shape rather than the font.** A style swap is a change
+of *every* inherited property at once, and only the ones you name are visible in the diff. The
+double-pass question — *what did I change that nothing is watching?* — is the only instrument
+that reaches it, and reading `PillText` to see what was being replaced is what surfaced it.
+
+**Fixed and pinned to the thing it came from.** `PillButton` names `Font.Mono` explicitly, with
+a comment saying it is inherited from neither side and therefore has to be written out. The test
+asserts the pill's resolved `FontFamily` against a throwaway `TextBlock` wearing `PillText` —
+not against the literal "mono" — so the two styles cannot drift apart later either. Removing the
+setter turns it red.
+
+---
+
+### One guard intent grew three verbs, and the dialog kept saying the first one
+
+**Found on 2026-08-18 while fixing the stale comment on the member itself (UX-13), and recorded
+rather than fixed.** `GuardIntent.Pull` shipped with one caller and a matching label:
+`GuardNarrative.Action` maps it to the word `"pull"`, which is what reaches the dialog body and
+the log line.
+
+It now has **three** callers — `PullAsync`, the divergence reconcile, and the merge verb added
+on 2026-08-18 — because all three rewrite the project and its mirror together, which is the
+scenario the guard exists for. Reusing the intent was right. Reusing its *noun* was not:
+
+- merging a branch onto a dirty tree asks **"Continue and pull?"**
+- and logs **"asking before pull: 3 file(s) have changes"**
+
+**The guard's decision is correct in every case.** `RewritesWorkingTree` answers true, the
+dirty-tree branch offers the auto-stash, the refusals refuse. Only the verb in the sentence is
+wrong, which is why this is a wording defect and not a safety one.
+
+**Why it was left.** Closing it means a second intent, and `InterruptionGuard.RewritesWorkingTree`
+has to learn that intent in the same change or the guard grows a silent hole — the exact failure
+this document already records under *the seam test passed for a year because a string is not a
+signature*. A reconcile is also a rebase **or** a merge depending on a parameter, so the naming
+question is genuinely more than one row. That is more than a comment fix should quietly take on,
+and the merge verb it touches already owes a real-CODESYS gate run.
+
+**It is written into the enum's own remarks**, at the declaration, so the next reader meets it
+before the next caller is added. The prediction that this would happen was already in
+`UX-PLAN.md`'s second pass — *"a new intent would also have to be added to
+`InterruptionGuard.RewritesWorkingTree` or the guard has a silent hole"* — and the merge verb
+shipped without one.
+
+---
+
 ### A cancelled merge ran straight past the thing that protects it
 
 **Found on 2026-08-18, on the fourth read of the same feature.** The three before it had each

@@ -5,9 +5,9 @@ projects, 0 skipped — re-derived by running each, not carried forward
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,410 | under a second | nothing |
+| `Versio.Core.Tests` | 1,411 | under a second | nothing |
 | `Versio.Integration.Tests` | 147 | ~10 s | real git |
-| `Versio.App.Tests` | 581 | ~50 s | nothing |
+| `Versio.App.Tests` | 589 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 14 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 260 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 92 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
@@ -887,12 +887,13 @@ does not record them has to be run again.
   done incrementally, because half-applied is the one state worse than either — and it should end
   with a test that rejects an off-scale literal, so the rule `Spacing.xaml` states is finally one
   that something enforces. Starting with the six repeat offenders covers 79 of the 239.
-- **Word-level diff highlighting is not implemented, and its colours are.**
-  `Brush.Diff.AddedWord` and `Brush.Diff.DeletedWord` exist in both palettes and are
-  contrast-checked by `ThemeTokenTests`; `DiffView` tints whole rows and never asks which
-  characters inside a changed line differ. A feature rather than a fix, which is why it sat out
-  the UI pass — and the highest-value thing the diff pane has left, because the diffs being read
-  are generated XML and ST where a long line often differs by one identifier.
+- ~~**Word-level diff highlighting is not implemented, and its colours are.**~~ — **built
+  2026-08-17**, as PHASE2 item 4, and this bullet simply never got struck. `DiffView` resolves
+  `Brush.Diff.AddedWord`/`DeletedWord` per changed pair now, over a token-aligned common
+  prefix/suffix trim — linear where an LCS is quadratic, on exactly the long generated lines
+  where the feature matters most. **Left here as a struck entry rather than deleted**, because
+  the audit that re-read this file on 2026-08-18 believed it: a loose end that closed silently
+  is indistinguishable from one still open.
 - ~~**The full solution suite flakes under its own load.**~~ — **diagnosed, and the UI half
   fixed.** The cause was not timeouts: **fifty-six tests opened a repository through a
   `ShellViewModel` and never disposed it.** A shell that has opened one owns a
@@ -925,12 +926,12 @@ does not record them has to be run again.
   and `dotnet test --filter FullyQualifiedName~<TestClass>` for a per-area figure.
 - **One integration test is flaky under full-suite load** — see the finding below. Diagnosed,
   two fixes attempted and reverted, left alone deliberately.
-- **The orphan scanner's sentence is unconditional and sometimes wrong.**
-  `OrphanScanner.cs:194` reports an export directory with no bound project as "never deleted
-  automatically because it is committed history". That is the usual case and the right default,
-  but it is stated as fact: the scanner never asks git. An export tree under an ignored path -
-  `phase0/roundtrip/baseline`, written by `tools/codesys/Test-RoundTrip.ps1` - was reported with the
-  same words while being neither committed nor history.
+- ~~**The orphan scanner's sentence is unconditional and sometimes wrong.**~~ — **reworded
+  2026-08-17**, as PHASE2 item 6, and this bullet never got struck either. It claimed "because
+  it is committed history", which a pure scan cannot know and which was false for an export tree
+  under an ignored path (`phase0/roundtrip/baseline`). `OrphanScanner.cs:220` now says what is
+  actually true: never deleted automatically, what it is worth is a person's call, and it *may*
+  be committed history.
 - **`RefrigeratorControl.~u` is in pushed history.** Untracked and ignored now, but the commit
   that carried a username, machine name and pid to `origin/main` is still there. Removing it
   means rewriting a pushed commit — the owner's call, not a maintenance task.
@@ -1013,6 +1014,8 @@ actually do.
 
 The full list, newest first:
 
+- [Turning a label into a button changed its typeface, and the setter that carried it left with the element](FINDINGS.md#turning-a-label-into-a-button-changed-its-typeface-and-the-setter-that-carried-it-left-with-the-element)
+- [One guard intent grew three verbs, and the dialog kept saying the first one](FINDINGS.md#one-guard-intent-grew-three-verbs-and-the-dialog-kept-saying-the-first-one)
 - [A cancelled merge ran straight past the thing that protects it](FINDINGS.md#a-cancelled-merge-ran-straight-past-the-thing-that-protects-it)
 - [Abandoning a merge left the lock it took, with no way out](FINDINGS.md#abandoning-a-merge-left-the-lock-it-took-with-no-way-out)
 - [The two predicates that name the lock's whole purpose have no callers](FINDINGS.md#the-two-predicates-that-name-the-locks-whole-purpose-have-no-callers)

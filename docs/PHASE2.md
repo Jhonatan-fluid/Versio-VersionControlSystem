@@ -13,8 +13,8 @@ plan-driven import that creates, updates, deletes, renames and moves objects, re
 everywhere it cannot act, and never applies anything a person did not confirm. Thirteen
 numbered gaps (G1–G13) were closed, guarded or decided; the feature checklist ran every import
 behaviour against a real project; and the last two reachable rows closed on 2026-08-17. The
-suite is seven projects, 2,319 tests, split by need — the half-hour CODESYS gate holds only the
-53 tests that actually launch the toolchain.
+suite is seven projects, 2,567 tests, split by need — the half-hour CODESYS gate holds only the
+54 tests that actually launch the toolchain.
 
 **Documents that stay live** (not archived, because they are logs and references, not plans):
 

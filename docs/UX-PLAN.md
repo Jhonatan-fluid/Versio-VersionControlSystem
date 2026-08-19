@@ -1,6 +1,9 @@
 # Versio — a UX pass over the running shell
 
-**Date opened:** 2026-08-17 · **Status: a plan. Nothing here is built.**
+**Date opened:** 2026-08-17 · **Status, as of 2026-08-18: ten of thirteen built, one half.**
+The header below said *"Nothing here is built"* for two sessions after that stopped being
+true. What is left is **UX-6**, **UX-7's second half**, **UX-8** and **UX-12** — see
+*Where this stands* at the foot of this file, which is the authoritative tally.
 
 This is a review of the app *as somebody uses it*, not as a set of features. Everything below
 was read out of the markup and the view models — `MainWindow.xaml`, the three panels, the
@@ -159,8 +162,8 @@ it by an import, rather than both being adopted as though a commit had vetted th
 | **UX-6** | Nothing in the git panel or the history can be searched | small | The project panel has a find box. The list with four hundred rows does not |
 | ~~**UX-7**~~ | ~~The keyboard reaches three things~~ — **partly done 2026-08-18**: the rail has keys; the find boxes and Escape do not | small | Panel switching is the most frequent act in the app and has no key |
 | **UX-8** | A commit in the history cannot be acted on, or even copied | small | Read-only by design is a decision; *un-copyable* is not |
-| **UX-9** | `+2 more` is a dead end | trivial | A count with nothing behind it |
-| **UX-10** | Detached HEAD says the sentence and does not offer the exit | trivial | §9e is built except for the half that was its point |
+| ~~**UX-9**~~ | ~~`+2 more` is a dead end~~ — **done 2026-08-18** | trivial | A count with nothing behind it. The fix caught a silent font regression in its own conversion |
+| ~~**UX-10**~~ | ~~Detached HEAD says the sentence and does not offer the exit~~ — **done 2026-08-18** | trivial | §9e is built except for the half that was its point — and now including it |
 | ~~**UX-11**~~ | ~~The change badge renders `0` on a clean tree~~ — **done 2026-08-18**, by deleting the control | trivial | Furniture |
 | **UX-12** | The last commit cannot be amended | small | Declined-or-built decision, not a gap to leave unstated |
 
@@ -703,7 +706,15 @@ so that sentence describes an app this one is not. Worth correcting whichever wa
 
 ---
 
-## UX-9 · `+2 more` is a dead end
+## ~~UX-9 · `+2 more` is a dead end~~ — **done 2026-08-18**
+
+> Built as proposed — the pill raises a command that opens the log and filters it. Three things
+> the plan did not know. **It lands on a superset**: the filter is a category and every git line
+> comes with the notifications, stated rather than glossed. **The filter had to set levels too**,
+> or a panel still hiding `WRN` would show a subset and look like the whole. And **the
+> conversion silently changed the typeface** — the count wore `PillText`, which is mono, and
+> becoming a `Button` put it under `GhostButton`, which is not. Caught by re-reading, not by a
+> test; there is one now, tied to `PillText`'s own value.
 
 **Today.** When more than three notifications are live the rest become a pill reading
 `+2 more` ([`MainWindow.xaml:1128–1137`](../src/Versio.App/Views/MainWindow.xaml)). It is a
@@ -723,7 +734,13 @@ categories. The log filter, the category popup and the counts all exist already
 
 ---
 
-## UX-10 · Detached HEAD says the sentence and does not offer the exit
+## ~~UX-10 · Detached HEAD says the sentence and does not offer the exit~~ — **done 2026-08-18**
+
+> Built as proposed, name **not** pre-filled: any default good enough to accept unread would
+> have to know what the work is, and a wrong-but-plausible branch name is harder to notice than
+> an empty box. A second command rather than a second caller of `CreateBranchCommand`, so the
+> click log can tell the two routes apart — this button exists on a bet about how people get
+> stuck, and one shared string would make the bet unmeasurable.
 
 **Today.** `RemoteStanding` produces the amber sentence, and the gating works — with no upstream
 recorded, `CanPull`, `CanPush` and `CanPublish` are all false, so the remote row is dead and
@@ -780,7 +797,13 @@ written down, so a future session finds the decision instead of re-deriving it.
 
 ---
 
-## UX-13 · A doc comment says a member is unwired, and it has been wired twice
+## ~~UX-13 · A doc comment says a member is unwired, and it has been wired twice~~ — **done 2026-08-18**
+
+> Wired by **three** callers by the time it was fixed, not two: the merge verb landed in
+> between. The "why it waited" argument is kept as history rather than deleted. **And the fix
+> found a live defect it deliberately did not take on** — `GuardNarrative` renders this intent
+> as the word "pull", so a guarded merge asks *"Continue and pull?"*. Recorded in the enum's
+> own remarks; see *Still open* below.
 
 **Found by the second pass, while checking UX-1's guard claim.** `GuardIntent.Pull`'s remarks
 read *"**Implemented and deliberately not yet wired.** … wiring it now would offer a button that
@@ -869,8 +892,13 @@ markup and view models. It did not see the screen.
 
 ## Where this stands, 2026-08-18
 
-Seven of the thirteen items are closed, one is half closed, and the two most valuable things
+Ten of the thirteen items are closed, one is half closed, and the two most valuable things
 this document produced were not on its list at all.
+
+**Updated 2026-08-18, second session.** UX-9, UX-10 and UX-13 landed, and `LOCK-1` grew a
+third pass — an abandoned merge was leaving the lock it took, with neither documented release
+available. **What is left of the original thirteen: UX-6, UX-7's second half, UX-8 and
+UX-12** — and `Ctrl+F` still waits on UX-6, which is what creates the boxes it would focus.
 
 ### Built
 
@@ -888,11 +916,17 @@ this document produced were not on its list at all.
   tracked project, because P-M1 measured that both available behaviours lose work. Closing it
   means pointing the direction lock at import so the export gate cannot win the race, which is
   a change to the lock model. **It is now the top of the queue, as `LOCK-1`.**
-- **UX-6, UX-8, UX-9, UX-10, UX-12.** Untouched. UX-12 was approved by the owner and is still
-  owed.
+- ~~**UX-6, UX-8, UX-9, UX-10, UX-12.** Untouched.~~ — **UX-9, UX-10 and UX-13 built
+  2026-08-18**, each with a mutation-checked test. **UX-6, UX-8 and UX-12 remain**; UX-12 was
+  approved by the owner and is still owed. UX-9 turned out to carry a lesson the plan could
+  not have predicted — restyling a label as a button silently changed its typeface, because a
+  style swap changes every inherited property and only the named ones appear in the diff. See
+  the Finding.
 - **P-M2.** Needs a real export and therefore real CODESYS. Deliberately not run: the owner's
   standing rule is that the half-hour gate does not run for changes that touch no vendor code,
-  and none of this does.
+  and none of this does. **Still true of UX-9, UX-10 and UX-13** — a pill, a button and a
+  comment — but NOT of `LOCK-1`, which touches `SyncOrchestrator` and the direction lock and
+  owes the gate before it ships.
 
 ### The two things worth more than the list
 
