@@ -3494,37 +3494,50 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         using var busy = Busy.Begin(WorkKind.GitWrite, $"Merging {chosen}…");
 
         GitResult result = default!;
+        IReadOnlyList<string> unprotected = [];
 
-        // The same hold a pull takes. Nothing tracked is involved - the preflight has just
-        // established that - but the watcher does not know which paths a merge will touch
-        // until it has touched them, and an unheld watcher would report the rewrite as edits.
-        // NOT ADOPTED WHEN AN IMPORT IS OWED, and that argument belongs here rather than in
-        // the helper. Adopting takes the project and the mirror as jointly true, which is
-        // right for a checkout or a pull - both arrive from one commit the gate vetted - and
-        // wrong for this merge, where the binary project keeps one side and the mirror keeps
-        // both. Adopting would write a LastSynced claiming they agree; on a merge that stopped
-        // on a conflict it would record the conflict markers themselves as the synced state.
-        await Sync.WhileGitRewritesTheTreeAsync(
-            "merge",
-            async () => result = await _git.MergeBranchAsync(chosen, null, busy.Token)
-                .ConfigureAwait(true),
-            adoptResult: !plan.NeedsImport)
-            .ConfigureAwait(true);
-
-        // THE MIRROR IS IN CHARGE NOW, AND THIS RUNS WHETHER OR NOT THE MERGE CONFLICTED.
+        // THE HOLD, THE ADOPT DECISION, AND THE MARKING - IN A try/finally, WHICH IS THE
+        // FOURTH THING A RE-READ FOUND WRONG HERE.
         //
-        // A conflicted merge has still rewritten the mirror - git three-way merges the text
-        // cleanly and stops only on the binary project - so the window in which the commit
-        // gate could export over it opens the moment the merge command returns, not when the
-        // user finishes resolving. Marking it here closes that window; the lock is released
-        // by the import, or by a push, or by discarding.
+        // The watcher hold is the same one a pull takes: the watcher cannot know which paths
+        // a merge will touch until it has touched them, and unheld it would report the
+        // rewrite as edits to the exported text.
         //
-        // Before the refresh, deliberately: RunRefreshAsync re-reads the tree and re-evaluates
-        // the gate, and it must find the lock already moved.
-        var unprotected = plan.NeedsImport
-            ? await Sync.NoteMergedTextAsync([.. plan.Affected.Select(a => a.BindingId)])
-                .ConfigureAwait(true)
-            : [];
+        // NOT ADOPTED WHEN AN IMPORT IS OWED. Adopting takes the project and the mirror as
+        // jointly true, which is right for a checkout or a pull - both arrive from one commit
+        // the gate vetted - and wrong for a merge, where the binary project keeps one side
+        // and the mirror keeps both. Adopting would write a LastSynced claiming they agree;
+        // on a merge that stopped on a conflict it would record the conflict markers
+        // themselves as the synced state.
+        //
+        // AND THE MARKING IS IN A finally BECAUSE THE HAPPY PATH IS NOT THE DANGEROUS ONE.
+        // MergeBranchAsync can throw rather than return a failed GitResult - busy.Token is
+        // cancellable, and a cancelled merge can leave the tree part-way through with the
+        // mirror already rewritten. On that path the exception ran straight past the marking
+        // to AsyncCommand's error handler, leaving the merged text open to the commit gate's
+        // export. The trade is deliberate: a lock taken over a merge that turned out to touch
+        // nothing is recoverable - abandoning releases it, and so does discarding - while an
+        // unprotected merged mirror is not.
+        try
+        {
+            await Sync.WhileGitRewritesTheTreeAsync(
+                "merge",
+                async () => result = await _git.MergeBranchAsync(chosen, null, busy.Token)
+                    .ConfigureAwait(true),
+                adoptResult: !plan.NeedsImport)
+                .ConfigureAwait(true);
+        }
+        finally
+        {
+            // Before the refresh, deliberately: RunRefreshAsync re-reads the tree and
+            // re-evaluates the gate, and it must find the lock already moved.
+            if (plan.NeedsImport)
+            {
+                unprotected = await Sync
+                    .NoteMergedTextAsync([.. plan.Affected.Select(a => a.BindingId)])
+                    .ConfigureAwait(true);
+            }
+        }
 
         if (unprotected.Count > 0)
         {

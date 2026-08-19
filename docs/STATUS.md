@@ -1013,6 +1013,7 @@ actually do.
 
 The full list, newest first:
 
+- [A cancelled merge ran straight past the thing that protects it](FINDINGS.md#a-cancelled-merge-ran-straight-past-the-thing-that-protects-it)
 - [Abandoning a merge left the lock it took, with no way out](FINDINGS.md#abandoning-a-merge-left-the-lock-it-took-with-no-way-out)
 - [The two predicates that name the lock's whole purpose have no callers](FINDINGS.md#the-two-predicates-that-name-the-locks-whole-purpose-have-no-callers)
 - [A new verb was live on a detached HEAD, where every old one is dead](FINDINGS.md#a-new-verb-was-live-on-a-detached-head-where-every-old-one-is-dead)

@@ -17,6 +17,39 @@ produce a diff touching everything else.
 
 ---
 
+### A cancelled merge ran straight past the thing that protects it
+
+**Found on 2026-08-18, on the fourth read of the same feature.** The three before it had each
+asked a different question — is the gate right, does the code match its comment, what happens on
+the undo — and all three looked only at paths that <i>return</i>.
+
+`MergeBranchAsync` marks the mirror authoritative after the merge command comes back. But
+`IGitClient.MergeBranchAsync` can **throw** rather than return a failed `GitResult`: it is handed
+`busy.Token`, and a cancelled merge can leave the tree part-way through with the mirror already
+rewritten. On that path the exception propagates to `AsyncCommand`'s error handler and the
+marking never runs, so the merged text is left open to the commit gate's export — the exact loss
+the whole feature exists to prevent, reached by the one route nobody had looked at.
+
+**The fix is a `finally`, and the trade in it is deliberate.** Marking there means a merge that
+threw *before touching anything* — git missing, a process that would not start — takes a lock it
+did not need. That is recoverable: abandoning releases it, and so does discarding. **An
+unprotected merged mirror is not recoverable.** So the safe default is to take the lock and let
+the release paths sort it out, rather than to protect only the path that returned cleanly.
+
+**And the comment above it had gone stale in the same edit that made it wrong.** It still read
+*"Nothing tracked is involved — the preflight has just established that"*, written when the
+preflight refused such merges. It stopped being true the moment the refusal became a
+confirmation, two commits earlier, and neither of the two passes in between noticed because both
+were reading the code rather than the comment.
+
+**Four passes, four defects, one feature.** The list is in
+[`HANDOFF-UxPlan.md`](HANDOFF-UxPlan.md). The useful conclusion is not that reviewing works — it
+is that a lot of code was written quickly in the most dangerous subsystem here, and that the
+things still owed (the real-CODESYS gate, a human looking at it) are worth more than another
+read by the same reader.
+
+---
+
 ### Abandoning a merge left the lock it took, with no way out
 
 **Found on 2026-08-18, on the third read of the same feature, before it reached a user.** Two

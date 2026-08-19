@@ -24,6 +24,7 @@ suite is seven projects, 2,319 tests, split by need — the half-hour CODESYS ga
 | [`FINDINGS.md`](FINDINGS.md) | Every defect with its evidence, newest first — search it |
 | [`SAFEGUARDS.md`](SAFEGUARDS.md) | What Versio refuses, asks about or waits for |
 | [`vendors/codesys/DRIVING.md`](vendors/codesys/DRIVING.md) | How CODESYS is driven — API traps, forms, events, manifest schema |
+| [`HANDOFF-UxPlan.md`](HANDOFF-UxPlan.md) | **Read before merging branch `UxPlan`** — what it built, what it owes, and the three things that must happen first |
 | [`UX-PLAN.md`](UX-PLAN.md) | **A plan, and the one live one** — thirteen UX findings over the running shell, ranked, each with its evidence. Opened 2026-08-18. Item 6's human eyeball pass is still owed and this is not it |
 
 **`UX-PLAN.md` is where the shell's remaining UX work lives, and it is not copied here** — one
