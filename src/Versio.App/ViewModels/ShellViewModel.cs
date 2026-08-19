@@ -2088,6 +2088,18 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     public string UnstagedSelectionCaption =>
         StagingSelection.Caption(Unstaged.Count, UnstagedSelectedCount);
 
+    /// <summary>"STAGED · 12", or "STAGED · 3 of 12 selected" while anything is ticked.</summary>
+    /// <remarks>
+    /// The label is passed in from here rather than living in <see cref="StagingSelection"/>,
+    /// because the casing is this panel's typographic choice and Core has no business holding
+    /// it. What Core owns is the rule about which of the two sentences applies.
+    /// </remarks>
+    public string StagedHeader =>
+        StagingSelection.Header("STAGED", Staged.Count, StagedSelectedCount);
+
+    public string UnstagedHeader =>
+        StagingSelection.Header("NOT STAGED", Unstaged.Count, UnstagedSelectedCount);
+
     /// <summary>
     /// What the commit button will do right now.
     /// </summary>
@@ -2362,6 +2374,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(UnstagedAllSelected));
         OnPropertyChanged(nameof(StagedSelectionCaption));
         OnPropertyChanged(nameof(UnstagedSelectionCaption));
+        OnPropertyChanged(nameof(StagedHeader));
+        OnPropertyChanged(nameof(UnstagedHeader));
         OnPropertyChanged(nameof(StageLabel));
         OnPropertyChanged(nameof(UnstageLabel));
         OnPropertyChanged(nameof(DiscardLabel));
@@ -4218,7 +4232,19 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             row.SelectionChanged += RaiseSelectionState;
         }
 
-        RaiseCommitState();
+        // THE WHOLE SELECTION STATE, NOT ONLY THE COMMIT BUTTON.
+        //
+        // This raised RaiseCommitState alone, which was enough while every count-bearing
+        // caption depended only on the TICKS: with nothing ticked the captions were the empty
+        // string before and after a list changed, so a missing notification looked like
+        // agreement. The headers carry the list's own total now, so the same omission would
+        // freeze "STAGED · 3" on a list that had grown to forty.
+        //
+        // It happened to work through UpdateStagingLists, which raises this itself once it has
+        // reconciled both lists - but that made the CollectionChanged funnel and one of its
+        // callers jointly responsible for a rule only one of them stated. This handler runs
+        // for every mutation of either list by definition, which is the place the rule belongs.
+        RaiseSelectionState();
     }
 
     /// <summary>

@@ -825,12 +825,41 @@
                         <RowDefinition Height="*" MinHeight="60" />
                     </Grid.RowDefinitions>
 
-                    <!-- STAGED header: master checkbox, label, count, action. -->
-                    <Grid Grid.Row="0" Margin="0,0,0,4">
+                    <!-- STAGED header: master checkbox, label-with-count, action.
+
+                         THREE COLUMNS, NOT FOUR, AND THAT IS THE OVERFLOW FIX.
+
+                         This was Auto | Auto | * | Auto - checkbox, label, caption,
+                         button - and the label's Auto column was the defect. A Grid
+                         measures every Auto column against infinity and hands each
+                         its full desired width; the star takes what is left, floored
+                         at zero and never negative. So once the Autos together wanted
+                         more than the row had, the star collapsed to nothing, the
+                         Autos kept their width regardless, and the row arranged PAST
+                         the panel - over the splitter and the diff pane, because
+                         nothing in that chain clips.
+
+                         `STAGED` in the letter-spaced SectionLabel face, with no
+                         trimming and no ceiling, was rigid while everything around it
+                         grew with the number of changes: StagingSelection.Label puts
+                         the count in the button, so `Discard 127` and `Stage 127` sit
+                         side by side one row down.
+
+                         Measured, at the panel's own MinWidth of 260 px - which is
+                         reachable by dragging and is PERSISTED, so a panel narrowed
+                         once is narrow on every later launch. The NOT STAGED row,
+                         which carries two buttons where this one carries one,
+                         overflowed by 13 px with the short labels and by 26 px with
+                         three-digit counts.
+
+                         Label and count are one trimming string in the star column
+                         now, so the header yields to the buttons instead of shoving
+                         them off the panel - and the count arrives as a side effect
+                         rather than as another thing to fit. See StagingSelection.Header. -->
+                    <Grid Grid.Row="0" Margin="0,0,0,4" ClipToBounds="True">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" MinWidth="24" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
 
@@ -843,19 +872,17 @@
                                   ToolTip="Tick or clear every staged file"
                                   IsChecked="{Binding StagedAllSelected, Mode=TwoWay}" />
 
-                        <TextBlock Grid.Column="1" Text="STAGED"
-                                   VerticalAlignment="Center"
-                                   Style="{StaticResource SectionLabel}" />
-
-                        <TextBlock Grid.Column="2" Margin="8,0,0,0"
+                        <!-- The tooltip carries the untrimmed text, because at 260 px
+                             this is the control that gives way and an ellipsis with no
+                             way to read the whole thing is worse than the crowding it
+                             replaced. -->
+                        <TextBlock Grid.Column="1" Text="{Binding StagedHeader}"
                                    VerticalAlignment="Center"
                                    TextTrimming="CharacterEllipsis"
-                                   FontFamily="{DynamicResource Font.UI}"
-                                   FontSize="{DynamicResource Font.Size.Caption}"
-                                   Foreground="{DynamicResource Brush.Text.Disabled}"
-                                   Text="{Binding StagedSelectionCaption}" />
+                                   ToolTip="{Binding StagedHeader}"
+                                   Style="{StaticResource SectionLabel}" />
 
-                        <Button Grid.Column="3" Content="{Binding UnstageLabel}"
+                        <Button Grid.Column="2" Content="{Binding UnstageLabel}"
                                 Margin="8,0,0,0"
                                 Style="{StaticResource GhostButton}" Padding="8,2"
                                 Height="{DynamicResource Size.Control.Compact}"
@@ -886,11 +913,14 @@
                                   ResizeDirection="Rows"
                                   AutomationProperties.Name="Resize the staged list" />
 
-                    <Grid Grid.Row="3" Margin="0,4,0,4">
+                    <!-- The same three columns as the STAGED header above, and this is
+                         the row that actually overflowed: two buttons where that one
+                         has one. The reasoning is on that grid; do not change one
+                         without the other. -->
+                    <Grid Grid.Row="3" Margin="0,4,0,4" ClipToBounds="True">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" MinWidth="24" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
 
@@ -900,19 +930,13 @@
                                   ToolTip="Tick or clear every changed file"
                                   IsChecked="{Binding UnstagedAllSelected, Mode=TwoWay}" />
 
-                        <TextBlock Grid.Column="1" Text="NOT STAGED"
-                                   VerticalAlignment="Center"
-                                   Style="{StaticResource SectionLabel}" />
-
-                        <TextBlock Grid.Column="2" Margin="8,0,0,0"
+                        <TextBlock Grid.Column="1" Text="{Binding UnstagedHeader}"
                                    VerticalAlignment="Center"
                                    TextTrimming="CharacterEllipsis"
-                                   FontFamily="{DynamicResource Font.UI}"
-                                   FontSize="{DynamicResource Font.Size.Caption}"
-                                   Foreground="{DynamicResource Brush.Text.Disabled}"
-                                   Text="{Binding UnstagedSelectionCaption}" />
+                                   ToolTip="{Binding UnstagedHeader}"
+                                   Style="{StaticResource SectionLabel}" />
 
-                        <StackPanel Grid.Column="3" Orientation="Horizontal"
+                        <StackPanel Grid.Column="2" Orientation="Horizontal"
                                     Margin="8,0,0,0">
                             <!-- Still the only button here that destroys work
                                  nothing else has a copy of, and it still confirms

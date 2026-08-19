@@ -571,6 +571,88 @@ public sealed class GitPanelChromeTests : IDisposable
         return Assert.IsType<Border>(parent);
     }
 
+    /// <summary>
+    /// Both list headers carry their count, and move when the ticks do.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The geometry test cannot cover this, and would go greener if it broke.</b> A WPF
+    /// binding to a property that does not exist fails silently and leaves the TextBlock
+    /// empty — and an empty header is <i>narrower</i>, so
+    /// <c>Nothing_overflows_the_panel_sideways</c> would pass more comfortably with the count
+    /// gone entirely. Whether the header fits and whether the header says anything are two
+    /// questions, and only one of them is about pixels.
+    /// </para>
+    /// <para>
+    /// <b>The second half is the notification.</b> The counts are computed properties, so
+    /// nothing reaches the screen unless <c>RaiseSelectionState</c> names them. Deleting those
+    /// two <c>OnPropertyChanged</c> lines leaves the header frozen at whatever it said when
+    /// the row was realised, and every other test in the suite stays green — the exact shape
+    /// this codebase has been bitten by three times, where a pure move loses its coverage
+    /// because nothing about it looks like new behaviour.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void The_list_headers_carry_their_counts_and_follow_the_ticks()
+    {
+        StaHarness.Run(() =>
+        {
+            var (window, shell) = Build();
+            var (panel, content) = ShowGitPanel(window);
+
+            for (var i = 0; i < 3; i++)
+            {
+                shell.Staged.Add(new ChangeRow(new FileChange
+                {
+                    Path = $"src/App/POU/FB_Staged_{i}.st",
+                    Staged = ChangeKind.Modified,
+                    Unstaged = ChangeKind.Unmodified,
+                }));
+            }
+
+            for (var i = 0; i < 12; i++)
+            {
+                shell.Unstaged.Add(new ChangeRow(new FileChange
+                {
+                    Path = $"src/App/GVL/GVL_Changed_{i}.st",
+                    Staged = ChangeKind.Unmodified,
+                    Unstaged = ChangeKind.Modified,
+                }));
+            }
+
+            content.Measure(new Size(1400, 900));
+            content.Arrange(new Rect(0, 0, 1400, 900));
+            content.UpdateLayout();
+
+            var texts = AllOf<TextBlock>(panel).Select(t => t.Text).ToList();
+
+            // The count, on screen, where a scrolling list cannot show it.
+            Assert.Contains("STAGED · 3", texts);
+            Assert.Contains("NOT STAGED · 12", texts);
+
+            // And the bare labels are gone, which is what proves the binding resolved rather
+            // than the old literal text still being there.
+            Assert.DoesNotContain("NOT STAGED", texts);
+
+            // Tick two, and the header has to follow. This is the assertion that dies if the
+            // OnPropertyChanged calls are removed.
+            shell.Unstaged[0].IsSelected = true;
+            shell.Unstaged[1].IsSelected = true;
+            content.UpdateLayout();
+
+            var after = AllOf<TextBlock>(panel).Select(t => t.Text).ToList();
+
+            Assert.Contains("NOT STAGED · 2 of 12 selected", after);
+
+            // The total alone is no longer shown while a selection is: one header, one
+            // sentence, and the selection's own wording already carries the total.
+            Assert.DoesNotContain("NOT STAGED · 12", after);
+
+            // The other list is untouched by the other's ticks.
+            Assert.Contains("STAGED · 3", after);
+        });
+    }
+
     private static IEnumerable<T> AllOf<T>(DependencyObject root)
         where T : DependencyObject
     {

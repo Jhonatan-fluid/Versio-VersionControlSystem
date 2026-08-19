@@ -73,4 +73,30 @@ public sealed class StagingSelectionTests
         // list already shows twelve rows.
         Assert.Equal(string.Empty, StagingSelection.Caption(total, selected));
     }
+
+    [Fact]
+    public void The_header_carries_the_count_so_the_list_does_not_have_to_be_counted()
+    {
+        // The gap this closes: a forty-file stage read "STAGED", and the only way to learn it
+        // was forty was to count the rows.
+        Assert.Equal("STAGED · 12", StagingSelection.Header("STAGED", 12, 0));
+    }
+
+    [Fact]
+    public void The_selection_takes_the_slot_while_anything_is_ticked()
+    {
+        // Not "STAGED · 12 · 3 of 12 selected". The selection sentence already carries the
+        // total, and printing it twice in one header is two controls' worth of noise in one.
+        Assert.Equal("NOT STAGED · 3 of 12 selected",
+                     StagingSelection.Header("NOT STAGED", 12, 3));
+    }
+
+    [Fact]
+    public void An_empty_list_gets_the_bare_label()
+    {
+        // "STAGED · 0" is the coverage line that congratulated itself on every refresh. With
+        // both lists empty the panel shows its clean-tree sentence instead of either header,
+        // so the only reader of this case is a list that is empty while the other is not.
+        Assert.Equal("STAGED", StagingSelection.Header("STAGED", 0, 0));
+    }
 }
