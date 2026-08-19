@@ -123,6 +123,74 @@
         <Setter Property="Padding" Value="14,0" />
     </Style>
 
+    <!--
+        A PILL THAT IS ALSO A BUTTON (UX-9).
+
+        For a summary that is now pressable: it has to keep reading as the count it is, and
+        start behaving like the control it has become. The notification overflow is the case -
+        "+2 more", appearing only when several things have gone wrong at once, and until this
+        existed it was a Border with nothing behind it.
+
+        BasedOn GhostButton rather than templated from the Pill style, and that is the whole
+        reason this is a keyed style instead of an inline template at the call site. Ghost
+        already carries the focus ring, the hover and pressed fills, the hand cursor and the
+        disabled foreground. An inline template would have had to restate all five and would
+        have restated four of them - the focus ring is exactly the setter every retemplated
+        control in this stylesheet once missed, and FocusVisualTests exists because nothing
+        fails when it is absent.
+
+        What it changes from Ghost is only the shape: the pill's own radius and sunken fill,
+        and a height that belongs beside body text rather than in a control row.
+
+        The radius is written here rather than taken from the Pill style because CornerRadius
+        is not a Button property, so there is nothing for a setter to reach - Ghost's template
+        fixes it at Radius.Control. 9 is the Pill's, restated to match it, and the two are
+        worth keeping in step by eye.
+    -->
+    <Style x:Key="PillButton" TargetType="Button" BasedOn="{StaticResource GhostButton}">
+        <Setter Property="Background" Value="{DynamicResource Brush.Surface.Sunken}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Secondary}" />
+
+        <!-- MONO, and it is inherited from neither side - which is why it is written out.
+             Ghost is Font.UI because its content is words on a button; a pill's content is a
+             COUNT, and PillText has been mono since the pill existed so that "+2 more" and
+             "+12 more" do not shift the glyphs around them. Taking Ghost's default here would
+             have been a silent change of typeface on the one control being converted, invisible
+             in a diff of the call site because the setter that used to carry it - the PillText
+             style on the TextBlock - went away with the TextBlock. -->
+        <Setter Property="FontFamily" Value="{DynamicResource Font.Mono}" />
+        <Setter Property="FontSize" Value="{DynamicResource Font.Size.Caption}" />
+        <Setter Property="Height" Value="18" />
+        <Setter Property="Padding" Value="8,0" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Root" CornerRadius="9"
+                            Background="{TemplateBinding Background}"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          RecognizesAccessKey="True" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Root" Property="Background"
+                                    Value="{DynamicResource Brush.Surface.Hover}" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Root" Property="Background"
+                                    Value="{DynamicResource Brush.Surface.Selected}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Foreground"
+                                    Value="{DynamicResource Brush.Text.Disabled}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- ==================================================================== RAIL -->
     <!-- Selected state is an accent bar plus a tinted fill, never a border. -->
     <Style x:Key="RailButton" TargetType="RadioButton">

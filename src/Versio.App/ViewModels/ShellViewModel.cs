@@ -510,6 +510,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // now, and the collision was not theoretical - see NotificationCenter's remarks.
         Notifications = new NotificationCenter(_clock, logger);
 
+        // The overflow pill's command. Here rather than on NotificationCenter because it is the
+        // one place both halves are visible: the center knows what it is holding back, the log
+        // knows where they went, and neither has any business holding a reference to the other.
+        ShowHeldNotificationsCommand = new RelayCommand(ShowHeldNotifications);
+
         // The credential and the git identity, in a class of their own. Constructed here
         // because it needs Busy and Notifications, and it is handed `ready` as a DELEGATE
         // rather than a copy of the predicate: Ready is `a client, and nothing running`, and a
@@ -1390,6 +1395,34 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// overwrite the answer to what the user just pressed.
     /// </remarks>
     public NotificationCenter Notifications { get; }
+
+    /// <summary>
+    /// Reach the notifications that did not fit on screen (UX-10's sibling, UX-9).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The pill counting them used to be a <c>Border</c> with no command at all.</b> It said
+    /// "+2 more" at the exact moment several things had gone wrong at once — a network outage,
+    /// a push retried — which is precisely when somebody wants to read them, and there was
+    /// nothing behind it. A count of unreachable things is worse than no count: it tells the
+    /// reader something exists and denies them it.
+    /// </para>
+    /// <para>
+    /// <b>Nothing new is stored to make this work.</b> Every notification is mirrored into the
+    /// log at the moment it is posted — deliberately, so that a dismissed card and an empty log
+    /// can never be the same repository state — so the ones that scrolled off the stack are
+    /// already on disk and in the buffer. This opens the panel they are in and filters to the
+    /// category they are in, and that is the whole of it.
+    /// </para>
+    /// <para>
+    /// <b>It lands on a superset, and that is the honest trade.</b> The filter is a category,
+    /// not a notification flag: every git line comes with them, held-back notifications
+    /// included. Marking notifications as their own category was the alternative and it buys a
+    /// tighter landing at the cost of splitting one operation's story across two categories in
+    /// the panel where reading that story is the point.
+    /// </para>
+    /// </remarks>
+    public RelayCommand ShowHeldNotificationsCommand { get; }
 
     public string StatusSummary
     {
@@ -5078,6 +5111,23 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             _logger.Error(LogCategory.App, "could not reach the clipboard", ex);
             StatusSummary = $"Could not reach the clipboard — the path is {repoRelative}";
         }
+    }
+
+    /// <summary>Open the log on the category the held notifications are in.</summary>
+    /// <remarks>
+    /// Deliberately not conditional on <c>Notifications.HasOverflow</c>. The pill that raises
+    /// this is already hidden when there is no overflow, and a command that silently did
+    /// nothing when pressed would be a second, invisible gate able to disagree with the first.
+    /// </remarks>
+    private void ShowHeldNotifications()
+    {
+        _logger.Click("Notifications.Overflow");
+
+        Log.Filters.ShowOnly(NotificationCenter.LogCategoryName);
+
+        // Expanded last, so the panel appears already showing the right rows. The other order
+        // opens on the unfiltered log and then visibly re-filters it, which reads as a glitch.
+        Log.IsExpanded = true;
     }
 
     /// <summary>

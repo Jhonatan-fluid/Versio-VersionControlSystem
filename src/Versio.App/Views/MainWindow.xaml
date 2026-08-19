@@ -1186,15 +1186,32 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
 
-            <!-- What is being held back, when more has happened than fits. -->
-            <Border Grid.ColumnSpan="3" Style="{StaticResource Pill}"
-                    Margin="0,0,18,4" Padding="8,2"
+            <!-- WHAT IS BEING HELD BACK, AND THE WAY TO READ IT (UX-9).
+
+                 This was a Border with a TextBlock in it and nothing behind either. It
+                 appears when several things have gone wrong at once - an outage, a push
+                 retried - which is exactly the moment somebody wants to read them, and it
+                 offered a count of things it would not show. A dead end that only appears
+                 during trouble is worse than no count at all.
+
+                 Every notification is mirrored into the log as it is posted, deliberately, so
+                 the held ones are already there. Pressing this opens the log filtered to the
+                 category they are in. Nothing is stored to make that work.
+
+                 Still a pill to look at and a Button to use - PillButton, which is Ghost's
+                 focus ring and hover feedback wearing the pill's shape. The name is written
+                 out rather than left to the content: "+2 more" read aloud is not a thing
+                 anybody can act on. -->
+            <Button Grid.ColumnSpan="3" x:Name="NotificationOverflow"
+                    Style="{StaticResource PillButton}"
+                    Margin="0,0,18,4"
                     VerticalAlignment="Bottom" HorizontalAlignment="Right"
+                    ToolTip="Read these in the log"
+                    AutomationProperties.Name="Read the held notifications in the log"
+                    Command="{Binding ShowHeldNotificationsCommand}"
+                    Content="{Binding Notifications.OverflowText}"
                     Visibility="{Binding Notifications.HasOverflow,
-                        Converter={StaticResource BoolToVisibility}}">
-                <TextBlock Style="{StaticResource PillText}"
-                           Text="{Binding Notifications.OverflowText}" />
-            </Border>
+                        Converter={StaticResource BoolToVisibility}}" />
         </Grid>
 
         <!-- ============================= LOG PANEL ============================= -->
