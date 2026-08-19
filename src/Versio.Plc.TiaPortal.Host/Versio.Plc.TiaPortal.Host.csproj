@@ -16,7 +16,6 @@
 
     <ItemGroup>
     <Reference Include="Microsoft.CSharp" />
-    <Reference Include="System.Windows.Forms" />
     <PackageReference Include="System.Text.Json" Version="8.0.5" />
     <!-- So the host builds on a machine that has the net9 SDK but not the
          .NET Framework 4.8 targeting pack (no Visual Studio). -->

@@ -33,13 +33,14 @@ and technology objects are coverage skips.
 
 | Project | Role |
 |---|---|
-| `Versio.Plc.TiaPortal` | Pure. Format (`.ap17`–`.ap21`, `.alXX` as template), directory payload, occupancy, transients, import planner, SCL header, SimaticML scrubber, `TiaJob` / `TiaProtocol` |
+| `Versio.Plc.TiaPortal` | Pure. Format (`.ap17`–`.ap21`, `.alXX` as template), directory payload, occupancy, transients, import planner, SCL header, SimaticML scrubber, `TiaPortalJob` / `TiaPortalProtocol` |
 | `Versio.Plc.TiaPortal.Infrastructure` | Driven. Locator, toolchain (refuses if several Portal versions are installed), `LocalTiaPortalRunner`, `TiaPortalPack.Register()` |
-| `Versio.Plc.TiaPortal.Host` | net48 x64 exe. Reflection / `dynamic` against Openness. `[STAThread]`. `OpennessLoader` installs `AssemblyResolve` **before** any Openness type is touched |
+| `Versio.Plc.TiaPortal.Host` | net48 x64 exe. Reflection / `dynamic` against Openness. `[STAThread]`. `OpennessLoader` installs `AssemblyResolve` **before** any Openness type is touched. Split: `HostApp` (session), `HostExport`, `HostImport`, `HostReflection` |
 
 `Versio.App` has a second `ProjectReference` and calls `TiaPortalPack.Register()` **after**
-`CodesysPack.Register()`, so `PlcFormats.All[0]` stays the default for anything that still
-picks the first registered format. The log filter includes `TiaPortalLog.Category` (`TiaPortal`),
+`CodesysPack.Register()`. A missing `vendor` field on an old binding still deserialises as
+the first vendor; the session probes every registered format and no longer pins
+`PlcFormats.All[0]`. The log filter includes `TiaPortalLog.Category` (`TiaPortal`),
 declared on the pack rather than in the neutral `LogCategory` table.
 
 The host does **not** reference `Versio.Core` (different TFM). The JSON job file is the
@@ -114,7 +115,7 @@ Versio.Plc.TiaPortal.Host.exe <job.json>
 lines. Timeout floor is **20 minutes** — a 488 MB project is not the first vendor's 20-second
 session. `TypicalStartupCost` is **45 s** (measured warm probe 42 s, warm export 37 s).
 
-The job schema (`TiaJob` / `JobReader`):
+The job schema (`TiaPortalJob` / `JobReader`):
 
 | Field | Meaning |
 |---|---|
@@ -161,12 +162,15 @@ holds the project, `Open` fails and the runner reports it.
 | Member | Used by |
 |---|---|
 | `PlcSoftware.BlockGroup` / `.Blocks` / `.Groups` | export, import, probe counts |
-| `PlcSoftware.TypeGroup` / `.Types` / `.Groups` | export |
-| `PlcSoftware.TagTableGroup` / `.TagTables` / `.Groups` | export |
+| `PlcSoftware.TypeGroup` / `.Types` / `.Groups` | export; import find (`…/UDT/{name}`) |
+| `PlcSoftware.TagTableGroup` / `.TagTables` / `.Groups` | export; import find (`…/TAG_TABLE/{name}`) |
 | `block.Name`, `Number`, `ProgrammingLanguage`, `IsKnowHowProtected` | export |
 | `block.Export(FileInfo, ExportOptions.None)` | SimaticML beside every object |
 | `IGenerateSource.GenerateSource(FileInfo)` on the block | SCL / `.udt` |
 | `ExternalSourceGroup.GenerateSource(collection, FileInfo)` | fallback when the block has no `IGenerateSource` |
+
+Export walks emit `progress` (`phase` + `detail`). The runner already maps `t == "progress"`
+onto `PlcProgress`.
 
 Languages starting `F_` are safety — coverage skip. Know-how-protected blocks export for
 review and are not imported.
@@ -175,11 +179,12 @@ review and are not imported.
 
 | Member | Used by | Notes |
 |---|---|---|
-| `block.Name = newName` | rename | Identity is name+number, so this is the rename |
-| `PlcBlock.Delete()` | delete | Refused when `cannotVerify` is set |
+| `FindObject` over `BlockGroup`, `TypeGroup`, `TagTableGroup` | rename, delete | Same identity strings export writes. A UDT or tag table used to be a silent no-op |
+| `obj.Name = newName` | rename | Identity is name+number, so this is the rename |
+| `obj.Delete()` via `TryDelete` | delete | Refused when `cannotVerify` is set. If `Delete()` is missing or throws, emit a warning and **keep** the object — same class of refusal as an unverifiable delete. No second API is invented |
 | `ExternalSourceGroup.CreateFromFile` / `CreateFrom` | SCL apply / create | Existing source of the same file name is deleted first |
 | `externalSource.GenerateBlocksFromSource(Overwrite)` | SCL apply / create | Overload hunting: Openness versions disagree on the option enum |
-| `BlockGroup.Blocks.Import(FileInfo, ImportOptions.Override)` | native XML | LAD/FBD; SimaticML marked `XML_REVIEW` is **never** this path |
+| `BlockGroup.Blocks.Import` / `TypeGroup.Types.Import` / `TagTableGroup.TagTables.Import` | native XML | Chosen from the identity (`…/UDT/…`, `…/TAG_TABLE/…`, else blocks). Handing a tag table to `Blocks.Import` fails "out of context" — measured 2026-08-19. SimaticML marked `XML_REVIEW` is **never** this path |
 
 G12: one object, one importable file. SCL (or `.udt`) imports; the SimaticML beside it is
 `XML_REVIEW` and is never applied back. Importing both puts the old body back.
@@ -349,9 +354,10 @@ Layered verdict: textual must match; native XML is expected to differ; never a s
 `Lossless: False`. `-MutateFirst` is mandatory — without it a round trip that writes nothing
 passes vacuously.
 
-The C# gate is `tests/Versio.Plc.TiaPortal.Tests` (3 tests, `[Collection("tia-portal")]`).
+The C# gate is `tests/Versio.Plc.TiaPortal.Tests` (4 tests, `[Collection("tia-portal")]`).
 Skip is the success path when Portal, Openness membership, AllowList, or LFS content is
-missing.
+missing. The fourth Fact copies the committed fixture aside, mutates one `.scl`, imports
+the planner's plan, re-exports, and asserts textual bytes — never native XML.
 
 ---
 
@@ -363,15 +369,13 @@ have to re-derive it.
 
 ### Next (PLC-program parity with the first vendor)
 
-1. **Import has not been run against live Portal.** Planner and host exist; the C# gate
-   is locator / probe / export only. Run `Test-RoundTrip.ps1 -MutateFirst` on a copy
-   under `.versio/local/tia/`, then `Measure-ImportStability.ps1` (P7 SETTLES). Do not
-   start on the OneDrive original. The committed LFS tree is the gate fixture: mutating
-   it is a choice, not the default.
-2. **The host's import only finds blocks.** `FindBlock` / `ApplyNative` walk
-   `PlcSoftware.BlockGroup`. UDTs live on `TypeGroup`, tag tables on `TagTableGroup`.
-   They export; rename, delete and native apply would miss them. SCL apply via
-   `ExternalSourceGroup` is the path that might already cover `.udt` / `.scl` — unproven.
+1. ~~**Import has not been run against live Portal.**~~ — **gated 2026-08-19.** The C#
+   gate copies the fixture, mutates one `.scl`, imports, re-exports, asserts textual
+   bytes. Still run `Measure-ImportStability.ps1` (P7 SETTLES) on a copy under
+   `.versio/local/tia/`. Never the OneDrive original.
+2. ~~**The host's import only finds blocks.**~~ — **done 2026-08-19.** `FindObject`
+   walks `TypeGroup` and `TagTableGroup` as well as `BlockGroup`. `TryDelete` keeps the
+   object and warns when `Delete()` is missing or throws. Export emits `progress`.
 3. **Two unchanged textual exports have not been shown byte-identical.** Native XML is
    expected to differ (G12: SimaticML beside SCL is `XML_REVIEW` and is never applied).
 4. **The app has not been eyeballed against a TIA project it is allowed to adopt.** This

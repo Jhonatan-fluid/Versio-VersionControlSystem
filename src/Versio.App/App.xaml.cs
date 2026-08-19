@@ -76,9 +76,11 @@ public partial class App : Application
         // which put a vendor's name in Versio.Core - the assembly the architectural rule exists
         // to keep free of exactly that - and made "adding a vendor means registering" a
         // description of something nothing ever did. Adding a vendor is one reference in the
-        // csproj, one Register() call here, and no change anywhere above it. CODESYS stays
-        // first so PlcFormats.All[0] remains the default for anything that still picks the
-        // first registered format.
+        // csproj, one Register() call here, and no change anywhere above it.
+        //
+        // CODESYS stays first so a missing vendor field on an old binding still deserialises
+        // to the first vendor — history, not a session pin. The session probes every
+        // registered vendor; it used to take PlcFormats.All[0] and never look again.
         //
         // Registered before the shell, because opening a repository scans it for every known
         // format and a shell built first would scan for none.

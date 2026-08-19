@@ -13,7 +13,7 @@ namespace Versio.Plc.TiaPortal;
 /// create the wrong object.
 /// </para>
 /// </remarks>
-public static class TiaSclHeader
+public static class TiaPortalSclHeader
 {
     private static readonly Regex Header = new(
         @"^\s*(FUNCTION_BLOCK|FUNCTION|ORGANIZATION_BLOCK|DATA_BLOCK|TYPE)\s+""?([^\s"";:]+)""?",

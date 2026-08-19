@@ -1,19 +1,19 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-19 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,517 across nine
-projects — re-derived by running each, not carried forward. TIA Portal gate: 3 passing on this
-machine once Openness membership and AllowList were in place.
+**Date:** 2026-08-19 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,525 across nine
+projects — re-derived by running each, not carried forward. TIA Portal gate: 4 tests; the
+import/re-export Fact copies the fixture and can run many minutes when Portal is present.
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,388 | under a second | nothing |
+| `Versio.Core.Tests` | 1,392 | under a second | nothing |
 | `Versio.Integration.Tests` | 147 | ~10 s | real git |
-| `Versio.App.Tests` | 546 | ~50 s | nothing |
+| `Versio.App.Tests` | 547 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 14 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 260 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 92 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 13 | instant | nothing |
-| `Versio.Plc.TiaPortal.Tests` | 3 | seconds when skipped; ~45 s when Portal opens | **real TIA Portal** — skips without Openness membership or LFS content |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 15 | instant | nothing |
+| `Versio.Plc.TiaPortal.Tests` | 4 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.Codesys.Tests` | 54 | **~30 min** | **real CODESYS** |
 
 *The first eight are the loop to work in — about thirty seconds plus the UI suite. The last is
@@ -551,9 +551,10 @@ does not record them has to be run again.
   `fixtures/projects/CleaningStation_V20_V21/` (LFS; ignored by this repo's adoption so
   opening Versio here does not export it).
   - **What is still open is not this bullet.** Item 7's remaining queue is in
-    [`PHASE2.md`](PHASE2.md): mutating import on a copy, host import beyond `BlockGroup`,
-    textual determinism, the app loop on an adopted TIA project, GUI occupancy. AllowList
-    after a host rebuild is friction, not a gap.
+    [`PHASE2.md`](PHASE2.md): export textual determinism, the app loop on an adopted TIA
+    project, GUI occupancy. The session pin on `PlcFormats.All[0]` is closed (see
+    Findings). Host import finds UDTs and tag tables; the C# gate has a mutating
+    import/re-export. AllowList after a host rebuild is friction, not a gap.
 
 - ~~**Launching the app against this repository adopts the 21 `phase0/` scratch projects and
   starts exporting all of them.**~~ — **closed 2026-08-17, and the closing found a defect.**
@@ -1015,9 +1016,8 @@ would have gone on passing while checking one fewer every time a panel moved out
 ## Findings
 
 Every defect worth understanding, written down with its evidence, lives in
-**[`FINDINGS.md`](FINDINGS.md)** — 111 of them, newest first. (Said 99 until 2026-08-17,
-when it was re-derived rather than incremented: the number had gone stale during the split
-itself, which is the one edit that could not have been an oversight.)
+**[`FINDINGS.md`](FINDINGS.md)** — 121 of them, newest first. (Said 111 until 2026-08-19,
+when it was re-derived rather than incremented.)
 
 It moved out on 2026-08-17. It was 3,681 lines of this document's 4,782, so the file that
 answers *where is the project now* was 77% engineering log, and `CLAUDE.md`'s opening
@@ -1026,6 +1026,7 @@ actually do.
 
 The full list, newest first:
 
+- [The App session treated every repository as the first vendor](FINDINGS.md#the-app-session-treated-every-repository-as-the-first-vendor)
 - [SimaticML UId is a document-local integer, not a project identity](FINDINGS.md#simaticml-uid-is-a-document-local-integer-not-a-project-identity)
 - [TIA occupancy is a .info sidecar, measured while Openness held the project](FINDINGS.md#tia-occupancy-is-a-info-sidecar-measured-while-openness-held-the-project)
 - [Restoring a backup in the same second overwrote the backup](FINDINGS.md#restoring-a-backup-in-the-same-second-overwrote-the-backup)

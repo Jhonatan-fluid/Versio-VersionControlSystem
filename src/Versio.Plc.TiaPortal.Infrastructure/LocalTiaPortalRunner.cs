@@ -89,7 +89,7 @@ public sealed class LocalTiaPortalRunner(
             plan = TiaPortalProjectFormat.Instance.PlanImport(null, [], new Dictionary<string, string>());
         }
 
-        var native = new TiaJob
+        var native = new TiaPortalJob
         {
             Operation = job.Operation.ToString(),
             ProjectPath = only.ProjectPath,
@@ -122,7 +122,7 @@ public sealed class LocalTiaPortalRunner(
     }
 
     private PlcResult RunGuarded(
-        TiaJob job, string jobFile,
+        TiaPortalJob job, string jobFile,
         IProgress<PlcProgress>? progress, CancellationToken cancellationToken)
     {
         using var mutex = new Mutex(false, GlobalMutexName);
@@ -167,7 +167,7 @@ public sealed class LocalTiaPortalRunner(
     }
 
     private PlcResult Execute(
-        TiaJob job, string jobFile,
+        TiaPortalJob job, string jobFile,
         IProgress<PlcProgress>? progress, CancellationToken cancellationToken)
     {
         var psi = new ProcessStartInfo
@@ -201,7 +201,7 @@ public sealed class LocalTiaPortalRunner(
                 buffer.AppendLine(e.Data);
             }
 
-            var parsed = TiaProtocol.Parse(e.Data);
+            var parsed = TiaPortalProtocol.Parse(e.Data);
             var evt = parsed.Events.FirstOrDefault();
             if (evt is not null && evt.Type == "progress")
             {
@@ -243,7 +243,7 @@ public sealed class LocalTiaPortalRunner(
             stdout = buffer.ToString();
         }
 
-        var output = TiaProtocol.Parse(stdout);
+        var output = TiaPortalProtocol.Parse(stdout);
         foreach (var line in output.Chatter)
         {
             _log.Debug(TiaPortalLog.Category, line);
@@ -291,7 +291,7 @@ public sealed class LocalTiaPortalRunner(
     private static string Quote(string path) =>
         path.Contains(' ', StringComparison.Ordinal) ? "\"" + path + "\"" : path;
 
-    private static string WriteJobFile(TiaJob job)
+    private static string WriteJobFile(TiaPortalJob job)
     {
         var path = Path.Combine(Path.GetTempPath(), $"versio-tia-{job.OperationId}.json");
         File.WriteAllText(path, job.ToJson(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));

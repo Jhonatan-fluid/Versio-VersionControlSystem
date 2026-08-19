@@ -85,7 +85,7 @@ public readonly record struct SyncRunNotice(
 public sealed class SyncOrchestrator
 {
     private readonly IClock _clock;
-    private readonly IPlcRunner _toolchain;
+    private readonly Func<PlcVendor, IPlcRunner> _runnerFor;
     private readonly IFileSystem _fs;
     private readonly ILockStore _lockStore;
     private readonly OrchestratorOptions _options;
@@ -168,7 +168,8 @@ public sealed class SyncOrchestrator
         IProjectOccupancyProbe? occupancy = null,
         IConflictProbe? conflicts = null,
         IHistoricContentProbe? history = null,
-        Func<string, IPlcProjectFormat?>? formats = null)
+        Func<string, IPlcProjectFormat?>? formats = null,
+        Func<PlcVendor, IPlcRunner>? runnerFor = null)
     {
         _formats = formats ?? PlcFormats.ForPath;
         _occupancy = occupancy;
@@ -179,7 +180,10 @@ public sealed class SyncOrchestrator
         _progress = progress;
         _clock = clock;
         _fs = fs;
-        _toolchain = toolchain;
+        // One runner is still the usual case, and every existing caller passes that.
+        // A mixed repository needs one per vendor or every job is driven by whoever
+        // was probed first — which used to be the first registered format.
+        _runnerFor = runnerFor ?? (_ => toolchain);
         _lockStore = lockStore;
         _log = logger ?? NullLogger.Instance;
         _options = options ?? new OrchestratorOptions();
@@ -1346,7 +1350,7 @@ public sealed class SyncOrchestrator
         // watcher's quiet period lets them - which is long after the toolchain has exited.
         using var writing = BeginOwnWrite(binding.Id, ChangeSource.ExportedText);
 
-        var result = await _toolchain.RunAsync(job, _progress, ct).ConfigureAwait(false);
+        var result = await RunnerFor(binding).RunAsync(job, _progress, ct).ConfigureAwait(false);
         var elapsed = _clock.UtcNow - started;
 
         if (!result.Succeeded)
@@ -1704,7 +1708,7 @@ public sealed class SyncOrchestrator
         // other is a rule somebody will eventually be surprised by.
         using var writing = BeginOwnWrite(binding.Id, ChangeSource.Project);
 
-        var result = await _toolchain.RunAsync(job, _progress, ct).ConfigureAwait(false);
+        var result = await RunnerFor(binding).RunAsync(job, _progress, ct).ConfigureAwait(false);
         var elapsed = _clock.UtcNow - started;
 
         if (!result.Succeeded)
@@ -2228,6 +2232,17 @@ public sealed class SyncOrchestrator
         var project = Absolute(binding.ProjectPath);
         return _formats(binding.ProjectPath)?.PayloadPathFor(project) ?? project;
     }
+
+    /// <summary>
+    /// The runner that owns this binding's vendor.
+    /// </summary>
+    /// <remarks>
+    /// Bindings already record a vendor. Until this existed the engine had one runner
+    /// for the whole repository, so a mixed tree sent every job to whoever was probed
+    /// first. The lookup is by <see cref="PlcVendor"/> — the seam token — not by a
+    /// brand name Sync is not allowed to know.
+    /// </remarks>
+    private IPlcRunner RunnerFor(ProjectBinding binding) => _runnerFor(binding.Vendor);
 
     private bool IsTreePayload(string payload) =>
         _fs.DirectoryExists(payload) && !_fs.FileExists(payload);

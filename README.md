@@ -89,7 +89,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | **Export coverage stated, not assumed** — `_coverage.md` + every skip in the manifest | ✅ a gap is distinguished from a deliberate omission; an old manifest reports "unknown", never "complete"; and **an object the export could not write at all is reported rather than counted as covered** — it reaches neither the records nor the skips, so until 2026-08-16 a lost object left a verdict of "everything reaches the mirror" |
 | **Library references exported** (`<manager>.libraries.yaml`) | ✅ **the gap is closed.** One file per library manager, beside the object that owns it — 21 references on the fixture's application, 13 on its project, **all 34 placeholders**. Hand-written YAML on both sides, no third-party dependency. Export-only: change libraries in the IDE. A **fixed-version** reference records its version, company and title parsed from its own name, which is project state — reading them off `managed_library` reports what the exporting machine has *installed*, and answers nothing at all for a library it does not have |
 | Template generation | ⛔ needs a new operation and script — not assembly |
-| A second vendor (TwinCAT / Studio 5000 / TIA Portal) | ⛔ the seam is ready and unproven |
+| A second vendor — TIA Portal | ✅ the second pack; PLC software round-trips once Openness membership is granted. TwinCAT / Studio 5000 are not started |
 | **Git side panel** — staging, commit message, fetch/pull/push | ✅ one operation at a time across every button |
 | **Changed files named as objects** — `FB_Motor · POU`, not `src/…/POU/FB_Motor.st` | ✅ resolved through the export manifest, so it costs no extra read. A file the manifest does not describe stays a path and is **never** guessed at. A library-reference file carries a lock: editing it does not reach the project |
 | **Change summary and drafted commit subject** — *"1 GVL and 1 POU changed in RefrigeratorControl"*, and a **Draft** button that writes `Modify FB_Motor, Glob_Var` | ✅ counted by object, not by file — one GVL is two files and one edit. Both describe exactly what the commit button will record, and Draft refuses to overwrite anything you have typed |
@@ -188,11 +188,11 @@ Versio.sln
 ├─ tests/
 │  ├─ Versio.TestSupport/       not a test project: the three helpers more than one suite
 │  │                            needs (TestPaths, TestLogger, VendorSeamScanner)
-│  ├─ Versio.Core.Tests/        1,388 unit tests — pure, no IO, under a second
+│  ├─ Versio.Core.Tests/        1,392 unit tests — pure, no IO, under a second
 │  ├─ Versio.Integration.Tests/ 147 tests against real git and the real filesystem, ~10 s.
 │  │                            NO CODESYS: that is a different project now, so this one
 │  │                            needs no filter and cannot accidentally cost half an hour
-│  ├─ Versio.App.Tests/         546 tests that build the real windows and panels against
+│  ├─ Versio.App.Tests/         547 tests that build the real windows and panels against
 │  │                            the real stylesheet on an STA thread — none is ever shown
 │  ├─ Versio.Plc.Codesys.Pure.Tests/ 260 pure vendor tests — the planner, the codecs, the
 │  │                            protocol — under a second, needing nothing
@@ -200,8 +200,8 @@ Versio.sln
 │  │                            ~15 s, no CODESYS — python on PATH, skips cleanly without
 │  ├─ Versio.Plc.Codesys.Tests/ 54 tests against real CODESYS, ~30 min. The CODESYS gate
 │  │                            before a commit, and the only suite that needs that toolchain
-│  ├─ Versio.Plc.TiaPortal.Pure.Tests/ 13 pure vendor tests — format, planner, protocol
-│  └─ Versio.Plc.TiaPortal.Tests/ 3 tests against real TIA Portal; skip with a count when
+│  ├─ Versio.Plc.TiaPortal.Pure.Tests/ 15 pure vendor tests — format, planner, protocol
+│  └─ Versio.Plc.TiaPortal.Tests/ 4 tests against real TIA Portal; skip with a count when
 │                               Openness membership or the install is missing
 ├─ tools/                       PowerShell and python harnesses. tools/tia/ is the second
 │                               vendor's round-trip and P7 harness; the rest are CODESYS
@@ -361,14 +361,14 @@ dotnet test tests/Versio.Core.Tests
 
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,388 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
+| `Versio.Core.Tests` | 1,392 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
 | `Versio.Integration.Tests` | 147 | a real `git.exe` and the real filesystem | ~10 s |
 | `Versio.Arch.Tests` | 14 | nothing — it reads assembly metadata, IL, and the project files | instant |
-| `Versio.App.Tests` | 546 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
+| `Versio.App.Tests` | 547 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
 | `Versio.Plc.Codesys.Pure.Tests` | 260 | nothing — the vendor's planner, codecs and protocol, pure | under a second |
 | `Versio.Plc.Codesys.Parity.Tests` | 92 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 13 | nothing — format, planner, protocol, scrubber | instant |
-| `Versio.Plc.TiaPortal.Tests` | 3 | **a real TIA Portal**; skips cleanly without Openness membership | seconds when skipped |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 15 | nothing — format, planner, protocol, scrubber | instant |
+| `Versio.Plc.TiaPortal.Tests` | 4 | **a real TIA Portal**; skips cleanly without Openness membership | seconds when skipped |
 | `Versio.Plc.Codesys.Tests` | 54 | **a real CODESYS**, and **skips cleanly** without one | **~30 min** |
 
 The first six are the loop to work in. The last is the gate before a commit — and it is a

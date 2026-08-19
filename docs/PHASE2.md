@@ -205,17 +205,20 @@ safety are coverage skips. The gate fixture is committed at
 adoption). Driving notes — setup, Openness members, occupancy, identity — live in
 [`docs/vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md).
 
-**What is left, in order** — export and the directory seam are measured; import is not.
-The measurements and the "never" list sit in DRIVING.md §12; the sequence lives here so it
-cannot be rediscovered from an unordered dump:
+**What is left, in order** — the pack and the directory seam are measured; the session
+used to pin `PlcFormats.All[0]` (see Findings). Import has a skippable C# gate. What
+remains:
 
-1. **A mutating round-trip against a copy** (`tools/tia/Test-RoundTrip.ps1 -MutateFirst`
-   on `.versio/local/tia/`, never OneDrive, and not the committed LFS tree until that
-   dirtiness is accepted). Then `Measure-ImportStability.ps1` for P7 SETTLES. There is no
-   C# import gate yet; the three live tests are locator / probe / export.
-2. **Host import that is not only `BlockGroup`.** Apply/create uses `ExternalSourceGroup`;
-   native apply is `Blocks.Import`; rename/delete use `FindBlock` on blocks. UDTs and tag
-   tables export today and would be missed on the way back.
+1. ~~**A mutating round-trip against a copy**~~ — **gated 2026-08-19.**
+   `TiaPortalGateTests.Import_then_reexport_keeps_textual_bytes` copies the committed
+   fixture aside, exports, mutates one `.scl`, imports the planner's plan, re-exports,
+   and asserts **textual** bytes. Native XML is not compared. Still: run
+   `Measure-ImportStability.ps1` for P7 SETTLES; never the OneDrive original.
+2. ~~**Host import that is not only `BlockGroup`.**~~ — **done 2026-08-19.**
+   `FindObject` walks `BlockGroup`, `TypeGroup` (`…/UDT/{name}`) and `TagTableGroup`
+   (`…/TAG_TABLE/{name}`), the same identity strings export writes. Delete is
+   `Delete()` when present; a missing method or a throw keeps the object and warns.
+   Export emits `progress` (`phase` + `detail`). `HostApp` is split along those methods.
 3. **Export determinism** — two textual exports of an unchanged project, byte-identical.
    Native XML is expected to differ (G12).
 4. **The app loop on a TIA project that is not this repository's ignored fixture** —

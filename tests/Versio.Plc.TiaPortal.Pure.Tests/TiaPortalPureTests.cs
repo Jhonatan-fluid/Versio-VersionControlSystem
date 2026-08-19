@@ -44,7 +44,7 @@ public sealed class TiaPortalFormatTests
     }
 }
 
-public sealed class TiaSclHeaderTests
+public sealed class TiaPortalSclHeaderTests
 {
     [Fact]
     public void A_quoted_function_block_header_names_the_object()
@@ -55,14 +55,14 @@ public sealed class TiaSclHeaderTests
             END_VAR
             """;
 
-        Assert.Equal("Motor", TiaSclHeader.ObjectName(scl));
-        Assert.Equal("FB", TiaSclHeader.ObjectType(scl));
+        Assert.Equal("Motor", TiaPortalSclHeader.ObjectName(scl));
+        Assert.Equal("FB", TiaPortalSclHeader.ObjectType(scl));
     }
 
     [Fact]
     public void A_file_named_wrong_does_not_supply_the_name()
     {
-        Assert.Null(TiaSclHeader.ObjectName("this is a comment\n// no header"));
+        Assert.Null(TiaPortalSclHeader.ObjectName("this is a comment\n// no header"));
     }
 }
 
@@ -265,12 +265,12 @@ public sealed class TiaPortalImportPlannerTests
     }
 }
 
-public sealed class TiaProtocolTests
+public sealed class TiaPortalProtocolTests
 {
     [Fact]
     public void Protocol_lines_are_separated_from_chatter()
     {
-        var output = TiaProtocol.Parse(
+        var output = TiaPortalProtocol.Parse(
             "licence nag\n@@VERSIO@@{\"t\":\"object\",\"path\":\"Motor.scl\"}\n@@VERSIO@@{\"t\":\"done\"}\n");
 
         Assert.Equal(["licence nag"], output.Chatter);
@@ -280,12 +280,29 @@ public sealed class TiaProtocolTests
     }
 }
 
-public sealed class TiaJobTests
+public sealed class TiaPortalObjectTypeNamesTests
+{
+    [Fact]
+    public void Udt_and_tag_table_have_this_vendor_display_names()
+    {
+        var udt = TiaPortalObjectTypeNames.TryFor("UDT");
+        Assert.NotNull(udt);
+        Assert.Equal("UDT", udt.Value.Chip);
+        Assert.Equal("PLC data type", udt.Value.One);
+
+        var tags = TiaPortalObjectTypeNames.TryFor("TAG_TABLE");
+        Assert.NotNull(tags);
+        Assert.Equal("tag table", tags.Value.One);
+        Assert.Null(TiaPortalObjectTypeNames.TryFor("NOPE"));
+    }
+}
+
+public sealed class TiaPortalJobTests
 {
     [Fact]
     public void An_import_job_without_a_plan_refuses_to_serialize()
     {
-        var job = new TiaJob
+        var job = new TiaPortalJob
         {
             Operation = "import",
             ProjectPath = "Station.ap21",
@@ -294,6 +311,40 @@ public sealed class TiaJobTests
         };
 
         Assert.Throws<InvalidOperationException>(() => job.ToJson());
+    }
+
+    [Fact]
+    public void An_import_job_keeps_the_plan_on_the_wire()
+    {
+        var plan = new ImportPlan
+        {
+            Files =
+            [
+                new PlannedFile
+                {
+                    Path = "Device/PLC/Program blocks/Motor.scl",
+                    Action = PlannedAction.ApplyText,
+                    Name = "Motor",
+                    Guid = "uid-1",
+                },
+            ],
+        };
+
+        var json = new TiaPortalJob
+        {
+            Operation = "import",
+            ProjectPath = "Station.ap21",
+            Path = "mirror",
+            ApiFolder = "api",
+            Plan = plan,
+        }.ToJson();
+
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        Assert.Equal("import", doc.RootElement.GetProperty("op").GetString());
+        Assert.True(doc.RootElement.TryGetProperty("plan", out var wire));
+        Assert.Equal("Device/PLC/Program blocks/Motor.scl",
+            wire.GetProperty("files")[0].GetProperty("path").GetString());
+        Assert.Equal("ApplyText", wire.GetProperty("files")[0].GetProperty("action").GetString());
     }
 }
 

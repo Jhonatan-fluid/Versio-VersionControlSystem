@@ -144,7 +144,7 @@ public static class TiaPortalImportPlanner
 
         if (NeedsText(file.Path))
         {
-            var declared = TiaSclHeader.ObjectName(file.Text);
+            var declared = TiaPortalSclHeader.ObjectName(file.Text);
             if (string.IsNullOrEmpty(declared))
             {
                 warnings.Add($"{file.Path}: create refused — no SCL header naming the object");

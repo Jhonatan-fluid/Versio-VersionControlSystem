@@ -3,7 +3,7 @@ using System.Text.Json;
 namespace Versio.Plc.TiaPortal;
 
 /// <summary>One JSON-lines event emitted by the TIA Portal host.</summary>
-public sealed record TiaEvent
+public sealed record TiaPortalEvent
 {
     public required string Type { get; init; }
 
@@ -19,15 +19,15 @@ public sealed record TiaEvent
 }
 
 /// <summary>Everything parsed out of one host run.</summary>
-public sealed record TiaOutput
+public sealed record TiaPortalOutput
 {
-    public IReadOnlyList<TiaEvent> Events { get; init; } = [];
+    public IReadOnlyList<TiaPortalEvent> Events { get; init; } = [];
 
     public IReadOnlyList<string> Chatter { get; init; } = [];
 
     public IReadOnlyList<string> Malformed { get; init; } = [];
 
-    public TiaEvent? Fatal => Events.FirstOrDefault(e => e.Type == "fatal");
+    public TiaPortalEvent? Fatal => Events.FirstOrDefault(e => e.Type == "fatal");
 
     public bool Completed => Events.Any(e => e.Type == "done");
 }
@@ -40,19 +40,19 @@ public sealed record TiaOutput
 /// way to tell protocol from the toolchain's own chatter. The field name is <c>t</c>,
 /// matching that protocol, so a second emitter is not a second language.
 /// </remarks>
-public static class TiaProtocol
+public static class TiaPortalProtocol
 {
     public const string Marker = "@@VERSIO@@";
 
-    public static TiaOutput Parse(string? stdout)
+    public static TiaPortalOutput Parse(string? stdout)
     {
-        var events = new List<TiaEvent>();
+        var events = new List<TiaPortalEvent>();
         var chatter = new List<string>();
         var malformed = new List<string>();
 
         if (string.IsNullOrEmpty(stdout))
         {
-            return new TiaOutput();
+            return new TiaPortalOutput();
         }
 
         foreach (var rawLine in stdout.Replace("\r\n", "\n").Split('\n'))
@@ -80,7 +80,7 @@ public static class TiaProtocol
             }
         }
 
-        return new TiaOutput
+        return new TiaPortalOutput
         {
             Events = events,
             Chatter = chatter,
@@ -88,7 +88,7 @@ public static class TiaProtocol
         };
     }
 
-    private static TiaEvent? TryParse(string json)
+    private static TiaPortalEvent? TryParse(string json)
     {
         if (string.IsNullOrWhiteSpace(json))
         {
@@ -118,7 +118,7 @@ public static class TiaProtocol
                 }
             }
 
-            return new TiaEvent
+            return new TiaPortalEvent
             {
                 Type = t.GetString()!,
                 Fields = fields,

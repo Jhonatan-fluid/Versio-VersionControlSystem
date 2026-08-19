@@ -18,7 +18,6 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Versio.Plc.TiaPortal.Tests" />
-    <InternalsVisibleTo Include="Versio.Plc.TiaPortal.Pure.Tests" />
   </ItemGroup>
 
   <Import Project="..\Versio.Plc.TiaPortal.Host\CopyHostToReferrer.targets" />

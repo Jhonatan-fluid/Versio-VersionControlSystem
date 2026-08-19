@@ -10,8 +10,10 @@ namespace Versio.Plc.TiaPortal;
 /// <remarks>
 /// The host cannot reference Versio.Core (different TFM), so this JSON is the contract.
 /// Schema 1: one project, a plan on import, never OpenWithUpgrade.
+/// Wire field names stay short (<c>op</c>, <c>t</c>, <c>plan</c>) — renaming this type
+/// does not rename the host's job file.
 /// </remarks>
-public sealed record TiaJob
+public sealed record TiaPortalJob
 {
     public required string Operation { get; init; }
 

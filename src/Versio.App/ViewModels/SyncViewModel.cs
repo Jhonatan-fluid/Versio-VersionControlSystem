@@ -116,29 +116,22 @@ public sealed class SyncViewModel : ObservableObject
 
     /// <summary>Shared with the shell, so one progress bar covers every kind of work.</summary>
     private readonly BusyTracker _busy;
-    /// <summary>
-    /// The format for the repository's vendor.
-    /// </summary>
-    /// <remarks>
-    /// Resolved from the registry rather than named. The first registered format is the
-    /// default until a repository declares which vendor it holds — which is the next step
-    /// here, since a binding already records its own vendor.
-    /// </remarks>
-    private IPlcProjectFormat _format = PlcFormats.All[0];
     private readonly OrphanScanner _orphanScanner = new();
     private readonly MachineIdentity _machine = new();
+
+    /// <summary>
+    /// What the last probe found, keyed by vendor.
+    /// </summary>
+    /// <remarks>
+    /// A repository can hold more than one brand. One toolchain and one profile for the
+    /// whole session was how a TIA project got driven by whoever registered first.
+    /// </remarks>
+    private readonly Dictionary<PlcVendor, ProbedToolchain> _probed = [];
 
     private string? _repositoryRoot;
     private IGitClient? _git;
     private SyncOrchestrator? _orchestrator;
     private RepoConfig _config = new();
-    private IPlcToolchain? _toolchain;
-    private PlcToolchainStatus? _status;
-
-    /// <summary>Which vendor this repository's projects belong to. One today; per-binding
-    /// once a repository can hold more than one brand.</summary>
-    private PlcVendor _vendor = PlcFormats.All[0].Vendor;
-    private string? _profile;
 
     private string _toolchainState = "Not checked";
     private bool _toolchainAvailable;
@@ -781,43 +774,61 @@ public sealed class SyncViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Find the toolchain and settle on a profile.
+    /// Find every registered vendor's toolchain and settle on a profile for each.
     /// </summary>
     /// <remarks>
     /// <para>
     /// Asks the toolchain, whichever vendor's it is. This used to construct a
     /// <c>CodesysLocator</c>, call <c>ProfileResolver</c>, read a <c>CodesysInstall</c> and
     /// build a <c>LocalCodesysRunner</c> — five brand names in a view model with no business
-    /// knowing any of them.
+    /// knowing any of them. It then probed only the first registered format, so a repository
+    /// of any other brand was reported as that first vendor's problem.
     /// </para>
     /// <para>
-    /// The profile is opaque here. It is not optional and it cannot be guessed — CODESYS
+    /// The profile is opaque here. It is not optional and it cannot be guessed — one vendor
     /// refuses to start headless without one, and the name does not follow from the install
-    /// folder — but that is the toolchain's problem now, and a different vendor will have a
+    /// folder — but that is the toolchain's problem, and a different vendor will have a
     /// different one.
     /// </para>
     /// </remarks>
     private async Task ProbeToolchainAsync(CancellationToken ct)
     {
-        _toolchain = _toolchains(_vendor, _logger);
-
-        if (_toolchain is null)
+        _probed.Clear();
+        var vendors = PlcFormats.All.Select(f => f.Vendor).Distinct().ToList();
+        if (vendors.Count == 0)
         {
-            // Recognised but not drivable: a project Versio can see and cannot run. A state to
-            // report, not an error - the repository is still a perfectly good git repository.
-            _status = null;
-            _profile = null;
             ToolchainAvailable = false;
-            ToolchainState = $"{_vendor} projects can be tracked but not exported yet";
+            ToolchainState = "No PLC vendors are registered";
             _logger.Warn(LogCategory.Plc, ToolchainState);
             return;
         }
 
-        _status = await _toolchain.ProbeAsync(ct).ConfigureAwait(true);
-        _profile = _status.Profile;
-        ToolchainAvailable = _status.Available;
-        ToolchainState = _status.Explanation ?? (_status.Available ? "ready" : "unavailable");
+        var parts = new List<string>();
+        foreach (var vendor in vendors)
+        {
+            var toolchain = _toolchains(vendor, _logger);
+            if (toolchain is null)
+            {
+                _probed[vendor] = new ProbedToolchain(null, null);
+                var missing = $"{vendor} projects can be tracked but not exported yet";
+                parts.Add(missing);
+                _logger.Warn(LogCategory.Plc, missing);
+                continue;
+            }
+
+            var status = await toolchain.ProbeAsync(ct).ConfigureAwait(true);
+            _probed[vendor] = new ProbedToolchain(toolchain, status);
+            parts.Add(status.Explanation
+                      ?? (status.Available
+                          ? $"{toolchain.Format.DisplayName} ready"
+                          : $"{toolchain.Format.DisplayName} unavailable"));
+        }
+
+        ToolchainAvailable = _probed.Values.Any(p => p.Status?.Available == true);
+        ToolchainState = string.Join("; ", parts);
     }
+
+    private readonly record struct ProbedToolchain(IPlcToolchain? Toolchain, PlcToolchainStatus? Status);
 
     /// <summary>
     /// Compose the sync engine for the bindings this repository currently has.
@@ -852,14 +863,25 @@ public sealed class SyncViewModel : ObservableObject
             return;
         }
 
-        // The toolchain builds its own runner, and always returns one: an unavailable
-        // toolchain yields a runner that fails every job with the reason, so the locks, their
-        // persistence and their recovery keep working on a machine that cannot export.
-        var runner = _toolchain?.CreateRunner(_status ?? new PlcToolchainStatus
+        // Each vendor builds its own runner. An unavailable toolchain yields a runner that
+        // fails every job with the reason, so the locks, their persistence and their recovery
+        // keep working on a machine that cannot export that brand.
+        IPlcRunner RunnerFor(PlcVendor vendor)
         {
-            Available = false,
-            Explanation = ToolchainState,
-        }) ?? new UnavailableToolchainRunner(ToolchainState);
+            if (_probed.TryGetValue(vendor, out var probed) && probed.Toolchain is not null)
+            {
+                return probed.Toolchain.CreateRunner(probed.Status ?? new PlcToolchainStatus
+                {
+                    Available = false,
+                    Explanation = ToolchainState,
+                });
+            }
+
+            return new UnavailableToolchainRunner(
+                $"{vendor} projects can be tracked but not exported yet");
+        }
+
+        var fallback = RunnerFor(_config.Bindings[0].Vendor);
 
         // Constructed on the UI thread, so Progress<T> captures this context and every
         // report lands back here without an explicit dispatch.
@@ -883,7 +905,7 @@ public sealed class SyncViewModel : ObservableObject
             },
             _clock,
             new WindowsFileSystem(),
-            runner,
+            fallback,
             new JsonLockStore(_repositoryRoot, _logger),
             progress: progress,
             logger: _logger,
@@ -911,7 +933,8 @@ public sealed class SyncViewModel : ObservableObject
             // fetch from the static registry, so the composition root stays the one place that
             // decides which vendors exist — and so an orchestrator under test is independent of
             // whatever else has registered into a process-wide static.
-            formats: PlcFormats.ForPath);
+            formats: PlcFormats.ForPath,
+            runnerFor: RunnerFor);
 
         AttachRunSignals(_orchestrator);
 
@@ -1374,7 +1397,7 @@ public sealed class SyncViewModel : ObservableObject
             // A template is a .project file too. Showing it as an untracked project would
             // invite adopting it, which creates a binding that exports a template into its
             // own tree - nonsense, and confusing to unpick (plan R28).
-            if (_format.IsTemplate(project))
+            if (IsTemplate(project))
             {
                 continue;
             }
@@ -1503,7 +1526,7 @@ public sealed class SyncViewModel : ObservableObject
 
         foreach (var binding in _config.Bindings.Where(b => b.Enabled))
         {
-            _watcher.WatchFile(AbsolutePath(binding.ProjectPath));
+            WatchProjectPayload(binding);
 
             // The export tree may not exist yet on a freshly adopted project; the watcher
             // says so and carries on, and the first export creates it.
@@ -1526,6 +1549,35 @@ public sealed class SyncViewModel : ObservableObject
 
         _logger.Info(LogCategory.Watch,
             $"watching {_config.Bindings.Count(b => b.Enabled)} tracked project(s) for changes");
+    }
+
+    /// <summary>
+    /// Watch the bytes that are the project, not merely the pointer file.
+    /// </summary>
+    /// <remarks>
+    /// A file payload is the project path. A directory payload is the folder that
+    /// contains it — watching only the pointer would miss the program. Asked of the
+    /// format so this file never learns which vendors are trees.
+    /// </remarks>
+    private void WatchProjectPayload(ProjectBinding binding)
+    {
+        var project = AbsolutePath(binding.ProjectPath);
+        var format = PlcFormats.ForVendor(binding.Vendor) ?? PlcFormats.ForPath(binding.ProjectPath);
+        if (format is null)
+        {
+            _watcher!.WatchFile(project);
+            return;
+        }
+
+        var payload = format.PayloadPathFor(project);
+        if (!string.Equals(payload, project, StringComparison.OrdinalIgnoreCase)
+            && Directory.Exists(payload))
+        {
+            _watcher!.WatchTree(payload);
+            return;
+        }
+
+        _watcher!.WatchFile(project);
     }
 
     private void StopWatching()
@@ -2632,7 +2684,7 @@ public sealed class SyncViewModel : ObservableObject
             return;
         }
 
-        var setup = new RepoSetup(_repositoryRoot, _format, _logger);
+        var setup = new RepoSetup(_repositoryRoot, format: null, _logger);
         var mirrors = _config.Bindings
             .Where(b => b.Enabled)
             .Select(b => b.ExportPath)
@@ -2665,19 +2717,20 @@ public sealed class SyncViewModel : ObservableObject
             return 0;
         }
 
-        var setup = new RepoSetup(_repositoryRoot, _format);
+        var setup = new RepoSetup(_repositoryRoot, format: null);
         var adopted = 0;
 
         foreach (var project in snapshot.ProjectFiles.OrderBy(p => p, StringComparer.Ordinal))
         {
-            if (_format.IsTemplate(project) ||
+            if (IsTemplate(project) ||
                 _config.Bindings.Any(b =>
                     string.Equals(b.ProjectPath, project, StringComparison.OrdinalIgnoreCase)))
             {
                 continue;
             }
 
-            var result = await setup.AdoptAsync(project, _git, _profile, ct).ConfigureAwait(true);
+            var result = await setup.AdoptAsync(project, _git, ProfileFor(project), ct)
+                .ConfigureAwait(true);
             if (result.Adopted)
             {
                 _config = result.Config;
@@ -2842,10 +2895,13 @@ public sealed class SyncViewModel : ObservableObject
 
     /// <summary>Which binding a changed path belongs to, and which side of it.</summary>
     /// <remarks>
-    /// The project file is matched exactly and the export tree by prefix, in that order. A
-    /// project sitting beside its own export directory - <c>plc/A.project</c> next to
-    /// <c>plc/A</c> - would match a careless prefix test both ways, and exporting because of
-    /// an export is the loop the whole design exists to avoid.
+    /// The project file is matched exactly, then the export tree by prefix, then the
+    /// payload directory for a vendor whose project is a tree. Export is checked before
+    /// payload because a conventional export often lives beside the pointer, inside the
+    /// payload folder — a prefix on the folder would otherwise treat a mirror edit as a
+    /// project save, which is the loop the whole design exists to avoid.
+    /// A payload file that the format says does not count toward the hash is dropped, the
+    /// same way occupancy-marker rewrites stay quiet.
     /// </remarks>
     private (ProjectBinding? Binding, ChangeSource Source) Locate(string repoRelativePath)
     {
@@ -2867,7 +2923,77 @@ public sealed class SyncViewModel : ObservableObject
             }
         }
 
+        foreach (var binding in _config.Bindings.Where(b => b.Enabled))
+        {
+            if (PayloadRelative(binding) is not { } payload)
+            {
+                continue;
+            }
+
+            var prefix = payload.TrimEnd('/') + "/";
+            if (!repoRelativePath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(repoRelativePath, payload, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var format = PlcFormats.ForVendor(binding.Vendor)
+                         ?? PlcFormats.ForPath(binding.ProjectPath);
+            var relative = string.Equals(repoRelativePath, payload, StringComparison.OrdinalIgnoreCase)
+                ? string.Empty
+                : repoRelativePath[prefix.Length..];
+            if (format is not null
+                && relative.Length > 0
+                && !format.CountsTowardProjectHash(relative))
+            {
+                return (null, ChangeSource.Project);
+            }
+
+            return (binding, ChangeSource.Project);
+        }
+
         return (null, ChangeSource.Project);
+    }
+
+    /// <summary>
+    /// Repo-relative payload path, or null when the payload is the project file itself.
+    /// </summary>
+    private string? PayloadRelative(ProjectBinding binding)
+    {
+        if (_repositoryRoot is null)
+        {
+            return null;
+        }
+
+        var format = PlcFormats.ForVendor(binding.Vendor) ?? PlcFormats.ForPath(binding.ProjectPath);
+        if (format is null)
+        {
+            return null;
+        }
+
+        var project = AbsolutePath(binding.ProjectPath);
+        var payload = format.PayloadPathFor(project);
+        if (string.Equals(payload, project, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return Normalize(System.IO.Path.GetRelativePath(_repositoryRoot, payload));
+    }
+
+    private static bool IsTemplate(string path) =>
+        PlcFormats.ForPath(path)?.IsTemplate(path) == true;
+
+    private string? ProfileFor(string projectPath)
+    {
+        var format = PlcFormats.ForPath(projectPath);
+        if (format is not null
+            && _probed.TryGetValue(format.Vendor, out var probed))
+        {
+            return probed.Status?.Profile;
+        }
+
+        return null;
     }
 
     private static string Normalize(string path) => path.Replace('\\', '/').TrimStart('/');

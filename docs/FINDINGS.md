@@ -17,6 +17,35 @@ produce a diff touching everything else.
 
 ---
 
+### The App session treated every repository as the first vendor
+
+**Found 2026-08-19**, audit of the second pack. The pack split was already right: Core has
+no vendor project reference, `VendorSeamTests` holds the IL, and TIA Portal registers
+beside the first vendor. The **session** did not follow it.
+
+`SyncViewModel` pinned `_format = PlcFormats.All[0]` and `_vendor` from that format, and
+never reassigned them. One `ProbeAsync`, one `IPlcRunner`, `new RepoSetup(..., _format)`,
+`IsTemplate` through the pinned format, `WatchFile(ProjectPath)` only. A `.ap21` in a
+mixed repo would be adopted under the first vendor's conventions (`*.~u` instead of
+`Logs/` / `.info`), a TIA export would wait on that first toolchain being installed, and
+a change inside a directory payload would not reach the orchestrator.
+
+`ProjectBinding.Vendor` and `ProjectManifest.Vendor` still deserialize a missing field as
+the first vendor. That is history on the JSON, not this pin.
+
+**Fix:** `SyncOrchestrator` takes an optional `Func<PlcVendor, IPlcRunner>` so a binding
+runs on its own vendor's runner. The session probes every registered vendor, builds
+`runnerFor` from that map, constructs `RepoSetup` with `format: null` so `ForPath` wins,
+asks `format.IsTemplate`, and watches `PayloadPathFor` (file or tree). Orphan scan skips
+templates the same way and does not invent a vendor on `ProposeBinding`. App.Tests
+register both packs; a temp `.ap21` is adopted with this vendor's gitignore entries.
+
+**What was rejected:** teaching `Sync/` `.apXX` or `Logs/`; an App.Tests IL scan of
+ViewModels (the composition root may name vendors — the flow test polices the pin);
+changing the JSON default for a missing `vendor` field.
+
+---
+
 ### SimaticML UId is a document-local integer, not a project identity
 
 **Found 2026-08-19**, first inspectable export of CleaningStation. Manifest `guid` preferred

@@ -151,8 +151,9 @@ public sealed class RepoSetup(
         // comments in the engine described this as gitignored while nothing wrote the rule —
         // true here only because a person had typed it into this repository by hand.
         //
-        // Then whatever the vendor leaves beside a project. No format means no vendor to ask,
-        // which is a legitimate way to construct this for the scan-only paths.
+        // Then whatever the vendor leaves beside a project. The format is resolved from
+        // the path when the caller did not pin one — pinning was how a mixed repository
+        // wrote the first vendor's scratch rules beside every other brand's project.
         // And the two directories an export writes beside the mirror. Neither is the
         // vendor's: staging and trash are Versio's own swap mechanism, which is why they are
         // here rather than in TransientPatternsFor.
@@ -162,14 +163,17 @@ public sealed class RepoSetup(
         // hand — an adopted user repository had nothing, so a killed export left an untracked
         // staging tree that "stage all" would cheerfully commit. Same shape as the three
         // comments that described .versio/local/ as gitignored while nothing wrote the rule.
-        var mirror = (exportPath ?? BindingConventions.ConventionalExportPath(projectPath))
+        var resolved = format ?? PlcFormats.ForPath(projectPath);
+        var mirror = (exportPath ?? (resolved is null
+                ? BindingConventions.ConventionalExportPath(projectPath)
+                : resolved.ConventionalExportPath(projectPath)))
             .Replace('\\', '/')
             .TrimEnd('/');
 
         List<string> patterns =
         [
             BindingConventions.LocalIgnorePattern,
-            .. format?.TransientPatternsFor(projectPath) ?? [],
+            .. resolved?.TransientPatternsFor(projectPath) ?? [],
             mirror + BindingConventions.StagingSuffix + "/",
             mirror + BindingConventions.TrashSuffix + "/",
         ];
