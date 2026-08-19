@@ -500,6 +500,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         Staged.CollectionChanged += OnStagingListChanged;
         Unstaged.CollectionChanged += OnStagingListChanged;
 
+        // The rail badge's count, on the same argument one line up: it is a computed property
+        // over this collection, so it moves because the collection moved rather than because
+        // Reconcile remembered to say so. Reconcile mutates row by row, and the badge is cheap
+        // - a count, a comparison and a string.
+        Changes.CollectionChanged += (_, _) => OnPropertyChanged(nameof(ChangeBadge));
+
         // Events, as against the state StatusSummary holds. The two were one property until
         // now, and the collision was not theoretical - see NotificationCenter's remarks.
         Notifications = new NotificationCenter(_clock, logger);
@@ -656,6 +662,22 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     public HistoryViewModel History { get; }
 
     public ObservableCollection<ChangeRow> Changes { get; } = [];
+
+    /// <summary>The count on the git rail, and what colour it is.</summary>
+    /// <remarks>
+    /// <b>On the rail rather than in a panel title, which is what makes it worth having.</b>
+    /// The pill this replaces lived in the panel header and the shell drew it on the Project
+    /// panel only — so it stated the working tree's size exactly where you could already see
+    /// it, and said nothing from the two panels where you cannot. The rail is the one surface
+    /// permanently on screen; a navigation control that cannot say <i>there is something over
+    /// here</i> is doing half its job.
+    /// <para>
+    /// The rule is in <see cref="Core.Git.ChangeBadge"/> — suppression at zero, the cap, and
+    /// conflicts outranking the count — because all three are decisions rather than
+    /// arithmetic, and none of them needs a window to check.
+    /// </para>
+    /// </remarks>
+    public ChangeBadge ChangeBadge => ChangeBadge.For(Changes.Count, HasConflicts);
 
     /// <summary>Most-recently-opened repositories, newest first. Backs the top-bar dropdown.</summary>
     public ObservableCollection<RepoEntry> RecentRepositories { get; } = [];
@@ -2849,6 +2871,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(CommitBlockedReason));
         OnPropertyChanged(nameof(CommitExplanation));
         OnPropertyChanged(nameof(HasConflicts));
+
+        // The rail's badge reads HasConflicts for its colour, so it moves whenever that does.
+        // The other half - the count - comes from Changes, and is raised where that collection
+        // changes rather than here.
+        OnPropertyChanged(nameof(ChangeBadge));
     }
 
     private bool CanCommit() =>

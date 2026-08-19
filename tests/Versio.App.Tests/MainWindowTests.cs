@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using Versio.App.ViewModels;
+using Versio.Core.Git;
 using Versio.Core.Guarding;
 using Versio.App.Views;
 using Versio.Core.Logging;
@@ -356,6 +357,82 @@ public sealed class MainWindowTests
                 // measures through it.
                 popup.IsOpen = false;
             }
+        });
+    }
+
+    /// <summary>
+    /// The rail's change count appears, counts, and survives switching panels.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The last clause is the whole point of moving it.</b> The pill this replaces was
+    /// drawn by <c>OnRailChanged</c> on the Project panel alone, so the one number saying the
+    /// working tree had anything in it was hidden from the two panels where you cannot
+    /// otherwise see it. A test that only checked "the badge shows 3" would have passed
+    /// against the old behaviour too; walking every rail is what distinguishes them.
+    /// </para>
+    /// <para>
+    /// <b>And nothing else would notice if this broke.</b> A WPF binding to a property that
+    /// does not exist fails silently and leaves the badge empty and collapsed — which no
+    /// layout or geometry assertion anywhere can tell apart from a clean tree.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void The_rail_carries_the_change_count_from_every_panel()
+    {
+        StaHarness.Run(() =>
+        {
+            var (window, shell) = BuildWithShell();
+            var content = (FrameworkElement)window.Content;
+            var badge = Assert.IsType<Border>(window.FindName("RailGitBadge"));
+
+            void Layout()
+            {
+                content.Measure(new Size(1400, 900));
+                content.Arrange(new Rect(0, 0, 1400, 900));
+                content.UpdateLayout();
+            }
+
+            Layout();
+
+            // Nothing open, nothing changed: no badge at all. The pill this replaces drew a
+            // literal "0" here.
+            Assert.Equal(Visibility.Collapsed, badge.Visibility);
+
+            for (var i = 0; i < 3; i++)
+            {
+                shell.Changes.Add(new ChangeRow(new FileChange
+                {
+                    Path = $"src/App/POU/FB_{i}.st",
+                    Staged = ChangeKind.Unmodified,
+                    Unstaged = ChangeKind.Modified,
+                }));
+            }
+
+            Layout();
+
+            Assert.Equal(Visibility.Visible, badge.Visibility);
+
+            var text = AllOf<TextBlock>(badge).Single();
+            Assert.Equal("3", text.Text);
+
+            // From EVERY panel, which the pill could not do. Project last, because that is
+            // the one the old behaviour did work on - ending there would let a regression
+            // that only shows Project pass.
+            foreach (var rail in new[] { "RailGit", "RailHistory", "RailProject" })
+            {
+                Assert.IsType<RadioButton>(window.FindName(rail)).IsChecked = true;
+                Layout();
+
+                Assert.Equal(Visibility.Visible, badge.Visibility);
+                Assert.Equal("3", AllOf<TextBlock>(badge).Single().Text);
+            }
+
+            // And it goes away again rather than sticking at its high-water mark.
+            shell.Changes.Clear();
+            Layout();
+
+            Assert.Equal(Visibility.Collapsed, badge.Visibility);
         });
     }
 

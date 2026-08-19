@@ -344,8 +344,11 @@ public partial class MainWindow : Window
         GitPanel.Visibility = Show(panel == ShellPanel.Git);
         HistoryPanel.Visibility = Show(panel == ShellPanel.History);
 
-        // The count badge is about the working tree, which is what the project panel shows.
-        ChangeCountBadge.Visibility = Show(panel == ShellPanel.Project);
+        // The change count is no longer this method's business. It was a pill in the panel
+        // title shown here on the Project panel alone, which meant the one number saying the
+        // working tree had anything in it was hidden from the two panels where you cannot
+        // otherwise see it. It is on the git rail now, bound to ChangeBadge and visible from
+        // every panel, so nothing about it depends on which one is showing.
 
         static Visibility Show(bool visible) =>
             visible ? Visibility.Visible : Visibility.Collapsed;

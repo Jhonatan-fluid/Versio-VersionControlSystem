@@ -411,11 +411,47 @@
                              Content="{DynamicResource Icon.Document}"
                              Checked="OnRailChanged"
                              ToolTip="Project — the repository as CODESYS structures it, with every change marked" />
-                <RadioButton x:Name="RailGit" Style="{StaticResource RailButton}"
-                             Tag="Git"
-                             Content="{DynamicResource Icon.Link}"
-                             Checked="OnRailChanged"
-                             ToolTip="Git — staging, commit, pull and push" />
+                <!-- THE COUNT LIVES HERE, NOT IN A PANEL TITLE.
+
+                     It used to be a pill in the panel header that the shell drew on the
+                     Project panel alone - so it stated the working tree's size in the one
+                     place you could already see it, and said nothing from the two panels
+                     where you cannot. Sitting on History, reading what already happened,
+                     which is exactly when somebody is about to act, twelve changed files
+                     and none looked identical.
+
+                     Overlaid in a Grid rather than plumbed into RailButton's template
+                     through an attached property. Exactly one rail button has a badge, and
+                     building the general mechanism for a single consumer is the mistake
+                     this repository keeps catching - a reader with no consumer, a Register
+                     with no caller, a predicate with no test in its whole life. If a second
+                     badge ever appears, THAT is when the template earns it.
+
+                     IsHitTestVisible="False" so the badge cannot eat the click that selects
+                     the panel: it sits over the top-right corner of a 40 px tile, which is
+                     inside the button's own target. -->
+                <Grid>
+                    <RadioButton x:Name="RailGit" Style="{StaticResource RailButton}"
+                                 Tag="Git"
+                                 Content="{DynamicResource Icon.Link}"
+                                 Checked="OnRailChanged"
+                                 ToolTip="Git — staging, commit, pull and push" />
+
+                    <Border x:Name="RailGitBadge"
+                            HorizontalAlignment="Right" VerticalAlignment="Top"
+                            Margin="0,1,1,0" Padding="4,0" MinWidth="16"
+                            CornerRadius="8" IsHitTestVisible="False"
+                            Background="{DynamicResource Brush.Surface.Base}"
+                            Visibility="{Binding ChangeBadge.IsVisible,
+                                Converter={StaticResource BoolToVisibility}}">
+                        <TextBlock Text="{Binding ChangeBadge.Text}"
+                                   HorizontalAlignment="Center"
+                                   FontFamily="{DynamicResource Font.Mono}"
+                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                   Foreground="{Binding ChangeBadge.BrushKey,
+                                       Converter={StaticResource ResourceKey}}" />
+                    </Border>
+                </Grid>
 
                 <!-- History is its own panel rather than a section of the git one. The
                      two answer different questions - what is about to happen, and what
@@ -455,25 +491,23 @@
                         <RowDefinition Height="*" />      <!-- panel -->
                     </Grid.RowDefinitions>
 
+                    <!-- THE COUNT PILL THAT WAS HERE HAS MOVED TO THE RAIL.
+
+                         It was `{Binding Changes.Count}` with no zero-suppression of any
+                         kind, shown by code-behind on the Project panel only. So it drew a
+                         pill containing `0` on a clean tree, beside a panel whose empty
+                         state already said so in words - and it stated the working tree's
+                         size in the one place you could already see it.
+
+                         Moved rather than fixed in place, and the duplicate deleted rather
+                         than kept: with the rail carrying the count from every panel, a
+                         second control saying the same number whenever Project happens to
+                         be showing is two things describing one fact. -->
                     <Grid Grid.Row="0" Margin="14,12,12,8">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Style="{StaticResource SectionLabel}"
+                        <TextBlock Style="{StaticResource SectionLabel}"
                                    VerticalAlignment="Center"
                                    TextTrimming="CharacterEllipsis"
                                    Text="{Binding PanelTitle}" />
-                        <Border Grid.Column="1" Margin="8,0,0,0"
-                                x:Name="ChangeCountBadge"
-                                Background="{DynamicResource Brush.Accent.Muted}"
-                                CornerRadius="9" Padding="8,1" MinWidth="22">
-                            <TextBlock Text="{Binding Changes.Count}"
-                                       HorizontalAlignment="Center"
-                                       FontFamily="{DynamicResource Font.Mono}"
-                                       FontSize="{DynamicResource Font.Size.Caption}"
-                                       Foreground="{DynamicResource Brush.Accent.Default}" />
-                        </Border>
                     </Grid>
 
                     <!-- GIT: staging, the commit message, and the remote operations.
