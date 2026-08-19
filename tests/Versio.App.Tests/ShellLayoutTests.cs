@@ -153,6 +153,7 @@ public sealed class ShellLayoutTests : IDisposable
 
     [Theory]
     [InlineData("RailProject", "ProjectPanel")]
+    [InlineData("RailExplorer", "ExplorerPanel")]
     [InlineData("RailGit", "GitPanel")]
     [InlineData("RailHistory", "HistoryPanel")]
     public void Every_panel_fills_the_card_it_lives_in(string rail, string panel)

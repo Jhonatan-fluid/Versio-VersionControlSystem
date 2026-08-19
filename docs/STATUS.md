@@ -1,15 +1,15 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-19 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,525 across nine
-projects — re-derived by running each, not carried forward. TIA Portal gate: 4 tests; the
-import/re-export Fact is **red** (generate does not overwrite). The CODESYS gate (54) was
-not re-run this session.
+**Date:** 2026-08-19 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,616 across nine
+projects — UxPlan counts plus the TIA suites; re-derive after the merge's test run. TIA Portal
+gate: 4 tests; the import/re-export Fact is **red** (generate does not overwrite). The CODESYS
+gate (54) was not re-run this session. `UxPlan` merged in on 2026-08-19.
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,392 | under a second | nothing |
+| `Versio.Core.Tests` | 1,421 | under a second | nothing |
 | `Versio.Integration.Tests` | 147 | ~10 s | real git |
-| `Versio.App.Tests` | 547 | ~50 s | nothing |
+| `Versio.App.Tests` | 609 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 14 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 260 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 92 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
@@ -337,7 +337,8 @@ projects are reported as unsupported rather than silently ignored. Both registri
 
 | | |
 |---|---|
-| **Project view** | **One panel.** Every project *with something to review* — a change, a mirror behind, a lock held, a failure, or never exported — carrying its full CODESYS-shaped object tree, with every other changed file beside them. A project whose mirror is clean is not listed, and the empty state says so rather than going blank. Search still reaches into a clean project, because the box searches the project and not the diff. **Rows carry a context menu** (2026-08-17) — Stage, Discard through the git panel's own confirmed flow, Reveal in Explorer, Copy path — and **expansion survives the window now**, not only the refresh: `.versio/local/tree.json`, written when the repository detaches, defaults when unreadable |
+| **Project view** | **One panel.** Every project *with something to review* — a change, a mirror behind, a lock held, a failure, or never exported — carrying its full object tree, with every other changed file beside them. A project whose mirror is clean is not listed, and the empty state says so rather than going blank. Search still reaches into a clean project, because the box searches the project and not the diff. **Rows carry a context menu** (2026-08-17) — Stage, Discard through the git panel's own confirmed flow, Reveal in Explorer, Copy path — and **expansion survives the window now**, not only the refresh: `.versio/local/tree.json`, written when the repository detaches, defaults when unreadable |
+| **Explorer panel** | **Fourth rail button (Ctrl+4).** The open clone as a folder tree (`git ls-files`), with each tracked PLC project grafted in through the same `WorkspaceTreeBuilder.BuildProjectNode` the Project panel uses. Clicks **visualize** — they never ask git for a diff, never offer hunks. The Project panel remains the review surface |
 | **Git panel** | **Per-file staging** — a checkbox on every row, tri-state headers, and labels that say what will happen (`Stage 3`, `Stage all`); both panes scroll and a splitter divides them. **One commit button with three behaviours** — it stages what you ticked, or everything, or nothing at all when you have staged deliberately, and the caption says which before you press. Commit message with a 50/72 guide and Ctrl+Enter. **Where the branch stands, in words** rather than two arrows — eleven states covering unborn, detached, no remote, never published, ahead, behind and diverged, each naming its remedy. **Publish** for a branch with no upstream, which a plain push cannot do. Fetch / pull / push / discard. **Branches show where they live** — local only, remote only, or both — and remote-only ones are listed at all for the first time. A delete dialog removes them from this machine and optionally the remote, naming what is not merged and reporting per branch when one refuses. **Conflicts get their own section** with keep-mine / keep-theirs and an abandon, and a diverged branch is offered a rebase or a merge by name — before this, the badge said "pull first" and a fast-forward-only pull refuses a diverged branch, so the only way out was a terminal. **Notifications** that survive the status refresh, with failures sticky until dismissed and git's own words on them. **Credentials**: detected at open, handed off to the engineer's own helper, never stored — and a *forget credential* for the expired token no git GUI lets you clear. **The remote is watched in the background**, by `ls-remote` rather than by fetching, so a colleague's push shows up without a click. **Git's own health**: a launch probe that names PATH when git is missing, and an identity preflight so a commit is refused before a 17–31 s export rather than after it. One operation at a time across every button — a shared counted flag. **Changed files are named as objects** — `FB_Motor` with a `POU` chip and the path beneath, resolved through the export manifest, with a lock glyph on a file whose edits cannot reach the project; a file the manifest does not describe stays a path and is never guessed at. **A change summary and a drafted commit subject** — *"1 GVL and 1 POU changed in RefrigeratorControl"*, and a **Draft** button that writes `Modify FB_Motor, Glob_Var`, both counting objects rather than files and both describing exactly what the commit button will record. **A merge-request button** for GitHub, GitLab, Azure DevOps, Bitbucket and Gitea: it opens the forge's own page pre-filled and submits nothing, upgrades itself to *Go to* when the forge's hidden refs say one already exists — no API token, nothing stored — and shows **nothing at all** for a host it cannot identify. **Stashes are a section that exists only while there are any** (2026-08-17, replacing the withdrawn six-permanent-controls design): Apply keeps the stash, Drop confirms by name and re-resolves the positional ref by SHA, and there is no save button — the auto-stash owns taking, and the deliberate case belongs to a terminal. See [`phase1/GIT-PANEL-PLAN.md`](phase1/GIT-PANEL-PLAN.md) |
 | **History panel** | **Its own rail button**, not a strip inside the git panel. Every commit with its hash, local date and time, author and subject; expand one for the files it touched; click a file for what that commit did to it, in the shared diff pane. Lazy at four levels — the log is not walked until the panel is first shown, then one page of 50 at a time; a commit's files are read when it is expanded and cached for the session, because a commit's contents cannot change; a patch is read only when a file is clicked, and never cached. A merge says so rather than showing an empty list |
 | **PLC state** | **No card, and no buttons.** Toolchain, version and profile were environment rather than repository state and moved to Settings → Help → System information. "Export now" is gone because a stale mirror needs no decision — it is exported when the repository opens. "Acknowledge failure" is gone as a panel-wide control: a failure belongs to one project, so it is reported on that project's row with the reason and a *Try again* beside it. What is left in the panel is transient and hides itself: the coverage warning and the live heartbeat |
@@ -350,7 +351,7 @@ projects are reported as unsupported rather than silently ignored. Both registri
 | **Library references** | One `<manager>.libraries.yaml` per library manager, beside the object that owns it — what the project asks for, never how it resolved here. Hand-written YAML on both sides, no dependency added to either. **Export-only**, and stated where a reader will meet it: the file's own header, `_coverage.md`, the manifest's `form`, **and now the panel** — the changed-files row carries a lock glyph and a tooltip saying the edit does not reach the project. It went there rather than on the tree row (§9.3) because the row somebody is about to *stage* is where the warning has to be. `CoverageSummary` still speaks only when there are gaps, deliberately. **And the tree draws one row per reference** (2026-08-17): under its manager, version beside the name, chosen libraries before system ones — and against HEAD's copy of a changed catalog, the mark lands on the reference that moved, so a version bump reads as *that library*. **The task configuration gets the same treatment** the same day, through `TaskCatalog.cs` — one row per task in the configuration's own order, schedule and priority beside the name, a priority edit marked on that task — with the difference that the `.tasks.yaml` those rows read is the importable half, so the row is exactly what the next import applies |
 | **Chrome** | One app-wide progress bar with a caption, maximized on open, log console collapsed, heartbeat during long runs. **The title bar follows the theme** — painted with `Color.Surface.Base` through DWM, on every window the app opens and again on every theme switch, so the caption and the top bar are one surface rather than two. Tooltips are themed too, by an implicit style, because there are dozens of them and not one named a style |
 | **Saying it is working** | A toolchain run announces itself the moment it passes the last gate, and three surfaces answer three different questions: the **bar** that the app is busy, the **row** which project it is busy with (`exporting…`, in the accent colour), and the **heartbeat** that it is still alive and how far along. A refused, coalesced or throttled save announces nothing, because it is not working |
-| **Log panel** | Level as four chips (click to drop, click to restore) and category as a multi-select dropdown carrying a live count each, because the counts are what say where the volume is. **Pause freezes the feed** rather than the scroll, says so in the header, and shows what is queued behind it. The controls appear with the list they filter: collapsed, the strip is a chevron, a count and the paused pill |
+| **Log panel** | Level as four chips (click to drop, click to restore) and category as a multi-select dropdown carrying a live count each, because the counts are what say where the volume is. **Opening follows the tail.** Scrolling away **freezes the feed**; scrolling back to the newest line resumes it. Drag across rows to highlight a run, then Ctrl+C or the context menu — the paste matches the file. The controls appear with the list they filter: collapsed, the strip is a chevron, a count and the paused pill |
 | **Logging** | Ring buffer, correlation ids, rolling file from startup, crash handlers on all three .NET channels. An idle app is quiet: a completed git command writes one line, not two, and runs of unchanged status polls are summarised every five minutes instead of three lines per poll. The export narrates itself: the directory swap with both file counts, every skip with its reason, the summary, and a warning when a killed run left a staging folder behind |
 
 ---
@@ -928,12 +929,13 @@ does not record them has to be run again.
   done incrementally, because half-applied is the one state worse than either — and it should end
   with a test that rejects an off-scale literal, so the rule `Spacing.xaml` states is finally one
   that something enforces. Starting with the six repeat offenders covers 79 of the 239.
-- **Word-level diff highlighting is not implemented, and its colours are.**
-  `Brush.Diff.AddedWord` and `Brush.Diff.DeletedWord` exist in both palettes and are
-  contrast-checked by `ThemeTokenTests`; `DiffView` tints whole rows and never asks which
-  characters inside a changed line differ. A feature rather than a fix, which is why it sat out
-  the UI pass — and the highest-value thing the diff pane has left, because the diffs being read
-  are generated XML and ST where a long line often differs by one identifier.
+- ~~**Word-level diff highlighting is not implemented, and its colours are.**~~ — **built
+  2026-08-17**, as PHASE2 item 4, and this bullet simply never got struck. `DiffView` resolves
+  `Brush.Diff.AddedWord`/`DeletedWord` per changed pair now, over a token-aligned common
+  prefix/suffix trim — linear where an LCS is quadratic, on exactly the long generated lines
+  where the feature matters most. **Left here as a struck entry rather than deleted**, because
+  the audit that re-read this file on 2026-08-18 believed it: a loose end that closed silently
+  is indistinguishable from one still open.
 - ~~**The full solution suite flakes under its own load.**~~ — **diagnosed, and the UI half
   fixed.** The cause was not timeouts: **fifty-six tests opened a repository through a
   `ShellViewModel` and never disposed it.** A shell that has opened one owns a
@@ -960,18 +962,29 @@ does not record them has to be run again.
   reading it as a regression.
 - **`Versio.App.Tests` shells must be disposed** — `using var shell = ...`. This is the rule the
   bullet above exists to keep; `TestShell` states it where the next test author will read it.
+  A helper that `using`-binds a shell and then **returns** it is the same defect inverted:
+  `GitPanelChromeTests` already records it, and `GitPanelGeometryTests` had it until
+  2026-08-18.
+- ~~**Pull, push and fetch logged a Click and then nothing to join the trail.**~~ — **closed
+  2026-08-18.** Publish already opened a correlation scope; the other three did not, so a
+  pull that auto-stashed then imported was three unconnected stories. They share one wrap
+  now, pinned on Fetch: dropping the scope leaves that test with Git lines and no id.
+- ~~**`History.LoadMoreCommand` swallowed its exceptions.**~~ — **closed 2026-08-18.**
+  `AsyncCommand.Execute` only calls `onError?.Invoke`; without it a failed `git log` looks
+  like a dead button. The shell passes `ReportError`. Deleting that argument turns one test
+  red.
 - **Hand-maintained counts in these documents drift.** The commit count was wrong by twelve,
   the project tree's test count by six, and the scenario suite's by twenty-two — all of them
   written once and never re-checked. Re-derive rather than trust: `git rev-list --count HEAD`,
   and `dotnet test --filter FullyQualifiedName~<TestClass>` for a per-area figure.
 - **One integration test is flaky under full-suite load** — see the finding below. Diagnosed,
   two fixes attempted and reverted, left alone deliberately.
-- **The orphan scanner's sentence is unconditional and sometimes wrong.**
-  `OrphanScanner.cs:194` reports an export directory with no bound project as "never deleted
-  automatically because it is committed history". That is the usual case and the right default,
-  but it is stated as fact: the scanner never asks git. An export tree under an ignored path -
-  `phase0/roundtrip/baseline`, written by `tools/codesys/Test-RoundTrip.ps1` - was reported with the
-  same words while being neither committed nor history.
+- ~~**The orphan scanner's sentence is unconditional and sometimes wrong.**~~ — **reworded
+  2026-08-17**, as PHASE2 item 6, and this bullet never got struck either. It claimed "because
+  it is committed history", which a pure scan cannot know and which was false for an export tree
+  under an ignored path (`phase0/roundtrip/baseline`). `OrphanScanner.cs:220` now says what is
+  actually true: never deleted automatically, what it is worth is a person's call, and it *may*
+  be committed history.
 - **`RefrigeratorControl.~u` is in pushed history.** Untracked and ignored now, but the commit
   that carried a username, machine name and pid to `origin/main` is still there. Removing it
   means rewriting a pushed commit — the owner's call, not a maintenance task.
@@ -1043,8 +1056,8 @@ would have gone on passing while checking one fewer every time a panel moved out
 ## Findings
 
 Every defect worth understanding, written down with its evidence, lives in
-**[`FINDINGS.md`](FINDINGS.md)** — 122 of them, newest first. (Said 121 until 2026-08-19
-afternoon, when the TIA generate finding was added.)
+**[`FINDINGS.md`](FINDINGS.md)** — both the TIA findings from `Siemens` and the UX/lock
+findings from `UxPlan`, newest first. Count re-derived after the merge.
 
 It moved out on 2026-08-17. It was 3,681 lines of this document's 4,782, so the file that
 answers *where is the project now* was 77% engineering log, and `CLAUDE.md`'s opening
@@ -1059,6 +1072,18 @@ The full list, newest first:
 - [TIA occupancy is a .info sidecar, measured while Openness held the project](FINDINGS.md#tia-occupancy-is-a-info-sidecar-measured-while-openness-held-the-project)
 - [Restoring a backup in the same second overwrote the backup](FINDINGS.md#restoring-a-backup-in-the-same-second-overwrote-the-backup)
 - [TIA Portal Openness: the group is empty, so the host cannot open a project yet](FINDINGS.md#tia-portal-openness-the-group-is-empty-so-the-host-cannot-open-a-project-yet)
+- [A corrupt `repo.json` opened as a repository that had never been adopted](FINDINGS.md#a-corrupt-repojson-opened-as-a-repository-that-had-never-been-adopted)
+- [The geometry tests measured a disposed shell](FINDINGS.md#the-geometry-tests-measured-a-disposed-shell)
+- [The log opened on the first line, fought the wheel, and copied nothing](FINDINGS.md#the-log-opened-on-the-first-line-fought-the-wheel-and-copied-nothing)
+- [Turning a label into a button changed its typeface, and the setter that carried it left with the element](FINDINGS.md#turning-a-label-into-a-button-changed-its-typeface-and-the-setter-that-carried-it-left-with-the-element)
+- [One guard intent grew three verbs, and the dialog kept saying the first one](FINDINGS.md#one-guard-intent-grew-three-verbs-and-the-dialog-kept-saying-the-first-one)
+- [A cancelled merge ran straight past the thing that protects it](FINDINGS.md#a-cancelled-merge-ran-straight-past-the-thing-that-protects-it)
+- [Abandoning a merge left the lock it took, with no way out](FINDINGS.md#abandoning-a-merge-left-the-lock-it-took-with-no-way-out)
+- [The two predicates that name the lock's whole purpose have no callers](FINDINGS.md#the-two-predicates-that-name-the-locks-whole-purpose-have-no-callers)
+- [A new verb was live on a detached HEAD, where every old one is dead](FINDINGS.md#a-new-verb-was-live-on-a-detached-head-where-every-old-one-is-dead)
+- [`merge=lfs` quietly cancelled the `-merge` two tokens to its left](FINDINGS.md#mergelfs-quietly-cancelled-the--merge-two-tokens-to-its-left)
+- [Two rail buttons lit at once, because grouping was a property of the nesting](FINDINGS.md#two-rail-buttons-lit-at-once-because-grouping-was-a-property-of-the-nesting)
+- [A test named for the overflow it was watching could not reach the overflowing state](FINDINGS.md#a-test-named-for-the-overflow-it-was-watching-could-not-reach-the-overflowing-state)
 - [Properties are readable now: the payload imports, the text is for people](FINDINGS.md#properties-are-readable-now-the-payload-imports-the-text-is-for-people)
 - [An import destroyed a method, and the summary said seven native, zero warnings](FINDINGS.md#an-import-destroyed-a-method-and-the-summary-said-seven-native-zero-warnings)
 - [Ownership was spelled three ways in one tree, and the panel could only read one](FINDINGS.md#ownership-was-spelled-three-ways-in-one-tree-and-the-panel-could-only-read-one)

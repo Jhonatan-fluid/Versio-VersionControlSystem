@@ -178,7 +178,8 @@ public sealed record ProjectManifest
     /// <summary>
     /// Manifest format version. 2 added <see cref="Skipped"/>; 3 exports library references;
     /// 4 records each member's owner in <see cref="ProjectObject.Parent"/>; 8 names the
-    /// <see cref="Vendor"/> that wrote it.
+    /// <see cref="Vendor"/> that wrote it; 9 makes a recorded path the whole chain of names
+    /// to the object; 10 records the <see cref="ToolchainVersion"/> that produced it.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -217,6 +218,33 @@ public sealed record ProjectManifest
     /// </para>
     /// </remarks>
     [JsonPropertyName("vendor")] public Plc.PlcVendor Vendor { get; init; } = Plc.PlcVendor.Codesys;
+
+    /// <summary>
+    /// The toolchain that produced this mirror, in its own words. Added by schema 10.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Verbatim and unparsed — for CODESYS,
+    /// <c>CODESYS.exe CODESYS V3.5 SP22 Patch 2, ScriptEngine.plugin 4.2.0.0</c>. Parsing a
+    /// tidy <c>3.5.22.20</c> out of it would discard the plug-in version, the patch wording,
+    /// and whatever a future release calls itself; the question this answers is "which
+    /// toolchain wrote this", and the whole string answers it while a parsed subset answers
+    /// it only until the wording changes. A reader that wants it shorter can shorten it.
+    /// </para>
+    /// <para>
+    /// <b>Empty is "nobody recorded it", not "unknown".</b> Every manifest below schema 10
+    /// has none because nothing wrote one — the same reading
+    /// <see cref="Vendor"/> needed at schema 8, and the reason this field cost a bump
+    /// despite being additive.
+    /// </para>
+    /// <para>
+    /// <b>It is the toolchain that performed the EXPORT</b>, which is not necessarily the one
+    /// that last saved the project. They coincide whenever Versio did the export, which is
+    /// every mirror it writes.
+    /// </para>
+    /// </remarks>
+    [JsonPropertyName("toolchainVersion")]
+    public string ToolchainVersion { get; init; } = string.Empty;
 
     [JsonPropertyName("bindingId")] public string BindingId { get; init; } = string.Empty;
     [JsonPropertyName("project")] public string Project { get; init; } = string.Empty;
@@ -309,6 +337,9 @@ public sealed record ProjectManifest
                 // Empty.Vendor is Codesys, so an absent field lands on the pre-schema-8
                 // reading without a second rule stating it anywhere.
                 Vendor = Scalar(root, "vendor", Empty.Vendor, found),
+
+                ToolchainVersion = Scalar(
+                    root, "toolchainVersion", Empty.ToolchainVersion, found),
 
                 BindingId = Scalar(root, "bindingId", Empty.BindingId, found),
                 Project = Scalar(root, "project", Empty.Project, found),

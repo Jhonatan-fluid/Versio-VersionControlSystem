@@ -79,6 +79,25 @@ public sealed partial class GitCliClient(
         return PorcelainV2Parser.Parse(result.StdOut);
     }
 
+    /// <summary>
+    /// Tracked and untracked paths, gitignored files excluded.
+    /// </summary>
+    /// <remarks>
+    /// <c>-z</c> for the same reason status uses it: paths with spaces or non-ASCII must
+    /// round-trip. Parsed in Core so an empty listing and a quoted name are tested without
+    /// spawning git.
+    /// </remarks>
+    public async Task<IReadOnlyList<string>> ListWorkingTreeAsync(CancellationToken ct)
+    {
+        var result = await RunAsync(
+            ["ls-files", "-z", "-c", "-o", "--exclude-standard"],
+            null, ct).ConfigureAwait(false);
+
+        return result.Success
+            ? WorkingTreeListParser.Parse(result.StdOut)
+            : [];
+    }
+
     /// <summary>Local branches with their upstream and divergence counts.</summary>
     /// <remarks>Ahead/behind needs a second command per branch: <c>for-each-ref</c> cannot
     /// produce both counts in one pass consistently across git versions.</remarks>

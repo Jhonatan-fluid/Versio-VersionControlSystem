@@ -94,8 +94,8 @@ public partial class App : Application
             logger.Info(LogCategory.App, $"logging to {fileSink.CurrentFile}");
         }
 
-        // The file sink needs a repository, so it is attached when one is opened. Until
-        // then the ring buffer holds everything and the console shows it.
+        // The file sink is already attached, above. The panel reads the same logger
+        // through the ring buffer; both have been receiving every line since startup.
         var log = new LogViewModel(sink);
 
         // The real settings store is wired HERE and nowhere else. The view model defaults to
@@ -254,9 +254,10 @@ public partial class App : Application
     ///     reported as "it just didn't do anything".</item>
     /// </list>
     /// <para>
-    /// The file sink is attached when a repository opens, so a crash before that reaches the
-    /// ring buffer only. That is a real gap, and the reason the banner and these handlers
-    /// log through the same logger the UI is already showing.
+    /// The file sink is attached at startup, before these handlers, so a crash during
+    /// construction still reaches disk. It used to wait for a repository to open, which
+    /// meant the banner and any startup failure lived only in the ring buffer — and
+    /// memory does not survive the crash these handlers exist to record.
     /// </para>
     /// </remarks>
     private void InstallCrashHandlers(VersioLogger logger)

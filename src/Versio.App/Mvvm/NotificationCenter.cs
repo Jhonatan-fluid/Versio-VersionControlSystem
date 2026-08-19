@@ -103,6 +103,18 @@ public sealed class NotificationCenter : ObservableObject, IDisposable
     /// </remarks>
     public const int VisibleLimit = 3;
 
+    /// <summary>
+    /// The log category every notification is mirrored into.
+    /// </summary>
+    /// <remarks>
+    /// Named here rather than only written at the <see cref="Post"/> call, because the overflow
+    /// pill's whole promise is that the held notifications are still readable in the log, and it
+    /// keeps that promise by filtering to this category. Two literals would let the filter and
+    /// the post drift apart, and the failure would be silent: a pill that opens the log onto a
+    /// category the notifications are not in looks exactly like a quiet app.
+    /// </remarks>
+    public const string LogCategoryName = LogCategory.Git;
+
     private readonly NotificationLog _log;
     private readonly IClock _clock;
     private readonly IVersioLogger _logger;
@@ -177,7 +189,7 @@ public sealed class NotificationCenter : ObservableObject, IDisposable
                 NotificationSeverity.Warning => LogLevel.Warning,
                 _ => LogLevel.Error,
             },
-            LogCategory.Git,
+            LogCategoryName,
             line);
 
         Rebuild();

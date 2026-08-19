@@ -53,7 +53,7 @@ questions about "why is this like this" are already answered there.
 |---|---|
 | `docs/PHASE2.md` | **The forward queue** — what is left, in order, and the decisions already taken with their why. Start here for "what next" |
 | `docs/STATUS.md` | Where the project is, and **Known loose ends** — an audit of the repository |
-| `docs/FINDINGS.md` | **Every defect written up with its evidence**, newest first. 116 of them. Search it rather than reading it; `STATUS.md` carries the index |
+| `docs/FINDINGS.md` | **Every defect written up with its evidence**, newest first. Search it rather than reading it; `STATUS.md` carries the index |
 | `docs/SAFEGUARDS.md` | What Versio refuses, asks about, or waits for |
 | `docs/vendors/codesys/DRIVING.md` | **One vendor's docs**, beside its two projects. How CODESYS is driven end to end, and the audit of it |
 | `docs/vendors/tia/DRIVING.md` | **One vendor's docs**, beside its three projects. How TIA Portal is driven. Remaining work is ordered in `PHASE2.md` item 7; §12 here is the evidence |
@@ -227,10 +227,10 @@ stays that way.
 
 | Suite | Count | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,392 | under a second | nothing |
+| `Versio.Core.Tests` | 1,421 | under a second | nothing |
 | `Versio.Integration.Tests` | 147 | ~10 s | real git |
 | `Versio.Arch.Tests` | 14 | instant | nothing — it reads assembly metadata, IL and the `.csproj` files |
-| `Versio.App.Tests` | 547 | ~50 s, STA, no window shown | nothing |
+| `Versio.App.Tests` | 609 | ~50 s, STA, no window shown | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 260 | under a second | nothing — the planner, the codecs, the protocol |
 | `Versio.Plc.Codesys.Parity.Tests` | 92 | ~15 s | `python` on PATH — **skips cleanly without it, so check the count, not the colour** |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 15 | instant | nothing — format, planner, protocol |

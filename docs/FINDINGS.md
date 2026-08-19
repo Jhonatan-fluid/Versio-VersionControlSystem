@@ -164,6 +164,479 @@ than going red, so a machine without membership is still a green suite.
 shipping `Siemens.Engineering.dll`; calling `OpenWithUpgrade`; treating an open failure as
 "the project is free".
 
+### A corrupt `repo.json` opened as a repository that had never been adopted
+
+**Found on 2026-08-18 by an audit of silent paths, not by a failure.** `RepoConfigStore.LoadAsync`
+caught `JsonException` and returned `new RepoConfig()` — the same answer as a missing file.
+Opening the repository then showed no bindings, which is how a never-adopted clone looks, and
+nothing in the log named the file that had just been thrown away.
+
+The recovery is right: refusing to start over a malformed config leaves the user with no way
+in, and bindings can be re-adopted. The lock store already logged this shape as Error, because
+discarding a direction lock is a safety loss. Bindings were the one committed JSON file that
+could go bad and leave no trail.
+
+**A Warning, with the exception, and the path.** Empty bindings after a bad edit now have
+something to grep. Mutation: dropping the log line leaves the existing round-trip tests green
+and turns only the new one red.
+
+### The geometry tests measured a disposed shell
+
+**Found on 2026-08-18, the same defect `GitPanelChromeTests` already records, one file along.**
+`GitPanelGeometryTests.Loaded` used `using var shell = TestShell.Build()` inside a helper that
+**returns** the shell. When the helper returned, the shell was disposed, and every case in the
+file laid out a window bound to a torn-down instance.
+
+It passed throughout because none of those tests opens a repository, so disposal had almost
+nothing to release — until the shell began disposing its log console, which the window is
+bound to. Held in a list and released in `IDisposable.Dispose` on the STA thread, matching
+the chrome file.
+
+The suite staying green while measuring a dead instance is the inverted form of the
+fifty-six undisposed shells: that leak kept watchers alive against deleted directories; this
+one pretended to measure a panel that had already been torn down.
+
+---
+
+### The log opened on the first line, fought the wheel, and copied nothing
+
+**Found on 2026-08-18 by using the panel.** Three defects, one list.
+
+Opening the log after startup painted the *first* rows. Follow-the-tail lived only in
+`OnRowsAppended`, and `ScrollIntoView` on a collapsed `ListBox` is a no-op, so a console that
+already held the startup lines came back at offset 0. `ScrollIntoView` is still a no-op once
+the list is visible, on a virtualizing panel that has not placed the last row — the test that
+caught it saw extent 80, viewport 7, offset 0. The viewer itself has to be told
+`ScrollToBottom`. `ScrollToEnd` is the wrong call: it also jumps horizontally, and a long
+message would hide its own start.
+
+Wheel-up was overwritten by the next 100 ms drain. Pause existed, but only as a header button,
+and it already means freeze — the tooltip that used to say "pause auto-scroll" was rewritten
+because the list changing under the reader is exactly what pause is for. Scrolling away from
+the tail is the same request, made with the wheel, so it sets the same `IsPaused`. An unused
+`AutoScroll` flag on the view model had survived that rewrite with no readers.
+
+The list was a stock `ListBox`. `SelectionMode` defaulted to Single, the rows were
+`TextBlock`s, and no `ApplicationCommands.Copy` binding existed anywhere on it. Click,
+shift-click and Ctrl+C produced nothing a colleague could paste. The diff pane had already
+solved this shape: Extended selection, document order not pick order, `LogEvent.Format()` so
+a paste matches the file, and `ExternalException` swallowed so a busy clipboard cannot take
+the window down.
+
+Pinned in `LogPanelInteractionTests`. Deleting the expand-scroll left the list at offset 0
+with the chevron test still green. Deleting the Copy binding left `CanExecute` false with a
+row selected.
+
+**What was still wrong after that, found by using it.** Extended mode still needed Shift or
+Ctrl: a plain drag moved a single row with the mouse, so one line copied and a run of them
+did not. And arriving back at the newest line stayed frozen — Play was the only way out,
+which is not how a log you scrolled up to read should behave. A drag now paints a range;
+scrolling back to the tail unpauses and Drain delivers what was held.
+
+---
+
+### Turning a label into a button changed its typeface, and the setter that carried it left with the element
+
+**Found on 2026-08-18 by re-reading a finished, green change.** UX-9 turned the notification
+overflow pill from a `Border` holding a `TextBlock` into a `Button`, so that the "+2 more" count
+could actually be pressed. Everything about the conversion was correct except one property
+nobody named.
+
+The count was a `TextBlock` wearing the `PillText` style, which sets `FontFamily` to
+**`Font.Mono`** — deliberately, so that "+2 more" and "+12 more" do not shift the glyphs around
+them. The replacement `Button` was styled `BasedOn` `GhostButton`, which sets `Font.UI`, because
+its content is normally words on a button rather than a number.
+
+**So the face changed, and the setter that had been holding it disappeared along with the
+element it was set on.** Nothing in the diff of the call site shows a font: the old markup names
+`PillText`, the new markup names `PillButton`, and neither line says "mono". Nothing in the suite
+could see it either — 589 App tests, all green, before and after.
+
+**What makes this worth an entry is the shape rather than the font.** A style swap is a change
+of *every* inherited property at once, and only the ones you name are visible in the diff. The
+double-pass question — *what did I change that nothing is watching?* — is the only instrument
+that reaches it, and reading `PillText` to see what was being replaced is what surfaced it.
+
+**Fixed and pinned to the thing it came from.** `PillButton` names `Font.Mono` explicitly, with
+a comment saying it is inherited from neither side and therefore has to be written out. The test
+asserts the pill's resolved `FontFamily` against a throwaway `TextBlock` wearing `PillText` —
+not against the literal "mono" — so the two styles cannot drift apart later either. Removing the
+setter turns it red.
+
+---
+
+### One guard intent grew three verbs, and the dialog kept saying the first one
+
+**Found on 2026-08-18 while fixing the stale comment on the member itself (UX-13), and recorded
+rather than fixed.** `GuardIntent.Pull` shipped with one caller and a matching label:
+`GuardNarrative.Action` maps it to the word `"pull"`, which is what reaches the dialog body and
+the log line.
+
+It now has **three** callers — `PullAsync`, the divergence reconcile, and the merge verb added
+on 2026-08-18 — because all three rewrite the project and its mirror together, which is the
+scenario the guard exists for. Reusing the intent was right. Reusing its *noun* was not:
+
+- merging a branch onto a dirty tree asks **"Continue and pull?"**
+- and logs **"asking before pull: 3 file(s) have changes"**
+
+**The guard's decision is correct in every case.** `RewritesWorkingTree` answers true, the
+dirty-tree branch offers the auto-stash, the refusals refuse. Only the verb in the sentence is
+wrong, which is why this is a wording defect and not a safety one.
+
+**Why it was left.** Closing it means a second intent, and `InterruptionGuard.RewritesWorkingTree`
+has to learn that intent in the same change or the guard grows a silent hole — the exact failure
+this document already records under *the seam test passed for a year because a string is not a
+signature*. A reconcile is also a rebase **or** a merge depending on a parameter, so the naming
+question is genuinely more than one row. That is more than a comment fix should quietly take on,
+and the merge verb it touches already owes a real-CODESYS gate run.
+
+**It is written into the enum's own remarks**, at the declaration, so the next reader meets it
+before the next caller is added. The prediction that this would happen was already in
+`UX-PLAN.md`'s second pass — *"a new intent would also have to be added to
+`InterruptionGuard.RewritesWorkingTree` or the guard has a silent hole"* — and the merge verb
+shipped without one.
+
+---
+
+### A cancelled merge ran straight past the thing that protects it
+
+**Found on 2026-08-18, on the fourth read of the same feature.** The three before it had each
+asked a different question — is the gate right, does the code match its comment, what happens on
+the undo — and all three looked only at paths that <i>return</i>.
+
+`MergeBranchAsync` marks the mirror authoritative after the merge command comes back. But
+`IGitClient.MergeBranchAsync` can **throw** rather than return a failed `GitResult`: it is handed
+`busy.Token`, and a cancelled merge can leave the tree part-way through with the mirror already
+rewritten. On that path the exception propagates to `AsyncCommand`'s error handler and the
+marking never runs, so the merged text is left open to the commit gate's export — the exact loss
+the whole feature exists to prevent, reached by the one route nobody had looked at.
+
+**The fix is a `finally`, and the trade in it is deliberate.** Marking there means a merge that
+threw *before touching anything* — git missing, a process that would not start — takes a lock it
+did not need. That is recoverable: abandoning releases it, and so does discarding. **An
+unprotected merged mirror is not recoverable.** So the safe default is to take the lock and let
+the release paths sort it out, rather than to protect only the path that returned cleanly.
+
+**And the comment above it had gone stale in the same edit that made it wrong.** It still read
+*"Nothing tracked is involved — the preflight has just established that"*, written when the
+preflight refused such merges. It stopped being true the moment the refusal became a
+confirmation, two commits earlier, and neither of the two passes in between noticed because both
+were reading the code rather than the comment.
+
+**Four passes, four defects, one feature.** The list is in
+[`HANDOFF-UxPlan.md`](HANDOFF-UxPlan.md). The useful conclusion is not that reviewing works — it
+is that a lot of code was written quickly in the most dangerous subsystem here, and that the
+things still owed (the real-CODESYS gate, a human looking at it) are worth more than another
+read by the same reader.
+
+---
+
+### Abandoning a merge left the lock it took, with no way out
+
+**Found on 2026-08-18, on the third read of the same feature, before it reached a user.** Two
+earlier passes over the merge work missed it because both were looking at the merge and this is
+about the *undo*.
+
+`AbortMergeAsync` puts the tree back through `WhileGitRewritesTheTreeAsync`, which calls
+`AdoptExternalStateAsync` — and adopt **deliberately skips a binding that holds a lock**. So a
+merge that had just made the mirror authoritative left that lock on after the abandon:
+
+- exports blocked, over a mirror that no longer differed from anything;
+- the import banner still up, offering to import a mirror identical to the project;
+- and neither documented way out available, because the two releases are **push** and
+  **discard**, and an abandoned merge leaves nothing to push.
+
+The next project edit would then be refused by the commit gate, and the user would have no
+visible way to clear it.
+
+**A blanket release on abort would have been wrong**, which is the part worth recording. A
+`TextAuthoritative` lock can predate the merge — committed mirror edits nobody has imported —
+and undoing the merge does not undo those. Releasing there would drop the record of real work
+still owed to the project. So the release compares **both hashes against `LastSynced`** and lets
+go only when nothing is outstanding: a derived answer rather than remembered state, correct
+regardless of which operation created the lock.
+
+**And the same read found a silent no-op beside it.** `NoteMergedTextAsync` called `ApplyAsync`
+and ignored the result — but the state machine blocks `TextChanged` from `ProjectAuthoritative`,
+a project whose own edits have not been exported. In that case the merged mirror was left
+unprotected from the export gate and **nothing said so**: `ApplyAsync` logs a refused trigger at
+`Debug`, which is right for the ordinary case and far too quiet for this one. It returns whether
+the lock actually moved now, and the panel posts a sticky failure when it did not. Mutation
+found it: reporting `true` unconditionally left every other test in the file green.
+
+**Three passes, three defects, in one feature** — the adopt ordering, this, and the silent
+no-op — and none of them was catchable by running the suite. Each came from re-reading with a
+different question: *what does the comment claim*, *what happens on the undo*, *what does this
+return value mean*.
+
+---
+
+### The two predicates that name the lock's whole purpose have no callers
+
+**Found on 2026-08-18**, while building the import-after-merge path, at the moment of relying on
+one of them.
+
+`SyncState.cs` ends with three predicates:
+
+```csharp
+public static bool ImportAllowed(SyncDirection state) => …
+public static bool ExportAllowed(SyncDirection state) => …
+public static bool HoldsLock(SyncDirection state)     => …
+```
+
+`HoldsLock` has callers. **`ExportAllowed` and `ImportAllowed` have none in `src/` at all** —
+their only references anywhere are two lines of `SyncStateMachineTests`, which asserts they
+return what they return.
+
+**Why that is worth an entry rather than a delete.** They are not obscure helpers. They are the
+sentences that state what the direction lock is *for* — "exports blocked", "imports allowed" —
+sitting in the file that defines the lock, next to a predicate that is used. Anyone reading the
+state machine to find out what enforces the lock finds them first and stops there. **This work
+did exactly that**, and designed the whole merge ordering around calling `ExportAllowed` before
+checking whether anything already did.
+
+**What actually enforces it** is `SyncStateMachine.Next` plus `DirectionLockForbids`
+([`SyncOrchestrator.cs:1096`](../src/Versio.Core/Sync/SyncOrchestrator.cs)), asked in
+`AttemptAsync` **before** the toolchain is opened. That ordering is the real protection and it is
+correct — but nothing named it, so it had to be established by reading the call chain rather than
+by reading the predicate that appears to say it.
+
+**The near-miss.** Had the enforcement been *after* the export instead of before, relying on
+`ExportAllowed` would have shipped a merge path that overwrote the merged mirror and then failed
+a transition — the mirror gone, the lock unchanged, and a green test suite. The reason it is not
+that is luck of an existing design, not anything this work checked first.
+
+**Deliberately not deleted.** The obvious move is to remove two members with no callers, and this
+repository's own rule says every member has a caller or says why it does not. They are kept and
+their remarks now name the enforcement instead — because the third option is worse than both: a
+future reader asking "what stops an export here" would otherwise find nothing at all in the file
+that defines the states, and go looking in the orchestrator on their own.
+
+---
+
+### A new verb was live on a detached HEAD, where every old one is dead
+
+**Found on 2026-08-18**, on the third read of the merge work, before it reached a user.
+
+`MergeBranchCommand` was gated `Ready && Branches.Count > 1`. Neither clause says anything about
+a **detached HEAD**, and on one the flow would have:
+
+1. read `BranchName`, which is the literal string `"(detached)"`
+   ([`ShellViewModel.cs:5158`](../src/Versio.App/ViewModels/ShellViewModel.cs));
+2. handed that to `git branch --merged "(detached)"`, where it resolves to nothing, so **every**
+   branch would have been offered as having new work;
+3. asked *"Choose a branch to merge into (detached)"*;
+4. and made a merge commit reachable from **no branch at all** — work that exists only in the
+   reflog.
+
+**What makes it worth an entry is the company it was keeping.** Every other verb that writes to
+the remote is already off in that state, and not by accident: `CanPush`, `CanPull` and
+`CanPublish` all read `HasUpstream`, and a detached `RemoteStanding` carries no upstream, so the
+whole remote row goes dead. `RemoteStanding`'s detached branch even spells out the hazard —
+*"New work here will be lost unless you put it on a branch."* The new command was the one live
+way to write history in a state the rest of the panel had carefully closed down.
+
+**The near-miss is the lesson, not the fix.** The fix is one clause. What nearly shipped it was
+adding a command by copying the shape of the one beside it: `DeleteBranchesCommand` requires
+`DefaultBranch.IsKnown`, which happens to keep it sane, and the new one dropped that requirement
+for a good reason — merging asks about the *current* branch, not the trunk — without asking what
+else that requirement had been doing. **A gate copied from a neighbour inherits its accidents as
+well as its intent, and dropping half of one needs its own argument.**
+
+Gated on `Remote.Standing.State != TrackingState.Detached` now, and covered by a test that
+detaches a real repository and asserts the command goes dead — verified by removing the clause,
+which fails exactly that case.
+
+---
+
+### `merge=lfs` quietly cancelled the `-merge` two tokens to its left
+
+**Found on 2026-08-18** while trying to run probe P-M1 — the question of what a merge does to a
+`.project` and its mirror. The probe never got that far, because its first step disproved the
+premise everything above it rested on.
+
+**`GitAttributesPlan` writes one line per project pattern:**
+
+```
+*.project        binary -diff -merge filter=lfs diff=lfs merge=lfs
+```
+
+and its own comment calls `-diff -merge` *"the part that matters"* — without it "git will attempt
+a line merge on a binary compound document and produce a file that opens in neither CODESYS nor
+a text editor". **Later attributes win.** `merge=lfs`, six tokens along the same line, overrode
+it. Asked directly:
+
+```
+$ git check-attr merge fixtures/projects/RefrigeratorControl.project
+fixtures/projects/RefrigeratorControl.project: merge: lfs
+```
+
+`lfs`, not `unset`. On every machine with LFS installed — which is precisely the machines the LFS
+tokens were added for.
+
+**And `merge=lfs` names a driver that does not exist.** git-lfs installs `filter.lfs.*` and
+`diff.lfs.*`; it does **not** install a `merge.lfs.driver`, and nothing in Versio writes one. Git
+falls back to the built-in three-way **text** merge — applied to the LFS pointer file.
+
+**Measured on two throwaway repositories differing only in that line**, each with a base commit
+and two branches editing the same binary:
+
+| line | git says | working tree afterwards |
+|---|---|---|
+| `binary -diff -merge` | `warning: Cannot merge binary files` | the **intact binary**, conflict raised |
+| `… -merge filter=lfs diff=lfs merge=lfs` | `Auto-merging App.project` | an **LFS pointer with `<<<<<<< HEAD` inside it** |
+
+git-lfs itself noticed and complained on the second: *"Encountered 1 file that should have been
+a pointer, but wasn't"*. A pointer carrying conflict markers no longer resolves to any object —
+commit it and the binary is unreachable from that commit.
+
+**How exposed Versio actually was.** Narrower than it looks, and worth stating precisely rather
+than dramatising. The conflict is still *raised*, so nothing is silently wrong; and Versio's own
+conflict section resolves through `git checkout --ours/--theirs`
+(`ResolveWithSideAsync`), which replaces the file wholesale and restores a clean pointer. The
+danger is the paths that do not go through it: resolving in a text editor, or staging and
+committing the marker-laden pointer because the panel reported a conflict and the file "looked
+like text".
+
+**The fix is to delete one token.** `filter=lfs diff=lfs` stay — they name real, installed
+behaviours and are what make the binary stored and displayed sensibly. Only `merge` goes, and
+`check-attr` then answers `merge: unset`. This repository's own committed `.gitattributes` was
+rewritten the same way, on the four project patterns that carry `-merge`; the `third_party/**`
+lines keep theirs, because they never had a `-merge` to protect.
+
+**The test that should have caught it pinned the defect instead.** `GitAttributesTests` asserted
+
+```csharp
+Assert.Contains("filter=lfs diff=lfs merge=lfs", with.Content);
+```
+
+— the literal string the code emitted, which is a test that the code does what the code does. It
+asserts the *rule* now: `-merge` present, `merge=lfs` absent, `filter` and `diff` still there.
+The general shape is the same one this log recorded twice already this week: a test written
+against the implementation rather than against the behaviour cannot fail when the implementation
+is the thing that is wrong.
+
+**What it means for the merge verb (UX-1).** The original prediction — that a merge leaves the
+project and its mirror disagreeing — is *not* disproved; it is still true that resolving a
+`.project` conflict by picking a side gives you one branch's project against a three-way-merged
+mirror. What changed is that the first link in that chain was worse than described, and had to be
+fixed before the rest could be measured at all. P-M1 proper still has to run.
+
+---
+
+### Two rail buttons lit at once, because grouping was a property of the nesting
+
+**Reported by the product owner on 2026-08-18**, with a screenshot, against a change made
+minutes earlier: *"cant even click on the git button, is stuck and highlighting 2 buttons at
+once, git panel doesnt open"*. Project and Git both showed selected.
+
+**Cause.** A `RadioButton` with no `GroupName` groups by its **visual parent**. The three rail
+buttons were bare siblings in one `StackPanel`, so mutual exclusion worked — by accident, and
+only for as long as nothing came between them. Adding the change badge wrapped the git button in
+a `Grid` so the badge could be overlaid on its tile, and that made it a group of one: checking
+it never cleared Project, and the panel could not switch.
+
+**The nesting is not the defect.** Unwrapping the badge would have restored the accident, and
+left the same trap for whoever wraps a rail button next — for a second badge, a tooltip host,
+anything. `GroupName="Rail"` on all three makes exclusion a property of the buttons rather than
+of how they happen to be arranged. The theme radios in the settings popup have carried an
+explicit group since they were written; the rail was the odd one out, and the accident had held
+long enough to look like a decision.
+
+**What makes this worth an entry is that the suite was blind to it in a way that generalises.**
+Every rail test in `Versio.App.Tests` — `ShellLayoutTests`, `MainWindowTests`,
+`PanelCodeBehindTests`, `HistoryRowChromeTests`, and the one added with the badge itself, which
+deliberately walks all three buttons — does this:
+
+```csharp
+Assert.IsType<RadioButton>(window.FindName(rail)).IsChecked = true;
+```
+
+**Setting a bool on three objects one after another does not exercise exclusion.** Nothing is
+ever asked to turn anything *off*. Each test then asserts that the panel it just selected is
+visible, which is true in both the working and the broken build. They were doing exactly what a
+user does and checking exactly the thing the user was about to complain about.
+
+**Measured, by putting the bug back.** With `GroupName` removed, exactly one test fails — the
+new `Selecting_one_rail_button_clears_the_others`, on its `RailGit` case — while **28 others,
+every pre-existing rail and panel test among them, stay green.**
+
+**The rule this leaves behind.** For any mutually exclusive control, assert the **negative**:
+after selecting one, the others are off. A test that only checks "the thing I selected is on"
+cannot tell a working group from three independent toggles — and neither can a reviewer reading
+it, which is why five separate test classes contained the same blind spot without anyone
+noticing.
+
+**And a second-order note on the badge itself.** The plan proposed plumbing it through
+`RailButton`'s `ControlTemplate` with attached properties. That was rejected — one consumer does
+not justify the mechanism — and the rejection stands, but it is worth recording that the cheaper
+route carried a cost the plan did not price: overlaying in a `Grid` changes the visual tree, and
+in WPF the visual tree is load-bearing for more than layout.
+
+---
+
+### A test named for the overflow it was watching could not reach the overflowing state
+
+**Reported by the product owner on 2026-08-18**, from the running app: *"the staged and not
+staged lists get cluttered, when there are multiple changes the labels start overlapping"*.
+
+**The layout defect is ordinary.** Both list headers were `Auto | Auto | * | Auto` — checkbox,
+label, caption, buttons. A WPF `Grid` measures every `Auto` column against infinity and hands
+each its full desired width; the star column takes the remainder, floored at zero and never
+negative. So once the `Auto` columns together wanted more than the row had, the star collapsed
+to nothing, the `Auto`s kept their width regardless, and the row arranged **past** the panel —
+over the splitter and the diff pane, because nothing in that chain clips. `NOT STAGED` sat in
+one of those `Auto` columns in the letter-spaced `SectionLabel` face, rigid, while
+`StagingSelection.Label` grew the buttons beside it into `Discard 127` and `Stage 127`.
+
+**What is worth recording is not that. It is that the test existed.**
+`GitPanelGeometryTests.Nothing_overflows_the_panel_sideways` walks every visible child of the
+panel and asserts that none crosses its right edge. It is named for this failure, it was written
+for this failure, and it passed — **for four independent reasons**, each of which is available
+to any fixture:
+
+1. **It measured one width.** `PanelWidth = 380`, which the class comment called *"the panel's
+   real column width"*. It is the **default**. `PanelColumn` is `Width="380" MinWidth="260"`,
+   and the chosen width is **persisted** — so a panel dragged narrow once is narrow on every
+   later launch, and 120 px of the budget can be gone before a single row is drawn.
+2. **That constant was never read by anything.** The 380 arrived only from the XAML's own
+   `Width="380"`. The constant documented the test's premise and enforced none of it — so a
+   reader checking "does this measure the narrow case?" would find a named width and a comment
+   saying yes, and both were decoration.
+3. **Nothing in the fixture was ever ticked.** It added 4 staged and 12 unstaged rows and never
+   set `IsSelected`, so every button rendered its short `"{verb} all"` caption and **both header
+   captions were the empty string**. Twelve rows also caps every count at two digits. The widest
+   state the header can reach was not merely untested — it could not be constructed.
+4. **And the assertion then filtered it out anyway.** It ran on
+   `Visibility == Visible && ActualWidth > 0`. An empty `TextBlock` measures zero wide, so the
+   one control in each row *designed to absorb the slack* was excluded from the only test
+   watching the row.
+
+**Measured, once the fixture could reach it.** At 260 px the `NOT STAGED` row — two buttons
+where `STAGED` has one — reached 317 px against a 304 px edge with the short labels, and 330 px
+with three-digit counts. **The plan's diagnosis was wrong about the trigger**: it blamed the
+growing labels, and the row overflows with the short ones too. The narrow column is the cause;
+the labels are an aggravator. At 380 px it never overflowed at all, ticked or not.
+
+**The fix and its own trap.** Label and count became one trimming run in the star column, which
+removes the rigid `Auto` outright. The mutation check — restore the rigid column — fails at
+**380 px as well** (435 against 424), because the header text is longer now. That is the
+evidence for the sequencing rule this was planned under: **adding the count alone, without the
+column merge, would have broken the default width too.**
+
+**And one correction made during the work.** The first attempt simply deleted the
+`ActualWidth > 0` filter. That is wrong: a child of a **collapsed** parent still reports
+`Visibility.Visible` for itself, so the conflict section's buttons — not on screen — immediately
+began reporting as the widest thing in the panel. The width clause had been doing
+ancestor-visibility filtering *by accident*. It is an explicit ancestor walk now, and
+deliberately not `UIElement.IsVisible`, which additionally requires a presentation source these
+tests never create and would have made the whole assertion vacuous.
+
+**The lesson, which is the reason this is here.** A test that cannot construct the failing state
+is indistinguishable from a test that passes, and this one carried a name, a comment and a
+constant all asserting it covered the case it could not reach. Green was never evidence. The
+question that found it was not *"is this tested?"* but *"can this test fail?"*.
+
 ---
 
 ### Properties are readable now: the payload imports, the text is for people

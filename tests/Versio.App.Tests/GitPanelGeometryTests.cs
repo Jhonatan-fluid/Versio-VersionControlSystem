@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using Versio.App.ViewModels;
 using Versio.App.Views;
@@ -33,34 +34,96 @@ namespace Versio.App.Tests;
 /// </para>
 /// </remarks>
 [Collection("theme")]
-public sealed class GitPanelGeometryTests(ITestOutputHelper output)
+public sealed class GitPanelGeometryTests(ITestOutputHelper output) : IDisposable
 {
+    /// <summary>The width the panel column opens at.</summary>
     private const double PanelWidth = 380;
+
+    /// <summary>
+    /// The narrowest the user can drag the panel, from <c>PanelColumn</c>'s own MinWidth.
+    /// </summary>
+    /// <remarks>
+    /// <b>Measured as well as 380, because 380 is a default and not a constraint.</b> The
+    /// column is <c>Width="380" MinWidth="260"</c> and the chosen width is <i>persisted</i>
+    /// (<c>MainWindow.xaml.cs</c>, <c>PanelWidth</c> in the saved layout), so a panel dragged
+    /// narrow once is narrow on every later launch. 120 px of the budget can be gone before a
+    /// single row is drawn, and every test here used to assume it never was.
+    /// </remarks>
+    private const double NarrowPanelWidth = 260;
 
     private static ChangeRow Row(string path, ChangeKind staged, ChangeKind unstaged) =>
         new(new FileChange { Path = path, Staged = staged, Unstaged = unstaged });
 
+    private readonly List<ShellViewModel> _shells = [];
+
     /// <summary>A panel carrying about as much as it ever will.</summary>
-    private static (MainWindow Window, ShellViewModel Shell, FrameworkElement Panel,
-                    FrameworkElement Content) Loaded()
+    /// <remarks>
+    /// <para>
+    /// <b>Every parameter defaults to what this fixture has always done</b>, so the four tests
+    /// that predate them measure exactly the panel they always measured. That is deliberate:
+    /// widening a shared fixture to suit one new test is how the others quietly start checking
+    /// something else, and a test that goes on passing while measuring one thing fewer is the
+    /// failure this file exists to prevent.
+    /// </para>
+    /// <para>
+    /// <b>The defaults are also why the overflow was invisible.</b> Nothing was ever ticked, so
+    /// every action button rendered its short <c>"{verb} all"</c> caption and both header
+    /// captions were the empty string — and twelve rows caps every count at two digits. The
+    /// widest state the headers can reach was not merely untested, it could not be built here.
+    /// </para>
+    /// </remarks>
+    private (MainWindow Window, ShellViewModel Shell, FrameworkElement Panel,
+                    FrameworkElement Content) Loaded(
+        double panelWidth = PanelWidth,
+        int stagedRows = 4,
+        int unstagedRows = 12,
+        bool tickEverything = false)
     {
-        using var shell = TestShell.Build();
+        // NOT `using var` here. That used to dispose the shell at the closing brace of
+        // this helper, before any test measured the window it had just built — the same
+        // defect GitPanelChromeTests already records. Held until Dispose, on the STA
+        // thread that built it.
+        var shell = TestShell.Build();
+        _shells.Add(shell);
         var window = new MainWindow(shell);
         var content = (FrameworkElement)window.Content;
 
         var rail = (RadioButton)window.FindName("RailGit")!;
         rail.IsChecked = true;
 
-        for (var i = 0; i < 4; i++)
+        // Asserted rather than probed. The width used to arrive only from the XAML's own
+        // Width="380", so this file's PanelWidth constant documented a premise it did not
+        // enforce - and a rename of the column would have left every case here measuring 380
+        // for ever while claiming to measure 260.
+        var column = Assert.IsType<ColumnDefinition>(window.FindName("PanelColumn"));
+        column.Width = new GridLength(panelWidth, GridUnitType.Pixel);
+
+        for (var i = 0; i < stagedRows; i++)
         {
             shell.Staged.Add(Row($"src/MainProject/PLC/POU/FB_Conveyor_{i}.st",
                                  ChangeKind.Modified, ChangeKind.Unmodified));
         }
 
-        for (var i = 0; i < 12; i++)
+        for (var i = 0; i < unstagedRows; i++)
         {
             shell.Unstaged.Add(Row($"src/MainProject/PLC/GVL/GVL_Alarms_Section_{i}.st",
                                    ChangeKind.Unmodified, ChangeKind.Modified));
+        }
+
+        if (tickEverything)
+        {
+            // Ticking is what makes the headers as wide as they get, in both directions at
+            // once: the captions stop being empty ("127 of 127 selected") and every button
+            // label picks up the count ("Discard 127"). Neither happens with nothing ticked.
+            foreach (var row in shell.Staged)
+            {
+                row.IsSelected = true;
+            }
+
+            foreach (var row in shell.Unstaged)
+            {
+                row.IsSelected = true;
+            }
         }
 
         shell.CommitMessage = "Rework the conveyor interlock so a jam stops the upstream feed";
@@ -72,6 +135,15 @@ public sealed class GitPanelGeometryTests(ITestOutputHelper output)
 
         return (window, shell, (FrameworkElement)window.FindName("GitPanel")!, content);
     }
+
+    /// <summary>Release the shells this class built, on the thread that built them.</summary>
+    public void Dispose() => StaHarness.Run(() =>
+    {
+        foreach (var shell in _shells)
+        {
+            shell.Dispose();
+        }
+    });
 
     [Fact]
     public void Everything_in_the_panel_renders_at_a_usable_size()
@@ -125,15 +197,49 @@ public sealed class GitPanelGeometryTests(ITestOutputHelper output)
         });
     }
 
-    [Fact]
-    public void Nothing_overflows_the_panel_sideways()
+    /// <summary>
+    /// Nothing reaches past the panel's right edge, at either width, however wide the labels get.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Four cases, because this was one and the one it was could not fail.</b> It ran at 380 px
+    /// with nothing ticked, which is simultaneously the widest column and the narrowest labels —
+    /// the single most forgiving combination the panel has. The overflow a user reported needs
+    /// the opposite corner: a dragged-narrow column and three-digit counts in every button.
+    /// </para>
+    /// <para>
+    /// <b>The mechanism it is watching for.</b> Both list headers are
+    /// <c>Auto | Auto | * | Auto</c>. A WPF Grid measures its Auto columns against infinity and
+    /// gives each its full desired width; the star column takes what is left, floored at zero
+    /// and never negative. So once the Autos together want more than the row has, the star
+    /// collapses and the Autos keep their width anyway — the grid overflows its own slot and
+    /// the right-hand children arrange past the panel, over the splitter and the diff pane.
+    /// Nothing in that chain clips.
+    /// </para>
+    /// <para>
+    /// <b>And every input to that sum grows with the number of changes</b>, which is why it
+    /// appears when the lists fill and not before: <c>StagingSelection.Label</c> renders
+    /// <c>"{verb} {selected}"</c>, so the unstaged header carries <c>Discard 127</c> and
+    /// <c>Stage 127</c> side by side, while <c>NOT STAGED</c> sits in an Auto column in the
+    /// letter-spaced SectionLabel face with no trimming and no ceiling.
+    /// </para>
+    /// </remarks>
+    [Theory]
+    // The case this test has always run. It must keep passing: the fix is not allowed to
+    // buy the narrow column by giving something up at the default one.
+    [InlineData(PanelWidth, 12, false)]
+    // Default width, widest labels. Isolates the label growth from the column width.
+    [InlineData(PanelWidth, 127, true)]
+    // Narrowest column, short labels. Isolates the column width from the label growth.
+    [InlineData(NarrowPanelWidth, 12, false)]
+    // Both at once, which is the state being reported.
+    [InlineData(NarrowPanelWidth, 127, true)]
+    public void Nothing_overflows_the_panel_sideways(double width, int unstagedRows, bool ticked)
     {
-        // A 380 px column with a checkbox, a glyph and a long PLC path in every row is exactly
-        // where a horizontal overflow appears - and an overflowing row is what somebody means
-        // by "it looks broken".
         StaHarness.Run(() =>
         {
-            var (_, _, panel, content) = Loaded();
+            var (_, _, panel, content) = Loaded(
+                panelWidth: width, unstagedRows: unstagedRows, tickEverything: ticked);
 
             var panelRight = panel.TransformToAncestor(content)
                                   .Transform(new Point(panel.ActualWidth, 0)).X;
@@ -141,8 +247,28 @@ public sealed class GitPanelGeometryTests(ITestOutputHelper output)
             var widest = 0d;
             string? offender = null;
 
+            // THE ANCESTOR WALK REPLACES AN ActualWidth FILTER, AND THAT WAS THE THIRD
+            // REASON THIS TEST PASSED.
+            //
+            // It read `e.Visibility == Visibility.Visible && e.ActualWidth > 0`. The width
+            // clause is there to skip controls that are not laid out - but an empty TextBlock
+            // also measures zero wide, and with nothing ticked BOTH header captions were the
+            // empty string. So the one control in each row designed to absorb the slack was
+            // excluded from the only test watching the row.
+            //
+            // It cannot simply be dropped, either, and the first attempt to was wrong: a
+            // child of a COLLAPSED parent still reports Visibility.Visible for itself, so
+            // removing the width clause started reporting the conflict section's buttons -
+            // which are not on screen in this fixture - as the widest thing in the panel.
+            // The width clause had been doing ancestor filtering by accident.
+            //
+            // So the rule is stated instead of emerging: an element counts when it and every
+            // ancestor up to the panel are visible. UIElement.IsVisible says exactly this and
+            // is deliberately NOT used - it also requires a presentation source, and this
+            // window is never shown, so it is false for everything here and would make the
+            // whole test vacuous.
             foreach (var element in AllOf<FrameworkElement>(panel)
-                         .Where(e => e.Visibility == Visibility.Visible && e.ActualWidth > 0))
+                         .Where(e => IsRenderedWithin(e, panel)))
             {
                 var right = element.TransformToAncestor(content)
                                    .Transform(new Point(element.ActualWidth, 0)).X;
@@ -154,11 +280,108 @@ public sealed class GitPanelGeometryTests(ITestOutputHelper output)
                 }
             }
 
-            output.WriteLine($"panel right edge {panelRight:F0}, widest child {widest:F0} ({offender})");
+            output.WriteLine(
+                $"width {width:F0}, {unstagedRows} unstaged, ticked={ticked}: " +
+                $"panel right edge {panelRight:F0}, widest child {widest:F0} ({offender})");
 
             // A pixel of tolerance for rounding at the boundary.
             Assert.True(widest <= panelRight + 1,
                         $"{offender} reaches {widest:F0} px, past the panel's {panelRight:F0} px");
+        });
+    }
+
+    /// <summary>
+    /// Nothing in the remote row sits on top of anything else, at either width.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The overflow test above cannot see this.</b> It asks whether anything crosses the
+    /// panel's right edge, and two buttons can collide perfectly happily well inside it — a
+    /// StackPanel hands every child the width it asks for and then overflows <i>itself</i>,
+    /// leaving the children drawn over one another with the panel none the wiser. That is what
+    /// was happening here.
+    /// </para>
+    /// <para>
+    /// <b>The captions are set directly, and that is the point rather than a shortcut.</b>
+    /// <c>Remote.Standing</c> has a private setter, so a test cannot manufacture a diverged
+    /// branch — but the question is what the row does with <i>those strings</i>, and measured
+    /// at 260 px it is decisive: Fetch, <c>Pull (12)</c> and <c>Push (127)</c> want 207 px in
+    /// a 206 px row. The three verbs alone were a pixel over before anything was put beside
+    /// them.
+    /// </para>
+    /// <para>
+    /// They wrap now, so the row takes a second line in exactly the case that could not fit on
+    /// one and stays on a single line everywhere else — which the third case here pins.
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [InlineData(NarrowPanelWidth, true)]
+    [InlineData(PanelWidth, true)]
+    [InlineData(NarrowPanelWidth, false)]
+    public void Nothing_in_the_remote_row_overlaps(double width, bool diverged)
+    {
+        StaHarness.Run(() =>
+        {
+            var (window, _, panel, content) = Loaded(panelWidth: width);
+
+            var toggle = Assert.IsType<ToggleButton>(panel.FindName("BranchMenuButton"));
+            var row = Assert.IsAssignableFrom<FrameworkElement>(
+                VisualTreeHelper.GetParent(toggle));
+
+            if (diverged)
+            {
+                foreach (var b in AllOf<Button>(row))
+                {
+                    if ((b.Content as string) == "Pull")
+                    {
+                        b.Content = "Pull (12)";
+                    }
+                    else if ((b.Content as string) == "Push")
+                    {
+                        b.Content = "Push (127)";
+                    }
+                }
+
+                content.Measure(new Size(1400, 900));
+                content.Arrange(new Rect(0, 0, 1400, 900));
+                content.UpdateLayout();
+            }
+
+            var boxes = new List<(string Name, Rect Box)>();
+
+            foreach (var b in AllOf<ButtonBase>(row).Where(b => b.ActualWidth > 0))
+            {
+                var origin = b.TransformToAncestor(row).Transform(new Point(0, 0));
+                boxes.Add((b is ToggleButton ? "Branch" : b.Content?.ToString() ?? "?",
+                           new Rect(origin, new Size(b.ActualWidth, b.ActualHeight))));
+            }
+
+            Assert.True(boxes.Count >= 3, "the remote row realised almost nothing");
+
+            foreach (var (name, box) in boxes)
+            {
+                output.WriteLine($"  {name,-12} {box}");
+            }
+
+            for (var i = 0; i < boxes.Count; i++)
+            {
+                for (var j = i + 1; j < boxes.Count; j++)
+                {
+                    var overlap = Rect.Intersect(boxes[i].Box, boxes[j].Box);
+
+                    // Half a pixel of tolerance for rounding where two edges meet.
+                    Assert.False(overlap is { Width: > 0.5, Height: > 0.5 },
+                                 $"{boxes[i].Name} and {boxes[j].Name} overlap at {overlap}");
+                }
+            }
+
+            // One line unless the captions genuinely cannot fit on one. A row that wrapped
+            // whenever it felt like it would cost the file lists height for nothing.
+            if (!diverged)
+            {
+                Assert.True(row.ActualHeight < 40,
+                            $"the remote row wrapped at {row.ActualHeight:F0} px with ordinary captions");
+            }
         });
     }
 
@@ -210,8 +433,60 @@ public sealed class GitPanelGeometryTests(ITestOutputHelper output)
             TextBox t => $"TextBox '{t.Name}'",
             ListBox => "ListBox",
             CheckBox c => $"CheckBox '{c.Content}'",
+            TextBlock t => $"TextBlock '{Shorten(t.Text)}'",
+
+            // A CONTAINER HAS TO SAY WHICH ONE IT IS.
+            //
+            // The overflow this test now catches reported its offender as the bare word
+            // "Grid" - true, useless, and there are a dozen of them in this panel. A layout
+            // failure names a rectangle, so the only way back to the markup is through what
+            // the rectangle contains. The first text inside it is enough: "STAGED",
+            // "NOT STAGED", "COMMIT MESSAGE" each identify their row unambiguously.
+            Panel or Border or ContentControl =>
+                $"{e.GetType().Name} around '{Shorten(FirstTextIn(e))}'",
+
             _ => e.GetType().Name,
         };
+
+    /// <summary>
+    /// True when this element and every ancestor up to <paramref name="root"/> are visible.
+    /// </summary>
+    /// <remarks>
+    /// <b>Not <c>UIElement.IsVisible</c>.</b> That property also requires the element to be
+    /// connected to a live presentation source, and these tests measure a window that is never
+    /// shown — so it is false for every element here and any filter built on it would pass by
+    /// measuring nothing. This asks the one question that is actually meaningful in an
+    /// unshown tree: is anything between here and the panel collapsed?
+    /// </remarks>
+    private static bool IsRenderedWithin(FrameworkElement element, FrameworkElement root)
+    {
+        for (DependencyObject? node = element; node is not null;
+             node = VisualTreeHelper.GetParent(node))
+        {
+            if (node is UIElement { Visibility: not Visibility.Visible })
+            {
+                return false;
+            }
+
+            if (ReferenceEquals(node, root))
+            {
+                return true;
+            }
+        }
+
+        // Ran out of tree before reaching the panel. Not part of what is being measured.
+        return false;
+    }
+
+    /// <summary>The first text of any depth inside a container, for naming it in a failure.</summary>
+    private static string FirstTextIn(DependencyObject root) =>
+        AllOf<TextBlock>(root)
+            .Select(t => t.Text)
+            .FirstOrDefault(s => !string.IsNullOrWhiteSpace(s))
+        ?? "no text";
+
+    private static string Shorten(string s) =>
+        s.Length <= 40 ? s : s[..40] + "…";
 
     /// <summary>A named control inside the git panel.</summary>
     /// <remarks>

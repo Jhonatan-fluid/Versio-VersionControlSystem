@@ -63,6 +63,44 @@ public sealed class RemoteStandingTests
         Assert.Contains("lost", standing.Headline);
         Assert.False(standing.CanPush);
         Assert.False(standing.CanPull);
+
+        // And it is the one standing that has to OFFER the way out, because it is the one
+        // whose action is not already on the card - see IsDetached's own remarks.
+        Assert.True(standing.IsDetached);
+    }
+
+    /// <summary>
+    /// The escape hatch is offered here and nowhere else.
+    /// </summary>
+    /// <remarks>
+    /// <b>The negative half is the half worth having.</b> A predicate that is true when it
+    /// should be proves the button appears; a predicate that is false everywhere else is what
+    /// proves it does not turn up on a healthy branch, offering to rescue work that is in no
+    /// danger. Written over every state rather than a chosen few, so a state added later has to
+    /// come here and say which side it is on.
+    /// </remarks>
+    [Fact]
+    public void No_other_standing_offers_to_put_the_work_on_a_branch()
+    {
+        RemoteStanding[] others =
+        [
+            RemoteStanding.None,
+            RemoteStanding.For(Branch(upstream: null, unborn: true), hasRemote: true),
+            RemoteStanding.For(Branch(upstream: null), hasRemote: false),
+            RemoteStanding.For(Branch(upstream: null), hasRemote: true),
+            RemoteStanding.For(Branch(), hasRemote: true),
+            RemoteStanding.For(Branch(ahead: 2), hasRemote: true),
+            RemoteStanding.For(Branch(behind: 2), hasRemote: true),
+            RemoteStanding.For(Branch(ahead: 1, behind: 3), hasRemote: true),
+        ];
+
+        Assert.All(others, s => Assert.False(s.IsDetached, $"{s.State} claims to be detached"));
+
+        // The list above is the point of the test, so it must actually cover the enum. Detached
+        // is the one deliberately missing, and Unborn appears as a state that CANNOT be reached
+        // here - a fresh init reports both flags and unborn wins - so it is counted, not walked.
+        var reached = others.Select(s => s.State).Distinct().Count();
+        Assert.Equal(Enum.GetValues<TrackingState>().Length - 1, reached);
     }
 
     [Fact]

@@ -26,6 +26,97 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="../RowTemplates.xaml" />
             </ResourceDictionary.MergedDictionaries>
+
+            <!--
+                THE SAME ROW, WITH THE MENU EACH LIST ACTUALLY WANTS.
+
+                Two templates rather than one with half its entries hidden, because the two
+                lists want genuinely different verbs: a staged row can be taken back out, an
+                unstaged row can be staged or thrown away. A shared menu would need a flag on
+                ChangeRow saying which list it is in - and a file can be in BOTH at once, with
+                staged changes and further unstaged ones on top, so that flag would have to be
+                about the list rather than the row, and the row is what a template binds to.
+
+                The body is still shared. Only the checkbox and the menu are repeated; the
+                glyph, the name, the type chip and the path all come from ChangeRowTemplate
+                exactly as before, so the two lists cannot drift apart on what a modified file
+                looks like.
+
+                THE MENU HANGS OFF THE ROW'S OWN GRID, which is the shape the project tree
+                uses and is not a style choice: a ContextMenu inherits its DataContext from
+                the element it is set on, so every entry acts on the row that was
+                right-clicked. Hanging it off the ListBox instead would make it act on the
+                SELECTION - and WPF does not select a row on right-click, so right-clicking
+                the third row while the first is selected would silently act on the first.
+
+                The verbs act on the CLICKED ROW, never on the ticks. The buttons above the
+                list already act on the ticked set; someone who ticked three files and then
+                right-clicks a fourth must not get their three swept in. See StageRowAsync.
+            -->
+
+            <!--
+                DOUBLE-CLICK HANGS OFF THE ROW CONTAINER, NOT THE LIST.
+
+                The obvious wiring is MouseDoubleClick on the ListBox. It does not work, and
+                the reason is worth keeping: Control.MouseDoubleClick is registered with
+                RoutingStrategy.DIRECT, so it does not bubble - a double-click on a row never
+                reaches a handler on the list. The first attempt did exactly that, and the
+                test caught it before the app was ever run.
+
+                Attached to the container instead, `sender` IS the row, so the handler reads
+                its DataContext with no tree walking and no assumption about what
+                OriginalSource carries at the moment the event is re-raised. It also gives the
+                right answer for free below the last row: empty space is not a container, so
+                nothing fires.
+            -->
+            <Style x:Key="StagedRowContainer" TargetType="ListBoxItem"
+                   BasedOn="{StaticResource RowItem}">
+                <EventSetter Event="MouseDoubleClick" Handler="OnStagedRowDoubleClick" />
+            </Style>
+
+            <Style x:Key="UnstagedRowContainer" TargetType="ListBoxItem"
+                   BasedOn="{StaticResource RowItem}">
+                <EventSetter Event="MouseDoubleClick" Handler="OnUnstagedRowDoubleClick" />
+            </Style>
+
+            <DataTemplate x:Key="StagedRowTemplate">
+                <Grid>
+                    <Grid.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Unstage" Click="OnUnstageRow" />
+                            <Separator />
+                            <MenuItem Header="Reveal in Explorer" Click="OnRevealRow" />
+                            <MenuItem Header="Copy path" Click="OnCopyRowPath" />
+                        </ContextMenu>
+                    </Grid.ContextMenu>
+
+                    <ContentPresenter Content="{Binding}"
+                                      ContentTemplate="{StaticResource StageRowTemplate}" />
+                </Grid>
+            </DataTemplate>
+
+            <DataTemplate x:Key="UnstagedRowTemplate">
+                <Grid>
+                    <Grid.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Stage" Click="OnStageRow" />
+
+                            <!-- Still the only entry that destroys work nothing else has a
+                                 copy of, and it still goes through DiscardRowsAsync - which
+                                 names every file it will touch and asks first. A new way to
+                                 REACH that flow, not a second implementation of it. The
+                                 ellipsis says a question is coming. -->
+                            <MenuItem Header="Discard changes…" Click="OnDiscardRow" />
+                            <Separator />
+                            <MenuItem Header="Reveal in Explorer" Click="OnRevealRow" />
+                            <MenuItem Header="Copy path" Click="OnCopyRowPath" />
+                        </ContextMenu>
+                    </Grid.ContextMenu>
+
+                    <ContentPresenter Content="{Binding}"
+                                      ContentTemplate="{StaticResource StageRowTemplate}" />
+                </Grid>
+            </DataTemplate>
         </ResourceDictionary>
     </UserControl.Resources>
 
@@ -446,27 +537,6 @@
                             </TextBlock.Style>
                         </TextBlock>
 
-                        <!-- BRANCH HOUSEKEEPING, ON THE BRANCH LINE.
-
-                             Not in the fetch/pull/push row, and the geometry test
-                             is what settled it: a fourth button there overflowed
-                             the 380 px panel outright. It does not belong in that
-                             rhythm anyway - deleting branches is about which
-                             branches exist, not about the remote's state - and a
-                             destructive action sitting where Fetch sits gives it
-                             the same weight as a fetch.
-
-                             Right-aligned and quiet: reached deliberately, not
-                             stumbled into. -->
-                        <Button Content="Delete branches…" Padding="8,2"
-                                Margin="0,6,0,0"
-                                HorizontalAlignment="Right"
-                                Style="{StaticResource GhostButton}"
-                                Height="{DynamicResource Size.Control.Compact}"
-                                ToolTipService.ShowOnDisabled="True"
-                                ToolTip="Remove branches from this machine, and optionally from the remote"
-                                Command="{Binding DeleteBranchesCommand}" />
-
                         <!-- WHERE THIS BRANCH STANDS, IN WORDS.
 
                              The arrows above are compact and ask the reader to
@@ -484,6 +554,35 @@
                                    FontSize="{DynamicResource Font.Size.Caption}"
                                    Foreground="{Binding Remote.Standing.BrushKey,
                                        Converter={StaticResource ResourceKey}}" />
+
+                        <!-- THE WAY OUT, BESIDE THE SENTENCE THAT DESCRIBES THE TRAP (UX-10).
+
+                             §9e argued for exactly this and only half of it was built: the
+                             amber sentence landed, the escape did not. A detached HEAD is
+                             normally reached by ACCIDENT - clicking a commit in the history -
+                             so the reader is somebody who did not mean to be here and does not
+                             know the vocabulary. Telling them their next commit is reachable
+                             only from the reflog and then leaving the remedy in the top bar's
+                             "+" is the menu §9e was arguing against.
+
+                             It is the only standing whose action is not already on this card.
+                             Push, publish, pull and the divergence pair all have their buttons
+                             above; this one had a warning and no door.
+
+                             The name is not pre-filled. Worth a moment's thought and not worth
+                             blocking on: any default good enough to accept unread would have to
+                             know what the work IS, and a wrong-but-plausible branch name is
+                             harder to notice than an empty box. -->
+                        <Button Content="Put this on a branch…"
+                                x:Name="PutOnBranchButton"
+                                HorizontalAlignment="Left" Margin="0,8,0,0"
+                                Style="{StaticResource AccentButton}"
+                                Height="{DynamicResource Size.Control.Compact}"
+                                ToolTipService.ShowOnDisabled="True"
+                                ToolTip="Create a branch here and switch to it, so this work is kept"
+                                Command="{Binding PutOnBranchCommand}"
+                                Visibility="{Binding Remote.Standing.IsDetached,
+                                    Converter={StaticResource BoolToVisibility}}" />
 
                         <!-- WHAT THE ARROWS STAND FOR, LISTED (GP-K §9d).
 
@@ -564,7 +663,27 @@
                              inside a 380 px panel. At the full 32 px they set the
                              height of the whole card and pushed the file lists
                              down for nothing. -->
-                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <Grid Margin="0,8,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                        <!-- A WrapPanel, AND IT FIXES SOMETHING THAT PREDATES THIS ROW.
+
+                             Measured at the panel's MinWidth of 260 px, where the row is
+                             206 px: on a DIVERGED branch the captions carry their counts, and
+                             Fetch + "Pull (12)" + "Push (127)" want 207 px with their margins.
+                             The three verbs alone were already a pixel over before anything
+                             was added beside them - a StackPanel hands every child the width
+                             it asks for and then overflows, so Push simply drew past the row.
+
+                             Wrapping is the honest answer for a row of fixed-width verbs whose
+                             captions grow with the repository's state. It costs a second line
+                             of height in exactly the case that could not fit on one, and the
+                             lists below give up 24 px only while a branch is diverged at the
+                             narrowest panel width. Nothing ever overlaps. -->
+                        <WrapPanel Grid.Column="0" Orientation="Horizontal">
                             <!-- ToolTipService.ShowOnDisabled on every one of
                                  these. A dead button with no reason is what sends
                                  somebody to the command line, which is the thing
@@ -605,7 +724,93 @@
                                     Command="{Binding Remote.PublishCommand}"
                                     Visibility="{Binding Remote.ShowPublish,
                                         Converter={StaticResource BoolToVisibility}}" />
-                        </StackPanel>
+                        </WrapPanel>
+
+                        <!-- A GLYPH, NOT A WORD, AND THAT IS THE WHOLE COST OF MOVING IT HERE.
+
+                             Measured at the panel's own MinWidth of 260 px: the row is 206 px
+                             and Fetch, Pull and Push need 151 of it with their margins. That
+                             leaves 49 px, and `Branch ⌄` wanted 68 - so Push sat underneath
+                             it. With real counts on the labels ("Pull (12)", "Push (127)")
+                             there is less again, and GP-H had already measured a fourth button
+                             on this row overflowing outright at 380.
+
+                             So the container gives way rather than the verbs. Fetch, Pull and
+                             Push are the things somebody presses all day; this is a lid on a
+                             box opened a few times a month, and it is the only control here
+                             that is not itself an action.
+
+                             It loses its caption to do it, which is a real cost - "a caption
+                             says what will happen" is why it was not called `More…`. What
+                             replaces it is the same bargain every icon in the top bar makes:
+                             the tooltip carries the meaning, and it now NAMES THE ENTRIES
+                             rather than describing the button, so the answer to "what is
+                             behind this" arrives on hover instead of on click.
+
+                             ButtonBase, not Button: GhostButton targets ButtonBase so a
+                             ToggleButton may wear it, and IconButton targets Button and would
+                             throw at construction. That is the crash MainWindowTests exists
+                             for. -->
+                        <ToggleButton Grid.Column="1" x:Name="BranchMenuButton"
+                                      Padding="7,2" Margin="6,0,0,0"
+                                      VerticalAlignment="Top"
+                                      HorizontalAlignment="Right"
+                                      Style="{StaticResource GhostButton}"
+                                      Height="{DynamicResource Size.Control.Compact}"
+                                      AutomationProperties.Name="Branch actions"
+                                      ToolTipService.ShowOnDisabled="True"
+                                      ToolTip="Branch actions — merge a branch in, or delete branches">
+                            <TextBlock Text="{DynamicResource Icon.ChevronDown}"
+                                       Style="{StaticResource IconText}" FontSize="11" />
+                        </ToggleButton>
+
+                        <Popup x:Name="BranchMenuPopup"
+                               PlacementTarget="{Binding ElementName=BranchMenuButton}"
+                               Placement="Bottom" HorizontalOffset="-120" VerticalOffset="4"
+                               StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade"
+                               IsOpen="{Binding IsChecked, ElementName=BranchMenuButton,
+                                   Mode=TwoWay}">
+                            <!-- A Popup rather than a ContextMenu: the log panel's category
+                                 filter already does exactly this, so the shape and its theming
+                                 are precedented. A popup carries its own HWND and inherits
+                                 none of the window's palette, which is why the Border paints
+                                 itself from the tokens rather than relying on anything. -->
+                            <Border Background="{DynamicResource Brush.Surface.Raised}"
+                                    BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                                    BorderThickness="1" Padding="4" Width="220"
+                                    CornerRadius="{DynamicResource Radius.Card}">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="18" ShadowDepth="4"
+                                                      Opacity="0.24" Direction="270" />
+                                </Border.Effect>
+                                <StackPanel>
+                                    <Button Content="{Binding MergeBranchLabel}"
+                                            HorizontalContentAlignment="Left"
+                                            Padding="8,4" Margin="0,0,0,2"
+                                            Style="{StaticResource GhostButton}"
+                                            ToolTipService.ShowOnDisabled="True"
+                                            ToolTip="Bring another branch's commits into this one"
+                                            Command="{Binding MergeBranchCommand}"
+                                            Click="OnBranchMenuItem" />
+
+                                    <Border Height="1" Margin="4,3"
+                                            Background="{DynamicResource Brush.Border.Subtle}" />
+
+                                    <!-- Destructive last and separated, the same order the
+                                         delete dialog itself uses for its force checkbox. -->
+                                    <Button Content="Delete branches…"
+                                            HorizontalContentAlignment="Left"
+                                            Padding="8,4"
+                                            Style="{StaticResource GhostButton}"
+                                            Foreground="{DynamicResource Brush.Status.Deleted}"
+                                            ToolTipService.ShowOnDisabled="True"
+                                            ToolTip="Remove branches from this machine, and optionally from the remote"
+                                            Command="{Binding DeleteBranchesCommand}"
+                                            Click="OnBranchMenuItem" />
+                                </StackPanel>
+                            </Border>
+                        </Popup>
+                        </Grid>
 
                         <!-- ITS OWN ROW, FULL WIDTH, AND NOT BESIDE FETCH.
 
@@ -825,12 +1030,41 @@
                         <RowDefinition Height="*" MinHeight="60" />
                     </Grid.RowDefinitions>
 
-                    <!-- STAGED header: master checkbox, label, count, action. -->
-                    <Grid Grid.Row="0" Margin="0,0,0,4">
+                    <!-- STAGED header: master checkbox, label-with-count, action.
+
+                         THREE COLUMNS, NOT FOUR, AND THAT IS THE OVERFLOW FIX.
+
+                         This was Auto | Auto | * | Auto - checkbox, label, caption,
+                         button - and the label's Auto column was the defect. A Grid
+                         measures every Auto column against infinity and hands each
+                         its full desired width; the star takes what is left, floored
+                         at zero and never negative. So once the Autos together wanted
+                         more than the row had, the star collapsed to nothing, the
+                         Autos kept their width regardless, and the row arranged PAST
+                         the panel - over the splitter and the diff pane, because
+                         nothing in that chain clips.
+
+                         `STAGED` in the letter-spaced SectionLabel face, with no
+                         trimming and no ceiling, was rigid while everything around it
+                         grew with the number of changes: StagingSelection.Label puts
+                         the count in the button, so `Discard 127` and `Stage 127` sit
+                         side by side one row down.
+
+                         Measured, at the panel's own MinWidth of 260 px - which is
+                         reachable by dragging and is PERSISTED, so a panel narrowed
+                         once is narrow on every later launch. The NOT STAGED row,
+                         which carries two buttons where this one carries one,
+                         overflowed by 13 px with the short labels and by 26 px with
+                         three-digit counts.
+
+                         Label and count are one trimming string in the star column
+                         now, so the header yields to the buttons instead of shoving
+                         them off the panel - and the count arrives as a side effect
+                         rather than as another thing to fit. See StagingSelection.Header. -->
+                    <Grid Grid.Row="0" Margin="0,0,0,4" ClipToBounds="True">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" MinWidth="24" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
 
@@ -843,19 +1077,17 @@
                                   ToolTip="Tick or clear every staged file"
                                   IsChecked="{Binding StagedAllSelected, Mode=TwoWay}" />
 
-                        <TextBlock Grid.Column="1" Text="STAGED"
-                                   VerticalAlignment="Center"
-                                   Style="{StaticResource SectionLabel}" />
-
-                        <TextBlock Grid.Column="2" Margin="8,0,0,0"
+                        <!-- The tooltip carries the untrimmed text, because at 260 px
+                             this is the control that gives way and an ellipsis with no
+                             way to read the whole thing is worse than the crowding it
+                             replaced. -->
+                        <TextBlock Grid.Column="1" Text="{Binding StagedHeader}"
                                    VerticalAlignment="Center"
                                    TextTrimming="CharacterEllipsis"
-                                   FontFamily="{DynamicResource Font.UI}"
-                                   FontSize="{DynamicResource Font.Size.Caption}"
-                                   Foreground="{DynamicResource Brush.Text.Disabled}"
-                                   Text="{Binding StagedSelectionCaption}" />
+                                   ToolTip="{Binding StagedHeader}"
+                                   Style="{StaticResource SectionLabel}" />
 
-                        <Button Grid.Column="3" Content="{Binding UnstageLabel}"
+                        <Button Grid.Column="2" Content="{Binding UnstageLabel}"
                                 Margin="8,0,0,0"
                                 Style="{StaticResource GhostButton}" Padding="8,2"
                                 Height="{DynamicResource Size.Control.Compact}"
@@ -869,10 +1101,10 @@
                              ItemsSource="{Binding Staged}"
                              SelectedItem="{Binding SelectedStaged}"
                              Background="Transparent" BorderThickness="0"
-                             ItemContainerStyle="{StaticResource RowItem}"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                              ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             ItemTemplate="{StaticResource StageRowTemplate}"
+                             ItemTemplate="{StaticResource StagedRowTemplate}"
+                             ItemContainerStyle="{StaticResource StagedRowContainer}"
                              VirtualizingStackPanel.IsVirtualizing="True"
                              VirtualizingStackPanel.VirtualizationMode="Recycling" />
 
@@ -886,11 +1118,14 @@
                                   ResizeDirection="Rows"
                                   AutomationProperties.Name="Resize the staged list" />
 
-                    <Grid Grid.Row="3" Margin="0,4,0,4">
+                    <!-- The same three columns as the STAGED header above, and this is
+                         the row that actually overflowed: two buttons where that one
+                         has one. The reasoning is on that grid; do not change one
+                         without the other. -->
+                    <Grid Grid.Row="3" Margin="0,4,0,4" ClipToBounds="True">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" MinWidth="24" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
 
@@ -900,19 +1135,13 @@
                                   ToolTip="Tick or clear every changed file"
                                   IsChecked="{Binding UnstagedAllSelected, Mode=TwoWay}" />
 
-                        <TextBlock Grid.Column="1" Text="NOT STAGED"
-                                   VerticalAlignment="Center"
-                                   Style="{StaticResource SectionLabel}" />
-
-                        <TextBlock Grid.Column="2" Margin="8,0,0,0"
+                        <TextBlock Grid.Column="1" Text="{Binding UnstagedHeader}"
                                    VerticalAlignment="Center"
                                    TextTrimming="CharacterEllipsis"
-                                   FontFamily="{DynamicResource Font.UI}"
-                                   FontSize="{DynamicResource Font.Size.Caption}"
-                                   Foreground="{DynamicResource Brush.Text.Disabled}"
-                                   Text="{Binding UnstagedSelectionCaption}" />
+                                   ToolTip="{Binding UnstagedHeader}"
+                                   Style="{StaticResource SectionLabel}" />
 
-                        <StackPanel Grid.Column="3" Orientation="Horizontal"
+                        <StackPanel Grid.Column="2" Orientation="Horizontal"
                                     Margin="8,0,0,0">
                             <!-- Still the only button here that destroys work
                                  nothing else has a copy of, and it still confirms
@@ -941,10 +1170,10 @@
                              ItemsSource="{Binding Unstaged}"
                              SelectedItem="{Binding SelectedUnstaged}"
                              Background="Transparent" BorderThickness="0"
-                             ItemContainerStyle="{StaticResource RowItem}"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                              ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             ItemTemplate="{StaticResource StageRowTemplate}"
+                             ItemTemplate="{StaticResource UnstagedRowTemplate}"
+                             ItemContainerStyle="{StaticResource UnstagedRowContainer}"
                              VirtualizingStackPanel.IsVirtualizing="True"
                              VirtualizingStackPanel.VirtualizationMode="Recycling" />
                     </Grid>

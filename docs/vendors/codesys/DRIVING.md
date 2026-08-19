@@ -583,7 +583,7 @@ plc/Machine/                     ← the mirror
 └─ _coverage.md                  ← what a person reads in a pull request
 ```
 
-**`_manifest.json` is at schema 9.** The schema number is not decoration — each bump exists
+**`_manifest.json` is at schema 10.** The schema number is not decoration — each bump exists
 because an older manifest's *silence* would otherwise be misread:
 
 | Schema | Adds | The ambiguity it resolves |
@@ -594,6 +594,7 @@ because an older manifest's *silence* would otherwise be misread:
 | 7 | `shash` on full ST records | A bounded fingerprint of the file's lines — 16 values, 128 characters, whatever the POU's size. It is what pairs a renamed-**and-edited** POU when the mirror was never committed, so git has no old copy: schema 6 and earlier simply have no record of what the departed file looked like, and such a rename falls back to a delete and a create |
 | 6 | `ihash` on full ST records | A schema-5 manifest has no implementation hash because nothing wrote one, not because the object has no body. It is what pairs a **renamed POU** with the file it became — the whole-file hash cannot, since `PROGRAM Simulation` is inside the file — so without it a rename falls back to a delete and a create, losing the GUID |
 | 5 | `nhash` on native records | A schema-4 manifest has no normalised hash because nothing wrote one, not because the object is unchanged — reading absence as agreement would delete work on every mirror exported before 2026-08-15. Without it a native deletion stays refused |
+| 10 | `toolchainVersion` | Which toolchain produced the mirror, verbatim: `CODESYS.exe CODESYS V3.5 SP22 Patch 2, ScriptEngine.plugin 4.2.0.0`. **That is what `sys.version` returns inside CODESYS** — not the CPython string it is anywhere else — and the exporter had emitted it in its `start` event since the first export, where it reached the log and nothing else. Additive, but bumped: an absent field must read as *nobody recorded it* rather than as *unknown version*, the same ambiguity `vendor` was bumped for at 8. Unparsed on purpose — extracting `3.5.22.20` would discard the plug-in version and the patch wording, and answer the question only until the wording changes |
 | 9 | the path **is** the chain of names | **The one bump that changes how an existing file is read rather than what a new one contains.** A member moved from `FB_Alarm.M_Reset.st` beside its owner to `FB_Alarm/M_Reset.st` inside it, so on schema 8 and below the owner chain must be re-applied on top of the directories and on 9 doing that names `FB_Alarm` twice and resolves to nothing. Both layouts are legal file names and neither is recognisable on sight, so the number is the only thing that can tell them apart |
 | 8 | `vendor` | Two vendors' mirrors were otherwise indistinguishable on disk — and `type` holds a *toolchain's own* tree vocabulary (`PLC_LOGIC`, `CALL_TO_POU`, `GVL_PERSISTENT` are CODESYS's words, not IEC 61131-3's), so a reader that has to guess whose words it holds cannot render them without guessing too. Absent reads as CODESYS, which is a fact rather than a guess: every mirror written before this was written by CODESYS |
 

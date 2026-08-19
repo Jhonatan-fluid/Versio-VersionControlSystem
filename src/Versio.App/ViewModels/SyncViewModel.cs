@@ -853,7 +853,7 @@ public sealed class SyncViewModel : ObservableObject
             return;
         }
 
-        var store = new RepoConfigStore(_repositoryRoot);
+        var store = new RepoConfigStore(_repositoryRoot, _logger);
         _config = await store.LoadAsync(ct).ConfigureAwait(true);
         AnnounceIgnoredPaths();
 
@@ -1187,7 +1187,150 @@ public sealed class SyncViewModel : ObservableObject
     /// a change nobody made.
     /// </para>
     /// </remarks>
-    public async Task WhileGitRewritesTheTreeAsync(string what, Func<Task> operation)
+    /// <summary>
+    /// Every tracked project as the pair of repository-relative roots a merge preflight needs.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The export path comes from the binding, never from the project path.</b> Where a
+    /// mirror lives is the vendor format's decision —
+    /// <c>IPlcProjectFormat.ConventionalExportPath</c> — and deriving it here by trimming an
+    /// extension would be exactly the vendor knowledge the seam exists to keep out of the
+    /// shell. It happens to be "the project path without its extension" for CODESYS today, and
+    /// that is not a rule this file is entitled to know.
+    /// </para>
+    /// <para>
+    /// Enabled bindings only: a disabled one is not being kept in step with anything, so a
+    /// merge that touches it is ordinary git.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<TrackedRoot> TrackedRoots() =>
+        _config is null
+            ? []
+            : [.. _config.Bindings
+                .Where(b => b.Enabled)
+                .Select(b => new TrackedRoot
+                {
+                    BindingId = b.Id,
+                    Name = System.IO.Path.GetFileNameWithoutExtension(b.ProjectPath),
+                    ProjectPath = b.ProjectPath.Replace('\\', '/'),
+                    MirrorPath = b.ExportPath.Replace('\\', '/').TrimEnd('/'),
+                })];
+
+    /// <summary>
+    /// A merge has landed and left these projects' mirrors ahead of them.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Instead of adopting, not as well as — and the caller is what makes that true.</b>
+    /// <c>AdoptExternalStateAsync</c> takes the project and the mirror as jointly true, which
+    /// is right after a checkout or a pull and wrong after a merge, where the binary project
+    /// keeps one side and the mirror keeps both. The merge flow therefore passes
+    /// <c>adoptResult: false</c> to <see cref="WhileGitRewritesTheTreeAsync"/> before calling
+    /// this. <b>The first version of this comment claimed the same thing while the merge was
+    /// still going through the adopting path</b>, so the lock briefly held a <c>LastSynced</c>
+    /// asserting an agreement that had never existed. See <c>MergePreflight</c> for the
+    /// measurement behind all of it.
+    /// </para>
+    /// <para>
+    /// Two things happen per project, and the order does not matter because neither can run the
+    /// toolchain: the lock is moved so the export gate will be refused before it can touch the
+    /// mirror, and the import is raised so the panel offers the way out.
+    /// </para>
+    /// </remarks>
+    /// <summary>
+    /// An undo has put the tree back; let go of any lock that now protects nothing.
+    /// </summary>
+    /// <remarks>
+    /// <b>Abandoning a merge is the case this exists for.</b> The merge marked the mirror
+    /// authoritative, and <c>AdoptExternalStateAsync</c> skips a binding holding a lock — so
+    /// the abandon left the lock on, blocking exports over a mirror that no longer differed
+    /// from anything, with the import banner offering to import a mirror identical to the
+    /// project. The orchestrator compares both hashes against <c>LastSynced</c> and releases
+    /// only when nothing is outstanding, so a lock that predates the merge and still owes an
+    /// import is left exactly where it is.
+    /// <para>
+    /// The pending import goes with the lock. Leaving the banner up over a released binding
+    /// would offer a button whose whole job is already done.
+    /// </para>
+    /// </remarks>
+    public async Task ReleaseLocksWithNothingOutstandingAsync()
+    {
+        if (_orchestrator is null || _config is null)
+        {
+            return;
+        }
+
+        foreach (var binding in _config.Bindings.Where(b => b.Enabled))
+        {
+            if (await _orchestrator
+                    .ReleaseIfNothingOutstandingAsync(binding.Id, CancellationToken.None)
+                    .ConfigureAwait(true))
+            {
+                _pendingImports.Remove(binding.Id);
+            }
+        }
+
+        RefreshPendingImport();
+        await RescanAsync().ConfigureAwait(true);
+        await RefreshStalenessAsync().ConfigureAwait(true);
+    }
+
+    /// <returns>The bindings whose mirror could NOT be put in charge, for the caller to
+    /// report. Empty is the ordinary answer.</returns>
+    public async Task<IReadOnlyList<string>> NoteMergedTextAsync(IReadOnlyList<string> bindingIds)
+    {
+        if (_orchestrator is null || bindingIds.Count == 0)
+        {
+            return [];
+        }
+
+        var unprotected = new List<string>();
+
+        foreach (var id in bindingIds)
+        {
+            // The answer matters. A binding whose project already had unexported edits is
+            // ProjectAuthoritative, and the state machine blocks TextChanged from there - so
+            // the merged mirror would be left open to the commit gate's export with nothing
+            // on screen saying so. Loud rather than logged: this is the one guarantee the
+            // whole merge path rests on.
+            if (await _orchestrator.NoteMergedTextAsync(id, CancellationToken.None)
+                    .ConfigureAwait(true))
+            {
+                NotePendingImport(id);
+            }
+            else
+            {
+                unprotected.Add(id);
+            }
+        }
+
+        await RescanAsync().ConfigureAwait(true);
+        await RefreshStalenessAsync().ConfigureAwait(true);
+
+        return unprotected;
+    }
+
+    /// <param name="adoptResult">
+    /// Whether the state git leaves behind may be taken as the synced truth.
+    /// </param>
+    /// <remarks>
+    /// <b><paramref name="adoptResult"/> is false for exactly one caller, and it is the reason
+    /// this parameter exists.</b> Adopting is right after a checkout, a pull or a stash: all
+    /// three arrive from a single commit the gate already vetted, so the project and its mirror
+    /// agree. A <b>merge</b> is the one operation whose working tree came from no commit — the
+    /// binary project keeps one side while the mirror three-way merges and keeps both — so
+    /// adopting there writes a <c>LastSynced</c> that claims they agree when they do not. On a
+    /// merge that stopped on a conflict it is worse still: the mirror on disk holds conflict
+    /// markers at that moment, and adopt would record <i>those</i> as the synced state.
+    /// <para>
+    /// Nothing is lost either way, because the caller then makes the mirror authoritative and
+    /// the export gate is refused. What this avoids is a false record living in the lock file
+    /// until the import happens to overwrite it.
+    /// </para>
+    /// </remarks>
+    public async Task WhileGitRewritesTheTreeAsync(
+        string what, Func<Task> operation, bool adoptResult = true)
     {
         if (_orchestrator is null)
         {
@@ -1200,14 +1343,23 @@ public sealed class SyncViewModel : ObservableObject
             await operation().ConfigureAwait(true);
         }
 
-        var adopted = await _orchestrator
-            .AdoptExternalStateAsync(CancellationToken.None)
-            .ConfigureAwait(true);
+        if (adoptResult)
+        {
+            var adopted = await _orchestrator
+                .AdoptExternalStateAsync(CancellationToken.None)
+                .ConfigureAwait(true);
 
-        if (adopted.Count > 0)
+            if (adopted.Count > 0)
+            {
+                _logger.Info(LogCategory.Sync,
+                    $"{what}: adopted the state of {adopted.Count} binding(s) without syncing");
+            }
+        }
+        else
         {
             _logger.Info(LogCategory.Sync,
-                $"{what}: adopted the state of {adopted.Count} binding(s) without syncing");
+                $"{what}: the result is NOT adopted — the caller is making the exported text " +
+                "authoritative instead");
         }
 
         await RescanAsync().ConfigureAwait(true);
@@ -1795,6 +1947,46 @@ public sealed class SyncViewModel : ObservableObject
         System.IO.Path.Combine(
             _repositoryRoot!,
             repoRelative.Replace('/', System.IO.Path.DirectorySeparatorChar));
+
+    /// <summary>
+    /// The tracked projects as the explorer needs them: every binding, full object tree,
+    /// no git status. The Project panel's own build still pairs catalogs with HEAD; this
+    /// one does not, because the explorer does not mark changes.
+    /// </summary>
+    public IReadOnlyList<WorkspaceProject> ReadProjectsForExplorer()
+    {
+        if (_repositoryRoot is null)
+        {
+            return [];
+        }
+
+        var projects = new List<WorkspaceProject>();
+        foreach (var binding in _config.Bindings.Where(b => b.Enabled))
+        {
+            var manifestPath = System.IO.Path.Combine(
+                AbsolutePath(binding.ExportPath), BindingConventions.ManifestFileName);
+            var manifest = File.Exists(manifestPath)
+                ? ProjectManifest.Parse(File.ReadAllText(manifestPath), out _)
+                : null;
+
+            var catalogs = ReadCatalogs(manifest, binding.ExportPath,
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+
+            projects.Add(new WorkspaceProject
+            {
+                ProjectPath = binding.ProjectPath,
+                ExportPath = binding.ExportPath,
+                Manifest = manifest,
+                Libraries = catalogs.Libraries,
+                Tasks = catalogs.Tasks,
+                ExportState = Projects.FirstOrDefault(p => p.BindingId == binding.Id)?.State
+                              ?? "tracked",
+                Busy = Projects.FirstOrDefault(p => p.BindingId == binding.Id)?.Busy ?? false,
+            });
+        }
+
+        return projects;
+    }
 
     /// <summary>
     /// The whole working tree: every tracked project with its objects, and every other

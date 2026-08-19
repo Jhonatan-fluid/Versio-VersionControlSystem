@@ -1,7 +1,9 @@
 using System.Text;
 using Versio.Core.Bindings;
+using Versio.Core.Logging;
 using Versio.Core.Plc;
 using Versio.Infrastructure.Bindings;
+using Versio.Infrastructure.Platform;
 using Xunit;
 
 namespace Versio.Integration.Tests;
@@ -138,6 +140,32 @@ public sealed class RepoConfigVendorTests
             var text = await File.ReadAllTextAsync(store.Path, Encoding.UTF8);
 
             Assert.Contains("\"vendor\": \"Mitsubishi GX Works3\"", text, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task A_corrupt_file_returns_empty_and_says_so()
+    {
+        var root = NewTempRoot();
+        try
+        {
+            var sink = new InMemoryLogSink();
+            var logger = new VersioLogger(new SystemClock()).AddSink(sink);
+            var store = new RepoConfigStore(root, logger);
+            Directory.CreateDirectory(Path.GetDirectoryName(store.Path)!);
+            await File.WriteAllTextAsync(store.Path, "{ this is not json");
+
+            var config = await store.LoadAsync(CancellationToken.None);
+
+            Assert.Empty(config.Bindings);
+            var warning = Assert.Single(sink.Snapshot(),
+                e => e.Level == LogLevel.Warning && e.Message.Contains("corrupt", StringComparison.Ordinal));
+            Assert.Contains("repo.json", warning.Message, StringComparison.Ordinal);
+            Assert.NotNull(warning.Exception);
         }
         finally
         {

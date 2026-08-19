@@ -89,4 +89,52 @@ public static class StagingSelection
     /// </remarks>
     public static string Caption(int total, int selected) =>
         selected <= 0 || total <= 0 ? string.Empty : $"{selected} of {total} selected";
+
+    /// <summary>
+    /// The whole header for one staging list: its name, and how much is in it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The count is the first thing anybody wants from either list, and the one thing a
+    /// scrollable list cannot show.</b> Until this existed a forty-file stage read
+    /// <c>STAGED</c>, and the way to learn it was forty was to count it — while the commit
+    /// button beside it already said <c>Stage &amp; commit (3)</c>, so the panel knew the
+    /// number and stated it only where it was about the <i>selection</i>.
+    /// </para>
+    /// <para>
+    /// <b>One string rather than a label and a caption in two columns, and that is a layout
+    /// fix rather than a cosmetic one.</b> Both list headers are
+    /// <c>Auto | Auto | * | Auto</c>: checkbox, label, caption, buttons. The label sat in an
+    /// <c>Auto</c> column in a letter-spaced face with no trimming and no ceiling, so it was
+    /// rigid — and a Grid hands every Auto column its full desired width and floors the star
+    /// at zero, so once the Autos wanted more than the row had, the star collapsed, the Autos
+    /// kept their width, and the buttons arranged past the panel's right edge. Measured at the
+    /// panel's own <c>MinWidth</c> of 260 px: the <c>NOT STAGED</c> row, which carries two
+    /// buttons where <c>STAGED</c> carries one, overflowed by 13 px with the short labels and
+    /// by 26 px with three-digit counts. Merging the two into one trimming star column removes
+    /// the rigid column outright, so the header yields to the buttons instead of shoving them
+    /// off the panel.
+    /// </para>
+    /// <para>
+    /// <b>Nothing is said about an empty list.</b> <c>STAGED · 0</c> is the coverage line that
+    /// congratulated itself on every refresh — a caption that reads the same every time is read
+    /// once and never again — and with both lists empty the panel shows its clean-tree sentence
+    /// instead of either header.
+    /// </para>
+    /// </remarks>
+    /// <param name="label">The list's name, already in the case the panel wants it.</param>
+    public static string Header(string label, int total, int selected)
+    {
+        if (total <= 0)
+        {
+            return label;
+        }
+
+        // The selection wins the slot when there is one: while somebody is ticking, "3 of 12
+        // selected" answers both questions - how much is here, and how much is spoken for -
+        // and repeating the bare total beside it would say the same number twice.
+        var detail = Caption(total, selected);
+
+        return detail.Length > 0 ? $"{label} · {detail}" : $"{label} · {total}";
+    }
 }

@@ -1,8 +1,10 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Media;
 using Versio.App.ViewModels;
+using Versio.Core.Git;
 using Versio.Core.Guarding;
 using Versio.App.Views;
 using Versio.Core.Logging;
@@ -193,7 +195,7 @@ public sealed class MainWindowTests
             // reintroduced by the thing that was supposed to be a pure move.
             var trees = new List<TreeView>();
 
-            foreach (var rail in new[] { "RailProject", "RailGit", "RailHistory" })
+            foreach (var rail in new[] { "RailProject", "RailExplorer", "RailGit", "RailHistory" })
             {
                 Assert.IsType<RadioButton>(window.FindName(rail)).IsChecked = true;
 
@@ -204,9 +206,9 @@ public sealed class MainWindowTests
                 trees.AddRange(AllOf<TreeView>(content).Except(trees));
             }
 
-            // The project tree and the history tree. If a third appears, it needs the same
-            // treatment, and this is where that gets noticed.
-            Assert.Equal(2, trees.Count);
+            // Project, history, and explorer. A fourth TreeView that skipped TreeRowItem
+            // would be Windows' highlight blue again, and this is where that gets noticed.
+            Assert.Equal(3, trees.Count);
 
             foreach (var tree in trees)
             {
@@ -356,6 +358,228 @@ public sealed class MainWindowTests
                 // measures through it.
                 popup.IsOpen = false;
             }
+        });
+    }
+
+    /// <summary>
+    /// Ctrl+1/2/3/4 reach the rail, and say so where somebody would look.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Both halves, because the second is most of the value.</b> A key nobody can find is a
+    /// key nobody has — the rule §10.6 established when Ctrl+Shift+P went into the push
+    /// button's own tooltip. The binding without the advertisement is a feature only its author
+    /// uses.
+    /// </para>
+    /// <para>
+    /// The command is invoked rather than a keystroke synthesised: WPF's input plumbing needs a
+    /// focused, presented window, and this one is never shown. What is being checked is that
+    /// the gesture is bound to something that switches the panel — not that Windows delivers
+    /// keys, which is not this application's to prove.
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [InlineData(Key.D1, "ProjectPanel", "Ctrl+1")]
+    [InlineData(Key.D2, "GitPanel", "Ctrl+2")]
+    [InlineData(Key.D3, "HistoryPanel", "Ctrl+3")]
+    [InlineData(Key.D4, "ExplorerPanel", "Ctrl+4")]
+    [InlineData(Key.NumPad1, "ProjectPanel", "Ctrl+1")]
+    [InlineData(Key.NumPad2, "GitPanel", "Ctrl+2")]
+    [InlineData(Key.NumPad3, "HistoryPanel", "Ctrl+3")]
+    [InlineData(Key.NumPad4, "ExplorerPanel", "Ctrl+4")]
+    public void The_rail_is_reachable_from_the_keyboard(Key key, string panel, string advertised)
+    {
+        StaHarness.Run(() =>
+        {
+            var window = Build();
+
+            var binding = window.InputBindings
+                .OfType<KeyBinding>()
+                .SingleOrDefault(b => b.Key == key && b.Modifiers == ModifierKeys.Control);
+
+            Assert.True(binding is not null, $"nothing is bound to Ctrl+{key}");
+
+            binding!.Command.Execute(null);
+
+            var shown = Assert.IsAssignableFrom<FrameworkElement>(window.FindName(panel));
+            Assert.Equal(Visibility.Visible, shown.Visibility);
+
+            // And every other panel went away with it — the shortcut goes through the rail
+            // button, so the exclusion the rail already guarantees applies here too.
+            foreach (var other in new[] { "ProjectPanel", "ExplorerPanel", "GitPanel", "HistoryPanel" }
+                         .Where(p => p != panel))
+            {
+                var hidden = Assert.IsAssignableFrom<FrameworkElement>(window.FindName(other));
+                Assert.Equal(Visibility.Collapsed, hidden.Visibility);
+            }
+
+            // Advertised where somebody would look for it.
+            var rail = Assert.IsType<RadioButton>(window.FindName(
+                panel.Replace("Panel", string.Empty) switch
+                {
+                    "Project" => "RailProject",
+                    "Git" => "RailGit",
+                    "Explorer" => "RailExplorer",
+                    _ => "RailHistory",
+                }));
+
+            Assert.Contains(advertised, rail.ToolTip?.ToString() ?? string.Empty);
+        });
+    }
+
+    /// <summary>
+    /// Selecting one rail button clears the other two, and shows only its own panel.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This is here because its absence shipped a broken rail.</b> A
+    /// <see cref="RadioButton"/> with no <c>GroupName</c> groups by its <i>visual parent</i>.
+    /// The three rail buttons were bare siblings in one StackPanel, so exclusion worked by
+    /// accident — and wrapping the git one in a Grid to carry its change badge made it a group
+    /// of one. Two buttons highlighted at once and the git panel would not open.
+    /// </para>
+    /// <para>
+    /// <b>Every existing test walked straight past it</b>, and for one reason worth stating:
+    /// they all set <c>IsChecked = true</c> on each rail in turn. Setting a bool on three
+    /// objects one after another does not exercise exclusion — nothing is asked to turn
+    /// anything else off. The tests that switch panels were doing exactly what a user does and
+    /// checking exactly the thing a user was not complaining about.
+    /// </para>
+    /// <para>
+    /// So this asserts the negative: after selecting one, the OTHER two are off, and their
+    /// panels are collapsed. That is the assertion the bug produces a failure on, and no
+    /// amount of "does the git panel show when I check RailGit" ever would.
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [InlineData("RailProject", "ProjectPanel")]
+    [InlineData("RailExplorer", "ExplorerPanel")]
+    [InlineData("RailGit", "GitPanel")]
+    [InlineData("RailHistory", "HistoryPanel")]
+    public void Selecting_one_rail_button_clears_the_others(string rail, string panel)
+    {
+        StaHarness.Run(() =>
+        {
+            var window = Build();
+
+            var rails = new Dictionary<string, RadioButton>
+            {
+                ["RailProject"] = Assert.IsType<RadioButton>(window.FindName("RailProject")),
+                ["RailExplorer"] = Assert.IsType<RadioButton>(window.FindName("RailExplorer")),
+                ["RailGit"] = Assert.IsType<RadioButton>(window.FindName("RailGit")),
+                ["RailHistory"] = Assert.IsType<RadioButton>(window.FindName("RailHistory")),
+            };
+
+            var panels = new Dictionary<string, FrameworkElement>
+            {
+                ["ProjectPanel"] = Assert.IsAssignableFrom<FrameworkElement>(
+                    window.FindName("ProjectPanel")),
+                ["ExplorerPanel"] = Assert.IsAssignableFrom<FrameworkElement>(
+                    window.FindName("ExplorerPanel")),
+                ["GitPanel"] = Assert.IsAssignableFrom<FrameworkElement>(
+                    window.FindName("GitPanel")),
+                ["HistoryPanel"] = Assert.IsAssignableFrom<FrameworkElement>(
+                    window.FindName("HistoryPanel")),
+            };
+
+            rails[rail].IsChecked = true;
+
+            foreach (var (name, button) in rails)
+            {
+                if (name == rail)
+                {
+                    Assert.True(button.IsChecked, $"{name} did not select");
+                    continue;
+                }
+
+                // The assertion the grouping bug fails on.
+                Assert.False(button.IsChecked,
+                             $"{name} is still lit after {rail} was selected — the rail " +
+                             "buttons are not in one group");
+            }
+
+            foreach (var (name, element) in panels)
+            {
+                var expected = name == panel ? Visibility.Visible : Visibility.Collapsed;
+
+                Assert.Equal(expected, element.Visibility);
+            }
+        });
+    }
+
+    /// <summary>
+    /// The rail's change count appears, counts, and survives switching panels.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The last clause is the whole point of moving it.</b> The pill this replaces was
+    /// drawn by <c>OnRailChanged</c> on the Project panel alone, so the one number saying the
+    /// working tree had anything in it was hidden from the two panels where you cannot
+    /// otherwise see it. A test that only checked "the badge shows 3" would have passed
+    /// against the old behaviour too; walking every rail is what distinguishes them.
+    /// </para>
+    /// <para>
+    /// <b>And nothing else would notice if this broke.</b> A WPF binding to a property that
+    /// does not exist fails silently and leaves the badge empty and collapsed — which no
+    /// layout or geometry assertion anywhere can tell apart from a clean tree.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void The_rail_carries_the_change_count_from_every_panel()
+    {
+        StaHarness.Run(() =>
+        {
+            var (window, shell) = BuildWithShell();
+            var content = (FrameworkElement)window.Content;
+            var badge = Assert.IsType<Border>(window.FindName("RailGitBadge"));
+
+            void Layout()
+            {
+                content.Measure(new Size(1400, 900));
+                content.Arrange(new Rect(0, 0, 1400, 900));
+                content.UpdateLayout();
+            }
+
+            Layout();
+
+            // Nothing open, nothing changed: no badge at all. The pill this replaces drew a
+            // literal "0" here.
+            Assert.Equal(Visibility.Collapsed, badge.Visibility);
+
+            for (var i = 0; i < 3; i++)
+            {
+                shell.Changes.Add(new ChangeRow(new FileChange
+                {
+                    Path = $"src/App/POU/FB_{i}.st",
+                    Staged = ChangeKind.Unmodified,
+                    Unstaged = ChangeKind.Modified,
+                }));
+            }
+
+            Layout();
+
+            Assert.Equal(Visibility.Visible, badge.Visibility);
+
+            var text = AllOf<TextBlock>(badge).Single();
+            Assert.Equal("3", text.Text);
+
+            // From EVERY panel, which the pill could not do. Project last, because that is
+            // the one the old behaviour did work on - ending there would let a regression
+            // that only shows Project pass.
+            foreach (var rail in new[] { "RailGit", "RailHistory", "RailExplorer", "RailProject" })
+            {
+                Assert.IsType<RadioButton>(window.FindName(rail)).IsChecked = true;
+                Layout();
+
+                Assert.Equal(Visibility.Visible, badge.Visibility);
+                Assert.Equal("3", AllOf<TextBlock>(badge).Single().Text);
+            }
+
+            // And it goes away again rather than sticking at its high-water mark.
+            shell.Changes.Clear();
+            Layout();
+
+            Assert.Equal(Visibility.Collapsed, badge.Visibility);
         });
     }
 

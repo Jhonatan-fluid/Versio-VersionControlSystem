@@ -78,6 +78,22 @@ public interface IGitClient
 
     Task<GitStatus> StatusAsync(CancellationToken ct);
 
+    /// <summary>
+    /// Every tracked and untracked path git will show, gitignored files excluded.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>git ls-files -z -c -o --exclude-standard</c>. This is a repository listing, not a
+    /// disk walk: <c>bin/</c>, <c>obj/</c> and <c>.versio/local/</c> stay out because git
+    /// already ignores them, and <c>.git</c> is never a path git reports.
+    /// </para>
+    /// <para>
+    /// NUL-separated for the same reason status is: CODESYS object names contain spaces and
+    /// non-ASCII, and git quotes those without <c>-z</c>.
+    /// </para>
+    /// </remarks>
+    Task<IReadOnlyList<string>> ListWorkingTreeAsync(CancellationToken ct);
+
     Task<IReadOnlyList<BranchInfo>> BranchesAsync(CancellationToken ct);
 
     Task<GitResult> StageAsync(IReadOnlyList<string> paths, CancellationToken ct);
@@ -218,6 +234,37 @@ public interface IGitClient
     /// text and a merge commit in the middle of it explains nothing.
     /// </remarks>
     Task<GitResult> RebaseOntoUpstreamAsync(IProgress<GitProgress>? progress, CancellationToken ct);
+
+    /// <summary>Merge a named branch into the current one, producing conflicts rather than refusing.</summary>
+    /// <remarks>
+    /// <para>
+    /// Distinct from <see cref="MergeUpstreamAsync"/>, which can only ever bring in this
+    /// branch's own upstream and is offered only out of a diverged state. This is the ordinary
+    /// "bring that work in here" that every git client has and Versio did not.
+    /// </para>
+    /// <para>
+    /// <b>No <c>--no-ff</c></b>, for the reason <see cref="MergeUpstreamAsync"/> already gives:
+    /// where the merge can fast-forward there is nothing to be gained by manufacturing a merge
+    /// commit, and on an exported tree a linear history is easier to read back.
+    /// </para>
+    /// </remarks>
+    Task<GitResult> MergeBranchAsync(
+        string branch, IProgress<GitProgress>? progress, CancellationToken ct);
+
+    /// <summary>
+    /// The paths that differ between this branch and another, from their merge base.
+    /// </summary>
+    /// <remarks>
+    /// <b>Three dots, and that is the whole point.</b> Two would list this branch's own commits
+    /// as well, so a merge preflight would refuse on work that is already here. Three asks the
+    /// question actually being posed: what would this merge <i>bring</i>?
+    /// </remarks>
+    /// <returns>
+    /// The paths, or <c>null</c> when git could not answer — a branch with no resolvable ref,
+    /// most often a remote-only name. Deliberately not an empty list, which would be
+    /// indistinguishable from "brings nothing" and read as "already merged".
+    /// </returns>
+    Task<IReadOnlyList<string>?> IncomingPathsAsync(string branch, CancellationToken ct);
 
     /// <summary>
     /// Undo a merge or rebase that is part-way through, back to where it started.

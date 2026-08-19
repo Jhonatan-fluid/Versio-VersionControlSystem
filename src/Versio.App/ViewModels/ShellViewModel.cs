@@ -74,6 +74,9 @@ public enum ShellPanel
     /// <summary>The repository as CODESYS structures it, plus every other changed file.</summary>
     Project,
 
+    /// <summary>The open clone as a folder tree. Visualize, not review.</summary>
+    Explorer,
+
     /// <summary>Staging, commit, and the remote operations.</summary>
     Git,
 
@@ -366,7 +369,7 @@ public sealed class ChangeRow(FileChange change) : ObservableObject
 public sealed class ShellViewModel : ObservableObject, IDisposable
 {
     private readonly VersioLogger _logger;
-    private readonly Func<string, GitCliClient> _gitFactory;
+    private readonly Func<string, IGitClient> _gitFactory;
     private readonly RepositoryLocator _locator;
     private readonly IClock _clock;
 
@@ -416,7 +419,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// </remarks>
     private AppSettings _stored = AppSettings.Empty;
 
-    private GitCliClient? _git;
+    private IGitClient? _git;
 
     /// <summary>True while a question is on screen waiting for an answer.</summary>
     /// <remarks>
@@ -461,7 +464,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     private ShellPanel _activePanel = ShellPanel.Project;
 
     public ShellViewModel(VersioLogger logger, LogViewModel log,
-                          Func<string, GitCliClient>? gitFactory = null,
+                          Func<string, IGitClient>? gitFactory = null,
                           IRepositoryProbe? probe = null,
                           IClock? clock = null,
                           Func<PlcVendor, IVersioLogger, IPlcToolchain?>? toolchains = null,
@@ -500,9 +503,20 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         Staged.CollectionChanged += OnStagingListChanged;
         Unstaged.CollectionChanged += OnStagingListChanged;
 
+        // The rail badge's count, on the same argument one line up: it is a computed property
+        // over this collection, so it moves because the collection moved rather than because
+        // Reconcile remembered to say so. Reconcile mutates row by row, and the badge is cheap
+        // - a count, a comparison and a string.
+        Changes.CollectionChanged += (_, _) => OnPropertyChanged(nameof(ChangeBadge));
+
         // Events, as against the state StatusSummary holds. The two were one property until
         // now, and the collision was not theoretical - see NotificationCenter's remarks.
         Notifications = new NotificationCenter(_clock, logger);
+
+        // The overflow pill's command. Here rather than on NotificationCenter because it is the
+        // one place both halves are visible: the center knows what it is holding back, the log
+        // knows where they went, and neither has any business holding a reference to the other.
+        ShowHeldNotificationsCommand = new RelayCommand(ShowHeldNotifications);
 
         // The credential and the git identity, in a class of their own. Constructed here
         // because it needs Busy and Notifications, and it is handed `ready` as a DELEGATE
@@ -572,7 +586,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             }
         };
 
-        History = new HistoryViewModel(logger);
+        History = new HistoryViewModel(logger, ReportError);
+        Explorer = new ExplorerViewModel(logger, () => Sync.ReadProjectsForExplorer());
         _gitFactory = gitFactory ?? (path => new GitCliClient(path, logger: logger));
         _locator = new RepositoryLocator(probe ?? new FileSystemRepositoryProbe());
         _policy = new StatusRefreshPolicy(_clock);
@@ -586,7 +601,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         // Picking a row in the project tree shows it in the diff pane. One pane, whichever
         // way the row was reached.
-        Sync.NodeSelected += ShowNode;
+        Sync.NodeSelected += row => ShowNode(row, visualizeOnly: false);
+        Explorer.NodeSelected += row => ShowNode(row, visualizeOnly: true);
 
         // A project adopted while the app is running writes new .gitignore rules, and its
         // toolchain starts rewriting a lock marker a second later. Without this the watcher
@@ -655,7 +671,26 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// <summary>The commit history, in its own panel and loaded only when it is shown.</summary>
     public HistoryViewModel History { get; }
 
+    /// <summary>The open clone as a folder tree. Visualize, not review.</summary>
+    public ExplorerViewModel Explorer { get; }
+
     public ObservableCollection<ChangeRow> Changes { get; } = [];
+
+    /// <summary>The count on the git rail, and what colour it is.</summary>
+    /// <remarks>
+    /// <b>On the rail rather than in a panel title, which is what makes it worth having.</b>
+    /// The pill this replaces lived in the panel header and the shell drew it on the Project
+    /// panel only — so it stated the working tree's size exactly where you could already see
+    /// it, and said nothing from the two panels where you cannot. The rail is the one surface
+    /// permanently on screen; a navigation control that cannot say <i>there is something over
+    /// here</i> is doing half its job.
+    /// <para>
+    /// The rule is in <see cref="Core.Git.ChangeBadge"/> — suppression at zero, the cap, and
+    /// conflicts outranking the count — because all three are decisions rather than
+    /// arithmetic, and none of them needs a window to check.
+    /// </para>
+    /// </remarks>
+    public ChangeBadge ChangeBadge => ChangeBadge.For(Changes.Count, HasConflicts);
 
     /// <summary>Most-recently-opened repositories, newest first. Backs the top-bar dropdown.</summary>
     public ObservableCollection<RepoEntry> RecentRepositories { get; } = [];
@@ -1030,6 +1065,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // never called, and it already knew what to forget.
         Sync.Detach();
         History.Detach();
+        Explorer.Detach();
 
         RaiseGitCommandStates();
     }
@@ -1309,6 +1345,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             // that happens. Everything else here is already loaded by the time the rail
             // can switch to it.
             History.IsVisible = value == ShellPanel.History;
+            Explorer.IsVisible = value == ShellPanel.Explorer;
 
             // Somebody has come to look at the remote, so watch it closely again. The backoff
             // exists to stop polling for nobody; opening this panel is the clearest possible
@@ -1324,6 +1361,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     public string PanelTitle => _activePanel switch
     {
         ShellPanel.Project => "PROJECT",
+        ShellPanel.Explorer => "EXPLORER",
         ShellPanel.Git => "GIT",
         ShellPanel.History => "HISTORY",
         _ => string.Empty,
@@ -1347,7 +1385,16 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     public string BranchName
     {
         get => _branchName;
-        private set => SetProperty(ref _branchName, value);
+        private set
+        {
+            if (SetProperty(ref _branchName, value))
+            {
+                // The overflow's caption names this branch as the merge destination, so it
+                // has to move with it. A computed property nothing raises would sit on the
+                // previous branch's name for the whole session after a checkout.
+                OnPropertyChanged(nameof(MergeBranchLabel));
+            }
+        }
     }
 
     /// <summary>
@@ -1359,6 +1406,34 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// overwrite the answer to what the user just pressed.
     /// </remarks>
     public NotificationCenter Notifications { get; }
+
+    /// <summary>
+    /// Reach the notifications that did not fit on screen (UX-10's sibling, UX-9).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The pill counting them used to be a <c>Border</c> with no command at all.</b> It said
+    /// "+2 more" at the exact moment several things had gone wrong at once — a network outage,
+    /// a push retried — which is precisely when somebody wants to read them, and there was
+    /// nothing behind it. A count of unreachable things is worse than no count: it tells the
+    /// reader something exists and denies them it.
+    /// </para>
+    /// <para>
+    /// <b>Nothing new is stored to make this work.</b> Every notification is mirrored into the
+    /// log at the moment it is posted — deliberately, so that a dismissed card and an empty log
+    /// can never be the same repository state — so the ones that scrolled off the stack are
+    /// already on disk and in the buffer. This opens the panel they are in and filters to the
+    /// category they are in, and that is the whole of it.
+    /// </para>
+    /// <para>
+    /// <b>It lands on a superset, and that is the honest trade.</b> The filter is a category,
+    /// not a notification flag: every git line comes with them, held-back notifications
+    /// included. Marking notifications as their own category was the alternative and it buys a
+    /// tighter landing at the cost of splitting one operation's story across two categories in
+    /// the panel where reading that story is the point.
+    /// </para>
+    /// </remarks>
+    public RelayCommand ShowHeldNotificationsCommand { get; }
 
     public string StatusSummary
     {
@@ -1915,6 +1990,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // The history is handed the client but reads nothing yet. Whether this repository's
         // log is ever walked is now the user's decision, made by clicking the rail.
         History.Attach(client);
+        Explorer.Attach(client, path);
 
         // Scan for PLC projects after the git state is up, so the sync panel is populated
         // by the time the user reaches for it.
@@ -2087,6 +2163,18 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
     public string UnstagedSelectionCaption =>
         StagingSelection.Caption(Unstaged.Count, UnstagedSelectedCount);
+
+    /// <summary>"STAGED · 12", or "STAGED · 3 of 12 selected" while anything is ticked.</summary>
+    /// <remarks>
+    /// The label is passed in from here rather than living in <see cref="StagingSelection"/>,
+    /// because the casing is this panel's typographic choice and Core has no business holding
+    /// it. What Core owns is the rule about which of the two sentences applies.
+    /// </remarks>
+    public string StagedHeader =>
+        StagingSelection.Header("STAGED", Staged.Count, StagedSelectedCount);
+
+    public string UnstagedHeader =>
+        StagingSelection.Header("NOT STAGED", Unstaged.Count, UnstagedSelectedCount);
 
     /// <summary>
     /// What the commit button will do right now.
@@ -2312,6 +2400,21 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// <summary>Open the delete-branches dialog.</summary>
     public AsyncCommand DeleteBranchesCommand { get; private set; } = null!;
 
+    /// <summary>Open the merge-a-branch dialog.</summary>
+    public AsyncCommand MergeBranchCommand { get; private set; } = null!;
+
+    /// <summary>"Merge a branch into main…", naming where the work would land.</summary>
+    /// <remarks>
+    /// The destination is in the caption because it is the half somebody gets wrong: the
+    /// dialog asks which branch to merge, and which branch it merges INTO is whichever one
+    /// happens to be checked out. Naming it here means the answer is on screen before the
+    /// dialog opens rather than after.
+    /// </remarks>
+    public string MergeBranchLabel =>
+        BranchName is { Length: > 0 } and not "—"
+            ? $"Merge a branch into {BranchName}…"
+            : "Merge a branch…";
+
 
     /// <summary>Button labels that say what will happen, not what the button is called.</summary>
     public string StageLabel =>
@@ -2353,8 +2456,18 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         return ticked.Count > 0 ? ticked : [.. rows];
     }
 
-    /// <summary>Recount after anything that could have changed a tick.</summary>
-    private void RaiseSelectionState()
+    /// <summary>
+    /// Everything that reads how many rows there are and how many are ticked.
+    /// </summary>
+    /// <remarks>
+    /// <b>Split out of <see cref="RaiseSelectionState"/> because the list funnel calls it per
+    /// row.</b> <c>OnStagingListChanged</c> fires once for every row added or removed, and
+    /// <c>ReconcileInto</c> mutates row by row — so on a four-hundred-file import anything
+    /// raised here is raised four hundred times. That is fine for these: they are counts, a
+    /// comparison and a string. It is not fine for the git command surface, which is why that
+    /// stayed behind. See <see cref="OnStagingListChanged"/>.
+    /// </remarks>
+    private void RaiseStagingCounts()
     {
         OnPropertyChanged(nameof(StagedSelectedCount));
         OnPropertyChanged(nameof(UnstagedSelectedCount));
@@ -2362,9 +2475,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(UnstagedAllSelected));
         OnPropertyChanged(nameof(StagedSelectionCaption));
         OnPropertyChanged(nameof(UnstagedSelectionCaption));
+        OnPropertyChanged(nameof(StagedHeader));
+        OnPropertyChanged(nameof(UnstagedHeader));
         OnPropertyChanged(nameof(StageLabel));
         OnPropertyChanged(nameof(UnstageLabel));
         OnPropertyChanged(nameof(DiscardLabel));
+    }
+
+    /// <summary>Recount after anything that could have changed a tick.</summary>
+    private void RaiseSelectionState()
+    {
+        RaiseStagingCounts();
         RaiseCommitState();
         RaiseGitCommandStates();
     }
@@ -2743,6 +2864,24 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             DeleteBranchesAsync,
             () => Ready && Branches.Count > 1 && DefaultBranch.IsKnown, ReportError);
 
+        // No DefaultBranch requirement, unlike deletion beside it: deleting needs a trunk to
+        // ask "merged into what" and to fall back to, and merging asks that of the branch you
+        // are on.
+        //
+        // DEAD WHILE DETACHED, and that is not tidiness. On a detached HEAD every other remote
+        // verb is already off - CanPush, CanPull and CanPublish all read HasUpstream, which is
+        // false - so this would have been the one live way to write history there. It would
+        // ask "merge into (detached)", hand that string to `git branch --merged` where it
+        // resolves to nothing, and then make a merge commit reachable from no branch at all:
+        // work that exists only in the reflog, which is the trap RemoteStanding's own detached
+        // sentence warns about.
+        MergeBranchCommand = new AsyncCommand(
+            MergeBranchAsync,
+            () => Ready
+                  && Branches.Count > 1
+                  && Remote.Standing.State != TrackingState.Detached,
+            ReportError);
+
         ResolveCommand = new AsyncCommand<bool>(
             ResolveSelectedAsync,
             _ => Ready && SelectedConflict is not null, ReportError);
@@ -2763,7 +2902,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         DiscardCommand = new AsyncCommand(
             DiscardAsync, () => Ready && SelectedUnstaged is not null, ReportError);
 
-        CreateBranchCommand = new AsyncCommand(CreateBranchAsync, () => Ready, ReportError);
+        CreateBranchCommand = new AsyncCommand(
+            () => CreateBranchAsync("TopBar.CreateBranch"), () => Ready, ReportError);
+
+        // THE SAME ACTION, AND DELIBERATELY NOT THE SAME COMMAND.
+        //
+        // It could bind CreateBranchCommand directly and behave identically — the difference is
+        // one string in the log. That string is the point: this button exists on a bet that
+        // people reach a detached HEAD and cannot find the way out, and the only way to know
+        // whether the bet paid is to be able to tell the two routes apart afterwards.
+        PutOnBranchCommand = new AsyncCommand(
+            () => CreateBranchAsync("Standing.PutOnBranch"), () => Ready, ReportError);
 
         // Cloning needs no open repository — it is how you get one — so it is enabled
         // whenever nothing else is running, unlike every other command here.
@@ -2835,6 +2984,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(CommitBlockedReason));
         OnPropertyChanged(nameof(CommitExplanation));
         OnPropertyChanged(nameof(HasConflicts));
+
+        // The rail's badge reads HasConflicts for its colour, so it moves whenever that does.
+        // The other half - the count - comes from Changes, and is raised where that collection
+        // changes rather than here.
+        OnPropertyChanged(nameof(ChangeBadge));
     }
 
     private bool CanCommit() =>
@@ -2873,6 +3027,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         HunkCommand.RaiseCanExecuteChanged();
         DiscardCommand.RaiseCanExecuteChanged();
         CreateBranchCommand.RaiseCanExecuteChanged();
+        PutOnBranchCommand.RaiseCanExecuteChanged();
         CloneCommand.RaiseCanExecuteChanged();
 
         // Every input the plan reads — branch, standing, trunk, dirtiness — has just moved or
@@ -2895,6 +3050,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // IsMidMerge, called this method, and left Abandon merge exactly as disabled as it
         // had been - until something unrelated happened to the credentials.
         DeleteBranchesCommand.RaiseCanExecuteChanged();
+        MergeBranchCommand.RaiseCanExecuteChanged();
         ResolveCommand.RaiseCanExecuteChanged();
         AbortMergeCommand.RaiseCanExecuteChanged();
         ReconcileCommand.RaiseCanExecuteChanged();
@@ -3186,6 +3342,18 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
+        // THE LOCK THE MERGE TOOK HAS TO GO BACK TOO.
+        //
+        // A merge that reached a tracked project marked its mirror authoritative, and
+        // AdoptExternalStateAsync deliberately skips a binding holding a lock - so without
+        // this the abandon left it on, blocking exports over a mirror that no longer differs
+        // from anything, and leaving the import banner offering to import a mirror identical
+        // to the project. Neither way out applied: there was nothing left to push.
+        //
+        // Released only where nothing is outstanding, so a lock that predates the merge and
+        // still owes a real import survives untouched.
+        await Sync.ReleaseLocksWithNothingOutstandingAsync().ConfigureAwait(true);
+
         Notifications.Success($"The {what} was abandoned.", "The branch is back where it was.");
         await RunRefreshAsync(RefreshTrigger.GitMetadata, null).ConfigureAwait(true);
     }
@@ -3266,6 +3434,219 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// The dialog decides <i>what</i>; every rule about whether it may happen lives here, where
     /// the repository is.
     /// </remarks>
+    /// <summary>
+    /// Bring another branch's work into this one.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The verb Versio did not have.</b> <c>ReconcileCommand</c> can only ever merge this
+    /// branch's own upstream, and only out of a diverged state — so finishing a feature branch
+    /// and bringing it into main meant a terminal, which is the thing this panel exists to
+    /// remove.
+    /// </para>
+    /// <para>
+    /// <b>It refuses when the merge would reach a tracked project, and that refusal is
+    /// measured.</b> Probe P-M1 committed a project holding one branch's work beside a mirror
+    /// holding both — 41 mirror files, two of them carrying content the kept project does not
+    /// have, one of those a POU method body. Neither thing Versio could do next is right:
+    /// adopting the result records the disagreement as synced, and not adopting lets the commit
+    /// gate export over the merged mirror and delete the other branch's work outright. The
+    /// answer is to import the merged mirror, which needs the direction lock pointed at import
+    /// so the gate cannot win the race — a change to the lock model, not to this panel. See
+    /// <see cref="MergePreflight"/>.
+    /// </para>
+    /// <para>
+    /// <b>Through the same guard a pull uses</b>, and for the reason <c>ReconcileAsync</c>
+    /// already records: both rewrite the project and its mirror together. The guard's wording
+    /// says "pull" during a merge, which it already did for reconcile — accepted knowingly
+    /// rather than left to be discovered.
+    /// </para>
+    /// </remarks>
+    private async Task MergeBranchAsync()
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        _logger.Click("Git.MergeBranch");
+        using var scope = _logger.BeginOperation(LoggerExtensions.NewOperationId());
+
+        // Merged INTO THE CURRENT BRANCH, not into the default one. The delete dialog asks the
+        // same question of the trunk because there "merged" means safe to delete; here it means
+        // the merge would do nothing, and that is only true of the branch being merged into.
+        var already = await _git.MergedBranchesAsync(BranchName, CancellationToken.None)
+            .ConfigureAwait(true);
+
+        var alreadySet = already.ToHashSet(StringComparer.Ordinal);
+
+        var candidates = Branches
+            .Select(b => new BranchCandidate
+            {
+                Name = b.Name,
+                Existence = b.Existence,
+                IsMerged = alreadySet.Contains(b.Name),
+                IsCurrent = b.IsCurrent,
+                IsDefault = string.Equals(b.Name, DefaultBranch.Name, StringComparison.Ordinal),
+            })
+            .ToList();
+
+        string? chosen;
+        using (AskingSomething())
+        {
+            chosen = Prompts.PromptForBranchMerge(candidates, BranchName);
+        }
+
+        if (chosen is not { Length: > 0 })
+        {
+            _logger.Info(LogCategory.Git, "merge cancelled");
+            return;
+        }
+
+        // The preflight runs on what the merge would BRING - three dots - so work already on
+        // this branch cannot make it refuse.
+        var incoming = await _git.IncomingPathsAsync(chosen, CancellationToken.None)
+            .ConfigureAwait(true);
+
+        var plan = MergePreflight.For(chosen, incoming, Sync.TrackedRoots());
+
+        if (!plan.CanProceed)
+        {
+            _logger.Warn(LogCategory.Git, $"merge of {chosen} refused: {plan.Verdict}");
+
+            // FAILURE, NOT WARNING, AND THE REASON IS THE LIFETIME RATHER THAN THE SEVERITY.
+            //
+            // Only a Failure is sticky - NotificationLog gives Success and Warning an expiry
+            // and Failure none - and this explanation is several sentences that say what to do
+            // instead. On a Warning's timer it would be gone before it had been read, which is
+            // the exact failure the log's own remarks describe for a push result. It also gets
+            // the Copy button, so the sentence can be pasted into a message asking about it.
+            //
+            // The first version of this used Warning and carried a comment claiming it was
+            // sticky. It was not.
+            Notifications.Failure($"Did not merge {chosen}.", plan.Explanation);
+            return;
+        }
+
+        // ASKED BEFORE THE MERGE, NOT REPORTED AFTER IT.
+        //
+        // A merge that reaches a tracked project is allowed now, and it leaves the project a
+        // branch behind its own text until an import puts both sides back. That is a real
+        // consequence and it is cheap to decline BEFORE the tree has been rewritten - after it
+        // the only way back is `git merge --abort`, which this panel does offer but which is a
+        // worse place to make the decision from.
+        if (plan.NeedsImport && !AskToMerge(chosen, plan))
+        {
+            _logger.Info(LogCategory.Git, $"merge of {chosen} declined at the import warning");
+            return;
+        }
+
+        if (!await ClearForContextChangeAsync(GuardIntent.Pull, $"merging {chosen}")
+                .ConfigureAwait(true))
+        {
+            return;
+        }
+
+        using var busy = Busy.Begin(WorkKind.GitWrite, $"Merging {chosen}…");
+
+        GitResult result = default!;
+        IReadOnlyList<string> unprotected = [];
+
+        // THE HOLD, THE ADOPT DECISION, AND THE MARKING - IN A try/finally, WHICH IS THE
+        // FOURTH THING A RE-READ FOUND WRONG HERE.
+        //
+        // The watcher hold is the same one a pull takes: the watcher cannot know which paths
+        // a merge will touch until it has touched them, and unheld it would report the
+        // rewrite as edits to the exported text.
+        //
+        // NOT ADOPTED WHEN AN IMPORT IS OWED. Adopting takes the project and the mirror as
+        // jointly true, which is right for a checkout or a pull - both arrive from one commit
+        // the gate vetted - and wrong for a merge, where the binary project keeps one side
+        // and the mirror keeps both. Adopting would write a LastSynced claiming they agree;
+        // on a merge that stopped on a conflict it would record the conflict markers
+        // themselves as the synced state.
+        //
+        // AND THE MARKING IS IN A finally BECAUSE THE HAPPY PATH IS NOT THE DANGEROUS ONE.
+        // MergeBranchAsync can throw rather than return a failed GitResult - busy.Token is
+        // cancellable, and a cancelled merge can leave the tree part-way through with the
+        // mirror already rewritten. On that path the exception ran straight past the marking
+        // to AsyncCommand's error handler, leaving the merged text open to the commit gate's
+        // export. The trade is deliberate: a lock taken over a merge that turned out to touch
+        // nothing is recoverable - abandoning releases it, and so does discarding - while an
+        // unprotected merged mirror is not.
+        try
+        {
+            await Sync.WhileGitRewritesTheTreeAsync(
+                "merge",
+                async () => result = await _git.MergeBranchAsync(chosen, null, busy.Token)
+                    .ConfigureAwait(true),
+                adoptResult: !plan.NeedsImport)
+                .ConfigureAwait(true);
+        }
+        finally
+        {
+            // Before the refresh, deliberately: RunRefreshAsync re-reads the tree and
+            // re-evaluates the gate, and it must find the lock already moved.
+            if (plan.NeedsImport)
+            {
+                unprotected = await Sync
+                    .NoteMergedTextAsync([.. plan.Affected.Select(a => a.BindingId)])
+                    .ConfigureAwait(true);
+            }
+        }
+
+        if (unprotected.Count > 0)
+        {
+            // LOUD, BECAUSE THE ONE GUARANTEE THIS PATH RESTS ON DID NOT HOLD. The state
+            // machine blocks TextChanged from ProjectAuthoritative - a project that already
+            // had unexported edits - so the merged text is open to the commit gate's export
+            // with nothing else on screen to say so. Sticky, like every other Failure.
+            Notifications.Failure(
+                "The merged text is not protected.",
+                $"{unprotected.Count} project(s) already had unsynced work, so Versio could " +
+                "not put the merged text in charge. Export or discard that work before " +
+                "committing, or the next export will overwrite what the merge brought in.");
+        }
+
+        if (result.Success)
+        {
+            if (plan.NeedsImport)
+            {
+                Notifications.Warning(
+                    $"Merged {chosen}. The project still needs the merged text.",
+                    "Review the changes and press Review and import. Exports are held off " +
+                    "until you do, so nothing overwrites them.");
+            }
+            else
+            {
+                Notifications.Success($"Merged {chosen}.");
+            }
+        }
+        else
+        {
+            // Not a failure card. A merge that conflicts has done exactly what it should, and
+            // the panel's conflict section is already showing the files to resolve.
+            Notifications.Warning($"{chosen} merged with conflicts.",
+                                  "Resolve them in the panel, then commit.");
+        }
+
+        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+    }
+
+    /// <summary>The one question a merge into a tracked project has to ask first.</summary>
+    /// <remarks>
+    /// Through <c>AskingSomething</c> like every other prompt in this file: it is what stops a
+    /// background refresh landing under an open dialog and moving what the user is reading.
+    /// </remarks>
+    private bool AskToMerge(string branch, MergePlan plan)
+    {
+        using (AskingSomething())
+        {
+            return Prompts.ConfirmDestructive(
+                new DestructivePrompt($"Merge {branch}?", plan.Explanation, "Merge"));
+        }
+    }
+
     private async Task DeleteBranchesAsync()
     {
         if (_git is null || !DefaultBranch.IsKnown)
@@ -3495,8 +3876,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// <summary>Throw away the working-tree changes to the selected unstaged file.</summary>
     public AsyncCommand DiscardCommand { get; private set; } = null!;
 
-    /// <summary>Create a branch and switch to it.</summary>
+    /// <summary>Create a branch and switch to it. The top bar's <c>+</c>.</summary>
     public AsyncCommand CreateBranchCommand { get; private set; } = null!;
+
+    /// <summary>The same thing, offered inside the detached-HEAD sentence as the way out.</summary>
+    public AsyncCommand PutOnBranchCommand { get; private set; } = null!;
 
     /// <summary>Clone a repository, then open it.</summary>
     public AsyncCommand CloneCommand { get; private set; } = null!;
@@ -4218,6 +4602,27 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             row.SelectionChanged += RaiseSelectionState;
         }
 
+        // THE COUNTS, NOT THE WHOLE SELECTION STATE, AND THE DIFFERENCE IS MEASURED IN
+        // URL PARSES.
+        //
+        // This raised RaiseCommitState alone, which was enough while every count-bearing
+        // caption depended only on the TICKS: with nothing ticked the captions were the empty
+        // string before and after a list changed, so a missing notification looked like
+        // agreement. The headers carry the list's own total now, so the same omission would
+        // freeze "STAGED · 3" on a list that had grown to forty. This handler runs for every
+        // mutation of either list by definition, which is where that rule belongs - leaving it
+        // to UpdateStagingLists made the funnel and one of its callers jointly responsible for
+        // a rule only one of them stated.
+        //
+        // But NOT RaiseSelectionState, which was the first version and was too big a hammer.
+        // It ends in RaiseGitCommandStates - roughly twenty RaiseCanExecuteChanged calls plus
+        // a notification on MergeRequest, which is fully recomputed on every read and parses
+        // the remote's URL to do it. ReconcileInto mutates row by row, so a four-hundred-file
+        // import would have paid all of that four hundred times for a button whose enabled
+        // state cannot change until the batch is finished anyway. UpdateStagingLists still
+        // calls RaiseSelectionState once when it has reconciled both lists, which is where the
+        // command surface genuinely needs to be told.
+        RaiseStagingCounts();
         RaiseCommitState();
     }
 
@@ -4513,6 +4918,84 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// git already answers. The commit gate still runs at commit time — staging early
     /// changes when the mirror is recorded, not whether the gate sees it.
     /// </remarks>
+    /// <summary>
+    /// Stage, unstage or discard exactly one row of a staging list.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The clicked row, never the ticks.</b> This is the whole reason these exist rather
+    /// than the menu reusing <c>StageCommand</c>: the buttons act on <c>Chosen</c> — the ticked
+    /// rows, or all of them when nothing is ticked — and a right-click is a statement about the
+    /// row under the cursor. Somebody who has ticked three files, then right-clicks a fourth to
+    /// stage it, must not have their three swept in. The two interactions mean different things
+    /// and they both have to keep meaning them.
+    /// </para>
+    /// <para>
+    /// <b>Discard goes through <see cref="DiscardRowsAsync"/> unchanged</b>, so the one flow in
+    /// this application that destroys work nothing else has a copy of still names every file it
+    /// will touch and still asks first. The context menu is a new way to reach that flow, not a
+    /// second implementation of it.
+    /// </para>
+    /// </remarks>
+    public async Task StageRowAsync(ChangeRow row)
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        _logger.Click("Row.Stage");
+        using var busy = Busy.Begin(WorkKind.GitWrite, $"Staging {row.Primary}…");
+
+        var result = await _git.StageAsync([row.Path], busy.Token).ConfigureAwait(true);
+
+        if (!result.Success)
+        {
+            _logger.Warn(LogCategory.Git, $"stage failed for {row.Path}: {result.FailureReason}");
+            Notifications.Failure("Could not stage.", result.FailureReason ?? string.Empty);
+        }
+
+        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+    }
+
+    public async Task UnstageRowAsync(ChangeRow row)
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        _logger.Click("Row.Unstage");
+        using var busy = Busy.Begin(WorkKind.GitWrite, $"Unstaging {row.Primary}…");
+
+        var result = await _git.UnstageAsync([row.Path], busy.Token).ConfigureAwait(true);
+
+        if (!result.Success)
+        {
+            _logger.Warn(LogCategory.Git,
+                         $"unstage failed for {row.Path}: {result.FailureReason}");
+            Notifications.Failure("Could not unstage.", result.FailureReason ?? string.Empty);
+        }
+
+        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+    }
+
+    public Task DiscardRowAsync(ChangeRow row) => DiscardRowsAsync([row]);
+
+    /// <summary>Reveal one staging row's file in Explorer.</summary>
+    public void RevealRow(ChangeRow row)
+    {
+        _logger.Click("Row.Reveal");
+        RevealPath(row.Path);
+    }
+
+    /// <summary>Put one staging row's repo-relative path on the clipboard.</summary>
+    public void CopyRowPath(ChangeRow row)
+    {
+        _logger.Click("Row.CopyPath");
+        CopyPathToClipboard(row.Path);
+    }
+
     public async Task StageNodeAsync(TreeRow row)
     {
         if (_git is null || row.Node.Files.Count == 0)
@@ -4545,15 +5028,34 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// </remarks>
     public void RevealNode(TreeRow row)
     {
+        _logger.Click("Tree.Reveal");
+        RevealPath(row.Node.Files.FirstOrDefault() ?? row.Node.Path);
+    }
+
+    /// <summary>
+    /// Reveal one repo-relative path in Explorer.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Extracted from <see cref="RevealNode"/> when the git panel's rows gained the same
+    /// menu entry. <b>The whole of the reasoning came with it</b>, because none of it was
+    /// about trees: explorer by name so <c>/select,</c> works, the argument as ONE string
+    /// because splitting it makes Explorer open Documents instead, and failure logged and
+    /// put in the status bar rather than swallowed — a locked-down industrial machine really
+    /// can refuse this.
+    /// </para>
+    /// <para>
+    /// The caller logs its own click, so the log still says which surface asked.
+    /// </para>
+    /// </remarks>
+    public void RevealPath(string repoRelative)
+    {
         if (RepositoryPath is not { } root)
         {
             return;
         }
 
-        _logger.Click("Tree.Reveal");
-
-        var relative = (row.Node.Files.FirstOrDefault() ?? row.Node.Path)
-            .Replace('/', Path.DirectorySeparatorChar);
+        var relative = repoRelative.Replace('/', Path.DirectorySeparatorChar);
         var absolute = Path.Combine(root, relative);
 
         try
@@ -4594,17 +5096,50 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     public void CopyNodePath(TreeRow row)
     {
         _logger.Click("Tree.CopyPath");
+        CopyPathToClipboard(row.Node.Path);
+    }
+
+    /// <summary>
+    /// Put one repo-relative path on the clipboard.
+    /// </summary>
+    /// <remarks>
+    /// Extracted alongside <see cref="RevealPath"/>, with its reasoning intact: the
+    /// repo-relative path rather than an absolute one, because that is the path that means
+    /// the same thing to every clone — a commit message, an issue, a chat message. Clipboard
+    /// access can be refused when another process holds it open, which is worth a status-bar
+    /// sentence and not a crash, and the sentence still carries the path so the copy failing
+    /// does not also lose the thing being copied.
+    /// </remarks>
+    public void CopyPathToClipboard(string repoRelative)
+    {
 
         try
         {
-            System.Windows.Clipboard.SetText(row.Node.Path);
-            StatusSummary = $"Copied {row.Node.Path}";
+            System.Windows.Clipboard.SetText(repoRelative);
+            StatusSummary = $"Copied {repoRelative}";
         }
         catch (System.Runtime.InteropServices.ExternalException ex)
         {
             _logger.Error(LogCategory.App, "could not reach the clipboard", ex);
-            StatusSummary = $"Could not reach the clipboard — the path is {row.Node.Path}";
+            StatusSummary = $"Could not reach the clipboard — the path is {repoRelative}";
         }
+    }
+
+    /// <summary>Open the log on the category the held notifications are in.</summary>
+    /// <remarks>
+    /// Deliberately not conditional on <c>Notifications.HasOverflow</c>. The pill that raises
+    /// this is already hidden when there is no overflow, and a command that silently did
+    /// nothing when pressed would be a second, invisible gate able to disagree with the first.
+    /// </remarks>
+    private void ShowHeldNotifications()
+    {
+        _logger.Click("Notifications.Overflow");
+
+        Log.Filters.ShowOnly(NotificationCenter.LogCategoryName);
+
+        // Expanded last, so the panel appears already showing the right rows. The other order
+        // opens on the unfiltered log and then visibly re-filters it, which reads as a glitch.
+        Log.IsExpanded = true;
     }
 
     /// <summary>
@@ -4625,14 +5160,14 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// branches — so the failure is reported rather than assumed away.
     /// </para>
     /// </remarks>
-    private async Task CreateBranchAsync()
+    private async Task CreateBranchAsync(string source)
     {
         if (_git is null)
         {
             return;
         }
 
-        _logger.Click("TopBar.CreateBranch");
+        _logger.Click(source);
 
         using var asking = AskingSomething();
         if (Prompts.PromptForBranchName() is not { } name)
@@ -4837,6 +5372,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             // `git status` per refresh is a process spawn for an answer we already have, and
             // two reads a moment apart can disagree.
             await Sync.RefreshTreeAsync(status).ConfigureAwait(true);
+            Explorer.Invalidate();
 
             // A project dropped into the repository while Versio is running is git's news
             // first: it appears here as an untracked file and nothing else happens, because
@@ -5426,6 +5962,21 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             Sync.ToolchainAvailable
                 ? "installed — version under Settings → System information"
                 : "not installed on this machine"));
+
+        // WHICH TOOLCHAIN WROTE THIS MIRROR, which is a different question from whether one
+        // is installed here — a colleague's export, a CI machine's, or an older CODESYS on
+        // this one all read the same on the row above and differently on this one. That was
+        // the gap: the card could say "Codesys" and never which CODESYS.
+        //
+        // Verbatim, because the manifest recorded it verbatim and shortening it here would be
+        // this file inventing a parse of somebody else's version string. Absent on any mirror
+        // exported before schema 10, and the row is simply not drawn — "not recorded" is what
+        // an empty field means, and a row saying "unknown" would claim more than that.
+        if (manifest?.ToolchainVersion is { Length: > 0 } producedBy)
+        {
+            facts.Add(new FactRow("Exported by", producedBy));
+        }
+
         facts.Add(new FactRow("Sync state",
             node.Detail.Length > 0 ? node.Detail : "tracked"));
 
@@ -5606,8 +6157,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// A <c>.project</c> row reports its export instead of a diff. That is the whole premise
     /// of the tool stated in the one place somebody is most likely to test it: the binary
     /// file has nothing to compare, and the text beside it does.
+    /// <para>
+    /// <paramref name="visualizeOnly"/> is the explorer: same <see cref="BuildRenderedContent"/>,
+    /// never <see cref="ShowPathAsync"/>. An explorer click that asked git for a diff would
+    /// turn a browse into a review.
+    /// </para>
     /// </remarks>
-    private void ShowNode(TreeRow row)
+    private void ShowNode(TreeRow row, bool visualizeOnly)
     {
         if (row.IsProject)
         {
@@ -5654,9 +6210,40 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         // The rendered half, beside whatever the raw half loads below. Defaulted per
         // selection: a changed file opens on its diff, a clean one on its content —
-        // see ShowRendered's remark.
+        // see ShowRendered's remark. The explorer always visualizes.
         RenderedContent = BuildRenderedContent(row);
-        ShowRendered = HasRenderedView && row.Node.Status == ChangeKind.Unmodified;
+        ShowRendered = HasRenderedView && (visualizeOnly || row.Node.Status == ChangeKind.Unmodified);
+
+        if (visualizeOnly)
+        {
+            // Never DiffAsync. The explorer is a listing; a git patch would be a review.
+            CanStageHunks = false;
+            DiffLayers = [];
+            _shownCommit = null;
+            _selectedDiffStaged = false;
+            PaneNote = string.Empty;
+            SelectedDiffPath = row.PrimaryFile ?? row.Node.Path;
+
+            if (RenderedContent is SourceRender source)
+            {
+                SelectedDiff = source.PseudoDiff;
+            }
+            else if (row.PrimaryFile is { } visualizePath
+                     && RepositoryPath is { } root
+                     && SourceRender.Load(
+                            Path.Combine(root, visualizePath.Replace('/', Path.DirectorySeparatorChar)),
+                            visualizePath, noChanges: true) is { } fallback
+                     && !fallback.PseudoDiff.Contains('\0'))
+            {
+                SelectedDiff = fallback.PseudoDiff;
+            }
+            else
+            {
+                SelectedDiff = string.Empty;
+            }
+
+            return;
+        }
 
         if (row.PrimaryFile is { } path)
         {
@@ -5666,6 +6253,28 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             _ = ShowPathAsync(path, staged: null);
         }
     }
+
+    /// <summary>Drive the pane from a test the way the explorer panel does.</summary>
+    internal void ShowTreeRow(TreeRow row, bool visualizeOnly) => ShowNode(row, visualizeOnly);
+
+    /// <summary>
+    /// A repository root the pane can read files from, without opening a real clone.
+    /// </summary>
+    /// <param name="git">
+    /// Optional client so a test can prove explorer selection never calls
+    /// <see cref="IGitClient.DiffAsync"/>, while a Project-panel selection still does.
+    /// </param>
+    internal void PreviewRepository(string path, IGitClient? git = null)
+    {
+        RepositoryPath = path;
+        if (git is not null)
+        {
+            _git = git;
+        }
+    }
+
+    /// <summary>The Project-panel path into the pane: prefers a git diff.</summary>
+    internal Task ShowWorkingTreePathAsync(string path) => ShowPathAsync(path, staged: false);
 
     /// <summary>
     /// Load a diff for one path.

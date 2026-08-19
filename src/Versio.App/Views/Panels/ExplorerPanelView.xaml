@@ -1,0 +1,145 @@
+<!--
+    EXPLORER: the open clone as a folder tree.
+
+    PLC projects are grafted in as the same CODESYS-shaped object tree the Project panel
+    already builds. Clicks visualize — they never ask git for a diff.
+
+    WHAT STAYS ON THE INSTANCE RATHER THAN HERE. MainWindow owns where this sits and whether
+    it is showing. The DataContext is inherited, so the bindings read the same ShellViewModel.
+-->
+<UserControl x:Class="Versio.App.Views.Panels.ExplorerPanelView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Border Padding="14,0,12,12">
+        <DockPanel>
+            <TextBox DockPanel.Dock="Top" Margin="0,0,0,6"
+                     AutomationProperties.Name="Find a file or an object"
+                     Style="{StaticResource FlatTextBox}"
+                     Tag="Find a file or an object…"
+                     Text="{Binding Explorer.Search, UpdateSourceTrigger=PropertyChanged, Delay=200}" />
+
+            <TextBlock DockPanel.Dock="Bottom" Text="{Binding Explorer.Summary}"
+                       TextWrapping="Wrap" Margin="0,6,0,0"
+                       FontFamily="{DynamicResource Font.UI}"
+                       FontSize="{DynamicResource Font.Size.Caption}"
+                       Foreground="{DynamicResource Brush.Text.Disabled}" />
+
+            <Grid>
+                <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center"
+                           TextAlignment="Center" TextWrapping="Wrap"
+                           Margin="12"
+                           FontFamily="{DynamicResource Font.UI}"
+                           FontSize="{DynamicResource Font.Size.Body}"
+                           Foreground="{DynamicResource Brush.Text.Disabled}"
+                           Text="Open a repository to browse it">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Explorer.Tree.Count}"
+                                             Value="0">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+                <TreeView ItemsSource="{Binding Explorer.Tree}"
+                          AutomationProperties.Name="Repository contents"
+                          Background="Transparent" BorderThickness="0"
+                          VirtualizingStackPanel.IsVirtualizing="True"
+                          VirtualizingStackPanel.VirtualizationMode="Recycling"
+                          VirtualizingStackPanel.ScrollUnit="Pixel"
+                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                          SelectedItemChanged="OnTreeNodeSelected">
+                    <TreeView.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <VirtualizingStackPanel />
+                        </ItemsPanelTemplate>
+                    </TreeView.ItemsPanel>
+                    <TreeView.ItemContainerStyle>
+                        <Style TargetType="TreeViewItem"
+                               BasedOn="{StaticResource TreeRowItem}">
+                            <Setter Property="IsExpanded"
+                                    Value="{Binding IsExpanded, Mode=TwoWay}" />
+                        </Style>
+                    </TreeView.ItemContainerStyle>
+                    <TreeView.ItemTemplate>
+                        <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                            <Grid Margin="0,1" Background="Transparent">
+                                <Grid.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Reveal in Explorer" Click="OnRevealNode" />
+                                        <MenuItem Header="Copy path" Click="OnCopyNodePath" />
+                                    </ContextMenu>
+                                </Grid.ContextMenu>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="14" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="{Binding Glyph}"
+                                           VerticalAlignment="Center"
+                                           FontFamily="{DynamicResource Font.Mono}"
+                                           FontSize="{DynamicResource Font.Size.Caption}"
+                                           FontWeight="{DynamicResource Font.Weight.Semibold}"
+                                           Foreground="{Binding BrushKey,
+                                               Converter={StaticResource ResourceKey}}" />
+                                <TextBlock Grid.Column="1" Text="{Binding Name}"
+                                           VerticalAlignment="Center"
+                                           FontSize="{DynamicResource Font.Size.Body}"
+                                           Foreground="{DynamicResource Brush.Text.Primary}"
+                                           TextTrimming="CharacterEllipsis"
+                                           ToolTip="{Binding Node.Path}">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="FontFamily"
+                                                    Value="{DynamicResource Font.UI}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsFile}" Value="True">
+                                                    <Setter Property="FontFamily"
+                                                            Value="{DynamicResource Font.Mono}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsProject}" Value="True">
+                                                    <Setter Property="FontWeight"
+                                                            Value="{DynamicResource Font.Weight.Semibold}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                                <TextBlock Grid.Column="2" Text="{Binding Annotation}"
+                                           VerticalAlignment="Center" Margin="8,0,0,0"
+                                           FontFamily="{DynamicResource Font.Mono}"
+                                           FontSize="{DynamicResource Font.Size.Caption}"
+                                           Foreground="{DynamicResource Brush.Text.Disabled}" />
+                                <Border Grid.Column="3" Margin="8,0,4,0"
+                                        Background="{DynamicResource Brush.Surface.Sunken}"
+                                        CornerRadius="8" Padding="6,0"
+                                        VerticalAlignment="Center">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Badge}" Value="">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <TextBlock Text="{Binding Badge}"
+                                               FontFamily="{DynamicResource Font.Mono}"
+                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                               Foreground="{Binding BrushKey,
+                                                   Converter={StaticResource ResourceKey}}" />
+                                </Border>
+                            </Grid>
+                        </HierarchicalDataTemplate>
+                    </TreeView.ItemTemplate>
+                </TreeView>
+            </Grid>
+        </DockPanel>
+    </Border>
+</UserControl>

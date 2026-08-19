@@ -24,16 +24,35 @@ public sealed class TreeExpansion
 {
     private readonly HashSet<string> _opened = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _closed = new(StringComparer.OrdinalIgnoreCase);
+    private readonly bool _expandTopLevelFolders;
+
+    /// <param name="expandTopLevelFolders">
+    /// Explorer default: open the first level of the clone so the listing is a listing, not
+    /// a single closed chevron named <c>src</c>. The Project panel leaves this off — its
+    /// roots are projects, which already open themselves.
+    /// </param>
+    public TreeExpansion(bool expandTopLevelFolders = false) =>
+        _expandTopLevelFolders = expandTopLevelFolders;
 
     /// <summary>Whether a freshly built row should start open.</summary>
-    public bool ShouldExpand(ProjectTreeNode node)
+    public bool ShouldExpand(ProjectTreeNode node, int depth = 0)
     {
         if (_closed.Contains(node.Path))
         {
             return false;
         }
 
-        return _opened.Contains(node.Path) || DefaultFor(node);
+        if (_opened.Contains(node.Path))
+        {
+            return true;
+        }
+
+        if (_expandTopLevelFolders && depth == 0 && node.Children.Count > 0)
+        {
+            return true;
+        }
+
+        return DefaultFor(node);
     }
 
     /// <summary>Remember what the user just did to a row.</summary>

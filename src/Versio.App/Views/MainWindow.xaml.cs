@@ -69,6 +69,44 @@ public partial class MainWindow : Window
         SyncThemeRadios();
 
         InputBindings.Add(new KeyBinding(shell.RefreshCommand, Key.F5, ModifierKeys.None));
+
+        // CTRL+1/2/3 FOR THE RAIL.
+        //
+        // Switching panels is the most frequent thing anybody does in this window and cost a
+        // mouse trip every time. On the WINDOW rather than the rail, because the point is to
+        // reach it from wherever you are - reading a diff, typing a commit message, filtering
+        // the log - and a binding scoped to the rail would only work once the rail had focus,
+        // which is the moment you no longer need a shortcut.
+        //
+        // Through the rail buttons rather than by setting ActivePanel, because OnRailChanged
+        // is what actually shows the panel and tells the history it is being looked at. A
+        // shortcut that set the property directly would light the wrong button and leave the
+        // panel where it was — and it would be the second thing deciding which panel shows,
+        // which is the defect this file's own comments warn about twice.
+        Bind(Key.D1, "RailProject");
+        Bind(Key.D2, "RailGit");
+        Bind(Key.D3, "RailHistory");
+        Bind(Key.D4, "RailExplorer");
+
+        // NumPad as well as the number row. A full-size keyboard on a workshop desk is exactly
+        // where this application runs, and Ctrl+NumPad1 doing nothing is the kind of small
+        // wrongness nobody reports.
+        Bind(Key.NumPad1, "RailProject");
+        Bind(Key.NumPad2, "RailGit");
+        Bind(Key.NumPad3, "RailHistory");
+        Bind(Key.NumPad4, "RailExplorer");
+
+        void Bind(Key key, string rail) =>
+            InputBindings.Add(new KeyBinding(
+                new RelayCommand(() =>
+                {
+                    if (FindName(rail) is RadioButton button)
+                    {
+                        button.IsChecked = true;
+                    }
+                }),
+                key,
+                ModifierKeys.Control));
     }
 
     /// <summary>
@@ -341,11 +379,15 @@ public partial class MainWindow : Window
         _shell.ActivePanel = panel;
 
         ProjectPanel.Visibility = Show(panel == ShellPanel.Project);
+        ExplorerPanel.Visibility = Show(panel == ShellPanel.Explorer);
         GitPanel.Visibility = Show(panel == ShellPanel.Git);
         HistoryPanel.Visibility = Show(panel == ShellPanel.History);
 
-        // The count badge is about the working tree, which is what the project panel shows.
-        ChangeCountBadge.Visibility = Show(panel == ShellPanel.Project);
+        // The change count is no longer this method's business. It was a pill in the panel
+        // title shown here on the Project panel alone, which meant the one number saying the
+        // working tree had anything in it was hidden from the two panels where you cannot
+        // otherwise see it. It is on the git rail now, bound to ChangeBadge and visible from
+        // every panel, so nothing about it depends on which one is showing.
 
         static Visibility Show(bool visible) =>
             visible ? Visibility.Visible : Visibility.Collapsed;

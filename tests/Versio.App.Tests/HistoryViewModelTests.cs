@@ -56,9 +56,21 @@ internal sealed class CountingGitClient : IGitClient
         string range, CancellationToken ct) =>
         throw new NotSupportedException();
 
+    /// <summary>
+    /// When set, <see cref="RecentCommitsAsync"/> throws once skip reaches this value.
+    /// The first page is skip 0, so this is how a test reaches the Load-more failure
+    /// without also failing the first read.
+    /// </summary>
+    public int? ThrowAtSkip { get; set; }
+
     public Task<IReadOnlyList<CommitEntry>> RecentCommitsAsync(
         int count, int skip, CancellationToken ct)
     {
+        if (ThrowAtSkip is { } at && skip >= at)
+        {
+            throw new InvalidOperationException("git log failed");
+        }
+
         LogCalls.Add((count, skip));
 
         IReadOnlyList<CommitEntry> page =
@@ -114,6 +126,12 @@ internal sealed class CountingGitClient : IGitClient
         throw new NotSupportedException();
 
     public Task<GitResult> RebaseOntoUpstreamAsync(IProgress<GitProgress>? p, CancellationToken ct) =>
+        throw new NotSupportedException();
+
+    public Task<GitResult> MergeBranchAsync(string branch, IProgress<GitProgress>? p, CancellationToken ct) =>
+        throw new NotSupportedException();
+
+    public Task<IReadOnlyList<string>?> IncomingPathsAsync(string branch, CancellationToken ct) =>
         throw new NotSupportedException();
 
     public Task<GitResult> AbortMergeOrRebaseAsync(CancellationToken ct) =>
@@ -214,9 +232,31 @@ internal sealed class CountingGitClient : IGitClient
     public Task<GitResult> PushAsync(IProgress<GitProgress>? progress, CancellationToken ct) =>
         throw new NotSupportedException();
 
+    public IReadOnlyList<string> WorkingTree { get; set; } = [];
+
+    public Task<IReadOnlyList<string>> ListWorkingTreeAsync(CancellationToken ct) =>
+        Task.FromResult(WorkingTree);
+
+    /// <summary>How many working-tree diffs were asked for.</summary>
+    public int WorkingTreeDiffCalls { get; private set; }
+
+    /// <summary>When set, <see cref="DiffAsync"/> throws this instead of returning.</summary>
+    public Exception? DiffError { get; set; } = new NotSupportedException();
+
+    /// <summary>Returned when <see cref="DiffError"/> is null.</summary>
+    public string DiffText { get; set; } = string.Empty;
+
     public Task<string> DiffAsync(string path, bool staged, CancellationToken ct,
-                                  int contextLines = 3) =>
-        throw new NotSupportedException();
+                                  int contextLines = 3)
+    {
+        WorkingTreeDiffCalls++;
+        if (DiffError is not null)
+        {
+            throw DiffError;
+        }
+
+        return Task.FromResult(DiffText);
+    }
 
     public Task<IReadOnlyDictionary<string, string>> DetectRenamesAsync(CancellationToken ct) =>
         throw new NotSupportedException();
@@ -356,6 +396,25 @@ public class HistoryViewModelTests
         Assert.Equal(2, git.LogCalls.Count);
         Assert.Equal(HistoryViewModel.PageSize, git.LogCalls[1].Skip);
         Assert.Equal(HistoryViewModel.PageSize * 2, history.Commits.Count);
+    }
+
+    /// <summary>
+    /// A failed second page must surface. AsyncCommand swallows the exception unless
+    /// onError is passed, so a dead "Load older commits" used to look like a no-op.
+    /// </summary>
+    [Fact]
+    public async Task A_failed_load_more_is_reported_rather_than_swallowed()
+    {
+        var seen = new List<Exception>();
+        var git = new CountingGitClient { ThrowAtSkip = HistoryViewModel.PageSize };
+        var history = new HistoryViewModel(new VersioLogger(new SystemClock()), seen.Add);
+        history.Attach(git);
+        history.IsVisible = true;
+
+        await Eventually.Press(history.LoadMoreCommand, "load more");
+
+        var ex = Assert.Single(seen);
+        Assert.Equal("git log failed", ex.Message);
     }
 
     /// <summary>The end of the branch is how the panel knows to stop offering another page.</summary>

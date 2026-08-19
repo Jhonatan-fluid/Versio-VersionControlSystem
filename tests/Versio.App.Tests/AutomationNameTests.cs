@@ -157,7 +157,7 @@ public sealed class AutomationNameTests : IDisposable
                 .Select(NameOf)
                 .ToList();
 
-            Assert.Equal(["Project", "Git", "History"], names);
+            Assert.Equal(["Project", "Explorer", "Git", "History"], names);
 
             foreach (var button in Descendants(rail).OfType<RadioButton>())
             {

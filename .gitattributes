@@ -27,10 +27,10 @@
 # A .project is a binary compound document. Marking it -diff -merge stops git
 # attempting a text diff or an automatic merge on something it cannot reason
 # about; the readable diff lives in the exported tree beside it.
-*.project        binary -diff -merge filter=lfs diff=lfs merge=lfs
-*.library        binary -diff -merge filter=lfs diff=lfs merge=lfs
-*.projectarchive binary -diff -merge filter=lfs diff=lfs merge=lfs
-*.compiled-library binary -diff -merge filter=lfs diff=lfs merge=lfs
+*.project        binary -diff -merge filter=lfs diff=lfs
+*.library        binary -diff -merge filter=lfs diff=lfs
+*.projectarchive binary -diff -merge filter=lfs diff=lfs
+*.compiled-library binary -diff -merge filter=lfs diff=lfs
 
 # ---------------------------------------------------------------------------
 # Vendored dependencies (see docs/PLAN.md section 13.3)

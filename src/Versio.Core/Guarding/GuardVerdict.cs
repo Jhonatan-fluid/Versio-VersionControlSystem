@@ -34,20 +34,30 @@ public enum GuardIntent
     CloseApp,
 
     /// <summary>
-    /// Pull from the upstream.
+    /// Bring somebody else's commits into this working tree.
     /// </summary>
     /// <remarks>
-    /// <b>Implemented and deliberately not yet wired.</b> A pull rewrites the working tree, so
-    /// this is one of the two intents <c>RewritesWorkingTree</c> answers true for, and its
-    /// dirty-tree branch is offered stash-without-discard for reasons argued in
-    /// <c>ChoicesForDirtyTree</c>. All three of its verdicts — unmerged paths, a held direction
-    /// lock, a dirty tree — resolve to the auto-stash, which is not built yet, so wiring it now
-    /// would offer a button that cannot do what it says.
+    /// <b>Wired, by three callers.</b> <c>PullAsync</c> in <c>GitRemoteViewModel</c>, the
+    /// divergence reconcile, and the merge verb all pass this intent, because all three rewrite
+    /// the project and its mirror together — the scenario <c>SAFEGUARDS</c> §5.A calls able to
+    /// corrupt a project through no user error. It is one of the two intents
+    /// <c>RewritesWorkingTree</c> answers true for, and its dirty-tree branch is offered
+    /// stash-without-discard for reasons argued in <c>ChoicesForDirtyTree</c>.
     /// <para>
-    /// Kept rather than deleted for the same reason the stash client operations are kept while
-    /// withdrawn from the UI: the behaviour is designed and tested, and the thing missing is a
-    /// caller. Meanwhile <c>PullAsync</c> is gated on <c>Ready</c> like every other git command,
-    /// so it cannot run while anything else is.
+    /// <b>Why it waited, as history.</b> It shipped implemented, tested and deliberately
+    /// unreachable: all three of its verdicts — unmerged paths, a held direction lock, a dirty
+    /// tree — resolve to the auto-stash, and until that existed, wiring it would have offered a
+    /// button that could not do what it said. The auto-stash landed and the callers followed.
+    /// This paragraph is the record of that, not a description of today.
+    /// </para>
+    /// <para>
+    /// <b>Known gap: <see cref="GuardNarrative"/> renders this intent as the word "pull"</b>,
+    /// which was the whole of it when the enum was written and is now one caller of three. A
+    /// guarded merge therefore asks "Continue and pull?" and logs "asking before pull". The
+    /// guard's decision is right in every case — only the verb in the sentence is wrong — so it
+    /// is recorded here rather than fixed in passing: closing it means a second intent, and
+    /// <c>RewritesWorkingTree</c> has to learn it in the same change or the guard grows a silent
+    /// hole.
     /// </para>
     /// </remarks>
     Pull,

@@ -66,7 +66,7 @@ public static class ExportCoverage
     /// the silent drift <c>CODESYS.md</c> §9 already counts four of.
     /// </remarks>
     /// <seealso cref="ProjectManifest.Schema"/>
-    public const int CurrentSchema = 9;
+    public const int CurrentSchema = 10;
 
     /// <summary>
     /// From this schema, a recorded path <b>is</b> the chain of names to the object.

@@ -250,10 +250,14 @@ public sealed class HistoryViewModel : ObservableObject
     private bool _isLoading;
     private string _summary = string.Empty;
 
-    public HistoryViewModel(VersioLogger logger)
+    public HistoryViewModel(VersioLogger logger, Action<Exception>? onError = null)
     {
         _logger = logger;
-        LoadMoreCommand = new AsyncCommand(LoadMoreAsync, () => HasMore && !IsLoading);
+        // Without onError an exception from git log is swallowed by AsyncCommand.Execute —
+        // the catch only calls onError?.Invoke — so "Load older commits" failing looks like
+        // a dead button. The shell passes ReportError; tests that do not care about the
+        // failure path leave it null.
+        LoadMoreCommand = new AsyncCommand(LoadMoreAsync, () => HasMore && !IsLoading, onError);
     }
 
     /// <summary>The commits currently loaded, newest first.</summary>

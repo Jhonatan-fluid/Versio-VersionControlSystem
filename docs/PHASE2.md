@@ -13,8 +13,8 @@ plan-driven import that creates, updates, deletes, renames and moves objects, re
 everywhere it cannot act, and never applies anything a person did not confirm. Thirteen
 numbered gaps (G1–G13) were closed, guarded or decided; the feature checklist ran every import
 behaviour against a real project; and the last two reachable rows closed on 2026-08-17. The
-suite is seven projects, 2,319 tests, split by need — the half-hour CODESYS gate holds only the
-53 tests that actually launch the toolchain.
+suite is seven projects, 2,597 tests, split by need — the half-hour CODESYS gate holds only the
+54 tests that actually launch the toolchain.
 
 **Documents that stay live** (not archived, because they are logs and references, not plans):
 
@@ -25,6 +25,29 @@ suite is seven projects, 2,319 tests, split by need — the half-hour CODESYS ga
 | [`SAFEGUARDS.md`](SAFEGUARDS.md) | What Versio refuses, asks about or waits for |
 | [`vendors/codesys/DRIVING.md`](vendors/codesys/DRIVING.md) | How CODESYS is driven — API traps, forms, events, manifest schema |
 | [`vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md) | How TIA Portal is driven — Openness, occupancy, identity. §12 is evidence; **the remaining order is item 7 in this file** |
+| [`HANDOFF-UxPlan.md`](HANDOFF-UxPlan.md) | What `UxPlan` built and still owes. Merged into `Siemens` on 2026-08-19; the real-CODESYS gate and the eyeball pass are still owed |
+| [`UX-PLAN.md`](UX-PLAN.md) | **A plan, and the one live one** — thirteen UX findings over the running shell, ranked, each with its evidence. Opened 2026-08-18. Item 6's human eyeball pass is still owed and this is not it |
+
+**`UX-PLAN.md` is where the shell's remaining UX work lives, and it is not copied here** — one
+claim in one place, which is the defect the Phase 1 documents caught in themselves five separate
+times.
+
+**Repo explorer landed 2026-08-18** and is on this branch: a fourth rail panel lists the open clone as a
+folder tree, grafting each tracked PLC project through the same `BuildProjectNode` the Project
+panel already uses. Clicks visualize — they never ask git for a diff. The Project panel remains
+the review surface. Not a second item in this queue; see `UX-PLAN.md`.
+
+**That plan's own warning has since been answered and is kept here only as history.** It said a
+merge resolves the `binary -diff -merge` `.project` to one side while the mirror beside it gets a
+real three-way merge, that `AdoptExternalStateAsync` then re-baselines both as though a commit
+had vetted them, and that the merge verb must not be built on top of it unmeasured. **Probe P-M1
+ran on 2026-08-18 and confirmed it** — 41 mirror files, two carrying content the kept project did
+not have — and `LOCK-1` closed it the same day: a merge now puts the mirror in charge and the
+export gate is refused before the toolchain runs. **P-M2 is still open**, and needs a real export.
+
+`UxPlan` was merged into `Siemens` on 2026-08-19. The three items in
+[`HANDOFF-UxPlan.md`](HANDOFF-UxPlan.md) still stand: the real-CODESYS gate, a human eyeball of
+the rail/overflow/merge dialog, and the decision on UX-12.
 
 ---
 
@@ -288,15 +311,17 @@ the panel showing `FB_Alarm` with four loose members under it.
   `FB_Alarm` eleventh of twelve where the IDE shows it second. Folders-first is what both
   screenshots agreed on and is what shipped. If this is ever reopened, the within-group rule
   still has not been measured, and two cropped screenshots are not enough to derive it.
-- **Still not recorded: which CODESYS version the project was exported by** — and the answer
-  to "what would it take" is now known rather than guessed. **It is already in the export.**
-  Inside CODESYS, `sys.version` returns
-  `CODESYS.exe CODESYS V3.5 SP22 Patch 2, ScriptEngine.plugin 4.2.0.0`, and
-  `versio_export.py` already emits it in its `start` event on every run — it simply never
-  reaches the manifest. So this is one field written, one field read on the card, and a
-  schema bump because an absent field must not read as "unknown version" on an old mirror.
-  No probe needed. Note it is the version that *performed the export*, not necessarily the
-  one that last saved the project; the two are the same whenever Versio did the export.
+- ~~**Still not recorded: which CODESYS version the project was exported by**~~ — **done,
+  2026-08-18, schema 10.** It was already in the export and being thrown away: inside CODESYS
+  `sys.version` returns `CODESYS.exe CODESYS V3.5 SP22 Patch 2, ScriptEngine.plugin 4.2.0.0`
+  — not the CPython string it is anywhere else — and `versio_export.py` had emitted it in its
+  `start` event since the first export, where it reached the log and stopped. It is now
+  `toolchainVersion` in the manifest and an **Exported by** row on the project card.
+  Recorded verbatim: parsing `3.5.22.20` out of it would discard the plug-in version and the
+  patch wording, and answer the question only until the wording changes. Absent on any mirror
+  below schema 10, where the row is simply not drawn — "not recorded" is what empty means,
+  and a row reading "unknown" would claim more. It is the toolchain that *performed the
+  export*, which is the one that last saved the project whenever Versio did the exporting.
 - ~~**A graphical member inside an in-POU folder imports into the POU root**~~ — **parked by
   the owner, 2026-08-18: "I don't care about graphical members, won't be working with those
   for now, they are just part of a sample project".** The textual case — the normal one — is
