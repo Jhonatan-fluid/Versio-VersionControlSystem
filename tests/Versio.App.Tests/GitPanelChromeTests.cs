@@ -573,6 +573,68 @@ public sealed class GitPanelChromeTests : IDisposable
     }
 
     /// <summary>
+    /// The rare branch verbs are behind one overflow, and both are in it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The container is most of the value, more than either entry.</b> <c>Delete
+    /// branches…</c> was a permanent top-level control in a 380 px column for something
+    /// reached a few times a month, and merging makes two; every future rare branch verb would
+    /// have made another. This asserts the shape rather than the contents, so adding a third
+    /// entry does not need a new test and removing the overflow does.
+    /// </para>
+    /// <para>
+    /// <b>And it asserts what is NOT there.</b> Neither verb may sit at the card's top level
+    /// again — that is the regression this change exists to prevent, and a test that only
+    /// checked the menu's contents would pass with both a menu and the old buttons present.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void The_rare_branch_verbs_live_behind_one_overflow()
+    {
+        StaHarness.Run(() =>
+        {
+            var (window, shell) = Build();
+            var (panel, _) = ShowGitPanel(window);
+
+            var toggle = Assert.IsType<ToggleButton>(panel.FindName("BranchMenuButton"));
+
+            // Not "More…": a caption has to say what is behind it, or an overflow hides its
+            // own contents from the one person trying to find them.
+            Assert.Contains("Branch", toggle.Content?.ToString() ?? string.Empty);
+
+            // NEITHER VERB IS ON THE CARD. A Popup lives in its own visual tree, so a walk
+            // from the panel cannot reach its contents at all — which is the assertion, not a
+            // limitation of the walk. This is what fails if somebody puts either button back
+            // at the top level beside the overflow.
+            var onTheCard = AllOf<Button>(panel)
+                .Select(b => b.Content?.ToString() ?? string.Empty)
+                .ToList();
+
+            Assert.DoesNotContain(onTheCard, c => c.StartsWith("Merge a branch", StringComparison.Ordinal));
+            Assert.DoesNotContain("Delete branches…", onTheCard);
+            Assert.False(toggle.IsChecked, "the overflow starts open");
+
+            // And both are inside it, reached through the popup's own child.
+            var popup = Assert.IsType<Popup>(panel.FindName("BranchMenuPopup"));
+            var inside = AllOf<Button>(popup.Child)
+                .Select(b => b.Content?.ToString() ?? string.Empty)
+                .ToList();
+
+            Assert.Contains(inside, c => c.StartsWith("Merge a branch", StringComparison.Ordinal));
+            Assert.Contains("Delete branches…", inside);
+
+            // NO REPOSITORY OPEN, SO NO DESTINATION TO NAME. The caption names the branch a
+            // merge would land on, and with nothing open there is no honest answer — so it
+            // says "Merge a branch…" rather than "Merge a branch into —…". That the named
+            // form appears once a repository IS open is asserted in MergeBranchFlowTests,
+            // where there is a real branch to name.
+            Assert.Equal("—", shell.BranchName);
+            Assert.Contains("Merge a branch…", inside);
+        });
+    }
+
+    /// <summary>
     /// Each staging list's rows carry the menu that list's verbs belong to.
     /// </summary>
     /// <remarks>

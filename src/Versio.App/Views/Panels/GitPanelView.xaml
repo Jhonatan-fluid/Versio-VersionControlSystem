@@ -545,14 +545,83 @@
 
                              Right-aligned and quiet: reached deliberately, not
                              stumbled into. -->
-                        <Button Content="Delete branches…" Padding="8,2"
-                                Margin="0,6,0,0"
-                                HorizontalAlignment="Right"
-                                Style="{StaticResource GhostButton}"
-                                Height="{DynamicResource Size.Control.Compact}"
-                                ToolTipService.ShowOnDisabled="True"
-                                ToolTip="Remove branches from this machine, and optionally from the remote"
-                                Command="{Binding DeleteBranchesCommand}" />
+                        <!-- ONE OVERFLOW, IN THE SLOT THE DELETE BUTTON HAD.
+
+                             `Delete branches…` was a permanent top-level control in a 380 px
+                             column for something reached a few times a month, and it was the
+                             only one of its kind. Merging a branch makes two. Every future
+                             infrequent branch verb - rename, set upstream, copy the name,
+                             prune the remotes - would make another, and the card degrades one
+                             row at a time. The stashes section one border up already won this
+                             argument and answered it with zero permanent controls.
+
+                             NOT LABELLED "More…". This codebase's rule is that a caption says
+                             what will happen; "More" says nothing and makes the contents
+                             unguessable, which is the one thing an overflow must not do.
+
+                             Same slot, same right alignment, same quiet ghost styling, so the
+                             card's geometry does not move - which the panel's own geometry
+                             test asserts.
+
+                             Create-a-branch is deliberately NOT in here. It stays in the top
+                             bar beside the branch dropdown, because it is frequent, cheap and
+                             reversible, and grouping it with a rare destructive act by family
+                             would give both the wrong weight. Frequency decides prominence;
+                             family decides grouping. -->
+                        <ToggleButton x:Name="BranchMenuButton" Content="Branch ⌄"
+                                      Padding="8,2" Margin="0,6,0,0"
+                                      HorizontalAlignment="Right"
+                                      Style="{StaticResource GhostButton}"
+                                      Height="{DynamicResource Size.Control.Compact}"
+                                      ToolTipService.ShowOnDisabled="True"
+                                      ToolTip="Merge a branch in, or delete branches" />
+
+                        <Popup x:Name="BranchMenuPopup"
+                               PlacementTarget="{Binding ElementName=BranchMenuButton}"
+                               Placement="Bottom" HorizontalOffset="-120" VerticalOffset="4"
+                               StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade"
+                               IsOpen="{Binding IsChecked, ElementName=BranchMenuButton,
+                                   Mode=TwoWay}">
+                            <!-- A Popup rather than a ContextMenu: the log panel's category
+                                 filter already does exactly this, so the shape and its theming
+                                 are precedented. A popup carries its own HWND and inherits
+                                 none of the window's palette, which is why the Border paints
+                                 itself from the tokens rather than relying on anything. -->
+                            <Border Background="{DynamicResource Brush.Surface.Raised}"
+                                    BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                                    BorderThickness="1" Padding="4" Width="220"
+                                    CornerRadius="{DynamicResource Radius.Card}">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="18" ShadowDepth="4"
+                                                      Opacity="0.24" Direction="270" />
+                                </Border.Effect>
+                                <StackPanel>
+                                    <Button Content="{Binding MergeBranchLabel}"
+                                            HorizontalContentAlignment="Left"
+                                            Padding="8,4" Margin="0,0,0,2"
+                                            Style="{StaticResource GhostButton}"
+                                            ToolTipService.ShowOnDisabled="True"
+                                            ToolTip="Bring another branch's commits into this one"
+                                            Command="{Binding MergeBranchCommand}"
+                                            Click="OnBranchMenuItem" />
+
+                                    <Border Height="1" Margin="4,3"
+                                            Background="{DynamicResource Brush.Border.Subtle}" />
+
+                                    <!-- Destructive last and separated, the same order the
+                                         delete dialog itself uses for its force checkbox. -->
+                                    <Button Content="Delete branches…"
+                                            HorizontalContentAlignment="Left"
+                                            Padding="8,4"
+                                            Style="{StaticResource GhostButton}"
+                                            Foreground="{DynamicResource Brush.Status.Deleted}"
+                                            ToolTipService.ShowOnDisabled="True"
+                                            ToolTip="Remove branches from this machine, and optionally from the remote"
+                                            Command="{Binding DeleteBranchesCommand}"
+                                            Click="OnBranchMenuItem" />
+                                </StackPanel>
+                            </Border>
+                        </Popup>
 
                         <!-- WHERE THIS BRANCH STANDS, IN WORDS.
 

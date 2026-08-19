@@ -129,6 +129,18 @@ public partial class GitPanelView : UserControl
     }
 
     /// <summary>
+    /// Close the branch overflow once one of its entries has been pressed.
+    /// </summary>
+    /// <remarks>
+    /// The command runs on its own; this is only about the popup, which is StaysOpen="False"
+    /// and so closes on a click OUTSIDE itself but not on one within. Left alone it would hang
+    /// over the dialog its own entry just opened - the settings popup carries the same note,
+    /// having learned it the same way.
+    /// </remarks>
+    private void OnBranchMenuItem(object sender, RoutedEventArgs e) =>
+        BranchMenuButton.IsChecked = false;
+
+    /// <summary>
     /// The row a menu entry or a double-click belongs to.
     /// </summary>
     /// <remarks>

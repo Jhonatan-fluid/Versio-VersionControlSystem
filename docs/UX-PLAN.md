@@ -149,9 +149,9 @@ it by an import, rather than both being adopted as though a commit had vetted th
 | | Finding | Cost | Why it ranks there |
 |---|---|---|---|
 | **P-M1/2** | **Probe first: does a merge commit a project and a mirror that disagree?** | two probes, no new code | Above the queue because it is a correctness question in **shipped** code, and UX-1 must not be built on an unmeasured answer |
-| **UX-1** | **Merging a branch into the current one is not implemented at all** | medium | The one missing *verb*. And the one place Versio can beat a terminal outright |
+| ~~**UX-1**~~ | ~~Merging a branch into the current one is not implemented at all~~ — **done 2026-08-18, with a measured refusal in it** | medium | The one missing *verb*. And the one place Versio can beat a terminal outright |
 | ~~**UX-2**~~ | ~~The rail carries no counts~~ — **done 2026-08-18**, with UX-11 folded in | small | Cheapest large win; the user asked for it by name |
-| **UX-3** | The rare branch actions have no container, so each one lands as furniture | small | The fix is a shape, not a move — and it is where UX-1 lives |
+| ~~**UX-3**~~ | ~~The rare branch actions have no container~~ — **done 2026-08-18**, with UX-1 | small | The fix is a shape, not a move — and it is where UX-1 lives |
 | ~~**UX-4**~~ | ~~The two list headers say no count, and run into each other once there is one to say~~ — **done 2026-08-18** | small | A live layout defect, **and a test named for it that cannot reach the failing state** |
 | ~~**UX-5**~~ | ~~The git panel's lists have no context menu and no double-click~~ — **done 2026-08-18** | small | The project tree got one this session; the panel about those same files did not |
 | **UX-6** | Nothing in the git panel or the history can be searched | small | The project panel has a find box. The list with four hundred rows does not |
@@ -164,7 +164,31 @@ it by an import, rather than both being adopted as though a commit had vetted th
 
 ---
 
-## UX-1 · Merging a branch into the current one is not implemented at all
+## ~~UX-1 · Merging a branch into the current one is not implemented at all~~ — **done, 2026-08-18**
+
+> **What actually shipped, and the one place it is smaller than this section asks for.**
+>
+> The verb exists: `MergeBranchAsync` on `IGitClient`, a picker modelled on the delete dialog,
+> the guard reused, and the whole thing behind UX-3's overflow. **What it does not do is finish
+> a merge that reaches a tracked project — it refuses it, by name, with the reason.**
+>
+> That refusal is the direct consequence of P-M1 below. Both of the things Versio could do next
+> are wrong: adopting records a project and mirror that disagree as synced, and not adopting
+> lets the commit gate export over the merged mirror and delete the other branch's work. The
+> right answer is to import the merged mirror, and that needs the direction lock pointed at
+> import so the export gate cannot win the race first — **a change to the lock model, which is
+> the most dangerous code in this repository and deserves its own plan rather than the tail of
+> a UI change.**
+>
+> So the shipped feature is: every merge that touches nothing tracked — documentation, tests,
+> configuration, a second application — goes through as ordinary git; a merge that would reach
+> a project is refused with a sentence naming the project and saying what to do instead. That
+> is a worse feature and not a worse outcome, and it is stated as a stopping point rather than
+> left to be discovered.
+>
+> **Still to do, and now the top of the queue:** the import-after-merge path. `MergePreflight`
+> is where the refusal is written down, and its remarks carry the whole argument for whoever
+> picks it up.
 
 **Today.** `IGitClient` has `MergeUpstreamAsync` and `RebaseOntoUpstreamAsync`
 ([`IGitClient.cs:212`](../src/Versio.Core/Abstractions/IGitClient.cs), `:220`), and both are

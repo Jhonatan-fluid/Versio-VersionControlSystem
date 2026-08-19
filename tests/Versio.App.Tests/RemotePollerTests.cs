@@ -96,6 +96,12 @@ public sealed class RemotePollerTests
         public Task<GitResult> RebaseOntoUpstreamAsync(IProgress<GitProgress>? p, CancellationToken ct) =>
             throw new NotSupportedException();
 
+        public Task<GitResult> MergeBranchAsync(string branch, IProgress<GitProgress>? p, CancellationToken ct) =>
+            throw new NotSupportedException();
+
+        public Task<IReadOnlyList<string>> IncomingPathsAsync(string branch, CancellationToken ct) =>
+            throw new NotSupportedException();
+
         public Task<GitResult> AbortMergeOrRebaseAsync(CancellationToken ct) =>
             throw new NotSupportedException();
 

@@ -219,6 +219,32 @@ public interface IGitClient
     /// </remarks>
     Task<GitResult> RebaseOntoUpstreamAsync(IProgress<GitProgress>? progress, CancellationToken ct);
 
+    /// <summary>Merge a named branch into the current one, producing conflicts rather than refusing.</summary>
+    /// <remarks>
+    /// <para>
+    /// Distinct from <see cref="MergeUpstreamAsync"/>, which can only ever bring in this
+    /// branch's own upstream and is offered only out of a diverged state. This is the ordinary
+    /// "bring that work in here" that every git client has and Versio did not.
+    /// </para>
+    /// <para>
+    /// <b>No <c>--no-ff</c></b>, for the reason <see cref="MergeUpstreamAsync"/> already gives:
+    /// where the merge can fast-forward there is nothing to be gained by manufacturing a merge
+    /// commit, and on an exported tree a linear history is easier to read back.
+    /// </para>
+    /// </remarks>
+    Task<GitResult> MergeBranchAsync(
+        string branch, IProgress<GitProgress>? progress, CancellationToken ct);
+
+    /// <summary>
+    /// The paths that differ between this branch and another, from their merge base.
+    /// </summary>
+    /// <remarks>
+    /// <b>Three dots, and that is the whole point.</b> Two would list this branch's own commits
+    /// as well, so a merge preflight would refuse on work that is already here. Three asks the
+    /// question actually being posed: what would this merge <i>bring</i>?
+    /// </remarks>
+    Task<IReadOnlyList<string>> IncomingPathsAsync(string branch, CancellationToken ct);
+
     /// <summary>
     /// Undo a merge or rebase that is part-way through, back to where it started.
     /// </summary>

@@ -1164,6 +1164,35 @@ public sealed class SyncViewModel : ObservableObject
     /// a change nobody made.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// Every tracked project as the pair of repository-relative roots a merge preflight needs.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The export path comes from the binding, never from the project path.</b> Where a
+    /// mirror lives is the vendor format's decision —
+    /// <c>IPlcProjectFormat.ConventionalExportPath</c> — and deriving it here by trimming an
+    /// extension would be exactly the vendor knowledge the seam exists to keep out of the
+    /// shell. It happens to be "the project path without its extension" for CODESYS today, and
+    /// that is not a rule this file is entitled to know.
+    /// </para>
+    /// <para>
+    /// Enabled bindings only: a disabled one is not being kept in step with anything, so a
+    /// merge that touches it is ordinary git.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<TrackedRoot> TrackedRoots() =>
+        _config is null
+            ? []
+            : [.. _config.Bindings
+                .Where(b => b.Enabled)
+                .Select(b => new TrackedRoot
+                {
+                    Name = System.IO.Path.GetFileNameWithoutExtension(b.ProjectPath),
+                    ProjectPath = b.ProjectPath.Replace('\\', '/'),
+                    MirrorPath = b.ExportPath.Replace('\\', '/').TrimEnd('/'),
+                })];
+
     public async Task WhileGitRewritesTheTreeAsync(string what, Func<Task> operation)
     {
         if (_orchestrator is null)

@@ -1369,7 +1369,16 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     public string BranchName
     {
         get => _branchName;
-        private set => SetProperty(ref _branchName, value);
+        private set
+        {
+            if (SetProperty(ref _branchName, value))
+            {
+                // The overflow's caption names this branch as the merge destination, so it
+                // has to move with it. A computed property nothing raises would sit on the
+                // previous branch's name for the whole session after a checkout.
+                OnPropertyChanged(nameof(MergeBranchLabel));
+            }
+        }
     }
 
     /// <summary>
@@ -2346,6 +2355,21 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// <summary>Open the delete-branches dialog.</summary>
     public AsyncCommand DeleteBranchesCommand { get; private set; } = null!;
 
+    /// <summary>Open the merge-a-branch dialog.</summary>
+    public AsyncCommand MergeBranchCommand { get; private set; } = null!;
+
+    /// <summary>"Merge a branch into main…", naming where the work would land.</summary>
+    /// <remarks>
+    /// The destination is in the caption because it is the half somebody gets wrong: the
+    /// dialog asks which branch to merge, and which branch it merges INTO is whichever one
+    /// happens to be checked out. Naming it here means the answer is on screen before the
+    /// dialog opens rather than after.
+    /// </remarks>
+    public string MergeBranchLabel =>
+        BranchName is { Length: > 0 } and not "—"
+            ? $"Merge a branch into {BranchName}…"
+            : "Merge a branch…";
+
 
     /// <summary>Button labels that say what will happen, not what the button is called.</summary>
     public string StageLabel =>
@@ -2795,6 +2819,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             DeleteBranchesAsync,
             () => Ready && Branches.Count > 1 && DefaultBranch.IsKnown, ReportError);
 
+        // No DefaultBranch requirement, unlike deletion beside it: deleting needs a trunk to
+        // ask "merged into what" and to fall back to, and merging asks that of the branch you
+        // are on. More than one branch is the only precondition.
+        MergeBranchCommand = new AsyncCommand(
+            MergeBranchAsync,
+            () => Ready && Branches.Count > 1, ReportError);
+
         ResolveCommand = new AsyncCommand<bool>(
             ResolveSelectedAsync,
             _ => Ready && SelectedConflict is not null, ReportError);
@@ -2952,6 +2983,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // IsMidMerge, called this method, and left Abandon merge exactly as disabled as it
         // had been - until something unrelated happened to the credentials.
         DeleteBranchesCommand.RaiseCanExecuteChanged();
+        MergeBranchCommand.RaiseCanExecuteChanged();
         ResolveCommand.RaiseCanExecuteChanged();
         AbortMergeCommand.RaiseCanExecuteChanged();
         ReconcileCommand.RaiseCanExecuteChanged();
@@ -3323,6 +3355,127 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// The dialog decides <i>what</i>; every rule about whether it may happen lives here, where
     /// the repository is.
     /// </remarks>
+    /// <summary>
+    /// Bring another branch's work into this one.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The verb Versio did not have.</b> <c>ReconcileCommand</c> can only ever merge this
+    /// branch's own upstream, and only out of a diverged state — so finishing a feature branch
+    /// and bringing it into main meant a terminal, which is the thing this panel exists to
+    /// remove.
+    /// </para>
+    /// <para>
+    /// <b>It refuses when the merge would reach a tracked project, and that refusal is
+    /// measured.</b> Probe P-M1 committed a project holding one branch's work beside a mirror
+    /// holding both — 41 mirror files, two of them carrying content the kept project does not
+    /// have, one of those a POU method body. Neither thing Versio could do next is right:
+    /// adopting the result records the disagreement as synced, and not adopting lets the commit
+    /// gate export over the merged mirror and delete the other branch's work outright. The
+    /// answer is to import the merged mirror, which needs the direction lock pointed at import
+    /// so the gate cannot win the race — a change to the lock model, not to this panel. See
+    /// <see cref="MergePreflight"/>.
+    /// </para>
+    /// <para>
+    /// <b>Through the same guard a pull uses</b>, and for the reason <c>ReconcileAsync</c>
+    /// already records: both rewrite the project and its mirror together. The guard's wording
+    /// says "pull" during a merge, which it already did for reconcile — accepted knowingly
+    /// rather than left to be discovered.
+    /// </para>
+    /// </remarks>
+    private async Task MergeBranchAsync()
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        _logger.Click("Git.MergeBranch");
+        using var scope = _logger.BeginOperation(LoggerExtensions.NewOperationId());
+
+        // Merged INTO THE CURRENT BRANCH, not into the default one. The delete dialog asks the
+        // same question of the trunk because there "merged" means safe to delete; here it means
+        // the merge would do nothing, and that is only true of the branch being merged into.
+        var already = await _git.MergedBranchesAsync(BranchName, CancellationToken.None)
+            .ConfigureAwait(true);
+
+        var alreadySet = already.ToHashSet(StringComparer.Ordinal);
+
+        var candidates = Branches
+            .Select(b => new BranchCandidate
+            {
+                Name = b.Name,
+                Existence = b.Existence,
+                IsMerged = alreadySet.Contains(b.Name),
+                IsCurrent = b.IsCurrent,
+                IsDefault = string.Equals(b.Name, DefaultBranch.Name, StringComparison.Ordinal),
+            })
+            .ToList();
+
+        string? chosen;
+        using (AskingSomething())
+        {
+            chosen = Prompts.PromptForBranchMerge(candidates, BranchName);
+        }
+
+        if (chosen is not { Length: > 0 })
+        {
+            _logger.Info(LogCategory.Git, "merge cancelled");
+            return;
+        }
+
+        // The preflight runs on what the merge would BRING - three dots - so work already on
+        // this branch cannot make it refuse.
+        var incoming = await _git.IncomingPathsAsync(chosen, CancellationToken.None)
+            .ConfigureAwait(true);
+
+        var plan = MergePreflight.For(chosen, incoming, Sync.TrackedRoots());
+
+        if (!plan.CanProceed)
+        {
+            _logger.Warn(LogCategory.Git, $"merge of {chosen} refused: {plan.Verdict}");
+
+            // A sticky failure card rather than the status bar: the explanation is several
+            // sentences and names what to do instead, and it is not an event that happened so
+            // much as a decision the user now has to make.
+            Notifications.Warning($"Did not merge {chosen}.", plan.Explanation);
+            return;
+        }
+
+        if (!await ClearForContextChangeAsync(GuardIntent.Pull, $"merging {chosen}")
+                .ConfigureAwait(true))
+        {
+            return;
+        }
+
+        using var busy = Busy.Begin(WorkKind.GitWrite, $"Merging {chosen}…");
+
+        GitResult result = default!;
+
+        // The same hold a pull takes. Nothing tracked is involved - the preflight has just
+        // established that - but the watcher does not know which paths a merge will touch
+        // until it has touched them, and an unheld watcher would report the rewrite as edits.
+        await Sync.WhileGitRewritesTheTreeAsync(
+            "merge",
+            async () => result = await _git.MergeBranchAsync(chosen, null, busy.Token)
+                .ConfigureAwait(true))
+            .ConfigureAwait(true);
+
+        if (result.Success)
+        {
+            Notifications.Success($"Merged {chosen}.");
+        }
+        else
+        {
+            // Not a failure card. A merge that conflicts has done exactly what it should, and
+            // the panel's conflict section is already showing the files to resolve.
+            Notifications.Warning($"{chosen} merged with conflicts.",
+                                  "Resolve them in the panel, then commit.");
+        }
+
+        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+    }
+
     private async Task DeleteBranchesAsync()
     {
         if (_git is null || !DefaultBranch.IsKnown)
