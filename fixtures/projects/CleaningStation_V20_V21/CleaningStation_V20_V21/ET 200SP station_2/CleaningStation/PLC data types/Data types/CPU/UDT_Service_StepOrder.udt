@@ -1,0 +1,10 @@
+﻿TYPE "UDT_Service_StepOrder"
+VERSION : 0.1
+   STRUCT
+      stepNumber : Int := -1;   // actual number of step
+      stepMonitoringTime : UDInt := 1000;   // step monitoring time
+      parameter { S7_SetPoint := 'False'} : "UDT_Service_IndexElement";   // start index of used parameters in parameter Array
+   END_STRUCT;
+
+END_TYPE
+

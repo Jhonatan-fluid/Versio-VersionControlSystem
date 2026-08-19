@@ -1,0 +1,819 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Document>
+  <Engineering version="V21" />
+  <DocumentInfo>
+    <Created>2026-08-19T17:13:21.031622Z</Created>
+    <ExportSetting>None</ExportSetting>
+    <InstalledProducts>
+      <Product>
+        <DisplayName>Totally Integrated Automation Portal</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>STEP 7 Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <OptionPackage>
+        <DisplayName>STEP 7 Safety</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <OptionPackage>
+        <DisplayName>Tech WebApplication</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <Product>
+        <DisplayName>WinCC Basic/Comfort/Advanced</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Unified</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+    </InstalledProducts>
+  </DocumentInfo>
+  <SW.Types.PlcStruct ID="0">
+    <AttributeList>
+      <Interface>
+        <Sections xmlns="http://www.siemens.com/automation/Openness/SW/Interface/v5">
+          <Section Name="None">
+            <Member Name="Gain" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Proportional gain</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Proportional gain</MultiLanguageText>
+              </Comment>
+              <StartValue>1.0</StartValue>
+            </Member>
+            <Member Name="TI" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Integral time [s]</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Integral time [s]</MultiLanguageText>
+              </Comment>
+              <StartValue>100.0</StartValue>
+            </Member>
+            <Member Name="TD" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Differential time (derivative time) [s]</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Differential time (derivative time) [s]</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="DiffGain" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Gain of differentiator [1..10], DiffGain = TD / (time lag of D action)</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Gain of differentiator [1..10], DiffGain = TD / (time lag of D action)</MultiLanguageText>
+              </Comment>
+              <StartValue>5.0</StartValue>
+            </Member>
+            <Member Name="DiffToFbk" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">1 = D action is moved to feedback path</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">1 = D action is moved to feedback path</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="PropFacSP" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">P action to feedback path [0..1]: 0 = P action fully in feedback path</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">P action to feedback path [0..1]: 0 = P action fully in feedback path</MultiLanguageText>
+              </Comment>
+              <StartValue>1.0</StartValue>
+            </Member>
+            <Member Name="DeadBand" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Width of deadband</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Width of deadband</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="ConZone" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="CFC_Visible" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Width of control zone</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Width of control zone</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="SP_ExtOp" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">1 = Select external setpoint (via operator)</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">1 = Select external setpoint (via operator)</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="SP_IntOp" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">1 = Select internal setpoint (via operator)</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">1 = Select internal setpoint (via operator)</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="SP_Int" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Internal setpoint for operation</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Internal setpoint for operation</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="SP_InHiLim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">High limit of internal setpoint</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">High limit of internal setpoint</MultiLanguageText>
+              </Comment>
+              <StartValue>100.0</StartValue>
+            </Member>
+            <Member Name="SP_InLoLim" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="CFC_Visible" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Low limit of internal setpoint</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Low limit of internal setpoint</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="SP_ExHiLim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">High limit for external setpoint</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">High limit for external setpoint</MultiLanguageText>
+              </Comment>
+              <StartValue>100.0</StartValue>
+            </Member>
+            <Member Name="SP_ExLoLim" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="CFC_Visible" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Low limit for external setpoint</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Low limit for external setpoint</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="SP_TrkPV" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="CFC_Visible" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">1 = Setpoint follows PV in manual mode and in tracking</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">1 = Setpoint follows PV in manual mode and in tracking</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="SP_TrkExt" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="CFC_Visible" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">1 = Bumpless switchover from external to internal setpoint active</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">1 = Bumpless switchover from external to internal setpoint active</MultiLanguageText>
+              </Comment>
+              <StartValue>TRUE</StartValue>
+            </Member>
+            <Member Name="SP_RateOn" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="CFC_Visible" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">1= Activate limitation of setpoint gradients</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">1= Activate limitation of setpoint gradients</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="SP_RmpOn" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="CFC_Visible" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">1= Activate setpoint ramp to target SP_RmpTarget</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">1= Activate setpoint ramp to target SP_RmpTarget</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="SP_RmpModTime" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">1= Use time SP_RmpTime for ramp, 0= Use rates SP_UpRaLim, SP_DnRaLim</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">1= Use time SP_RmpTime for ramp, 0= Use rates SP_UpRaLim, SP_DnRaLim</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="SP_UpRaLim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Upward rate limit of setpoint</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Upward rate limit of setpoint</MultiLanguageText>
+              </Comment>
+              <StartValue>100.0</StartValue>
+            </Member>
+            <Member Name="SP_DnRaLim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Downward rate limit of setpoint</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Downward rate limit of setpoint</MultiLanguageText>
+              </Comment>
+              <StartValue>100.0</StartValue>
+            </Member>
+            <Member Name="SP_RmpTime" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="CFC_Visible" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Setpoint ramp time [s,min,h]</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Setpoint ramp time [s,min,h]</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="SP_RmpTarget" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Setpoint ramp target</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Setpoint ramp target</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="PV" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Process value (controlled variable)</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Process value (controlled variable)</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="PV_AH_Lim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">PV alarm high limit</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">PV alarm high limit</MultiLanguageText>
+              </Comment>
+              <StartValue>95.0</StartValue>
+            </Member>
+            <Member Name="PV_WH_Lim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">PV warning high limit</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">PV warning high limit</MultiLanguageText>
+              </Comment>
+              <StartValue>90.0</StartValue>
+            </Member>
+            <Member Name="PV_TH_Lim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">PV tolerance message high limit</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">PV tolerance message high limit</MultiLanguageText>
+              </Comment>
+              <StartValue>85.0</StartValue>
+            </Member>
+            <Member Name="PV_TL_Lim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">PV tolerance message low limit</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">PV tolerance message low limit</MultiLanguageText>
+              </Comment>
+              <StartValue>15.0</StartValue>
+            </Member>
+            <Member Name="PV_WL_Lim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">PV warning low limit</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">PV warning low limit</MultiLanguageText>
+              </Comment>
+              <StartValue>10.0</StartValue>
+            </Member>
+            <Member Name="PV_AL_Lim" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="CFC_Visible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="CFC_ForTest" SystemDefined="true">true</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">PV alarm low limit</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">PV alarm low limit</MultiLanguageText>
+              </Comment>
+              <StartValue>5.0</StartValue>
+            </Member>
+            <Member Name="PV_Hyst" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="CFC_Visible" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Hysteresis for PV alarms, warnings and tolerance messages</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Hysteresis for PV alarms, warnings and tolerance messages</MultiLanguageText>
+              </Comment>
+              <StartValue>1.0</StartValue>
+            </Member>
+            <Member Name="ER_AH_Lim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">ER alarm high limit</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">ER alarm high limit</MultiLanguageText>
+              </Comment>
+              <StartValue>100.0</StartValue>
+            </Member>
+            <Member Name="ER_AL_Lim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">ER alarm low limit</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">ER alarm low limit</MultiLanguageText>
+              </Comment>
+              <StartValue>-100.0</StartValue>
+            </Member>
+            <Member Name="ER_Hyst" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Hysteresis for ER alarms</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Hysteresis for ER alarms</MultiLanguageText>
+              </Comment>
+              <StartValue>1.0</StartValue>
+            </Member>
+            <Member Name="ER_AH_DFac" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">ER alarm coming delay factor for positive SP jump [s/PV_Unit]</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">ER alarm coming delay factor for positive SP jump [s/PV_Unit]</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="ER_AL_DFac" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="CFC_Visible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="CFC_ForTest" SystemDefined="true">true</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">ER alarm coming delay factor for negative SP jump [s/PV_Unit]</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">ER alarm coming delay factor for negative SP jump [s/PV_Unit]</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="FFwd" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="CFC_Visible" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Input for additive disturbance variable compensation</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Input for additive disturbance variable compensation</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="MV_Trk" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="CFC_Visible" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Tracking value for manipulated variable MV</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Tracking value for manipulated variable MV</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="AutModOp" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="CFC_Visible" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">1 = Automatic mode by operator (controlled by ModLiOp = 0)</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">1 = Automatic mode by operator (controlled by ModLiOp = 0)</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="ManModOp" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="CFC_Visible" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">1 = Manual mode by operator (controlled by ModLiOp = 0)</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">1 = Manual mode by operator (controlled by ModLiOp = 0)</MultiLanguageText>
+              </Comment>
+              <StartValue>TRUE</StartValue>
+            </Member>
+            <Member Name="AdvCoOn" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="CFC_Visible" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">1 = Enable program mode via faceplate</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">1 = Enable program mode via faceplate</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="AdvCoMV" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="CFC_Visible" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Target value from the external program</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Target value from the external program</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="OosOp" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="CFC_Visible" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">1 = Out of service by OS operation</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">1 = Out of service by OS operation</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="OptimEn" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="CFC_Visible" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">1 = Enable optimization of PID parameters by PID tuner</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">1 = Enable optimization of PID parameters by PID tuner</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="CPI_In" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="CFC_Visible" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Input for control performance index calculated by related ConPerMon block</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Input for control performance index calculated by related ConPerMon block</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="Man" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="CFC_Visible" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Operator input for manual setting of manipulated variable MV</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Operator input for manual setting of manipulated variable MV</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="ManHiLim" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="CFC_Visible" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">High limit for manipulated variable in manual mode</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">High limit for manipulated variable in manual mode</MultiLanguageText>
+              </Comment>
+              <StartValue>100.0</StartValue>
+            </Member>
+            <Member Name="ManLoLim" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="CFC_Visible" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Low limit for manipulated variable in manual mode</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Low limit for manipulated variable in manual mode</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="Intlock" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">0=Controller is Interlocked, 1=Controller is Not Interlocked</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">0=Controller is Interlocked, 1=Controller is Not Interlocked</MultiLanguageText>
+              </Comment>
+              <StartValue>true</StartValue>
+            </Member>
+            <Member Name="Intlock_ST" Datatype="Byte">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Intlock Signal Status</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Intlock Signal Status</MultiLanguageText>
+              </Comment>
+              <StartValue>BYTE#16#FF</StartValue>
+            </Member>
+            <Member Name="RbkWH_Lim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Rbk warning high limit</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Rbk warning high limit</MultiLanguageText>
+              </Comment>
+              <StartValue>100.0</StartValue>
+            </Member>
+            <Member Name="RbkWL_Lim" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="CFC_ForTest" SystemDefined="true">true</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Rbk warning low limit</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Rbk warning low limit</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="RbkHyst" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Hysteresis for Rbk warnings</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Hysteresis for Rbk warnings</MultiLanguageText>
+              </Comment>
+              <StartValue>1.0</StartValue>
+            </Member>
+            <Member Name="PV_OpScale" Datatype="&quot;ScaVal&quot;">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Limit values for scale in PV bar display of faceplate</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Limit values for scale in PV bar display of faceplate</MultiLanguageText>
+              </Comment>
+              <Sections>
+                <Section Name="None">
+                  <Member Name="High" Datatype="Real">
+                    <Comment>
+                      <MultiLanguageText Lang="en-US">High Value</MultiLanguageText>
+                    </Comment>
+                  </Member>
+                  <Member Name="Low" Datatype="Real">
+                    <Comment>
+                      <MultiLanguageText Lang="en-US">Low Value</MultiLanguageText>
+                    </Comment>
+                  </Member>
+                </Section>
+              </Sections>
+            </Member>
+            <Member Name="MV_OpScale" Datatype="&quot;ScaVal&quot;">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Limit values for scale in MV bar display of faceplate</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Limit values for scale in MV bar display of faceplate</MultiLanguageText>
+              </Comment>
+              <Sections>
+                <Section Name="None">
+                  <Member Name="High" Datatype="Real">
+                    <Comment>
+                      <MultiLanguageText Lang="en-US">High Value</MultiLanguageText>
+                    </Comment>
+                  </Member>
+                  <Member Name="Low" Datatype="Real">
+                    <Comment>
+                      <MultiLanguageText Lang="en-US">Low Value</MultiLanguageText>
+                    </Comment>
+                  </Member>
+                </Section>
+              </Sections>
+            </Member>
+            <Member Name="PV_Unit" Datatype="Int">
+              <AttributeList>
+                <BooleanAttribute Name="CFC_Visible" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Unit of measurement for the process value</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Unit of measurement for the process value</MultiLanguageText>
+              </Comment>
+              <StartValue>1001</StartValue>
+            </Member>
+            <Member Name="MV_Unit" Datatype="Int">
+              <AttributeList>
+                <BooleanAttribute Name="CFC_Visible" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Unit of measurement for manipulated variable</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Unit of measurement for manipulated variable</MultiLanguageText>
+              </Comment>
+              <StartValue>1342</StartValue>
+            </Member>
+            <Member Name="TimeFactor" Datatype="Int">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Time Conversion Factor (0- Sec, 1- Min, 2- Hour)</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Time Conversion Factor (0- Sec, 1- Min, 2- Hour)</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="MV" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Manipulated variable, Control output</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Manipulated variable, Control output</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="MV_ST" Datatype="Byte">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">MV Signal Status</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">MV Signal Status</MultiLanguageText>
+              </Comment>
+              <StartValue>BYTE#16#80</StartValue>
+            </Member>
+            <Member Name="MV_HiAct" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">MV high limit is actively restricting manipulated variable</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">MV high limit is actively restricting manipulated variable</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="MV_LoAct" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">MV low limit is actively restricting manipulated variable</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">MV low limit is actively restricting manipulated variable</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="RbkOut" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Readback value output</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Readback value output</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="LoopClosed" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">1 = Loop control is closed, 0 = Loop control is opened</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">1 = Loop control is closed, 0 = Loop control is opened</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="SP" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Active setpoint as calculated and used by controller</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Active setpoint as calculated and used by controller</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="SP_ExtOut" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">External setpoint output</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">External setpoint output</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="SP_IntOut" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Internal setpoint output</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Internal setpoint output</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="SP_RemRT" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="CFC_Visible" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Remaining ramp time of setpoint</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Remaining ramp time of setpoint</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="PV_Out" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Process value (controlled variable) output</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Process value (controlled variable) output</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="PV_Out_ST" Datatype="Byte">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">PV_Out Signal Status</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">PV_Out Signal Status</MultiLanguageText>
+              </Comment>
+              <StartValue>BYTE#16#80</StartValue>
+            </Member>
+            <Member Name="PV_ToleHi" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">High limit of 3-sigma band around the setpoint (only with ConPerMon)</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">High limit of 3-sigma band around the setpoint (only with ConPerMon)</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="PV_ToleLo" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Low limit of 3-sigma band around the setpoint (only with ConPerMon)</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Low limit of 3-sigma band around the setpoint (only with ConPerMon)</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="ER" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Control error</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Control error</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="Status1" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Status word 1, defined in the online help</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Status word 1, defined in the online help</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="Status2" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Status word 2, defined in the online help</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Status word 2, defined in the online help</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="Status3" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Status word 3, defined in the online help</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Status word 3, defined in the online help</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="Status4" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Status word 4, defined in the online help</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Status word 4, defined in the online help</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="OS_PermOut" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Display of operator permissions OS_Perm</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Display of operator permissions OS_Perm</MultiLanguageText>
+              </Comment>
+              <StartValue>DWORD#16#FFFF_FFFF</StartValue>
+            </Member>
+            <Member Name="OS_PermLog" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Operator permissions with settings changed by the block algorithm</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Operator permissions with settings changed by the block algorithm</MultiLanguageText>
+              </Comment>
+              <StartValue>DWORD#16#FFFF_FFFF</StartValue>
+            </Member>
+            <Member Name="OS1PermOut" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Display of operator permissions OS1Perm</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Display of operator permissions OS1Perm</MultiLanguageText>
+              </Comment>
+              <StartValue>DWORD#16#FFFF_FFFF</StartValue>
+            </Member>
+            <Member Name="OS1PermLog" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Operator permissions with settings changed by the block algorithm</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Operator permissions with settings changed by the block algorithm</MultiLanguageText>
+              </Comment>
+              <StartValue>DWORD#16#FFFF_FFFF</StartValue>
+            </Member>
+            <Member Name="ST_Worst" Datatype="Byte">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Worst signal status</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Worst signal status</MultiLanguageText>
+              </Comment>
+              <StartValue>BYTE#16#80</StartValue>
+            </Member>
+            <Member Name="AlarmState" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Alarm State for group display</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Alarm Status for group display</MultiLanguageText>
+              </Comment>
+            </Member>
+          </Section>
+        </Sections>
+      </Interface>
+      <Name>HMI_PIDConL</Name>
+      <Namespace />
+    </AttributeList>
+    <ObjectList>
+      <MultilingualText ID="1" CompositionName="Comment">
+        <ObjectList>
+          <MultilingualTextItem ID="2" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="3" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="4" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+      <MultilingualText ID="5" CompositionName="Title">
+        <ObjectList>
+          <MultilingualTextItem ID="6" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="7" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="8" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+    </ObjectList>
+  </SW.Types.PlcStruct>
+</Document>

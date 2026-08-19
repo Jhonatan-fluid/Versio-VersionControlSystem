@@ -1,0 +1,10 @@
+﻿TYPE "typeMTPModuleTypePackageRevision"
+TITLE = MTP versioning
+VERSION : 0.1
+//MTP version information
+   STRUCT
+      ModuleTypePackageRevision { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : String := '0.0.1';   // ModuleTypePackageRevision; scheme: Major.Minor.Patch
+   END_STRUCT;
+
+END_TYPE
+

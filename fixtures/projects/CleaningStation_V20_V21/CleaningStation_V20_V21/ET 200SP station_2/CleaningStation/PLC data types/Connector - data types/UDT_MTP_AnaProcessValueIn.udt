@@ -1,0 +1,19 @@
+﻿TYPE "UDT_MTP_AnaProcessValueIn"
+VERSION : 0.1
+   STRUCT
+      WQC { ExternalWritable := 'False'} : Byte := 16#FF;   // Worst Quality Code
+      OSLevel : Byte;   // OSLevel variable
+      V : Real;   // Value
+      VQC : Byte := 16#FF;   // Quality Code of the current received value
+      SclMinCur { ExternalWritable := 'False'} : Real;   // Value Scale Low Limit
+      SclMaxCur { ExternalWritable := 'False'} : Real := 100.0;   // Value Scale High Limit
+      UnitCur { ExternalWritable := 'False'} : Int := 1998;   // Value Unit
+      SclMinExt : Real;   // External configuration for VScaleMin; If written value is valid VScaleMin will be set to VSclMinExt;  If written value is invalid VScaleMin will be set to a predefined Value
+      SclMaxExt : Real := 100.0;   // External configuration for VScaleMax; If written value is valid VScaleMax will be set to VSclMaxExt;  If written value is invalid VScaleMax will be set to a predefined Value
+      UnitExt : Int := 1998;   // External configuration for VUnit; If written value is valid VUnit will be set to VUnitExt
+      Apply : Bool;   // Apply new *Ext values to *Cur values
+      ApplyEn { ExternalWritable := 'False'} : Bool;   // Flag to signalize if a new values can be applied; 1: new values can be applied; 0: currently, no new value can be applied
+   END_STRUCT;
+
+END_TYPE
+

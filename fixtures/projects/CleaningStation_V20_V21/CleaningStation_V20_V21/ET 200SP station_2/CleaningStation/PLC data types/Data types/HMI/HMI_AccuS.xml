@@ -1,0 +1,234 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Document>
+  <Engineering version="V21" />
+  <DocumentInfo>
+    <Created>2026-08-19T17:13:21.2206241Z</Created>
+    <ExportSetting>None</ExportSetting>
+    <InstalledProducts>
+      <Product>
+        <DisplayName>Totally Integrated Automation Portal</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>STEP 7 Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <OptionPackage>
+        <DisplayName>STEP 7 Safety</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <OptionPackage>
+        <DisplayName>Tech WebApplication</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <Product>
+        <DisplayName>WinCC Basic/Comfort/Advanced</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Unified</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+    </InstalledProducts>
+  </DocumentInfo>
+  <SW.Types.PlcStruct ID="0">
+    <AttributeList>
+      <Interface>
+        <Sections xmlns="http://www.siemens.com/automation/Openness/SW/Interface/v5">
+          <Section Name="None">
+            <Member Name="OnOp" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="CFC_Visible" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">1=On Mode: On Mode by Operator</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">1=On Mode: On Mode by Operator</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="OosOp" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="CFC_Visible" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">1=Oos Mode: Oos Mode by Operator</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">1=Oos Mode: Oos Mode by Operator</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="SpecFact" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Specific factor</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Specific factor</MultiLanguageText>
+              </Comment>
+              <StartValue>1.0</StartValue>
+            </Member>
+            <Member Name="AcCnt_Unit" Datatype="Int">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Unit of AcCnt1 / AcCnt2</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Unit of AcCnt1 / AcCnt2</MultiLanguageText>
+              </Comment>
+              <StartValue>1001</StartValue>
+            </Member>
+            <Member Name="RstCnt1Op" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Operator Input Reset counter #1</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Operator Input Reset counter #1</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="RstCnt2Op" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Operator Input Reset counter #2</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Operator Input Reset counter #2</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="Rst1Date" Datatype="DWord">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Date of last Counter #1 Reset [yy/mm/dd_hh]</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Date of last Counter #1 Reset [yy/mm/dd_hh]</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="Rst2Date" Datatype="DWord">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Date of last Counter #2 Reset [yy/mm/dd_hh]</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Date of last Counter #2 Reset [yy/mm/dd_hh]</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="AcCnt1Out" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Accum. counter #1</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Accum. counter #1</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="AcCnt2Out" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Accum. counter #2</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Accum. counter #2</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="AcDiCnt1Out" Datatype="DInt">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Accum. counter #1 (DINT)</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Accum. counter #1 (DINT)</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="AcDiCnt2Out" Datatype="DInt">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Accum. counter #2 (DINT)</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Accum. counter #2 (DINT)</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="OS_PermOut" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Operator Permissions: Output for OS</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Operator Permissions: Output for OS</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="OS_PermLog" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Operator Permissions: Output for OS</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Operator Permissions: Output for OS</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="OpSt_Out" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Enabled operator stations</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Enabled operator stations</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="ST_Worst" Datatype="Byte">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Worst Signal Status</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Worst Signal Status</MultiLanguageText>
+              </Comment>
+              <StartValue>BYTE#16#80</StartValue>
+            </Member>
+            <Member Name="Status1" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Status word 1</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Status word 1</MultiLanguageText>
+              </Comment>
+            </Member>
+          </Section>
+        </Sections>
+      </Interface>
+      <Name>HMI_AccuS</Name>
+      <Namespace />
+    </AttributeList>
+    <ObjectList>
+      <MultilingualText ID="1" CompositionName="Comment">
+        <ObjectList>
+          <MultilingualTextItem ID="2" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="3" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="4" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+      <MultilingualText ID="5" CompositionName="Title">
+        <ObjectList>
+          <MultilingualTextItem ID="6" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="7" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="8" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+    </ObjectList>
+  </SW.Types.PlcStruct>
+</Document>

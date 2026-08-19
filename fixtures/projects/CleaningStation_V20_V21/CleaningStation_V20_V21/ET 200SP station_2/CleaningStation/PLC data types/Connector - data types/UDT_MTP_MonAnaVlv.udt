@@ -1,0 +1,69 @@
+﻿TYPE "UDT_MTP_MonAnaVlv"
+TITLE = MTPDataObjectSUCLibrary/DataAssembly/AnaVlv
+VERSION : 0.1
+   STRUCT
+      WQC { ExternalWritable := 'False'} : Byte := 16#FF;   // Worst Quality Code variable
+      OSLevel : Byte;   // OSLevel variable
+      StateChannel { ExternalWritable := 'False'} : Bool;   // Selection of the active OperationMode interaction channel0: The operator switches (*Op) shall be used.1: The automatic switches (*Aut) shall be used.
+      StateOffAut { ExternalWritable := 'False'} : Bool;   // Set OperationMode to Offline by automatic interaction (relevant, if StateChannel).1: OperationMode is set to Offline.0: no operation
+      StateOpAut { ExternalWritable := 'False'} : Bool;   // Set OperationMode to Operator by automatic interaction (relevant, if StateChannel).1: OperationMode is set to Manual.0: no operation
+      StateAutAut { ExternalWritable := 'False'} : Bool;   // Set OperationMode to Automatic by automatic interaction (relevant, if StateChannel).1: OperationMode is set to Automatic.0: no operation
+      StateOffOp : Bool;   // Set OperationMode to Offline by operator interaction (relevant, if not StateChannel) 0-->1:request to set OperationMode to Offline 1-->0:acknowledge by PEA
+      StateOpOp : Bool;   // Set OperationMode to Operator by operator interaction (relevant, if not StateChannel) 0-->1:request to set OperationMode to Manual 1-->0:acknowledge by PEA
+      StateAutOp : Bool;   // Set OperationMode to Automatic by operator interaction (relevant, if not StateChannel) 0-->1:request to set OperationMode is to Automatic 1-->0:acknowledge by PEA
+      StateOpAct { ExternalWritable := 'False'} : Bool;   // 1: current mode is Operator0: current mode is not Operator
+      StateAutAct { ExternalWritable := 'False'} : Bool;   // 1: current mode is Automatic0: current mode is not Automatic
+      StateOffAct { ExternalWritable := 'False'} : Bool;   // 1: current mode is Offline0: current mode is not Offline
+      SrcChannel { ExternalWritable := 'False'} : Bool;   // selection of the active SourceMode interaction channel0: The operator switches (*Op) shall be used.1: The automatic switches (*Aut) shall be used.
+      SrcManAut { ExternalWritable := 'False'} : Bool;   // Set SourceMode to Manual by automatic interaction (relevant, if SrcChannel is true) 1:SourceMode is set to Manual 0:no operation
+      SrcIntAut { ExternalWritable := 'False'} : Bool;   // Set SourceMode to Internal by automatic interaction (relevant, if SrcChannel is true) 1:SourceMode is set to Internal 0:no operation
+      SrcIntOp : Bool;   // Set SourceMode to Internal by operator interaction (relevant, if SrcChannel is false) 0-->1:request to set OperationMode to Internal 1-->0:acknowledge by PEA
+      SrcManOp : Bool;   // Set SourceMode to Manual by operator interaction  (relevant, if SrcChannel is false) 0-->1:request to set OperationMode to Manual 1-->0:acknowledge by PEA
+      SrcIntAct { ExternalWritable := 'False'} : Bool;   // 1: current mode is Internal0: current mode is not Internal
+      SrcManAct { ExternalWritable := 'False'} : Bool;   // 1: current mode is Manual0: current mode is not Manual
+      SafePos { ExternalWritable := 'False'} : Bool;   // Safe Position1: PosMax0: PosMin
+      SafePosEn { ExternalWritable := 'False'} : Bool;   // Safe Position Enabled1: device has safe position0: device has no safe position
+      SafePosAct { ExternalWritable := 'False'} : Bool;   // Safe Position Activated1: Safe Position is activated (safe operation)0: Safe Position is not activated (normal opera-tion)
+      OpenAut { ExternalWritable := 'False'} : Bool;   // Set Valve to Open by automatic.(relevant, if StateAutAct)1: Valve is set to Open.0: no operation
+      CloseAut { ExternalWritable := 'False'} : Bool;   // Set Valve to Close by automatic(relevant, if StateAutAct).1: Valve is set to Close.0: no operation
+      OpenOp : Bool;   // Set Valve to Open by Operator instruction (relevant, if StateOpAct) 0-->1:request to set Valve to Open 1-->0:acknowledge by PEA
+      CloseOp : Bool;   // Set Valve to Close by Operator instruction (relevant, if StateOpAct) 0-->1:request to set Valve to Close 1-->0:acknowledge by PEA
+      OpenAct { ExternalWritable := 'False'} : Bool;   // Valve is set to Open.1: Valve is set to Open.0: Valve is not set to Open.
+      CloseAct { ExternalWritable := 'False'} : Bool;   // Valve is set to Close.1: Valve is set to Close.0: Valve is not set to Close.
+      PosSclMin { ExternalWritable := 'False'} : Real;   // Position Setpoint Scale Low Limit
+      PosSclMax { ExternalWritable := 'False'} : Real := 100.0;   // Position Setpoint Scale High Limit
+      PosUnit { ExternalWritable := 'False'} : Int := 1342;   // Position Setpoint Unit
+      PosMin { ExternalWritable := 'False'} : Real;   // Position Setpoint Low Limit
+      PosMax { ExternalWritable := 'False'} : Real := 100.0;   // Position Setpoint High Limit
+      PosInt { ExternalWritable := 'False'} : Real;   // Position Internal Setpoint(relevant, if SrcIntAct)
+      PosMan : Real;   // Position Manual Setpoint(relevant, if SrcManAct)
+      PosRbk { ExternalWritable := 'False'} : Real;   // Position Readback Signal(if SrcIntAct is true, then PosRbk = PosInt)(if SrcManAct is true, then PosRbk = PosMan)
+      Pos { ExternalWritable := 'False'} : Real;   // Position Setpoint(if OpenAct & Not SafePosAct then Pos = PosRbk)(if CloseAct & Not SafePosAct then Pos = PosMin)(if SafePosAct & SafePosEn & SafePos = 1 thenPos = PosMax)(if SafePosAct & SafePosEn & SafePos = 0 thenPos = PosMin)(if SafePosAct & Not SafePosEn then hold Pos)
+      OpenFbkCalc { ExternalWritable := 'False'} : Bool;   // Open Feedback Source1: calculated0: sensor detection
+      OpenFbk { ExternalWritable := 'False'} : Bool;   // Open Feedback Signal1: Open End Position achieved0: Open End Position not achieved
+      CloseFbkCalc { ExternalWritable := 'False'} : Bool;   // Close Feedback Source1: calculated0: sensor detection
+      CloseFbk { ExternalWritable := 'False'} : Bool;   // Close Feedback Signal1: Close End Position achieved0: Close End Position not achieved
+      PosFbkCalc { ExternalWritable := 'False'} : Bool;   // Position Feedback Source1: calculated0: sensor detection
+      PosFbk { ExternalWritable := 'False'} : Real;   // Position Feedback Signal
+      PermEn { ExternalWritable := 'False'} : Bool;   // Enables the Permission Lock1: enabled0: disabled
+      Permit { ExternalWritable := 'False'} : Bool;   // Permit allows control1: permission is given0: permission is not given
+      IntlEn { ExternalWritable := 'False'} : Bool;   // Enables the Interlock Lock1: enabled0: disabled
+      Interlock { ExternalWritable := 'False'} : Bool;   // Interlock prevents from being activated and sets it to safe position.1: Interlock is not active0: Interlock is active
+      ProtEn { ExternalWritable := 'False'} : Bool;   // Enables the Protection Lock1: enabled; 0: disabled
+      Protect { ExternalWritable := 'False'} : Bool;   // Protect prevents from being activated and sets it to safe position, requires a reset command.1: protect is not active0: protect is active, requires reset
+      ResetOp : Bool;   // Reset from Operator 0-->1:request from POL 1-->0:acknowledge from PEA (see Handshake)
+      ResetAut { ExternalWritable := 'False'} : Bool;   // Reset from Automatic1: Reset execute0: no operation
+      MonEn : Bool;   // Monitor Enable1: enabled0: disabled
+      MonSafePos { ExternalWritable := 'False'} : Bool;   // Set the Error Behavior, if an error occurs.1: After an error occurs, the Safe Position will be set.0: After an error occurs, the entity holds the state.
+      MonStatErr { ExternalWritable := 'False'} : Bool;   // Static Error active1: active0: inactive
+      MonDynErr { ExternalWritable := 'False'} : Bool;   // Dynamic Error active1: active0: inactive
+      MonStatTi { ExternalWritable := 'False'} : Real;   // Monitor Time for uncontrolled changes, in s
+      MonDynTi { ExternalWritable := 'False'} : Real;   // Monitor Time for controlled changes, in s
+      PosReachedFbk { ExternalWritable := 'False'} : Bool;   // Position reachedPosition is reached, PosReachedFbk = (PosFbk – Pos) <= PosTolerance
+      PosTolerance { ExternalWritable := 'False'} : Real;   // Position Tolerance Value for Calculation
+      MonPosTi { ExternalWritable := 'False'} : Real;   // Monitor Time until position is reached, in s
+      MonPosErr { ExternalWritable := 'False'} : Bool;   // Position Error active1: if the MonPosTi is elapsed before ReachedFbk = true0: no error
+   END_STRUCT;
+
+END_TYPE
+

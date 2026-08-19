@@ -25,6 +25,46 @@ public static class TestPaths
         Path.Combine(Fixtures, "projects", name);
 
     /// <summary>
+    /// The committed TIA Portal gate fixture, or null when this clone has LFS pointers
+    /// instead of a real project.
+    /// </summary>
+    /// <remarks>
+    /// The tree lives at <c>fixtures/projects/CleaningStation_V20_V21/</c>. A clone without
+    /// <c>git lfs pull</c> gets a 130-byte pointer for the <c>.ap21</c> and an empty
+    /// <c>System/</c> — TIA cannot open that, and the gate skips rather than going red.
+    /// The original OneDrive copy is never this path.
+    /// </remarks>
+    public static string? TiaPortalProject()
+    {
+        var dir = Path.Combine(Fixtures, "projects", "CleaningStation_V20_V21");
+        if (!Directory.Exists(dir))
+        {
+            return null;
+        }
+
+        var ap = Directory.EnumerateFiles(dir, "*.ap21").FirstOrDefault();
+        if (ap is null)
+        {
+            return null;
+        }
+
+        // An LFS pointer is ~130 bytes; the real pointer file is ~151 KB.
+        if (new FileInfo(ap).Length < 1024)
+        {
+            return null;
+        }
+
+        var system = Path.Combine(dir, "System");
+        if (!Directory.Exists(system)
+            || !Directory.EnumerateFiles(system).Any())
+        {
+            return null;
+        }
+
+        return ap;
+    }
+
+    /// <summary>
     /// The python, on disk rather than embedded.
     /// </summary>
     /// <remarks>

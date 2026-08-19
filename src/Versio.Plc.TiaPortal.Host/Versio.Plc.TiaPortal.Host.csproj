@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Versio.Plc.TiaPortal.Host</RootNamespace>
+    <AssemblyName>Versio.Plc.TiaPortal.Host</AssemblyName>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <PlatformTarget>x64</PlatformTarget>
+    <!-- Openness is x64 Framework. AnyCPU would load as 32-bit on some hosts and fail
+         to bind the PublicAPI assemblies. -->
+  </PropertyGroup>
+
+    <ItemGroup>
+    <Reference Include="Microsoft.CSharp" />
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+    <!-- So the host builds on a machine that has the net9 SDK but not the
+         .NET Framework 4.8 targeting pack (no Visual Studio). -->
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net48" Version="1.0.3" />
+  </ItemGroup>
+
+</Project>

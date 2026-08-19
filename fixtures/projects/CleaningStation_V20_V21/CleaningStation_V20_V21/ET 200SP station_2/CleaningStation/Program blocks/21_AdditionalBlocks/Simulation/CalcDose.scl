@@ -1,0 +1,88 @@
+﻿FUNCTION_BLOCK "CalcDose"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      Enable : Bool;
+      Dose_Liters : Real;
+      VolumeFlow : Real;
+      Adj_high : Real;
+      Adj_middle : Real;
+      Adj_low : Real;
+      Adj_high_Value : Real;
+      Adj_middle_Value : Real;
+      Adj_low_Value : Real;
+      Scale_Raw : "ScaVal_Raw" := (27648, 0);
+   END_VAR
+
+   VAR_OUTPUT 
+      Service_Done : Bool;
+      PIDCtrl_Value : "AnaVal";
+      Liters { ExternalWritable := 'False'} : Real;
+      Liters_Raw : Int;
+   END_VAR
+
+   VAR_TEMP 
+      Liters_Diff : Real;
+      State : "Service_States";
+   END_VAR
+
+
+BEGIN
+	IF "Dose".Information.state = #State.Starting THEN
+	    #Liters := 0;
+	    "AccuSDB".RstCnt1Li.ST := 16#80;
+	    "AccuSDB".RstCnt1Li.Value := TRUE;
+	    #Service_Done := FALSE;
+	ELSE
+	    "AccuSDB".RstCnt1Li.ST := 16#80;
+	    "AccuSDB".RstCnt1Li.Value := False;
+	END_IF;
+	IF #Enable = FALSE THEN
+	    RETURN;
+	END_IF;
+	
+	#PIDCtrl_Value.ST := 16#80;
+	"AccuSDB".RstCnt1Li.ST := 16#80;
+	//calc already pumped liters and set valve MV
+	IF "Dose".Information.state = #State.Execute THEN
+	    //set valve MV for Procedure doseToEmpty
+	    IF "Dose".MTP.ServiceControl.ProcedureCur = 3 THEN
+	        "AccuSDB".RstCnt1Li.Value := False;
+	        #Liters := "AccuSDB".AcCnt1Out.Value;
+	        #PIDCtrl_Value.Value := 100;
+	        #Liters_Diff := #Dose_Liters - #Liters;
+	        IF "LIT100_Type".to_Indicate.AnaVal1.Value <= 1.0 THEN
+	            #PIDCtrl_Value.Value := 60;
+	        ELSIF "LIT100_Type".to_Indicate.AnaVal1.Value <= 0.5 THEN
+	            #PIDCtrl_Value.Value := 0;
+	        END_IF;
+	    //set valve MV for Procedure doseByFlow and DoseByVolume
+	    ELSE
+	        IF #Liters <= #Dose_Liters THEN
+	            #Liters := "AccuSDB".AcCnt1Out.Value;
+	        ELSIF #Liters > #Dose_Liters THEN
+	            #Service_Done := TRUE;
+	        END_IF;
+	        
+	        //calc PID ctrl value. Different MV depending on already pumped liters. 
+	        #Liters_Diff := #Dose_Liters - #Liters;
+	        IF "LIT100_Type".to_Indicate.AnaVal1.Value <= 0.4 OR #Liters_Diff = 0 THEN
+	            #PIDCtrl_Value.Value := 0;
+	        ELSIF #Liters_Diff <= #Adj_low * #Dose_Liters THEN
+	            #PIDCtrl_Value.Value := #Adj_low_Value;
+	        ELSIF #Liters_Diff <= (#Adj_middle * #Dose_Liters) AND #Liters_Diff > (#Adj_low * #Dose_Liters) THEN
+	            #PIDCtrl_Value.Value := #Adj_middle_Value;
+	        ELSIF #Liters_Diff <= (#Adj_high * #Dose_Liters) AND #Liters_Diff > (#Adj_middle * #Dose_Liters) THEN
+	            #PIDCtrl_Value.Value := #Adj_high_Value;
+	        ELSE
+	            #PIDCtrl_Value.Value := 100;
+	        END_IF;
+	    END_IF;
+	ELSIF "Dose".Information.state <> #State.Execute THEN
+	    #PIDCtrl_Value.Value := 0;
+	END_IF;
+	
+	#Liters_Raw := (#Liters/3600) * #Scale_Raw.High;
+	
+END_FUNCTION_BLOCK
+

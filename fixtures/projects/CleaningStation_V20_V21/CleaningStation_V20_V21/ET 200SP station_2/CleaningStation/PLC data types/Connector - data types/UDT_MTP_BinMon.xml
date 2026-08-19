@@ -1,0 +1,173 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Document>
+  <Engineering version="V21" />
+  <DocumentInfo>
+    <Created>2026-08-19T17:13:19.0844128Z</Created>
+    <ExportSetting>None</ExportSetting>
+    <InstalledProducts>
+      <Product>
+        <DisplayName>Totally Integrated Automation Portal</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>STEP 7 Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <OptionPackage>
+        <DisplayName>STEP 7 Safety</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <OptionPackage>
+        <DisplayName>Tech WebApplication</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <Product>
+        <DisplayName>WinCC Basic/Comfort/Advanced</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Unified</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+    </InstalledProducts>
+  </DocumentInfo>
+  <SW.Types.PlcStruct ID="0">
+    <AttributeList>
+      <Interface>
+        <Sections xmlns="http://www.siemens.com/automation/Openness/SW/Interface/v5">
+          <Section Name="None">
+            <Member Name="VState0" Datatype="String[16]">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Text replacement for false</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Text replacement for false</MultiLanguageText>
+              </Comment>
+              <StartValue>''</StartValue>
+            </Member>
+            <Member Name="VState1" Datatype="String[16]">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Text replacement for true</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Text replacement for true</MultiLanguageText>
+              </Comment>
+              <StartValue>''</StartValue>
+            </Member>
+            <Member Name="OSLevel" Datatype="Byte">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">OSLevel variable</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">OSLevel variable</MultiLanguageText>
+              </Comment>
+              <StartValue>16#00</StartValue>
+            </Member>
+            <Member Name="WQC" Datatype="Byte">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Worst Quality Code variable</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Worst Quality Code variable</MultiLanguageText>
+              </Comment>
+              <StartValue>16#FF</StartValue>
+            </Member>
+            <Member Name="V" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Value</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Value</MultiLanguageText>
+              </Comment>
+              <StartValue>FALSE</StartValue>
+            </Member>
+            <Member Name="VFlutEn" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Enable Fluttering Recognition1: enabled; 0: disabled</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Enable Fluttering Recognition1: enabled; 0: disabled</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="VFlutTi" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Period of an active signal before it will be recognized as flutter-free, in s</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Period of an active signal before it will be recognized as flutter-free, in s</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="VFlutCnt" Datatype="Int">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Counts of the allowed fluttering signals in the defined period VFlutTi</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Counts of the allowed fluttering signals in the defined period VFlutTi</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="VFlutAct" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Fluttering Signal recognized1: Fluttering Signal recognized 0: no Fluttering Signal recognized</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Fluttering Signal recognized1: Fluttering Signal recognized 0: no Fluttering Signal recognized</MultiLanguageText>
+              </Comment>
+            </Member>
+          </Section>
+        </Sections>
+      </Interface>
+      <Name>UDT_MTP_BinMon</Name>
+      <Namespace />
+    </AttributeList>
+    <ObjectList>
+      <MultilingualText ID="1" CompositionName="Comment">
+        <ObjectList>
+          <MultilingualTextItem ID="2" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="3" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="4" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+      <MultilingualText ID="5" CompositionName="Title">
+        <ObjectList>
+          <MultilingualTextItem ID="6" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="7" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text>MTPDataObjectSUCLibrary/DataAssembly/BinView</Text>
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="8" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+    </ObjectList>
+  </SW.Types.PlcStruct>
+</Document>

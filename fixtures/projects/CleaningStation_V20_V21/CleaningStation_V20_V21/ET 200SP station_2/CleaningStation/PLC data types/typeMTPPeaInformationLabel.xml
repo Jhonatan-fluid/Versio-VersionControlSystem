@@ -1,0 +1,207 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Document>
+  <Engineering version="V21" />
+  <DocumentInfo>
+    <Created>2026-08-19T17:13:18.2495521Z</Created>
+    <ExportSetting>None</ExportSetting>
+    <InstalledProducts>
+      <Product>
+        <DisplayName>Totally Integrated Automation Portal</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>STEP 7 Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <OptionPackage>
+        <DisplayName>STEP 7 Safety</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <OptionPackage>
+        <DisplayName>Tech WebApplication</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <Product>
+        <DisplayName>WinCC Basic/Comfort/Advanced</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Unified</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+    </InstalledProducts>
+  </DocumentInfo>
+  <SW.Types.PlcStruct ID="0">
+    <AttributeList>
+      <Interface>
+        <Sections xmlns="http://www.siemens.com/automation/Openness/SW/Interface/v5">
+          <Section Name="None">
+            <Member Name="AssetId" Datatype="String">
+              <Comment>
+                <MultiLanguageText Lang="en-US">Unique identifier assigned by the system operator for the PEA, which can be used for maintenance purposes. When a PEA is delivered, the AssetId has the value of the ProductInstanceUri.</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="ComponentName" Datatype="String">
+              <Comment>
+                <MultiLanguageText Lang="en-US">Descriptive name of a PEA, which is set by the POL. So that the operator can assign the PEA to a system part, the value must be unique within a system.</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="DeviceClass" Datatype="String">
+              <Comment>
+                <MultiLanguageText Lang="en-US">This value enables a classification of PEAs. The value initially assigned by the manufacturer of a PEA can be overwritten by the system operator. This gives the plant operator the opportunity to classify the PEAs according to his principles. This standard does not define any device classes.</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="DeviceHealth" Datatype="Byte">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Contains the aggregated Worst Quality Code at PEA level. The default value is 16#FF. The concrete enumeration and the aggregation rules are specified in VDI/VDE/NAMUR 2658 Part 10.</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="DeviceManual" Datatype="String">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Reference to the PEA manual (e.g. URL)</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="DeviceRevision" Datatype="String">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">The version information of the information technology interface of a PEA is defined as DeviceRevision and shall be implemented in the major-minor patch notation.</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="HardwareRevision" Datatype="String">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">The version information of the constructive structure of a PEA is defined as HardwareRevision and is to be implemented as major-minor patch notation.</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="Manufacturer" Datatype="String">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Name of the PEA manufacturer</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="ManufacturerUri" Datatype="String">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Unique identifier (URI) of the manufacturer</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="Model" Datatype="String">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Name of the PEA type. This name is identical to the name of the MTP</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="ProductCode" Datatype="String">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Character string for unique identification of the PEA type</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="ProductInstanceUri" Datatype="String">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Unique identifier (URI) of the PEA according to DIN SPEC 91406</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="RevisionCounter" Datatype="Int">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">RevisionCounter is increased in the event of a corresponding internal configuration change and reset to 0 by loading new software.</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="SerialNumber" Datatype="String">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Serial number of the PEA assigned by the manufacturer</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="SoftwareRevision" Datatype="String">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">The version information of the control software of a PEA is defined as a SoftwareRevision and is to be implemented in the Major-Minor-Patch Notation.</MultiLanguageText>
+              </Comment>
+            </Member>
+          </Section>
+        </Sections>
+      </Interface>
+      <Name>typeMTPPeaInformationLabel</Name>
+      <Namespace />
+    </AttributeList>
+    <ObjectList>
+      <MultilingualText ID="1" CompositionName="Comment">
+        <ObjectList>
+          <MultilingualTextItem ID="2" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="3" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text>List of product- and instance-specific information for the PEA handling within a modular plant environment.</Text>
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="4" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+      <MultilingualText ID="5" CompositionName="Title">
+        <ObjectList>
+          <MultilingualTextItem ID="6" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="7" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text>typeMTPPeaInformationLabel</Text>
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="8" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+    </ObjectList>
+  </SW.Types.PlcStruct>
+</Document>

@@ -1,0 +1,9 @@
+﻿TYPE "UDT_Service_StepOrderRawDataMedium"
+VERSION : 0.1
+   STRUCT
+      stepOrder { S7_SetPoint := 'False'} : Array[0..199] of "UDT_Service_StepOrder";
+      parameterIndex : Array[0..511] of Byte;
+   END_STRUCT;
+
+END_TYPE
+

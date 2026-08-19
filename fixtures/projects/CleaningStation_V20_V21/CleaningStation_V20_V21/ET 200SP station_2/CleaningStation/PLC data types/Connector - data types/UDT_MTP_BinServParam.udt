@@ -1,0 +1,39 @@
+﻿TYPE "UDT_MTP_BinServParam"
+VERSION : 0.1
+   STRUCT
+      WQC { ExternalWritable := 'False'} : Byte := 16#FF;   // Worst Quality Code
+      OSLevel : Byte;   // OSLevel variable
+      ApplyEn { ExternalWritable := 'False'} : Bool;   // Flag to signalize if a new value can be applied; 1: new value can be applied; 0: currently, no new value can be applied
+      ApplyExt : Bool;   // External Value Application Flag; 0 to 1: request to apply value of VExt; 1 to 0: acknowledge by PEA; relevant, if StateAutAct is true and SrcExtAct is true
+      ApplyOp : Bool;   // Operator Value Application Flag; 0 to 1: request to apply value of VOp; 1 to 0: acknowledge by PEA; relevant, if StateOpAct is true
+      ApplyInt { ExternalWritable := 'False'} : Bool;   // Internal Value Application Flag; 0 to 1: request to apply value of VInt; 1 to 0: acknowledge by PEA; relevant, if StateAutAct is true and SrcIntAct is true
+      Sync : Bool := true;   // synchronisation mode
+      StateChannel { ExternalWritable := 'False'} : Bool;   // Current operation mode interaction channel; 0: The operator switches (*Op) shall be used; 1: The automatic switches (*Aut) shall be used
+      StateOffAut { ExternalWritable := 'False'} : Bool;   // Set operation mode to Offline by automatic interaction (relevant, if StateChannel is true).
+      StateOpAut { ExternalWritable := 'False'} : Bool;   // Set operation mode to Operator by automatic interaction (relevant, if StateChannel is true).
+      StateAutAut { ExternalWritable := 'False'} : Bool;   // Set operation mode to Automatic by automatic interaction (relevant, if StateChannel is true); 1: Operation mode is set to Automatic; 0: no operation
+      StateOffOp : Bool;   // Set operation mode to Offline by operator interaction (relevant, if StateChannel is false); 0 to 1: request to set operation mode to Offline; 1 to 0: acknowledge by PEA
+      StateOpOp : Bool;   // Set operation mode to Operator by operator interaction (relevant, if StateChannel Is false); 0 to 1: request to set operation mode to Operator; 1 to 0: acknowledge by PEA
+      StateAutOp : Bool;   // Set operation mode to Automatic by operator interaction (relevant, if StateChannel is false); 0 to 1: request to set operation mode is to Automatic; 1 to 0: acknowledge by PEA
+      StateOffAct { ExternalWritable := 'False'} : Bool;   // 1: current mode is Offline; 0: current mode is not Offline
+      StateOpAct { ExternalWritable := 'False'} : Bool;   // 1: current mode is Operator; 0: current mode is not Operator
+      StateAutAct { ExternalWritable := 'False'} : Bool;   // 1: current mode is Automatic; 0: current mode is not Automatic
+      SrcChannel { ExternalWritable := 'False'} : Bool;   // selection of the active source mode interaction channel; 0: The operator switches (*Op) shall be used; 1: The automatic switches (*Aut) shall be used.
+      SrcExtAut { ExternalWritable := 'False'} : Bool;   // Set source mode to External by automatic interaction (relevant, if SrcChannel is true); 1: Source mode is set to External; 0: no operation
+      SrcIntAut { ExternalWritable := 'False'} : Bool;   // Set source mode to Internal by automatic interaction (relevant, if SrcChannel is true); 1: Source mode is set to Internal; 0: no operation
+      SrcIntOp : Bool;   // Set source mode to Internal by operator interaction (relevant, if SrcChannel is false); 0 to 1: request to set operation mode to Internal; 1 to 0: acknowledge by PEA
+      SrcExtOp : Bool;   // Set source mode to External by operator interaction (relevant, if SrcChannel is false); 0 to 1: request to set operation mode to External; 1 to 0: acknowledge by PEA
+      SrcIntAct { ExternalWritable := 'False'} : Bool;   // relevant if service operation mode is Automatic; 1: current mode is Internal; 0: current mode is not Internal; relevant if service operation mode is not Automatic; 0: current mode is not Internal
+      SrcExtAct { ExternalWritable := 'False'} : Bool;   // relevant if service operation mode is Automatic; 1: current mode is External; 0: current mode is not External; relevant if service operation mode is not Automatic; 0: current mode is not External
+      VExt : Bool;   // External parameter value variable; relevant, if StateAutAct is true and SrcExtAct is true
+      VOp : Bool;   // Manual Parameter Value variable; relevant, if StateOpAct is true
+      VInt { ExternalWritable := 'False'} : Bool;   // Internal parameter value variable; relevant, if StateAutAct is true and SrcIntAct is true
+      VReq { ExternalWritable := 'False'} : Bool;   // Requested parameter value variable
+      VOut { ExternalWritable := 'False'} : Bool;   // Current parameter value variable
+      VFbk { ExternalWritable := 'False'} : Bool;   // Feedback value variable
+      VState0 { ExternalWritable := 'False'} : String[16];   // text replacement for false
+      VState1 { ExternalWritable := 'False'} : String[16];   // text replacement for true
+   END_STRUCT;
+
+END_TYPE
+

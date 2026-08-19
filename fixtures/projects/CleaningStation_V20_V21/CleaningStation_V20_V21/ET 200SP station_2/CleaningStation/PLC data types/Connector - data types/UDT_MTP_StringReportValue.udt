@@ -1,0 +1,10 @@
+﻿TYPE "UDT_MTP_StringReportValue"
+VERSION : 0.1
+   STRUCT
+      WQC { ExternalWritable := 'False'} : Byte := 16#FF;   // Worst Quality Code
+      Text { ExternalWritable := 'False'} : String[40];   // Value
+      MissedValue { ExternalWritable := 'False'} : Bool;   // MissedValueFeature
+   END_STRUCT;
+
+END_TYPE
+

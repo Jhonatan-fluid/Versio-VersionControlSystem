@@ -1,0 +1,32 @@
+﻿FUNCTION "ConvertToStruCm" : Void
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      AnaVal1 : "AnaVal";   // Rbk
+      AnaVal2 : "AnaVal";
+      AnaVal3 : "AnaVal";
+      DigVal1 : "DigVal";
+      DigVal2 : "DigVal";
+      DigVal3 : "DigVal";
+      Scale : "ScaVal";   // MV_Scale
+      ScaleRAW : "ScaVal_Raw";   // MV_ScaleRAW
+      Unit : Int;   // MV_Unit
+   END_VAR
+
+   VAR_OUTPUT 
+      StruCm_Out : "StruCm";
+   END_VAR
+
+
+BEGIN
+	#StruCm_Out.AnaVal1 := #AnaVal1;
+	#StruCm_Out.AnaVal2 := #AnaVal2;
+	#StruCm_Out.AnaVal3 := #AnaVal3;
+	#StruCm_Out.DigVal1 := #DigVal1;
+	#StruCm_Out.DigVal2 := #DigVal2;
+	#StruCm_Out.DigVal3 := #DigVal3;
+	#StruCm_Out.Scale := #Scale;
+	#StruCm_Out.ScaleRAW := #ScaleRAW;
+	#StruCm_Out.Unit := #Unit;
+END_FUNCTION
+

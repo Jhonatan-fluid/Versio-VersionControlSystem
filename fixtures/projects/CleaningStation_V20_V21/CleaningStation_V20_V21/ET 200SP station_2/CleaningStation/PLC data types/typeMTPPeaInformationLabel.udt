@@ -1,0 +1,24 @@
+﻿TYPE "typeMTPPeaInformationLabel"
+TITLE = typeMTPPeaInformationLabel
+VERSION : 0.1
+//List of product- and instance-specific information for the PEA handling within a modular plant environment.
+   STRUCT
+      AssetId : String;   // Unique identifier assigned by the system operator for the PEA, which can be used for maintenance purposes. When a PEA is delivered, the AssetId has the value of the ProductInstanceUri.
+      ComponentName : String;   // Descriptive name of a PEA, which is set by the POL. So that the operator can assign the PEA to a system part, the value must be unique within a system.
+      DeviceClass : String;   // This value enables a classification of PEAs. The value initially assigned by the manufacturer of a PEA can be overwritten by the system operator. This gives the plant operator the opportunity to classify the PEAs according to his principles. This standard does not define any device classes.
+      DeviceHealth { ExternalWritable := 'False'} : Byte;   // Contains the aggregated Worst Quality Code at PEA level. The default value is 16#FF. The concrete enumeration and the aggregation rules are specified in VDI/VDE/NAMUR 2658 Part 10.
+      DeviceManual { ExternalWritable := 'False'} : String;   // Reference to the PEA manual (e.g. URL)
+      DeviceRevision { ExternalWritable := 'False'} : String;   // The version information of the information technology interface of a PEA is defined as DeviceRevision and shall be implemented in the major-minor patch notation.
+      HardwareRevision { ExternalWritable := 'False'} : String;   // The version information of the constructive structure of a PEA is defined as HardwareRevision and is to be implemented as major-minor patch notation.
+      Manufacturer { ExternalWritable := 'False'} : String;   // Name of the PEA manufacturer
+      ManufacturerUri { ExternalWritable := 'False'} : String;   // Unique identifier (URI) of the manufacturer
+      Model { ExternalWritable := 'False'} : String;   // Name of the PEA type. This name is identical to the name of the MTP
+      ProductCode { ExternalWritable := 'False'} : String;   // Character string for unique identification of the PEA type
+      ProductInstanceUri { ExternalWritable := 'False'} : String;   // Unique identifier (URI) of the PEA according to DIN SPEC 91406
+      RevisionCounter { ExternalWritable := 'False'} : Int;   // RevisionCounter is increased in the event of a corresponding internal configuration change and reset to 0 by loading new software.
+      SerialNumber { ExternalWritable := 'False'} : String;   // Serial number of the PEA assigned by the manufacturer
+      SoftwareRevision { ExternalWritable := 'False'} : String;   // The version information of the control software of a PEA is defined as a SoftwareRevision and is to be implemented in the Major-Minor-Patch Notation.
+   END_STRUCT;
+
+END_TYPE
+

@@ -1,0 +1,11 @@
+﻿TYPE "UDT_Service_StepMedium"
+VERSION : 0.1
+   STRUCT
+      command : Array[0..0] of DWord := [16#FFFFFFFF];   // 'Command' configuration of control modules for sequencer
+      force : Array[0..0] of DWord := [16#FFFFFFFF];   // 'Force' configuration of control modules for sequencer
+      check : Array[0..0] of DWord := [16#FFFFFFFF];   // 'Check' configuration of control modules for sequencer
+      or : Array[0..0] of DWord := [16#FFFFFFFF];   // Logical 'OR' configuration of control modules for sequencer
+   END_STRUCT;
+
+END_TYPE
+

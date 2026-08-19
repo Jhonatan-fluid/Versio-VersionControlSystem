@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Versio.Plc.TiaPortal</RootNamespace>
+    <!-- ONE VENDOR. Project-file conventions, the import planner, object-type names,
+         the host wire protocol, and the native-XML scrubber. No processes, no
+         filesystem, no TIA Portal install — driving lives in Infrastructure, for the
+         same reason Versio.Core and Versio.Infrastructure are two projects. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Versio.Core\Versio.Core.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,450 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Document>
+  <Engineering version="V21" />
+  <DocumentInfo>
+    <Created>2026-08-19T17:13:13.6334505Z</Created>
+    <ExportSetting>None</ExportSetting>
+    <InstalledProducts>
+      <Product>
+        <DisplayName>Totally Integrated Automation Portal</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>STEP 7 Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <OptionPackage>
+        <DisplayName>STEP 7 Safety</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <OptionPackage>
+        <DisplayName>Tech WebApplication</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <Product>
+        <DisplayName>WinCC Basic/Comfort/Advanced</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Unified</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+    </InstalledProducts>
+  </DocumentInfo>
+  <SW.Blocks.FB ID="0">
+    <AttributeList>
+      <Interface>
+        <Sections xmlns="http://www.siemens.com/automation/Openness/SW/Interface/v5">
+          <Section Name="Input">
+            <Member Name="On" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">0 = Off =&gt; In = 0.0</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="In_Raw" Datatype="Int">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="P" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Propotional parameter</MultiLanguageText>
+              </Comment>
+              <StartValue>1.0</StartValue>
+            </Member>
+            <Member Name="T" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Time constant [s]</MultiLanguageText>
+              </Comment>
+              <StartValue>1.0</StartValue>
+            </Member>
+            <Member Name="t_cyc" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">OB-Cycle time</MultiLanguageText>
+              </Comment>
+              <StartValue>0.1</StartValue>
+            </Member>
+          </Section>
+          <Section Name="Output">
+            <Member Name="Out" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <StartValue>0.0</StartValue>
+            </Member>
+            <Member Name="Out_Raw" Datatype="Int">
+              <StartValue>0</StartValue>
+            </Member>
+          </Section>
+          <Section Name="InOut" />
+          <Section Name="Static">
+            <Member Name="Out-1" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <StartValue>0.0</StartValue>
+            </Member>
+          </Section>
+          <Section Name="Temp" />
+          <Section Name="Constant" />
+        </Sections>
+      </Interface>
+      <MemoryLayout>Optimized</MemoryLayout>
+      <MemoryReserve>100</MemoryReserve>
+      <Name>PT1</Name>
+      <Namespace />
+      <Number>4</Number>
+      <ProgrammingLanguage>SCL</ProgrammingLanguage>
+      <SetENOAutomatically>false</SetENOAutomatically>
+    </AttributeList>
+    <ObjectList>
+      <MultilingualText ID="1" CompositionName="Comment">
+        <ObjectList>
+          <MultilingualTextItem ID="2" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="3" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="4" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+      <SW.Blocks.CompileUnit ID="5" CompositionName="CompileUnits">
+        <AttributeList>
+          <NetworkSource>
+            <StructuredText xmlns="http://www.siemens.com/automation/Openness/SW/NetworkSource/StructuredText/v4">
+              <Token Text="IF" UId="21" />
+              <Blank UId="22" />
+              <Access Scope="LocalVariable" UId="23">
+                <Symbol UId="24">
+                  <Component Name="On" UId="25" />
+                </Symbol>
+              </Access>
+              <Blank UId="26" />
+              <Token Text="THEN" UId="27" />
+              <NewLine UId="28" />
+              <Blank Num="4" UId="29" />
+              <Access Scope="LocalVariable" UId="30">
+                <Symbol UId="31">
+                  <Component Name="Out_Raw" UId="32" />
+                </Symbol>
+              </Access>
+              <Blank UId="33" />
+              <Token Text=":=" UId="34" />
+              <Blank UId="35" />
+              <Access Scope="LocalVariable" UId="36">
+                <Symbol UId="37">
+                  <Component Name="Out-1" UId="38" />
+                </Symbol>
+              </Access>
+              <Blank UId="39" />
+              <Token Text="+" UId="40" />
+              <Blank UId="41" />
+              <Token Text="(" UId="42" />
+              <Access Scope="LocalVariable" UId="43">
+                <Symbol UId="44">
+                  <Component Name="P" UId="45" />
+                </Symbol>
+              </Access>
+              <Blank UId="46" />
+              <Token Text="*" UId="47" />
+              <Blank UId="48" />
+              <Token Text="(" UId="49" />
+              <Access Scope="LocalVariable" UId="50">
+                <Symbol UId="51">
+                  <Component Name="In_Raw" UId="52" />
+                </Symbol>
+              </Access>
+              <Blank UId="53" />
+              <Token Text="-" UId="54" />
+              <Blank UId="55" />
+              <Access Scope="LocalVariable" UId="56">
+                <Symbol UId="57">
+                  <Component Name="Out-1" UId="58" />
+                </Symbol>
+              </Access>
+              <Token Text=")" UId="59" />
+              <Blank UId="60" />
+              <Token Text="*" UId="61" />
+              <Blank UId="62" />
+              <Token Text="(" UId="63" />
+              <Access Scope="LocalVariable" UId="64">
+                <Symbol UId="65">
+                  <Component Name="t_cyc" UId="66" />
+                </Symbol>
+              </Access>
+              <Blank UId="67" />
+              <Token Text="/" UId="68" />
+              <Blank UId="69" />
+              <Token Text="(" UId="70" />
+              <Access Scope="LocalVariable" UId="71">
+                <Symbol UId="72">
+                  <Component Name="T" UId="73" />
+                </Symbol>
+              </Access>
+              <Blank UId="74" />
+              <Token Text="+" UId="75" />
+              <Blank UId="76" />
+              <Access Scope="LocalVariable" UId="77">
+                <Symbol UId="78">
+                  <Component Name="t_cyc" UId="79" />
+                </Symbol>
+              </Access>
+              <Token Text=")" UId="80" />
+              <Token Text=")" UId="81" />
+              <Token Text=")" UId="82" />
+              <Token Text=";" UId="83" />
+              <NewLine UId="84" />
+              <Token Text="ELSE" UId="85" />
+              <NewLine UId="86" />
+              <Blank Num="4" UId="87" />
+              <Access Scope="LocalVariable" UId="88">
+                <Symbol UId="89">
+                  <Component Name="Out_Raw" UId="90" />
+                </Symbol>
+              </Access>
+              <Blank UId="91" />
+              <Token Text=":=" UId="92" />
+              <Blank UId="93" />
+              <Access Scope="LocalVariable" UId="94">
+                <Symbol UId="95">
+                  <Component Name="Out-1" UId="96" />
+                </Symbol>
+              </Access>
+              <Blank UId="97" />
+              <Token Text="+" UId="98" />
+              <Blank UId="99" />
+              <Token Text="(" UId="100" />
+              <Access Scope="LocalVariable" UId="101">
+                <Symbol UId="102">
+                  <Component Name="P" UId="103" />
+                </Symbol>
+              </Access>
+              <Blank UId="104" />
+              <Token Text="*" UId="105" />
+              <Blank UId="106" />
+              <Token Text="(" UId="107" />
+              <Access Scope="LiteralConstant" UId="108">
+                <Constant UId="109">
+                  <ConstantValue UId="111">0.0</ConstantValue>
+                </Constant>
+              </Access>
+              <Blank UId="112" />
+              <Token Text="-" UId="113" />
+              <Blank UId="114" />
+              <Access Scope="LocalVariable" UId="115">
+                <Symbol UId="116">
+                  <Component Name="Out-1" UId="117" />
+                </Symbol>
+              </Access>
+              <Token Text=")" UId="118" />
+              <Blank UId="119" />
+              <Token Text="*" UId="120" />
+              <Blank UId="121" />
+              <Token Text="(" UId="122" />
+              <Access Scope="LocalVariable" UId="123">
+                <Symbol UId="124">
+                  <Component Name="t_cyc" UId="125" />
+                </Symbol>
+              </Access>
+              <Blank UId="126" />
+              <Token Text="/" UId="127" />
+              <Blank UId="128" />
+              <Token Text="(" UId="129" />
+              <Access Scope="LocalVariable" UId="130">
+                <Symbol UId="131">
+                  <Component Name="T" UId="132" />
+                </Symbol>
+              </Access>
+              <Blank UId="133" />
+              <Token Text="+" UId="134" />
+              <Blank UId="135" />
+              <Access Scope="LocalVariable" UId="136">
+                <Symbol UId="137">
+                  <Component Name="t_cyc" UId="138" />
+                </Symbol>
+              </Access>
+              <Token Text=")" UId="139" />
+              <Token Text=")" UId="140" />
+              <Token Text=")" UId="141" />
+              <Token Text=";" UId="142" />
+              <NewLine UId="143" />
+              <Token Text="END_IF" UId="144" />
+              <Token Text=";" UId="145" />
+              <NewLine Num="2" UId="146" />
+              <Access Scope="LocalVariable" UId="147">
+                <Symbol UId="148">
+                  <Component Name="Out-1" UId="149" />
+                </Symbol>
+              </Access>
+              <Blank UId="150" />
+              <Token Text=":=" UId="151" />
+              <Blank UId="152" />
+              <Access Scope="LocalVariable" UId="153">
+                <Symbol UId="154">
+                  <Component Name="Out_Raw" UId="155" />
+                </Symbol>
+              </Access>
+              <Token Text=";" UId="156" />
+              <Blank UId="157" />
+              <LineComment UId="158">
+                <Text UId="159">Save output value end of this cycle</Text>
+              </LineComment>
+              <NewLine UId="160" />
+              <Access Scope="LocalVariable" UId="161">
+                <Symbol UId="162">
+                  <Component Name="Out" UId="163" />
+                </Symbol>
+              </Access>
+              <Blank UId="164" />
+              <Token Text=":=" UId="165" />
+              <Blank UId="166" />
+              <Token Text="(" UId="167" />
+              <Access Scope="Call" UId="168">
+                <Instruction Name="INT_TO_REAL" UId="169">
+                  <Token Text="(" UId="170" />
+                  <NamelessParameter UId="171">
+                    <Access Scope="LocalVariable" UId="172">
+                      <Symbol UId="173">
+                        <Component Name="Out_Raw" UId="174" />
+                      </Symbol>
+                    </Access>
+                  </NamelessParameter>
+                  <Token Text=")" UId="176" />
+                </Instruction>
+              </Access>
+              <Blank UId="177" />
+              <Token Text="/" UId="178" />
+              <Blank UId="179" />
+              <Access Scope="LiteralConstant" UId="180">
+                <Constant UId="181">
+                  <ConstantValue UId="183">27648</ConstantValue>
+                </Constant>
+              </Access>
+              <Token Text=")" UId="184" />
+              <Blank UId="185" />
+              <Token Text="*" UId="186" />
+              <Blank UId="187" />
+              <Access Scope="LiteralConstant" UId="188">
+                <Constant UId="189">
+                  <ConstantValue UId="191">100</ConstantValue>
+                </Constant>
+              </Access>
+              <Token Text=";" UId="192" />
+            </StructuredText>
+          </NetworkSource>
+          <ProgrammingLanguage>SCL</ProgrammingLanguage>
+        </AttributeList>
+        <ObjectList>
+          <MultilingualText ID="6" CompositionName="Comment">
+            <ObjectList>
+              <MultilingualTextItem ID="7" CompositionName="Items">
+                <AttributeList>
+                  <Culture>de-DE</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+              <MultilingualTextItem ID="8" CompositionName="Items">
+                <AttributeList>
+                  <Culture>en-US</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+              <MultilingualTextItem ID="9" CompositionName="Items">
+                <AttributeList>
+                  <Culture>fr-FR</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+            </ObjectList>
+          </MultilingualText>
+          <MultilingualText ID="A" CompositionName="Title">
+            <ObjectList>
+              <MultilingualTextItem ID="B" CompositionName="Items">
+                <AttributeList>
+                  <Culture>de-DE</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+              <MultilingualTextItem ID="C" CompositionName="Items">
+                <AttributeList>
+                  <Culture>en-US</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+              <MultilingualTextItem ID="D" CompositionName="Items">
+                <AttributeList>
+                  <Culture>fr-FR</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+            </ObjectList>
+          </MultilingualText>
+        </ObjectList>
+      </SW.Blocks.CompileUnit>
+      <MultilingualText ID="E" CompositionName="Title">
+        <ObjectList>
+          <MultilingualTextItem ID="F" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="10" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="11" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+    </ObjectList>
+  </SW.Blocks.FB>
+</Document>

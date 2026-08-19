@@ -1,0 +1,37 @@
+﻿TYPE "HMI_Intlk04"
+VERSION : 0.1
+   STRUCT
+      In01_Text : String[16];   //  In01 text
+      BypIn01 : Bool := FALSE;   //  Bypass In01 (via operator)
+      AV01 : Real;   //  Analog value for In01
+      AV01_Unit : Int := 0;   //  Engineering unit of AV01
+      In02_Text : String[16];   //  In02 text
+      BypIn02 : Bool := FALSE;   //  Bypass In02 (via operator)
+      AV02 : Real;   //  Analog value for In02
+      AV02_Unit : Int := 0;   //  Engineering unit of AV02
+      In03_Text : String[16];   //  In03 text
+      BypIn03 : Bool := FALSE;   //  Bypass In03 (via operator)
+      AV03 : Real;   //  Analog value for In03
+      AV03_Unit : Int := 0;   //  Engineering unit of AV03
+      In04_Text : String[16];   //  In04 text
+      BypIn04 : Bool := FALSE;   //  Bypass In04 (via operator)
+      AV04 : Real;   //  Analog value for In04
+      AV04_Unit : Int := 0;   //  Engineering unit of AV04
+      RstOp : Bool := FALSE;   //  Reset FirstIn (operator)
+      RstBypOp : Bool := FALSE;   //  Reset all Bypasses (Operator)
+      OS_PermOut { ExternalWritable := 'False'} : DWord := DWORD#16#FFFF_FFFF;   //  Operator Permission: Output for OS
+      OS_PermLog { ExternalWritable := 'False'} : DWord := DWORD#16#FFFF_FFFF;   //  Operator Permission: Output for OS
+      OpSt_Out { ExternalWritable := 'False'} : DWord := 16#0;   //  Enabled operator stations
+      ST_Worst { ExternalWritable := 'False'} : Byte := 16#80;   //  Worst Signal Status
+      Status1 { ExternalWritable := 'False'} : DWord := 16#0;   //  Status1
+      Status2 { ExternalWritable := 'False'} : DWord := 16#0;   //  Status2
+      Status3 { ExternalWritable := 'False'} : DWord := 16#0;   //  Status3
+      Status4 { ExternalWritable := 'False'} : DWord := 16#0;   //  Status4
+      Status5 { ExternalWritable := 'False'} : DWord := 16#0;   //  Status5
+      Status6 { ExternalWritable := 'False'} : DWord := 16#0;   //  Status6
+      Status7 { ExternalWritable := 'False'} : DWord := 16#0;   //  Status7
+      Status8 { ExternalWritable := 'False'} : DWord := 16#0;   //  Status8
+   END_STRUCT;
+
+END_TYPE
+

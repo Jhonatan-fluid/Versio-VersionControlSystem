@@ -52,6 +52,38 @@ public interface IPlcProjectFormat
     string ConventionalExportPath(string projectPath);
 
     /// <summary>
+    /// The bytes that <i>are</i> the project on disk — the file, or the directory that
+    /// contains it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Default is the project path itself, which is a file for every vendor Versio drove
+    /// first. A second vendor's project is a directory that happens to have a small
+    /// pointer file at the top: copying, hashing, backing up or restoring only that
+    /// pointer leaves the program behind and the next open looking at an empty shell.
+    /// </para>
+    /// <para>
+    /// <b>Asked of the format so Sync never learns which vendors are trees.</b> The
+    /// orchestrator copies, hashes and restores whatever this returns. Naming a vendor
+    /// in that code would be the leak the seam exists to prevent; a TwinCAT project is
+    /// a directory too.
+    /// </para>
+    /// </remarks>
+    string PayloadPathFor(string projectPath) => projectPath;
+
+    /// <summary>
+    /// True when this file, relative to <see cref="PayloadPathFor"/>, belongs in the
+    /// project hash.
+    /// </summary>
+    /// <remarks>
+    /// Default is everything. A tree payload writes logs and scratch beside the program;
+    /// hashing those would make an idle project look changed on every poll. The format
+    /// names the noise. Sync still must not skip the program store itself — that is how
+    /// a 150 KB pointer file would become the whole hash of a half-gigabyte project.
+    /// </remarks>
+    bool CountsTowardProjectHash(string relativePath) => true;
+
+    /// <summary>
     /// Where this toolchain records that it has a project open, or null if it records nothing.
     /// </summary>
     /// <remarks>

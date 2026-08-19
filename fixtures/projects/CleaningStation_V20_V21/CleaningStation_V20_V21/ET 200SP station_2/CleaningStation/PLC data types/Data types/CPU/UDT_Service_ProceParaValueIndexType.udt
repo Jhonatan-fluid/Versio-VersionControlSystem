@@ -1,0 +1,16 @@
+﻿TYPE "UDT_Service_ProceParaValueIndexType"
+VERSION : 0.1
+   STRUCT
+      ProcedureReqCurInd : Bool;   // Prepared procedure selection indication
+      IndexAnalog { S7_SetPoint := 'True'} : DWord;   // Reference for Index number of the analog parameter
+      IndexDigital { S7_SetPoint := 'True'} : DWord;   // Reference for Index number of the digital parameter
+      IndexBinary { S7_SetPoint := 'True'} : DWord;   // Reference for Index number of the binary parameter
+      IndexString { S7_SetPoint := 'True'} : DWord;   // Reference for Index number of the string parameter
+      NameIndexAnalog { S7_SetPoint := 'True'} : DWord;   // Reference for Index name of the analog parameter
+      NameIndexDigital { S7_SetPoint := 'True'} : DWord;   // Reference for Index name of the digital parameter
+      NameIndexBinary { S7_SetPoint := 'True'} : DWord;   // Reference for Index name of the binary parameter
+      NameIndexString { S7_SetPoint := 'True'} : DWord;   // Reference for Index name of the string parameter
+   END_STRUCT;
+
+END_TYPE
+

@@ -1,0 +1,17 @@
+﻿TYPE "AnaVal"
+VERSION : 0.0
+   STRUCT
+      Value : Real;   // Value
+      ST : Byte := BYTE#16#80;   // Signal Status
+      InternalUseBit0 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; CFC_Configurable := 'false'; CFC_Interconnectable := 'false'} : Bool;   // Reserved
+      InternalUseBit1 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; CFC_Configurable := 'false'; CFC_Interconnectable := 'false'} : Bool;   // Reserved
+      InternalUseBit2 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; CFC_Configurable := 'false'; CFC_Interconnectable := 'false'} : Bool;   // Reserved
+      InternalUseBit3 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; CFC_Configurable := 'false'; CFC_Interconnectable := 'false'} : Bool;   // Reserved
+      InternalUseBit4 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; CFC_Configurable := 'false'; CFC_Interconnectable := 'false'} : Bool;   // Reserved
+      InternalUseBit5 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; CFC_Configurable := 'false'; CFC_Interconnectable := 'false'} : Bool;   // Reserved
+      InternalUseBit6 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; CFC_Configurable := 'false'; CFC_Interconnectable := 'false'} : Bool;   // Reserved
+      InternalUseBit7 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; CFC_Configurable := 'false'; CFC_Interconnectable := 'false'} : Bool;   // Reserved
+   END_STRUCT;
+
+END_TYPE
+

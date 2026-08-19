@@ -1,0 +1,144 @@
+﻿FUNCTION_BLOCK "CM_Interface"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      CmCommand { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Array[0..29] of Bool;
+      Procedure_Param { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Array[0..31] of Real;
+      Config_Param : Array[0..31] of Bool;
+      ProcessValueIn_Bool : Array[0..31] of Bool;
+      ProcessValueIn_Real : Array[0..31] of Real;
+      CmFbOnOff { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Array[0..29] of Bool;
+      DosingSpeed : Real;
+      Auto_Man : Bool;
+      Oos : Bool;
+   END_VAR
+
+   VAR_OUTPUT 
+      CM_P100 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : "DigVal";
+      CM_P101 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : "DigVal";
+      CM_FIC100 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : "DigVal";
+      CM_V100 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : "DigVal";
+      FlowRate { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : "AnaVal";
+      Liter { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : "AnaVal";
+      ExternalLevel : "AnaVal";
+      PEA_inlet_Vlv_opened : "DigVal";
+      PVConnected : "DigVal";
+   END_VAR
+
+   VAR 
+      Pos_edge : Bool;
+      Neg_edge : Bool;
+   END_VAR
+
+   VAR_TEMP 
+      State : "Service_States";
+   END_VAR
+
+
+BEGIN
+	REGION Bool TO DigVal
+	    //CM Pump 100
+	    "BoolToDigVal"(In := #CmCommand[0],
+	                   ST := 16#80,
+	                   Out => #CM_P100);
+	    //CM Pump 101
+	    "BoolToDigVal"(In := #CmCommand[1],
+	                   ST := 16#80,
+	                   Out => #CM_P101);
+	    //CM Controler 100
+	    "BoolToDigVal"(In := #CmCommand[2],
+	                   ST := 16#80,
+	                   Out => #CM_FIC100);
+	    //CM Valve 100
+	    "BoolToDigVal"(In := #CmCommand[3],
+	                   ST := 16#80,
+	                   Out => #CM_V100);
+	END_REGION
+	
+	REGION Real TO AnaVal
+	    //Flow
+	    "RealToAnaVal"(In := #Procedure_Param[0],
+	                   ST := 16#80,
+	                   Out => #FlowRate);
+	    //Liter
+	    "RealToAnaVal"(In := #Procedure_Param[1],
+	                   ST := 16#80,
+	                   Out => #Liter);
+	                END_REGION
+	                
+	REGION other values
+	    //Dosing Speed
+	    "Dose".ProcessValueOutAnalogIn[0] := #DosingSpeed;
+	    
+	    //Configuration parameter
+	    "BoolToDigVal"(In := #Config_Param[0],
+	                   ST := 16#80,
+	                   Out => #PVConnected);
+	    //process value input
+	    "RealToAnaVal"(In := #ProcessValueIn_Real[0],
+	                   ST := 16#80,
+	                   Out => #ExternalLevel);
+	    "BoolToDigVal"(In := #ProcessValueIn_Bool[0],
+	                   ST := 16#80,
+	                   Out => #PEA_inlet_Vlv_opened);
+	END_REGION
+	    
+	    
+	REGION Set auto/man mode & Int/Ext
+	    //check for positive edge at Dose.Oos
+	    "R_TRIG_DB"(CLK := #Oos,
+	                Q => #Neg_edge);
+	    
+	    //Set POs to auto mode
+	    IF #Auto_Man = TRUE THEN
+	        "FIC100_Type".Cmd_Man := FALSE;
+	        "P100_Type".Cmd_Man := FALSE;
+	        "V100_Type".Cmd_Man := FALSE;
+	        "P101_Type".Cmd_Man := FALSE;
+	        "FIC100_Type".Cmd_Auto := TRUE;
+	        "P100_Type".Cmd_Auto := TRUE;
+	        "V100_Type".Cmd_Auto := TRUE;
+	        "P101_Type".Cmd_Auto := TRUE;
+	    //Set POs to man mode
+	    ELSIF #Neg_edge = TRUE THEN
+	        "FIC100_Type".Cmd_Auto := FALSE;
+	        "P100_Type".Cmd_Auto := FALSE;
+	        "V100_Type".Cmd_Auto := FALSE;
+	        "P101_Type".Cmd_Auto := FALSE;
+	        "FIC100_Type".Cmd_Man := TRUE;
+	        "P100_Type".Cmd_Man := TRUE;
+	        "V100_Type".Cmd_Man := TRUE;
+	        "P101_Type".Cmd_Man := TRUE;
+	    //Reset Value
+	    ELSE
+	        "FIC100_Type".Cmd_Auto := FALSE;
+	        "P100_Type".Cmd_Auto := FALSE;
+	        "V100_Type".Cmd_Auto := FALSE;
+	        "P101_Type".Cmd_Auto := FALSE;
+	        "FIC100_Type".Cmd_Man := FALSE;
+	        "P100_Type".Cmd_Man := FALSE;
+	        "V100_Type".Cmd_Man := FALSE;
+	        "P101_Type".Cmd_Man := FALSE;
+	    END_IF;
+	END_REGION
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+END_FUNCTION_BLOCK
+

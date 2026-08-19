@@ -1,0 +1,239 @@
+﻿FUNCTION_BLOCK "ProcessValues"
+TITLE = ProcessValues
+{ S7_Optimized_Access := 'TRUE' }
+AUTHOR : 'Siemens AG'
+FAMILY : ServiceControl
+VERSION : 1.0
+//Handling of ProcessValues
+   VAR_INPUT 
+      ProcessValueOutAnalogIn { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_HiddenAssignment := 'HideIfNoParamAssigned'} : Array[0..#NUMBER_PARAMETERS_OUT_ANALOG_NOT_MAPPED] of "UDT_MTP_AnaProcessValueOut";
+      ProcessValueOutDigitalIn { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_HiddenAssignment := 'HideIfNoParamAssigned'} : Array[0..#NUMBER_PARAMETERS_OUT_DIGITAL_NOT_MAPPED] of "UDT_MTP_DIntProcessValueOut";
+      ProcessValueOutBinaryIn { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_HiddenAssignment := 'HideIfNoParamAssigned'} : Array[0..#NUMBER_PARAMETERS_OUT_BINARY_NOT_MAPPED] of "UDT_MTP_BinProcessValueOut";
+      ProcessValueOutStringIn { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_HiddenAssignment := 'HideIfNoParamAssigned'} : Array[0..#NUMBER_PARAMETERS_OUT_STRING_NOT_MAPPED] of "UDT_MTP_StringProcessValueOut";
+      ProcessValueInAnalogApply { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_HiddenAssignment := 'HideIfNoParamAssigned'} : Array[0..#NUMBER_PARAMETERS_IN_ANALOG_NOT_MAPPED] of "UDT_Service_ProcessValueInApply";
+      ProcessValueInDigitalApply { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_HiddenAssignment := 'HideIfNoParamAssigned'} : Array[0..#NUMBER_PARAMETERS_IN_DIGITAL_NOT_MAPPED] of "UDT_Service_ProcessValueInApply";
+   END_VAR
+
+   VAR_OUTPUT 
+      ProcessValueInAnalogOut { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_HiddenAssignment := 'HideIfNoParamAssigned'} : Array[0..#NUMBER_PARAMETERS_IN_ANALOG_NOT_MAPPED] of "UDT_MTP_AnaProcessValueOut";
+      ProcessValueInDigitalOut { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_HiddenAssignment := 'HideIfNoParamAssigned'} : Array[0..#NUMBER_PARAMETERS_IN_DIGITAL_NOT_MAPPED] of "UDT_MTP_DIntProcessValueOut";
+      ProcessValueInBinaryOut { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_HiddenAssignment := 'HideIfNoParamAssigned'} : Array[0..#NUMBER_PARAMETERS_IN_BINARY_NOT_MAPPED] of "UDT_MTP_BinProcessValueOut";
+      ProcessValueInStringOut { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_HiddenAssignment := 'HideIfNoParamAssigned'} : Array[0..#NUMBER_PARAMETERS_IN_STRING_NOT_MAPPED] of "UDT_MTP_StringProcessValueOut";
+   END_VAR
+
+   VAR 
+      MTPAnalogIn { S7_SetPoint := 'False'} : Array[0..#NUMBER_PARAMETERS_IN_ANALOG_TOTAL] of "UDT_MTP_AnaProcessValueIn";
+      MTPDigitalIn { S7_SetPoint := 'False'} : Array[0..#NUMBER_PARAMETERS_IN_DIGITAL_TOTAL] of "UDT_MTP_DIntProcessValueIn";
+      MTPBinaryIn { S7_SetPoint := 'False'} : Array[0..#NUMBER_PARAMETERS_IN_BINARY_TOTAL] of "UDT_MTP_BinProcessValueIn";
+      MTPStringIn { S7_SetPoint := 'False'} : Array[0..#NUMBER_PARAMETERS_IN_STRING_TOTAL] of "UDT_MTP_StringProcessValueIn";
+      AnalogIn { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Array[0..#NUMBER_PARAMETERS_IN_ANALOG_NOT_MAPPED] of "ProcessValueInAnalog";
+      DigitalIn { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Array[0..#NUMBER_PARAMETERS_IN_DIGITAL_NOT_MAPPED] of "ProcessValueInDigital";
+      BinaryIn { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Array[0..#NUMBER_PARAMETERS_IN_BINARY_NOT_MAPPED] of "ProcessValueInBinary";
+      StringIn { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Array[0..#NUMBER_PARAMETERS_IN_STRING_NOT_MAPPED] of "ProcessValueInString";
+      MTPAnalogOut { S7_SetPoint := 'False'} : Array[0..#NUMBER_PARAMETERS_OUT_ANALOG_TOTAL] of "UDT_MTP_AnaProcessValueOut";
+      MTPDigitalOut { S7_SetPoint := 'False'} : Array[0..#NUMBER_PARAMETERS_OUT_DIGITAL_TOTAL] of "UDT_MTP_DIntProcessValueOut";
+      MTPBinaryOut { S7_SetPoint := 'False'} : Array[0..#NUMBER_PARAMETERS_OUT_BINARY_TOTAL] of "UDT_MTP_BinProcessValueOut";
+      MTPStringOut { S7_SetPoint := 'False'} : Array[0..#NUMBER_PARAMETERS_OUT_STRING_TOTAL] of "UDT_MTP_StringProcessValueOut";
+      AnalogOut { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Array[0..#NUMBER_PARAMETERS_OUT_ANALOG_NOT_MAPPED] of "ProcessValueOutAnalog";
+      DigitalOut { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Array[0..#NUMBER_PARAMETERS_OUT_DIGITAL_NOT_MAPPED] of "ProcessValueOutDigital";
+      BinaryOut { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Array[0..#NUMBER_PARAMETERS_OUT_BINARY_NOT_MAPPED] of "ProcessValueOutBinary";
+      StringOut { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Array[0..#NUMBER_PARAMETERS_OUT_STRING_NOT_MAPPED] of "ProcessValueOutString";
+   END_VAR
+
+   VAR_TEMP 
+      i : Int;
+      tempUpperLimit : Int;   // Upper limit for FOR - loop
+      tempModuloNumber : Int;   // Number for modulo calculation
+      tempIndexExt : Int;   // Index for external interface of not mapped process values
+      tempTVO : Bool;   // Transfer value only from Ext to MTP (instead of whole UDT)
+   END_VAR
+
+   VAR CONSTANT 
+      NUMBER_PARAMETERS_IN_ANALOG_TOTAL : Int := 1;
+      NUMBER_PARAMETERS_IN_DIGITAL_TOTAL : Int := 0;
+      NUMBER_PARAMETERS_IN_BINARY_TOTAL : Int := 1;
+      NUMBER_PARAMETERS_IN_STRING_TOTAL : Int := 0;
+      NUMBER_PARAMETERS_OUT_ANALOG_TOTAL : Int := 1;
+      NUMBER_PARAMETERS_OUT_DIGITAL_TOTAL : Int := 0;
+      NUMBER_PARAMETERS_OUT_BINARY_TOTAL : Int := 0;
+      NUMBER_PARAMETERS_OUT_STRING_TOTAL : Int := 0;
+      NUMBER_PARAMETERS_IN_ANALOG_NOT_MAPPED : Int;   // Not mapped to a service
+      NUMBER_PARAMETERS_IN_DIGITAL_NOT_MAPPED : Int;   // Not mapped to a service
+      NUMBER_PARAMETERS_IN_BINARY_NOT_MAPPED : Int;   // Not mapped to a service
+      NUMBER_PARAMETERS_IN_STRING_NOT_MAPPED : Int;   // Not mapped to a service
+      NUMBER_PARAMETERS_OUT_ANALOG_NOT_MAPPED : Int;   // Not mapped to a service
+      NUMBER_PARAMETERS_OUT_DIGITAL_NOT_MAPPED : Int;   // Not mapped to a service
+      NUMBER_PARAMETERS_OUT_BINARY_NOT_MAPPED : Int;   // Not mapped to a service
+      NUMBER_PARAMETERS_OUT_STRING_NOT_MAPPED : Int;   // Not mapped to a service
+      NUMBER_PARAMETERS_IN_MIN : Int;
+      NUMBER_PARAMETERS_OUT_MIN : Int;
+   END_VAR
+
+
+BEGIN
+	REGION Block Info Header
+	  //===============================================================================
+	  // Siemens AG / (c)Copyright 2021
+	  //-------------------------------------------------------------------------------
+	  // Title:            ProcessValues
+	  // Comment/Function: Handling of ProcessValues
+	  // Library/Family:   ServiceControl
+	  // Author:           Siemens AG
+	  // Tested with:      S7-PLCSIM Advanced 4.0
+	  // Engineering:      TIA Portal V17
+	  // Restrictions:     MTP
+	  // Requirements:     PLC (S7-1200 / S7-1500)
+	  //-------------------------------------------------------------------------------
+	  // Change log table:
+	  // Version  | Date       | Expert in charge        | Changes applied
+	  //----------|------------|-------------------------|-----------------------------
+	  // 01.00.00 | 29.07.2021 | Michael Schlosser       | First released version
+	  // 01.00.01 | 20.09.2021 | Michael Schlosser       | change: comment in region "Description"; new comments of for-loops
+	  // 01.00.02 | 19.10.2021 | Markus Krause           | change: New Outputs for PV Inputs without Service
+	  // 01.00.03 | 21.10.2021 | Markus Krause           | change: New concept for Standalone mode of the Process Values Inputs / Outputs
+	  // 01.00.04 | 22.10.2021 | Markus Krause           | change: Bugfix for Standalone mode of the Process Values Inputs / Outputs
+	  // 01.00.05 | 22.10.2021 | Markus Krause           | change: Bugfix for Standalone mode of the Process Values Inputs / Outputs
+	  // 01.00.06 | 22.10.2021 | Markus Krause           | change: ApplyEn changed from Bool to UDT_Service_ProcessValueInApply
+	  // 01.00.07 | 25.10.2021 | Michael Schlosser       | change: process out values are now connected via InOut interface "Ext" to process value out FBs
+	  // 01.00.08 | 26.10.2021 | Michael Schlosser       | change: differentiation between "mapped" and "not mapped" for process values out
+	  // 01.00.09 | 27.10.2021 | Michael Schlosser       | change: process in values are now connected via InOut interface "Ext" to process value in FBs; differentiation between "mapped" and "not mapped" for process values in
+	  // 01.00.10 | 28.10.2021 | Michael Schlosser       | rename: interface "isMapped" to "TVO" (transfer value only) for process values out
+	  // 01.00.11 | 22.11.2021 | Michael Schlosser       | change: extend comment in region "Description"
+	  //===============================================================================
+	END_REGION Block Info Header
+	
+	REGION Description
+	  // ProcessValues provides the MTP-Interface and the number of values of each type of process in/out value
+	  // and calls the FB for each analog, digital, binary and string process in/out value which is not mapped to any service
+	END_REGION Description
+	
+	REGION BLOCK INITIALIZATION
+	  #tempTVO := false;  // Transfer whole UDT from Ext to MTP for not mapped (to a service) process values out
+	END_REGION BLOCK INITIALIZATION
+	
+	REGION BEHAVIOR LOGIC
+	  
+	  // Call of process value FB for each not mapped analog in value
+	  #tempUpperLimit := #NUMBER_PARAMETERS_IN_ANALOG_TOTAL - 1 + #NUMBER_PARAMETERS_IN_MIN;
+	  #tempModuloNumber := #NUMBER_PARAMETERS_IN_ANALOG_TOTAL;  // without this trick, the compiler throws error division by zero 
+	  FOR #i := #NUMBER_PARAMETERS_IN_MIN TO #tempUpperLimit DO
+	    IF (#i > #tempUpperLimit - #NUMBER_PARAMETERS_IN_ANALOG_NOT_MAPPED) AND (#tempModuloNumber > 0) AND (#tempModuloNumber >= #NUMBER_PARAMETERS_IN_ANALOG_NOT_MAPPED) THEN
+	      // Number_Mapped + Number_not_Mapped = Number_Total
+	      // Call FB only in case that the values of the constants are consistent and that no division by zero is possible
+	      #tempIndexExt := ((#i + #NUMBER_PARAMETERS_IN_ANALOG_NOT_MAPPED) MOD #tempModuloNumber) + #NUMBER_PARAMETERS_IN_MIN;
+	      // Not-mapped (to a service) process values in are located at upper MTP-indices and must be mapped to their external output area
+	      #AnalogIn[#tempIndexExt](Apply := #ProcessValueInAnalogApply[#tempIndexExt],
+	                               MTP   := #MTPAnalogIn[#i],
+	                               Ext   := #ProcessValueInAnalogOut[#tempIndexExt]);
+	    END_IF;
+	  END_FOR;
+	  
+	  // Call of process value FB for each not mapped digital in value
+	  #tempUpperLimit := #NUMBER_PARAMETERS_IN_DIGITAL_TOTAL - 1 + #NUMBER_PARAMETERS_IN_MIN;
+	  #tempModuloNumber := #NUMBER_PARAMETERS_IN_DIGITAL_TOTAL;  // without this trick, the compiler throws error division by zero 
+	  FOR #i := #NUMBER_PARAMETERS_IN_MIN TO #tempUpperLimit DO
+	    IF (#i > #tempUpperLimit - #NUMBER_PARAMETERS_IN_DIGITAL_NOT_MAPPED) AND (#tempModuloNumber > 0) AND (#tempModuloNumber >= #NUMBER_PARAMETERS_IN_DIGITAL_NOT_MAPPED) THEN
+	      // Number_Mapped + Number_not_Mapped = Number_Total
+	      // Call FB only in case that the values of the constants are consistent and that no division by zero is possible
+	      #tempIndexExt := ((#i + #NUMBER_PARAMETERS_IN_DIGITAL_NOT_MAPPED) MOD #tempModuloNumber) + #NUMBER_PARAMETERS_IN_MIN;
+	      // Not-mapped (to a service) process values in are located at upper MTP-indices and must be mapped to their external output area
+	      #DigitalIn[#tempIndexExt](Apply := #ProcessValueInDigitalApply[#tempIndexExt],
+	                                MTP   := #MTPDigitalIn[#i],
+	                                Ext   := #ProcessValueInDigitalOut[#tempIndexExt]);
+	    END_IF;
+	  END_FOR;
+	  
+	  // Call of process value FB for each not mapped binary in value
+	  #tempUpperLimit := #NUMBER_PARAMETERS_IN_BINARY_TOTAL - 1 + #NUMBER_PARAMETERS_IN_MIN;
+	  #tempModuloNumber := #NUMBER_PARAMETERS_IN_BINARY_TOTAL;  // without this trick, the compiler throws error division by zero 
+	  FOR #i := #NUMBER_PARAMETERS_IN_MIN TO #tempUpperLimit DO
+	    IF (#i > #tempUpperLimit - #NUMBER_PARAMETERS_IN_BINARY_NOT_MAPPED) AND (#tempModuloNumber > 0) AND (#tempModuloNumber >= #NUMBER_PARAMETERS_IN_BINARY_NOT_MAPPED) THEN
+	      // Number_Mapped + Number_not_Mapped = Number_Total
+	      // Call FB only in case that the values of the constants are consistent and that no division by zero is possible
+	      #tempIndexExt := ((#i + #NUMBER_PARAMETERS_IN_BINARY_NOT_MAPPED) MOD #tempModuloNumber) + #NUMBER_PARAMETERS_IN_MIN;
+	      // Not-mapped (to a service) process values in are located at upper MTP-indices and must be mapped to their external output area
+	      #BinaryIn[#tempIndexExt](MTP := #MTPBinaryIn[#i],
+	                               Ext := #ProcessValueInBinaryOut[#tempIndexExt]);
+	    END_IF;
+	  END_FOR;
+	  
+	  // Call of process value FB for each not mapped string in value
+	  #tempUpperLimit := #NUMBER_PARAMETERS_IN_STRING_TOTAL - 1 + #NUMBER_PARAMETERS_IN_MIN;
+	  #tempModuloNumber := #NUMBER_PARAMETERS_IN_STRING_TOTAL;  // without this trick, the compiler throws error division by zero 
+	  FOR #i := #NUMBER_PARAMETERS_IN_MIN TO #tempUpperLimit DO
+	    IF (#i > #tempUpperLimit - #NUMBER_PARAMETERS_IN_STRING_NOT_MAPPED) AND (#tempModuloNumber > 0) AND (#tempModuloNumber >= #NUMBER_PARAMETERS_IN_STRING_NOT_MAPPED) THEN
+	      // Number_Mapped + Number_not_Mapped = Number_Total
+	      // Call FB only in case that the values of the constants are consistent and that no division by zero is possible
+	      #tempIndexExt := ((#i + #NUMBER_PARAMETERS_IN_STRING_NOT_MAPPED) MOD #tempModuloNumber) + #NUMBER_PARAMETERS_IN_MIN;
+	      // Not-mapped (to a service) process values in are located at upper MTP-indices and must be mapped to their external output area
+	      #StringIn[#tempIndexExt](MTP := #MTPStringIn[#i],
+	                               Ext := #ProcessValueInStringOut[#tempIndexExt]);
+	    END_IF;
+	  END_FOR;
+	  
+	  
+	  
+	  // Call of process value FB for each not mapped analog out value
+	  #tempUpperLimit := #NUMBER_PARAMETERS_OUT_ANALOG_TOTAL - 1 + #NUMBER_PARAMETERS_OUT_MIN;
+	  #tempModuloNumber := #NUMBER_PARAMETERS_OUT_ANALOG_TOTAL;  // without this trick, the compiler throws error division by zero 
+	  FOR #i := #NUMBER_PARAMETERS_OUT_MIN TO #tempUpperLimit DO
+	    IF (#i > #tempUpperLimit - #NUMBER_PARAMETERS_OUT_ANALOG_NOT_MAPPED) AND (#tempModuloNumber > 0) AND (#tempModuloNumber >= #NUMBER_PARAMETERS_OUT_ANALOG_NOT_MAPPED) THEN
+	      // Number_Mapped + Number_not_Mapped = Number_Total
+	      // Call FB only in case that the values of the constants are consistent and that no division by zero is possible
+	      #tempIndexExt := ((#i + #NUMBER_PARAMETERS_OUT_ANALOG_NOT_MAPPED) MOD #tempModuloNumber) + #NUMBER_PARAMETERS_OUT_MIN;
+	      // Not-mapped (to a service) process values out are located at upper MTP-indices and must be mapped to their external input area
+	      #AnalogOut[#tempIndexExt](TVO := #tempTVO,
+	                                Ext := #ProcessValueOutAnalogIn[#tempIndexExt],
+	                                MTP := #MTPAnalogOut[#i]);
+	    END_IF;
+	  END_FOR;
+	  
+	  // Call of process value FB for each not mapped digital out value
+	  #tempUpperLimit := #NUMBER_PARAMETERS_OUT_DIGITAL_TOTAL - 1 + #NUMBER_PARAMETERS_OUT_MIN;
+	  #tempModuloNumber := #NUMBER_PARAMETERS_OUT_DIGITAL_TOTAL;  // without this trick, the compiler throws error division by zero 
+	  FOR #i := #NUMBER_PARAMETERS_OUT_MIN TO #tempUpperLimit DO
+	    IF (#i > #tempUpperLimit - #NUMBER_PARAMETERS_OUT_DIGITAL_NOT_MAPPED) AND (#tempModuloNumber > 0) AND (#tempModuloNumber >= #NUMBER_PARAMETERS_OUT_DIGITAL_NOT_MAPPED) THEN
+	      // Number_Mapped + Number_not_Mapped = Number_Total
+	      // Call FB only in case that the values of the constants are consistent and that no division by zero is possible
+	      #tempIndexExt := ((#i + #NUMBER_PARAMETERS_OUT_DIGITAL_NOT_MAPPED) MOD #tempModuloNumber) + #NUMBER_PARAMETERS_OUT_MIN;
+	      // Not-mapped (to a service) process values out are located at upper MTP-indices and must be mapped to their external input area
+	      #DigitalOut[#tempIndexExt](TVO := #tempTVO,
+	                                 Ext := #ProcessValueOutDigitalIn[#tempIndexExt],
+	                                 MTP := #MTPDigitalOut[#i]);
+	    END_IF;
+	  END_FOR;
+	  
+	  // Call of process value FB for each not mapped binary out value
+	  #tempUpperLimit := #NUMBER_PARAMETERS_OUT_BINARY_TOTAL - 1 + #NUMBER_PARAMETERS_OUT_MIN;
+	  #tempModuloNumber := #NUMBER_PARAMETERS_OUT_BINARY_TOTAL;  // without this trick, the compiler throws error division by zero 
+	  FOR #i := #NUMBER_PARAMETERS_OUT_MIN TO #tempUpperLimit DO
+	    IF (#i > #tempUpperLimit - #NUMBER_PARAMETERS_OUT_BINARY_NOT_MAPPED) AND (#tempModuloNumber > 0) AND (#tempModuloNumber >= #NUMBER_PARAMETERS_OUT_BINARY_NOT_MAPPED) THEN
+	      // Number_Mapped + Number_not_Mapped = Number_Total
+	      // Call FB only in case that the values of the constants are consistent and that no division by zero is possible
+	      #tempIndexExt := ((#i + #NUMBER_PARAMETERS_OUT_BINARY_NOT_MAPPED) MOD #tempModuloNumber) + #NUMBER_PARAMETERS_OUT_MIN;
+	      // Not-mapped (to a service) process values out are located at upper MTP-indices and must be mapped to their external input area
+	      #BinaryOut[#tempIndexExt](TVO := #tempTVO,
+	                                Ext := #ProcessValueOutBinaryIn[#tempIndexExt],
+	                                MTP := #MTPBinaryOut[#i]);
+	    END_IF;
+	  END_FOR;
+	  
+	  // Call of process value FB for each not mapped string out value
+	  #tempUpperLimit := #NUMBER_PARAMETERS_OUT_STRING_TOTAL - 1 + #NUMBER_PARAMETERS_OUT_MIN;
+	  #tempModuloNumber := #NUMBER_PARAMETERS_OUT_STRING_TOTAL;  // without this trick, the compiler throws error division by zero 
+	  FOR #i := #NUMBER_PARAMETERS_OUT_MIN TO #tempUpperLimit DO
+	    IF (#i > #tempUpperLimit - #NUMBER_PARAMETERS_OUT_STRING_NOT_MAPPED) AND (#tempModuloNumber > 0) AND (#tempModuloNumber >= #NUMBER_PARAMETERS_OUT_STRING_NOT_MAPPED) THEN
+	      // Number_Mapped + Number_not_Mapped = Number_Total
+	      // Call FB only in case that the values of the constants are consistent and that no division by zero is possible
+	      #tempIndexExt := ((#i + #NUMBER_PARAMETERS_OUT_STRING_NOT_MAPPED) MOD #tempModuloNumber) + #NUMBER_PARAMETERS_OUT_MIN;
+	      // Not-mapped (to a service) process values out are located at upper MTP-indices and must be mapped to their external input area
+	      #StringOut[#tempIndexExt](TVO := #tempTVO,
+	                                Ext := #ProcessValueOutStringIn[#tempIndexExt],
+	                                MTP := #MTPStringOut[#i]);
+	    END_IF;
+	  END_FOR;
+	  
+	END_REGION BEHAVIOR LOGIC
+	
+END_FUNCTION_BLOCK
+

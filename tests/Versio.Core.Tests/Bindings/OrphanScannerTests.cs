@@ -1,4 +1,6 @@
 using Versio.Core.Bindings;
+using Versio.Core.Plc;
+using Versio.Core.Projects;
 using Xunit;
 
 namespace Versio.Core.Tests.Bindings;
@@ -289,6 +291,48 @@ public class OrphanScannerTests
         Assert.Equal("plc/New", b.ExportPath);
         Assert.Equal("plc/New_template.project", b.TemplatePath);
         Assert.Equal("CODESYS V3.5 SP22 Patch 2", b.Profile);
+        Assert.True(b.Vendor.IsUnknown);
         Assert.True(b.Enabled);
+    }
+
+    [Fact]
+    public void A_format_template_is_not_offered_for_adoption()
+    {
+        // .alXX archives are this vendor's packed project. The scanner used to only know
+        // *_template.project, so an archive looked like an ordinary orphan.
+        var scanner = new OrphanScanner(path =>
+            path.EndsWith(".al21", StringComparison.OrdinalIgnoreCase)
+                ? ArchiveFormat.Instance
+                : null);
+
+        var findings = scanner.Scan(new RepoConfig(), new RepoSnapshot
+        {
+            ProjectFiles = ["plc/Archive.al21"],
+        });
+
+        Assert.Empty(findings);
+    }
+
+    private sealed class ArchiveFormat : IPlcProjectFormat
+    {
+        public static readonly ArchiveFormat Instance = new();
+
+        public PlcVendor Vendor => new("ArchiveStandIn");
+        public string DisplayName => "archive stand-in";
+        public PlcCapabilities Capabilities => new();
+        public IReadOnlyList<string> ProjectExtensions => [".al21"];
+        public bool IsTemplate(string path) =>
+            path.EndsWith(".al21", StringComparison.OrdinalIgnoreCase);
+        public string ConventionalExportPath(string projectPath) => projectPath + ".export";
+        public string? OccupancyMarkerFor(string projectPath) => null;
+        public IReadOnlyList<string> TransientPatternsFor(string projectPath) => [];
+        public ProjectOccupancy ParseOccupancy(string markerContents) => ProjectOccupancy.Free;
+        public bool NeedsTextToPlan(string relativePath) => false;
+        public ImportPlan PlanImport(
+            Versio.Core.Projects.ProjectManifest? manifest,
+            IReadOnlyList<MirrorFile> mirror,
+            IReadOnlyDictionary<string, string> departed) =>
+            new() { Files = [] };
+        public Versio.Core.Projects.ObjectTypeName? DisplayNameFor(string type) => null;
     }
 }

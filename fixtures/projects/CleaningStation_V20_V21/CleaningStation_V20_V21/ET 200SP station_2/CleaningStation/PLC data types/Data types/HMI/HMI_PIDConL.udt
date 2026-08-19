@@ -1,0 +1,91 @@
+﻿TYPE "HMI_PIDConL"
+VERSION : 0.1
+   STRUCT
+      Gain : Real := 1.0;   // Proportional gain
+      TI : Real := 100.0;   // Integral time [s]
+      TD : Real;   // Differential time (derivative time) [s]
+      DiffGain : Real := 5.0;   // Gain of differentiator [1..10], DiffGain = TD / (time lag of D action)
+      DiffToFbk : Bool;   // 1 = D action is moved to feedback path
+      PropFacSP : Real := 1.0;   // P action to feedback path [0..1]: 0 = P action fully in feedback path
+      DeadBand : Real;   // Width of deadband
+      ConZone { CFC_Visible := 'false'} : Real;   // Width of control zone
+      SP_ExtOp : Bool;   // 1 = Select external setpoint (via operator)
+      SP_IntOp : Bool;   // 1 = Select internal setpoint (via operator)
+      SP_Int : Real;   // Internal setpoint for operation
+      SP_InHiLim : Real := 100.0;   // High limit of internal setpoint
+      SP_InLoLim { CFC_Visible := 'false'} : Real;   // Low limit of internal setpoint
+      SP_ExHiLim : Real := 100.0;   // High limit for external setpoint
+      SP_ExLoLim { CFC_Visible := 'false'} : Real;   // Low limit for external setpoint
+      SP_TrkPV { CFC_Visible := 'false'} : Bool;   // 1 = Setpoint follows PV in manual mode and in tracking
+      SP_TrkExt { CFC_Visible := 'false'} : Bool := TRUE;   // 1 = Bumpless switchover from external to internal setpoint active
+      SP_RateOn { CFC_Visible := 'false'} : Bool;   // 1= Activate limitation of setpoint gradients
+      SP_RmpOn { CFC_Visible := 'false'} : Bool;   // 1= Activate setpoint ramp to target SP_RmpTarget
+      SP_RmpModTime : Bool;   // 1= Use time SP_RmpTime for ramp, 0= Use rates SP_UpRaLim, SP_DnRaLim
+      SP_UpRaLim : Real := 100.0;   // Upward rate limit of setpoint
+      SP_DnRaLim : Real := 100.0;   // Downward rate limit of setpoint
+      SP_RmpTime { CFC_Visible := 'false'} : Real;   // Setpoint ramp time [s,min,h]
+      SP_RmpTarget : Real;   // Setpoint ramp target
+      PV : Real;   // Process value (controlled variable)
+      PV_AH_Lim : Real := 95.0;   // PV alarm high limit
+      PV_WH_Lim : Real := 90.0;   // PV warning high limit
+      PV_TH_Lim : Real := 85.0;   // PV tolerance message high limit
+      PV_TL_Lim : Real := 15.0;   // PV tolerance message low limit
+      PV_WL_Lim : Real := 10.0;   // PV warning low limit
+      PV_AL_Lim { CFC_Visible := 'false'; CFC_ForTest := 'true'} : Real := 5.0;   // PV alarm low limit
+      PV_Hyst { CFC_Visible := 'false'} : Real := 1.0;   // Hysteresis for PV alarms, warnings and tolerance messages
+      ER_AH_Lim : Real := 100.0;   // ER alarm high limit
+      ER_AL_Lim : Real := -100.0;   // ER alarm low limit
+      ER_Hyst : Real := 1.0;   // Hysteresis for ER alarms
+      ER_AH_DFac : Real;   // ER alarm coming delay factor for positive SP jump [s/PV_Unit]
+      ER_AL_DFac { CFC_Visible := 'false'; CFC_ForTest := 'true'} : Real;   // ER alarm coming delay factor for negative SP jump [s/PV_Unit]
+      FFwd { CFC_Visible := 'false'} : Real;   // Input for additive disturbance variable compensation
+      MV_Trk { CFC_Visible := 'false'} : Real;   // Tracking value for manipulated variable MV
+      AutModOp { CFC_Visible := 'false'} : Bool;   // 1 = Automatic mode by operator (controlled by ModLiOp = 0)
+      ManModOp { CFC_Visible := 'false'} : Bool := TRUE;   // 1 = Manual mode by operator (controlled by ModLiOp = 0)
+      AdvCoOn { CFC_Visible := 'false'} : Bool;   // 1 = Enable program mode via faceplate
+      AdvCoMV { CFC_Visible := 'false'} : Real;   // Target value from the external program
+      OosOp { CFC_Visible := 'false'} : Bool;   // 1 = Out of service by OS operation
+      OptimEn { CFC_Visible := 'false'} : Bool;   // 1 = Enable optimization of PID parameters by PID tuner
+      CPI_In { CFC_Visible := 'false'} : Real;   // Input for control performance index calculated by related ConPerMon block
+      Man { CFC_Visible := 'false'} : Real;   // Operator input for manual setting of manipulated variable MV
+      ManHiLim { CFC_Visible := 'false'} : Real := 100.0;   // High limit for manipulated variable in manual mode
+      ManLoLim { CFC_Visible := 'false'} : Real;   // Low limit for manipulated variable in manual mode
+      Intlock : Bool := true;   // 0=Controller is Interlocked, 1=Controller is Not Interlocked
+      Intlock_ST : Byte := BYTE#16#FF;   // Intlock Signal Status
+      RbkWH_Lim : Real := 100.0;   // Rbk warning high limit
+      RbkWL_Lim { CFC_ForTest := 'true'} : Real;   // Rbk warning low limit
+      RbkHyst : Real := 1.0;   // Hysteresis for Rbk warnings
+      PV_OpScale { S7_SetPoint := 'False'} : "ScaVal";   // Limit values for scale in PV bar display of faceplate
+      MV_OpScale { S7_SetPoint := 'False'} : "ScaVal";   // Limit values for scale in MV bar display of faceplate
+      PV_Unit { CFC_Visible := 'false'} : Int := 1001;   // Unit of measurement for the process value
+      MV_Unit { CFC_Visible := 'false'} : Int := 1342;   // Unit of measurement for manipulated variable
+      TimeFactor : Int;   // Time Conversion Factor (0- Sec, 1- Min, 2- Hour)
+      MV { ExternalWritable := 'False'} : Real;   // Manipulated variable, Control output
+      MV_ST { ExternalWritable := 'False'} : Byte := BYTE#16#80;   // MV Signal Status
+      MV_HiAct { ExternalWritable := 'False'} : Bool;   // MV high limit is actively restricting manipulated variable
+      MV_LoAct { ExternalWritable := 'False'} : Bool;   // MV low limit is actively restricting manipulated variable
+      RbkOut { ExternalWritable := 'False'} : Real;   // Readback value output
+      LoopClosed { ExternalWritable := 'False'} : Bool;   // 1 = Loop control is closed, 0 = Loop control is opened
+      SP { ExternalWritable := 'False'} : Real;   // Active setpoint as calculated and used by controller
+      SP_ExtOut { ExternalWritable := 'False'} : Real;   // External setpoint output
+      SP_IntOut { ExternalWritable := 'False'} : Real;   // Internal setpoint output
+      SP_RemRT { ExternalWritable := 'False'; CFC_Visible := 'false'} : Real;   // Remaining ramp time of setpoint
+      PV_Out { ExternalWritable := 'False'} : Real;   // Process value (controlled variable) output
+      PV_Out_ST { ExternalWritable := 'False'} : Byte := BYTE#16#80;   // PV_Out Signal Status
+      PV_ToleHi { ExternalWritable := 'False'} : Real;   // High limit of 3-sigma band around the setpoint (only with ConPerMon)
+      PV_ToleLo { ExternalWritable := 'False'} : Real;   // Low limit of 3-sigma band around the setpoint (only with ConPerMon)
+      ER { ExternalWritable := 'False'} : Real;   // Control error
+      Status1 { ExternalWritable := 'False'} : DWord;   // Status word 1, defined in the online help
+      Status2 { ExternalWritable := 'False'} : DWord;   // Status word 2, defined in the online help
+      Status3 { ExternalWritable := 'False'} : DWord;   // Status word 3, defined in the online help
+      Status4 { ExternalVisible := 'False'; ExternalWritable := 'False'} : DWord;   // Status word 4, defined in the online help
+      OS_PermOut { ExternalWritable := 'False'} : DWord := DWORD#16#FFFF_FFFF;   // Display of operator permissions OS_Perm
+      OS_PermLog { ExternalWritable := 'False'} : DWord := DWORD#16#FFFF_FFFF;   // Operator permissions with settings changed by the block algorithm
+      OS1PermOut { ExternalWritable := 'False'} : DWord := DWORD#16#FFFF_FFFF;   // Display of operator permissions OS1Perm
+      OS1PermLog { ExternalWritable := 'False'} : DWord := DWORD#16#FFFF_FFFF;   // Operator permissions with settings changed by the block algorithm
+      ST_Worst { ExternalWritable := 'False'} : Byte := BYTE#16#80;   // Worst signal status
+      AlarmState { ExternalWritable := 'False'} : DWord;   // Alarm Status for group display
+   END_STRUCT;
+
+END_TYPE
+

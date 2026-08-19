@@ -73,24 +73,89 @@ public sealed class FakeFileSystem : IFileSystem
         }
 
         _files[destination] = _files.TryGetValue(source, out var b) ? b : [];
+        RememberAncestors(destination);
         return Task.CompletedTask;
+    }
+
+    public async Task CopyTreeAsync(string source, string destination, CancellationToken ct)
+    {
+        CreateDirectory(destination);
+
+        var prefix = source.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                     + Path.DirectorySeparatorChar;
+
+        foreach (var file in _files.Keys
+                     .Where(k => k.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                     .ToList())
+        {
+            var relative = file[prefix.Length..];
+            var dest = Path.Combine(destination, relative);
+            await CopyAsync(file, dest, ct).ConfigureAwait(false);
+        }
+
+        foreach (var dir in _dirs
+                     .Where(d => d.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                     .ToList())
+        {
+            var relative = dir[prefix.Length..];
+            if (relative.Length > 0)
+            {
+                CreateDirectory(Path.Combine(destination, relative));
+            }
+        }
+    }
+
+    public IEnumerable<string> EnumerateDirectories(string root)
+    {
+        var prefix = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                     + Path.DirectorySeparatorChar;
+
+        return _dirs.Where(d =>
+        {
+            if (!d.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            var rest = d[prefix.Length..];
+            return rest.Length > 0
+                   && rest.IndexOf(Path.DirectorySeparatorChar) < 0
+                   && rest.IndexOf(Path.AltDirectorySeparatorChar) < 0;
+        });
     }
 
     public void DeleteFile(string path) => _files.Remove(path);
 
-    public void CreateDirectory(string path) => _dirs.Add(path);
+    public void DeleteDirectory(string path) => RemoveDirectory(path);
+
+    public void CreateDirectory(string path)
+    {
+        if (string.IsNullOrEmpty(path))
+        {
+            return;
+        }
+
+        _dirs.Add(path);
+        RememberAncestors(path);
+    }
+
+    private void RememberAncestors(string path)
+    {
+        for (var dir = Path.GetDirectoryName(path);
+             !string.IsNullOrEmpty(dir);
+             dir = Path.GetDirectoryName(dir))
+        {
+            _dirs.Add(dir);
+        }
+    }
 
     /// <summary>
-    /// Remove a directory and everything beneath it — the fake's only way to express a folder
-    /// that is <b>not there</b>, as opposed to one that is empty.
+    /// Remove a directory and everything beneath it.
     /// </summary>
     /// <remarks>
-    /// <b>Not part of <see cref="IFileSystem"/>, and deliberately not.</b> Nothing in the
-    /// product deletes a directory through the abstraction; a person does it in a file
-    /// manager, and the code's job is only to notice. But until this existed the fake could
-    /// not represent that at all — deleting every file left <see cref="DirectoryExists"/>
-    /// answering true, which is correct for a real filesystem and meant the "the mirror is
-    /// gone" case had no way to be written down.
+    /// Also the <see cref="IFileSystem.DeleteDirectory"/> implementation. A tree-payload
+    /// scratch copy and a tree backup have to go as a folder, not as a bag of files, or
+    /// the prune walks into the newest copy and deletes it from the inside out.
     /// </remarks>
     public void RemoveDirectory(string path)
     {

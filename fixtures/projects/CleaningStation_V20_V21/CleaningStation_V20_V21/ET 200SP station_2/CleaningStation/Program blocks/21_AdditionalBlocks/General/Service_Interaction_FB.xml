@@ -1,0 +1,599 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Document>
+  <Engineering version="V21" />
+  <DocumentInfo>
+    <Created>2026-08-19T17:13:14.7072323Z</Created>
+    <ExportSetting>None</ExportSetting>
+    <InstalledProducts>
+      <Product>
+        <DisplayName>Totally Integrated Automation Portal</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>STEP 7 Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <OptionPackage>
+        <DisplayName>STEP 7 Safety</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <OptionPackage>
+        <DisplayName>Tech WebApplication</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <Product>
+        <DisplayName>WinCC Basic/Comfort/Advanced</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Unified</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+    </InstalledProducts>
+  </DocumentInfo>
+  <SW.Blocks.FB ID="0">
+    <AttributeList>
+      <Interface>
+        <Sections xmlns="http://www.siemens.com/automation/Openness/SW/Interface/v5">
+          <Section Name="Input">
+            <Member Name="Startbit" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="AnswerID" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+          </Section>
+          <Section Name="Output">
+            <Member Name="P100_Start" Datatype="Bool" />
+            <Member Name="P101_Start" Datatype="Bool" />
+          </Section>
+          <Section Name="InOut">
+            <Member Name="Pump_100" Datatype="&quot;MotL&quot;" />
+            <Member Name="Pump_101" Datatype="&quot;MotL&quot;" />
+          </Section>
+          <Section Name="Static" />
+          <Section Name="Temp">
+            <Member Name="State" Datatype="&quot;Service_States&quot;" />
+          </Section>
+          <Section Name="Constant" />
+        </Sections>
+      </Interface>
+      <MemoryLayout>Optimized</MemoryLayout>
+      <MemoryReserve>100</MemoryReserve>
+      <Name>Service_Interaction_FB</Name>
+      <Namespace />
+      <Number>6</Number>
+      <ProgrammingLanguage>SCL</ProgrammingLanguage>
+      <SetENOAutomatically>false</SetENOAutomatically>
+    </AttributeList>
+    <ObjectList>
+      <MultilingualText ID="1" CompositionName="Comment">
+        <ObjectList>
+          <MultilingualTextItem ID="2" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="3" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="4" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+      <SW.Blocks.CompileUnit ID="5" CompositionName="CompileUnits">
+        <AttributeList>
+          <NetworkSource>
+            <StructuredText xmlns="http://www.siemens.com/automation/Openness/SW/NetworkSource/StructuredText/v4">
+              <LineComment UId="21">
+                <Text UId="22">if positive edge, then trigger service interaction (set Question and info text)</Text>
+              </LineComment>
+              <NewLine UId="23" />
+              <Token Text="IF" UId="24" />
+              <Blank UId="25" />
+              <Access Scope="LocalVariable" UId="26">
+                <Symbol UId="27">
+                  <Component Name="Startbit" UId="28" />
+                </Symbol>
+              </Access>
+              <Blank UId="29" />
+              <Token Text="AND" UId="30" />
+              <Blank UId="31" />
+              <Token Text="NOT" UId="32" />
+              <Blank UId="33" />
+              <Access Scope="LocalVariable" UId="34">
+                <Symbol UId="35">
+                  <Component Name="Pump_100" UId="36" />
+                  <Token Text="." UId="37" />
+                  <Component Name="Run" UId="38" />
+                  <Token Text="." UId="39" />
+                  <Component Name="Value" UId="40" />
+                </Symbol>
+              </Access>
+              <Blank UId="41" />
+              <Token Text="AND" UId="42" />
+              <Blank UId="43" />
+              <Token Text="NOT" UId="44" />
+              <Blank UId="45" />
+              <Access Scope="LocalVariable" UId="46">
+                <Symbol UId="47">
+                  <Component Name="Pump_101" UId="48" />
+                  <Token Text="." UId="49" />
+                  <Component Name="Run" UId="50" />
+                  <Token Text="." UId="51" />
+                  <Component Name="Value" UId="52" />
+                </Symbol>
+              </Access>
+              <Blank UId="53" />
+              <Token Text="THEN" UId="54" />
+              <NewLine UId="55" />
+              <Blank Num="4" UId="56" />
+              <Access Scope="GlobalVariable" UId="57">
+                <Symbol UId="58">
+                  <Component Name="Dose" UId="59">
+                    <BooleanAttribute Name="HasQuotes" UId="60">true</BooleanAttribute>
+                  </Component>
+                  <Token Text="." UId="61" />
+                  <Component Name="InteractAddInfoLi" UId="62" />
+                </Symbol>
+              </Access>
+              <Blank UId="63" />
+              <Token Text=":=" UId="64" />
+              <Blank UId="65" />
+              <Access Scope="LiteralConstant" UId="66">
+                <Constant UId="67">
+                  <ConstantValue UId="69">'Select the available Pump for the operation'</ConstantValue>
+                </Constant>
+              </Access>
+              <Token Text=";" UId="70" />
+              <NewLine UId="71" />
+              <Blank Num="4" UId="72" />
+              <Access Scope="GlobalVariable" UId="73">
+                <Symbol UId="74">
+                  <Component Name="Dose" UId="75">
+                    <BooleanAttribute Name="HasQuotes" UId="76">true</BooleanAttribute>
+                  </Component>
+                  <Token Text="." UId="77" />
+                  <Component Name="InteractQuestionIdLi" UId="78" />
+                </Symbol>
+              </Access>
+              <Blank UId="79" />
+              <Token Text=":=" UId="80" />
+              <Blank UId="81" />
+              <Access Scope="LiteralConstant" UId="82">
+                <Constant UId="83">
+                  <ConstantValue UId="85">1</ConstantValue>
+                </Constant>
+              </Access>
+              <Token Text=";" UId="86" />
+              <NewLine UId="87" />
+              <Token Text="END_IF" UId="88" />
+              <Token Text=";" UId="89" />
+              <NewLine Num="2" UId="90" />
+              <LineComment UId="91">
+                <Text UId="92">if answer ID 1 or 3 is selected, start pump_100</Text>
+              </LineComment>
+              <NewLine UId="93" />
+              <Token Text="IF" UId="94" />
+              <Blank UId="95" />
+              <Token Text="(" UId="96" />
+              <Token Text="(" UId="97" />
+              <Access Scope="LocalVariable" UId="98">
+                <Symbol UId="99">
+                  <Component Name="AnswerID" UId="100" />
+                </Symbol>
+              </Access>
+              <Blank UId="101" />
+              <Token Text="=" UId="102" />
+              <Blank UId="103" />
+              <Access Scope="LiteralConstant" UId="104">
+                <Constant UId="105">
+                  <ConstantValue UId="107">1</ConstantValue>
+                </Constant>
+              </Access>
+              <Blank UId="108" />
+              <Token Text="OR" UId="109" />
+              <Blank UId="110" />
+              <Access Scope="LocalVariable" UId="111">
+                <Symbol UId="112">
+                  <Component Name="AnswerID" UId="113" />
+                </Symbol>
+              </Access>
+              <Blank UId="114" />
+              <Token Text="=" UId="115" />
+              <Blank UId="116" />
+              <Access Scope="LiteralConstant" UId="117">
+                <Constant UId="118">
+                  <ConstantValue UId="120">3</ConstantValue>
+                </Constant>
+              </Access>
+              <Token Text=")" UId="121" />
+              <Blank UId="122" />
+              <Token Text="AND" UId="123" />
+              <Blank UId="124" />
+              <Access Scope="LocalVariable" UId="125">
+                <Symbol UId="126">
+                  <Component Name="Startbit" UId="127" />
+                </Symbol>
+              </Access>
+              <Token Text=")" UId="128" />
+              <Blank UId="129" />
+              <Token Text="THEN" UId="130" />
+              <NewLine UId="131" />
+              <Blank Num="4" UId="132" />
+              <Access Scope="LocalVariable" UId="133">
+                <Symbol UId="134">
+                  <Component Name="P100_Start" UId="135" />
+                </Symbol>
+              </Access>
+              <Blank UId="136" />
+              <Token Text=":=" UId="137" />
+              <Blank UId="138" />
+              <Access Scope="LiteralConstant" UId="139">
+                <Constant UId="140">
+                  <ConstantValue UId="142">True</ConstantValue>
+                </Constant>
+              </Access>
+              <Token Text=";" UId="143" />
+              <NewLine UId="144" />
+              <Token Text="END_IF" UId="145" />
+              <Token Text=";" UId="146" />
+              <NewLine UId="147" />
+              <LineComment UId="148">
+                <Text UId="149">if answer ID 2 or 3 is selected, start pump_101</Text>
+              </LineComment>
+              <NewLine UId="150" />
+              <Token Text="IF" UId="151" />
+              <Blank UId="152" />
+              <Token Text="(" UId="153" />
+              <Token Text="(" UId="154" />
+              <Access Scope="LocalVariable" UId="155">
+                <Symbol UId="156">
+                  <Component Name="AnswerID" UId="157" />
+                </Symbol>
+              </Access>
+              <Blank UId="158" />
+              <Token Text="=" UId="159" />
+              <Blank UId="160" />
+              <Access Scope="LiteralConstant" UId="161">
+                <Constant UId="162">
+                  <ConstantValue UId="164">2</ConstantValue>
+                </Constant>
+              </Access>
+              <Blank UId="165" />
+              <Token Text="OR" UId="166" />
+              <Blank UId="167" />
+              <Access Scope="LocalVariable" UId="168">
+                <Symbol UId="169">
+                  <Component Name="AnswerID" UId="170" />
+                </Symbol>
+              </Access>
+              <Blank UId="171" />
+              <Token Text="=" UId="172" />
+              <Blank UId="173" />
+              <Access Scope="LiteralConstant" UId="174">
+                <Constant UId="175">
+                  <ConstantValue UId="177">3</ConstantValue>
+                </Constant>
+              </Access>
+              <Token Text=")" UId="178" />
+              <Blank UId="179" />
+              <Token Text="AND" UId="180" />
+              <Blank UId="181" />
+              <Access Scope="LocalVariable" UId="182">
+                <Symbol UId="183">
+                  <Component Name="Startbit" UId="184" />
+                </Symbol>
+              </Access>
+              <Token Text=")" UId="185" />
+              <Blank UId="186" />
+              <Token Text="THEN" UId="187" />
+              <NewLine UId="188" />
+              <Blank Num="4" UId="189" />
+              <Access Scope="LocalVariable" UId="190">
+                <Symbol UId="191">
+                  <Component Name="P101_Start" UId="192" />
+                </Symbol>
+              </Access>
+              <Blank UId="193" />
+              <Token Text=":=" UId="194" />
+              <Blank UId="195" />
+              <Access Scope="LiteralConstant" UId="196">
+                <Constant UId="197">
+                  <ConstantValue UId="199">True</ConstantValue>
+                </Constant>
+              </Access>
+              <Token Text=";" UId="200" />
+              <NewLine UId="201" />
+              <Token Text="END_IF" UId="202" />
+              <Token Text=";" UId="203" />
+              <NewLine Num="2" UId="204" />
+              <LineComment UId="205">
+                <Text UId="206">if answer ID 0 or service in state stopping/resetting/aborting/completing then reset question ID and info</Text>
+              </LineComment>
+              <NewLine UId="207" />
+              <Token Text="IF" UId="208" />
+              <Blank UId="209" />
+              <Token Text="(" UId="210" />
+              <Access Scope="LocalVariable" UId="211">
+                <Symbol UId="212">
+                  <Component Name="AnswerID" UId="213" />
+                </Symbol>
+              </Access>
+              <Blank UId="214" />
+              <Token Text="&lt;&gt;" UId="215" />
+              <Blank UId="216" />
+              <Access Scope="LiteralConstant" UId="217">
+                <Constant UId="218">
+                  <ConstantValue UId="220">0</ConstantValue>
+                </Constant>
+              </Access>
+              <Blank UId="221" />
+              <Token Text="AND" UId="222" />
+              <Blank UId="223" />
+              <Access Scope="LocalVariable" UId="224">
+                <Symbol UId="225">
+                  <Component Name="Startbit" UId="226" />
+                </Symbol>
+              </Access>
+              <Token Text=")" UId="227" />
+              <Blank UId="228" />
+              <Token Text="OR" UId="229" />
+              <Blank UId="230" />
+              <Access Scope="GlobalVariable" UId="231">
+                <Symbol UId="232">
+                  <Component Name="Dose" UId="233">
+                    <BooleanAttribute Name="HasQuotes" UId="234">true</BooleanAttribute>
+                  </Component>
+                  <Token Text="." UId="235" />
+                  <Component Name="MTP" UId="236" />
+                  <Token Text="." UId="237" />
+                  <Component Name="ServiceControl" UId="238" />
+                  <Token Text="." UId="239" />
+                  <Component Name="StateCur" UId="240" />
+                </Symbol>
+              </Access>
+              <Blank UId="241" />
+              <Token Text="&lt;&gt;" UId="242" />
+              <Blank UId="243" />
+              <Access Scope="LocalVariable" UId="244">
+                <Symbol UId="245">
+                  <Component Name="State" UId="246" />
+                  <Token Text="." UId="247" />
+                  <Component Name="Execute" UId="248" />
+                </Symbol>
+              </Access>
+              <Blank UId="249" />
+              <Token Text="THEN" UId="250" />
+              <NewLine UId="251" />
+              <Blank Num="4" UId="252" />
+              <Access Scope="GlobalVariable" UId="253">
+                <Symbol UId="254">
+                  <Component Name="Dose" UId="255">
+                    <BooleanAttribute Name="HasQuotes" UId="256">true</BooleanAttribute>
+                  </Component>
+                  <Token Text="." UId="257" />
+                  <Component Name="InteractQuestionIdLi" UId="258" />
+                </Symbol>
+              </Access>
+              <Blank UId="259" />
+              <Token Text=":=" UId="260" />
+              <Blank UId="261" />
+              <Access Scope="LiteralConstant" UId="262">
+                <Constant UId="263">
+                  <ConstantValue UId="265">0</ConstantValue>
+                </Constant>
+              </Access>
+              <Token Text=";" UId="266" />
+              <NewLine UId="267" />
+              <Blank Num="4" UId="268" />
+              <Access Scope="GlobalVariable" UId="269">
+                <Symbol UId="270">
+                  <Component Name="Dose" UId="271">
+                    <BooleanAttribute Name="HasQuotes" UId="272">true</BooleanAttribute>
+                  </Component>
+                  <Token Text="." UId="273" />
+                  <Component Name="InteractAddInfoLi" UId="274" />
+                </Symbol>
+              </Access>
+              <Blank UId="275" />
+              <Token Text=":=" UId="276" />
+              <Blank UId="277" />
+              <Access Scope="LiteralConstant" UId="278">
+                <Constant UId="279">
+                  <ConstantValue UId="281">''</ConstantValue>
+                </Constant>
+              </Access>
+              <Token Text=";" UId="282" />
+              <NewLine UId="283" />
+              <Token Text="END_IF" UId="284" />
+              <Token Text=";" UId="285" />
+              <NewLine Num="2" UId="286" />
+              <LineComment UId="287">
+                <Text UId="288">reset start aut of pumps, if no positive edge</Text>
+              </LineComment>
+              <NewLine UId="289" />
+              <Token Text="IF" UId="290" />
+              <Blank UId="291" />
+              <Token Text="NOT" UId="292" />
+              <Blank UId="293" />
+              <Access Scope="LocalVariable" UId="294">
+                <Symbol UId="295">
+                  <Component Name="Startbit" UId="296" />
+                </Symbol>
+              </Access>
+              <Blank UId="297" />
+              <Token Text="AND" UId="298" />
+              <Blank UId="299" />
+              <Token Text="(" UId="300" />
+              <Access Scope="LocalVariable" UId="301">
+                <Symbol UId="302">
+                  <Component Name="Pump_100" UId="303" />
+                  <Token Text="." UId="304" />
+                  <Component Name="Run" UId="305" />
+                  <Token Text="." UId="306" />
+                  <Component Name="Value" UId="307" />
+                </Symbol>
+              </Access>
+              <Blank UId="308" />
+              <Token Text="=" UId="309" />
+              <Blank UId="310" />
+              <Access Scope="LiteralConstant" UId="311">
+                <Constant UId="312">
+                  <ConstantValue UId="314">True</ConstantValue>
+                </Constant>
+              </Access>
+              <Blank UId="315" />
+              <Token Text="OR" UId="316" />
+              <Blank UId="317" />
+              <Access Scope="LocalVariable" UId="318">
+                <Symbol UId="319">
+                  <Component Name="Pump_101" UId="320" />
+                  <Token Text="." UId="321" />
+                  <Component Name="Run" UId="322" />
+                  <Token Text="." UId="323" />
+                  <Component Name="Value" UId="324" />
+                </Symbol>
+              </Access>
+              <Blank UId="325" />
+              <Token Text="=" UId="326" />
+              <Blank UId="327" />
+              <Access Scope="LiteralConstant" UId="328">
+                <Constant UId="329">
+                  <ConstantValue UId="331">True</ConstantValue>
+                </Constant>
+              </Access>
+              <Token Text=")" UId="332" />
+              <Blank UId="333" />
+              <Token Text="THEN" UId="334" />
+              <NewLine UId="335" />
+              <Blank Num="4" UId="336" />
+              <Access Scope="LocalVariable" UId="337">
+                <Symbol UId="338">
+                  <Component Name="P100_Start" UId="339" />
+                </Symbol>
+              </Access>
+              <Blank UId="340" />
+              <Token Text=":=" UId="341" />
+              <Blank UId="342" />
+              <Access Scope="LiteralConstant" UId="343">
+                <Constant UId="344">
+                  <ConstantValue UId="346">false</ConstantValue>
+                </Constant>
+              </Access>
+              <Token Text=";" UId="347" />
+              <NewLine UId="348" />
+              <Blank Num="4" UId="349" />
+              <Access Scope="LocalVariable" UId="350">
+                <Symbol UId="351">
+                  <Component Name="P101_Start" UId="352" />
+                </Symbol>
+              </Access>
+              <Blank UId="353" />
+              <Token Text=":=" UId="354" />
+              <Blank UId="355" />
+              <Access Scope="LiteralConstant" UId="356">
+                <Constant UId="357">
+                  <ConstantValue UId="359">false</ConstantValue>
+                </Constant>
+              </Access>
+              <Token Text=";" UId="360" />
+              <NewLine UId="361" />
+              <Token Text="END_IF" UId="362" />
+              <Token Text=";" UId="363" />
+            </StructuredText>
+          </NetworkSource>
+          <ProgrammingLanguage>SCL</ProgrammingLanguage>
+        </AttributeList>
+        <ObjectList>
+          <MultilingualText ID="6" CompositionName="Comment">
+            <ObjectList>
+              <MultilingualTextItem ID="7" CompositionName="Items">
+                <AttributeList>
+                  <Culture>de-DE</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+              <MultilingualTextItem ID="8" CompositionName="Items">
+                <AttributeList>
+                  <Culture>en-US</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+              <MultilingualTextItem ID="9" CompositionName="Items">
+                <AttributeList>
+                  <Culture>fr-FR</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+            </ObjectList>
+          </MultilingualText>
+          <MultilingualText ID="A" CompositionName="Title">
+            <ObjectList>
+              <MultilingualTextItem ID="B" CompositionName="Items">
+                <AttributeList>
+                  <Culture>de-DE</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+              <MultilingualTextItem ID="C" CompositionName="Items">
+                <AttributeList>
+                  <Culture>en-US</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+              <MultilingualTextItem ID="D" CompositionName="Items">
+                <AttributeList>
+                  <Culture>fr-FR</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+            </ObjectList>
+          </MultilingualText>
+        </ObjectList>
+      </SW.Blocks.CompileUnit>
+      <MultilingualText ID="E" CompositionName="Title">
+        <ObjectList>
+          <MultilingualTextItem ID="F" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="10" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="11" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+    </ObjectList>
+  </SW.Blocks.FB>
+</Document>

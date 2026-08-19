@@ -53,7 +53,39 @@ public interface IFileSystem
     /// </remarks>
     Task CopyAsync(string source, string destination, CancellationToken ct);
 
+    /// <summary>
+    /// Copy a directory tree, creating the destination and retrying share-locked files.
+    /// </summary>
+    /// <remarks>
+    /// The counterpart of <see cref="CopyAsync"/> for a project that is a directory rather
+    /// than a file. Without this the orchestrator can only copy one name, and a tree
+    /// payload would lose everything but the pointer sitting at the top of it.
+    /// </remarks>
+    Task CopyTreeAsync(string source, string destination, CancellationToken ct);
+
+    /// <summary>
+    /// Immediate child directories of <paramref name="root"/>, as absolute paths.
+    /// Empty when the root does not exist.
+    /// </summary>
+    /// <remarks>
+    /// Non-recursive on purpose. The backup folder holds one copy per import, each of
+    /// which may itself be a tree; walking files underneath those copies is how a prune
+    /// would delete the inside of the newest backup and leave its name looking valid.
+    /// </remarks>
+    IEnumerable<string> EnumerateDirectories(string root);
+
     void DeleteFile(string path);
+
+    /// <summary>
+    /// Remove a directory and everything beneath it. No-op when it is not there.
+    /// </summary>
+    /// <remarks>
+    /// Added because a tree-payload scratch copy and a tree backup cannot be cleared by
+    /// deleting files one at a time without leaving the folders behind, and because the
+    /// backup pruner has to drop a whole copy rather than the files inside the newest
+    /// one. Nothing outside those two jobs should reach for this.
+    /// </remarks>
+    void DeleteDirectory(string path);
 
     void CreateDirectory(string path);
 }

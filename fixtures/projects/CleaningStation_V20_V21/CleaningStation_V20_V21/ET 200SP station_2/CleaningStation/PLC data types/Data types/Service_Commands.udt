@@ -1,0 +1,17 @@
+﻿TYPE "Service_Commands"
+VERSION : 0.1
+   STRUCT
+      Reset { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DWord := 16#0000_0002;
+      Start { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DWord := 16#0000_0004;
+      Stop { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DWord := 16#0000_0008;
+      Hold { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DWord := 16#0000_0010;
+      Unhold { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DWord := 16#0000_0020;
+      Pause { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DWord := 16#0000_0040;
+      Resume { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DWord := 16#0000_0080;
+      Abort { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DWord := 16#0000_0100;
+      Restart { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DWord := 16#0000_0200;
+      Complete { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DWord := 16#0000_0400;
+   END_STRUCT;
+
+END_TYPE
+

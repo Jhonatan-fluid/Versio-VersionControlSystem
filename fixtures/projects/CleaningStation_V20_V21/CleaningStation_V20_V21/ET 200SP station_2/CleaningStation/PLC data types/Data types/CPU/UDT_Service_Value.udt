@@ -1,0 +1,11 @@
+﻿TYPE "UDT_Service_Value"
+VERSION : 0.1
+   STRUCT
+      Analog : Real;   // Analog value
+      Digital : DInt;   // Digital value
+      Binary : Bool;   // Binary value
+      "String" : String[40];   // String value
+   END_STRUCT;
+
+END_TYPE
+

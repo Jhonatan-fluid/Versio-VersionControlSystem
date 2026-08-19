@@ -1,0 +1,32 @@
+﻿TYPE "UDT_MTP_AnaMon"
+TITLE = MTPDataObjectSUCLibrary/DataAssembly/AnaView
+VERSION : 0.1
+   STRUCT
+      VSclMin { ExternalWritable := 'False'} : Real := 0.0;   // Value Scale Low Limit
+      VSclMax { ExternalWritable := 'False'} : Real := 100.0;   // Value Scale High Limit
+      VUnit { ExternalWritable := 'False'} : Int := 1001;   // Value Unit
+      OSLevel : Byte := 16#00;   // OSLevel variable
+      WQC { ExternalWritable := 'False'} : Byte := 16#FF;   // Worst Quality Code variable
+      V { ExternalWritable := 'False'} : Real := 0.0;   // Value
+      VAHEn { ExternalWritable := 'False'} : Bool;   // Enables Alarm High Limit1: enabled0: disabled
+      VAHLim : Real;   // Limit Value for Alarm High
+      VAHAct { ExternalWritable := 'False'} : Bool;   // Alarm High active1: active0: inactive
+      VWHEn { ExternalWritable := 'False'} : Bool;   // Enables Warning High Limit1: enabled0: disabled
+      VWHLim : Real;   // Limit Value for Warning High
+      VWHAct { ExternalWritable := 'False'} : Bool;   // Warning High active1: active0: inactive
+      VTHEn { ExternalWritable := 'False'} : Bool;   // Enables Tolerance High Limit1: enabled0: disabled
+      VTHLim : Real;   // Limit Value for Tolerance High
+      VTHAct { ExternalWritable := 'False'} : Bool;   // Tolerance High active1: active0: inactive
+      VTLEn { ExternalWritable := 'False'} : Bool;   // Enables Tolerance Low Limit1: enabled0: disabled
+      VTLLim : Real;   // Limit Value for Tolerance Low
+      VTLAct { ExternalWritable := 'False'} : Bool;   // Tolerance Low active1: active0: inactive
+      VWLEn { ExternalWritable := 'False'} : Bool;   // Enables Warning Low Limit1: enabled0: disabled
+      VWLLim : Real;   // Limit Value for Warning Low
+      VWLAct { ExternalWritable := 'False'} : Bool;   // Warning Low active1: active0: inactive
+      VALEn { ExternalWritable := 'False'} : Bool;   // Enables Alarm Low Limit1: enabled0: disabled
+      VALLim : Real;   // Limit Value for Alarm Low
+      VALAct { ExternalWritable := 'False'} : Bool;   // Alarm Low active1: active0: inactive
+   END_STRUCT;
+
+END_TYPE
+

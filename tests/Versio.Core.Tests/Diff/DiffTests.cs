@@ -147,6 +147,9 @@ public class LanguageCatalogTests
 {
     [Theory]
     [InlineData("plc/Main.st", "Structured Text")]
+    [InlineData("plc/FB_Motor.scl", "Structured Text")]
+    [InlineData("plc/Type.udt", "Structured Text")]
+    [InlineData("plc/FB_Motor.s7dcl", "Structured Text")]
     [InlineData("src/Program.cs", "C#")]
     [InlineData("tools/build.py", "Python")]
     [InlineData("Visualization.vis.xml", "XML")]

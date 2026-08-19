@@ -1,0 +1,177 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Document>
+  <Engineering version="V21" />
+  <DocumentInfo>
+    <Created>2026-08-19T17:13:18.6263042Z</Created>
+    <ExportSetting>None</ExportSetting>
+    <InstalledProducts>
+      <Product>
+        <DisplayName>Totally Integrated Automation Portal</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>STEP 7 Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <OptionPackage>
+        <DisplayName>STEP 7 Safety</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <OptionPackage>
+        <DisplayName>Tech WebApplication</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <Product>
+        <DisplayName>WinCC Basic/Comfort/Advanced</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Unified</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+    </InstalledProducts>
+  </DocumentInfo>
+  <SW.Types.PlcStruct ID="0">
+    <AttributeList>
+      <Interface>
+        <Sections xmlns="http://www.siemens.com/automation/Openness/SW/Interface/v5">
+          <Section Name="None">
+            <Member Name="WQC" Datatype="Byte">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Worst Quality Code</MultiLanguageText>
+              </Comment>
+              <StartValue>16#FF</StartValue>
+            </Member>
+            <Member Name="OSLevel" Datatype="Byte">
+              <Comment>
+                <MultiLanguageText Lang="en-US">OSLevel variable</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="V" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="en-US">Value</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="VQC" Datatype="Byte">
+              <Comment>
+                <MultiLanguageText Lang="en-US">Quality Code of the current received value</MultiLanguageText>
+              </Comment>
+              <StartValue>16#FF</StartValue>
+            </Member>
+            <Member Name="SclMinCur" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Value Scale Low Limit</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="SclMaxCur" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Value Scale High Limit</MultiLanguageText>
+              </Comment>
+              <StartValue>100.0</StartValue>
+            </Member>
+            <Member Name="UnitCur" Datatype="Int">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Value Unit</MultiLanguageText>
+              </Comment>
+              <StartValue>1998</StartValue>
+            </Member>
+            <Member Name="SclMinExt" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="en-US">External configuration for VScaleMin; If written value is valid VScaleMin will be set to VSclMinExt;  If written value is invalid VScaleMin will be set to a predefined Value</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="SclMaxExt" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="en-US">External configuration for VScaleMax; If written value is valid VScaleMax will be set to VSclMaxExt;  If written value is invalid VScaleMax will be set to a predefined Value</MultiLanguageText>
+              </Comment>
+              <StartValue>100.0</StartValue>
+            </Member>
+            <Member Name="UnitExt" Datatype="Int">
+              <Comment>
+                <MultiLanguageText Lang="en-US">External configuration for VUnit; If written value is valid VUnit will be set to VUnitExt</MultiLanguageText>
+              </Comment>
+              <StartValue>1998</StartValue>
+            </Member>
+            <Member Name="Apply" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="en-US">Apply new *Ext values to *Cur values</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="ApplyEn" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Flag to signalize if a new values can be applied; 1: new values can be applied; 0: currently, no new value can be applied</MultiLanguageText>
+              </Comment>
+            </Member>
+          </Section>
+        </Sections>
+      </Interface>
+      <Name>UDT_MTP_AnaProcessValueIn</Name>
+      <Namespace />
+    </AttributeList>
+    <ObjectList>
+      <MultilingualText ID="1" CompositionName="Comment">
+        <ObjectList>
+          <MultilingualTextItem ID="2" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="3" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="4" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+      <MultilingualText ID="5" CompositionName="Title">
+        <ObjectList>
+          <MultilingualTextItem ID="6" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="7" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="8" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+    </ObjectList>
+  </SW.Types.PlcStruct>
+</Document>

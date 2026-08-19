@@ -1,0 +1,18 @@
+﻿TYPE "UDT_Service_ProcedureParameterBinaryExt"
+VERSION : 0.1
+   STRUCT
+      SP_Ext { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;   // Setpoint (External)
+      Rbk { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;   // Readback Binary Input
+      ModLiOp { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;   // Mode selection via 0 = Operator, 1 = Interconnection or SFC
+      OosLi { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;   // 1 = Out of service via interconnection or SFC (0-1 edge transition)
+      ManModLi { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;   // 1 = Manual mode by interconnection or SFC (controlled by ModLiOp = 1)
+      AutModLi { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;   // 1 = Automatic mode by interconnection or SFC (controlled by ModLiOp = 1)
+      SP_LiOp { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; CFC_ForTest := 'true'} : Bool;   // 1=Link, 0=Operator
+      SP_ExtLi { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;   // Linkable Input to Select External Setpoint
+      SP_IntLi { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;   // Linkable Input to Select Internal Setpoint
+      ApplyEn { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := true;   // Flag to signalize if a new value can be applied; 1: new value can be applied; 0: currently, no new value can be applied
+      ApplyInt { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;   // Internal Value Application Flag; 0 to 1: request to apply value of VInt; 1 to 0: acknowledge by PEA; relevant, if StateAutAct is true and SrcIntAct is true
+   END_STRUCT;
+
+END_TYPE
+

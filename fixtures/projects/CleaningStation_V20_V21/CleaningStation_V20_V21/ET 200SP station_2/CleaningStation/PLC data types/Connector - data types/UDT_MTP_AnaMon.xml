@@ -1,0 +1,297 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Document>
+  <Engineering version="V21" />
+  <DocumentInfo>
+    <Created>2026-08-19T17:13:19.0481509Z</Created>
+    <ExportSetting>None</ExportSetting>
+    <InstalledProducts>
+      <Product>
+        <DisplayName>Totally Integrated Automation Portal</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>STEP 7 Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <OptionPackage>
+        <DisplayName>STEP 7 Safety</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <OptionPackage>
+        <DisplayName>Tech WebApplication</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <Product>
+        <DisplayName>WinCC Basic/Comfort/Advanced</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Unified</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+    </InstalledProducts>
+  </DocumentInfo>
+  <SW.Types.PlcStruct ID="0">
+    <AttributeList>
+      <Interface>
+        <Sections xmlns="http://www.siemens.com/automation/Openness/SW/Interface/v5">
+          <Section Name="None">
+            <Member Name="VSclMin" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Value Scale Low Limit</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Value Scale Low Limit</MultiLanguageText>
+              </Comment>
+              <StartValue>0.0</StartValue>
+            </Member>
+            <Member Name="VSclMax" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Value Scale High Limit</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Value Scale High Limit</MultiLanguageText>
+              </Comment>
+              <StartValue>100.0</StartValue>
+            </Member>
+            <Member Name="VUnit" Datatype="Int">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Value Unit</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Value Unit</MultiLanguageText>
+              </Comment>
+              <StartValue>1001</StartValue>
+            </Member>
+            <Member Name="OSLevel" Datatype="Byte">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">OSLevel variable</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">OSLevel variable</MultiLanguageText>
+              </Comment>
+              <StartValue>16#00</StartValue>
+            </Member>
+            <Member Name="WQC" Datatype="Byte">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Worst Quality Code variable</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Worst Quality Code variable</MultiLanguageText>
+              </Comment>
+              <StartValue>16#FF</StartValue>
+            </Member>
+            <Member Name="V" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Value</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Value</MultiLanguageText>
+              </Comment>
+              <StartValue>0.0</StartValue>
+            </Member>
+            <Member Name="VAHEn" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Enables Alarm High Limit1: enabled0: disabled</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Enables Alarm High Limit1: enabled0: disabled</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="VAHLim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Limit Value for Alarm High</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Limit Value for Alarm High</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="VAHAct" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Alarm High active1: active0: inactive</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Alarm High active1: active0: inactive</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="VWHEn" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Enables Warning High Limit1: enabled0: disabled</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Enables Warning High Limit1: enabled0: disabled</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="VWHLim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Limit Value for Warning High</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Limit Value for Warning High</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="VWHAct" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Warning High active1: active0: inactive</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Warning High active1: active0: inactive</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="VTHEn" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Enables Tolerance High Limit1: enabled0: disabled</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Enables Tolerance High Limit1: enabled0: disabled</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="VTHLim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Limit Value for Tolerance High</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Limit Value for Tolerance High</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="VTHAct" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Tolerance High active1: active0: inactive</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Tolerance High active1: active0: inactive</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="VTLEn" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Enables Tolerance Low Limit1: enabled0: disabled</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Enables Tolerance Low Limit1: enabled0: disabled</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="VTLLim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Limit Value for Tolerance Low</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Limit Value for Tolerance Low</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="VTLAct" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Tolerance Low active1: active0: inactive</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Tolerance Low active1: active0: inactive</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="VWLEn" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Enables Warning Low Limit1: enabled0: disabled</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Enables Warning Low Limit1: enabled0: disabled</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="VWLLim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Limit Value for Warning Low</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Limit Value for Warning Low</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="VWLAct" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Warning Low active1: active0: inactive</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Warning Low active1: active0: inactive</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="VALEn" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Enables Alarm Low Limit1: enabled0: disabled</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Enables Alarm Low Limit1: enabled0: disabled</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="VALLim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Limit Value for Alarm Low</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Limit Value for Alarm Low</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="VALAct" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Alarm Low active1: active0: inactive</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Alarm Low active1: active0: inactive</MultiLanguageText>
+              </Comment>
+            </Member>
+          </Section>
+        </Sections>
+      </Interface>
+      <Name>UDT_MTP_AnaMon</Name>
+      <Namespace />
+    </AttributeList>
+    <ObjectList>
+      <MultilingualText ID="1" CompositionName="Comment">
+        <ObjectList>
+          <MultilingualTextItem ID="2" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="3" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="4" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+      <MultilingualText ID="5" CompositionName="Title">
+        <ObjectList>
+          <MultilingualTextItem ID="6" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="7" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text>MTPDataObjectSUCLibrary/DataAssembly/AnaView</Text>
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="8" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+    </ObjectList>
+  </SW.Types.PlcStruct>
+</Document>

@@ -71,11 +71,42 @@ public sealed class WindowsFileSystem(int copyRetries = 5) : IFileSystem
         }
     }
 
+    public async Task CopyTreeAsync(string source, string destination, CancellationToken ct)
+    {
+        Directory.CreateDirectory(destination);
+
+        foreach (var dir in Directory.EnumerateDirectories(source, "*", SearchOption.AllDirectories))
+        {
+            var relative = Path.GetRelativePath(source, dir);
+            Directory.CreateDirectory(Path.Combine(destination, relative));
+        }
+
+        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+        {
+            ct.ThrowIfCancellationRequested();
+            var relative = Path.GetRelativePath(source, file);
+            await CopyAsync(file, Path.Combine(destination, relative), ct).ConfigureAwait(false);
+        }
+    }
+
+    public IEnumerable<string> EnumerateDirectories(string root) =>
+        Directory.Exists(root)
+            ? Directory.EnumerateDirectories(root)
+            : [];
+
     public void DeleteFile(string path)
     {
         if (File.Exists(path))
         {
             File.Delete(path);
+        }
+    }
+
+    public void DeleteDirectory(string path)
+    {
+        if (Directory.Exists(path))
+        {
+            Directory.Delete(path, recursive: true);
         }
     }
 

@@ -1,0 +1,24 @@
+﻿TYPE "HMI_AccuS"
+VERSION : 0.1
+   STRUCT
+      OnOp { CFC_Visible := 'false'} : Bool;   // 1=On Mode: On Mode by Operator
+      OosOp { CFC_Visible := 'false'} : Bool;   // 1=Oos Mode: Oos Mode by Operator
+      SpecFact : Real := 1.0;   // Specific factor
+      AcCnt_Unit : Int := 1001;   // Unit of AcCnt1 / AcCnt2
+      RstCnt1Op : Bool;   // Operator Input Reset counter #1
+      RstCnt2Op : Bool;   // Operator Input Reset counter #2
+      Rst1Date : DWord;   // Date of last Counter #1 Reset [yy/mm/dd_hh]
+      Rst2Date : DWord;   // Date of last Counter #2 Reset [yy/mm/dd_hh]
+      AcCnt1Out { ExternalWritable := 'False'} : Real;   // Accum. counter #1
+      AcCnt2Out { ExternalWritable := 'False'} : Real;   // Accum. counter #2
+      AcDiCnt1Out { ExternalWritable := 'False'} : DInt;   // Accum. counter #1 (DINT)
+      AcDiCnt2Out { ExternalWritable := 'False'} : DInt;   // Accum. counter #2 (DINT)
+      OS_PermOut { ExternalWritable := 'False'} : DWord;   // Operator Permissions: Output for OS
+      OS_PermLog { ExternalWritable := 'False'} : DWord;   // Operator Permissions: Output for OS
+      OpSt_Out { ExternalWritable := 'False'} : DWord;   // Enabled operator stations
+      ST_Worst { ExternalWritable := 'False'} : Byte := BYTE#16#80;   // Worst Signal Status
+      Status1 { ExternalWritable := 'False'} : DWord;   // Status word 1
+   END_STRUCT;
+
+END_TYPE
+

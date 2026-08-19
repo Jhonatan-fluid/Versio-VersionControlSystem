@@ -1,0 +1,10 @@
+<Project>
+  <!-- Host is net48. Without this file MSBuild would walk up to the solution props
+       and inherit net9.0, which cannot load Openness. Import that file first so
+       version metadata still flows, then pin the TFM. -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)..\'))" />
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+</Project>

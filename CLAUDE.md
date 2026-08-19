@@ -14,13 +14,18 @@ distinction is the project's central architectural rule rather than an aspiratio
 | `Versio.Core` (`Iec/`) | The IEC 61131-3 **standard**, shared by every vendor — ST codec, declaration parser, the standard's object-type names |
 | `Versio.Plc.Codesys` | **One vendor, pure.** Object-type GUIDs, native XML shape, import planner, ScriptEngine protocol, CODESYS's own tree vocabulary |
 | `Versio.Plc.Codesys.Infrastructure` | **One vendor, driven.** `CODESYS.exe`, the install locator, the embedded python |
+| `Versio.Plc.TiaPortal` | **One vendor, pure.** `.apXX` conventions, directory payload, import planner, SCL header, native-XML scrubber |
+| `Versio.Plc.TiaPortal.Infrastructure` | **One vendor, driven.** Portal locator, net48 host spawn, Openness session |
+| `Versio.Plc.TiaPortal.Host` | **One vendor, net48 exe.** Loads Openness from the install; never shipped as Siemens DLLs |
 | everything else | Vendor-neutral: git, diff, sync, locking, watching, logging, bindings |
 
-Structured Text is a standard, not a CODESYS feature. Adding a vendor means a new project
-implementing `IPlcRunner`, `IPlcProjectFormat` and `IPlcToolchain`, one `ProjectReference` from
-`Versio.App`, and one `Register()` call in `App.xaml.cs` beside `CodesysPack.Register()` —
-**nothing in `Sync/`, `Git/`, `Locking/`, `Watching/`, `Projects/` or `Diff/` may change. If it
-does, vendor knowledge has leaked past the seam, and the leak is the bug.**
+Adding a vendor means a new project implementing `IPlcRunner`, `IPlcProjectFormat` and
+`IPlcToolchain`, one `ProjectReference` from `Versio.App`, and one `Register()` call in
+`App.xaml.cs` beside `CodesysPack.Register()` —
+**nothing in `Sync/`, `Git/`, `Locking/`, `Watching/`, `Projects/` or `Diff/` may learn a
+vendor's name. If it does, vendor knowledge has leaked past the seam, and the leak is the
+bug.** A directory project (TIA Portal, and TwinCAT later) widens `IPlcProjectFormat.PayloadPathFor`
+and `IFileSystem.CopyTreeAsync`; that is the seam growing, not a brand leaking.
 
 **`Versio.Core` has no project reference to a vendor pack**, so that is a compiler error rather
 than an opinion. `VendorSeamTests` and `VendorSeamInfrastructureTests` read assembly metadata on
@@ -51,6 +56,7 @@ questions about "why is this like this" are already answered there.
 | `docs/FINDINGS.md` | **Every defect written up with its evidence**, newest first. Search it rather than reading it; `STATUS.md` carries the index |
 | `docs/SAFEGUARDS.md` | What Versio refuses, asks about, or waits for |
 | `docs/vendors/codesys/DRIVING.md` | **One vendor's docs**, beside its two projects. How CODESYS is driven end to end, and the audit of it |
+| `docs/vendors/tia/DRIVING.md` | **One vendor's docs**, beside its three projects. How TIA Portal is driven. Remaining work is ordered in `PHASE2.md` item 7; §12 here is the evidence |
 | `docs/phase1/` | **The Phase 1 archive** — four completed plans, marked done, kept for reasoning and evidence: `PLAN.md` (the founding architecture), `IMPORT-PLAN.md` (thirteen gaps, the feature checklist, and the measurements — its raw probe logs are in `probes/`), `GIT-PANEL-PLAN.md`, `PHASE0-FINDINGS.md`. Read them for why, never for state |
 | `README.md` | Repository layout, vendor boundaries, the one architectural rule |
 
@@ -221,13 +227,18 @@ stays that way.
 
 | Suite | Count | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,421 | under a second | nothing |
-| `Versio.Integration.Tests` | 147 | ~10 s | real git |
+| `Versio.Core.Tests` | 1,432 | under a second | nothing |
+| `Versio.Integration.Tests` | 148 | ~10 s | real git |
 | `Versio.Arch.Tests` | 14 | instant | nothing — it reads assembly metadata, IL and the `.csproj` files |
-| `Versio.App.Tests` | 609 | ~50 s, STA, no window shown | nothing |
+| `Versio.App.Tests` | 612 | ~50 s, STA, no window shown | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 260 | under a second | nothing — the planner, the codecs, the protocol |
 | `Versio.Plc.Codesys.Parity.Tests` | 92 | ~15 s | `python` on PATH — **skips cleanly without it, so check the count, not the colour** |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 15 | instant | nothing — format, planner, protocol |
+| `Versio.Plc.TiaPortal.Tests` | 4 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips cleanly without Openness membership or LFS content. Import Fact is red: generate does not overwrite |
 | `Versio.Plc.Codesys.Tests` | 54 | **~30 min** | **real CODESYS** — every test launches it, which is the whole cost |
+
+The TIA gate fixture is `fixtures/projects/CleaningStation_V20_V21/` (Git LFS). Never the
+OneDrive original. `docs/vendors/tia/DRIVING.md` is this vendor's driving notes.
 
 **The loop to work in is everything except the last one:**
 
@@ -237,6 +248,7 @@ C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Integ
 C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Arch.Tests
 C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Plc.Codesys.Pure.Tests
 C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Plc.Codesys.Parity.Tests
+C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Plc.TiaPortal.Pure.Tests
 ```
 
 About thirty seconds together, plus fifty for `Versio.App.Tests` when the UI is in play.

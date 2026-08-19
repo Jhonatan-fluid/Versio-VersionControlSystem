@@ -1,0 +1,12 @@
+﻿TYPE "UDT_MTP_AnaProcessValueOut"
+VERSION : 0.1
+   STRUCT
+      WQC { ExternalWritable := 'False'} : Byte := 16#FF;   // Worst Quality Code CCC
+      V { ExternalWritable := 'False'} : Real := 0.0;   // External Source Value
+      VSclMin { ExternalWritable := 'False'} : Real := 0.0;   // Value Scale Low Limit
+      VSclMax { ExternalWritable := 'False'} : Real := 100.0;   // Value Scale High Limit
+      VUnit { ExternalWritable := 'False'} : Int := 1998;   // Value Unit
+   END_STRUCT;
+
+END_TYPE
+

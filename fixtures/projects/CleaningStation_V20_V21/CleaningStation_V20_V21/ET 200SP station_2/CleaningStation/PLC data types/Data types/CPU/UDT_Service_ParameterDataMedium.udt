@@ -1,0 +1,9 @@
+﻿TYPE "UDT_Service_ParameterDataMedium"
+VERSION : 0.1
+   STRUCT
+      used : Array[0..0] of DWord;   // Used configuration parameters of service
+      definition { S7_SetPoint := 'False'} : Array[0..31] of "UDT_Service_ParameterDefinition";
+   END_STRUCT;
+
+END_TYPE
+

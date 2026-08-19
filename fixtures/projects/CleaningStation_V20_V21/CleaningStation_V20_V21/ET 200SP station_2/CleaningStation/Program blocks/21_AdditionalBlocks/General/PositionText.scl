@@ -1,0 +1,44 @@
+﻿FUNCTION "PositionText" : Void
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      PosID_1 : Bool;
+      PosID_2 : Bool;
+      PosID_3 : Bool;
+      PosID_4 : Bool;
+      PosID_5 : Bool;
+      PosID_6 : Bool;
+      PosID_7 : Bool;
+      PosID_8 : Bool;
+      PosID_9 : Bool;
+      PosID_10 : Bool;
+      PosID_0 : Bool;
+   END_VAR
+
+
+BEGIN
+	IF #PosID_1 = True THEN
+	    "Dose".PosTextIDLi := 1;
+	ELSIF #PosID_2 = True THEN
+	    "Dose".PosTextIDLi := 2;
+	ELSIF #PosID_3 = True THEN
+	    "Dose".PosTextIDLi := 3;
+	ELSIF #PosID_4 = True THEN
+	    "Dose".PosTextIDLi := 4;
+	ELSIF #PosID_5 = True THEN
+	    "Dose".PosTextIDLi := 5;
+	ELSIF #PosID_6 = True THEN
+	    "Dose".PosTextIDLi := 6;
+	ELSIF #PosID_7 = True THEN
+	    "Dose".PosTextIDLi := 7;
+	ELSIF #PosID_8 = True THEN
+	    "Dose".PosTextIDLi := 8;
+	ELSIF #PosID_9 = True THEN
+	    "Dose".PosTextIDLi := 9;
+	ELSIF #PosID_10 = True THEN
+	    "Dose".PosTextIDLi := 10;
+	ELSIF #PosID_0 = True THEN
+	    "Dose".PosTextIDLi := 0;
+	END_IF;
+END_FUNCTION
+

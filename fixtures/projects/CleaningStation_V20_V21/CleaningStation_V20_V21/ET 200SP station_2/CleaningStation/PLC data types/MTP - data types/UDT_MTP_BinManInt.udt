@@ -1,0 +1,24 @@
+﻿TYPE "UDT_MTP_BinManInt"
+TITLE = MTPDataObjectSUCLibrary/DataAssembly/ExtBinOp/ExtIntBinOp/AdvBinOp
+VERSION : 0.1
+   STRUCT
+      VInt { ExternalWritable := 'False'} : Bool := FALSE;   // Internal Value (relevant, if SrcIntAct is true)
+      VMan : Bool := FALSE;   // Manual Value (relevant, if SrcManAct is true)
+      VState0 { ExternalWritable := 'False'} : String[16] := '';   // Text replacement for false
+      VState1 { ExternalWritable := 'False'} : String[16] := '';   // Text replacement for true
+      OSLevel : Byte := 16#00;   // OSLevel variable
+      SrcChannel { ExternalWritable := 'False'} : Bool;   // Selection of the active SourceMode interaction channel 0:The operator switches (*Op) shall be used 1:The automatic switches (*Aut) shall be used
+      SrcManAut { ExternalWritable := 'False'} : Bool;   // Set SourceMode to Manual by automatic interaction (relevant, if SrcChannel is true) 1:SourceMode is set to Manual 0:no operation
+      SrcIntAut { ExternalWritable := 'False'} : Bool;   // Set SourceMode to Internal by automatic interaction (relevant, if SrcChannel is true) 1:SourceMode is set to Internal 0:no operation
+      SrcIntOp : Bool;   // Set SourceMode to Internal by operator interaction (relevant, if SrcChannel is false) 0-->1:request to set OperationMode to Internal 1-->0:acknowledge by PEA
+      SrcManOp : Bool;   // Set SourceMode to Manual by operator interaction (relevant, if SrcChannel is false) 0-->1:request to set OperationMode to Manual 1-->0:acknowledge by PEA
+      SrcIntAct { ExternalWritable := 'False'} : Bool;   // 1: current mode is Internal 0: current mode is not Internal 
+      SrcManAct { ExternalWritable := 'False'} : Bool;   // 1: current mode is Manual 0: current mode is not Manual 
+      VOut { ExternalWritable := 'False'} : Bool := FALSE;   // Value Output
+      WQC { ExternalWritable := 'False'} : Byte := 16#FF;   // Worst Quality Code variable
+      VRbk { ExternalWritable := 'False'} : Bool;   // Readback Value
+      VFbk { ExternalWritable := 'False'} : Bool;   // Feedback Value
+   END_STRUCT;
+
+END_TYPE
+

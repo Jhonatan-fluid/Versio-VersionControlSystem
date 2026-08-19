@@ -1,0 +1,13 @@
+﻿TYPE "UDT_MTP_AnaReportValue"
+VERSION : 0.1
+   STRUCT
+      WQC { ExternalWritable := 'False'} : Byte := 16#FF;   // Worst Quality Code
+      V { ExternalWritable := 'False'} : Real;   // Value
+      VSclMin { ExternalWritable := 'False'} : Real;   // Value Scale Low Limit
+      VSclMax { ExternalWritable := 'False'} : Real := 100.0;   // Value Scale High Limit
+      VUnit { ExternalWritable := 'False'} : Int := 1998;   // Value Unit
+      MissedValue { ExternalWritable := 'False'} : Bool;   // MissedValueFeature
+   END_STRUCT;
+
+END_TYPE
+

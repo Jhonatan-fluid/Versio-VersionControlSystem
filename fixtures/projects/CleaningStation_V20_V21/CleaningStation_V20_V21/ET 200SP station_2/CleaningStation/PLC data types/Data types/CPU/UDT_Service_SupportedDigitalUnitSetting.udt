@@ -1,0 +1,10 @@
+﻿TYPE "UDT_Service_SupportedDigitalUnitSetting"
+VERSION : 0.1
+   STRUCT
+      Unit { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Int := 1001;   // Supported Unit
+      VMin { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DInt := 0;   // Value Low Limit
+      VMax { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DInt := 100;   // Value High Limit
+   END_STRUCT;
+
+END_TYPE
+

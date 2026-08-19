@@ -58,6 +58,9 @@ public sealed class ProjectReferenceTests
 
         Assert.DoesNotContain("Versio.Plc.Codesys", referenced);
         Assert.DoesNotContain("Versio.Plc.Codesys.Infrastructure", referenced);
+        Assert.DoesNotContain("Versio.Plc.TiaPortal", referenced);
+        Assert.DoesNotContain("Versio.Plc.TiaPortal.Infrastructure", referenced);
+        Assert.DoesNotContain("Versio.Plc.TiaPortal.Host", referenced);
     }
 
     [Fact]
@@ -72,8 +75,9 @@ public sealed class ProjectReferenceTests
     public void Versio_App_is_the_only_place_a_vendor_is_named()
     {
         // The composition root, and the one project allowed to know which vendors this build
-        // has. App.xaml.cs turns this reference into the single CodesysPack.Register() call.
+        // has. App.xaml.cs turns these references into Register() calls, one per pack.
         Assert.Contains("Versio.Plc.Codesys.Infrastructure", ReferencesOf("Versio.App"));
+        Assert.Contains("Versio.Plc.TiaPortal.Infrastructure", ReferencesOf("Versio.App"));
     }
 
     [Fact]
@@ -83,5 +87,6 @@ public sealed class ProjectReferenceTests
         // reports a circular reference — but by then somebody has already restructured to get
         // there, and this says which direction was intended.
         Assert.Equal(["Versio.Core"], ReferencesOf("Versio.Plc.Codesys"));
+        Assert.Equal(["Versio.Core"], ReferencesOf("Versio.Plc.TiaPortal"));
     }
 }

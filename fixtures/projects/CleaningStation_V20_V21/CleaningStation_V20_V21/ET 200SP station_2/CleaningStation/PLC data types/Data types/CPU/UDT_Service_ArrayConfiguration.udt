@@ -1,0 +1,11 @@
+﻿TYPE "UDT_Service_ArrayConfiguration"
+TITLE = typeArrayConfiguration
+VERSION : 0.1
+   STRUCT
+      diLowerBound { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DInt;   // Lower boundary of array
+      diUpperBound { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DInt;   // Upper boundary of array
+      diCount { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DInt;   // Number of array elements
+   END_STRUCT;
+
+END_TYPE
+

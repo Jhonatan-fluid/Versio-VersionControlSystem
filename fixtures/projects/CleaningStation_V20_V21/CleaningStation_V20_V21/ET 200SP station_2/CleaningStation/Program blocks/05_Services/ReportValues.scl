@@ -1,0 +1,51 @@
+﻿FUNCTION_BLOCK "ReportValues"
+TITLE = ReportValues
+{ S7_Optimized_Access := 'TRUE' }
+AUTHOR : 'Siemens AG'
+FAMILY : ServiceControl
+VERSION : 1.0
+//Handling of ReportValues
+   VAR 
+      MTPAnalog : Array[0..#NUMBER_PARAMETERS_ANALOG] of "UDT_MTP_AnaReportValue";
+      MTPDigital : Array[0..#NUMBER_PARAMETERS_DIGITAL] of "UDT_MTP_DIntReportValue";
+      MTPBinary : Array[0..#NUMBER_PARAMETERS_BINARY] of "UDT_MTP_BinReportValue";
+      MTPString : Array[0..#NUMBER_PARAMETERS_STRING] of "UDT_MTP_StringReportValue";
+   END_VAR
+
+   VAR CONSTANT 
+      NUMBER_PARAMETERS_ANALOG : Int := 1;
+      NUMBER_PARAMETERS_DIGITAL : Int := 0;
+      NUMBER_PARAMETERS_BINARY : Int := 0;
+      NUMBER_PARAMETERS_STRING : Int := 0;
+   END_VAR
+
+
+BEGIN
+	REGION Block Info Header
+	  //===============================================================================
+	  // Siemens AG / (c)Copyright 2021
+	  //-------------------------------------------------------------------------------
+	  // Title:            ReportValues
+	  // Comment/Function: Handling of ReportValues
+	  // Library/Family:   ServiceControl
+	  // Author:           Siemens AG
+	  // Tested with:      S7-PLCSIM Advanced 4.0
+	  // Engineering:      TIA Portal V17
+	  // Restrictions:     MTP
+	  // Requirements:     PLC (S7-1200 / S7-1500)
+	  //-------------------------------------------------------------------------------
+	  // Change log table:
+	  // Version  | Date       | Expert in charge        | Changes applied
+	  //----------|------------|-------------------------|-----------------------------
+	  // 01.00.00 | 29.07.2021 | Michael Schlosser       | First released version
+	  // 01.00.01 | 21.09.2021 | Michael Schlosser       | change: comment in region "Description"; new comments of for-loops
+	  // 01.00.02 | 21.10.2021 | Michael Schlosser       | change: call of FBs for report values now in ServiceControlBlock-FBs to allow several services per PLC
+	  //===============================================================================
+	END_REGION Block Info Header
+	
+	REGION Description
+	  // ReportValues provides the MTP-Interface and the number of values of each type of report value
+	END_REGION Description
+	
+END_FUNCTION_BLOCK
+

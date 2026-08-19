@@ -1,0 +1,18 @@
+﻿FUNCTION "RealToAnaVal_1" : Void
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      In : Real;
+      ST : Byte;
+   END_VAR
+
+   VAR_OUTPUT 
+      Out : "AnaVal";
+   END_VAR
+
+
+BEGIN
+	#Out.ST := #ST;
+	#Out.Value := #In;
+END_FUNCTION
+

@@ -59,11 +59,16 @@ public sealed record RepoSnapshot
 /// <remarks>
 /// Without this, someone adds a project, nothing happens, and they reasonably conclude the
 /// tool is broken. Detection is always on; <b>adoption is offered rather than performed</b>,
-/// because auto-exporting an unknown project launches CODESYS for 10–60 s unprompted and
+/// because auto-exporting an unknown project launches a toolchain for 10–60 s unprompted and
 /// the file may be a vendor sample, an archive, or a scratch copy nobody wants tracked.
 /// </remarks>
-public sealed class OrphanScanner
+public sealed class OrphanScanner(Func<string, IPlcProjectFormat?>? formats = null)
 {
+    /// <summary>
+    /// Which format claims a path. Defaulted rather than required, same shape as the
+    /// orchestrator: existing callers are unchanged and a test can hand its own in.
+    /// </summary>
+    private readonly Func<string, IPlcProjectFormat?> _formats = formats ?? PlcFormats.ForPath;
     public IReadOnlyList<ScanFinding> Scan(RepoConfig config, RepoSnapshot snapshot)
     {
         var findings = new List<ScanFinding>();
@@ -144,9 +149,10 @@ public sealed class OrphanScanner
                 continue;
             }
 
-            // Guard 1: any path bound as a template. Guard 2: the naming convention, which
-            // catches templates that have no binding yet.
-            if (BindingConventions.LooksLikeTemplate(proj))
+            // Guard 1: any path bound as a template. Guard 2: the format's own template
+            // convention, which catches templates that have no binding yet. Asked of the
+            // format so this scanner never learns a vendor's suffix.
+            if (_formats(proj)?.IsTemplate(proj) == true)
             {
                 continue;
             }
@@ -239,7 +245,7 @@ public sealed class OrphanScanner
                 ? BindingConventions.ConventionalExportPath(projectPath)
                 : format.ConventionalExportPath(projectPath)),
             Profile = profile,
-            Vendor = format?.Vendor ?? PlcVendor.Codesys,
+            Vendor = format?.Vendor ?? default,
             Enabled = true,
         };
 

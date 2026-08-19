@@ -71,6 +71,12 @@ public class SyncOrchestratorTests
         /// </remarks>
         public Func<string, IPlcProjectFormat?>? Formats { get; set; }
 
+        /// <summary>
+        /// Which runner owns a vendor. Null leaves the engine on the single
+        /// <see cref="Codesys"/> runner, so every existing scenario is unchanged.
+        /// </summary>
+        public Func<PlcVendor, IPlcRunner>? RunnerFor { get; set; }
+
         public Harness(OrchestratorOptions? options = null, params ProjectBinding[] extra)
         {
             Binding = new ProjectBinding
@@ -102,7 +108,8 @@ public class SyncOrchestratorTests
                 logger: LoggerOverride ?? new VersioLogger(Clock).AddSink(Sink),
                 occupancy: Occupancy,
                 conflicts: Conflicts,
-                formats: Formats);
+                formats: Formats,
+                runnerFor: RunnerFor);
 
         public void SetProject(string content) =>
             Fs.Write(Path.Combine(Root, "plc", "A.project"), content);
@@ -750,6 +757,40 @@ public class SyncOrchestratorTests
 
         Assert.Equal(SyncDirection.ProjectAuthoritative, h.Orchestrator.StateOf("b-1"));
         Assert.Equal(SyncDirection.Clean, h.Orchestrator.StateOf("b-2"));
+    }
+
+    [Fact]
+    public async Task A_binding_runs_on_its_own_vendor_runner()
+    {
+        // Proven by mutation: if RunnerFor is ignored and every job hits the constructor's
+        // single runner, this is the test that goes red. Two stubs, two vendors, one export
+        // each — the second vendor's job must not appear on the first stub.
+        var other = new FakeCodesysRunner();
+        other.EnqueueSuccess("plc/B/Main.scl");
+
+        var second = new ProjectBinding
+        {
+            Id = "b-2",
+            ProjectPath = "plc/B.ap21",
+            ExportPath = "plc/B",
+            Vendor = PlcVendor.TiaPortal,
+            Profile = "V21",
+        };
+
+        var h = new Harness();
+        h.RunnerFor = v => v == PlcVendor.TiaPortal ? other : h.Codesys;
+        h.Fs.Write(Path.Combine(Root, "plc", "B.ap21"), "pointer");
+        h.Fs.Write(Path.Combine(Root, "plc", "B", "Main.scl"), "old");
+        h.Build(null, second);
+
+        var outcome = await h.Orchestrator.HandleChangeAsync(
+            new SyncJob { BindingId = "b-2", Source = ChangeSource.Project, Synchronous = true },
+            CancellationToken.None);
+
+        Assert.Equal(SyncVerdict.Completed, outcome.Verdict);
+        Assert.Single(other.Jobs);
+        Assert.Empty(h.Codesys.Jobs);
+        Assert.Equal("b-2", other.Jobs[0].Projects[0].BindingId);
     }
 
     [Fact]

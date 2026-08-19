@@ -1,0 +1,36 @@
+﻿TYPE "HMI_MotL"
+VERSION : 0.1
+   STRUCT
+      StartMan : Bool;   //  1=Start: Start Command in Manual Mode
+      StopMan : Bool;   //  1=Stop: Stop Command in Manual Mode
+      AutModOp : Bool;   //  1=Auto Mode: Auto Mode by Operator
+      ManModOp : Bool := TRUE;   //  1=Manual Mode: Manual Mode by Operator
+      LocalOp { CFC_ForTest := 'true'} : Bool;   //  1=Local Mode: Local Operation by Operator
+      OosOp : Bool;   //  1=Oos Mode: Oos Mode by Operator
+      LocalLi : Bool;   //  1=Local Mode: Local Operation by Field Signal
+      StartLocal : Bool;   //  1=Start Local: Field Start Signal
+      StopLocal : Bool;   //  1=Stop Local: Field Stop Signal
+      Monitor : Bool := TRUE;   //  1=Monitor ON, 0=Monitor OFF: Feedback Monitor
+      MonTiStatic : Real := 3.0;   //  Monitoring Time of Feedback [s]
+      MonTiDynamic { CFC_ForTest := 'true'} : Real := 3.0;   //  Monitoring Time of Feedback on starting or on change in control output [s]
+      MonTiDyStop : Real := 3.0;   //  Monitoring Time of Feedback on stopping in control output [s]
+      RapidStp : Bool;   //  1 = Motor Rapid Stop command
+      RstOp : Bool;   //  Operator Reset Signal
+      Permit_ST : Byte := BYTE#16#FF;   // Permit Signal Status
+      Intlock_ST : Byte := BYTE#16#FF;   // Intlock Signal Status
+      Protect_ST : Byte := BYTE#16#FF;   // Protect Signal Status
+      CurrMon { ExternalWritable := 'False'} : DInt;   //  Remaining monitoring time [s]
+      FbkRunOut { ExternalWritable := 'False'} : Bool;   //  1=Run, 0=Stop: Feedback of Control Output
+      OS_PermOut { ExternalWritable := 'False'} : DWord := DWORD#16#FFFF_FFFF;   //  Operator Permission: Output for OS
+      OS_PermLog { ExternalWritable := 'False'} : DWord := DWORD#16#FFFF_FFFF;   //  Operator Permission: Output for OS
+      OpSt_Out { ExternalWritable := 'False'} : DWord;   //  Enabled operator stations
+      ST_Worst { ExternalWritable := 'False'} : Byte := 16#80;   //  Worst Signal Status
+      Status1 { ExternalWritable := 'False'} : DWord;   //  Status1 Word
+      Status2 { ExternalWritable := 'False'} : DWord;   //  Status2 Word
+      Status3 { ExternalWritable := 'False'} : DWord;   //  Status3 Word
+      Status4 { ExternalWritable := 'False'} : DWord;   //  Status4 Word
+      AlarmState { ExternalWritable := 'False'} : Word;   // Alarm Status for group display
+   END_STRUCT;
+
+END_TYPE
+

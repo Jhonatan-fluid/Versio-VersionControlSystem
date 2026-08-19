@@ -1,0 +1,54 @@
+﻿FUNCTION_BLOCK "Level"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      Fill_Start { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;   // 1 = Starts fill process
+      Release_Start { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;   // 1 = Starts release prozess
+      T_Fill { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Real := 1.0;   // Time constant
+      T_Release { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Real := 1.0;   // Execution cycle @ OB3x. E.g. 100 ms = 0.1s
+      Fill_Spd { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Real := 100.0;   // Filling speed in %
+      Release_Spd_Raw { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Int := 27648;   // Releasing speed in %
+      Level_Max { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Real := 100.0;   // Max Level
+      Raw_Scale { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : "ScaVal_Raw" := (27648, 0);
+      Reset { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := False;   // Reset level to 0.0
+   END_VAR
+
+   VAR_OUTPUT 
+      Fill_Level { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Real := 1500.0;
+      Fill_Level_Raw { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Int;
+   END_VAR
+
+   VAR_TEMP 
+      Release_Spd : Real;
+      ReleaseSpd_Real : Real;
+   END_VAR
+
+
+BEGIN
+	#ReleaseSpd_Real := INT_TO_REAL(#Release_Spd_Raw);
+	#Release_Spd := (#ReleaseSpd_Real / 27648) * 100;
+	
+	// Fill
+	IF #Fill_Start = True AND #Fill_Level <= #Level_Max THEN
+	    #Fill_Level := #Fill_Level + (#T_Fill * (#Fill_Spd) * 3.1);
+	END_IF;
+	
+	// Release
+	IF #Release_Start = True AND #Fill_Level >= 0.0 THEN
+	    #Fill_Level := #Fill_Level - (#T_Release * (#Release_Spd / 10.0 * 3.1));
+	END_IF;
+	
+	// Prevent negative fill level / Reset
+	IF #Fill_Level < 0.0 OR #Reset = True THEN
+	    #Fill_Level := 0.0;
+	END_IF;
+	
+	// Prevent overfilling
+	IF #Fill_Level > #Level_Max THEN
+	    #Fill_Level := #Level_Max;
+	END_IF;
+	
+	// Raw output
+	#Fill_Level_Raw := ((#Fill_Level / #Level_Max) * #Raw_Scale.High);
+END_FUNCTION_BLOCK
+

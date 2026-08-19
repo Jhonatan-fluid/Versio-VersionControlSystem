@@ -1,0 +1,9 @@
+﻿TYPE "UDT_Service_Parameter"
+VERSION : 0.1
+   STRUCT
+      index : Byte := 16#FF;   // index of value
+      value { S7_SetPoint := 'False'} : "UDT_Service_Value";   // value
+   END_STRUCT;
+
+END_TYPE
+

@@ -13,7 +13,7 @@ plan-driven import that creates, updates, deletes, renames and moves objects, re
 everywhere it cannot act, and never applies anything a person did not confirm. Thirteen
 numbered gaps (G1–G13) were closed, guarded or decided; the feature checklist ran every import
 behaviour against a real project; and the last two reachable rows closed on 2026-08-17. The
-suite is seven projects, 2,597 tests, split by need — the half-hour CODESYS gate holds only the
+suite is nine projects, 2,631 tests, split by need — the half-hour CODESYS gate holds only the
 54 tests that actually launch the toolchain.
 
 **Documents that stay live** (not archived, because they are logs and references, not plans):
@@ -24,14 +24,15 @@ suite is seven projects, 2,597 tests, split by need — the half-hour CODESYS ga
 | [`FINDINGS.md`](FINDINGS.md) | Every defect with its evidence, newest first — search it |
 | [`SAFEGUARDS.md`](SAFEGUARDS.md) | What Versio refuses, asks about or waits for |
 | [`vendors/codesys/DRIVING.md`](vendors/codesys/DRIVING.md) | How CODESYS is driven — API traps, forms, events, manifest schema |
-| [`HANDOFF-UxPlan.md`](HANDOFF-UxPlan.md) | **Read before merging branch `UxPlan`** — what it built, what it owes, and the three things that must happen first |
-| [`UX-PLAN.md`](UX-PLAN.md) | **A plan, and the one live one** — thirteen UX findings over the running shell, ranked, each with its evidence. Opened 2026-08-18. Item 6's human eyeball pass is still owed and this is not it |
+| [`vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md) | How TIA Portal is driven — Openness, occupancy, identity. §12 is evidence; **the remaining order is item 7 in this file** |
+| [`HANDOFF-UxPlan.md`](HANDOFF-UxPlan.md) | What `UxPlan` built, merged into `Siemens` on 2026-08-19. Owner saw the window; UX-12 and P-M2 remain. The CODESYS gate is this session's |
+| [`UX-PLAN.md`](UX-PLAN.md) | **A plan, and the one live one** — thirteen UX findings over the running shell, ranked, each with its evidence. Opened 2026-08-18. What is left: UX-6, UX-7's second half, UX-8, UX-12 |
 
 **`UX-PLAN.md` is where the shell's remaining UX work lives, and it is not copied here** — one
 claim in one place, which is the defect the Phase 1 documents caught in themselves five separate
 times.
 
-**Repo explorer landed 2026-08-18** on this branch: a fourth rail panel lists the open clone as a
+**Repo explorer landed 2026-08-18** and is on this branch: a fourth rail panel lists the open clone as a
 folder tree, grafting each tracked PLC project through the same `BuildProjectNode` the Project
 panel already uses. Clicks visualize — they never ask git for a diff. The Project panel remains
 the review surface. Not a second item in this queue; see `UX-PLAN.md`.
@@ -44,9 +45,10 @@ ran on 2026-08-18 and confirmed it** — 41 mirror files, two carrying content t
 not have — and `LOCK-1` closed it the same day: a merge now puts the mirror in charge and the
 export gate is refused before the toolchain runs. **P-M2 is still open**, and needs a real export.
 
-All of that is on branch `UxPlan`, which is **not merged**. See
-[`HANDOFF-UxPlan.md`](HANDOFF-UxPlan.md) for the three things that must happen first — the
-real-CODESYS gate among them.
+`UxPlan` was merged into `Siemens` on 2026-08-19. The owner saw the merged window the same
+day (explorer on the rail, Fetch / Pull / Push, branch overflow). What
+[`HANDOFF-UxPlan.md`](HANDOFF-UxPlan.md) still owes: the real-CODESYS gate (running this
+session), a walk of the merge dialog, and the decision on UX-12. Not on `main`.
 
 ---
 
@@ -203,23 +205,64 @@ be manufactured — they close when reality produces a specimen, not before.
   has rows (the conflicts section's own rule), Apply that keeps and Drop that confirms and
   re-resolves the positional ref by SHA. No save button — the auto-stash owns taking, and
   the deliberate case belongs to a terminal.
-- **The UI eyeball pass** — still owed to a human, and this session added to what it covers:
-  library and task rows, the layer chips, the context menu (and its newly themed
-  ContextMenu style), the ahead/behind previews, the clean-tree line, the coloured subject
-  counter, the emphasis colours and the split view, and the stash section.
+- **The UI eyeball pass** — the owner saw the merged `Siemens` + `UxPlan` window on
+  2026-08-19 and said it looks right (fourth rail button, Fetch / Pull / Push, overflow).
+  Still unwalked: the merge dialog, both themes on the rail badge, and the headers at
+  260 px. This session also added library and task rows, the layer chips, the context menu
+  (and its newly themed ContextMenu style), the ahead/behind previews, the clean-tree line,
+  the coloured subject counter, the emphasis colours and the split view, and the stash
+  section.
 - ~~**Five copies of the CPython-runner plumbing**~~ — **one now**: `CPythonHarness`, with
   the deadlock-avoiding stream drain every copy should have had, one temp directory deleted
   whole (closing the `GetTempFileName` base-file leak), and the python probe cached per
   process. The parity suite dropped from ~15 s to ~8 s with it.
 
-### 7. A second vendor — deliberately last (decided 2026-08-17)
+### 7. A second vendor — TIA Portal, opened 2026-08-19
 
-**Not started until everything above is complete** — the owner's call: the first vendor's
-product surface gets finished before the seam takes on a second. When it does start: the seam
-is ready and unproven, and only a real second implementation shows whether `PlcJob` and
-`PlcResult` are the right shape. TwinCAT is the cheapest test (CODESYS-derived), Studio 5000
-the harshest. `STATUS.md` §6, `README.md` *Vendor boundaries*, and the rule in `CLAUDE.md`:
-nothing in `Sync/`, `Git/`, `Locking/`, `Watching/`, `Projects/` or `Diff/` may change.
+~~**Not started until everything above is complete**~~ — **started 2026-08-19**, owner's call
+once a real TIA Portal V21 was on the machine. The seam was ready and unproven; the second
+implementation showed it: a project that is a directory cannot be copied, hashed, backed up
+or restored as one file. That widening (`IPlcProjectFormat.PayloadPathFor`,
+`IFileSystem.CopyTreeAsync`) names no vendor. TwinCAT will use it too.
+
+The pack is `Versio.Plc.TiaPortal` + Infrastructure + a net48 Host that loads Openness from
+the install. PLC software (SCL, types, tags) is the round-trip subject; hardware, HMI and
+safety are coverage skips. The gate fixture is committed at
+`fixtures/projects/CleaningStation_V20_V21/` (Git LFS; ignored by this repo's Versio
+adoption). Driving notes — setup, Openness members, occupancy, identity — live in
+[`docs/vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md).
+
+**What is left, in order** — the pack, the directory seam, and the App session pin are
+done (see Findings). Import has a skippable C# gate that is **red on generate**. Work
+only on a copy of the LFS fixture. Click **Yes to all** after a host rebuild.
+
+1. **`GenerateBlocksFromSource` does not overwrite the live SCL block.** The Fact
+   `Import_then_reexport_keeps_textual_bytes` is the gate. KeepOnError created
+   `*_1` clones; the documented zero-arg call dropped `Level.scl` from the next
+   export. See Findings. Then `Measure-ImportStability.ps1` on `.versio/local/tia/`
+   (P7 SETTLES). Never the OneDrive original.
+2. ~~**Host import that is not only `BlockGroup`.**~~ — **done 2026-08-19.**
+   `FindObject` walks `BlockGroup`, `TypeGroup` (`…/UDT/{name}`) and `TagTableGroup`
+   (`…/TAG_TABLE/{name}`). `TryDelete` keeps the object and warns when `Delete()` is
+   missing or throws. Native apply routes by identity (tag tables to `TagTables.Import`
+   — `Blocks.Import` failed "out of context"). Export emits `progress`. `HostApp` is
+   split along those methods.
+3. **Export determinism** — two textual exports of an unchanged project, byte-identical.
+   Native XML is expected to differ (G12). The import Fact already saw the textual *set*
+   differ after a generate; do not fold that into this item until generate is honest.
+4. **The app loop on a TIA project that is not this repository's ignored fixture** —
+   adopt, first export, panel, direction lock, confirmed import, restore of a ~500 MB
+   tree. Neutral code should do it; it has not been eyeballed.
+5. **Open-in-Portal.** Exclusive `Projects.Open`: no export-from-copy while the GUI holds
+   it. Occupancy was measured under Openness, not with a Portal window. Attach-to-running
+   is unused on purpose.
+
+Identity stays `device/plc/type/name#number` until a stable Siemens id appears. Folders
+are not recorded objects. Coverage skips (hardware, HMI, safety, technology,
+know-how-protected import, compile-after-import, VCI) are not this queue.
+
+The first vendor's rule still holds: nothing in `Sync/`, `Git/`, `Locking/`, `Watching/`,
+`Projects/` or `Diff/` may learn a vendor's name.
 
 ### 8. Packaging — deliberately last (decided 2026-08-17)
 
@@ -316,10 +359,14 @@ listed here even though every one lives in an archived document.
 
 1. Read `CLAUDE.md` end to end — the rules are load-bearing and each one names what it cost.
 2. Read `STATUS.md` *Where the project actually is* and *Known loose ends*.
-3. Pick from the queue above — item 1 unless something changed.
+3. Pick from the queue above — **item 7.1** (TIA `GenerateBlocksFromSource` overwrite)
+   unless the owner says otherwise. Items 1–6 are done; the eyeball pass has been seen once
+   on the merged shell and still owes the merge dialog and a 260 px drag.
 4. The loop: `Versio.Core.Tests` + `Versio.Integration.Tests` + `Versio.Arch.Tests` +
-   `Versio.Plc.Codesys.Pure.Tests` + `Versio.Plc.Codesys.Parity.Tests`, about thirty seconds;
-   `Versio.App.Tests` when the UI is in play; `Versio.Plc.Codesys.Tests` is the gate before a
-   commit — half an hour, every test launches real CODESYS.
+   `Versio.Plc.Codesys.Pure.Tests` + `Versio.Plc.Codesys.Parity.Tests` +
+   `Versio.Plc.TiaPortal.Pure.Tests`, about thirty seconds; `Versio.App.Tests` when the
+   UI is in play. Item 7.1 is gated by `Versio.Plc.TiaPortal.Tests` (live Portal, copy
+   of the LFS fixture, **Yes to all** after a host rebuild). `Versio.Plc.Codesys.Tests`
+   is the CODESYS gate before a commit — half an hour.
 5. When something surprises you, search `FINDINGS.md` before deriving it from scratch — an
    audit once re-derived, over an hour, what was already written there by name.

@@ -1,0 +1,24 @@
+﻿TYPE "UDT_Service_S88State"
+VERSION : 0.1
+   STRUCT
+      nostate { ExternalWritable := 'False'} : Bool;   // No state; not defined
+      idle { ExternalWritable := 'False'} : Bool;   // Idle state
+      starting { ExternalWritable := 'False'} : Bool;   // Starting state
+      execute { ExternalWritable := 'False'} : Bool;   // Execute state
+      completed { ExternalWritable := 'False'} : Bool;   // Completed state
+      held { ExternalWritable := 'False'} : Bool;   // Held state
+      aborted { ExternalWritable := 'False'} : Bool;   // Aborted state
+      stopped { ExternalWritable := 'False'} : Bool;   // Stopped state
+      resuming { ExternalWritable := 'False'} : Bool;   // Resuming state
+      completing { ExternalWritable := 'False'} : Bool;   // Completing state
+      holding { ExternalWritable := 'False'} : Bool;   // Holding state
+      stopping { ExternalWritable := 'False'} : Bool;   // Stopping state
+      aborting { ExternalWritable := 'False'} : Bool;   // Aborting state
+      unholding { ExternalWritable := 'False'} : Bool;   // Unholding state
+      paused { ExternalWritable := 'False'} : Bool;   // Paused state
+      pausing { ExternalWritable := 'False'} : Bool;   // Pausing state
+      resetting { ExternalWritable := 'False'} : Bool;   // Resetting state
+   END_STRUCT;
+
+END_TYPE
+

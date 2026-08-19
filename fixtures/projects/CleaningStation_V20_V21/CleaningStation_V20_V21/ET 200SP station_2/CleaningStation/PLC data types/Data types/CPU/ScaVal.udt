@@ -1,0 +1,9 @@
+﻿TYPE "ScaVal"
+VERSION : 0.0
+   STRUCT
+      High : Real := 100.0;   // High Value
+      Low : Real;   // Low Value
+   END_STRUCT;
+
+END_TYPE
+

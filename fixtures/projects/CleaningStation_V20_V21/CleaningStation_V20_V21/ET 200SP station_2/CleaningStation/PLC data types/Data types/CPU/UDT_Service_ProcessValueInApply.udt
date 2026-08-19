@@ -1,0 +1,8 @@
+﻿TYPE "UDT_Service_ProcessValueInApply"
+VERSION : 0.1
+   STRUCT
+      En { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := true;   // Flag to signalize if a new setting can be applied; 1: new setting can be applied; 0: currently, no new setting can be applied
+   END_STRUCT;
+
+END_TYPE
+

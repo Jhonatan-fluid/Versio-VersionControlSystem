@@ -89,3 +89,13 @@ fixtures/projects/RefrigeratorControl.versio_trash/
 # Added by Versio: files the PLC toolchain writes beside a project.
 # The per-user one carries a username and machine name in its filename.
 fixtures/projects/RefrigeratorControl_project.precompilecache
+
+# TIA Portal occupancy and churn beside the committed gate fixture.
+# Logs/ tmp/ Vci/ are not copied into the fixture; these rules catch them if
+# a test or the IDE recreates them. .info is OccupancyMarkerFor; System/~* is
+# the PEData lock sibling measured while Openness holds the project.
+fixtures/projects/CleaningStation_V20_V21/Logs/
+fixtures/projects/CleaningStation_V20_V21/tmp/
+fixtures/projects/CleaningStation_V20_V21/Vci/
+fixtures/projects/CleaningStation_V20_V21/*.info
+fixtures/projects/CleaningStation_V20_V21/System/~*

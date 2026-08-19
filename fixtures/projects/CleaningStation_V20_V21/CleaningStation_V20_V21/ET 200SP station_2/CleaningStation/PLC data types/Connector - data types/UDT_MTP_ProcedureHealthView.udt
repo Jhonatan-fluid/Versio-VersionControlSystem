@@ -1,0 +1,9 @@
+﻿TYPE "UDT_MTP_ProcedureHealthView"
+VERSION : 0.1
+   STRUCT
+      WQC { ExternalWritable := 'False'} : Byte := 16#FF;   // Worst Quality Code
+      CommandInfo { ExternalWritable := 'False'} : DWord := 16#FFFFFFFF;   // command info variable
+   END_STRUCT;
+
+END_TYPE
+

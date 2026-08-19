@@ -1,0 +1,32 @@
+﻿FUNCTION_BLOCK "PT1"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      On { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;   // 0 = Off => In = 0.0
+      In_Raw { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Int;
+      P { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Real := 1.0;   // Propotional parameter
+      T { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Real := 1.0;   // Time constant [s]
+      t_cyc { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Real := 0.1;   // OB-Cycle time
+   END_VAR
+
+   VAR_OUTPUT 
+      Out { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Real := 0.0;
+      Out_Raw : Int := 0;
+   END_VAR
+
+   VAR 
+      "Out-1" { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Real := 0.0;
+   END_VAR
+
+
+BEGIN
+	IF #On THEN
+	    #Out_Raw := #"Out-1" + (#P * (#In_Raw - #"Out-1") * (#t_cyc / (#T + #t_cyc)));
+	ELSE
+	    #Out_Raw := #"Out-1" + (#P * (0.0 - #"Out-1") * (#t_cyc / (#T + #t_cyc)));
+	END_IF;
+	
+	#"Out-1" := #Out_Raw; //Save output value end of this cycle
+	#Out := (INT_TO_REAL(#Out_Raw) / 27648) * 100;
+END_FUNCTION_BLOCK
+

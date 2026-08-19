@@ -53,6 +53,7 @@ public sealed class VendorSeamTests
         "Versio.Core.Abstractions",
         "Versio.Core.Hashing",
         "Versio.Core.Logging",
+        "Versio.Core.Guarding",
     ];
 
     /// <summary>

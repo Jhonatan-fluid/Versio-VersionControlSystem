@@ -17,6 +17,153 @@ produce a diff touching everything else.
 
 ---
 
+### TIA GenerateBlocksFromSource does not put a mutated SCL back on re-export
+
+**Found 2026-08-19**, `TiaPortalGateTests.Import_then_reexport_keeps_textual_bytes` on a
+copy of CleaningStation. Locator, probe and export are green. The Fact copies the LFS
+fixture, exports, mutates one `.scl`, imports the planner's ApplyText for that file,
+re-exports, and looks for the mutation in textual files. Native XML is not compared.
+
+Import reports success (`ChangedPaths` names the file). Re-export does not carry the
+edit. Measured in order:
+
+- Header comment, extra `VAR`, `REGION`, then `IF FALSE THEN (* ident *)` in `BEGIN` —
+  none survived.
+- `GenerateBlockOptions` is `None | KeepOnError` on V21, not `Overwrite`. Falling back
+  to enum value 1 called `KeepOnError` and created `BoolToDigVal_1.scl` beside the live
+  block; the original was missing from the next export.
+- Zero-argument `GenerateBlocksFromSource()` — V21's documented overwrite — applied
+  `Level.scl` without throwing, then **Level was absent from the re-export**.
+  `BoolToDigVal.scl` was back. The object was not renamed; it simply did not generate
+  source.
+
+Header comments and extra interface members were already the wrong mutation: generate
+rebuilds the interface from the object. A body statement should have been the right
+one. It still did not round-trip.
+
+**Still open.** The next session starts here. Scratch copy only; never the OneDrive
+original. A host rebuild needs **Yes to all** on Openness access.
+
+**What was rejected:** asserting the whole textual tree byte-identical (that is item 7.3,
+and the file *set* already differed); treating AllowList as the failure (runs finished in
+~90 s, not the 9-minute unanswered-dialog timeout).
+
+---
+
+### The App session treated every repository as the first vendor
+
+**Found 2026-08-19**, audit of the second pack. The pack split was already right: Core has
+no vendor project reference, `VendorSeamTests` holds the IL, and TIA Portal registers
+beside the first vendor. The **session** did not follow it.
+
+`SyncViewModel` pinned `_format = PlcFormats.All[0]` and `_vendor` from that format, and
+never reassigned them. One `ProbeAsync`, one `IPlcRunner`, `new RepoSetup(..., _format)`,
+`IsTemplate` through the pinned format, `WatchFile(ProjectPath)` only. A `.ap21` in a
+mixed repo would be adopted under the first vendor's conventions (`*.~u` instead of
+`Logs/` / `.info`), a TIA export would wait on that first toolchain being installed, and
+a change inside a directory payload would not reach the orchestrator.
+
+`ProjectBinding.Vendor` and `ProjectManifest.Vendor` still deserialize a missing field as
+the first vendor. That is history on the JSON, not this pin.
+
+**Fix:** `SyncOrchestrator` takes an optional `Func<PlcVendor, IPlcRunner>` so a binding
+runs on its own vendor's runner. The session probes every registered vendor, builds
+`runnerFor` from that map, constructs `RepoSetup` with `format: null` so `ForPath` wins,
+asks `format.IsTemplate`, and watches `PayloadPathFor` (file or tree). Orphan scan skips
+templates the same way and does not invent a vendor on `ProposeBinding`. App.Tests
+register both packs; a temp `.ap21` is adopted with this vendor's gitignore entries.
+
+**What was rejected:** teaching `Sync/` `.apXX` or `Logs/`; an App.Tests IL scan of
+ViewModels (the composition root may name vendors — the flow test polices the pin);
+changing the JSON default for a missing `vendor` field.
+
+---
+
+### SimaticML UId is a document-local integer, not a project identity
+
+**Found 2026-08-19**, first inspectable export of CleaningStation. Manifest `guid` preferred
+the first `UId` in the SimaticML. Every object recorded `"0"` — a wrapper attribute, not an
+identity. Skipping `"0"` made every object `"1"`. Counting the XML: 159 files, **26,661**
+distinct `UId` values, the most common `"35"`. They number elements inside a document.
+They do not survive as a project-wide key, and they collide across objects.
+
+**Fix:** the host records `{device}/{plc}/{type}/{name}#{number}` and never takes an
+integer UId. `TryReadUid` only accepts a GUID-shaped value, which this vendor's XML does
+not currently carry. Rename pairing stays on content hash / line sketch.
+
+**What was rejected:** using the first non-zero UId (that is `"1"`); treating a small
+integer as "probably unique enough".
+
+---
+
+### TIA occupancy is a .info sidecar, measured while Openness held the project
+
+**Found 2026-08-19**, polling the scratch tree while the net48 host held
+`Projects.Open`. `OccupancyMarkerFor` returned null because the closed-tree listing had
+no `.~u`. With the project actually open:
+
+- `<stem>.info` appeared beside the `.ap21` 16 s after open and vanished when the host
+  exited
+- `System/~PEData.1` appeared two seconds later and vanished on close
+
+Existence of `.info` is Held. The body is not parsed — guessing Free from an unknown
+format is how two writers would share a project. The tilde file is a transient inside
+`System/`, excluded from the project hash so an in-flight export is not a program change.
+
+**What was rejected:** leaving the marker null and relying on `Projects.Open` failing
+(that reports after a multi-minute wait, and the panel cannot watch it); hashing `.info`
+into the project (it is occupancy, not the program).
+
+GUI-open occupancy (Portal with a window, no Openness) is still unmeasured.
+
+---
+
+### Restoring a backup in the same second overwrote the backup
+
+**Found 2026-08-19**, writing the directory-payload restore test. `BackUpProjectAsync`
+names copies `yyyyMMdd-HHmmss-<Name>`. Restore takes a safety copy of the live project
+*before* it copies the chosen backup back, and on a frozen test clock — and on any
+restore that lands in the same second as the backup it is restoring — that safety copy
+was the **same path**. The good tree was replaced with the damaged one, then copied
+onto itself. The verdict was `Completed`. The project stayed damaged.
+
+The same collision exists for a file payload (the first vendor) if two imports, or an
+import and a restore, share a second. Unlikely with a wall clock, guaranteed with
+`FakeClock`, and a real restore done immediately after the import that created the
+copy.
+
+**Fix:** if the destination already exists, append `-2`, `-3`, … rather than overwrite.
+The stamp stays second-resolution so the pruner's ordinal sort still matches
+chronology; uniqueness is a suffix, not a finer clock.
+
+**What was rejected:** putting milliseconds in the stamp (a format change the catalogue
+parser would have to learn); advancing the fake clock in the test and leaving the
+product able to eat the copy it is restoring.
+
+---
+
+### TIA Portal Openness: the group is empty, so the host cannot open a project yet
+
+**Closed 2026-08-19.** `elli_` is in `Siemens TIA Openness` and this logon token carries
+the group. Probe 42 s, export 37 s, after a first unanswered AllowList dialog that timed
+out at 8 min 53 s.
+
+**Found 2026-08-19**, first probe of a real V21 install. Local group `Siemens TIA Openness`
+exists and had **zero members**. `net localgroup ... /add` returned Access denied (error 5).
+Until `elli_` was in that group and the session was logged off and on, `Projects.Open` was the
+failure, not a product bug.
+
+The first successful connect also needs Yes-to-all on the Openness firewall AllowList
+(path + hash + timestamp). Rebuilding the net48 host changes the hash and drops off that
+list — the same class of "it worked yesterday" as a CODESYS profile rename.
+
+Recorded in `docs/vendors/tia/DRIVING.md`. The gate test skips with the host's reason rather
+than going red, so a machine without membership is still a green suite.
+
+**What was rejected:** loading Openness in-process in net9 (the assemblies are net48);
+shipping `Siemens.Engineering.dll`; calling `OpenWithUpgrade`; treating an open failure as
+"the project is free".
+
 ### A corrupt `repo.json` opened as a repository that had never been adopted
 
 **Found on 2026-08-18 by an audit of silent paths, not by a failure.** `RepoConfigStore.LoadAsync`

@@ -1,0 +1,8 @@
+﻿TYPE "UDT_Service_Procedure"
+VERSION : 0.1
+   STRUCT
+      ProcedureEnable { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : "UDT_Service_ProcedureEnable";
+   END_STRUCT;
+
+END_TYPE
+

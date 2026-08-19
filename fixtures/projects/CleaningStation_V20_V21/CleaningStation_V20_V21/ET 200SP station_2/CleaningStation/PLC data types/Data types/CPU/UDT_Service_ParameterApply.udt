@@ -1,0 +1,9 @@
+﻿TYPE "UDT_Service_ParameterApply"
+VERSION : 0.1
+   STRUCT
+      En { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := true;   // Flag to signalize if a new value can be applied; 1: new value can be applied; 0: currently, no new value can be applied
+      "Int" { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;   // Internal Value Application Flag; 0 to 1: request to apply value of VInt; 1 to 0: acknowledge by PEA; relevant, if StateAutAct is true and SrcIntAct is true
+   END_STRUCT;
+
+END_TYPE
+

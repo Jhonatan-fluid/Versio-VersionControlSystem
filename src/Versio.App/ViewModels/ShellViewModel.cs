@@ -5330,8 +5330,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // noise that would teach them to ignore the one signal that matters.
         using var busy = manual ? Busy.Begin(WorkKind.GitRead, "Reading git status…") : null;
 
-        var operationId = Guid.NewGuid().ToString("N")[..8];
-        using var scope = _logger.BeginOperation(operationId);
+        // Join when a verb already opened a scope — Fetch/Pull/Push each wrap this
+        // refresh, and a second id on those git lines is exactly what
+        // Fetch_stamps_one_operation_id_on_the_git_lines_that_follow refuses. A
+        // watcher tick has no ambient scope and still gets one of its own.
+        using var scope = _logger.JoinOrBeginOperation(out _);
 
         try
         {

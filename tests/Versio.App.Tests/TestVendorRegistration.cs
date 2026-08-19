@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using Versio.Plc.Codesys.Infrastructure;
+using Versio.Plc.TiaPortal.Infrastructure;
 
 namespace Versio.App.Tests;
 
@@ -27,5 +28,9 @@ namespace Versio.App.Tests;
 internal static class TestVendorRegistration
 {
     [ModuleInitializer]
-    internal static void Register() => CodesysPack.Register();
+    internal static void Register()
+    {
+        CodesysPack.Register();
+        TiaPortalPack.Register();
+    }
 }

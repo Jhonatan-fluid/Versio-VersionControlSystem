@@ -1,0 +1,370 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Document>
+  <Engineering version="V21" />
+  <DocumentInfo>
+    <Created>2026-08-19T17:13:16.7913454Z</Created>
+    <ExportSetting>None</ExportSetting>
+    <InstalledProducts>
+      <Product>
+        <DisplayName>Totally Integrated Automation Portal</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>STEP 7 Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <OptionPackage>
+        <DisplayName>STEP 7 Safety</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <OptionPackage>
+        <DisplayName>Tech WebApplication</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <Product>
+        <DisplayName>WinCC Basic/Comfort/Advanced</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Unified</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+    </InstalledProducts>
+  </DocumentInfo>
+  <SW.Blocks.InstanceDB ID="0">
+    <AttributeList>
+      <HeaderAuthor>Siemens AG</HeaderAuthor>
+      <HeaderFamily>ServiceControl</HeaderFamily>
+      <HeaderVersion>4.0</HeaderVersion>
+      <InstanceOfName>ServiceMediumParameterHMI</InstanceOfName>
+      <InstanceOfType>FB</InstanceOfType>
+      <Interface>
+        <Sections xmlns="http://www.siemens.com/automation/Openness/SW/Interface/v5">
+          <Section Name="Input">
+            <Member Name="Id" Datatype="USInt">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="Setup" Datatype="DB_ANY">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="ProcedureCur" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="ProcedureReq" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+          </Section>
+          <Section Name="Output" />
+          <Section Name="InOut">
+            <Member Name="ConfigurationParameterAnalog" Datatype="Array[*] of &quot;UDT_MTP_AnaServParam&quot;" />
+            <Member Name="ConfigurationParameterDigital" Datatype="Array[*] of &quot;UDT_MTP_DIntServParam&quot;" />
+            <Member Name="ConfigurationParameterBinary" Datatype="Array[*] of &quot;UDT_MTP_BinServParam&quot;" />
+            <Member Name="ConfigurationParameterString" Datatype="Array[*] of &quot;UDT_MTP_StringServParam&quot;" />
+            <Member Name="ProcedureParameterAnalog" Datatype="Array[*] of &quot;UDT_MTP_AnaServParam&quot;" />
+            <Member Name="ProcedureParameterDigital" Datatype="Array[*] of &quot;UDT_MTP_DIntServParam&quot;" />
+            <Member Name="ProcedureParameterBinary" Datatype="Array[*] of &quot;UDT_MTP_BinServParam&quot;" />
+            <Member Name="ProcedureParameterString" Datatype="Array[*] of &quot;UDT_MTP_StringServParam&quot;" />
+            <Member Name="ProcessValueInAnalog" Datatype="Array[*] of &quot;UDT_MTP_AnaProcessValueIn&quot;" />
+            <Member Name="ProcessValueInDigital" Datatype="Array[*] of &quot;UDT_MTP_DIntProcessValueIn&quot;" />
+            <Member Name="ProcessValueInBinary" Datatype="Array[*] of &quot;UDT_MTP_BinProcessValueIn&quot;" />
+            <Member Name="ProcessValueInString" Datatype="Array[*] of &quot;UDT_MTP_StringProcessValueIn&quot;" />
+            <Member Name="ProcessValueOutAnalog" Datatype="Array[*] of &quot;UDT_MTP_AnaProcessValueOut&quot;" />
+            <Member Name="ProcessValueOutDigital" Datatype="Array[*] of &quot;UDT_MTP_DIntProcessValueOut&quot;" />
+            <Member Name="ProcessValueOutBinary" Datatype="Array[*] of &quot;UDT_MTP_BinProcessValueOut&quot;" />
+            <Member Name="ProcessValueOutString" Datatype="Array[*] of &quot;UDT_MTP_StringProcessValueOut&quot;" />
+            <Member Name="ReportValueAnalog" Datatype="Array[*] of &quot;UDT_MTP_AnaReportValue&quot;" />
+            <Member Name="ReportValueDigital" Datatype="Array[*] of &quot;UDT_MTP_DIntReportValue&quot;" />
+            <Member Name="ReportValueBinary" Datatype="Array[*] of &quot;UDT_MTP_BinReportValue&quot;" />
+            <Member Name="ReportValueString" Datatype="Array[*] of &quot;UDT_MTP_StringReportValue&quot;" />
+          </Section>
+          <Section Name="Static">
+            <Member Name="statTotalConfigParameters" Datatype="Int">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="statTotalProcedureParameters" Datatype="Int">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="statTotalProcessInValues" Datatype="Int">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="statTotalProcessOutValues" Datatype="Int">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="statTotalReportValues" Datatype="Int">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="StatConfigAnalog" Datatype="Array[0..0] of &quot;UDT_Service_AnaServParam&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="StatConfigDigital" Datatype="Array[0..0] of &quot;UDT_Service_DintServParam&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="StatConfigBinary" Datatype="Array[0..1] of &quot;UDT_Service_BinServParam&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="StatConfigString" Datatype="Array[0..0] of &quot;UDT_Service_StringServParam&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="StatProcedureAnalog" Datatype="Array[0..2] of &quot;UDT_Service_AnaServParam&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="StatProcedureDigital" Datatype="Array[0..0] of &quot;UDT_Service_DintServParam&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="StatProcedureBinary" Datatype="Array[0..0] of &quot;UDT_Service_BinServParam&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="StatProcedureString" Datatype="Array[0..0] of &quot;UDT_Service_StringServParam&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="stat16ProceReqIndex" Datatype="Int">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="stat16ProceCurIndex" Datatype="Int">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="stat16ProcParaStartIndex" Datatype="Int">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="stat16ProcParaEndIndex" Datatype="Int">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="stat32PrecedureProcessOutMap" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="stat32PrecedureProcessInMap" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="stat32PrecedureReportMap" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="ConfigParaType" Datatype="&quot;UDT_Service_ConfigParaIndexType&quot;" />
+            <Member Name="ProcedureParaType" Datatype="&quot;UDT_Service_ProceParaValueIndexType&quot;" />
+            <Member Name="ProcessInValueType" Datatype="&quot;UDT_Service_ProceParaValueIndexType&quot;" />
+            <Member Name="ProcessOutValueType" Datatype="&quot;UDT_Service_ProceParaValueIndexType&quot;" />
+            <Member Name="ReportValueType" Datatype="&quot;UDT_Service_ProceParaValueIndexType&quot;" />
+            <Member Name="ConfigAna" Datatype="Array[0..0] of &quot;UDT_MTP_AnaServParam&quot;" />
+            <Member Name="ConfigDint" Datatype="Array[0..0] of &quot;UDT_MTP_DIntServParam&quot;" />
+            <Member Name="ConfigBin" Datatype="Array[0..1] of &quot;UDT_MTP_BinServParam&quot;" />
+            <Member Name="ConfigString" Datatype="Array[0..0] of &quot;UDT_MTP_StringServParam&quot;" />
+            <Member Name="ProcedureAna" Datatype="Array[0..2] of &quot;UDT_MTP_AnaServParam&quot;" />
+            <Member Name="ProcedureDint" Datatype="Array[0..0] of &quot;UDT_MTP_DIntServParam&quot;" />
+            <Member Name="ProcedureBin" Datatype="Array[0..0] of &quot;UDT_MTP_BinServParam&quot;" />
+            <Member Name="ProcedureString" Datatype="Array[0..0] of &quot;UDT_MTP_StringServParam&quot;" />
+            <Member Name="ProcessInAna" Datatype="Array[0..1] of &quot;UDT_MTP_AnaProcessValueIn&quot;" />
+            <Member Name="ProcessInDint" Datatype="Array[0..0] of &quot;UDT_MTP_DIntProcessValueIn&quot;" />
+            <Member Name="ProcessInBin" Datatype="Array[0..1] of &quot;UDT_MTP_BinProcessValueIn&quot;" />
+            <Member Name="ProcessInString" Datatype="Array[0..0] of &quot;UDT_MTP_StringProcessValueIn&quot;" />
+            <Member Name="ProcessOutAna" Datatype="Array[0..1] of &quot;UDT_MTP_AnaProcessValueOut&quot;" />
+            <Member Name="ProcessOutDint" Datatype="Array[0..0] of &quot;UDT_MTP_DIntProcessValueOut&quot;" />
+            <Member Name="ProcessOutBin" Datatype="Array[0..0] of &quot;UDT_MTP_BinProcessValueOut&quot;" />
+            <Member Name="ProcessOutString" Datatype="Array[0..0] of &quot;UDT_MTP_StringProcessValueOut&quot;" />
+            <Member Name="ReportAna" Datatype="Array[0..1] of &quot;UDT_MTP_AnaReportValue&quot;" />
+            <Member Name="ReportDint" Datatype="Array[0..0] of &quot;UDT_MTP_DIntReportValue&quot;" />
+            <Member Name="ReportBin" Datatype="Array[0..0] of &quot;UDT_MTP_BinReportValue&quot;" />
+            <Member Name="ReportString" Datatype="Array[0..0] of &quot;UDT_MTP_StringReportValue&quot;" />
+            <Member Name="statInternalCurProcParameter" Datatype="Array[0..31] of &quot;UDT_Service_Parameter&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="statLasProcedureCur" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="statLasProcedureReq" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="statLastReqProcedSelected" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="StatLastProceselReport" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="StatLastProceselProcessOut" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="StatLastProceselProcessIn" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+          </Section>
+        </Sections>
+      </Interface>
+      <Name>Dose_HMI</Name>
+      <Namespace />
+      <Number>60</Number>
+      <ProgrammingLanguage>DB</ProgrammingLanguage>
+    </AttributeList>
+    <ObjectList>
+      <MultilingualText ID="1" CompositionName="Comment">
+        <ObjectList>
+          <MultilingualTextItem ID="2" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="3" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="4" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+      <MultilingualText ID="5" CompositionName="Title">
+        <ObjectList>
+          <MultilingualTextItem ID="6" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="7" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="8" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+    </ObjectList>
+  </SW.Blocks.InstanceDB>
+</Document>

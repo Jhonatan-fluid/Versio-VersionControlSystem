@@ -1,0 +1,18 @@
+﻿TYPE "UDT_Service_StringServParam_1"
+VERSION : 0.1
+   STRUCT
+      OSLevel : Byte;
+      ApplyExt : Bool;
+      ApplyOp : Bool;
+      Sync : Bool;
+      StateOffOp : Bool;
+      StateOpOp : Bool;
+      StateAutOp : Bool;
+      SrcIntOp : Bool;
+      SrcExtOp : Bool;
+      VExt : String[40];
+      VOp : String[40];
+   END_STRUCT;
+
+END_TYPE
+

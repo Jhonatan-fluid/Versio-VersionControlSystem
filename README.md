@@ -4,7 +4,11 @@
 
 A PLC project file is a binary compound document. Git can store it, but it cannot diff it, merge it, or tell you what changed — so version control degrades to "upload a zip with a date in the name". Versio keeps a **textual mirror** of the project inside the same repository, kept in sync automatically, so git becomes genuinely useful for PLC work: line diffs, blame, history, review.
 
-**CODESYS 3.5 is implemented today.** Rockwell Studio 5000, Siemens TIA Portal and Beckhoff TwinCAT are the intended next vendors, and the code is organised so adding one is additive — a rule enforced by a test that reads assembly metadata, not by a paragraph here.
+**CODESYS 3.5 is implemented today. TIA Portal is the second pack** — seen, probed, and
+exported for PLC software once Openness membership is granted; SCL import generate is
+the remaining hole (`PHASE2.md` item 7). Rockwell Studio 5000 and
+Beckhoff TwinCAT remain intended next vendors. The code is organised so adding one is additive
+— a rule enforced by a test that reads assembly metadata, not by a paragraph here.
 
 > **Status: pre-alpha, and the round trip works automatically.** A project in the repository is tracked without ceremony, exported to its reviewable mirror when it changes, and edits to that mirror flow back into the project — driven by the direction lock, proven end to end against a real project with real CODESYS. See [What works today](#what-works-today).
 
@@ -87,7 +91,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | **Export coverage stated, not assumed** — `_coverage.md` + every skip in the manifest | ✅ a gap is distinguished from a deliberate omission; an old manifest reports "unknown", never "complete"; and **an object the export could not write at all is reported rather than counted as covered** — it reaches neither the records nor the skips, so until 2026-08-16 a lost object left a verdict of "everything reaches the mirror" |
 | **Library references exported** (`<manager>.libraries.yaml`) | ✅ **the gap is closed.** One file per library manager, beside the object that owns it — 21 references on the fixture's application, 13 on its project, **all 34 placeholders**. Hand-written YAML on both sides, no third-party dependency. Export-only: change libraries in the IDE. A **fixed-version** reference records its version, company and title parsed from its own name, which is project state — reading them off `managed_library` reports what the exporting machine has *installed*, and answers nothing at all for a library it does not have |
 | Template generation | ⛔ needs a new operation and script — not assembly |
-| A second vendor (TwinCAT / Studio 5000 / TIA Portal) | ⛔ the seam is ready and unproven |
+| A second vendor — TIA Portal | ✅ the second pack; probe and export are gated. **SCL import generate does not yet overwrite** — see `PHASE2.md` item 7. TwinCAT / Studio 5000 are not started |
 | **Git side panel** — staging, commit message, fetch/pull/push | ✅ one operation at a time across every button |
 | **Changed files named as objects** — `FB_Motor · POU`, not `src/…/POU/FB_Motor.st` | ✅ resolved through the export manifest, so it costs no extra read. A file the manifest does not describe stays a path and is **never** guessed at. A library-reference file carries a lock: editing it does not reach the project |
 | **Change summary and drafted commit subject** — *"1 GVL and 1 POU changed in RefrigeratorControl"*, and a **Draft** button that writes `Modify FB_Motor, Glob_Var` | ✅ counted by object, not by file — one GVL is two files and one edit. Both describe exactly what the commit button will record, and Draft refuses to overwrite anything you have typed |
@@ -172,7 +176,7 @@ Versio.sln
 │  │                            Versio.Core has no reference to this — that is the rule,
 │  │                            and the compiler is what enforces it.
 │  │
-│  └─ Versio.Plc.Codesys.Infrastructure/
+│  ├─ Versio.Plc.Codesys.Infrastructure/
 │                               ONE VENDOR, driven. Process host, install locator, script
 │                               extractor, and CodesysPack.Register().
 │     └─ Scripts/               IronPython 2.7, run inside CODESYS, embedded into this
@@ -180,30 +184,42 @@ Versio.sln
 │                               decl, yaml, libraries, tasks, native_equiv) import no
 │                               scriptengine and run on CPython too, which is what the
 │                               parity tests use.
+│  ├─ Versio.Plc.TiaPortal/     ONE VENDOR, pure. Directory payload, import planner,
+│  │                            SCL header, native-XML scrubber.
+│  ├─ Versio.Plc.TiaPortal.Infrastructure/
+│  │                            ONE VENDOR, driven. Locator, runner, TiaPortalPack.
+│  └─ Versio.Plc.TiaPortal.Host/ ONE VENDOR, net48 exe. Loads Openness from the install.
 ├─ tests/
 │  ├─ Versio.TestSupport/       not a test project: the three helpers more than one suite
 │  │                            needs (TestPaths, TestLogger, VendorSeamScanner)
-│  ├─ Versio.Core.Tests/        1,421 unit tests — pure, no IO, under a second
-│  ├─ Versio.Integration.Tests/ 147 tests against real git and the real filesystem, ~10 s.
+│  ├─ Versio.Core.Tests/        1,432 unit tests — pure, no IO, under a second
+│  ├─ Versio.Integration.Tests/ 148 tests against real git and the real filesystem, ~10 s.
 │  │                            NO CODESYS: that is a different project now, so this one
 │  │                            needs no filter and cannot accidentally cost half an hour
-│  ├─ Versio.App.Tests/         609 tests that build the real windows and panels against
+│  ├─ Versio.App.Tests/         612 tests that build the real windows and panels against
 │  │                            the real stylesheet on an STA thread — none is ever shown
 │  ├─ Versio.Plc.Codesys.Pure.Tests/ 260 pure vendor tests — the planner, the codecs, the
 │  │                            protocol — under a second, needing nothing
 │  ├─ Versio.Plc.Codesys.Parity.Tests/ 92 CPython parity tests over the vendor's python,
 │  │                            ~15 s, no CODESYS — python on PATH, skips cleanly without
-│  └─ Versio.Plc.Codesys.Tests/ 54 tests against real CODESYS, ~30 min. The gate before a
-│                               commit, and the only suite that needs a toolchain installed
-├─ tools/                       PowerShell and python harnesses. Seven of the nine are
-│                               CODESYS-specific probes; New-VersioIcon.ps1 generates the
-│                               app icon and Compare-Exports.ps1 diffs any two export trees
+│  ├─ Versio.Plc.Codesys.Tests/ 54 tests against real CODESYS, ~30 min. The CODESYS gate
+│  │                            before a commit, and the only suite that needs that toolchain
+│  ├─ Versio.Plc.TiaPortal.Pure.Tests/ 15 pure vendor tests — format, planner, protocol
+│  └─ Versio.Plc.TiaPortal.Tests/ 4 tests against real TIA Portal; skip with a count when
+│                               Openness membership or the install is missing
+├─ tools/                       PowerShell and python harnesses. tools/tia/ is the second
+│                               vendor's round-trip and P7 harness; the rest are CODESYS
+│                               probes. New-VersioIcon.ps1 generates the app icon.
 ├─ assets/                      versio.svg (reference drawing) and versio.ico
 │                               (the build input — generated, never hand-edited)
-├─ fixtures/projects/           the CODESYS projects the suite runs against, plus their
-│                               committed export mirrors. The .project files are GIT LFS
-│                               POINTERS — a clone without git-lfs installed gets 130-byte
-│                               stubs and the integration suite fails confusingly
+├─ fixtures/projects/           the PLC projects the suite runs against, plus their
+│                               committed export mirrors. RefrigeratorControl.project
+│                               (CODESYS) and CleaningStation_V20_V21/ (TIA Portal,
+│                               a directory) are GIT LFS — a clone without git-lfs
+│                               gets 130-byte stubs and the toolchain gate skips
+│                               rather than opening a pointer. This repository's
+│                               .versio/repo.json ignores the TIA tree so opening
+│                               Versio here does not start a 37 s Portal export
 ├─ phase0/                      GITIGNORED scratch, created on demand by the tools/ harnesses
 │                               and safe to delete whole — it reached 150 MB of scratch
 │                               project copies before it was cleaned out on 2026-08-17. The
@@ -215,7 +231,7 @@ Versio.sln
    ├─ PHASE2.md                 THE FORWARD QUEUE — what is left, in order, and the
    │                            decisions already taken with their why
    ├─ STATUS.md                 where the project is; audits and the findings index
-   ├─ FINDINGS.md               128 defects with their evidence, newest first — the
+   ├─ FINDINGS.md               134 defects with their evidence, newest first — the
    │                            engineering log, split out of STATUS.md when it reached
    │                            77% of that file
    ├─ SAFEGUARDS.md             what Versio refuses, asks about, or waits for
@@ -224,8 +240,9 @@ Versio.sln
    │                            PHASE0-FINDINGS), each marked done, plus probes/ holding
    │                            the raw measurements behind every P-numbered claim.
    │                            Reasoning and evidence, never current state
-   └─ vendors/codesys/          ONE VENDOR's documentation, beside its two projects
-      └─ DRIVING.md             how CODESYS is driven end to end, and the audit of it
+   └─ vendors/                  ONE VENDOR's documentation per pack
+      ├─ codesys/DRIVING.md     how CODESYS is driven end to end, and the audit of it
+      └─ tia/DRIVING.md         how TIA Portal is driven — Openness, host, occupancy
 ```
 
 `Versio.App` holds the WPF shell: `Theme/tokens/` for the design tokens, `Theme/controls/` for
@@ -271,6 +288,9 @@ three ways and the namespaces say which is which:
 | `Versio.Core` → `Iec/` | **The IEC 61131-3 standard**, shared by every vendor | `StTextCodec`, `StDeclarationParser`, `IecObjectTypeNames` |
 | **`Versio.Plc.Codesys`** | **One vendor, pure.** Object-type GUIDs, native XML shape, the import planner, the ScriptEngine protocol, CODESYS's own words for its tree | `CodesysObjectType`, `ProfileResolver` |
 | **`Versio.Plc.Codesys.Infrastructure`** | **One vendor, driven.** Finding the install, starting `CODESYS.exe`, unpacking the embedded python | `LocalCodesysRunner`, `CodesysPack` |
+| **`Versio.Plc.TiaPortal`** | **One vendor, pure.** Directory payload, import planner, SCL header, native-XML scrubber | `TiaPortalProjectFormat`, `TiaPortalImportPlanner` |
+| **`Versio.Plc.TiaPortal.Infrastructure`** | **One vendor, driven.** Finding Portal, starting the net48 host | `LocalTiaPortalRunner`, `TiaPortalPack` |
+| **`Versio.Plc.TiaPortal.Host`** | **One vendor, net48.** Loads Openness from the install; Siemens DLLs are never shipped | `HostApp` |
 | everything else | **Vendor-neutral.** git, diff, sync, locking, watching, logging, bindings | `SyncOrchestrator`, `GitCliClient` |
 
 **Those are projects, not folders, and that is the whole point.** Until 2026-08-17 the vendor
@@ -287,8 +307,12 @@ than reimplementing them.
 **Adding a vendor** means a new project implementing `IPlcRunner`, `IPlcProjectFormat` and
 `IPlcToolchain`, one `ProjectReference` from `Versio.App`, and one `Register()` call in
 `App.xaml.cs` beside the existing `CodesysPack.Register()`. Nothing in `Sync/`, `Git/`,
-`Locking/`, `Watching/`, `Projects/` or `Diff/` may change — **if it does, vendor knowledge has
-leaked past the seam, and the leak is the bug.**
+`Locking/`, `Watching/`, `Projects/` or `Diff/` may **name** a vendor — **if it does, vendor
+knowledge has leaked past the seam, and the leak is the bug.** The second vendor proved the
+seam itself had to grow: a project that is a directory needs `PayloadPathFor` and a tree
+copy, and textual files that are not `.st` need a highlighter mapping. Those landed as
+defaults and extra extensions, with no brand in the orchestrator. See
+[`docs/vendors/tia/DRIVING.md`](docs/vendors/tia/DRIVING.md).
 
 Three things enforce that, and all three had to be built because the rule was stated from the
 start and was not true:
@@ -337,16 +361,18 @@ dotnet test tests/Versio.Core.Tests
 > `%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe`, or set `DOTNET_ROOT` to it — the same install
 > layout that makes a framework-dependent `Versio.exe` fail to start, noted again below.
 
-**Seven suites, and they need different things:**
+**Nine suites, and they need different things:**
 
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,421 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
-| `Versio.Integration.Tests` | 147 | a real `git.exe` and the real filesystem | ~10 s |
+| `Versio.Core.Tests` | 1,432 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
+| `Versio.Integration.Tests` | 148 | a real `git.exe` and the real filesystem | ~10 s |
 | `Versio.Arch.Tests` | 14 | nothing — it reads assembly metadata, IL, and the project files | instant |
-| `Versio.App.Tests` | 609 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
+| `Versio.App.Tests` | 612 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
 | `Versio.Plc.Codesys.Pure.Tests` | 260 | nothing — the vendor's planner, codecs and protocol, pure | under a second |
 | `Versio.Plc.Codesys.Parity.Tests` | 92 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 15 | nothing — format, planner, protocol, scrubber | instant |
+| `Versio.Plc.TiaPortal.Tests` | 4 | **a real TIA Portal**; skips cleanly without Openness membership | seconds when skipped |
 | `Versio.Plc.Codesys.Tests` | 54 | **a real CODESYS**, and **skips cleanly** without one | **~30 min** |
 
 The first six are the loop to work in. The last is the gate before a commit — and it is a
@@ -386,6 +412,19 @@ Native fidelity is *semantic*, and that check lives once, in C#: `dotnet test te
 
 > The profile string cannot be guessed from the install folder: `CODESYS 3.5.22.20` on disk is profile `CODESYS V3.5 SP22 Patch 2`. Read it from `…\CODESYS\Profiles\*.profile.xml`, or let `CodesysLocator` find it.
 
+### Running the TIA Portal pipeline by hand
+
+Same layered-verdict rule. Default project is the committed fixture. Close Versio **and**
+TIA Portal first. Openness membership and the host AllowList are required; see
+[`docs/vendors/tia/DRIVING.md`](docs/vendors/tia/DRIVING.md).
+
+```
+pwsh tools/tia/Test-RoundTrip.ps1 -MutateFirst
+```
+
+That writes the committed `CleaningStation_V20_V21` tree. For a disposable copy, pass
+`-Project` at a tree under `.versio/local/tia/` — never the OneDrive original.
+
 ---
 
 ## Dependencies
@@ -400,10 +439,11 @@ Deliberately few. Every one is a thing that can break a build or a publish.
 
 **`Versio.Core` and `Versio.Infrastructure` have no third-party dependencies at all.**
 
-**One tool is a prerequisite rather than a package: `git-lfs`.** The `.project` fixtures are
-stored in LFS, so a clone on a machine without it gets 130-byte pointer files instead. Nothing
-fails at build time — the integration suite fails later, complaining that a CODESYS project it
-was handed is not a project, which is a long way from the cause.
+**One tool is a prerequisite rather than a package: `git-lfs`.** The `.project` fixtures and
+the TIA Portal `System/*.plf` payload are stored in LFS, so a clone on a machine without it
+gets 130-byte pointer files instead. Nothing fails at build time — the CODESYS suite fails
+later, complaining that a project it was handed is not a project; the TIA gate **skips**
+when `TestPaths.TiaPortalProject()` sees a pointer.
 
 Two absences are decisions, not omissions:
 

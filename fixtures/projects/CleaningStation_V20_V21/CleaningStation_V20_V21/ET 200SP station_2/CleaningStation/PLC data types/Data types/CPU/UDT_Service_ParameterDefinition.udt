@@ -1,0 +1,11 @@
+﻿TYPE "UDT_Service_ParameterDefinition"
+VERSION : 0.1
+   STRUCT
+      indexMTP : Int;   // MTP Index of parameter
+      indexIO : Int;   // IO Index of parameter
+      "type" : Int;   // Type of parameter
+      controlModule : Byte := 16#FF;   // Number of control module used with parameter
+   END_STRUCT;
+
+END_TYPE
+

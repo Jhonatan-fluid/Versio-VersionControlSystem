@@ -58,8 +58,7 @@ public readonly struct PlcVendor : IEquatable<PlcVendor>
     /// <summary>CODESYS 3.5 and the many OEM rebrands built on it.</summary>
     public static PlcVendor Codesys { get; } = new("Codesys");
 
-    /// <summary>Siemens TIA Portal. Not implemented — listed so the shape of the
-    /// abstraction is judged against a real second vendor rather than a hypothetical one.</summary>
+    /// <summary>Siemens TIA Portal.</summary>
     public static PlcVendor TiaPortal { get; } = new("TiaPortal");
 
     /// <summary>Rockwell Studio 5000. Not implemented.</summary>

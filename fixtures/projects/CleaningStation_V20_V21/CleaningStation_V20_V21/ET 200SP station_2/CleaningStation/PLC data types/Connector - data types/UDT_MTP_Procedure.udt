@@ -1,0 +1,10 @@
+﻿TYPE "UDT_MTP_Procedure"
+VERSION : 0.1
+   STRUCT
+      IsSelfCompleting : Bool;   // 1:Procedure Self-Completing; 0:Procedure Not Self-Completing
+      ProcedureID : DWord;   // Procedure ID
+      IsDefault : Bool;   // 1:Default procedure; 0:Not Default Procedure
+   END_STRUCT;
+
+END_TYPE
+

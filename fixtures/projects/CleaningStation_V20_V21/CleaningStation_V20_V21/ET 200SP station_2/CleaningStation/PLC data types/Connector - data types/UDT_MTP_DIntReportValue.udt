@@ -1,0 +1,13 @@
+﻿TYPE "UDT_MTP_DIntReportValue"
+VERSION : 0.1
+   STRUCT
+      WQC { ExternalWritable := 'False'} : Byte := 16#FF;   // Worst Quality Code
+      V { ExternalWritable := 'False'} : DInt;   // Value
+      VSclMin { ExternalWritable := 'False'} : DInt;   // Value Scale Low Limit
+      VSclMax { ExternalWritable := 'False'} : DInt := 100;   // Value Scale High Limit
+      VUnit { ExternalWritable := 'False'} : Int := 1998;   // Value Unit
+      MissedValue { ExternalWritable := 'False'} : Bool;   // MissedValueFeature
+   END_STRUCT;
+
+END_TYPE
+

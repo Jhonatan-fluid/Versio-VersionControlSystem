@@ -1,0 +1,15 @@
+﻿TYPE "UDT_Service_ProcedureEnable"
+VERSION : 0.1
+   STRUCT
+      Reset { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : "DigValTFF";   // Reset Enablement Logic
+      Start { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : "DigValTFF";   // Start Enablement Logic
+      Hold { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : "DigValTFF";   // Hold Enablement Logic
+      Unhold { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : "DigValTFF";   // Unhold Enablement Logic
+      Pause { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : "DigValTFF";   // Pause Enablement Logic
+      Resume { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : "DigValTFF";   // Resume Enablement Logic
+      Restart { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : "DigValTFF";   // Restart Enablement Logic
+      Complete { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : "DigValTFF";   // Complete Enablement Logic
+   END_STRUCT;
+
+END_TYPE
+

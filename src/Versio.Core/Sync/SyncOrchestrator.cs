@@ -85,7 +85,7 @@ public readonly record struct SyncRunNotice(
 public sealed class SyncOrchestrator
 {
     private readonly IClock _clock;
-    private readonly IPlcRunner _toolchain;
+    private readonly Func<PlcVendor, IPlcRunner> _runnerFor;
     private readonly IFileSystem _fs;
     private readonly ILockStore _lockStore;
     private readonly OrchestratorOptions _options;
@@ -168,7 +168,8 @@ public sealed class SyncOrchestrator
         IProjectOccupancyProbe? occupancy = null,
         IConflictProbe? conflicts = null,
         IHistoricContentProbe? history = null,
-        Func<string, IPlcProjectFormat?>? formats = null)
+        Func<string, IPlcProjectFormat?>? formats = null,
+        Func<PlcVendor, IPlcRunner>? runnerFor = null)
     {
         _formats = formats ?? PlcFormats.ForPath;
         _occupancy = occupancy;
@@ -179,7 +180,10 @@ public sealed class SyncOrchestrator
         _progress = progress;
         _clock = clock;
         _fs = fs;
-        _toolchain = toolchain;
+        // One runner is still the usual case, and every existing caller passes that.
+        // A mixed repository needs one per vendor or every job is driven by whoever
+        // was probed first — which used to be the first registered format.
+        _runnerFor = runnerFor ?? (_ => toolchain);
         _lockStore = lockStore;
         _log = logger ?? NullLogger.Instance;
         _options = options ?? new OrchestratorOptions();
@@ -1346,7 +1350,7 @@ public sealed class SyncOrchestrator
         // watcher's quiet period lets them - which is long after the toolchain has exited.
         using var writing = BeginOwnWrite(binding.Id, ChangeSource.ExportedText);
 
-        var result = await _toolchain.RunAsync(job, _progress, ct).ConfigureAwait(false);
+        var result = await RunnerFor(binding).RunAsync(job, _progress, ct).ConfigureAwait(false);
         var elapsed = _clock.UtcNow - started;
 
         if (!result.Succeeded)
@@ -1470,7 +1474,7 @@ public sealed class SyncOrchestrator
 
     private async Task<string?> CopyOpenProjectAsync(ProjectBinding binding, CancellationToken ct)
     {
-        var source = Absolute(binding.ProjectPath);
+        var source = PayloadPath(binding);
         var folder = Combine(".versio", "local", "open", binding.Id);
         var name = Path.GetFileName(binding.ProjectPath.Replace('/', Path.DirectorySeparatorChar));
         var destination = Path.Combine(folder, name);
@@ -1478,7 +1482,17 @@ public sealed class SyncOrchestrator
         try
         {
             _fs.CreateDirectory(folder);
-            await _fs.CopyAsync(source, destination, ct).ConfigureAwait(false);
+
+            if (IsTreePayload(source))
+            {
+                // The project is the directory. Copying only the pointer file at the top
+                // would hand the toolchain an empty shell and leave the program behind.
+                await _fs.CopyTreeAsync(source, folder, ct).ConfigureAwait(false);
+            }
+            else
+            {
+                await _fs.CopyAsync(source, destination, ct).ConfigureAwait(false);
+            }
 
             _log.Info(LogCategory.Sync,
                 $"{binding.Id}: copied {binding.ProjectPath} to {destination} because the IDE " +
@@ -1500,12 +1514,11 @@ public sealed class SyncOrchestrator
     /// Clear the scratch folder. Never fails the export it belongs to.
     /// </summary>
     /// <remarks>
-    /// <b>Everything in the folder, not just the copy we made.</b> Opening a project makes the
-    /// toolchain write its own files beside it, and they outlive the run: measured on CODESYS
-    /// 3.5.22.20, an export leaves <c>&lt;name&gt;-AllUsers.opt</c> and
-    /// <c>&lt;name&gt;-&lt;user&gt;-&lt;machine&gt;.opt</c>. Deleting only the file we created
-    /// leaves those behind for good. The folder is ours and holds nothing else, so emptying it
-    /// is both safe and the only way to be sure — including of whatever a later version adds.
+    /// <b>The folder, not the files inside it.</b> Opening a project makes the toolchain
+    /// write its own files beside the copy, and a tree payload is itself a directory of
+    /// hundreds of them. Deleting files one at a time left the folders behind for good
+    /// once, and would walk into a tree copy the same way a backup prune would. The folder
+    /// is ours and holds nothing else.
     /// </remarks>
     private void DiscardScratchProject(string? path)
     {
@@ -1520,31 +1533,16 @@ public sealed class SyncOrchestrator
             return;
         }
 
-        foreach (var file in SafeEnumerate(folder))
-        {
-            try
-            {
-                _fs.DeleteFile(file);
-                _log.Debug(LogCategory.Sync, $"removed the scratch file {file}");
-            }
-            catch (IOException ex)
-            {
-                // Under .versio/local/, so a leak costs disk and nothing else. The next export
-                // of this binding overwrites the copy in place regardless.
-                _log.Debug(LogCategory.Sync, $"could not remove {file}: {ex.Message}");
-            }
-        }
-    }
-
-    private IEnumerable<string> SafeEnumerate(string folder)
-    {
         try
         {
-            return _fs.DirectoryExists(folder) ? _fs.EnumerateFiles(folder) : [];
+            _fs.DeleteDirectory(folder);
+            _log.Debug(LogCategory.Sync, $"removed the scratch folder {folder}");
         }
-        catch (IOException)
+        catch (IOException ex)
         {
-            return [];
+            // Under .versio/local/, so a leak costs disk and nothing else. The next export
+            // of this binding overwrites the copy in place regardless.
+            _log.Debug(LogCategory.Sync, $"could not remove {folder}: {ex.Message}");
         }
     }
 
@@ -1710,7 +1708,7 @@ public sealed class SyncOrchestrator
         // other is a rule somebody will eventually be surprised by.
         using var writing = BeginOwnWrite(binding.Id, ChangeSource.Project);
 
-        var result = await _toolchain.RunAsync(job, _progress, ct).ConfigureAwait(false);
+        var result = await RunnerFor(binding).RunAsync(job, _progress, ct).ConfigureAwait(false);
         var elapsed = _clock.UtcNow - started;
 
         if (!result.Succeeded)
@@ -1878,7 +1876,7 @@ public sealed class SyncOrchestrator
             // record whose comment disagrees with its contents is the defect this codebase
             // keeps writing up. Absolute would also leak the engineer's home directory into
             // anything that displayed it.
-            return BackupCatalog.Read(_fs.EnumerateFiles(folder).Select(Relative));
+            return BackupCatalog.Read(ImmediateBackupEntries(folder).Select(Relative));
         }
         catch (IOException ex)
         {
@@ -1919,7 +1917,7 @@ public sealed class SyncOrchestrator
         }
 
         var source = Absolute(backupPath);
-        if (!_fs.FileExists(source))
+        if (!_fs.FileExists(source) && !_fs.DirectoryExists(source))
         {
             return Refuse(LogLevel.Warning, SyncVerdict.Failed, bindingId,
                 $"that backup is no longer on disk: {backupPath}");
@@ -1945,7 +1943,15 @@ public sealed class SyncOrchestrator
 
         using (BeginOwnWrite(bindingId, ChangeSource.Project))
         {
-            await _fs.CopyAsync(source, Absolute(binding.ProjectPath), ct).ConfigureAwait(false);
+            var live = PayloadPath(binding);
+            if (IsTreePayload(source) || IsTreePayload(live))
+            {
+                await _fs.CopyTreeAsync(source, live, ct).ConfigureAwait(false);
+            }
+            else
+            {
+                await _fs.CopyAsync(source, Absolute(binding.ProjectPath), ct).ConfigureAwait(false);
+            }
         }
 
         _log.Info(LogCategory.Sync,
@@ -2225,8 +2231,8 @@ public sealed class SyncOrchestrator
     /// </remarks>
     private async Task<string?> BackUpProjectAsync(ProjectBinding binding, CancellationToken ct)
     {
-        var source = Absolute(binding.ProjectPath);
-        if (!_fs.FileExists(source))
+        var source = PayloadPath(binding);
+        if (!_fs.FileExists(source) && !_fs.DirectoryExists(source))
         {
             // Nothing to lose yet. An import that creates the project is unusual but not
             // wrong, and refusing it over a missing backup would be.
@@ -2243,7 +2249,22 @@ public sealed class SyncOrchestrator
         var destination = Path.Combine(folder, $"{stamp}-{name}");
 
         _fs.CreateDirectory(folder);
-        await _fs.CopyAsync(source, destination, ct).ConfigureAwait(false);
+
+        if (IsTreePayload(source))
+        {
+            // A tree copy must be a directory of its own. Enumerating files under the
+            // backup folder would otherwise list every inner file of the newest copy,
+            // parse none of them as stamps, and prune the inside of the thing we just
+            // wrote.
+            var treeName = Path.GetFileNameWithoutExtension(name);
+            destination = UniqueBackupPath(folder, $"{stamp}-{treeName}");
+            await _fs.CopyTreeAsync(source, destination, ct).ConfigureAwait(false);
+        }
+        else
+        {
+            destination = UniqueBackupPath(folder, $"{stamp}-{name}");
+            await _fs.CopyAsync(source, destination, ct).ConfigureAwait(false);
+        }
 
         PruneBackups(folder);
 
@@ -2256,19 +2277,21 @@ public sealed class SyncOrchestrator
     /// Each deletion is logged by name. These are somebody's undo history, and a backup that
     /// vanished without a line saying so is indistinguishable from one that was never made -
     /// which is the question being asked at precisely the moment they go looking.
+    /// Immediate children only: a tree backup is itself a directory, and walking files
+    /// underneath it would prune the newest copy from the inside.
     /// </remarks>
     private void PruneBackups(string folder)
     {
         try
         {
-            var existing = _fs.EnumerateFiles(folder)
+            var existing = ImmediateBackupEntries(folder)
                 .OrderByDescending(f => f, StringComparer.Ordinal)
                 .Skip(BackupsKept)
                 .ToList();
 
             foreach (var stale in existing)
             {
-                _fs.DeleteFile(stale);
+                DeleteBackupEntry(stale);
                 _log.Info(LogCategory.Sync, $"pruned old project backup {stale}");
             }
         }
@@ -2282,14 +2305,99 @@ public sealed class SyncOrchestrator
 
     private async Task<string> ProjectHashAsync(ProjectBinding binding, CancellationToken ct)
     {
-        var path = Absolute(binding.ProjectPath);
+        var path = PayloadPath(binding);
+        var format = _formats(binding.ProjectPath);
+
+        if (IsTreePayload(path))
+        {
+            var files = new List<(string Path, string Hash)>();
+            foreach (var file in _fs.EnumerateFiles(path))
+            {
+                ct.ThrowIfCancellationRequested();
+                var relative = Path.GetRelativePath(path, file).Replace('\\', '/');
+                if (format is not null && !format.CountsTowardProjectHash(relative))
+                {
+                    continue;
+                }
+
+                var bytes = await _fs.ReadAllBytesAsync(file, ct).ConfigureAwait(false);
+                files.Add((relative, ContentHash.Of(bytes)));
+            }
+
+            return files.Count == 0 ? string.Empty : ContentHash.OfTree(files);
+        }
+
         if (!_fs.FileExists(path))
         {
             return string.Empty;
         }
 
-        var bytes = await _fs.ReadAllBytesAsync(path, ct).ConfigureAwait(false);
-        return ContentHash.Of(bytes);
+        var fileBytes = await _fs.ReadAllBytesAsync(path, ct).ConfigureAwait(false);
+        return ContentHash.Of(fileBytes);
+    }
+
+    private string UniqueBackupPath(string folder, string baseName)
+    {
+        // Restore takes a safety copy of the live project before it overwrites it.
+        // The stamp is second-resolution, so a restore in the same second as the
+        // backup it is restoring would otherwise write on top of that backup and
+        // then copy the damaged tree back over itself — a no-op that looks like
+        // a completed restore. Same collision for two imports in one second.
+        var destination = Path.Combine(folder, baseName);
+        var n = 2;
+        while (_fs.FileExists(destination) || _fs.DirectoryExists(destination))
+        {
+            destination = Path.Combine(folder, $"{baseName}-{n}");
+            n++;
+        }
+
+        return destination;
+    }
+
+    private string PayloadPath(ProjectBinding binding)
+    {
+        var project = Absolute(binding.ProjectPath);
+        return _formats(binding.ProjectPath)?.PayloadPathFor(project) ?? project;
+    }
+
+    /// <summary>
+    /// The runner that owns this binding's vendor.
+    /// </summary>
+    /// <remarks>
+    /// Bindings already record a vendor. Until this existed the engine had one runner
+    /// for the whole repository, so a mixed tree sent every job to whoever was probed
+    /// first. The lookup is by <see cref="PlcVendor"/> — the seam token — not by a
+    /// brand name Sync is not allowed to know.
+    /// </remarks>
+    private IPlcRunner RunnerFor(ProjectBinding binding) => _runnerFor(binding.Vendor);
+
+    private bool IsTreePayload(string payload) =>
+        _fs.DirectoryExists(payload) && !_fs.FileExists(payload);
+
+    private IEnumerable<string> ImmediateBackupEntries(string folder)
+    {
+        var files = _fs.EnumerateFiles(folder)
+            .Where(f => PathsAreEqual(Path.GetDirectoryName(f), folder));
+        return _fs.EnumerateDirectories(folder).Concat(files);
+    }
+
+    private static bool PathsAreEqual(string? left, string right) =>
+        !string.IsNullOrEmpty(left)
+        && string.Equals(
+            left.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            right.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            StringComparison.OrdinalIgnoreCase);
+
+    private void DeleteBackupEntry(string path)
+    {
+        if (IsTreePayload(path))
+        {
+            _fs.DeleteDirectory(path);
+        }
+        else
+        {
+            _fs.DeleteFile(path);
+        }
     }
 
     /// <summary>
