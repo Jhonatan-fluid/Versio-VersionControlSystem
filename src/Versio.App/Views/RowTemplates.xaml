@@ -137,4 +137,5 @@
                               ContentTemplate="{StaticResource ChangeRowTemplate}" />
         </Grid>
     </DataTemplate>
+
 </ResourceDictionary>

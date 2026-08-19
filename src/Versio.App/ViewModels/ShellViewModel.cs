@@ -4566,6 +4566,84 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// git already answers. The commit gate still runs at commit time — staging early
     /// changes when the mirror is recorded, not whether the gate sees it.
     /// </remarks>
+    /// <summary>
+    /// Stage, unstage or discard exactly one row of a staging list.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The clicked row, never the ticks.</b> This is the whole reason these exist rather
+    /// than the menu reusing <c>StageCommand</c>: the buttons act on <c>Chosen</c> — the ticked
+    /// rows, or all of them when nothing is ticked — and a right-click is a statement about the
+    /// row under the cursor. Somebody who has ticked three files, then right-clicks a fourth to
+    /// stage it, must not have their three swept in. The two interactions mean different things
+    /// and they both have to keep meaning them.
+    /// </para>
+    /// <para>
+    /// <b>Discard goes through <see cref="DiscardRowsAsync"/> unchanged</b>, so the one flow in
+    /// this application that destroys work nothing else has a copy of still names every file it
+    /// will touch and still asks first. The context menu is a new way to reach that flow, not a
+    /// second implementation of it.
+    /// </para>
+    /// </remarks>
+    public async Task StageRowAsync(ChangeRow row)
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        _logger.Click("Row.Stage");
+        using var busy = Busy.Begin(WorkKind.GitWrite, $"Staging {row.Primary}…");
+
+        var result = await _git.StageAsync([row.Path], busy.Token).ConfigureAwait(true);
+
+        if (!result.Success)
+        {
+            _logger.Warn(LogCategory.Git, $"stage failed for {row.Path}: {result.FailureReason}");
+            Notifications.Failure("Could not stage.", result.FailureReason ?? string.Empty);
+        }
+
+        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+    }
+
+    public async Task UnstageRowAsync(ChangeRow row)
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        _logger.Click("Row.Unstage");
+        using var busy = Busy.Begin(WorkKind.GitWrite, $"Unstaging {row.Primary}…");
+
+        var result = await _git.UnstageAsync([row.Path], busy.Token).ConfigureAwait(true);
+
+        if (!result.Success)
+        {
+            _logger.Warn(LogCategory.Git,
+                         $"unstage failed for {row.Path}: {result.FailureReason}");
+            Notifications.Failure("Could not unstage.", result.FailureReason ?? string.Empty);
+        }
+
+        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+    }
+
+    public Task DiscardRowAsync(ChangeRow row) => DiscardRowsAsync([row]);
+
+    /// <summary>Reveal one staging row's file in Explorer.</summary>
+    public void RevealRow(ChangeRow row)
+    {
+        _logger.Click("Row.Reveal");
+        RevealPath(row.Path);
+    }
+
+    /// <summary>Put one staging row's repo-relative path on the clipboard.</summary>
+    public void CopyRowPath(ChangeRow row)
+    {
+        _logger.Click("Row.CopyPath");
+        CopyPathToClipboard(row.Path);
+    }
+
     public async Task StageNodeAsync(TreeRow row)
     {
         if (_git is null || row.Node.Files.Count == 0)
@@ -4598,15 +4676,34 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// </remarks>
     public void RevealNode(TreeRow row)
     {
+        _logger.Click("Tree.Reveal");
+        RevealPath(row.Node.Files.FirstOrDefault() ?? row.Node.Path);
+    }
+
+    /// <summary>
+    /// Reveal one repo-relative path in Explorer.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Extracted from <see cref="RevealNode"/> when the git panel's rows gained the same
+    /// menu entry. <b>The whole of the reasoning came with it</b>, because none of it was
+    /// about trees: explorer by name so <c>/select,</c> works, the argument as ONE string
+    /// because splitting it makes Explorer open Documents instead, and failure logged and
+    /// put in the status bar rather than swallowed — a locked-down industrial machine really
+    /// can refuse this.
+    /// </para>
+    /// <para>
+    /// The caller logs its own click, so the log still says which surface asked.
+    /// </para>
+    /// </remarks>
+    public void RevealPath(string repoRelative)
+    {
         if (RepositoryPath is not { } root)
         {
             return;
         }
 
-        _logger.Click("Tree.Reveal");
-
-        var relative = (row.Node.Files.FirstOrDefault() ?? row.Node.Path)
-            .Replace('/', Path.DirectorySeparatorChar);
+        var relative = repoRelative.Replace('/', Path.DirectorySeparatorChar);
         var absolute = Path.Combine(root, relative);
 
         try
@@ -4647,16 +4744,32 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     public void CopyNodePath(TreeRow row)
     {
         _logger.Click("Tree.CopyPath");
+        CopyPathToClipboard(row.Node.Path);
+    }
+
+    /// <summary>
+    /// Put one repo-relative path on the clipboard.
+    /// </summary>
+    /// <remarks>
+    /// Extracted alongside <see cref="RevealPath"/>, with its reasoning intact: the
+    /// repo-relative path rather than an absolute one, because that is the path that means
+    /// the same thing to every clone — a commit message, an issue, a chat message. Clipboard
+    /// access can be refused when another process holds it open, which is worth a status-bar
+    /// sentence and not a crash, and the sentence still carries the path so the copy failing
+    /// does not also lose the thing being copied.
+    /// </remarks>
+    public void CopyPathToClipboard(string repoRelative)
+    {
 
         try
         {
-            System.Windows.Clipboard.SetText(row.Node.Path);
-            StatusSummary = $"Copied {row.Node.Path}";
+            System.Windows.Clipboard.SetText(repoRelative);
+            StatusSummary = $"Copied {repoRelative}";
         }
         catch (System.Runtime.InteropServices.ExternalException ex)
         {
             _logger.Error(LogCategory.App, "could not reach the clipboard", ex);
-            StatusSummary = $"Could not reach the clipboard — the path is {row.Node.Path}";
+            StatusSummary = $"Could not reach the clipboard — the path is {repoRelative}";
         }
     }
 

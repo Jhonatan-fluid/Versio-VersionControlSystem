@@ -26,6 +26,93 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="../RowTemplates.xaml" />
             </ResourceDictionary.MergedDictionaries>
+
+        <!--
+            THE SAME ROW, WITH THE MENU EACH LIST ACTUALLY WANTS.
+
+            Two templates rather than one with half its entries hidden, because the two lists want
+            genuinely different verbs: a staged row can be taken back out, an unstaged row can be
+            staged or thrown away. A shared menu would need a flag on ChangeRow saying which list
+            it is in - and a file can be in BOTH at once, with staged changes and further unstaged
+            ones on top, so that flag would have to be about the list rather than the row and the
+            row is what the template binds to.
+
+            The body is still shared. Only the checkbox and the menu are repeated, and the glyph,
+            the name, the type chip and the path all come from ChangeRowTemplate exactly as before,
+            so the two lists cannot drift apart on what a modified file looks like.
+
+            THE MENU HANGS OFF THE ROW'S OWN GRID, which is the same shape the project tree uses
+            and it is not a style choice: a ContextMenu inherits its DataContext from the element
+            it is set on, so every entry here acts on the row that was right-clicked. Hanging it
+            off the ListBox instead would make it act on the SELECTION - and WPF does not select a
+            row on right-click, so right-clicking the third row while the first is selected would
+            silently act on the first.
+
+            The verbs act on the CLICKED ROW, never on the ticks. The buttons above the list
+            already act on the ticked set; someone who ticked three files and then right-clicks a
+            fourth must not get their three swept in. See StageRowAsync.
+        -->
+        <!--
+        DOUBLE-CLICK HANGS OFF THE ROW CONTAINER, NOT THE LIST.
+
+        The obvious wiring is MouseDoubleClick on the ListBox. It does not work, and the reason
+        is worth keeping: Control.MouseDoubleClick is registered with RoutingStrategy.DIRECT, so
+        it does not bubble - a double-click on a row never reaches a handler on the list. The
+        first attempt did exactly that and the test caught it.
+
+        Attached to the container instead, `sender` IS the row, so the handler reads its
+        DataContext with no tree walking and no assumption about what OriginalSource carries at
+        the moment the event is re-raised. It also gives the right answer for free below the
+        last row: empty space is not a container, so nothing fires.
+    -->
+    <Style x:Key="StagedRowContainer" TargetType="ListBoxItem"
+           BasedOn="{StaticResource RowItem}">
+        <EventSetter Event="MouseDoubleClick" Handler="OnStagedRowDoubleClick" />
+    </Style>
+
+    <Style x:Key="UnstagedRowContainer" TargetType="ListBoxItem"
+           BasedOn="{StaticResource RowItem}">
+        <EventSetter Event="MouseDoubleClick" Handler="OnUnstagedRowDoubleClick" />
+    </Style>
+
+    <DataTemplate x:Key="StagedRowTemplate">
+            <Grid>
+                <Grid.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="Unstage" Click="OnUnstageRow" />
+                        <Separator />
+                        <MenuItem Header="Reveal in Explorer" Click="OnRevealRow" />
+                        <MenuItem Header="Copy path" Click="OnCopyRowPath" />
+                    </ContextMenu>
+                </Grid.ContextMenu>
+
+                <ContentPresenter Content="{Binding}"
+                                  ContentTemplate="{StaticResource StageRowTemplate}" />
+            </Grid>
+        </DataTemplate>
+
+        <DataTemplate x:Key="UnstagedRowTemplate">
+            <Grid>
+                <Grid.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="Stage" Click="OnStageRow" />
+
+                        <!-- Still the only entry that destroys work nothing else has a copy of,
+                             and it still goes through DiscardRowsAsync - which names every file
+                             it will touch and asks first. A new way to REACH that flow, not a
+                             second implementation of it. The ellipsis says a question is
+                             coming. -->
+                        <MenuItem Header="Discard changes…" Click="OnDiscardRow" />
+                        <Separator />
+                        <MenuItem Header="Reveal in Explorer" Click="OnRevealRow" />
+                        <MenuItem Header="Copy path" Click="OnCopyRowPath" />
+                    </ContextMenu>
+                </Grid.ContextMenu>
+
+                <ContentPresenter Content="{Binding}"
+                                  ContentTemplate="{StaticResource StageRowTemplate}" />
+            </Grid>
+        </DataTemplate>
         </ResourceDictionary>
     </UserControl.Resources>
 
@@ -896,10 +983,10 @@
                              ItemsSource="{Binding Staged}"
                              SelectedItem="{Binding SelectedStaged}"
                              Background="Transparent" BorderThickness="0"
-                             ItemContainerStyle="{StaticResource RowItem}"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                              ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             ItemTemplate="{StaticResource StageRowTemplate}"
+                             ItemTemplate="{StaticResource StagedRowTemplate}"
+                             ItemContainerStyle="{StaticResource StagedRowContainer}"
                              VirtualizingStackPanel.IsVirtualizing="True"
                              VirtualizingStackPanel.VirtualizationMode="Recycling" />
 
@@ -965,10 +1052,10 @@
                              ItemsSource="{Binding Unstaged}"
                              SelectedItem="{Binding SelectedUnstaged}"
                              Background="Transparent" BorderThickness="0"
-                             ItemContainerStyle="{StaticResource RowItem}"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                              ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             ItemTemplate="{StaticResource StageRowTemplate}"
+                             ItemTemplate="{StaticResource UnstagedRowTemplate}"
+                             ItemContainerStyle="{StaticResource UnstagedRowContainer}"
                              VirtualizingStackPanel.IsVirtualizing="True"
                              VirtualizingStackPanel.VirtualizationMode="Recycling" />
                     </Grid>

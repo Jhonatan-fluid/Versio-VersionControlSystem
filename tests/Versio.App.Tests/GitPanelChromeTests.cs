@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
+using System.Windows.Input;
 using System.Windows.Media;
 using Versio.App.ViewModels;
 using Versio.App.Views;
@@ -569,6 +570,156 @@ public sealed class GitPanelChromeTests : IDisposable
         }
 
         return Assert.IsType<Border>(parent);
+    }
+
+    /// <summary>
+    /// Each staging list's rows carry the menu that list's verbs belong to.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Realised rows, not the templates.</b> A DataTemplate resolves its
+    /// <c>StaticResource</c>s when a row is first built, not when the XAML is parsed — so a
+    /// menu wired to a handler that does not exist, or a template referencing a key declared
+    /// below it, sails past every other test in this file and throws in front of whoever
+    /// right-clicks. The panel is filled and laid out here for that reason.
+    /// </para>
+    /// <para>
+    /// <b>The two lists deliberately differ.</b> A staged row can be taken back out; an
+    /// unstaged one can be staged or thrown away. Asserting the absences is what stops the two
+    /// templates quietly converging back into one — <c>Discard</c> on a staged row would act on
+    /// the working tree, which is not what the row in front of you is showing.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void Each_staging_list_carries_its_own_row_menu()
+    {
+        StaHarness.Run(() =>
+        {
+            var (window, shell) = Build();
+            var (panel, content) = ShowGitPanel(window);
+
+            shell.Staged.Add(new ChangeRow(new FileChange
+            {
+                Path = "src/App/POU/FB_Staged.st",
+                Staged = ChangeKind.Modified,
+                Unstaged = ChangeKind.Unmodified,
+            }));
+
+            shell.Unstaged.Add(new ChangeRow(new FileChange
+            {
+                Path = "src/App/GVL/GVL_Changed.st",
+                Staged = ChangeKind.Unmodified,
+                Unstaged = ChangeKind.Modified,
+            }));
+
+            content.Measure(new Size(1400, 900));
+            content.Arrange(new Rect(0, 0, 1400, 900));
+            content.UpdateLayout();
+
+            var staged = Headers(panel, "StagedList");
+            var unstaged = Headers(panel, "UnstagedList");
+
+            // A staged row can only be taken back out. Discarding it would act on the working
+            // tree, which is not what this row is showing.
+            Assert.Contains("Unstage", staged);
+            Assert.DoesNotContain("Stage", staged);
+            Assert.DoesNotContain("Discard changes…", staged);
+
+            Assert.Contains("Stage", unstaged);
+            Assert.Contains("Discard changes…", unstaged);
+            Assert.DoesNotContain("Unstage", unstaged);
+
+            // Shared by both, and the reason the project tree's menu was worth copying rather
+            // than inventing a new vocabulary for the same two acts.
+            foreach (var menu in new[] { staged, unstaged })
+            {
+                Assert.Contains("Reveal in Explorer", menu);
+                Assert.Contains("Copy path", menu);
+            }
+        });
+    }
+
+    /// <summary>The headers of the context menu on the first realised row of a named list.</summary>
+    private static List<string> Headers(FrameworkElement panel, string listName)
+    {
+        var list = Assert.IsType<ListBox>(panel.FindName(listName));
+        var item = AllOf<ListBoxItem>(list).FirstOrDefault();
+
+        Assert.True(item is not null, $"{listName} realised no rows");
+
+        // The menu hangs off the row's own Grid inside the template, so that every entry acts
+        // on the row that was right-clicked rather than on the list's selection - WPF does not
+        // select a row on right-click.
+        var owner = AllOf<Grid>(item!).FirstOrDefault(g => g.ContextMenu is not null);
+
+        Assert.True(owner is not null, $"no row in {listName} carries a context menu");
+
+        return [.. owner!.ContextMenu.Items.OfType<MenuItem>()
+            .Select(m => m.Header?.ToString() ?? string.Empty)];
+    }
+
+    /// <summary>
+    /// Double-clicking a row reaches the panel's own handler, on both lists.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The event is raised on the realised <see cref="ListBoxItem"/> and the assertion is that
+    /// it came back <c>Handled</c>. That is not a formality: the handlers mark it handled only
+    /// once they have found a <c>ChangeRow</c> under the pointer <i>and</i> a shell to act on,
+    /// so a handler that was never attached, a row walk that failed, or a lost DataContext all
+    /// leave it false. No reflection, and nothing that passes while doing nothing.
+    /// </para>
+    /// <para>
+    /// What the verbs then do to the index — and that they take the clicked row rather than the
+    /// ticked set — is covered against real git in <c>RowActionFlowTests</c>. Splitting it that
+    /// way keeps this test about the wiring and that one about the semantics.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void Both_staging_lists_answer_a_double_click()
+    {
+        StaHarness.Run(() =>
+        {
+            var (window, shell) = Build();
+            var (panel, content) = ShowGitPanel(window);
+
+            shell.Staged.Add(new ChangeRow(new FileChange
+            {
+                Path = "src/App/POU/FB_Staged.st",
+                Staged = ChangeKind.Modified,
+                Unstaged = ChangeKind.Unmodified,
+            }));
+
+            shell.Unstaged.Add(new ChangeRow(new FileChange
+            {
+                Path = "src/App/GVL/GVL_Changed.st",
+                Staged = ChangeKind.Unmodified,
+                Unstaged = ChangeKind.Modified,
+            }));
+
+            content.Measure(new Size(1400, 900));
+            content.Arrange(new Rect(0, 0, 1400, 900));
+            content.UpdateLayout();
+
+            foreach (var name in new[] { "StagedList", "UnstagedList" })
+            {
+                var list = Assert.IsType<ListBox>(panel.FindName(name));
+                var item = AllOf<ListBoxItem>(list).FirstOrDefault();
+
+                Assert.True(item is not null, $"{name} realised no rows");
+
+                var args = new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left)
+                {
+                    RoutedEvent = Control.MouseDoubleClickEvent,
+                    Source = item,
+                };
+
+                item!.RaiseEvent(args);
+
+                Assert.True(args.Handled,
+                            $"a double-click on a {name} row was not answered");
+            }
+        });
     }
 
     /// <summary>

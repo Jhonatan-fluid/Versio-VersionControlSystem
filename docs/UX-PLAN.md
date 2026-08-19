@@ -93,7 +93,7 @@ it by an import, rather than both being adopted as though a commit had vetted th
 | ~~**UX-2**~~ | ~~The rail carries no counts~~ — **done 2026-08-18**, with UX-11 folded in | small | Cheapest large win; the user asked for it by name |
 | **UX-3** | The rare branch actions have no container, so each one lands as furniture | small | The fix is a shape, not a move — and it is where UX-1 lives |
 | ~~**UX-4**~~ | ~~The two list headers say no count, and run into each other once there is one to say~~ — **done 2026-08-18** | small | A live layout defect, **and a test named for it that cannot reach the failing state** |
-| **UX-5** | The git panel's lists have no context menu and no double-click | small | The project tree got one this session; the panel about those same files did not |
+| ~~**UX-5**~~ | ~~The git panel's lists have no context menu and no double-click~~ — **done 2026-08-18** | small | The project tree got one this session; the panel about those same files did not |
 | **UX-6** | Nothing in the git panel or the history can be searched | small | The project panel has a find box. The list with four hundred rows does not |
 | **UX-7** | The keyboard reaches three things | small | Panel switching is the most frequent act in the app and has no key |
 | **UX-8** | A commit in the history cannot be acted on, or even copied | small | Read-only by design is a decision; *un-copyable* is not |
@@ -485,7 +485,32 @@ below it is worth believing.
 
 ---
 
-## UX-5 · The git panel's lists have no context menu and no double-click
+## ~~UX-5 · The git panel's lists have no context menu and no double-click~~ — **done, 2026-08-18**
+
+> **What actually happened.**
+>
+> **Two row templates, not one shared menu.** The plan said "the tree's menu, reused". The two
+> lists want genuinely different verbs — a staged row can be taken back out, an unstaged one can
+> be staged or discarded — and a shared menu would need a flag on `ChangeRow` saying which list
+> it is in. **A file can be in both lists at once**, with staged changes and further unstaged
+> ones on top, so that flag would have to describe the list rather than the row, and the row is
+> what the template binds to. The row *body* is still shared, so the two cannot drift on what a
+> modified file looks like.
+>
+> **"Open containing folder" was not added.** The plan wanted it as the entry "a change list
+> wants and a tree does not" — but `Reveal in Explorer` already opens the containing folder with
+> the file selected, and falls back to the folder for a deleted file. It was a second name for
+> the entry already there.
+>
+> **`MouseDoubleClick` does not bubble**, and the first attempt assumed it did. It is registered
+> `RoutingStrategy.Direct`, so a handler on the `ListBox` never sees a double-click on a row.
+> Attached per row container through an `EventSetter` instead, which also removed a visual-tree
+> walk and an assumption about what `OriginalSource` carries. **The test caught this before the
+> app was ever run.**
+>
+> **`RevealNode`/`CopyNodePath` were extracted to path-based cores** rather than copied, and the
+> whole of their reasoning moved with them — none of it was about trees.
+
 
 **Today.** The project tree grew Stage / Discard / Reveal in Explorer / Copy path this session
 ([`ProjectPanelView.xaml:237–249`](../src/Versio.App/Views/Panels/ProjectPanelView.xaml)). The
