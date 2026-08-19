@@ -6,8 +6,9 @@
         THE LAST PANEL OUT OF MainWindow.xaml, AND THE ONE THAT WAS HELD BACK.
 
         The other three moved with nothing but their markup. This one could not, because it is
-        the only panel with real code-behind: the list auto-scrolls on append, and the chevron
-        swaps glyph on expand. Both are view concerns and neither belongs in a view model.
+        the only panel with real code-behind: the list follows its tail on open and on append,
+        scrolling away freezes the feed, selected rows copy, and the chevron swaps glyph on
+        expand. Those are view concerns and none of them belong in a view model.
 
         WHAT STAYED IN MainWindow, AND WHY THE SPLIT IS WHERE IT IS. The GridSplitter above this
         console and the RowDefinition it resizes are the WINDOW's layout, not the console's - a
@@ -266,10 +267,21 @@
                      AutomationProperties.Name="Log"
                      ItemsSource="{Binding Log.Rows}"
                      Background="Transparent" BorderThickness="0"
+                     SelectionMode="Extended"
                      ItemContainerStyle="{StaticResource LogRowItem}"
                      ScrollViewer.HorizontalScrollBarVisibility="Auto"
                      VirtualizingStackPanel.IsVirtualizing="True"
                      VirtualizingStackPanel.VirtualizationMode="Recycling">
+                <!-- Whole rows. A drag highlights a range; Ctrl+C and this menu paste
+                     LogEvent.Format() lines, matching the file. A caret inside the
+                     message would fight the hit-testing that pick uses. -->
+                <ListBox.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="Copy" Command="Copy"
+                                  CommandTarget="{Binding PlacementTarget,
+                                      RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                    </ContextMenu>
+                </ListBox.ContextMenu>
                 <ListBox.ItemTemplate>
                     <DataTemplate>
                         <Grid>

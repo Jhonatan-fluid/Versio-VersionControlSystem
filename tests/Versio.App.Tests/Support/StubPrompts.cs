@@ -62,6 +62,9 @@ internal sealed class StubPrompts : IUserPrompts
 
     public Func<IReadOnlyList<BranchCandidate>, DeletePlan?>? BranchDeletion { get; set; }
 
+    /// <summary>Which branch the merge picker chooses, or null for cancel.</summary>
+    public Func<IReadOnlyList<BranchCandidate>, string, string?>? BranchMerge { get; set; }
+
     public Func<string, IReadOnlyList<ProjectBackup>, ProjectBackup?>? WhichBackup { get; set; }
 
     bool IUserPrompts.ConfirmDestructive(DestructivePrompt prompt) =>
@@ -84,6 +87,10 @@ internal sealed class StubPrompts : IUserPrompts
 
     DeletePlan? IUserPrompts.PromptForBranchDeletion(IReadOnlyList<BranchCandidate> candidates) =>
         BranchDeletion?.Invoke(candidates);
+
+    string? IUserPrompts.PromptForBranchMerge(IReadOnlyList<BranchCandidate> candidates,
+                                              string into) =>
+        BranchMerge?.Invoke(candidates, into);
 
     ProjectBackup? IUserPrompts.AskWhichBackup(string project,
                                                IReadOnlyList<ProjectBackup> backups) =>

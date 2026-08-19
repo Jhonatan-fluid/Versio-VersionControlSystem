@@ -51,6 +51,45 @@ public sealed partial class GitCliClient
         return RunAsync(["merge", "--progress", "@{u}"], progress, ct, TimeSpan.FromMinutes(10));
     }
 
+    /// <summary>Merge a named branch into the current one.</summary>
+    public Task<GitResult> MergeBranchAsync(
+        string branch, IProgress<GitProgress>? progress, CancellationToken ct)
+    {
+        _log.Info(LogCategory.Git, $"merging {branch} into the current branch");
+
+        // -- before the ref, so a branch named like a flag cannot become one.
+        return RunAsync(["merge", "--progress", "--", branch], progress, ct,
+                        TimeSpan.FromMinutes(10));
+    }
+
+    /// <summary>What merging that branch would bring, from the merge base.</summary>
+    /// <remarks>
+    /// <b>Null when the question could not be answered, never an empty list.</b> The first
+    /// version returned <c>[]</c> on failure, which is indistinguishable from a genuinely empty
+    /// diff — so a branch git cannot resolve at all (a remote-only name with no local ref, the
+    /// common case) was reported to the preflight as "brings nothing" and refused with
+    /// <i>already in this branch</i>. Wrong, and confidently so.
+    /// </remarks>
+    public async Task<IReadOnlyList<string>?> IncomingPathsAsync(
+        string branch, CancellationToken ct)
+    {
+        // Three dots: what THAT branch has done since the two parted, and not what this one
+        // has. Two dots here would report this branch's own work as incoming and refuse a
+        // merge over changes that are already present.
+        var result = await RunAsync(
+            ["diff", "--name-only", $"HEAD...{branch}"], null, ct).ConfigureAwait(false);
+
+        if (!result.Success)
+        {
+            _log.Warn(LogCategory.Git,
+                      $"could not list what {branch} would bring: {result.FailureReason}");
+            return null;
+        }
+
+        return [.. result.StdOut
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
+    }
+
     /// <summary>Replay this branch onto the upstream.</summary>
     public Task<GitResult> RebaseOntoUpstreamAsync(
         IProgress<GitProgress>? progress, CancellationToken ct)

@@ -1074,8 +1074,35 @@ def main():
         # re-applied on top of the directories to reach the object; on 9 doing that would
         # name FB_Alarm twice. CodesysImportPlanner branches on exactly this number, which
         # is why an un-re-exported mirror keeps importing correctly.
-        "schema": 9,
+        # 10: the toolchain version that produced this mirror. Additive - a schema-9
+        # manifest simply has no toolchainVersion, and that reads as "nobody recorded it"
+        # rather than as "unknown version", which is the same ambiguity `vendor` was bumped
+        # for at 8. Without the bump a reader cannot tell an old mirror from one exported by
+        # a CODESYS that somehow reported nothing.
+        "schema": 10,
         "vendor": VENDOR,
+
+        # WHAT sys.version RETURNS INSIDE CODESYS, verbatim and unparsed:
+        #
+        #   CODESYS.exe CODESYS V3.5 SP22 Patch 2, ScriptEngine.plugin 4.2.0.0
+        #
+        # Not the CPython version string it is in any other interpreter - IronPython hosted
+        # by CODESYS answers with the host and the ScriptEngine plug-in. It has been in the
+        # `start` event since the first export and reached the log and nowhere else, which is
+        # why the project card could not say which CODESYS a mirror came from.
+        #
+        # VERBATIM, and that is the decision worth stating. Parsing "3.5.22.20" out of it
+        # would produce a tidier field and throw away the plug-in version, the patch wording
+        # and whatever a future release calls itself - and the one question this answers is
+        # "which CODESYS wrote this", which the whole string answers and a parsed subset only
+        # answers until the wording changes. The panel can shorten it; the manifest records
+        # what was said.
+        #
+        # It is the toolchain that PERFORMED THE EXPORT, not necessarily the one that last
+        # saved the project. Those coincide whenever Versio did the export, which is every
+        # mirror it writes; a project last saved elsewhere and exported here would report
+        # this machine's CODESYS, and the field's name says `exported` for that reason.
+        "toolchainVersion": safe(lambda: sys.version, ""),
         "bindingId": job.get("bindingId", ""),
         "project": os.path.basename(job["project"]),
         "objectCount": len(ex.records),

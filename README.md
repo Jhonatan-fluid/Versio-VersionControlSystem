@@ -51,6 +51,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | Change detection — watcher + safety poll + overflow rescan | ✅ `FileChangeWatcher`, driving the sync engine |
 | Staleness stated, not implied — "2 projects not yet exported" | ✅ answered by the commit gate, so the two cannot disagree |
 | **The project view follows the repository by itself** | ✅ 18 policy tests + 9 against a real filesystem; rebuilt only when something it shows changed |
+| **Repo explorer** — the open clone as a folder tree, PLC projects grafted as the same object tree the Project panel uses | ✅ visualize only: no git diffs, no hunks; Ctrl+4 |
 | Design system tokens, light and dark | ✅ `src/Versio.App/Theme/`; switching at runtime repaints open windows, which it never did until it was measured |
 | Logging — ring buffer, correlation ids, heartbeat, rolling file | ✅ 21 tests; timestamps are local and the file rolls on the local day, so the panel and the file agree; "Open logs folder" selects today's file |
 | **The log panel filters** — level as four chips, category as a multi-select with live counts | ✅ a set rather than a minimum level, because "warnings and errors only" is the request a threshold cannot express |
@@ -79,7 +80,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | WPF binding-failure tracing — `Versio.exe --trace-bindings <file>` | ✅ the one silent failure class, made loud |
 | **Automatic import** when the mirror changes and no lock forbids it | ✅ the project is copied aside first; a failed backup fails the import |
 | Change detection over the mirror's real contents | ✅ `ContentHash.OfTree`; a hand-edited `.st` is seen, an untouched tree is not |
-| Side-by-side diff and word-level intra-line diff | ⛔ inline only |
+| Side-by-side diff and word-level intra-line diff | ✅ a fold of the same unified diff; word emphasis is a token-aligned trim, not an LCS |
 | **One project view** — the full CODESYS tree with changes marked, plus every other changed file | ✅ replaced the PLC panel and the changed-files list |
 | A project with a clean mirror is not listed | ✅ unless it needs attention — never exported, behind, locked, failed. The empty state says why rather than going blank |
 | **Lazy object rendering** — a row is built when something can reach it, not before | ✅ `TreeRow.Children` on first access; the tree survives a refresh without collapsing |
@@ -106,7 +107,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | Branch switching with work in the tree | ✅ the guard asks, the auto-stash saves it with the direction locks it released, and returning to the branch offers it back — restore, leave, or discard. A stash that git did not actually create abandons the switch rather than checking out over unsaved work |
 | **Project tree** — CODESYS structure, roll-up badges, search | ✅ 34 unit tests + built from the export this repository commits |
 | **Methods and properties under the object that owns them** | ✅ manifest schema 4 records each member's owner GUID and the tree nests by it — a chain, since a property owns its accessors. Before this a function block's methods were its siblings, and four `InitRoom` methods on four different rooms were four rows in one folder. A mirror exported earlier carries no parents and stays flat until it is re-exported |
-| Config nodes — one tree node per library, layer switcher, context menu | ⛔ not built. The library YAML now exists and parses (`LibraryCatalog`), so a version bump lands under the device that owns it; what is missing is a node per library. Device and IO YAML are still unwritten |
+| **Library and task rows, layer chips, context menu** | ✅ one node per library reference and per task, chips in the diff header for ST / native / tasks / libraries, a themed context menu on changed rows. Device and IO YAML are still unwritten |
 | Packaging | ⛔ not built |
 
 **[docs/STATUS.md](docs/STATUS.md)** has the current state and the route to completion.
@@ -114,9 +115,11 @@ Both directions run automatically and deterministically. A per-project **directi
 the interruption guard, the auto-stash, and the ways this could lose work. Eight of its nine
 phases are built, and so is the ninth. What is left in its scenario list is §5.H, a repository
 that disappears while it is open.
-**[docs/phase1/GIT-PANEL-PLAN.md](docs/phase1/GIT-PANEL-PLAN.md)** is the git panel's functionality and UX.
-Eleven of its twelve phases are built; what is left is the ahead/behind previews and a list of
-smaller polish items.
+**[docs/PHASE2.md](docs/PHASE2.md)** is the forward queue. Phase 1's four planning documents
+are archived in [`docs/phase1/`](docs/phase1/) — read them for reasoning, never for state.
+**[docs/phase1/GIT-PANEL-PLAN.md](docs/phase1/GIT-PANEL-PLAN.md)** is the git panel's
+functionality and UX. **Twelve of twelve phases are built**, including the ahead/behind
+previews.
 **[docs/vendors/codesys/DRIVING.md](docs/vendors/codesys/DRIVING.md)** is how CODESYS is actually driven — the ScriptEngine
 surface, the command line, both sides of the JSON-lines protocol, every script, and the export
 and import mechanics. Its §12 is a standing audit of that integration: what is broken, what is
@@ -126,9 +129,9 @@ limitations — including the one real CODESYS mutation it found: `Core2`, a tas
 affinity, rewritten by `import_native` without being asked. **That one is fixed** — task
 configuration imports through the typed API now and is no longer diff-only — so read that
 document as a record of what was measured in Phase 0, not as a list of what is still true.
-**[docs/phase1/IMPORT-PLAN.md](docs/phase1/IMPORT-PLAN.md)** is where the import side is
-being finished, and it is the active plan: eleven numbered gaps, what each measurement closed,
-and the order the evidence argues for building the rest in.
+**[docs/phase1/IMPORT-PLAN.md](docs/phase1/IMPORT-PLAN.md)** is the import plan as it was
+finished — eleven numbered gaps, what each measurement closed. It is archived with the rest
+of Phase 1.
 **[docs/phase1/PLAN.md](docs/phase1/PLAN.md)** is the full architecture plan behind all of it.
 
 ---
@@ -180,11 +183,11 @@ Versio.sln
 ├─ tests/
 │  ├─ Versio.TestSupport/       not a test project: the three helpers more than one suite
 │  │                            needs (TestPaths, TestLogger, VendorSeamScanner)
-│  ├─ Versio.Core.Tests/        1,381 unit tests — pure, no IO, under a second
+│  ├─ Versio.Core.Tests/        1,421 unit tests — pure, no IO, under a second
 │  ├─ Versio.Integration.Tests/ 147 tests against real git and the real filesystem, ~10 s.
 │  │                            NO CODESYS: that is a different project now, so this one
 │  │                            needs no filter and cannot accidentally cost half an hour
-│  ├─ Versio.App.Tests/         546 tests that build the real windows and panels against
+│  ├─ Versio.App.Tests/         609 tests that build the real windows and panels against
 │  │                            the real stylesheet on an STA thread — none is ever shown
 │  ├─ Versio.Plc.Codesys.Pure.Tests/ 260 pure vendor tests — the planner, the codecs, the
 │  │                            protocol — under a second, needing nothing
@@ -212,7 +215,7 @@ Versio.sln
    ├─ PHASE2.md                 THE FORWARD QUEUE — what is left, in order, and the
    │                            decisions already taken with their why
    ├─ STATUS.md                 where the project is; audits and the findings index
-   ├─ FINDINGS.md               109 defects with their evidence, newest first — the
+   ├─ FINDINGS.md               128 defects with their evidence, newest first — the
    │                            engineering log, split out of STATUS.md when it reached
    │                            77% of that file
    ├─ SAFEGUARDS.md             what Versio refuses, asks about, or waits for
@@ -338,10 +341,10 @@ dotnet test tests/Versio.Core.Tests
 
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,381 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
+| `Versio.Core.Tests` | 1,421 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
 | `Versio.Integration.Tests` | 147 | a real `git.exe` and the real filesystem | ~10 s |
 | `Versio.Arch.Tests` | 14 | nothing — it reads assembly metadata, IL, and the project files | instant |
-| `Versio.App.Tests` | 546 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
+| `Versio.App.Tests` | 609 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
 | `Versio.Plc.Codesys.Pure.Tests` | 260 | nothing — the vendor's planner, codecs and protocol, pure | under a second |
 | `Versio.Plc.Codesys.Parity.Tests` | 92 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
 | `Versio.Plc.Codesys.Tests` | 54 | **a real CODESYS**, and **skips cleanly** without one | **~30 min** |

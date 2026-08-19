@@ -1,6 +1,9 @@
 # Versio — a UX pass over the running shell
 
-**Date opened:** 2026-08-17 · **Status: a plan. Nothing here is built.**
+**Date opened:** 2026-08-17 · **Status, as of 2026-08-18: ten of thirteen built, one half.**
+The header below said *"Nothing here is built"* for two sessions after that stopped being
+true. What is left is **UX-6**, **UX-7's second half**, **UX-8** and **UX-12** — see
+*Where this stands* at the foot of this file, which is the authoritative tally.
 
 This is a review of the app *as somebody uses it*, not as a set of features. Everything below
 was read out of the markup and the view models — `MainWindow.xaml`, the three panels, the
@@ -82,29 +85,115 @@ it by an import, rather than both being adopted as though a commit had vetted th
 **It also changes UX-1's cost and its order.** UX-1 must not ship on top of an unmeasured
 `AdoptExternalStateAsync`, because it would make a rare path into a routine one.
 
+> ### Probe run, 2026-08-18 — and step 5 above was wrong
+>
+> **Attempting P-M1 disproved its own premise before reaching the question.** Step 5 says the
+> `.project` is written `binary -diff -merge` so git *cannot* merge it. Asked directly,
+> `git check-attr merge` on the fixture answered **`lfs`, not `unset`**: `GitAttributesPlan`
+> appended `filter=lfs diff=lfs merge=lfs` to the same line, later attributes win, and
+> `merge=lfs` cancelled the `-merge` six tokens earlier — on every machine with LFS installed,
+> which is exactly the machines those tokens were added for. `merge=lfs` also names a driver
+> git-lfs does not install, so git fell back to a three-way **text** merge of the pointer file
+> and produced an LFS pointer with `<<<<<<< HEAD` inside it.
+>
+> Written up in full in `FINDINGS.md`, measured on two throwaway repositories differing only in
+> that line, and **fixed** — one token deleted, plus this repository's own committed
+> `.gitattributes`.
+>
+> ### P-M1, run properly — 2026-08-18. **The prediction holds.**
+>
+> Measured on a sparse clone of this repository, using two genuine CODESYS-produced states of
+> the fixture (`c24d822` as side A, `045ed08` as side B) branched from a common base
+> (`7c45ec8`), with the **fixed** attribute line in force so `-merge` actually applies.
+>
+> `git merge` behaved exactly as the corrected attributes intend: *"Cannot merge binary files"*,
+> the `.project` left intact and conflicted, **and it was the only conflict**. The mirror
+> three-way merged clean — `_manifest.json` included, with no conflict reported.
+>
+> The `.project` was then resolved the way the panel's *Keep theirs* does — `git checkout
+> --theirs`, taking side A's project wholesale — and the merge committed. Provenance of the
+> 41 committed mirror files against each side:
+>
+> | | files |
+> |---|---|
+> | content only from A | 0 |
+> | **content only from B** | **2** |
+> | blended (neither side) | 0 |
+>
+> The two are `_manifest.json` and
+> `…/POUs/FB_Alarm/Private/_M_UpdateState.st` — a real POU method body, 7 lines from B where
+> A's is 15, differing in its declaration block and its whole implementation.
+>
+> **So: the committed project is side A's, and the committed mirror contains side B's method
+> and side B's manifest. The mirror describes a project that does not exist on disk** — which
+> is precisely what this section predicted.
+>
+> **What is measured and what is still inferred, stated separately.** The git half above is
+> measured. The Versio half — that `AdoptExternalStateAsync` then records this state as synced
+> and the commit gate consequently never exports — is **inference from reading those methods**,
+> not a run: P-M2 needs a real export and therefore real CODESYS. It is well-founded (the chain
+> of five links at the top of this box is quoted from the code) but it is not the same claim,
+> and it should not be written up as one.
+>
+> **What it means for UX-1, now with evidence behind it.** A merge must not go through the plain
+> `WhileGitRewritesTheTreeAsync` → adopt path. After a merge that touched a tracked project the
+> mirror is the merged truth and the project is one side of it, so the project has to be
+> regenerated from the mirror by an import the user confirms — the pending-import banner, not a
+> re-baseline. Note the direction: importing the merged mirror is the *correct* outcome, which
+> is why leaving it un-imported is the harm. The next export after this state would overwrite
+> B's method from A's project and lose it silently.
+>
+> **UX-1 is unblocked to design, with that requirement as part of it.**
+
 ---
 
 ## The queue, ranked
 
 | | Finding | Cost | Why it ranks there |
 |---|---|---|---|
-| **P-M1/2** | **Probe first: does a merge commit a project and a mirror that disagree?** | two probes, no new code | Above the queue because it is a correctness question in **shipped** code, and UX-1 must not be built on an unmeasured answer |
-| **UX-1** | **Merging a branch into the current one is not implemented at all** | medium | The one missing *verb*. And the one place Versio can beat a terminal outright |
-| **UX-2** | The rail carries no counts, so the app is blind from two of its three panels | small | Cheapest large win; the user asked for it by name |
-| **UX-3** | The rare branch actions have no container, so each one lands as furniture | small | The fix is a shape, not a move — and it is where UX-1 lives |
-| **UX-4** | The two list headers say no count, and run into each other once there is one to say | small | A live layout defect, **and a test named for it that cannot reach the failing state** |
-| **UX-5** | The git panel's lists have no context menu and no double-click | small | The project tree got one this session; the panel about those same files did not |
+| ~~**P-M1**~~ | ~~Does a merge commit a project and a mirror that disagree?~~ — **run 2026-08-18. Yes.** | done | It did, and it turned up a live `.gitattributes` defect on the way |
+| **P-M2** | Does the commit gate then skip the export? | one run, needs real CODESYS | Still **inferred from reading the gate**, not measured. Deliberately not run — no vendor code has changed |
+| ~~**LOCK-1**~~ | ~~The import-after-merge path~~ — **done 2026-08-18**, and UX-1's refusal became a confirmation | large | It needed no new lock state: `TextAuthoritative` already meant this |
+| ~~**UX-1**~~ | ~~Merging a branch into the current one is not implemented at all~~ — **done 2026-08-18, with a measured refusal in it** | medium | The one missing *verb*. And the one place Versio can beat a terminal outright |
+| ~~**UX-2**~~ | ~~The rail carries no counts~~ — **done 2026-08-18**, with UX-11 folded in | small | Cheapest large win; the user asked for it by name |
+| ~~**UX-3**~~ | ~~The rare branch actions have no container~~ — **done 2026-08-18**, with UX-1 | small | The fix is a shape, not a move — and it is where UX-1 lives |
+| ~~**UX-4**~~ | ~~The two list headers say no count, and run into each other once there is one to say~~ — **done 2026-08-18** | small | A live layout defect, **and a test named for it that cannot reach the failing state** |
+| ~~**UX-5**~~ | ~~The git panel's lists have no context menu and no double-click~~ — **done 2026-08-18** | small | The project tree got one this session; the panel about those same files did not |
 | **UX-6** | Nothing in the git panel or the history can be searched | small | The project panel has a find box. The list with four hundred rows does not |
-| **UX-7** | The keyboard reaches three things | small | Panel switching is the most frequent act in the app and has no key |
+| ~~**UX-7**~~ | ~~The keyboard reaches three things~~ — **partly done 2026-08-18**: the rail has keys; the find boxes and Escape do not | small | Panel switching is the most frequent act in the app and has no key |
 | **UX-8** | A commit in the history cannot be acted on, or even copied | small | Read-only by design is a decision; *un-copyable* is not |
-| **UX-9** | `+2 more` is a dead end | trivial | A count with nothing behind it |
-| **UX-10** | Detached HEAD says the sentence and does not offer the exit | trivial | §9e is built except for the half that was its point |
-| **UX-11** | The change badge renders `0` on a clean tree | trivial | Furniture |
+| ~~**UX-9**~~ | ~~`+2 more` is a dead end~~ — **done 2026-08-18** | trivial | A count with nothing behind it. The fix caught a silent font regression in its own conversion |
+| ~~**UX-10**~~ | ~~Detached HEAD says the sentence and does not offer the exit~~ — **done 2026-08-18** | trivial | §9e is built except for the half that was its point — and now including it |
+| ~~**UX-11**~~ | ~~The change badge renders `0` on a clean tree~~ — **done 2026-08-18**, by deleting the control | trivial | Furniture |
 | **UX-12** | The last commit cannot be amended | small | Declined-or-built decision, not a gap to leave unstated |
 
 ---
 
-## UX-1 · Merging a branch into the current one is not implemented at all
+## ~~UX-1 · Merging a branch into the current one is not implemented at all~~ — **done, 2026-08-18**
+
+> **What actually shipped, and the one place it is smaller than this section asks for.**
+>
+> The verb exists: `MergeBranchAsync` on `IGitClient`, a picker modelled on the delete dialog,
+> the guard reused, and the whole thing behind UX-3's overflow. **What it does not do is finish
+> a merge that reaches a tracked project — it refuses it, by name, with the reason.**
+>
+> That refusal is the direct consequence of P-M1 below. Both of the things Versio could do next
+> are wrong: adopting records a project and mirror that disagree as synced, and not adopting
+> lets the commit gate export over the merged mirror and delete the other branch's work. The
+> right answer is to import the merged mirror, and that needs the direction lock pointed at
+> import so the export gate cannot win the race first — **a change to the lock model, which is
+> the most dangerous code in this repository and deserves its own plan rather than the tail of
+> a UI change.**
+>
+> So the shipped feature is: every merge that touches nothing tracked — documentation, tests,
+> configuration, a second application — goes through as ordinary git; a merge that would reach
+> a project is refused with a sentence naming the project and saying what to do instead. That
+> is a worse feature and not a worse outcome, and it is stated as a stopping point rather than
+> left to be discovered.
+>
+> **The refusal is gone, 2026-08-18 — `LOCK-1` closed it the same day.** The merge now runs,
+> asks first, and puts the mirror in charge afterwards. What follows is kept because it is the
+> reasoning the refusal was built on and it is still why the confirmation exists.
 
 **Today.** `IGitClient` has `MergeUpstreamAsync` and `RebaseOntoUpstreamAsync`
 ([`IGitClient.cs:212`](../src/Versio.Core/Abstractions/IGitClient.cs), `:220`), and both are
@@ -185,7 +274,36 @@ justifies the whole feature is unwatched.
 
 ---
 
-## UX-2 · The rail carries no counts, so the app is blind from two of its three panels
+## ~~UX-2 · The rail carries no counts, so the app is blind from two of its three panels~~ — **done, 2026-08-18**, `1767957`, and **UX-11 with it**
+
+> **What actually happened.**
+>
+> **UX-11 dissolved into this one rather than being fixed.** The plan proposed keeping the
+> panel-title pill and adding zero-suppression to it. With the rail carrying the count from
+> everywhere, a second control saying the same number whenever Project happened to be showing
+> is two things describing one fact — so the pill is **deleted**. "Renders `0` on a clean tree"
+> is fixed by removing the control that did it, not by adding a rule to it.
+>
+> **No attached property**, which this document proposed. Exactly one rail button has a badge,
+> and building `Rail.Badge`/`Rail.BadgeKind` into the template for a single consumer is the
+> mistake this repository keeps catching. It is a `Border` overlaid in a `Grid`. If a second
+> badge ever appears, that is when the template earns it.
+>
+> **And that nesting cost a shipped regression**, written up in `FINDINGS.md`: a `RadioButton`
+> with no `GroupName` groups by its **visual parent**, so wrapping one rail button made it a
+> group of one — two buttons lit at once and the git panel would not open. All three carry
+> `GroupName="Rail"` now. The plan did not foresee it and could not have; what it does change
+> is the rule below.
+>
+> **A rule this document should have carried from the start, learned the hard way:** a test that
+> sets `IsChecked = true` on each of three buttons in turn **never exercises exclusion**, because
+> nothing is ever asked to turn anything off. Every rail test in the suite did that, including
+> the one added with the badge. Assert the negative.
+>
+> **Not built:** a History badge. The plan already ruled it out and the reasoning held — the
+> behind-count belongs to the branch card, which has two buttons explaining it.
+
+### The finding as first written
 
 **Today.** The only count on screen is a pill in the **panel title**
 ([`MainWindow.xaml:465–478`](../src/Versio.App/Views/MainWindow.xaml)), and code-behind shows it
@@ -299,11 +417,48 @@ third and fourth rare verb are covered by it too.
 
 ---
 
-## UX-4 · The two list headers say no count, and run into each other once there is one to say
+## ~~UX-4 · The two list headers say no count, and run into each other once there is one to say~~ — **done, 2026-08-18**, `9e7f598`
 
 Two halves of one row, and they must be fixed together — because **fixing the first alone makes
 the second worse.** Adding a count to a header that already overflows widens the thing that
 overflows.
+
+> **What actually happened**, kept because three things came out differently from the plan.
+>
+> **The diagnosis was wrong about the trigger.** This document blamed the growing button labels.
+> Measured: the `NOT STAGED` row overflows at 260 px **with the short labels too** — 317 px
+> against a 304 px edge — and the three-digit counts only take it to 330. The narrow column is
+> the cause; the labels are an aggravator. And it never overflows at 380 px, ticked or not, so
+> the "reported from the running app" case was only ever reachable on a panel somebody had
+> dragged narrower — which is persisted, so it stays that way.
+>
+> **The sequencing claim was right, and the mutation proved it harder than expected.** Putting
+> the rigid column back with the *new* longer header fails at **380 px as well** (435 against
+> 424), where the old bare label passed. UX-4a shipped alone would have broken the default
+> width.
+>
+> **There was a fourth reason the test could not fail**, on top of the three written up here:
+> its `PanelWidth = 380` constant was never read by anything. The width came only from the
+> XAML's own `Width="380"`, so the constant documented the test's premise and enforced nothing.
+>
+> **And one correction to this document's own proposal.** It said to drop the `ActualWidth > 0`
+> filter. Dropping it outright is wrong: a child of a *collapsed* parent still reports
+> `Visibility.Visible` for itself, so the conflict section's buttons — not on screen — began
+> reporting as the widest thing in the panel. The width clause had been doing ancestor
+> filtering by accident. It is an explicit ancestor walk now, and deliberately not
+> `UIElement.IsVisible`, which needs a presentation source these tests never create and would
+> make the whole assertion vacuous.
+>
+> **Not built:** the button-label ceiling and the bare-verb fallback. The header merge alone
+> brought both widths inside the panel, so the fallback had nothing left to fix — and a rule
+> with no reachable case is a rule with no caller. It stays described here rather than
+> implemented, and comes back if a fourth button or a longer verb ever needs it.
+>
+> **Also landed with it**, unplanned and found by the double pass: `OnStagingListChanged` now
+> raises the whole selection state rather than only the commit button. A header carrying the
+> list's own total would otherwise have frozen at its first value — it happened to work only
+> because `UpdateStagingLists` raises it too, which left the `CollectionChanged` funnel and one
+> of its callers jointly responsible for a rule only one of them stated.
 
 ### 4a · The headers do not say how many
 
@@ -419,7 +574,32 @@ below it is worth believing.
 
 ---
 
-## UX-5 · The git panel's lists have no context menu and no double-click
+## ~~UX-5 · The git panel's lists have no context menu and no double-click~~ — **done, 2026-08-18**
+
+> **What actually happened.**
+>
+> **Two row templates, not one shared menu.** The plan said "the tree's menu, reused". The two
+> lists want genuinely different verbs — a staged row can be taken back out, an unstaged one can
+> be staged or discarded — and a shared menu would need a flag on `ChangeRow` saying which list
+> it is in. **A file can be in both lists at once**, with staged changes and further unstaged
+> ones on top, so that flag would have to describe the list rather than the row, and the row is
+> what the template binds to. The row *body* is still shared, so the two cannot drift on what a
+> modified file looks like.
+>
+> **"Open containing folder" was not added.** The plan wanted it as the entry "a change list
+> wants and a tree does not" — but `Reveal in Explorer` already opens the containing folder with
+> the file selected, and falls back to the folder for a deleted file. It was a second name for
+> the entry already there.
+>
+> **`MouseDoubleClick` does not bubble**, and the first attempt assumed it did. It is registered
+> `RoutingStrategy.Direct`, so a handler on the `ListBox` never sees a double-click on a row.
+> Attached per row container through an `EventSetter` instead, which also removed a visual-tree
+> walk and an assumption about what `OriginalSource` carries. **The test caught this before the
+> app was ever run.**
+>
+> **`RevealNode`/`CopyNodePath` were extracted to path-based cores** rather than copied, and the
+> whole of their reasoning moved with them — none of it was about trees.
+
 
 **Today.** The project tree grew Stage / Discard / Reveal in Explorer / Copy path this session
 ([`ProjectPanelView.xaml:237–249`](../src/Versio.App/Views/Panels/ProjectPanelView.xaml)). The
@@ -465,7 +645,19 @@ would take — the trap, and the reason the filter must never touch the ticks.
 
 ---
 
-## UX-7 · The keyboard reaches three things
+## UX-7 · The keyboard reaches three things — **partly done, 2026-08-18**
+
+> **Done:** `Ctrl+1/2/3` for the rail, on the window rather than the rail so it works from
+> wherever focus is, and **NumPad 1/2/3 as well** — a full-size keyboard on a workshop desk is
+> exactly where this runs. Routed through the rail buttons rather than `ActivePanel`, so
+> `OnRailChanged` stays the one thing deciding which panel shows. Advertised in each rail
+> tooltip, per §10.6: a key nobody can find is a key nobody has, and both halves are
+> mutation-checked.
+>
+> **Not done:** `Ctrl+F` to the active panel's find box — it waits on UX-6, which is what
+> creates two of the three boxes — and `Escape` to close the settings popup and the
+> ahead/behind preview. Both popups already close on a click outside (`StaysOpen="False"`), so
+> Escape is a refinement rather than a gap.
 
 **Today.** `F5` refresh ([`MainWindow.xaml.cs:71`](../src/Versio.App/Views/MainWindow.xaml.cs)),
 `Ctrl+Enter` commit, `Ctrl+Shift+P` push
@@ -514,7 +706,15 @@ so that sentence describes an app this one is not. Worth correcting whichever wa
 
 ---
 
-## UX-9 · `+2 more` is a dead end
+## ~~UX-9 · `+2 more` is a dead end~~ — **done 2026-08-18**
+
+> Built as proposed — the pill raises a command that opens the log and filters it. Three things
+> the plan did not know. **It lands on a superset**: the filter is a category and every git line
+> comes with the notifications, stated rather than glossed. **The filter had to set levels too**,
+> or a panel still hiding `WRN` would show a subset and look like the whole. And **the
+> conversion silently changed the typeface** — the count wore `PillText`, which is mono, and
+> becoming a `Button` put it under `GhostButton`, which is not. Caught by re-reading, not by a
+> test; there is one now, tied to `PillText`'s own value.
 
 **Today.** When more than three notifications are live the rest become a pill reading
 `+2 more` ([`MainWindow.xaml:1128–1137`](../src/Versio.App/Views/MainWindow.xaml)). It is a
@@ -534,7 +734,13 @@ categories. The log filter, the category popup and the counts all exist already
 
 ---
 
-## UX-10 · Detached HEAD says the sentence and does not offer the exit
+## ~~UX-10 · Detached HEAD says the sentence and does not offer the exit~~ — **done 2026-08-18**
+
+> Built as proposed, name **not** pre-filled: any default good enough to accept unread would
+> have to know what the work is, and a wrong-but-plausible branch name is harder to notice than
+> an empty box. A second command rather than a second caller of `CreateBranchCommand`, so the
+> click log can tell the two routes apart — this button exists on a bet about how people get
+> stuck, and one shared string would make the bet unmeasurable.
 
 **Today.** `RemoteStanding` produces the amber sentence, and the gating works — with no upstream
 recorded, `CanPull`, `CanPush` and `CanPublish` are all false, so the remote row is dead and
@@ -555,7 +761,11 @@ state.
 
 ---
 
-## UX-11 · The change badge renders `0` on a clean tree
+## ~~UX-11 · The change badge renders `0` on a clean tree~~ — **done, 2026-08-18**, folded into UX-2
+
+> Fixed by **deleting** the pill rather than adding a visibility rule to it. The count moved to
+> the rail, where it is visible from every panel; a second control repeating it on the Project
+> panel alone had nothing left to add. See UX-2.
 
 **Today.** The pill has no zero-suppression of any kind
 ([`MainWindow.xaml:465–478`](../src/Versio.App/Views/MainWindow.xaml)) — on the Project panel
@@ -587,7 +797,13 @@ written down, so a future session finds the decision instead of re-deriving it.
 
 ---
 
-## UX-13 · A doc comment says a member is unwired, and it has been wired twice
+## ~~UX-13 · A doc comment says a member is unwired, and it has been wired twice~~ — **done 2026-08-18**
+
+> Wired by **three** callers by the time it was fixed, not two: the merge verb landed in
+> between. The "why it waited" argument is kept as history rather than deleted. **And the fix
+> found a live defect it deliberately did not take on** — `GuardNarrative` renders this intent
+> as the word "pull", so a guarded merge asks *"Continue and pull?"*. Recorded in the enum's
+> own remarks; see *Still open* below.
 
 **Found by the second pass, while checking UX-1's guard claim.** `GuardIntent.Pull`'s remarks
 read *"**Implemented and deliberately not yet wired.** … wiring it now would offer a button that
@@ -671,3 +887,127 @@ checking UX-1's guard claim.
 
 **Still owed to a person**, unchanged from the first draft: everything visual. This pass read
 markup and view models. It did not see the screen.
+
+---
+
+## Where this stands, 2026-08-18
+
+Ten of the thirteen items are closed, one is half closed, and the two most valuable things
+this document produced were not on its list at all.
+
+**Updated 2026-08-18, second session.** UX-9, UX-10 and UX-13 landed, and `LOCK-1` grew a
+third pass — an abandoned merge was leaving the lock it took, with neither documented release
+available. **What is left of the original thirteen: UX-6, UX-7's second half, UX-8 and
+UX-12** — and `Ctrl+F` still waits on UX-6, which is what creates the boxes it would focus.
+
+### Built
+
+| | What landed, where it differed from the plan |
+|---|---|
+| **UX-2 + UX-11** | The count moved to the git rail and the panel-title pill was **deleted**, not fixed — UX-11 dissolved rather than being done. No attached property: one consumer does not justify the mechanism |
+| **UX-4** | Header and count merged into one trimming column. The plan blamed the growing labels; measurement said the narrow column, with the labels only an aggravator |
+| **UX-5** | Two row templates rather than the planned shared menu — a file can be in both lists at once, so the flag would have described the list, not the row. `MouseDoubleClick` turned out not to bubble |
+| **UX-3 + UX-1** | The overflow, and the merge verb inside it — **with a refusal**. See below |
+| **UX-7** | Half: `Ctrl+1/2/3/4` (and NumPad) for the rail, advertised in the tooltips. `Ctrl+F` waits on UX-6; `Escape` is a refinement |
+| **Repo explorer** | Fourth rail panel. Same `TreeRow` / `BuildProjectNode` / `ShowNode` as the Project panel; visualize only — never `DiffAsync`. Project panel remains the review surface |
+
+### Not built, and why
+
+- **UX-1's second half — the import-after-merge path.** The verb refuses a merge that reaches a
+  tracked project, because P-M1 measured that both available behaviours lose work. Closing it
+  means pointing the direction lock at import so the export gate cannot win the race, which is
+  a change to the lock model. **It is now the top of the queue, as `LOCK-1`.**
+- ~~**UX-6, UX-8, UX-9, UX-10, UX-12.** Untouched.~~ — **UX-9, UX-10 and UX-13 built
+  2026-08-18**, each with a mutation-checked test. **UX-6, UX-8 and UX-12 remain**; UX-12 was
+  approved by the owner and is still owed. UX-9 turned out to carry a lesson the plan could
+  not have predicted — restyling a label as a button silently changed its typeface, because a
+  style swap changes every inherited property and only the named ones appear in the diff. See
+  the Finding.
+- **P-M2.** Needs a real export and therefore real CODESYS. Deliberately not run: the owner's
+  standing rule is that the half-hour gate does not run for changes that touch no vendor code,
+  and none of this does. **Still true of UX-9, UX-10 and UX-13** — a pill, a button and a
+  comment — but NOT of `LOCK-1`, which touches `SyncOrchestrator` and the direction lock and
+  owes the gate before it ships.
+
+### The two things worth more than the list
+
+**`merge=lfs` was cancelling the `-merge` on every project file** — a live defect in shipped
+`.gitattributes`, found while trying to run P-M1, measured on two throwaway repositories, and
+fixed. It made git text-merge an LFS pointer and write conflict markers into it.
+
+**P-M1 itself.** The merge really does commit a project its mirror disagrees with: 41 mirror
+files, two carrying content the kept project does not have. That measurement is what turned
+UX-1 from a feature into a feature with a stated stopping point.
+
+### Three defects this document's own work introduced, all caught by a later read
+
+Recorded because the pattern matters more than the bugs: **every one was green when it was
+written**, and each was found by re-reading rather than by running anything.
+
+1. **Two rail buttons lit at once** — a `RadioButton` groups by visual parent, and wrapping one
+   to carry a badge made it a group of one. Reported by the owner, not by the suite; five test
+   classes were structurally blind to it.
+2. **A refusal on a four-second timer** — the merge refusal was posted as a `Warning`, which
+   expires. Only a `Failure` is sticky.
+3. **A new verb live on a detached HEAD** — where every older remote verb is deliberately dead.
+
+Each now has a test that fails when the fix is removed.
+
+### What is still owed to a person
+
+Everything visual, unchanged. The rail badge's placement, the overflow's popup, the merge
+dialog's layout, and whether the trimmed header reads well at 260 px have all been asserted
+arithmetically and **not one of them has been looked at**.
+
+---
+
+## LOCK-1 — the import after a merge — **done, 2026-08-18**
+
+**It needed no new lock state.** `SyncDirection.TextAuthoritative` has meant exactly this since
+the state machine was written — *"The exported text changed. Imports allowed; exports blocked"* —
+and `(TextAuthoritative, ProjectChanged)` was already a **blocked** transition with a sentence
+attached. The whole of the work was putting a binding into that state after a merge, which is one
+call to the existing `ApplyAsync` funnel.
+
+**The ordering is what makes it safe, and it was already right.** `AttemptAsync` asks
+`SyncStateMachine.Next` and turns a refusal into `BlockedByLock` **before** it opens the project,
+so the commit gate's export is turned away with the mirror untouched. A check made after the
+export would have left the mirror overwritten and the lock unchanged — the exact loss, with a red
+test and the work gone anyway. That is asserted directly: the test drives the gate's own job
+shape and requires the toolchain fake to have received **no job at all**.
+
+**What changed in UX-1.** The refusal became a **confirmation asked before the merge**, and a
+warning plus a raised import afterwards. Asked before, deliberately: after the merge the only way
+back is `git merge --abort`, and that is a worse place to make the decision from.
+
+**Found on the way, and written up separately:** `ExportAllowed` and `ImportAllowed` — the two
+predicates that state what the lock is *for* — **have no callers in `src/` at all**. This work
+designed its ordering around calling one of them before checking whether anything already did.
+They are kept, with remarks that now point at the real enforcement.
+
+### One defect the double pass caught, and one gap now measured
+
+**The merge was adopting after all.** The first version routed through
+`WhileGitRewritesTheTreeAsync`, which calls `AdoptExternalStateAsync` — so adopt ran *first*,
+writing a `LastSynced` claiming the project and its mirror agreed, and only then was the mirror
+made authoritative. On a merge that stopped on a conflict it would have recorded the conflict
+markers themselves as the synced state. **The comment beside it said "Instead of adopting, not
+as well as" the whole time.** The helper takes `adoptResult` now, the merge passes
+`!plan.NeedsImport`, and a Core test compares the two orders directly. Nothing was ever at risk
+of loss — the lock still refused the export — but the lock file would have carried a false
+record until an import overwrote it.
+
+**And the App-level gap is measured, not merely suspected.** Mutating
+`adoptResult: !plan.NeedsImport` to `true` leaves **every suite green**. The Core mechanism is
+covered five ways and mutation-checked; the wiring from `plan.Affected` into it is not, because
+the merge flow tests run against a temp repository with no tracked project, so `NeedsImport` is
+false and the branch never executes. Covering it needs a temp repo carrying a real binding and
+orchestrator, which `TempRepo` does not build. **It is the part of this feature resting on a
+read rather than a run, and the mutation is the proof.**
+
+### And this change is on the wrong side of the CODESYS rule
+
+The standing rule is to skip the half-hour gate for changes that touch no vendor code. **This one
+touches `SyncOrchestrator` and the direction lock — the sync path that drives the toolchain**,
+which that rule names explicitly as the case where the gate does apply. It has **not** been run.
+It should be, before this ships.

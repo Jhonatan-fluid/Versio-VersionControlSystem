@@ -67,7 +67,7 @@ public sealed class RepoSetup(
     public async Task<AdoptionResult> AdoptAsync(
         string projectPath, IGitClient? git, string? profile, CancellationToken ct)
     {
-        var store = new RepoConfigStore(repositoryRoot);
+        var store = new RepoConfigStore(repositoryRoot, _log);
         var config = await store.LoadAsync(ct).ConfigureAwait(false);
 
         // Whichever vendor claims the extension. A pinned format still wins, and nothing

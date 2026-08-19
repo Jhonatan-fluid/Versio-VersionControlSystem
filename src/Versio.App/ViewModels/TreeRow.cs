@@ -52,7 +52,7 @@ public sealed class TreeRow : ObservableObject
         // collapsed block, which is the same complaint one level down. The two are equivalent
         // for a folder - a folder has no state of its own to change - so this is the same
         // rule stated in the terms that now cover both.
-        _isExpanded = expansion?.ShouldExpand(node)
+        _isExpanded = expansion?.ShouldExpand(node, depth)
                       ?? (node.Kind == ProjectNodeKind.Project || node.ChangedDescendants > 0);
     }
 

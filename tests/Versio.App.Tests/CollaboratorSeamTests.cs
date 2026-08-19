@@ -47,6 +47,11 @@ public sealed class CollaboratorSeamTests
     /// Something the collaborator owns moved, so the status light was told.
     /// </summary>
     /// <remarks>
+    /// Explorer's seam is the pane, not Health — see
+    /// <see cref="ExplorerFlowTests.An_explorer_selection_reaches_the_pane"/>. Deleting that
+    /// subscription is the mutation check; this theory does not cover it.
+    /// </remarks>
+    /// <remarks>
     /// <c>Health</c> is computed from <c>ShellConditions</c> and has no setter of its own, so
     /// the only thing that can raise it is the subscription.
     /// </remarks>

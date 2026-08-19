@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
+using System.Windows.Input;
 using System.Windows.Media;
 using Versio.App.ViewModels;
 using Versio.App.Views;
@@ -569,6 +570,361 @@ public sealed class GitPanelChromeTests : IDisposable
         }
 
         return Assert.IsType<Border>(parent);
+    }
+
+    /// <summary>
+    /// The rare branch verbs are behind one overflow, and both are in it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The container is most of the value, more than either entry.</b> <c>Delete
+    /// branches…</c> was a permanent top-level control in a 380 px column for something
+    /// reached a few times a month, and merging makes two; every future rare branch verb would
+    /// have made another. This asserts the shape rather than the contents, so adding a third
+    /// entry does not need a new test and removing the overflow does.
+    /// </para>
+    /// <para>
+    /// <b>And it asserts what is NOT there.</b> Neither verb may sit at the card's top level
+    /// again — that is the regression this change exists to prevent, and a test that only
+    /// checked the menu's contents would pass with both a menu and the old buttons present.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void The_rare_branch_verbs_live_behind_one_overflow()
+    {
+        StaHarness.Run(() =>
+        {
+            var (window, shell) = Build();
+            var (panel, _) = ShowGitPanel(window);
+
+            var toggle = Assert.IsType<ToggleButton>(panel.FindName("BranchMenuButton"));
+
+            // THE MEANING MOVED FROM THE CAPTION TO THE TOOLTIP, AND THIS TEST MOVED WITH IT.
+            //
+            // It read `Assert.Contains("Branch", toggle.Content)` while the button said
+            // "Branch ⌄", protecting the rule that an overflow must not hide its own
+            // contents - the reason it was never called "More…". The button became a glyph
+            // when it moved onto the fetch/pull/push row, because measured at 260 px there
+            // were 49 px for it and the caption wanted 68, so Push sat underneath it.
+            //
+            // The rule did not change; where it is kept did. The tooltip has to NAME THE
+            // ENTRIES rather than describe the button, or the overflow is exactly the anonymous
+            // lid the caption existed to prevent - and a screen reader gets nothing at all.
+            var tip = toggle.ToolTip?.ToString() ?? string.Empty;
+
+            Assert.Contains("merge", tip, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("delete", tip, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal("Branch actions", System.Windows.Automation.AutomationProperties.GetName(toggle));
+
+            // NEITHER VERB IS ON THE CARD. A Popup lives in its own visual tree, so a walk
+            // from the panel cannot reach its contents at all — which is the assertion, not a
+            // limitation of the walk. This is what fails if somebody puts either button back
+            // at the top level beside the overflow.
+            var onTheCard = AllOf<Button>(panel)
+                .Select(b => b.Content?.ToString() ?? string.Empty)
+                .ToList();
+
+            Assert.DoesNotContain(onTheCard, c => c.StartsWith("Merge a branch", StringComparison.Ordinal));
+            Assert.DoesNotContain("Delete branches…", onTheCard);
+            Assert.False(toggle.IsChecked, "the overflow starts open");
+
+            // And both are inside it, reached through the popup's own child.
+            var popup = Assert.IsType<Popup>(panel.FindName("BranchMenuPopup"));
+            var inside = AllOf<Button>(popup.Child)
+                .Select(b => b.Content?.ToString() ?? string.Empty)
+                .ToList();
+
+            Assert.Contains(inside, c => c.StartsWith("Merge a branch", StringComparison.Ordinal));
+            Assert.Contains("Delete branches…", inside);
+
+            // NO REPOSITORY OPEN, SO NO DESTINATION TO NAME. The caption names the branch a
+            // merge would land on, and with nothing open there is no honest answer — so it
+            // says "Merge a branch…" rather than "Merge a branch into —…". That the named
+            // form appears once a repository IS open is asserted in MergeBranchFlowTests,
+            // where there is a real branch to name.
+            Assert.Equal("—", shell.BranchName);
+            Assert.Contains("Merge a branch…", inside);
+        });
+    }
+
+    /// <summary>
+    /// Each staging list's rows carry the menu that list's verbs belong to.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Realised rows, not the templates.</b> A DataTemplate resolves its
+    /// <c>StaticResource</c>s when a row is first built, not when the XAML is parsed — so a
+    /// menu wired to a handler that does not exist, or a template referencing a key declared
+    /// below it, sails past every other test in this file and throws in front of whoever
+    /// right-clicks. The panel is filled and laid out here for that reason.
+    /// </para>
+    /// <para>
+    /// <b>The two lists deliberately differ.</b> A staged row can be taken back out; an
+    /// unstaged one can be staged or thrown away. Asserting the absences is what stops the two
+    /// templates quietly converging back into one — <c>Discard</c> on a staged row would act on
+    /// the working tree, which is not what the row in front of you is showing.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void Each_staging_list_carries_its_own_row_menu()
+    {
+        StaHarness.Run(() =>
+        {
+            var (window, shell) = Build();
+            var (panel, content) = ShowGitPanel(window);
+
+            shell.Staged.Add(new ChangeRow(new FileChange
+            {
+                Path = "src/App/POU/FB_Staged.st",
+                Staged = ChangeKind.Modified,
+                Unstaged = ChangeKind.Unmodified,
+            }));
+
+            shell.Unstaged.Add(new ChangeRow(new FileChange
+            {
+                Path = "src/App/GVL/GVL_Changed.st",
+                Staged = ChangeKind.Unmodified,
+                Unstaged = ChangeKind.Modified,
+            }));
+
+            content.Measure(new Size(1400, 900));
+            content.Arrange(new Rect(0, 0, 1400, 900));
+            content.UpdateLayout();
+
+            var staged = Headers(panel, "StagedList");
+            var unstaged = Headers(panel, "UnstagedList");
+
+            // A staged row can only be taken back out. Discarding it would act on the working
+            // tree, which is not what this row is showing.
+            Assert.Contains("Unstage", staged);
+            Assert.DoesNotContain("Stage", staged);
+            Assert.DoesNotContain("Discard changes…", staged);
+
+            Assert.Contains("Stage", unstaged);
+            Assert.Contains("Discard changes…", unstaged);
+            Assert.DoesNotContain("Unstage", unstaged);
+
+            // Shared by both, and the reason the project tree's menu was worth copying rather
+            // than inventing a new vocabulary for the same two acts.
+            foreach (var menu in new[] { staged, unstaged })
+            {
+                Assert.Contains("Reveal in Explorer", menu);
+                Assert.Contains("Copy path", menu);
+            }
+        });
+    }
+
+    /// <summary>The headers of the context menu on the first realised row of a named list.</summary>
+    private static List<string> Headers(FrameworkElement panel, string listName)
+    {
+        var list = Assert.IsType<ListBox>(panel.FindName(listName));
+        var item = AllOf<ListBoxItem>(list).FirstOrDefault();
+
+        Assert.True(item is not null, $"{listName} realised no rows");
+
+        // The menu hangs off the row's own Grid inside the template, so that every entry acts
+        // on the row that was right-clicked rather than on the list's selection - WPF does not
+        // select a row on right-click.
+        var owner = AllOf<Grid>(item!).FirstOrDefault(g => g.ContextMenu is not null);
+
+        Assert.True(owner is not null, $"no row in {listName} carries a context menu");
+
+        return [.. owner!.ContextMenu.Items.OfType<MenuItem>()
+            .Select(m => m.Header?.ToString() ?? string.Empty)];
+    }
+
+    /// <summary>
+    /// Double-clicking a row reaches the panel's own handler, on both lists.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The event is raised on the realised <see cref="ListBoxItem"/> and the assertion is that
+    /// it came back <c>Handled</c>. That is not a formality: the handlers mark it handled only
+    /// once they have found a <c>ChangeRow</c> under the pointer <i>and</i> a shell to act on,
+    /// so a handler that was never attached, a row walk that failed, or a lost DataContext all
+    /// leave it false. No reflection, and nothing that passes while doing nothing.
+    /// </para>
+    /// <para>
+    /// What the verbs then do to the index — and that they take the clicked row rather than the
+    /// ticked set — is covered against real git in <c>RowActionFlowTests</c>. Splitting it that
+    /// way keeps this test about the wiring and that one about the semantics.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void Both_staging_lists_answer_a_double_click()
+    {
+        StaHarness.Run(() =>
+        {
+            var (window, shell) = Build();
+            var (panel, content) = ShowGitPanel(window);
+
+            shell.Staged.Add(new ChangeRow(new FileChange
+            {
+                Path = "src/App/POU/FB_Staged.st",
+                Staged = ChangeKind.Modified,
+                Unstaged = ChangeKind.Unmodified,
+            }));
+
+            shell.Unstaged.Add(new ChangeRow(new FileChange
+            {
+                Path = "src/App/GVL/GVL_Changed.st",
+                Staged = ChangeKind.Unmodified,
+                Unstaged = ChangeKind.Modified,
+            }));
+
+            content.Measure(new Size(1400, 900));
+            content.Arrange(new Rect(0, 0, 1400, 900));
+            content.UpdateLayout();
+
+            foreach (var name in new[] { "StagedList", "UnstagedList" })
+            {
+                var list = Assert.IsType<ListBox>(panel.FindName(name));
+                var item = AllOf<ListBoxItem>(list).FirstOrDefault();
+
+                Assert.True(item is not null, $"{name} realised no rows");
+
+                var args = new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left)
+                {
+                    RoutedEvent = Control.MouseDoubleClickEvent,
+                    Source = item,
+                };
+
+                item!.RaiseEvent(args);
+
+                Assert.True(args.Handled,
+                            $"a double-click on a {name} row was not answered");
+            }
+        });
+    }
+
+    /// <summary>
+    /// Both list headers carry their count, and move when the ticks do.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The geometry test cannot cover this, and would go greener if it broke.</b> A WPF
+    /// binding to a property that does not exist fails silently and leaves the TextBlock
+    /// empty — and an empty header is <i>narrower</i>, so
+    /// <c>Nothing_overflows_the_panel_sideways</c> would pass more comfortably with the count
+    /// gone entirely. Whether the header fits and whether the header says anything are two
+    /// questions, and only one of them is about pixels.
+    /// </para>
+    /// <para>
+    /// <b>The second half is the notification.</b> The counts are computed properties, so
+    /// nothing reaches the screen unless <c>RaiseSelectionState</c> names them. Deleting those
+    /// two <c>OnPropertyChanged</c> lines leaves the header frozen at whatever it said when
+    /// the row was realised, and every other test in the suite stays green — the exact shape
+    /// this codebase has been bitten by three times, where a pure move loses its coverage
+    /// because nothing about it looks like new behaviour.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void The_list_headers_carry_their_counts_and_follow_the_ticks()
+    {
+        StaHarness.Run(() =>
+        {
+            var (window, shell) = Build();
+            var (panel, content) = ShowGitPanel(window);
+
+            for (var i = 0; i < 3; i++)
+            {
+                shell.Staged.Add(new ChangeRow(new FileChange
+                {
+                    Path = $"src/App/POU/FB_Staged_{i}.st",
+                    Staged = ChangeKind.Modified,
+                    Unstaged = ChangeKind.Unmodified,
+                }));
+            }
+
+            for (var i = 0; i < 12; i++)
+            {
+                shell.Unstaged.Add(new ChangeRow(new FileChange
+                {
+                    Path = $"src/App/GVL/GVL_Changed_{i}.st",
+                    Staged = ChangeKind.Unmodified,
+                    Unstaged = ChangeKind.Modified,
+                }));
+            }
+
+            content.Measure(new Size(1400, 900));
+            content.Arrange(new Rect(0, 0, 1400, 900));
+            content.UpdateLayout();
+
+            var texts = AllOf<TextBlock>(panel).Select(t => t.Text).ToList();
+
+            // The count, on screen, where a scrolling list cannot show it.
+            Assert.Contains("STAGED · 3", texts);
+            Assert.Contains("NOT STAGED · 12", texts);
+
+            // And the bare labels are gone, which is what proves the binding resolved rather
+            // than the old literal text still being there.
+            Assert.DoesNotContain("NOT STAGED", texts);
+
+            // Tick two, and the header has to follow. This is the assertion that dies if the
+            // OnPropertyChanged calls are removed.
+            shell.Unstaged[0].IsSelected = true;
+            shell.Unstaged[1].IsSelected = true;
+            content.UpdateLayout();
+
+            var after = AllOf<TextBlock>(panel).Select(t => t.Text).ToList();
+
+            Assert.Contains("NOT STAGED · 2 of 12 selected", after);
+
+            // The total alone is no longer shown while a selection is: one header, one
+            // sentence, and the selection's own wording already carries the total.
+            Assert.DoesNotContain("NOT STAGED · 12", after);
+
+            // The other list is untouched by the other's ticks.
+            Assert.Contains("STAGED · 3", after);
+        });
+    }
+
+    /// <summary>
+    /// The detached-HEAD escape is on the card, and hidden everywhere else (UX-10).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>§9e's own words were "the create-branch action sits in the badge, pre-filled, because
+    /// that is the only route out and making the user find it in a menu is the whole
+    /// problem."</b> The sentence shipped; the button did not, leaving the remedy in the top
+    /// bar's <c>+</c> — the menu that argument was against.
+    /// </para>
+    /// <para>
+    /// <b>Collapsed rather than absent is the assertion.</b> With no repository open the
+    /// standing is <c>NoRepository</c>, so this proves the visibility binding is doing the
+    /// gating: a button hard-coded visible would be on screen right here, beside a card with no
+    /// branch on it, offering to rescue work that does not exist.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void The_way_off_a_detached_head_is_on_the_card_and_hidden_until_it_applies()
+    {
+        StaHarness.Run(() =>
+        {
+            var (window, shell) = Build();
+            var (panel, _) = ShowGitPanel(window);
+
+            var escape = Assert.IsType<Button>(panel.FindName("PutOnBranchButton"));
+
+            Assert.Equal(
+                nameof(ShellViewModel.PutOnBranchCommand),
+                BindingOperations.GetBinding(escape, ButtonBase.CommandProperty)?.Path.Path);
+
+            Assert.Equal(
+                "Remote.Standing.IsDetached",
+                BindingOperations.GetBinding(escape, UIElement.VisibilityProperty)?.Path.Path);
+
+            Assert.False(shell.Remote.Standing.IsDetached);
+            Assert.Equal(Visibility.Collapsed, escape.Visibility);
+
+            // It is the branch card's own child, not a second card bolted underneath: the whole
+            // argument is that the remedy sits beside the sentence describing the trap.
+            var sentences = AllOf<TextBlock>(panel)
+                .Select(t => BindingOperations.GetBinding(t, TextBlock.TextProperty)?.Path.Path)
+                .ToList();
+
+            Assert.Contains("Remote.Standing.Headline", sentences);
+        });
     }
 
     private static IEnumerable<T> AllOf<T>(DependencyObject root)

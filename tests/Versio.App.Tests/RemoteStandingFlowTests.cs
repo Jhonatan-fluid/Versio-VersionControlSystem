@@ -144,4 +144,66 @@ public sealed class RemoteStandingFlowTests
         Assert.Empty(shell.Notifications.Visible);
     }
 
+    /// <summary>
+    /// A detached HEAD reaches the standing the panel offers the exit from (UX-10).
+    /// </summary>
+    /// <remarks>
+    /// <b>Against a real detachment, not a hand-built <c>BranchInfo</c>.</b> Whether
+    /// <c>IsDetached</c> follows from <c>State</c> is settled in Core without a repository;
+    /// what cannot be settled there is whether porcelain v2 over a genuinely detached HEAD
+    /// produces a branch the state machine reads as detached at all. That is the half that has
+    /// been wrong before — the shell reaching the state machine with the wrong inputs — and it
+    /// is what puts the button on screen.
+    /// </remarks>
+    [Fact]
+    public async Task A_detached_head_offers_the_way_back_onto_a_branch()
+    {
+        using var repo = new TempRepo();
+        using var shell = Shell();
+
+        await shell.OpenAsync(repo.Path);
+        Assert.False(shell.Remote.Standing.IsDetached);
+
+        repo.Git("checkout --detach HEAD");
+        await Eventually.Press(shell.RefreshCommand, "refresh");
+
+        Assert.Equal(TrackingState.Detached, shell.Remote.Standing.State);
+        Assert.True(shell.Remote.Standing.IsDetached);
+
+        // The button becomes live, which is the point: the sentence has said for two versions
+        // that work here will be lost, and the only remedy lived in a menu in the top bar.
+        //
+        // WAITED FOR RATHER THAN ASSERTED OUTRIGHT, and measured: asserting it directly failed
+        // under the full suite. It is gated on `Ready`, which is "a client, and nothing
+        // running" - and the remote poller runs git subprocesses of its own on a loop, so the
+        // instant after a refresh returns is not reliably idle. The standing itself IS asserted
+        // outright above, because that is the thing under test; this is the gate around it.
+        await Eventually.Until(
+            () => shell.PutOnBranchCommand.CanExecute(null), "the escape button went live");
+    }
+
+    [Fact]
+    public async Task Fetch_stamps_one_operation_id_on_the_git_lines_that_follow()
+    {
+        // Publish already opened a scope; Pull and Push did not, so a pull that auto-stashed
+        // then imported could not be reconstructed from the log. Fetch is the cheapest of
+        // the three to drive, and they share the same wrap.
+        using var repo = new TempRepo(withRemote: true);
+        using var shell = TestShell.Build(out var sink);
+
+        await shell.OpenAsync(repo.Path);
+        var before = sink.Snapshot().Count;
+
+        await Eventually.Press(shell.Remote.FetchCommand, "fetch");
+
+        var after = sink.Snapshot().Skip(before).ToList();
+        Assert.Contains(after, e => e.Message.Contains("Click ▸ Git.Fetch", StringComparison.Ordinal));
+
+        var correlated = after
+            .Where(e => e.OperationId is not null)
+            .Where(e => e.Category == LogCategory.Git)
+            .ToList();
+        Assert.NotEmpty(correlated);
+        Assert.Single(correlated.Select(e => e.OperationId).Distinct());
+    }
 }

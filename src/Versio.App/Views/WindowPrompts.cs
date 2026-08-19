@@ -167,6 +167,18 @@ public sealed class WindowPrompts(Window owner, ShellViewModel shell) : IUserPro
         return window.ShowDialog() == true ? window.Result : null;
     }
 
+    /// <summary>Choose one branch to merge into the current one.</summary>
+    /// <remarks>
+    /// A list with one selection and a reason beside the button, which no message box can do -
+    /// and the reason matters here: "already in" on a branch somebody has just pushed reads as
+    /// a bug until the sentence says the work is already present.
+    /// </remarks>
+    public string? PromptForBranchMerge(IReadOnlyList<BranchCandidate> candidates, string into)
+    {
+        var window = new BranchMergeWindow(candidates, into) { Owner = owner };
+        return window.ShowDialog() == true ? window.Result : null;
+    }
+
     /// <summary>Show the copies taken before every import and return the one chosen.</summary>
     public ProjectBackup? AskWhichBackup(string project, IReadOnlyList<ProjectBackup> backups)
     {

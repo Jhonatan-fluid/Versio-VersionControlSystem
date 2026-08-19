@@ -112,6 +112,7 @@ public sealed class LogFilterViewModel : ObservableObject
     ];
 
     private string _text = string.Empty;
+    private bool _batching;
 
     public LogFilterViewModel()
     {
@@ -242,16 +243,88 @@ public sealed class LogFilterViewModel : ObservableObject
         }
     }
 
-    private void SetAllCategories(bool enabled)
+    /// <summary>
+    /// Show one category and hide the rest, at every level that can carry a message.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The levels are set as well as the categories</b>, or this keeps only half a promise.
+    /// A caller asking for a category wants to see what is in it; landing on a panel that is
+    /// still hiding <c>WRN</c> from a previous session would show a subset and look like the
+    /// whole, which is the failure mode the panel's own <c>IsFiltering</c> line exists for.
+    /// <c>DBG</c> is deliberately left as the caller found it — it is the one level that is
+    /// volume rather than content, and turning it on unasked buries what was being looked for.
+    /// </para>
+    /// <para>
+    /// <b>It stomps the current filter on purpose, and says so on screen.</b>
+    /// <see cref="CategorySummary"/> drops to the category's own name and <see cref="IsFiltering"/>
+    /// goes true, so the new state is visible and one click from "All categories" undoes it.
+    /// The alternative — a filter that respects what was there — cannot guarantee the thing the
+    /// caller asked to see is actually shown.
+    /// </para>
+    /// </remarks>
+    public void ShowOnly(string category) => AsOneChange(() =>
+    {
+        foreach (var toggle in Categories)
+        {
+            toggle.IsEnabled = string.Equals(toggle.Name, category, StringComparison.Ordinal);
+        }
+
+        foreach (var level in Levels.Where(l => l.Level != LogLevel.Debug))
+        {
+            level.IsEnabled = true;
+        }
+    });
+
+    private void SetAllCategories(bool enabled) => AsOneChange(() =>
     {
         foreach (var category in Categories)
         {
             category.IsEnabled = enabled;
         }
+    });
+
+    /// <summary>
+    /// Run a batch of toggle changes and raise <see cref="Changed"/> once at the end.
+    /// </summary>
+    /// <remarks>
+    /// <b>Every raise costs a full rebuild</b> — <c>LogViewModel.Rebuild</c> clears the bound
+    /// collection and re-walks the whole sink, which holds up to ten thousand entries. Setting
+    /// ten toggles in a loop therefore did ten of them, on the UI thread, inside a click. That
+    /// "All categories" and "No categories" had it from the day they were written and nobody
+    /// noticed, because a wasted rebuild leaves no trace. <see cref="ShowOnly"/> is the caller
+    /// that made it worth fixing, and it fixed those two on the way.
+    /// <para>
+    /// A flag rather than a disposable scope: there is no re-entrancy to protect against — every
+    /// caller is a synchronous loop over toggles on the dispatcher — and a scope would invite
+    /// nesting that this does not handle.
+    /// </para>
+    /// </remarks>
+    private void AsOneChange(Action changes)
+    {
+        _batching = true;
+
+        try
+        {
+            changes();
+        }
+        finally
+        {
+            // In a finally so a throw mid-batch cannot leave the filter permanently mute,
+            // which would be a panel that silently stops responding to its own controls.
+            _batching = false;
+        }
+
+        Raise();
     }
 
     private void Raise()
     {
+        if (_batching)
+        {
+            return;
+        }
+
         OnPropertyChanged(nameof(CategorySummary));
         OnPropertyChanged(nameof(IsFiltering));
         Changed?.Invoke();

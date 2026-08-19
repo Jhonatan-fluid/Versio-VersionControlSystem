@@ -107,7 +107,7 @@ public static class WorkspaceTreeBuilder
 
         foreach (var project in projects.OrderBy(p => p.ProjectPath, StringComparer.OrdinalIgnoreCase))
         {
-            var node = BuildProject(project, changes, status, opts, claimed);
+            var node = BuildProjectNode(project, changes, opts, claimed, status);
 
             // Built first and dropped after, never skipped: building it is what claims the
             // project's files, and a project skipped before that would leak its own exported
@@ -148,14 +148,35 @@ public static class WorkspaceTreeBuilder
         return roots;
     }
 
-    /// <summary>One project row: the <c>.project</c> itself, with its export tree beneath it.</summary>
-    private static ProjectTreeNode BuildProject(
+    /// <summary>
+    /// One project row: the <c>.project</c> itself, with its export tree beneath it.
+    /// </summary>
+    /// <remarks>
+    /// Public because the repo explorer grafts this same node into a folder tree. A second
+    /// object-tree builder would be a second answer to "what is this project", and the two
+    /// would drift — which is the leak this method exists to prevent.
+    /// </remarks>
+    public static ProjectTreeNode BuildProjectNode(
         WorkspaceProject project,
         IReadOnlyList<FileChange> changes,
-        IReadOnlyDictionary<string, ChangeKind> status,
-        ProjectTreeOptions options,
-        HashSet<string> claimed)
+        ProjectTreeOptions? options = null,
+        HashSet<string>? claimed = null,
+        IReadOnlyDictionary<string, ChangeKind>? status = null)
     {
+        var opts = options ?? new ProjectTreeOptions { ChangedOnly = false };
+        claimed ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (status is null)
+        {
+            var map = new Dictionary<string, ChangeKind>(StringComparer.OrdinalIgnoreCase);
+            foreach (var change in changes)
+            {
+                map[Normalize(change.Path)] = change.Effective;
+            }
+
+            status = map;
+        }
+
         var projectPath = Normalize(project.ProjectPath);
         var exportRoot = Normalize(project.ExportPath).TrimEnd('/');
 
@@ -163,7 +184,7 @@ public static class WorkspaceTreeBuilder
 
         var manifest = project.Manifest ?? ProjectManifest.Empty;
         var tree = ProjectTreeBuilder.Build(
-            manifest, exportRoot, changes, options, project.Libraries, project.Tasks);
+            manifest, exportRoot, changes, opts, project.Libraries, project.Tasks);
 
         // Everything the manifest accounted for is now represented by an object node.
         foreach (var file in manifest.Objects
@@ -174,7 +195,7 @@ public static class WorkspaceTreeBuilder
         }
 
         var children = new List<ProjectTreeNode>(tree.Children);
-        children.AddRange(UnmappedExportFiles(changes, exportRoot, options, claimed));
+        children.AddRange(UnmappedExportFiles(changes, exportRoot, opts, claimed));
 
         // Counted over the whole subtree rather than taken from the export tree alone, so a
         // stray file under the export root still raises the project's badge.

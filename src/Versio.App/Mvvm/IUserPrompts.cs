@@ -102,6 +102,14 @@ public interface IUserPrompts
     /// </remarks>
     DeletePlan? PromptForBranchDeletion(IReadOnlyList<BranchCandidate> candidates);
 
+    /// <summary>Choose a branch to merge into the current one. Null means cancel.</summary>
+    /// <remarks>
+    /// One choice rather than a set, unlike the deletion prompt beside it: merging two branches
+    /// in one gesture is two merges with one confirmation, and the second would land on a tree
+    /// the user has not looked at.
+    /// </remarks>
+    string? PromptForBranchMerge(IReadOnlyList<BranchCandidate> candidates, string into);
+
     /// <summary>Choose which saved copy of a project to restore. Null means cancel.</summary>
     /// <remarks>
     /// <b>Choosing is the confirmation.</b> There is no second "are you sure" on top: the
@@ -154,6 +162,9 @@ public sealed class NullPrompts : IUserPrompts
     public Task<string?> PromptForClone(string? initialUrl) => Task.FromResult<string?>(null);
 
     public DeletePlan? PromptForBranchDeletion(IReadOnlyList<BranchCandidate> candidates) => null;
+
+    public string? PromptForBranchMerge(IReadOnlyList<BranchCandidate> candidates, string into) =>
+        null;
 
     public ProjectBackup? AskWhichBackup(string project, IReadOnlyList<ProjectBackup> backups) =>
         null;

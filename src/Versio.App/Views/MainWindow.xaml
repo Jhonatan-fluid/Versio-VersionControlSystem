@@ -405,17 +405,86 @@
         <Border x:Name="Rail" Grid.Row="1" Grid.RowSpan="3" Grid.Column="0"
                 Width="{DynamicResource Size.Rail.Width}"
                 Background="{DynamicResource Brush.Surface.Base}">
+            <!-- GroupName="Rail" ON ALL FOUR, AND IT IS NOT DECORATION.
+
+                 A RadioButton with no GroupName groups by its VISUAL PARENT. These three were
+                 bare siblings in this StackPanel, so that worked by accident for as long as
+                 nothing came between them - and the moment the git one was wrapped in a Grid
+                 to carry its badge, it became a group of one. Two rail buttons highlighted at
+                 once, and the panel would not switch.
+
+                 Naming the group makes the exclusion a property of the buttons rather than of
+                 how they happen to be nested, so the next person who wraps one - for a second
+                 badge, a tooltip host, anything - does not reintroduce it. The theme radios in
+                 the settings popup have always done this; the rail was the odd one out.
+
+                 RailExclusionTests drives it through IsChecked the way a click does, because
+                 setting IsChecked on each in turn - which is what every other test here does -
+                 never exercises exclusion at all and passed straight through the bug. -->
             <StackPanel Margin="2,10,2,0">
                 <RadioButton x:Name="RailProject" Style="{StaticResource RailButton}"
-                             IsChecked="True" Tag="Project"
+                             IsChecked="True" Tag="Project" GroupName="Rail"
                              Content="{DynamicResource Icon.Document}"
                              Checked="OnRailChanged"
-                             ToolTip="Project — the repository as CODESYS structures it, with every change marked" />
-                <RadioButton x:Name="RailGit" Style="{StaticResource RailButton}"
-                             Tag="Git"
-                             Content="{DynamicResource Icon.Link}"
+                             ToolTip="Project — the repository as CODESYS structures it, with every change marked (Ctrl+1)" />
+                <RadioButton x:Name="RailExplorer" Style="{StaticResource RailButton}"
+                             Tag="Explorer" GroupName="Rail"
+                             Content="{DynamicResource Icon.Folder}"
                              Checked="OnRailChanged"
-                             ToolTip="Git — staging, commit, pull and push" />
+                             ToolTip="Explorer — the repository as files on disk, with PLC projects as object trees (Ctrl+4)" />
+                <!-- THE COUNT LIVES HERE, NOT IN A PANEL TITLE.
+
+                     It used to be a pill in the panel header that the shell drew on the
+                     Project panel alone - so it stated the working tree's size in the one
+                     place you could already see it, and said nothing from the two panels
+                     where you cannot. Sitting on History, reading what already happened,
+                     which is exactly when somebody is about to act, twelve changed files
+                     and none looked identical.
+
+                     Overlaid in a Grid rather than plumbed into RailButton's template
+                     through an attached property. Exactly one rail button has a badge, and
+                     building the general mechanism for a single consumer is the mistake
+                     this repository keeps catching - a reader with no consumer, a Register
+                     with no caller, a predicate with no test in its whole life. If a second
+                     badge ever appears, THAT is when the template earns it.
+
+                     IsHitTestVisible="False" so the badge cannot eat the click that selects
+                     the panel: it sits over the top-right corner of a 40 px tile, which is
+                     inside the button's own target. -->
+                <Grid>
+                    <RadioButton x:Name="RailGit" Style="{StaticResource RailButton}"
+                                 Tag="Git" GroupName="Rail"
+                                 Content="{DynamicResource Icon.Link}"
+                                 Checked="OnRailChanged"
+                                 ToolTip="Git — staging, commit, pull and push (Ctrl+2)" />
+
+                    <!-- NO BACKGROUND, DELIBERATELY, AND IT USED TO HAVE ONE.
+
+                         A pill needs a backing only where it would otherwise collide with
+                         what is behind it, and there is no colour that works here: the tile
+                         is transparent over the rail at rest, Brush.Surface.Hover under the
+                         pointer, and Brush.Accent.Muted while the panel is showing. An opaque
+                         Brush.Surface.Base matched the rail in the first state and read as a
+                         differently-coloured blob in the other two - which is to say it was
+                         invisible exactly while it was correct.
+
+                         Nothing is behind it anyway. The glyph is 16 px centred in a 40 px
+                         tile, so the top-right corner it sits in is clear at every state, and
+                         the number carries its own meaning in its own colour. -->
+                    <Border x:Name="RailGitBadge"
+                            HorizontalAlignment="Right" VerticalAlignment="Top"
+                            Margin="0,1,1,0" Padding="4,0" MinWidth="16"
+                            CornerRadius="8" IsHitTestVisible="False"
+                            Visibility="{Binding ChangeBadge.IsVisible,
+                                Converter={StaticResource BoolToVisibility}}">
+                        <TextBlock Text="{Binding ChangeBadge.Text}"
+                                   HorizontalAlignment="Center"
+                                   FontFamily="{DynamicResource Font.Mono}"
+                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                   Foreground="{Binding ChangeBadge.BrushKey,
+                                       Converter={StaticResource ResourceKey}}" />
+                    </Border>
+                </Grid>
 
                 <!-- History is its own panel rather than a section of the git one. The
                      two answer different questions - what is about to happen, and what
@@ -423,10 +492,10 @@
                      it. It is also what makes the log affordable: a panel nobody has
                      opened reads nothing at all. -->
                 <RadioButton x:Name="RailHistory" Style="{StaticResource RailButton}"
-                             Tag="History"
+                             Tag="History" GroupName="Rail"
                              Content="{DynamicResource Icon.History}"
                              Checked="OnRailChanged"
-                             ToolTip="History — commits, the files in each, and their diffs" />
+                             ToolTip="History — commits, the files in each, and their diffs (Ctrl+3)" />
             </StackPanel>
         </Border>
 
@@ -441,11 +510,11 @@
             <!-- Left panel. One card; the rail swaps its contents.
                  A Grid, not a DockPanel, and that is the whole fix for a panel that used
                  only half its own card: DockPanel.Dock DEFAULTS TO LEFT, and only the last
-                 child fills. The three panels are listed git, history, project - so the
+                 child fills. The four panels are listed git, history, explorer, project - so the
                  project panel filled the card and the other two were docked left at
                  whatever width their content happened to want, leaving 200-odd pixels of
                  dead card to the right of every row in them.
-                 Both rows here are explicit, all three panels share row 1, and exactly one
+                 Both rows here are explicit, all four panels share row 1, and exactly one
                  of them is visible at a time. -->
             <Border Grid.Column="0" Background="{DynamicResource Brush.Surface.Base}"
                     Margin="8,8,0,8" CornerRadius="{DynamicResource Radius.Card}">
@@ -455,25 +524,23 @@
                         <RowDefinition Height="*" />      <!-- panel -->
                     </Grid.RowDefinitions>
 
+                    <!-- THE COUNT PILL THAT WAS HERE HAS MOVED TO THE RAIL.
+
+                         It was `{Binding Changes.Count}` with no zero-suppression of any
+                         kind, shown by code-behind on the Project panel only. So it drew a
+                         pill containing `0` on a clean tree, beside a panel whose empty
+                         state already said so in words - and it stated the working tree's
+                         size in the one place you could already see it.
+
+                         Moved rather than fixed in place, and the duplicate deleted rather
+                         than kept: with the rail carrying the count from every panel, a
+                         second control saying the same number whenever Project happens to
+                         be showing is two things describing one fact. -->
                     <Grid Grid.Row="0" Margin="14,12,12,8">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Style="{StaticResource SectionLabel}"
+                        <TextBlock Style="{StaticResource SectionLabel}"
                                    VerticalAlignment="Center"
                                    TextTrimming="CharacterEllipsis"
                                    Text="{Binding PanelTitle}" />
-                        <Border Grid.Column="1" Margin="8,0,0,0"
-                                x:Name="ChangeCountBadge"
-                                Background="{DynamicResource Brush.Accent.Muted}"
-                                CornerRadius="9" Padding="8,1" MinWidth="22">
-                            <TextBlock Text="{Binding Changes.Count}"
-                                       HorizontalAlignment="Center"
-                                       FontFamily="{DynamicResource Font.Mono}"
-                                       FontSize="{DynamicResource Font.Size.Caption}"
-                                       Foreground="{DynamicResource Brush.Accent.Default}" />
-                        </Border>
                     </Grid>
 
                     <!-- GIT: staging, the commit message, and the remote operations.
@@ -493,6 +560,9 @@
                          is showing, and OnRailChanged reaches this by name. -->
                     <panels:HistoryPanelView Grid.Row="1" x:Name="HistoryPanel"
                                              Visibility="Collapsed" />
+
+                    <panels:ExplorerPanelView Grid.Row="1" x:Name="ExplorerPanel"
+                                              Visibility="Collapsed" />
 
                     <!-- PROJECT: the one view. Every tracked project with its objects
                          underneath it, and every other changed file beside them. Its markup,
@@ -1124,15 +1194,32 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
 
-            <!-- What is being held back, when more has happened than fits. -->
-            <Border Grid.ColumnSpan="3" Style="{StaticResource Pill}"
-                    Margin="0,0,18,4" Padding="8,2"
+            <!-- WHAT IS BEING HELD BACK, AND THE WAY TO READ IT (UX-9).
+
+                 This was a Border with a TextBlock in it and nothing behind either. It
+                 appears when several things have gone wrong at once - an outage, a push
+                 retried - which is exactly the moment somebody wants to read them, and it
+                 offered a count of things it would not show. A dead end that only appears
+                 during trouble is worse than no count at all.
+
+                 Every notification is mirrored into the log as it is posted, deliberately, so
+                 the held ones are already there. Pressing this opens the log filtered to the
+                 category they are in. Nothing is stored to make that work.
+
+                 Still a pill to look at and a Button to use - PillButton, which is Ghost's
+                 focus ring and hover feedback wearing the pill's shape. The name is written
+                 out rather than left to the content: "+2 more" read aloud is not a thing
+                 anybody can act on. -->
+            <Button Grid.ColumnSpan="3" x:Name="NotificationOverflow"
+                    Style="{StaticResource PillButton}"
+                    Margin="0,0,18,4"
                     VerticalAlignment="Bottom" HorizontalAlignment="Right"
+                    ToolTip="Read these in the log"
+                    AutomationProperties.Name="Read the held notifications in the log"
+                    Command="{Binding ShowHeldNotificationsCommand}"
+                    Content="{Binding Notifications.OverflowText}"
                     Visibility="{Binding Notifications.HasOverflow,
-                        Converter={StaticResource BoolToVisibility}}">
-                <TextBlock Style="{StaticResource PillText}"
-                           Text="{Binding Notifications.OverflowText}" />
-            </Border>
+                        Converter={StaticResource BoolToVisibility}}" />
         </Grid>
 
         <!-- ============================= LOG PANEL ============================= -->
