@@ -1,0 +1,12 @@
+﻿TYPE "UDT_Service_StatusMedium"
+VERSION : 0.1
+   STRUCT
+      parameterError { ExternalWritable := 'False'} : Bool := FALSE;   // ParameterStart & ParameterEnd area out of range
+      parameterTypeError { ExternalWritable := 'False'} : Bool;   // Parametertype not defined; Number of Type out of range
+      monitoringTimeExceeded { ExternalWritable := 'False'} : Bool := FALSE;   // Step monitoring  time exceeded
+      noSystemTime { ExternalWritable := 'False'} : Bool;   // FB cannot evaluate system / sample time
+      SteporderStatus { ExternalWritable := 'False'} : Array[0..6] of DWord;   // Indication of steporder state
+   END_STRUCT;
+
+END_TYPE
+

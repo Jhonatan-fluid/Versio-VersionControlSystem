@@ -43,3 +43,30 @@ third_party/**/*.zip     filter=lfs diff=lfs merge=lfs -text
 # Without eol=lf a core.autocrlf=true clone lands CRLF, which git calls clean and
 # Versio's hash gate calls an edit to every file in it.
 fixtures/projects/RefrigeratorControl/** text eol=lf
+
+# ---------------------------------------------------------------------------
+# TIA Portal binaries
+# ---------------------------------------------------------------------------
+# A TIA project is a directory: the .apXX is a ~150 KB pointer and the program
+# lives in System/*.plf. Marking the payload -diff -merge stops git attempting
+# a text merge on something it cannot reason about; the readable diff lives in
+# the Versio mirror beside the pointer
+# (fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21/).
+*.ap17           binary -diff -merge filter=lfs diff=lfs merge=lfs
+*.ap18           binary -diff -merge filter=lfs diff=lfs merge=lfs
+*.ap19           binary -diff -merge filter=lfs diff=lfs merge=lfs
+*.ap20           binary -diff -merge filter=lfs diff=lfs merge=lfs
+*.ap21           binary -diff -merge filter=lfs diff=lfs merge=lfs
+*.al17           binary -diff -merge filter=lfs diff=lfs merge=lfs
+*.al18           binary -diff -merge filter=lfs diff=lfs merge=lfs
+*.al19           binary -diff -merge filter=lfs diff=lfs merge=lfs
+*.al20           binary -diff -merge filter=lfs diff=lfs merge=lfs
+*.al21           binary -diff -merge filter=lfs diff=lfs merge=lfs
+*.plf            binary -diff -merge filter=lfs diff=lfs merge=lfs
+*.idx            binary -diff -merge filter=lfs diff=lfs merge=lfs
+
+# Other Siemens binary leftovers inside a working tree. Path-scoped so a random
+# .zip elsewhere is not forced through LFS.
+fixtures/projects/CleaningStation_V20_V21/** filter=lfs diff=lfs merge=lfs -text
+fixtures/projects/CleaningStation_V20_V21/ProjectInfo.txt text eol=lf -filter -diff -merge
+fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21/** -filter -diff -merge text eol=lf

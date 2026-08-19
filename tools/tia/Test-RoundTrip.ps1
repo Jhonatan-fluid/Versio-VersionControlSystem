@@ -7,6 +7,8 @@
 # Never a single "Lossless: False" that collapses those two.
 #
 # -MutateFirst is mandatory. A round trip that writes nothing would pass vacuously.
+# Default -Project is the committed fixture (Git LFS). That writes the committed
+# tree. Pass a copy under .versio/local/tia/ to keep the fixture clean.
 
 param(
     [switch]$MutateFirst,
@@ -22,13 +24,13 @@ if (-not $MutateFirst) {
 
 $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 if (-not $Project) {
-    $scratch = Join-Path $root ".versio\local\tia"
-    $Project = Get-ChildItem -Path $scratch -Filter "*.ap21" -Recurse -ErrorAction SilentlyContinue |
+    $committed = Join-Path $root "fixtures\projects\CleaningStation_V20_V21"
+    $Project = Get-ChildItem -Path $committed -Filter "*.ap21" -ErrorAction SilentlyContinue |
         Select-Object -First 1 -ExpandProperty FullName
 }
 
-if (-not $Project -or -not (Test-Path $Project)) {
-    Write-Error "No .ap21 fixture. Copy a project into .versio/local/tia/ first. Never write the OneDrive original."
+if (-not $Project -or -not (Test-Path $Project) -or ((Get-Item $Project).Length -lt 1024)) {
+    Write-Error "No real .ap21 fixture. Expected fixtures/projects/CleaningStation_V20_V21/ (git lfs pull). Never write the OneDrive original."
 }
 
 $hostExe = @(

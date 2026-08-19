@@ -1,0 +1,32 @@
+﻿TYPE "HMI_MonAnL"
+VERSION : 0.1
+   STRUCT
+      PV_Hyst : Real;   //  PV - Alarm Hysteresis
+      PV_AH_Lim : Real := 95.0;   //  PV - High Alarm Limit
+      PV_WH_Lim : Real := 90.0;   //  PV - High Warning Limit
+      PV_TH_Lim : Real := 85.0;   //  PV - High Tolerance Limit
+      PV_TL_Lim : Real := 15.0;   //  PV - Low Tolerance Limit
+      PV_WL_Lim : Real := 10.0;   //  PV - Low Warning Limit
+      PV_AL_Lim : Real := 5.0;   //  PV - Low Alarm Limit
+      SmoothTi : Real;   //  Smooth Time [s]
+      RstOp : Bool;   //  Reset Peak Values
+      PV_OpScale { S7_SetPoint := 'False'} : "ScaVal";   //  PV - Bar Display Limits for OS
+      PV_Unit { CFC_ForTest := 'true'} : Int := 1001;   //  Unit of PV
+      DeadBand : Real;   //  Dead band width
+      TimeFactor : Int;   //  Time Conversion Factor (0- Sec, 1- Min, 2- Hour)
+      OnOp : Bool;   //  1=On Mode: On Mode by Operator
+      OosOp : Bool;   //  1=Oos Mode: Oos Mode by Operator
+      PV_Out { ExternalWritable := 'False'} : Real;   //  Process Value (Analog Output)
+      PV_Out_ST { ExternalWritable := 'False'} : Byte := BYTE#16#80;   //  PV_Out Signal Status
+      PV_Grad { ExternalWritable := 'False'} : Real;   //  PV - Gradient Value
+      OS_PermOut { ExternalWritable := 'False'} : DWord := DWORD#16#FFFF_FFFF;   //  Operator Permission: Output for OS
+      OS_PermLog { ExternalWritable := 'False'} : DWord := DWORD#16#FFFF_FFFF;   //  Operator Permission: Output for OS
+      OpSt_Out { ExternalWritable := 'False'} : DWord;   //  Enabled operator stations
+      ST_Worst { ExternalWritable := 'False'} : Byte := 16#80;   //  Worst Signal Status
+      Status1 { ExternalWritable := 'False'} : DWord;   //  Status1 Word
+      Status2 { ExternalWritable := 'False'} : DWord;   //  Status2 Word
+      AlarmState { ExternalWritable := 'False'} : DWord;   // Alarm Status for group display
+   END_STRUCT;
+
+END_TYPE
+

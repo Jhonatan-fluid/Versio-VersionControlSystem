@@ -1,0 +1,49 @@
+﻿TYPE "UDT_MTP_ServiceControl"
+VERSION : 0.1
+   STRUCT
+      WQC { ExternalWritable := 'False'} : Byte := 16#FF;   // Worst Quality Code
+      OSLevel : Byte;   // OSLevel variable
+      CommandOp : DWord;   // relevant, if StateOpAct is true; manual command variable; 0 to Cmd: command request from Operator; Cmd to 0: acknowledge by PEA
+      CommandInt { ExternalWritable := 'False'} : DWord;   // relevant, if StateAutAct is true and SrcIntAct is true; automatic-internal command variable
+      CommandExt : DWord;   // relevant, if StateAutAct is true and SrcExtAct is true; automatic-external command variable; 0 to Cmd: command request from External; Cmd to 0: acknowledge by PEA
+      ProcedureOp : DWord;   // relevant, if StateOpAct is true; manual procedure variable; 0 to ProcdureId: Procedure request from Operator; ProcdureId to 0: acknowledge by PEA
+      ProcedureInt { ExternalWritable := 'False'} : DWord;   // relevant, if StateAutAct is true and SrcIntAct is true; automatic-internal procedure variable
+      ProcedureExt : DWord;   // relevant, if StateAutAct is true and SrcExtAct is true; automatic-external command variable; 0 to ProcdureId: Procedure request from External; ProcdureId to 0: acknowledge by PEA
+      StateCur { ExternalWritable := 'False'} : DWord;   // current state variable
+      CommandEn { ExternalWritable := 'False'} : DWord;   // command enable variable
+      ProcedureCur { ExternalWritable := 'False'} : DWord;   // current procedure variable
+      ProcedureReq { ExternalWritable := 'False'} : DWord;   // requested procedure variable
+      PosTextID { ExternalWritable := 'False'} : DWord;   // position test ID variable
+      InteractQuestionID { ExternalWritable := 'False'} : DWord;   // interaction question ID variable
+      InteractAddInfo { ExternalWritable := 'False'} : String;   // interaction additional info variable
+      InteractAnswerID : DWord;   // interaction answer ID variable
+      StateChannel { ExternalWritable := 'False'} : Bool;   // Current operation mode interaction channel; 0: The operator switches (*Op) shall be used; 1: The automatic switches (*Aut) shall be used
+      StateOffAut { ExternalWritable := 'False'} : Bool;   // Set operation mode to Offline by automatic interaction (relevant, if StateChannel is true).
+      StateOpAut { ExternalWritable := 'False'} : Bool;   // Set operation mode to Operator by automatic interaction (relevant, if StateChannel is true).
+      StateAutAut { ExternalWritable := 'False'} : Bool;   // Set operation mode to Automatic by automatic interaction (relevant, if StateChannel is true); 1: Operation mode is set to Automatic; 0: no operation
+      StateOffOp : Bool;   // Set operation mode to Offline by operator interaction (relevant, if StateChannel is false); 0 to 1: request to set operation mode to Offline; 1 to 0: acknowledge by PEA
+      StateOpOp : Bool;   // Set operation mode to Operator by operator interaction (relevant, if StateChannel Is false); 0 to 1: request to set operation mode to Operator; 1 to 0: acknowledge by PEA
+      StateAutOp : Bool;   // Set operation mode to Automatic by operator interaction (relevant, if StateChannel is false); 0 to 1: request to set operation mode is to Automatic; 1 to 0: acknowledge by PEA
+      StateOffAct { ExternalWritable := 'False'} : Bool;   // 1: current mode is Offline; 0: current mode is not Offline
+      StateOpAct { ExternalWritable := 'False'} : Bool;   // 1: current mode is Operator; 0: current mode is not Operator
+      StateAutAct { ExternalWritable := 'False'} : Bool;   // 1: current mode is Automatic; 0: current mode is not Automatic
+      SrcChannel { ExternalWritable := 'False'} : Bool;   // selection of the active source mode interaction channel; 0: The operator switches (*Op) shall be used; 1: The automatic switches (*Aut) shall be used.
+      SrcExtAut { ExternalWritable := 'False'} : Bool;   // Set source mode to External by automatic interaction (relevant, if SrcChannel is true); 1: Source mode is set to External; 0: no operation
+      SrcIntAut { ExternalWritable := 'False'} : Bool;   // Set source mode to Internal by automatic interaction (relevant, if SrcChannel is true); 1: Source mode is set to Internal; 0: no operation
+      SrcIntOp : Bool;   // Set source mode to Internal by operator interaction (relevant, if SrcChannel is false); 0 to 1: request to set operation mode to Internal; 1 to 0: acknowledge by PEA
+      SrcExtOp : Bool;   // Set source mode to External by operator interaction (relevant, if SrcChannel is false); 0 to 1: request to set operation mode to External; 1 to 0: acknowledge by PEA
+      SrcIntAct { ExternalWritable := 'False'} : Bool;   // relevant if service operation mode is Automatic; 1: current mode is Internal; 0: current mode is not Internal; relevant if service operation mode is not Automatic; 0: current mode is not Internal
+      SrcExtAct { ExternalWritable := 'False'} : Bool;   // relevant if service operation mode is Automatic; 1: current mode is External; 0: current mode is not External; relevant if service operation mode is not Automatic; 0: current mode is not External
+      ProcParamApplyEn { ExternalWritable := 'False'} : Bool;   // Flag to signalize if new values for Procedure Parameters can be applied; 1: new value can be applied; 0: currently, no new value can be applied
+      ProcParamApplyExt : Bool;   // External Value Application Flag for all Procedure Parameters of the service; 0 to 1: request to apply the values of VExt, VOp, or VInt depending on the currently active individual ServiceOperationMode and ServiceSourceMode of the Procedure Parameters of the Service; 1 to 0: acknowledge by PEA
+      ProcParamApplyOp : Bool;   // Manual Value Application Flag for all Procedure Parameters of the service; 0 to 1: request to apply the values of VExt, VOp, or VInt depending on the currently active individual ServiceOperationMode and ServiceSourceMode of all Procedure Parameters of the Service; 1 to 0: acknowledge by PEA
+      ProcParamApplyInt { ExternalWritable := 'False'} : Bool;   // Internal Value Application Flag for all Procedure Parameters of the service; 01: request to apply the values of VExt, VOp, or VInt depending on the currently active individual ServiceOperationMode and ServiceSourceMode of all Procedure Parameters of the Service; 1 to 0: acknowledge by PEA
+      ConfigParamApplyEn { ExternalWritable := 'False'} : Bool;   // Flag to signalize if new values for Configuration Parameters can be applied; 1: new value can be applied; 0: currently, no new value can be applied
+      ConfigParamApplyExt : Bool;   // External Value Application Flag for all Configuration Parameters of the service; 0 to 1: request to apply value of VExt, VOp, or VInt depending on the currently active individual ServiceOperationMode and ServiceSourceMode of all Configuration Parameters of the Service; 1 to 0: acknowledge by PEA
+      ConfigParamApplyOp : Bool;   // Manual Value Application Flag for all Configuration Parameters of the service; 0 to 1: request to apply value of VExt, VOp, or VInt depending on the currently active individual ServiceOperationMode and ServiceSourceMode of all Configuration Parameters of the Service; 1 to 0: acknowledge by PEA
+      ConfigParamApplyInt { ExternalWritable := 'False'} : Bool;   // Internal Value Application Flag for all Configuration Parameters of the service; 0 to 1: request to apply value of VExt, VOp, or VInt depending on the currently active individual ServiceOperationMode and ServiceSourceMode of all Configuration Parameters of the Service; 1 to 0: acknowledge by PEA
+      ReportValueFreeze : Bool;   // Freeze Flag for all ReportValues of the service; 1: All ReportValues of the Service have to be frozen; 0: The ReportValues are not frozen
+   END_STRUCT;
+
+END_TYPE
+

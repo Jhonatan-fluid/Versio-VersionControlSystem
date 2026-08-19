@@ -1,0 +1,304 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Document>
+  <Engineering version="V21" />
+  <DocumentInfo>
+    <Created>2026-08-19T17:13:21.286485Z</Created>
+    <ExportSetting>None</ExportSetting>
+    <InstalledProducts>
+      <Product>
+        <DisplayName>Totally Integrated Automation Portal</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>STEP 7 Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <OptionPackage>
+        <DisplayName>STEP 7 Safety</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <OptionPackage>
+        <DisplayName>Tech WebApplication</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <Product>
+        <DisplayName>WinCC Basic/Comfort/Advanced</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Unified</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+    </InstalledProducts>
+  </DocumentInfo>
+  <SW.Types.PlcStruct ID="0">
+    <AttributeList>
+      <Interface>
+        <Sections xmlns="http://www.siemens.com/automation/Openness/SW/Interface/v5">
+          <Section Name="None">
+            <Member Name="PV_Hyst" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> PV - Alarm Hysteresis</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> PV - Alarm Hysteresis</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="PV_AH_Lim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> PV - High Alarm Limit</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> PV - High Alarm Limit</MultiLanguageText>
+              </Comment>
+              <StartValue>95.0</StartValue>
+            </Member>
+            <Member Name="PV_WH_Lim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> PV - High Warning Limit</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> PV - High Warning Limit</MultiLanguageText>
+              </Comment>
+              <StartValue>90.0</StartValue>
+            </Member>
+            <Member Name="PV_TH_Lim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> PV - High Tolerance Limit</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> PV - High Tolerance Limit</MultiLanguageText>
+              </Comment>
+              <StartValue>85.0</StartValue>
+            </Member>
+            <Member Name="PV_TL_Lim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> PV - Low Tolerance Limit</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> PV - Low Tolerance Limit</MultiLanguageText>
+              </Comment>
+              <StartValue>15.0</StartValue>
+            </Member>
+            <Member Name="PV_WL_Lim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> PV - Low Warning Limit</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> PV - Low Warning Limit</MultiLanguageText>
+              </Comment>
+              <StartValue>10.0</StartValue>
+            </Member>
+            <Member Name="PV_AL_Lim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> PV - Low Alarm Limit</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> PV - Low Alarm Limit</MultiLanguageText>
+              </Comment>
+              <StartValue>5.0</StartValue>
+            </Member>
+            <Member Name="SmoothTi" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Smooth Time [s]</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Smooth Time [s]</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="RstOp" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Reset Peak Values</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Reset Peak Values</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="PV_OpScale" Datatype="&quot;ScaVal&quot;">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> PV - Bar Display Limits for OS</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> PV - Bar Display Limits for OS</MultiLanguageText>
+              </Comment>
+              <Sections>
+                <Section Name="None">
+                  <Member Name="High" Datatype="Real">
+                    <Comment>
+                      <MultiLanguageText Lang="en-US">High Value</MultiLanguageText>
+                    </Comment>
+                  </Member>
+                  <Member Name="Low" Datatype="Real">
+                    <Comment>
+                      <MultiLanguageText Lang="en-US">Low Value</MultiLanguageText>
+                    </Comment>
+                  </Member>
+                </Section>
+              </Sections>
+            </Member>
+            <Member Name="PV_Unit" Datatype="Int">
+              <AttributeList>
+                <BooleanAttribute Name="CFC_ForTest" SystemDefined="true">true</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Unit of PV</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Unit of PV</MultiLanguageText>
+              </Comment>
+              <StartValue>1001</StartValue>
+            </Member>
+            <Member Name="DeadBand" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Dead band width</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Dead band width</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="TimeFactor" Datatype="Int">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Time Conversion Factor (0- Sec, 1- Min, 2- Hour)</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Time Conversion Factor (0- Sec, 1- Min, 2- Hour)</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="OnOp" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> 1=On Mode: On Mode by Operator</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> 1=On Mode: On Mode by Operator</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="OosOp" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> 1=Oos Mode: Oos Mode by Operator</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> 1=Oos Mode: Oos Mode by Operator</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="PV_Out" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Process Value (Analog Output)</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Process Value (Analog Output)</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="PV_Out_ST" Datatype="Byte">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> PV_Out Signal Status</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> PV_Out Signal Status</MultiLanguageText>
+              </Comment>
+              <StartValue>BYTE#16#80</StartValue>
+            </Member>
+            <Member Name="PV_Grad" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> PV - Gradient Value</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> PV - Gradient Value</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="OS_PermOut" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Operator Permission: Output for OS</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Operator Permission: Output for OS</MultiLanguageText>
+              </Comment>
+              <StartValue>DWORD#16#FFFF_FFFF</StartValue>
+            </Member>
+            <Member Name="OS_PermLog" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Operator Permission: Output for OS</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Operator Permission: Output for OS</MultiLanguageText>
+              </Comment>
+              <StartValue>DWORD#16#FFFF_FFFF</StartValue>
+            </Member>
+            <Member Name="OpSt_Out" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Enabled operator stations</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Enabled operator stations</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="ST_Worst" Datatype="Byte">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Worst Signal Status</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Worst Signal Status</MultiLanguageText>
+              </Comment>
+              <StartValue>16#80</StartValue>
+            </Member>
+            <Member Name="Status1" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Status1 Word</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Status1 Word</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="Status2" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Status2 Word</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Status2 Word</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="AlarmState" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Alarm State for group display</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Alarm Status for group display</MultiLanguageText>
+              </Comment>
+            </Member>
+          </Section>
+        </Sections>
+      </Interface>
+      <Name>HMI_MonAnL</Name>
+      <Namespace />
+    </AttributeList>
+    <ObjectList>
+      <MultilingualText ID="1" CompositionName="Comment">
+        <ObjectList>
+          <MultilingualTextItem ID="2" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="3" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="4" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+      <MultilingualText ID="5" CompositionName="Title">
+        <ObjectList>
+          <MultilingualTextItem ID="6" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="7" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="8" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+    </ObjectList>
+  </SW.Types.PlcStruct>
+</Document>

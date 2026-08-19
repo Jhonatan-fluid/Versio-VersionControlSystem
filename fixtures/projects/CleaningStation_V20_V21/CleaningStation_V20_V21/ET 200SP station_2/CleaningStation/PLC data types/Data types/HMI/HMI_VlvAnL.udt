@@ -1,0 +1,81 @@
+﻿TYPE "HMI_VlvAnL"
+VERSION : 0.1
+   STRUCT
+      OpenMan : Bool := FALSE;   // 1=Open: Open Command in Manual Mode
+      CloseMan : Bool := FALSE;   // 1=Close: Close Command in Manual Mode
+      AutModOp : Bool := FALSE;   // 1=Auto mode: auto mode by operator
+      ManModOp : Bool := TRUE;   // 1=Manual mode: manual mode by operator
+      LocalLi : Bool;   // 1=Local Mode: Local operation by field signal
+      LocalOp : Bool := FALSE;   // 1=Local Mode: Local operation by operator
+      OosOp : Bool := FALSE;   // 1=Oos mode: Oos mode by operator
+      MV_Int : Real := 0.0;   // manipulated variable (Internal)
+      MV_HiLim : Real := 100.0;   // manipulated variable High Limit
+      MV_LoLim : Real := 0.0;   // manipulated variable Low Limit
+      MV_OpScale { S7_SetPoint := 'False'} : "ScaVal";   // MV-Bar Display Limits for OS
+      MV_Unit : Int := 1342;   // Engineering units of MV
+      MV_ExtOp : Bool := FALSE;   // Operator Input to Select External manipulated variable
+      MV_IntOp : Bool := TRUE;   // Operator Input to Select Internal manipulated variable
+      MV_Trk : Real;   // Tracking value for manipulated variable MV
+      MV_TrkExt : Bool := FALSE;   // Bumpless Transfer from External to Internal
+      MV_TrkRbk : Bool := FALSE;   // Bumpless Transfer from tracking to not tracking
+      MV_RateOn : Bool := FALSE;   // 1= Activate limitation of manipulated variable gradients
+      MV_RmpOn : Bool := FALSE;   // 1= Activate manipulated variable ramp to target MV_RmpTarget
+      MV_RmpModTime : Bool := FALSE;   // 1= Use time MV_RmpTime for ramp, 0= Use rates MV_UpRaLim, MV_DnRaLim
+      MV_UpRaLim : Real := 100.0;   // Upward rate limit of MV
+      MV_DnRaLim : Real := 100.0;   // Downward rate limit of MV
+      MV_RmpTime : Real := 0.0;   // Manipulated variable ramp time [s,min,h]
+      MV_RmpTarget : Real := 0.0;   // Manipulated variable ramp target
+      SimRbk : Real := 0.0;   // Readback value used for SimOn = 1
+      RbkWH_Lim : Real := 90.0;   // Rbk - High Warning Limit
+      RbkWL_Lim : Real := 10.0;   // Rbk - Low Warning Limit
+      RbkHyst : Real := 1.0;   // Rbk - Hysteresis
+      ER_AH_Lim : Real := 100.0;   // ER alarm high limit
+      ER_AL_Lim : Real := -100.0;   // ER alarm low limit
+      ER_Hyst : Real := 1.0;   // Hysteresis for ER alarms
+      PosDeadBand : Real := 0.1;   // allowable variation from pre-set position
+      PosDiOpen : Real := 95.0;   // open position of control valve
+      PosDiClose : Real := 5.0;   // close position of control valve
+      Monitor : Bool := TRUE;   // 1=MonitorV ON, 0=Monitor OFF: Feedback monitor
+      MonTiStatic : Real := 3.0;   // Monitoring time for unexpected change in any feedback [s]
+      MonTiDynamic : Real := 3.0;   // Monitoring time for expected change of feedback [s]
+      MonitorAuxV : Bool := TRUE;   // 1=MonitorAuxV ON, 0=MonitorAuxV OFF: Feedback monitor of auxiliary valve
+      MonAuxVTime : Real := 3.0;   // Monitoring time of auxiliary valve for expected change of feedback [s]
+      RstOp : Bool := FALSE;   // Operator reset signal
+      Permit_ST : Byte := BYTE#16#FF;   // Permit Signal Status
+      PermCls_ST : Byte := BYTE#16#FF;   // PermCls Signal Status
+      Intlock_ST : Byte := BYTE#16#FF;   // Intlock Signal Status
+      IntlCls_ST : Byte := BYTE#16#FF;   // IntlCls Signal Status
+      Protect_ST : Byte := BYTE#16#FF;   // Protect Signal Status
+      ProtCls_ST : Byte := BYTE#16#FF;   // ProtCls Signal Status
+      TimeFactor : Int := 0;   // Time Conversion Factor (0- Sec, 1- Min, 2- Hour)
+      BatchID : DWord := 16#0;   // Current Batch ID (number)
+      BatchName : String[16] := '';   // Current Batch name
+      StepNo : DWord := 16#0;   // Batch step number
+      MV { ExternalWritable := 'False'} : Real;   // Manipulated variable, Control output
+      MV_ST { ExternalWritable := 'False'} : Byte := BYTE#16#80;   // MV Signal Status
+      MV_ExtOut { ExternalWritable := 'False'} : Real;   // External manipulated variable output
+      MV_IntOut { ExternalWritable := 'False'} : Real := 0.0;   // Internal setpoint output
+      MV_RateTarget { ExternalWritable := 'False'} : Real := 0.0;   // Target  for limitation of manipulated variable gradients
+      MV_RemRT { ExternalWritable := 'False'} : Real := 0.0;   // Remaining ramp time of manipulated variable
+      CurrMon { ExternalWritable := 'False'} : DInt := 0;   // Remaining monitoring time of valve [s]
+      CurrMonAuxV { ExternalWritable := 'False'} : DInt := 0;   // Remaining monitoring time of auxiliary valve [s]
+      Ctrl { ExternalWritable := 'False'} : Bool;   // Control output (dependent from SafePosAux)
+      RbkOut { ExternalWritable := 'False'} : Real;   // Readback value output
+      ER { ExternalWritable := 'False'} : Real;   // MV difference
+      OS_PermOut { ExternalWritable := 'False'} : DWord := DWORD#16#FFFF_FFFF;   // Operator Permission: Output for OS
+      OS_PermLog { ExternalWritable := 'False'} : DWord := DWORD#16#FFFF_FFFF;   // Operator Permission: Output for OS
+      OS1PermOut { ExternalWritable := 'False'} : DWord := DWORD#16#FFFF_FFFF;   // Operator Permission: Output for OS
+      OS1PermLog { ExternalWritable := 'False'} : DWord := DWORD#16#FFFF_FFFF;   // Operator Permission: Output for OS
+      OpSt_Out { ExternalWritable := 'False'} : DWord := 16#0;   // Enabled operator stations
+      ST_Worst { ExternalWritable := 'False'} : Byte := BYTE#16#80;   // Worst signal status
+      AutoST { ExternalWritable := 'False'} : Byte := BYTE#16#80;   // Worst Signal Status of the automatic commands
+      Status1 { ExternalWritable := 'False'} : DWord := 16#0;   // Status1 word
+      Status2 { ExternalWritable := 'False'} : DWord := 16#0;   // Status2 word
+      Status3 { ExternalWritable := 'False'} : DWord := 16#0;   // Status3 word
+      Status4 { ExternalWritable := 'False'} : DWord := 16#0;   // Status4 word
+      Status5 { ExternalWritable := 'False'} : DWord := 16#0;   // Status5 word
+      AlarmState { ExternalWritable := 'False'} : Word;   // Alarm Status for group display
+   END_STRUCT;
+
+END_TYPE
+

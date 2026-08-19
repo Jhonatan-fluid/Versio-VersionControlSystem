@@ -1,128 +1,344 @@
 # Driving TIA Portal
 
-**Date opened:** 2026-08-19 · Beside `Versio.Plc.TiaPortal*` — one vendor's docs, beside its
+**Date:** 2026-08-19 · Beside `Versio.Plc.TiaPortal*` — one vendor's docs, beside its
 projects. How TIA Portal is driven, and what was measured rather than assumed.
 
-Versio is not a TIA Portal tool. This file is what the CODESYS `DRIVING.md` is for CODESYS:
-the traps, the protocol, the payload, the refusals. Neutral code must not grow any of it.
+| | |
+|---|---|
+| Document | **The TIA Portal integration, end to end.** Which Openness surface Versio uses, how the net48 host is launched, what crosses the boundary, what every job does, and where the seams and the gaps are |
+| Audience | An engineer who has to change the export, the import, the host or the runner — or add a third vendor beside the first two |
+| Related | [`STATUS.md`](../../STATUS.md) · [`PHASE2.md`](../../PHASE2.md) §7 · [`SAFEGUARDS.md`](../../SAFEGUARDS.md) · the first vendor's [`vendors/codesys/DRIVING.md`](../codesys/DRIVING.md) |
+
+Versio is not a TIA Portal tool. Neutral code must not grow any of this. TwinCAT will be a
+directory project too; that is `PayloadPathFor` / `CopyTreeAsync` growing, not a brand leaking.
 
 ---
 
-## Install (measured 2026-08-19)
+## 0. In one paragraph
+
+Versio never parses an `.apXX` file. A TIA project is a **directory** whose pointer is ~150 KB
+and whose program lives in `System/` (~445 MB on the gate fixture). Openness — Siemens's
+automation API — is **.NET Framework 4.8**; Versio is **net9.0-windows**. They cannot share a
+process. A net48 helper (`Versio.Plc.TiaPortal.Host`) loads `Siemens.Engineering*.dll` from the
+install at runtime, opens the project **without a UI**, and talks back over stdout with the same
+`@@VERSIO@@` JSON-lines the first vendor's scripts use. The host is the analogue of
+`CODESYS.exe --noUI --runscript`. Siemens DLLs are never shipped.
+
+PLC software (SCL blocks, UDTs, tag tables) is the round-trip subject. Hardware, HMI, safety
+and technology objects are coverage skips.
+
+---
+
+## 1. The three projects
+
+| Project | Role |
+|---|---|
+| `Versio.Plc.TiaPortal` | Pure. Format (`.ap17`–`.ap21`, `.alXX` as template), directory payload, occupancy, transients, import planner, SCL header, SimaticML scrubber, `TiaJob` / `TiaProtocol` |
+| `Versio.Plc.TiaPortal.Infrastructure` | Driven. Locator, toolchain (refuses if several Portal versions are installed), `LocalTiaPortalRunner`, `TiaPortalPack.Register()` |
+| `Versio.Plc.TiaPortal.Host` | net48 x64 exe. Reflection / `dynamic` against Openness. `[STAThread]`. `OpennessLoader` installs `AssemblyResolve` **before** any Openness type is touched |
+
+`Versio.App` has a second `ProjectReference` and calls `TiaPortalPack.Register()` **after**
+`CodesysPack.Register()`, so `PlcFormats.All[0]` stays the default for anything that still
+picks the first registered format. The log filter includes `TiaPortalLog.Category` (`TiaPortal`),
+declared on the pack rather than in the neutral `LogCategory` table.
+
+The host does **not** reference `Versio.Core` (different TFM). The JSON job file is the
+contract. `CopyHostToReferrer.targets` copies the exe to `tia\` beside Infrastructure, the app,
+and the real-TIA tests, because a `ProjectReference` cannot carry a net48 output into net9.
+
+---
+
+## 2. Setup (measured 2026-08-19)
+
+### 2.1 Install
 
 | Fact | Value |
 |---|---|
 | Portal | `C:\Program Files\Siemens\Automation\Portal V21` |
-| Openness API | `C:\Program Files\Siemens\Automation\Portal V21\PublicAPI\V21\net48\` |
+| Openness API | `…\PublicAPI\V21\net48\` |
 | Shape | **Modular DLLs**, not the historical single `Siemens.Engineering.dll` |
 | Required | `Siemens.Engineering.Base.dll`, `Siemens.Engineering.Step7.dll` |
-| Host TFM | net48 x64. Versio is net9.0-windows. They cannot share a process. |
+| Host TFM | net48 x64 |
 
-The host resolves those DLLs from the install at runtime (`Private=false`, `AssemblyResolve`
-before any Openness type is used). They are never shipped.
+`TiaPortalLocator` walks `Program Files\Siemens\Automation\Portal V*` and takes the `PublicAPI\<version>\net48` folder that contains `Siemens.Engineering.Base.dll`. Version is the folder name (`V21`), not a file version — guessing a newer PublicAPI is how `OpenWithUpgrade` happens by accident.
 
-Do not call `OpenWithUpgrade`. That silently upgrades a project, the same class of mistake
+**Do not call `OpenWithUpgrade`.** That silently upgrades a project, the same class of mistake
 `ProfileResolver` refuses when several CODESYS profiles exist. The host looks up
 `Projects.Open(FileInfo)` and refuses if that overload is missing.
 
-## Openness access (measured 2026-08-19)
+Several Portal versions on one machine make the toolchain **unavailable** until one is picked.
+A project opened against the wrong PublicAPI is an upgrade.
 
-Local group **`Siemens TIA Openness` exists and has zero members.** Adding
-`rog-jvm\elli_` failed with Access denied (error 5). The first `Projects.Open` is therefore
-expected to fail until that membership is granted and the user logs off and on.
+### 2.2 Windows group `Siemens TIA Openness`
 
-The first successful connect also needs **Yes to all** on the Openness firewall AllowList
-(path + hash + timestamp). A debug rebuild of the host changes the hash and drops off the
-list.
+Openness will not open a project unless the **process token** is in this local group. Adding
+the account is not enough: the user must **sign out and in**. `whoami /groups` must show
+`…\Siemens TIA Openness`.
 
-Until those two are true, `TiaPortalGateTests.Probe_opens_the_scratch_fixture_or_explains_why_not`
-skips with the host's reason rather than going red. That skip is the record, not a silent pass.
+Until membership is present, `Projects.Open` fails in ~3 s with the group error. The gate
+skips with that reason rather than going red. That skip is the record on a machine without
+Portal.
 
-## Fixture
+On this machine: group existed empty; `net localgroup … /add` needed elevation; after
+`elli_` was added and a new logon, the token carried the group.
 
-Scratch copy only, gitignored:
+### 2.3 Firewall AllowList
 
-`C:\GIT\Versio\.versio\local\tia\CleaningStation_V20_V21`
+The first successful connect also needs **Yes to all** on the Openness access dialog
+(path + hash + timestamp of the host exe). Window title: `Openness access (0033:000666)`.
 
-Never write the OneDrive original. Do not commit this tree. `.ap21` is ~151 KB; the program
-lives in `System/` (~488 MB together). TIA cannot open the pointer file alone.
-
-`ProjectInfo.txt`: TIA V21.0, STEP 7 Professional V21. Upgraded V20→V21 on 2026-08-19.
-HMI (`HMI_RT`) and MTP Creator exports are coverage skips, not roundtrip subjects.
-
-## Payload
-
-The project is a **directory**. `IPlcProjectFormat.PayloadPathFor` returns the folder
-containing the `.apXX`. Sync copies, hashes, backs up and restores that folder. `Logs/` and
-`tmp/` do not count toward the project hash. **`System/` does** — skipping it would hash a
-150 KB pointer and call a half-gigabyte project unchanged.
-
-Ten folder backups are bounded and heavy (~5 GB). Restore copies the tree back. The backup
-catalogue lists **immediate children** of the backup folder; walking files underneath a tree
-copy would prune the newest backup from the inside.
-
-## Occupancy
-
-**Measured 2026-08-19, TIA closed.** The scratch tree has no CODESYS-style `.~u` sidecar.
-Top-level names: `CleaningStation_V20_V21.ap21`, `System/`, `IM/`, `Logs/`, `tmp/`,
-`Vci/`, `XRef/`, `AdditionalFiles/`, `UserFiles/`, `src/`, `ProjectInfo.txt`.
-
-`OccupancyMarkerFor` returns null, so the probe reports free. The backstop is
-`Projects.Open` failing when another instance holds the project, or when this user is
-not in the Openness group. Export-while-open is a **wait**: exclusive open, and a 488 MB
-copy is not the first vendor's sidecar copy.
-
-Attach-to-running is a different design and is not used.
-
-`Vci/` is Siemens's competing git exporter. It is ignored for the project hash and listed
-as a transient; Versio must not write into it.
-
-## First host run (measured 2026-08-19)
-
-`TiaPortalGateTests.Probe_opens_the_scratch_fixture_or_explains_why_not` started the
-net48 host against the scratch `.ap21`. It returned in **~3 s** with:
+A debug rebuild of the host changes the hash and drops off the list. An unanswered dialog is:
 
 ```
-Owner 'ROG-JVM\elli_' of this process is not member of the windows group
-'Siemens TIA Openness'
+Security error. The operation has timed out.
 ```
 
-That is the skip reason, not a hang and not a product bug. Cold start of a successful
-`WithoutUserInterface` session is still untimed. Determinism, round-trip, create/rename/
-delete via Openness, and a one-line SCL edit's payload churn wait on group membership.
+Measured at **8 min 53 s**. That string names neither `Access` nor `Openness`, so the gate
+used to go red instead of skip until those words were added to the skip matcher.
 
-## Identity
+### 2.4 Closing before a rebuild
 
-Manifest `guid` prefers SimaticML `UId` when the XML export carries one. Fallback is
-`{device}/{plc}/{type}/{name}#{number}` — recorded so a rename can still be a rename once a
-stable UId is measured on a real export, not used as the thing a rename is keyed on.
+A running `Versio.exe` locks its binaries. A running Portal / host holds the project
+exclusively. Close **both** before rebuilding, same rule as the first vendor.
 
-## Round trip (PLC software)
+---
 
-In: SCL blocks, UDTs, DBs, tag tables.
+## 3. How the host is launched
 
-Out / coverage skip: hardware, HMI, safety (`F_*` languages), technology objects,
-know-how-protected import, system blocks, VCI, Project Server, compile-after-import.
+```
+Versio.Plc.TiaPortal.Host.exe <job.json>
+```
+
+`LocalTiaPortalRunner` writes the job beside `%TEMP%`, takes
+`Global\Versio.TiaPortal.SingleInstance` (15 min wait), and reads stdout for `@@VERSIO@@`
+lines. Timeout floor is **20 minutes** — a 488 MB project is not the first vendor's 20-second
+session. `TypicalStartupCost` is **45 s** (measured warm probe 42 s, warm export 37 s).
+
+The job schema (`TiaJob` / `JobReader`):
+
+| Field | Meaning |
+|---|---|
+| `op` | `probe` / `export` / `import` |
+| `schema` | 1 |
+| `project` | absolute path to the `.apXX` |
+| `out` | export destination (probe, export) |
+| `src` | import source directory |
+| `apiFolder` | `PublicAPI\V21\net48` |
+| `install` | Portal folder |
+| `save` | import only; export and probe do not save |
+| `timeoutSeconds` | at least 1200 |
+| `plan` | confirmed `ImportPlan` JSON; an import without one refuses to serialise |
+
+---
+
+## 4. Openness members Versio actually uses
+
+Loaded by name so the host compiles without Siemens DLLs on the build machine.
+`OpennessLoader` `LoadFrom`s every `Siemens.Engineering*.dll` in `apiFolder` and resolves
+the rest; optional products (Safety, WinCC) may be absent.
+
+Every call below is **reflection**. A missing overload is a refusal, not a guess.
+
+### 4.1 Session
+
+| Member | Used by | Notes |
+|---|---|---|
+| `new TiaPortal(TiaPortalMode.WithoutUserInterface)` | every job | STA thread required; MTA fails with a threading exception that looks like a missing install |
+| `portal.Projects` | every job | |
+| `Projects.Open(FileInfo)` | every job | **The only open used.** `OpenWithUpgrade` is not looked up |
+| `project.Name` / `Path` | probe | |
+| `project.Devices` | walk | |
+| `device.DeviceItems` (recursive) | walk | PLC software is nested under the station |
+| `deviceItem.Software` as `PlcSoftware` | walk | |
+| `project.Save()` | import, when `save` | |
+| `IDisposable` on project and portal | finally | |
+
+Attach-to-running is a different design and is **not used**. Exclusive open: if Portal already
+holds the project, `Open` fails and the runner reports it.
+
+### 4.2 Walk (PLC software only)
+
+| Member | Used by |
+|---|---|
+| `PlcSoftware.BlockGroup` / `.Blocks` / `.Groups` | export, import, probe counts |
+| `PlcSoftware.TypeGroup` / `.Types` / `.Groups` | export |
+| `PlcSoftware.TagTableGroup` / `.TagTables` / `.Groups` | export |
+| `block.Name`, `Number`, `ProgrammingLanguage`, `IsKnowHowProtected` | export |
+| `block.Export(FileInfo, ExportOptions.None)` | SimaticML beside every object |
+| `IGenerateSource.GenerateSource(FileInfo)` on the block | SCL / `.udt` |
+| `ExternalSourceGroup.GenerateSource(collection, FileInfo)` | fallback when the block has no `IGenerateSource` |
+
+Languages starting `F_` are safety — coverage skip. Know-how-protected blocks export for
+review and are not imported.
+
+### 4.3 Import (confirmed plan only)
+
+| Member | Used by | Notes |
+|---|---|---|
+| `block.Name = newName` | rename | Identity is name+number, so this is the rename |
+| `PlcBlock.Delete()` | delete | Refused when `cannotVerify` is set |
+| `ExternalSourceGroup.CreateFromFile` / `CreateFrom` | SCL apply / create | Existing source of the same file name is deleted first |
+| `externalSource.GenerateBlocksFromSource(Overwrite)` | SCL apply / create | Overload hunting: Openness versions disagree on the option enum |
+| `BlockGroup.Blocks.Import(FileInfo, ImportOptions.Override)` | native XML | LAD/FBD; SimaticML marked `XML_REVIEW` is **never** this path |
 
 G12: one object, one importable file. SCL (or `.udt`) imports; the SimaticML beside it is
 `XML_REVIEW` and is never applied back. Importing both puts the old body back.
 
-The host timeout floor is 20 minutes. `TypicalStartupCost` is 2 minutes until a cold start is
-timed on this machine.
+---
 
-## Protocol
+## 5. Payload, hash, occupancy
+
+The project is a **directory**. `IPlcProjectFormat.PayloadPathFor` returns the folder
+containing the `.apXX`. Sync copies, hashes, backs up and restores that folder.
+
+| Counts toward the project hash | Does not |
+|---|---|
+| `System/` (the program) | `Logs/`, `tmp/`, `Vci/` |
+| `.apXX`, `IM/`, `UserFiles/`, … | root-level `<stem>.info` (occupancy) |
+| | any file whose name starts with `~` (`System/~PEData.1`) |
+
+Skipping `System/` would hash a 150 KB pointer and call a half-gigabyte project unchanged.
+`Vci/` is Siemens's competing git exporter sitting inside the tree — hashing it would make
+somebody else's workspace look like a program change. Versio must not write into it.
+
+Ten folder backups are bounded and heavy (~5 GB at this fixture size). Restore copies the
+tree back. Backup names that collide in the same second get `-2`, `-3` rather than
+overwriting the copy they are about to restore.
+
+### Occupancy (measured 2026-08-19, Openness holding CleaningStation)
+
+No CODESYS-style `.~u` sidecar. While `Projects.Open` holds the project:
+
+| Path | When |
+|---|---|
+| `<stem>.info` beside the `.apXX` | Appeared 16 s after open, **gone** when the host exited |
+| `System/~PEData.1` | Appeared two seconds later, **gone** on close |
+| `Logs/` size | Churns (already excluded from the hash) |
+
+`OccupancyMarkerFor` is `ChangeExtension(projectPath, ".info")`. Existence is Held. The
+body is not parsed — a leftover after a crash stays Held rather than guessed Free. Stale
+recovery needs a pid, which this marker has not been shown to carry.
+
+`System/~PEData.*` is a transient inside the program folder, not the marker the probe watches.
+
+Export-while-open **in the GUI** is still a wait: exclusive `Projects.Open`, and a 488 MB copy
+is not the first vendor's sidecar copy. GUI occupancy (Portal with a window, no Openness) is
+unmeasured.
+
+Closed, top-level names: `.ap21`, `System/`, `IM/`, `Logs/`, `tmp/`, `Vci/`, `XRef/`,
+`AdditionalFiles/`, `UserFiles/`, `src/`, `ProjectInfo.txt`. `System/` then is `PEData.idx`
+and `PEData.plf` only.
+
+---
+
+## 6. Identity
+
+Manifest `guid` is `{device}/{plc}/{type}/{name}#{number}` (UDT and tag tables omit the
+number). Example: `ET 200SP station_2/CleaningStation/FB/Level#11`.
+
+SimaticML `UId` is **not** used. It is per-document numbering:
+
+| Attempt | Result |
+|---|---|
+| First `UId` in the XML | every guid `"0"` (wrapper) |
+| Skip `"0"` | every guid `"1"` |
+| Count of distinct `UId` values in 159 XML files | **26,661**, most common `"35"` |
+
+A GUID-shaped value would be accepted if a future export carried one. Rename pairing is
+content hash, then text similarity / line sketch against `departed` — the same shape as the
+first vendor when a GUID is missing. TIA folders are not recorded objects; `NewParent` is
+the arrival path prefix.
+
+---
+
+## 7. Export shape
+
+Warm export of CleaningStation (measured 2026-08-19): **~37 s**, 270 form records, 159 unique
+identities, 58 coverage skips.
+
+| Files | Forms | Types |
+|---|---|---|
+| 18 `.scl`, 93 `.udt`, 159 `.xml` | 111 SCL + 111 XML_REVIEW + 48 NATIVE | 24 DB, 29 FB, 26 FC, 4 OB, 186 UDT, 1 tag table |
+
+Namespaced as `ET 200SP station_2/CleaningStation/…`. Manifest schema 9. `_coverage.md`
+names Hardware, HMI, safety, technology.
+
+Textual hashes are UTF-8 **without BOM** so they match `ContentHash.Of`. Siemens
+`GenerateSource` writes a BOM; hashing the raw file would make every rename pairing miss.
+`_manifest.json` is also without BOM — `System.Text.Json` rejects one.
+
+Out / coverage skip: hardware, HMI, safety (`F_*`), technology objects, know-how-protected
+import, system blocks, VCI, Project Server, compile-after-import.
+
+---
+
+## 8. Protocol
 
 JSON-lines, marker `@@VERSIO@@`, field `t` — the same shape as the first vendor's scripts so
 the heartbeat and the log filter are not a second language. The emitter is C#, in the net48
 host.
 
-## VCI
+Events: `info`, `object`, `warning`, `fatal`, `done`. Heartbeat is the runner's, not the
+host's: a silent host looks like a hang, so the 20-minute floor is the backstop.
 
-A competing Siemens git exporter. Do not write into a VCI workspace.
+---
 
-## Harnesses
+## 9. The fixture
 
-Close Versio **and** TIA Portal first.
+**Committed, Git LFS**, at:
+
+```
+fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21.ap21
+```
+
+The directory beside that pointer **is** the project (`System/` ~445 MB, plus `IM/`,
+`UserFiles/`, …). The Versio mirror is the conventional export path — the stem next to the
+pointer:
+
+```
+fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21/
+```
+
+`Logs/`, `tmp/`, `Vci/` are not in the tree. `.gitattributes` sends the payload through LFS
+and keeps the mirror as text.
+
+`ProjectInfo.txt`: TIA V21.0, STEP 7 Professional V21. Upgraded V20→V21 on 2026-08-19.
+HMI (`HMI_RT`) and MTP Creator exports are coverage skips.
+
+**Never write the OneDrive original**
+(`C:\Users\elli_\OneDrive\Documentos\Automation\CleaningStation_V20_V21`). That copy is not
+the fixture.
+
+This repository's `.versio/repo.json` **ignores** the fixture, so opening Versio on Versio
+does not adopt a 488 MB TIA tree and start exporting it. The first vendor's
+`RefrigeratorControl.project` is the opposite — it is both the gate fixture and a working
+project, which is a known loose end. Do not repeat that here.
+
+A clone without `git lfs pull` gets a 130-byte pointer. `TestPaths.TiaPortalProject()`
+returns null and the gate skips. Mutating round-trips (`Test-RoundTrip.ps1 -MutateFirst`)
+write **this** tree; close Versio and Portal first.
+
+A private scratch copy still exists at `.versio/local/tia/` (gitignored) if a test needs to
+destroy a tree that is not the committed one.
+
+---
+
+## 10. First host runs (measured 2026-08-19)
+
+| Run | Result |
+|---|---|
+| Probe (group missing) | ~3 s, skip with the group error |
+| Probe (group present, AllowList unanswered) | 8 m 53 s, `Security error. The operation has timed out.` |
+| Probe (AllowList accepted) | **42 s**, `report.json` written |
+| Export | **~37 s**, 270 forms, 159 identities, 58 skips |
+
+Cold start of a first AllowList session is the 8-minute timeout, not the 42 s success.
+
+---
+
+## 11. Harnesses
+
+Close Versio **and** TIA Portal first. Default project is the committed fixture.
 
 ```
 tools/tia/Test-RoundTrip.ps1 -MutateFirst
@@ -132,3 +348,19 @@ tools/tia/Measure-ImportStability.ps1
 Layered verdict: textual must match; native XML is expected to differ; never a single
 `Lossless: False`. `-MutateFirst` is mandatory — without it a round trip that writes nothing
 passes vacuously.
+
+The C# gate is `tests/Versio.Plc.TiaPortal.Tests` (3 tests, `[Collection("tia-portal")]`).
+Skip is the success path when Portal, Openness membership, AllowList, or LFS content is
+missing.
+
+---
+
+## 12. What is not done
+
+- GUI occupancy (Portal holding the project with a window, no Openness session)
+- Attach-to-running
+- Hardware / HMI / safety / technology round-trip
+- Compile-after-import
+- A P7 SETTLES measurement on this fixture (`Measure-ImportStability.ps1` exists; it has not
+  been run to a recorded verdict)
+- Treating this fixture as a daily working project inside this repository (deliberately ignored)

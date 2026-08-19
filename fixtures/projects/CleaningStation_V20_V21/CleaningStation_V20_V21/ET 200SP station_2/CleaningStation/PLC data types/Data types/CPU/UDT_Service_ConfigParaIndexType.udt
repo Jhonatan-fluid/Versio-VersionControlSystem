@@ -1,0 +1,11 @@
+﻿TYPE "UDT_Service_ConfigParaIndexType"
+VERSION : 0.1
+   STRUCT
+      IndexAnalog { S7_SetPoint := 'True'} : DWord;   // Reference for Index number of the analog parameter
+      IndexDigital { S7_SetPoint := 'True'} : DWord;   // Reference for Index number of the digital parameter
+      IndexBinary { S7_SetPoint := 'True'} : DWord;   // Reference for Index number of the binary parameter
+      IndexString { S7_SetPoint := 'True'} : DWord;   // Reference for Index number of the string parameter
+   END_STRUCT;
+
+END_TYPE
+

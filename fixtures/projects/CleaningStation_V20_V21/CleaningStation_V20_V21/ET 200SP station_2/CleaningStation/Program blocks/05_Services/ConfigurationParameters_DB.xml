@@ -1,0 +1,165 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Document>
+  <Engineering version="V21" />
+  <DocumentInfo>
+    <Created>2026-08-19T17:13:16.1080188Z</Created>
+    <ExportSetting>None</ExportSetting>
+    <InstalledProducts>
+      <Product>
+        <DisplayName>Totally Integrated Automation Portal</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>STEP 7 Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <OptionPackage>
+        <DisplayName>STEP 7 Safety</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <OptionPackage>
+        <DisplayName>Tech WebApplication</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <Product>
+        <DisplayName>WinCC Basic/Comfort/Advanced</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Unified</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+    </InstalledProducts>
+  </DocumentInfo>
+  <SW.Blocks.InstanceDB ID="0">
+    <AttributeList>
+      <HeaderAuthor>Siemens AG</HeaderAuthor>
+      <HeaderFamily>ServiceControl</HeaderFamily>
+      <HeaderVersion>1.0</HeaderVersion>
+      <InstanceOfName>ConfigurationParameters</InstanceOfName>
+      <InstanceOfType>FB</InstanceOfType>
+      <Interface>
+        <Sections xmlns="http://www.siemens.com/automation/Openness/SW/Interface/v5">
+          <Section Name="Input" />
+          <Section Name="Output" />
+          <Section Name="InOut" />
+          <Section Name="Static">
+            <Member Name="MTPAnalog" Datatype="Array[0..0] of &quot;UDT_MTP_AnaServParam&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="SetPoint" SystemDefined="true">true</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="MTPDigital" Datatype="Array[0..0] of &quot;UDT_MTP_DIntServParam&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="SetPoint" SystemDefined="true">true</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="MTPBinary" Datatype="Array[0..1] of &quot;UDT_MTP_BinServParam&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="SetPoint" SystemDefined="true">true</BooleanAttribute>
+              </AttributeList>
+              <Sections>
+                <Section Name="None">
+                  <Member Name="VExt" Datatype="Bool">
+                    <Subelement Path="0">
+                      <StartValue>True</StartValue>
+                    </Subelement>
+                  </Member>
+                  <Member Name="VOp" Datatype="Bool">
+                    <Subelement Path="0">
+                      <StartValue>True</StartValue>
+                    </Subelement>
+                  </Member>
+                  <Member Name="VInt" Datatype="Bool">
+                    <Subelement Path="0">
+                      <StartValue>True</StartValue>
+                    </Subelement>
+                  </Member>
+                  <Member Name="VReq" Datatype="Bool">
+                    <Subelement Path="0">
+                      <StartValue>True</StartValue>
+                    </Subelement>
+                  </Member>
+                  <Member Name="VOut" Datatype="Bool">
+                    <Subelement Path="0">
+                      <StartValue>True</StartValue>
+                    </Subelement>
+                  </Member>
+                  <Member Name="VState0" Datatype="String[16]">
+                    <Subelement Path="0">
+                      <StartValue>'Other PEA not co'</StartValue>
+                    </Subelement>
+                  </Member>
+                  <Member Name="VState1" Datatype="String[16]">
+                    <Subelement Path="0">
+                      <StartValue>'Other PEA connec'</StartValue>
+                    </Subelement>
+                  </Member>
+                </Section>
+              </Sections>
+            </Member>
+            <Member Name="MTPString" Datatype="Array[0..0] of &quot;UDT_MTP_StringServParam&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="SetPoint" SystemDefined="true">true</BooleanAttribute>
+              </AttributeList>
+            </Member>
+          </Section>
+        </Sections>
+      </Interface>
+      <Name>ConfigurationParameters_DB</Name>
+      <Namespace />
+      <Number>32</Number>
+      <ProgrammingLanguage>DB</ProgrammingLanguage>
+    </AttributeList>
+    <ObjectList>
+      <MultilingualText ID="1" CompositionName="Comment">
+        <ObjectList>
+          <MultilingualTextItem ID="2" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="3" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="4" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+      <MultilingualText ID="5" CompositionName="Title">
+        <ObjectList>
+          <MultilingualTextItem ID="6" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="7" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="8" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+    </ObjectList>
+  </SW.Blocks.InstanceDB>
+</Document>

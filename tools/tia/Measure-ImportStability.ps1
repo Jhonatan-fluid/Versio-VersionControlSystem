@@ -13,13 +13,13 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 
 if (-not $Project) {
-    $scratch = Join-Path $root ".versio\local\tia"
-    $Project = Get-ChildItem -Path $scratch -Filter "*.ap21" -Recurse -ErrorAction SilentlyContinue |
+    $committed = Join-Path $root "fixtures\projects\CleaningStation_V20_V21"
+    $Project = Get-ChildItem -Path $committed -Filter "*.ap21" -ErrorAction SilentlyContinue |
         Select-Object -First 1 -ExpandProperty FullName
 }
 
-if (-not $Project -or -not (Test-Path $Project)) {
-    Write-Error "No .ap21 fixture under .versio/local/tia/"
+if (-not $Project -or -not (Test-Path $Project) -or ((Get-Item $Project).Length -lt 1024)) {
+    Write-Error "No real .ap21 fixture under fixtures/projects/CleaningStation_V20_V21/ (git lfs pull)."
 }
 
 $hostExe = @(

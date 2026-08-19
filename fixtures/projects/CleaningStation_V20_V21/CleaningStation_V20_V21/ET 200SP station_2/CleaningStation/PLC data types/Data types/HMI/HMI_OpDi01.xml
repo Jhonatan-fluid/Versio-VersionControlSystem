@@ -1,0 +1,200 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Document>
+  <Engineering version="V21" />
+  <DocumentInfo>
+    <Created>2026-08-19T17:13:21.3274834Z</Created>
+    <ExportSetting>None</ExportSetting>
+    <InstalledProducts>
+      <Product>
+        <DisplayName>Totally Integrated Automation Portal</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>STEP 7 Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <OptionPackage>
+        <DisplayName>STEP 7 Safety</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <OptionPackage>
+        <DisplayName>Tech WebApplication</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <Product>
+        <DisplayName>WinCC Basic/Comfort/Advanced</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Unified</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+    </InstalledProducts>
+  </DocumentInfo>
+  <SW.Types.PlcStruct ID="0">
+    <AttributeList>
+      <Interface>
+        <Sections xmlns="http://www.siemens.com/automation/Openness/SW/Interface/v5">
+          <Section Name="None">
+            <Member Name="SetOp" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Operator Digital Input</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Operator Digital Input</MultiLanguageText>
+              </Comment>
+              <StartValue>FALSE</StartValue>
+            </Member>
+            <Member Name="RstOp" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Operator Reset Signal</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Operator Reset Signal</MultiLanguageText>
+              </Comment>
+              <StartValue>FALSE</StartValue>
+            </Member>
+            <Member Name="SetLi" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Linkable Digital Input</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Linkable Digital Input</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="RstLi" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Linkable Reset Signal</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Linkable Reset Signal</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="Intlock" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> 0=Interlocked, 1=Not Interlocked</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> 0=Interlocked, 1=Not Interlocked</MultiLanguageText>
+              </Comment>
+              <StartValue>true</StartValue>
+            </Member>
+            <Member Name="Intlock_ST" Datatype="Byte">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Intlock Signal Status</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Intlock Signal Status</MultiLanguageText>
+              </Comment>
+              <StartValue>BYTE#16#FF</StartValue>
+            </Member>
+            <Member Name="OnOp" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> 1=On Mode: On Mode by Operator</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> 1=On Mode: On Mode by Operator</MultiLanguageText>
+              </Comment>
+              <StartValue>FALSE</StartValue>
+            </Member>
+            <Member Name="OosOp" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> 1=Oos Mode: Oos Mode by Operator</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> 1=Oos Mode: Oos Mode by Operator</MultiLanguageText>
+              </Comment>
+              <StartValue>FALSE</StartValue>
+            </Member>
+            <Member Name="OS_PermOut" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Operator Permission: Output for OS</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Operator Permission: Output for OS</MultiLanguageText>
+              </Comment>
+              <StartValue>DWORD#16#FFFF_FFFF</StartValue>
+            </Member>
+            <Member Name="OS_PermLog" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Operator Permission: Output for OS</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Operator Permission: Output for OS</MultiLanguageText>
+              </Comment>
+              <StartValue>DWORD#16#FFFF_FFFF</StartValue>
+            </Member>
+            <Member Name="OpSt_Out" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Enabled operator stations</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Enabled operator stations</MultiLanguageText>
+              </Comment>
+              <StartValue>16#0</StartValue>
+            </Member>
+            <Member Name="ST_Worst" Datatype="Byte">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Worst Signal Status</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Worst Signal Status</MultiLanguageText>
+              </Comment>
+              <StartValue>16#80</StartValue>
+            </Member>
+            <Member Name="Status" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Status Word</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Status Word</MultiLanguageText>
+              </Comment>
+              <StartValue>16#0</StartValue>
+            </Member>
+          </Section>
+        </Sections>
+      </Interface>
+      <Name>HMI_OpDi01</Name>
+      <Namespace />
+    </AttributeList>
+    <ObjectList>
+      <MultilingualText ID="1" CompositionName="Comment">
+        <ObjectList>
+          <MultilingualTextItem ID="2" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="3" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="4" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+      <MultilingualText ID="5" CompositionName="Title">
+        <ObjectList>
+          <MultilingualTextItem ID="6" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="7" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="8" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+    </ObjectList>
+  </SW.Types.PlcStruct>
+</Document>

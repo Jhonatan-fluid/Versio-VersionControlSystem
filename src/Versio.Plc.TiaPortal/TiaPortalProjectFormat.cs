@@ -20,9 +20,9 @@ public sealed class TiaPortalProjectFormat : IPlcProjectFormat
     public string DisplayName => "TIA Portal";
 
     /// <remarks>
-    /// Startup cost is a floor until Phase 0 measures a cold start on this machine.
-    /// The host still uses a twenty-minute timeout because a 488 MB project export is
-    /// not the first vendor's 20-second session.
+    /// Measured 2026-08-19: a warm probe of CleaningStation is 42 s, a warm export 37 s.
+    /// The host still uses a twenty-minute timeout because a 488 MB project and a first
+    /// AllowList dialog (8 min 53 s unanswered) are not the first vendor's 20-second session.
     /// </remarks>
     public PlcCapabilities Capabilities => new()
     {
@@ -30,7 +30,7 @@ public sealed class TiaPortalProjectFormat : IPlcProjectFormat
         TextualImport = true,
         ObjectCreation = true,
         Headless = true,
-        TypicalStartupCost = TimeSpan.FromMinutes(2),
+        TypicalStartupCost = TimeSpan.FromSeconds(45),
     };
 
     /// <remarks>
@@ -84,21 +84,43 @@ public sealed class TiaPortalProjectFormat : IPlcProjectFormat
     /// Siemens's own git exporter sitting inside the tree — hashing it would make
     /// somebody else's workspace look like a program change. <c>System/</c> is the
     /// program — skipping it would make a 150 KB pointer the whole hash of a
-    /// half-gigabyte project.
+    /// half-gigabyte project. The occupancy sidecar <c>.info</c> and
+    /// <c>System/~PEData.*</c> appear while Openness holds the project and vanish on
+    /// close; hashing them would mark every in-flight export as a program change.
     /// </remarks>
     public bool CountsTowardProjectHash(string relativePath)
     {
-        var first = relativePath.Replace('\\', '/').Split('/')[0];
-        return !string.Equals(first, "Logs", StringComparison.OrdinalIgnoreCase)
-               && !string.Equals(first, "tmp", StringComparison.OrdinalIgnoreCase)
-               && !string.Equals(first, "Vci", StringComparison.OrdinalIgnoreCase);
+        var normalised = relativePath.Replace('\\', '/');
+        var parts = normalised.Split('/');
+        var first = parts[0];
+        var file = parts[^1];
+        if (string.Equals(first, "Logs", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(first, "tmp", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(first, "Vci", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (file.StartsWith('~'))
+        {
+            return false;
+        }
+
+        return parts.Length != 1
+               || !file.EndsWith(".info", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
-    /// No sidecar has been measured. A null marker reads as free; the host's open is
-    /// the backstop, and an exclusive open that fails is reported rather than guessed.
+    /// Beside the <c>.apXX</c>, TIA writes <c>&lt;stem&gt;.info</c> while the project is
+    /// held and removes it on close. Measured 2026-08-19 on CleaningStation under an
+    /// Openness <c>Projects.Open</c>: the sidecar appeared 16 s after open, vanished
+    /// when the host exited. <c>System/~PEData.1</c> appears too; that is a transient
+    /// inside the program folder, not the marker the occupancy probe watches.
     /// </summary>
-    public string? OccupancyMarkerFor(string projectPath) => null;
+    public string? OccupancyMarkerFor(string projectPath) =>
+        string.IsNullOrEmpty(projectPath)
+            ? null
+            : System.IO.Path.ChangeExtension(projectPath, ".info");
 
     public IReadOnlyList<string> TransientPatternsFor(string projectPath)
     {
@@ -107,11 +129,30 @@ public sealed class TiaPortalProjectFormat : IPlcProjectFormat
             return [];
         }
 
-        var dir = PayloadPathFor(projectPath.Replace('\\', '/')).Replace('\\', '/').TrimEnd('/');
-        return [dir + "/Logs/", dir + "/tmp/", dir + "/Vci/"];
+        var normalised = projectPath.Replace('\\', '/');
+        var dir = PayloadPathFor(normalised).Replace('\\', '/').TrimEnd('/');
+        var stem = System.IO.Path.GetFileNameWithoutExtension(normalised);
+        return
+        [
+            dir + "/Logs/",
+            dir + "/tmp/",
+            dir + "/Vci/",
+            dir + "/" + stem + ".info",
+            dir + "/System/~*",
+        ];
     }
 
-    public ProjectOccupancy ParseOccupancy(string markerContents) => ProjectOccupancy.Free;
+    /// <remarks>
+    /// Existence is the signal. The <c>.info</c> body was not parsed: a crashed session
+    /// leaving the file behind is still Held, because guessing Free from an unknown
+    /// format is how two writers would share a project. Stale recovery needs a pid,
+    /// which this marker has not been shown to carry.
+    /// </remarks>
+    public ProjectOccupancy ParseOccupancy(string markerContents)
+    {
+        _ = markerContents;
+        return new() { Verdict = OccupancyVerdict.Held };
+    }
 
     public bool NeedsTextToPlan(string relativePath) =>
         TiaPortalImportPlanner.NeedsText(relativePath);

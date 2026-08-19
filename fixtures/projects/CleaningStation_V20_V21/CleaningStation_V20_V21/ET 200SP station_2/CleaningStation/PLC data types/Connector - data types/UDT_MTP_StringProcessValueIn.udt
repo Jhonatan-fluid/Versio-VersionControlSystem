@@ -1,0 +1,10 @@
+﻿TYPE "UDT_MTP_StringProcessValueIn"
+VERSION : 0.1
+   STRUCT
+      WQC { ExternalWritable := 'False'} : Byte := 16#FF;   // Worst Quality Code
+      V : String[40];   // Value
+      VQC : Byte := 16#FF;   // Quality Code of the current received value
+   END_STRUCT;
+
+END_TYPE
+

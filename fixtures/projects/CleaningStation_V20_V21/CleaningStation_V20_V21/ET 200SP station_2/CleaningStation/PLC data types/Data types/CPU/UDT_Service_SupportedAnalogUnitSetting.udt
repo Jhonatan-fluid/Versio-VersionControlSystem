@@ -1,0 +1,11 @@
+﻿TYPE "UDT_Service_SupportedAnalogUnitSetting"
+TITLE = SupportedUnitsSettingStruct
+VERSION : 0.1
+   STRUCT
+      Unit { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Int := 1001;   // Supported Unit
+      VMin { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Real := 0.0;   // Value Low Limit
+      VMax { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Real := 100.0;   // Value High Limit
+   END_STRUCT;
+
+END_TYPE
+

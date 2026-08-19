@@ -1,0 +1,12 @@
+﻿TYPE "UDT_MTP_BinProcessValueIn"
+VERSION : 0.1
+   STRUCT
+      WQC { ExternalWritable := 'False'} : Byte := 16#FF;   // Worst Quality Code CCC
+      V : Bool := false;   // Value
+      VQC : Byte := 16#FF;   // Quality Code of the current received value
+      VState0 { ExternalWritable := 'False'} : String[16] := '';   // text replacement for false
+      VState1 { ExternalWritable := 'False'} : String[16] := '';   // text replacement for true
+   END_STRUCT;
+
+END_TYPE
+

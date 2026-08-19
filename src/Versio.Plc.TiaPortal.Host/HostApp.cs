@@ -13,6 +13,10 @@ namespace Versio.Plc.TiaPortal.Host;
 /// </summary>
 internal static class HostApp
 {
+    // System.Text.Json and ContentHash.Of both reject a BOM. The first export wrote
+    // _manifest.json with one and the analyser could not even parse it.
+    private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+
     public static int Run(string json)
     {
         var job = JobReader.Parse(json);
@@ -136,7 +140,7 @@ internal static class HostApp
         {
             Directory.CreateDirectory(outDir);
             var json = JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(Path.Combine(outDir, "report.json"), json, new UTF8Encoding(true));
+            File.WriteAllText(Path.Combine(outDir, "report.json"), json, Utf8NoBom);
         }
     }
 
@@ -174,7 +178,7 @@ internal static class HostApp
             ["warnings"] = warnings,
         };
         var json = JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true });
-        File.WriteAllText(Path.Combine(outDir, "_manifest.json"), json, new UTF8Encoding(true));
+        File.WriteAllText(Path.Combine(outDir, "_manifest.json"), json, Utf8NoBom);
 
         var md = new StringBuilder();
         md.AppendLine("# Export coverage");
@@ -483,8 +487,10 @@ internal static class HostApp
         }
 
         var xml = File.Exists(xmlPath) ? File.ReadAllText(xmlPath) : "";
-        var uid = TryUid(xml);
-        var guid = uid ?? $"{plc.DeviceName}/{plc.PlcName}/{typeName}/{name}#{number}";
+        // SimaticML UId is a document-local integer (CleaningStation: 26,661 of them,
+        // most common "35"). The first export keyed every object as "0"; skipping 0
+        // keyed them as "1". A rename is paired by content hash, not by this key.
+        var guid = $"{plc.DeviceName}/{plc.PlcName}/{typeName}/{name}#{number}";
         var isScl = language.Equals("SCL", StringComparison.OrdinalIgnoreCase);
         var sclPath = Path.Combine(dir, Sanitize(name) + ".scl");
         var wroteScl = false;
@@ -547,7 +553,7 @@ internal static class HostApp
             {
                 ExportXml(type, xmlPath);
                 var xml = File.ReadAllText(xmlPath);
-                var guid = TryUid(xml) ?? $"{plc.DeviceName}/{plc.PlcName}/UDT/{name}";
+                var guid = $"{plc.DeviceName}/{plc.PlcName}/UDT/{name}";
                 var wrote = false;
                 try
                 {
@@ -615,7 +621,7 @@ internal static class HostApp
             {
                 ExportXml(table, xmlPath);
                 var xml = File.ReadAllText(xmlPath);
-                var guid = TryUid(xml) ?? $"{plc.DeviceName}/{plc.PlcName}/TAG_TABLE/{name}";
+                var guid = $"{plc.DeviceName}/{plc.PlcName}/TAG_TABLE/{name}";
                 Record(objects, guid, name, "TAG_TABLE", "NATIVE", RelTo(xmlPath), HashFile(xmlPath),
                     nhash: HashNormalized(xml));
                 Emit("object", "path", RelTo(xmlPath), "guid", guid);
@@ -768,9 +774,9 @@ internal static class HostApp
                     return block;
                 }
 
-                // Manifest identity prefers SimaticML UId. The Openness object carries
-                // that as a property on some versions and not others; try the usual names
-                // so a rename/delete keyed on UId still finds the block.
+                // Openness may still expose a composition id on the live object. Matching
+                // it is harmless; recording SimaticML's document-local UId as the manifest
+                // guid is what collapsed CleaningStation to a single identity.
                 foreach (var prop in new[] { "UId", "Id", "ObjectId" })
                 {
                     if (string.Equals(Str(block, prop), guid, StringComparison.OrdinalIgnoreCase))
@@ -940,21 +946,6 @@ internal static class HostApp
         catch
         {
             return HashBytes(Encoding.UTF8.GetBytes(xml));
-        }
-    }
-
-    private static string? TryUid(string xml)
-    {
-        try
-        {
-            var doc = XDocument.Parse(xml);
-            return doc.Descendants()
-                .Select(e => (string?)e.Attribute("UId") ?? (string?)e.Attribute("ID"))
-                .FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
-        }
-        catch
-        {
-            return null;
         }
     }
 

@@ -1,0 +1,12 @@
+﻿TYPE "UDT_Service_Information"
+VERSION : 0.1
+   STRUCT
+      state { ExternalWritable := 'False'} : DWord;   // S88 State
+      lastState { ExternalWritable := 'False'} : DWord;   // S88 last State
+      readyToComplete { ExternalWritable := 'False'} : Bool;   // Ready to complete active
+      startTime {InstructionName := 'DTL'; LibVersion := '1.0'; ExternalWritable := 'False'} : DTL;   // Start time of control sequence
+      endTime {InstructionName := 'DTL'; LibVersion := '1.0'; ExternalWritable := 'False'} : DTL;   // End time of control sequence
+   END_STRUCT;
+
+END_TYPE
+

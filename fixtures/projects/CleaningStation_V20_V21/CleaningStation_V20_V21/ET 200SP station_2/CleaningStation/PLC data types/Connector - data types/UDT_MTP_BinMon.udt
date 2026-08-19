@@ -1,0 +1,17 @@
+﻿TYPE "UDT_MTP_BinMon"
+TITLE = MTPDataObjectSUCLibrary/DataAssembly/BinView
+VERSION : 0.1
+   STRUCT
+      VState0 { ExternalWritable := 'False'} : String[16] := '';   // Text replacement for false
+      VState1 { ExternalWritable := 'False'} : String[16] := '';   // Text replacement for true
+      OSLevel : Byte := 16#00;   // OSLevel variable
+      WQC { ExternalWritable := 'False'} : Byte := 16#FF;   // Worst Quality Code variable
+      V { ExternalWritable := 'False'} : Bool := FALSE;   // Value
+      VFlutEn { ExternalWritable := 'False'} : Bool;   // Enable Fluttering Recognition1: enabled; 0: disabled
+      VFlutTi : Real;   // Period of an active signal before it will be recognized as flutter-free, in s
+      VFlutCnt : Int;   // Counts of the allowed fluttering signals in the defined period VFlutTi
+      VFlutAct { ExternalWritable := 'False'} : Bool;   // Fluttering Signal recognized1: Fluttering Signal recognized 0: no Fluttering Signal recognized
+   END_STRUCT;
+
+END_TYPE
+

@@ -1,0 +1,52 @@
+﻿TYPE "UDT_MTP_MonBinDrv"
+TITLE = MTPDataObjectSUCLibrary/DataAssembly/BinDrv
+VERSION : 0.1
+   STRUCT
+      FwdEn { ExternalWritable := 'False'} : Bool := FALSE;   // Forward movement enable1: enabled0: disabled
+      RevEn { ExternalWritable := 'False'} : Bool := FALSE;   // Reverse movement enable1: enabled0: disabled
+      StopOp : Bool := FALSE;   // Stop Command from Operator (relevant, if StateOpAct) 0-->1:request from POL 1-->0:acknowledge from PEA (Handshake)
+      FwdOp : Bool := FALSE;   // Forward Command from Operator (relevant, if StateOpAct & FwdEn) 0-->1: request from POL 1-->0: acknowledge from PEA (Handshake)
+      RevOp : Bool := FALSE;   // Reverse Command from Operator (relevant, if StateOpAct & RevEn) 0-->1: request from POL 1-->0: acknowledge from PEA (Handshake)
+      OSLevel : Byte := 16#00;   // OSLevel variable
+      StateChannel { ExternalWritable := 'False'} : Bool;   // Selection of the active OperationMode interaction channel0: The operator switches (*Op) shall be used.1: The automatic switches (*Aut) shall be used.
+      StateOffAut { ExternalWritable := 'False'} : Bool;   // Set OperationMode to Offline by automatic interaction (relevant, if StateChannel).1: OperationMode is set to Offline.0: no operation
+      StateOffOp : Bool;   // Set OperationMode to Offline by operator interaction (relevant, if not StateChannel) 0-->1:request to set OperationMode to Offline 1-->0:acknowledge by PEA
+      StateOpAut { ExternalWritable := 'False'} : Bool;   // Set OperationMode to Operator by automatic interaction (relevant, if StateChannel).1: OperationMode is set to Manual.0: no operation
+      StateOpOp : Bool;   // Set OperationMode to Operator by operator interaction (relevant, if not StateChannel) 0-->1:request to set OperationMode to Manual
+      StateAutAut { ExternalWritable := 'False'} : Bool;   // Set OperationMode to Automatic by automatic interaction (relevant, if StateChannel).1: OperationMode is set to Automatic.0: no operation
+      StateAutOp : Bool;   // Set OperationMode to Automatic by operator interaction (relevant, if not StateChannel) 0-->1:request to set OperationMode is to Automatic 1-->0:acknowledge by PEA
+      StateOpAct { ExternalWritable := 'False'} : Bool;   // 1: current mode is Operator0: current mode is not Operator
+      StateAutAct { ExternalWritable := 'False'} : Bool;   // 1: current mode is Automatic0: current mode is not Automatic
+      StateOffAct { ExternalWritable := 'False'} : Bool;   // 1: current mode is Offline0: current mode is not Offline
+      SafePos { ExternalWritable := 'False'} : Bool;   // Safe Position1: running; 0: stopped
+      SafePosAct { ExternalWritable := 'False'} : Bool := FALSE;   // Safe Position activated 1 : Safe Position is activated ( safe operation)  0: Safe Position is not activated (normal operation)
+      CSF { ExternalWritable := 'False'} : Bool;   // Reserved
+      WQC { ExternalWritable := 'False'} : Byte := 16#FF;   // Worst Quality Code variable
+      StopAut { ExternalWritable := 'False'} : Bool := FALSE;   // Set Drive to Stop by automatic.(relevant, if StateAutAct)1: Stop Command executed0: no operation
+      FwdAut { ExternalWritable := 'False'} : Bool := FALSE;   // Set Drive to Fwd by automatic.(relevant, StateAutAct & FwdEn)1: Forward Command executed0: no operation
+      RevAut { ExternalWritable := 'False'} : Bool := FALSE;   // Set Drive to Rev by automatic.(relevant, if StateAutAct & RevEn)1: Reverse Command executed0: no operation
+      FwdCtrl { ExternalWritable := 'False'} : Bool := FALSE;   // Forward Control1: active0: inactive
+      RevCtrl { ExternalWritable := 'False'} : Bool := FALSE;   // Reverse Control1: active0: inactive
+      RevFbkCalc { ExternalWritable := 'False'} : Bool;   // Reverse Feedback Source1: calculated0: sensor detection
+      FwdFbkCalc { ExternalWritable := 'False'} : Bool;   // Forward Feedback Source1: calculated0: sensor detection
+      RevFbk { ExternalWritable := 'False'} : Bool := FALSE;   // Reverse Feedback Signal1: reverse running0: is not reverse running
+      FwdFbk { ExternalWritable := 'False'} : Bool := FALSE;   // Forward Feedback Signal1: forward running0: is not forward running
+      Trip { ExternalWritable := 'False'} : Bool := FALSE;   // Drive Protection Indicator 0:tripped 1:no error
+      PermEn { ExternalWritable := 'False'} : Bool := FALSE;   // Enables the Permission Lock1: enabled0: disabled
+      Permit { ExternalWritable := 'False'} : Bool := FALSE;   // Permit allows control1: permission is given0: permission is not given
+      IntlEn { ExternalWritable := 'False'} : Bool := FALSE;   // Enables the Interlock Lock1: enabled0: disabled
+      Interlock { ExternalWritable := 'False'} : Bool := FALSE;   // Interlock prevents from being activated and sets it to safe position1: Interlock is not active0: Interlock is active
+      ProtEn { ExternalWritable := 'False'} : Bool := FALSE;   // Enables the Protection Lock1: enabled; 0: disabled
+      Protect { ExternalWritable := 'False'} : Bool := FALSE;   // Protect prevents from being activated and sets it to safe position, requires a reset command1: protect is not active0: protect is active, requires reset
+      ResetOp : Bool := FALSE;   // Reset from Operator 0-->1:request from POL 1-->0:acknowledge from PEA (see Handshake)
+      ResetAut { ExternalWritable := 'False'} : Bool := FALSE;   // Reset from Automatic 1:Reset execute 0:no operation
+      MonEn : Bool := FALSE;   // Monitor Enable1: enabled0: disabled
+      MonSafePos { ExternalWritable := 'False'} : Bool;   // Monitor SafePos1: go to SafePos, if Monitoring Error occurs
+      MonStatErr { ExternalWritable := 'False'} : Bool := FALSE;   // Static Error active1: active0: inactive
+      MonDynErr { ExternalWritable := 'False'} : Bool := FALSE;   // Dynamic Error active1: active0: inactive
+      MonStatTi { ExternalWritable := 'False'} : Real := 0.0;   // Monitor Time for uncontrolled changes, in s
+      MonDynTi { ExternalWritable := 'False'} : Real := 0.0;   // Monitor Time for controlled changes, in s
+   END_STRUCT;
+
+END_TYPE
+

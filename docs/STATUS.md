@@ -1,7 +1,8 @@
 # Versio — status and route to completion
 
 **Date:** 2026-08-19 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,517 across nine
-projects, 2 skipped on this machine (Openness group empty) — re-derived by running each, not carried forward
+projects — re-derived by running each, not carried forward. TIA Portal gate: 3 passing on this
+machine once Openness membership and AllowList were in place.
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
@@ -12,7 +13,7 @@ projects, 2 skipped on this machine (Openness group empty) — re-derived by run
 | `Versio.Plc.Codesys.Pure.Tests` | 260 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 92 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 13 | instant | nothing |
-| `Versio.Plc.TiaPortal.Tests` | 3 | seconds when skipped; minutes when Portal opens | **real TIA Portal** — skips cleanly without Openness membership |
+| `Versio.Plc.TiaPortal.Tests` | 3 | seconds when skipped; ~45 s when Portal opens | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.Codesys.Tests` | 54 | **~30 min** | **real CODESYS** |
 
 *The first eight are the loop to work in — about thirty seconds plus the UI suite. The last is
@@ -543,9 +544,13 @@ has a window before believing a clean binding trace — see *Verifying the UI* b
 Small, specific, and none of them blocking. Written down because an audit that finds things and
 does not record them has to be run again.
 
-- **TIA Portal Openness group is empty on this machine** (2026-08-19). The pack, host and
-  seam are in; `Projects.Open` waits on group membership + AllowList. See
-  [`vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md).
+- ~~**TIA Portal Openness group is empty on this machine** (2026-08-19).~~ — **closed
+  2026-08-19.** `elli_` is in `Siemens TIA Openness` after a sign-out/in. Probe 42 s,
+  export 37 s. Occupancy is `<stem>.info` while Openness holds the project. SimaticML
+  `UId` is not a project identity — see the findings. The gate fixture is committed at
+  `fixtures/projects/CleaningStation_V20_V21/` (LFS; ignored by this repo's adoption so
+  opening Versio here does not export it). Remaining live cost: Yes-to-all on AllowList
+  after a host rebuild, and GUI-open occupancy unmeasured.
 
 - ~~**Launching the app against this repository adopts the 21 `phase0/` scratch projects and
   starts exporting all of them.**~~ — **closed 2026-08-17, and the closing found a defect.**
@@ -1007,7 +1012,7 @@ would have gone on passing while checking one fewer every time a panel moved out
 ## Findings
 
 Every defect worth understanding, written down with its evidence, lives in
-**[`FINDINGS.md`](FINDINGS.md)** — 109 of them, newest first. (Said 99 until 2026-08-17,
+**[`FINDINGS.md`](FINDINGS.md)** — 111 of them, newest first. (Said 99 until 2026-08-17,
 when it was re-derived rather than incremented: the number had gone stale during the split
 itself, which is the one edit that could not have been an oversight.)
 
@@ -1018,6 +1023,8 @@ actually do.
 
 The full list, newest first:
 
+- [SimaticML UId is a document-local integer, not a project identity](FINDINGS.md#simaticml-uid-is-a-document-local-integer-not-a-project-identity)
+- [TIA occupancy is a .info sidecar, measured while Openness held the project](FINDINGS.md#tia-occupancy-is-a-info-sidecar-measured-while-openness-held-the-project)
 - [Restoring a backup in the same second overwrote the backup](FINDINGS.md#restoring-a-backup-in-the-same-second-overwrote-the-backup)
 - [TIA Portal Openness: the group is empty, so the host cannot open a project yet](FINDINGS.md#tia-portal-openness-the-group-is-empty-so-the-host-cannot-open-a-project-yet)
 - [Properties are readable now: the payload imports, the text is for people](FINDINGS.md#properties-are-readable-now-the-payload-imports-the-text-is-for-people)

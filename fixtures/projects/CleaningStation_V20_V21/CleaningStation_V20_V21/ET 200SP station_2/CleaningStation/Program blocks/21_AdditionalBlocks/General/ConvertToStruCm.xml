@@ -1,0 +1,341 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Document>
+  <Engineering version="V21" />
+  <DocumentInfo>
+    <Created>2026-08-19T17:13:14.8215953Z</Created>
+    <ExportSetting>None</ExportSetting>
+    <InstalledProducts>
+      <Product>
+        <DisplayName>Totally Integrated Automation Portal</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>STEP 7 Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <OptionPackage>
+        <DisplayName>STEP 7 Safety</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <OptionPackage>
+        <DisplayName>Tech WebApplication</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <Product>
+        <DisplayName>WinCC Basic/Comfort/Advanced</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Unified</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+    </InstalledProducts>
+  </DocumentInfo>
+  <SW.Blocks.FC ID="0">
+    <AttributeList>
+      <Interface>
+        <Sections xmlns="http://www.siemens.com/automation/Openness/SW/Interface/v5">
+          <Section Name="Input">
+            <Member Name="AnaVal1" Datatype="&quot;AnaVal&quot;">
+              <Comment>
+                <MultiLanguageText Lang="en-US">Rbk</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="AnaVal2" Datatype="&quot;AnaVal&quot;" />
+            <Member Name="AnaVal3" Datatype="&quot;AnaVal&quot;" />
+            <Member Name="DigVal1" Datatype="&quot;DigVal&quot;" />
+            <Member Name="DigVal2" Datatype="&quot;DigVal&quot;" />
+            <Member Name="DigVal3" Datatype="&quot;DigVal&quot;" />
+            <Member Name="Scale" Datatype="&quot;ScaVal&quot;">
+              <Comment>
+                <MultiLanguageText Lang="en-US">MV_Scale</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="ScaleRAW" Datatype="&quot;ScaVal_Raw&quot;">
+              <Comment>
+                <MultiLanguageText Lang="en-US">MV_ScaleRAW</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="Unit" Datatype="Int">
+              <Comment>
+                <MultiLanguageText Lang="en-US">MV_Unit</MultiLanguageText>
+              </Comment>
+            </Member>
+          </Section>
+          <Section Name="Output">
+            <Member Name="StruCm_Out" Datatype="&quot;StruCm&quot;" />
+          </Section>
+          <Section Name="InOut" />
+          <Section Name="Temp" />
+          <Section Name="Constant" />
+          <Section Name="Return">
+            <Member Name="Ret_Val" Datatype="Void" />
+          </Section>
+        </Sections>
+      </Interface>
+      <MemoryLayout>Optimized</MemoryLayout>
+      <Name>ConvertToStruCm</Name>
+      <Namespace />
+      <Number>20</Number>
+      <ProgrammingLanguage>SCL</ProgrammingLanguage>
+      <SetENOAutomatically>false</SetENOAutomatically>
+    </AttributeList>
+    <ObjectList>
+      <MultilingualText ID="1" CompositionName="Comment">
+        <ObjectList>
+          <MultilingualTextItem ID="2" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="3" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="4" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+      <SW.Blocks.CompileUnit ID="5" CompositionName="CompileUnits">
+        <AttributeList>
+          <NetworkSource>
+            <StructuredText xmlns="http://www.siemens.com/automation/Openness/SW/NetworkSource/StructuredText/v4">
+              <Access Scope="LocalVariable" UId="21">
+                <Symbol UId="22">
+                  <Component Name="StruCm_Out" UId="23" />
+                  <Token Text="." UId="24" />
+                  <Component Name="AnaVal1" UId="25" />
+                </Symbol>
+              </Access>
+              <Blank UId="26" />
+              <Token Text=":=" UId="27" />
+              <Blank UId="28" />
+              <Access Scope="LocalVariable" UId="29">
+                <Symbol UId="30">
+                  <Component Name="AnaVal1" UId="31" />
+                </Symbol>
+              </Access>
+              <Token Text=";" UId="32" />
+              <NewLine UId="33" />
+              <Access Scope="LocalVariable" UId="34">
+                <Symbol UId="35">
+                  <Component Name="StruCm_Out" UId="36" />
+                  <Token Text="." UId="37" />
+                  <Component Name="AnaVal2" UId="38" />
+                </Symbol>
+              </Access>
+              <Blank UId="39" />
+              <Token Text=":=" UId="40" />
+              <Blank UId="41" />
+              <Access Scope="LocalVariable" UId="42">
+                <Symbol UId="43">
+                  <Component Name="AnaVal2" UId="44" />
+                </Symbol>
+              </Access>
+              <Token Text=";" UId="45" />
+              <NewLine UId="46" />
+              <Access Scope="LocalVariable" UId="47">
+                <Symbol UId="48">
+                  <Component Name="StruCm_Out" UId="49" />
+                  <Token Text="." UId="50" />
+                  <Component Name="AnaVal3" UId="51" />
+                </Symbol>
+              </Access>
+              <Blank UId="52" />
+              <Token Text=":=" UId="53" />
+              <Blank UId="54" />
+              <Access Scope="LocalVariable" UId="55">
+                <Symbol UId="56">
+                  <Component Name="AnaVal3" UId="57" />
+                </Symbol>
+              </Access>
+              <Token Text=";" UId="58" />
+              <NewLine UId="59" />
+              <Access Scope="LocalVariable" UId="60">
+                <Symbol UId="61">
+                  <Component Name="StruCm_Out" UId="62" />
+                  <Token Text="." UId="63" />
+                  <Component Name="DigVal1" UId="64" />
+                </Symbol>
+              </Access>
+              <Blank UId="65" />
+              <Token Text=":=" UId="66" />
+              <Blank UId="67" />
+              <Access Scope="LocalVariable" UId="68">
+                <Symbol UId="69">
+                  <Component Name="DigVal1" UId="70" />
+                </Symbol>
+              </Access>
+              <Token Text=";" UId="71" />
+              <NewLine UId="72" />
+              <Access Scope="LocalVariable" UId="73">
+                <Symbol UId="74">
+                  <Component Name="StruCm_Out" UId="75" />
+                  <Token Text="." UId="76" />
+                  <Component Name="DigVal2" UId="77" />
+                </Symbol>
+              </Access>
+              <Blank UId="78" />
+              <Token Text=":=" UId="79" />
+              <Blank UId="80" />
+              <Access Scope="LocalVariable" UId="81">
+                <Symbol UId="82">
+                  <Component Name="DigVal2" UId="83" />
+                </Symbol>
+              </Access>
+              <Token Text=";" UId="84" />
+              <NewLine UId="85" />
+              <Access Scope="LocalVariable" UId="86">
+                <Symbol UId="87">
+                  <Component Name="StruCm_Out" UId="88" />
+                  <Token Text="." UId="89" />
+                  <Component Name="DigVal3" UId="90" />
+                </Symbol>
+              </Access>
+              <Blank UId="91" />
+              <Token Text=":=" UId="92" />
+              <Blank UId="93" />
+              <Access Scope="LocalVariable" UId="94">
+                <Symbol UId="95">
+                  <Component Name="DigVal3" UId="96" />
+                </Symbol>
+              </Access>
+              <Token Text=";" UId="97" />
+              <NewLine UId="98" />
+              <Access Scope="LocalVariable" UId="99">
+                <Symbol UId="100">
+                  <Component Name="StruCm_Out" UId="101" />
+                  <Token Text="." UId="102" />
+                  <Component Name="Scale" UId="103" />
+                </Symbol>
+              </Access>
+              <Blank UId="104" />
+              <Token Text=":=" UId="105" />
+              <Blank UId="106" />
+              <Access Scope="LocalVariable" UId="107">
+                <Symbol UId="108">
+                  <Component Name="Scale" UId="109" />
+                </Symbol>
+              </Access>
+              <Token Text=";" UId="110" />
+              <NewLine UId="111" />
+              <Access Scope="LocalVariable" UId="112">
+                <Symbol UId="113">
+                  <Component Name="StruCm_Out" UId="114" />
+                  <Token Text="." UId="115" />
+                  <Component Name="ScaleRAW" UId="116" />
+                </Symbol>
+              </Access>
+              <Blank UId="117" />
+              <Token Text=":=" UId="118" />
+              <Blank UId="119" />
+              <Access Scope="LocalVariable" UId="120">
+                <Symbol UId="121">
+                  <Component Name="ScaleRAW" UId="122" />
+                </Symbol>
+              </Access>
+              <Token Text=";" UId="123" />
+              <NewLine UId="124" />
+              <Access Scope="LocalVariable" UId="125">
+                <Symbol UId="126">
+                  <Component Name="StruCm_Out" UId="127" />
+                  <Token Text="." UId="128" />
+                  <Component Name="Unit" UId="129" />
+                </Symbol>
+              </Access>
+              <Blank UId="130" />
+              <Token Text=":=" UId="131" />
+              <Blank UId="132" />
+              <Access Scope="LocalVariable" UId="133">
+                <Symbol UId="134">
+                  <Component Name="Unit" UId="135" />
+                </Symbol>
+              </Access>
+              <Token Text=";" UId="136" />
+            </StructuredText>
+          </NetworkSource>
+          <ProgrammingLanguage>SCL</ProgrammingLanguage>
+        </AttributeList>
+        <ObjectList>
+          <MultilingualText ID="6" CompositionName="Comment">
+            <ObjectList>
+              <MultilingualTextItem ID="7" CompositionName="Items">
+                <AttributeList>
+                  <Culture>de-DE</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+              <MultilingualTextItem ID="8" CompositionName="Items">
+                <AttributeList>
+                  <Culture>en-US</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+              <MultilingualTextItem ID="9" CompositionName="Items">
+                <AttributeList>
+                  <Culture>fr-FR</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+            </ObjectList>
+          </MultilingualText>
+          <MultilingualText ID="A" CompositionName="Title">
+            <ObjectList>
+              <MultilingualTextItem ID="B" CompositionName="Items">
+                <AttributeList>
+                  <Culture>de-DE</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+              <MultilingualTextItem ID="C" CompositionName="Items">
+                <AttributeList>
+                  <Culture>en-US</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+              <MultilingualTextItem ID="D" CompositionName="Items">
+                <AttributeList>
+                  <Culture>fr-FR</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+            </ObjectList>
+          </MultilingualText>
+        </ObjectList>
+      </SW.Blocks.CompileUnit>
+      <MultilingualText ID="E" CompositionName="Title">
+        <ObjectList>
+          <MultilingualTextItem ID="F" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="10" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="11" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+    </ObjectList>
+  </SW.Blocks.FC>
+</Document>

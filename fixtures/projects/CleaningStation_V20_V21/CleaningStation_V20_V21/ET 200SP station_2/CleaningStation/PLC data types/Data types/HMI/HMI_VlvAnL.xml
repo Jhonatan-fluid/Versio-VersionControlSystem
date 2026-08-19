@@ -1,0 +1,691 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Document>
+  <Engineering version="V21" />
+  <DocumentInfo>
+    <Created>2026-08-19T17:13:21.1079959Z</Created>
+    <ExportSetting>None</ExportSetting>
+    <InstalledProducts>
+      <Product>
+        <DisplayName>Totally Integrated Automation Portal</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>STEP 7 Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <OptionPackage>
+        <DisplayName>STEP 7 Safety</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <OptionPackage>
+        <DisplayName>Tech WebApplication</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <Product>
+        <DisplayName>WinCC Basic/Comfort/Advanced</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Unified</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+    </InstalledProducts>
+  </DocumentInfo>
+  <SW.Types.PlcStruct ID="0">
+    <AttributeList>
+      <Interface>
+        <Sections xmlns="http://www.siemens.com/automation/Openness/SW/Interface/v5">
+          <Section Name="None">
+            <Member Name="OpenMan" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">1=Open: Open Command in Manual Mode</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">1=Open: Open Command in Manual Mode</MultiLanguageText>
+              </Comment>
+              <StartValue>FALSE</StartValue>
+            </Member>
+            <Member Name="CloseMan" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">1=Close: Close Command in Manual Mode</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">1=Close: Close Command in Manual Mode</MultiLanguageText>
+              </Comment>
+              <StartValue>FALSE</StartValue>
+            </Member>
+            <Member Name="AutModOp" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">1=Auto mode: auto mode by operator</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">1=Auto mode: auto mode by operator</MultiLanguageText>
+              </Comment>
+              <StartValue>FALSE</StartValue>
+            </Member>
+            <Member Name="ManModOp" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">1=Manual mode: manual mode by operator</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">1=Manual mode: manual mode by operator</MultiLanguageText>
+              </Comment>
+              <StartValue>TRUE</StartValue>
+            </Member>
+            <Member Name="LocalLi" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">1=Local Mode: Local operation by field signal</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">1=Local Mode: Local operation by field signal</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="LocalOp" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">1=Local Mode: Local operation by operator</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">1=Local Mode: Local operation by operator</MultiLanguageText>
+              </Comment>
+              <StartValue>FALSE</StartValue>
+            </Member>
+            <Member Name="OosOp" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">1=Oos mode: Oos mode by operator</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">1=Oos mode: Oos mode by operator</MultiLanguageText>
+              </Comment>
+              <StartValue>FALSE</StartValue>
+            </Member>
+            <Member Name="MV_Int" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">manipulated variable (Internal)</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">manipulated variable (Internal)</MultiLanguageText>
+              </Comment>
+              <StartValue>0.0</StartValue>
+            </Member>
+            <Member Name="MV_HiLim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">manipulated variable High Limit</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">manipulated variable High Limit</MultiLanguageText>
+              </Comment>
+              <StartValue>100.0</StartValue>
+            </Member>
+            <Member Name="MV_LoLim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">manipulated variable Low Limit</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">manipulated variable Low Limit</MultiLanguageText>
+              </Comment>
+              <StartValue>0.0</StartValue>
+            </Member>
+            <Member Name="MV_OpScale" Datatype="&quot;ScaVal&quot;">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">MV-Bar Display Limits for OS</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">MV-Bar Display Limits for OS</MultiLanguageText>
+              </Comment>
+              <Sections>
+                <Section Name="None">
+                  <Member Name="High" Datatype="Real">
+                    <Comment>
+                      <MultiLanguageText Lang="en-US">High Value</MultiLanguageText>
+                    </Comment>
+                  </Member>
+                  <Member Name="Low" Datatype="Real">
+                    <Comment>
+                      <MultiLanguageText Lang="en-US">Low Value</MultiLanguageText>
+                    </Comment>
+                  </Member>
+                </Section>
+              </Sections>
+            </Member>
+            <Member Name="MV_Unit" Datatype="Int">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Engineering units of MV</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Engineering units of MV</MultiLanguageText>
+              </Comment>
+              <StartValue>1342</StartValue>
+            </Member>
+            <Member Name="MV_ExtOp" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Operator Input to Select External manipulated variable</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Operator Input to Select External manipulated variable</MultiLanguageText>
+              </Comment>
+              <StartValue>FALSE</StartValue>
+            </Member>
+            <Member Name="MV_IntOp" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Operator Input to Select Internal manipulated variable</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Operator Input to Select Internal manipulated variable</MultiLanguageText>
+              </Comment>
+              <StartValue>TRUE</StartValue>
+            </Member>
+            <Member Name="MV_Trk" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Tracking value for manipulated variable MV</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Tracking value for manipulated variable MV</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="MV_TrkExt" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Bumpless Transfer from External to Internal</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Bumpless Transfer from External to Internal</MultiLanguageText>
+              </Comment>
+              <StartValue>FALSE</StartValue>
+            </Member>
+            <Member Name="MV_TrkRbk" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Bumpless Transfer from tracking to not tracking</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Bumpless Transfer from tracking to not tracking</MultiLanguageText>
+              </Comment>
+              <StartValue>FALSE</StartValue>
+            </Member>
+            <Member Name="MV_RateOn" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">1= Activate limitation of manipulated variable gradients</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">1= Activate limitation of manipulated variable gradients</MultiLanguageText>
+              </Comment>
+              <StartValue>FALSE</StartValue>
+            </Member>
+            <Member Name="MV_RmpOn" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">1= Activate manipulated variable ramp to target MV_RmpTarget</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">1= Activate manipulated variable ramp to target MV_RmpTarget</MultiLanguageText>
+              </Comment>
+              <StartValue>FALSE</StartValue>
+            </Member>
+            <Member Name="MV_RmpModTime" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">1= Use time MV_RmpTime for ramp, 0= Use rates MV_UpRaLim, MV_DnRaLim</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">1= Use time MV_RmpTime for ramp, 0= Use rates MV_UpRaLim, MV_DnRaLim</MultiLanguageText>
+              </Comment>
+              <StartValue>FALSE</StartValue>
+            </Member>
+            <Member Name="MV_UpRaLim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Upward rate limit of MV</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Upward rate limit of MV</MultiLanguageText>
+              </Comment>
+              <StartValue>100.0</StartValue>
+            </Member>
+            <Member Name="MV_DnRaLim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Downward rate limit of MV</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Downward rate limit of MV</MultiLanguageText>
+              </Comment>
+              <StartValue>100.0</StartValue>
+            </Member>
+            <Member Name="MV_RmpTime" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Manipulated variable ramp time [s,min,h]</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Manipulated variable ramp time [s,min,h]</MultiLanguageText>
+              </Comment>
+              <StartValue>0.0</StartValue>
+            </Member>
+            <Member Name="MV_RmpTarget" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Manipulated variable ramp target</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Manipulated variable ramp target</MultiLanguageText>
+              </Comment>
+              <StartValue>0.0</StartValue>
+            </Member>
+            <Member Name="SimRbk" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Readback value used for SimOn = 1</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Readback value used for SimOn = 1</MultiLanguageText>
+              </Comment>
+              <StartValue>0.0</StartValue>
+            </Member>
+            <Member Name="RbkWH_Lim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Rbk - High Warning Limit</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Rbk - High Warning Limit</MultiLanguageText>
+              </Comment>
+              <StartValue>90.0</StartValue>
+            </Member>
+            <Member Name="RbkWL_Lim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Rbk - Low Warning Limit</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Rbk - Low Warning Limit</MultiLanguageText>
+              </Comment>
+              <StartValue>10.0</StartValue>
+            </Member>
+            <Member Name="RbkHyst" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Rbk - Hysteresis</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Rbk - Hysteresis</MultiLanguageText>
+              </Comment>
+              <StartValue>1.0</StartValue>
+            </Member>
+            <Member Name="ER_AH_Lim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">ER alarm high limit</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">ER alarm high limit</MultiLanguageText>
+              </Comment>
+              <StartValue>100.0</StartValue>
+            </Member>
+            <Member Name="ER_AL_Lim" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">ER alarm low limit</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">ER alarm low limit</MultiLanguageText>
+              </Comment>
+              <StartValue>-100.0</StartValue>
+            </Member>
+            <Member Name="ER_Hyst" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Hysteresis for ER alarms</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Hysteresis for ER alarms</MultiLanguageText>
+              </Comment>
+              <StartValue>1.0</StartValue>
+            </Member>
+            <Member Name="PosDeadBand" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">allowable variation from pre-set position</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">allowable variation from pre-set position</MultiLanguageText>
+              </Comment>
+              <StartValue>0.1</StartValue>
+            </Member>
+            <Member Name="PosDiOpen" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">open position of control valve</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">open position of control valve</MultiLanguageText>
+              </Comment>
+              <StartValue>95.0</StartValue>
+            </Member>
+            <Member Name="PosDiClose" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">close position of control valve</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">close position of control valve</MultiLanguageText>
+              </Comment>
+              <StartValue>5.0</StartValue>
+            </Member>
+            <Member Name="Monitor" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">1=MonitorV ON, 0=Monitor OFF: Feedback monitor</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">1=MonitorV ON, 0=Monitor OFF: Feedback monitor</MultiLanguageText>
+              </Comment>
+              <StartValue>TRUE</StartValue>
+            </Member>
+            <Member Name="MonTiStatic" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Monitoring time for unexpected change in any feedback [s]</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Monitoring time for unexpected change in any feedback [s]</MultiLanguageText>
+              </Comment>
+              <StartValue>3.0</StartValue>
+            </Member>
+            <Member Name="MonTiDynamic" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Monitoring time for expected change of feedback [s]</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Monitoring time for expected change of feedback [s]</MultiLanguageText>
+              </Comment>
+              <StartValue>3.0</StartValue>
+            </Member>
+            <Member Name="MonitorAuxV" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">1=MonitorAuxV ON, 0=MonitorAuxV OFF: Feedback monitor of auxiliary valve</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">1=MonitorAuxV ON, 0=MonitorAuxV OFF: Feedback monitor of auxiliary valve</MultiLanguageText>
+              </Comment>
+              <StartValue>TRUE</StartValue>
+            </Member>
+            <Member Name="MonAuxVTime" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Monitoring time of auxiliary valve for expected change of feedback [s]</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Monitoring time of auxiliary valve for expected change of feedback [s]</MultiLanguageText>
+              </Comment>
+              <StartValue>3.0</StartValue>
+            </Member>
+            <Member Name="RstOp" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Operator reset signal</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Operator reset signal</MultiLanguageText>
+              </Comment>
+              <StartValue>FALSE</StartValue>
+            </Member>
+            <Member Name="Permit_ST" Datatype="Byte">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Permit Signal Status</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Permit Signal Status</MultiLanguageText>
+              </Comment>
+              <StartValue>BYTE#16#FF</StartValue>
+            </Member>
+            <Member Name="PermCls_ST" Datatype="Byte">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">PermCls Signal Status</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">PermCls Signal Status</MultiLanguageText>
+              </Comment>
+              <StartValue>BYTE#16#FF</StartValue>
+            </Member>
+            <Member Name="Intlock_ST" Datatype="Byte">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Intlock Signal Status</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Intlock Signal Status</MultiLanguageText>
+              </Comment>
+              <StartValue>BYTE#16#FF</StartValue>
+            </Member>
+            <Member Name="IntlCls_ST" Datatype="Byte">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">IntlCls Signal Status</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">IntlCls Signal Status</MultiLanguageText>
+              </Comment>
+              <StartValue>BYTE#16#FF</StartValue>
+            </Member>
+            <Member Name="Protect_ST" Datatype="Byte">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Protect Signal Status</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Protect Signal Status</MultiLanguageText>
+              </Comment>
+              <StartValue>BYTE#16#FF</StartValue>
+            </Member>
+            <Member Name="ProtCls_ST" Datatype="Byte">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">ProtCls Signal Status</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">ProtCls Signal Status</MultiLanguageText>
+              </Comment>
+              <StartValue>BYTE#16#FF</StartValue>
+            </Member>
+            <Member Name="TimeFactor" Datatype="Int">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Time Conversion Factor (0- Sec, 1- Min, 2- Hour)</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Time Conversion Factor (0- Sec, 1- Min, 2- Hour)</MultiLanguageText>
+              </Comment>
+              <StartValue>0</StartValue>
+            </Member>
+            <Member Name="BatchID" Datatype="DWord">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Current Batch ID (number)</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Current Batch ID (number)</MultiLanguageText>
+              </Comment>
+              <StartValue>16#0</StartValue>
+            </Member>
+            <Member Name="BatchName" Datatype="String[16]">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Current Batch name</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Current Batch name</MultiLanguageText>
+              </Comment>
+              <StartValue>''</StartValue>
+            </Member>
+            <Member Name="StepNo" Datatype="DWord">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Batch step number</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Batch step number</MultiLanguageText>
+              </Comment>
+              <StartValue>16#0</StartValue>
+            </Member>
+            <Member Name="MV" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Manipulated variable, Control output</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Manipulated variable, Control output</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="MV_ST" Datatype="Byte">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">MV Signal Status</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">MV Signal Status</MultiLanguageText>
+              </Comment>
+              <StartValue>BYTE#16#80</StartValue>
+            </Member>
+            <Member Name="MV_ExtOut" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">External manipulated variable output</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">External manipulated variable output</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="MV_IntOut" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Internal setpoint output</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Internal setpoint output</MultiLanguageText>
+              </Comment>
+              <StartValue>0.0</StartValue>
+            </Member>
+            <Member Name="MV_RateTarget" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Target  for limitation of manipulated variable gradients</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Target  for limitation of manipulated variable gradients</MultiLanguageText>
+              </Comment>
+              <StartValue>0.0</StartValue>
+            </Member>
+            <Member Name="MV_RemRT" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Remaining ramp time of manipulated variable</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Remaining ramp time of manipulated variable</MultiLanguageText>
+              </Comment>
+              <StartValue>0.0</StartValue>
+            </Member>
+            <Member Name="CurrMon" Datatype="DInt">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Remaining monitoring time of valve [s]</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Remaining monitoring time of valve [s]</MultiLanguageText>
+              </Comment>
+              <StartValue>0</StartValue>
+            </Member>
+            <Member Name="CurrMonAuxV" Datatype="DInt">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Remaining monitoring time of auxiliary valve [s]</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Remaining monitoring time of auxiliary valve [s]</MultiLanguageText>
+              </Comment>
+              <StartValue>0</StartValue>
+            </Member>
+            <Member Name="Ctrl" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Control output (dependent from SafePosAux)</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Control output (dependent from SafePosAux)</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="RbkOut" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Readback value output</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Readback value output</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="ER" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">MV difference</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">MV difference</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="OS_PermOut" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Operator Permission: Output for OS</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Operator Permission: Output for OS</MultiLanguageText>
+              </Comment>
+              <StartValue>DWORD#16#FFFF_FFFF</StartValue>
+            </Member>
+            <Member Name="OS_PermLog" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Operator Permission: Output for OS</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Operator Permission: Output for OS</MultiLanguageText>
+              </Comment>
+              <StartValue>DWORD#16#FFFF_FFFF</StartValue>
+            </Member>
+            <Member Name="OS1PermOut" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Operator Permission: Output for OS</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Operator Permission: Output for OS</MultiLanguageText>
+              </Comment>
+              <StartValue>DWORD#16#FFFF_FFFF</StartValue>
+            </Member>
+            <Member Name="OS1PermLog" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Operator Permission: Output for OS</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Operator Permission: Output for OS</MultiLanguageText>
+              </Comment>
+              <StartValue>DWORD#16#FFFF_FFFF</StartValue>
+            </Member>
+            <Member Name="OpSt_Out" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Enabled operator stations</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Enabled operator stations</MultiLanguageText>
+              </Comment>
+              <StartValue>16#0</StartValue>
+            </Member>
+            <Member Name="ST_Worst" Datatype="Byte">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Worst signal status</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Worst signal status</MultiLanguageText>
+              </Comment>
+              <StartValue>BYTE#16#80</StartValue>
+            </Member>
+            <Member Name="AutoST" Datatype="Byte">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Worst Signal Status of the automatic commands</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Worst Signal Status of the automatic commands</MultiLanguageText>
+              </Comment>
+              <StartValue>BYTE#16#80</StartValue>
+            </Member>
+            <Member Name="Status1" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Status1 word</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Status1 word</MultiLanguageText>
+              </Comment>
+              <StartValue>16#0</StartValue>
+            </Member>
+            <Member Name="Status2" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Status2 word</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Status2 word</MultiLanguageText>
+              </Comment>
+              <StartValue>16#0</StartValue>
+            </Member>
+            <Member Name="Status3" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Status3 word</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Status3 word</MultiLanguageText>
+              </Comment>
+              <StartValue>16#0</StartValue>
+            </Member>
+            <Member Name="Status4" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Status4 word</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Status4 word</MultiLanguageText>
+              </Comment>
+              <StartValue>16#0</StartValue>
+            </Member>
+            <Member Name="Status5" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Status5 word</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Status5 word</MultiLanguageText>
+              </Comment>
+              <StartValue>16#0</StartValue>
+            </Member>
+            <Member Name="AlarmState" Datatype="Word">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Alarm State for group display</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Alarm Status for group display</MultiLanguageText>
+              </Comment>
+            </Member>
+          </Section>
+        </Sections>
+      </Interface>
+      <Name>HMI_VlvAnL</Name>
+      <Namespace />
+    </AttributeList>
+    <ObjectList>
+      <MultilingualText ID="1" CompositionName="Comment">
+        <ObjectList>
+          <MultilingualTextItem ID="2" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="3" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="4" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+      <MultilingualText ID="5" CompositionName="Title">
+        <ObjectList>
+          <MultilingualTextItem ID="6" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="7" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="8" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+    </ObjectList>
+  </SW.Types.PlcStruct>
+</Document>

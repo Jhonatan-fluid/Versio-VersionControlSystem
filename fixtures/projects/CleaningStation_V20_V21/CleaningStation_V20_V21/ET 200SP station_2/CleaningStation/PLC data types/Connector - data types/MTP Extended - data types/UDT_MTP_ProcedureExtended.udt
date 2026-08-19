@@ -1,0 +1,24 @@
+﻿TYPE "UDT_MTP_ProcedureExtended"
+VERSION : 0.1
+   STRUCT
+      Procedure : "UDT_MTP_Procedure";   // Procedure Definition
+      StateTransient : Struct   // Transient States
+         starting : "UDT_Service_IndexElement";   // Transient State Starting
+         running : "UDT_Service_IndexElement";   // Transient State Running
+         holding : "UDT_Service_IndexElement";   // Transient State Holding
+         unholding : "UDT_Service_IndexElement";   // Transient State Unholding
+         pausing : "UDT_Service_IndexElement";   // Transient State Pausing
+         resuming : "UDT_Service_IndexElement";   // Transient State Resuming
+         completing : "UDT_Service_IndexElement";   // Transient State Completing
+         stopping : "UDT_Service_IndexElement";   // Transient State Stopping
+         aborting : "UDT_Service_IndexElement";   // Transient State Aborting
+         resetting : "UDT_Service_IndexElement";   // Transient State Resetting
+      END_STRUCT;
+      ProcedureReportMap : Array[0..0] of DWord;   // Procedure Report value Mapping
+      ProcedureProcessInMap : Array[0..0] of DWord;   // Procedure ProcessIn value Mapping
+      ProcedureProcessOutMap : Array[0..0] of DWord;   // Procedure ProcessOut value Mapping
+      ProcedureProcedureMap : Array[0..0] of DWord;   // Procedure Procedure parameter Mapping
+   END_STRUCT;
+
+END_TYPE
+

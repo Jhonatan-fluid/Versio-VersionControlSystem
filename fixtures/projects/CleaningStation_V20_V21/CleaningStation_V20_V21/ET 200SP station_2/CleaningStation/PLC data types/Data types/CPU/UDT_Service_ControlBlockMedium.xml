@@ -1,0 +1,173 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Document>
+  <Engineering version="V21" />
+  <DocumentInfo>
+    <Created>2026-08-19T17:13:20.5611032Z</Created>
+    <ExportSetting>None</ExportSetting>
+    <InstalledProducts>
+      <Product>
+        <DisplayName>Totally Integrated Automation Portal</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>STEP 7 Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <OptionPackage>
+        <DisplayName>STEP 7 Safety</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <OptionPackage>
+        <DisplayName>Tech WebApplication</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <Product>
+        <DisplayName>WinCC Basic/Comfort/Advanced</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Unified</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+    </InstalledProducts>
+  </DocumentInfo>
+  <SW.Types.PlcStruct ID="0">
+    <AttributeList>
+      <Interface>
+        <Sections xmlns="http://www.siemens.com/automation/Openness/SW/Interface/v5">
+          <Section Name="None">
+            <Member Name="mode" Datatype="Int">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Service/Mapping selection</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Service/Mapping selection</MultiLanguageText>
+              </Comment>
+              <StartValue>1</StartValue>
+            </Member>
+            <Member Name="stepOrder" Datatype="&quot;UDT_Service_StepOrderRawDataMedium&quot;">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Configuration step order</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Configuration step order</MultiLanguageText>
+                <MultiLanguageText Lang="fr-FR">Configuration step order</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="step" Datatype="&quot;UDT_Service_StepRawDataMedium&quot;">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Configuration steps</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Configuration steps</MultiLanguageText>
+                <MultiLanguageText Lang="fr-FR">Configuration steps</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="procedure" Datatype="&quot;UDT_Service_ProcedureRawDataMedium&quot;">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Configuration procedures</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Configuration procedures</MultiLanguageText>
+                <MultiLanguageText Lang="fr-FR">Configuration procedures</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="configurationParameterData" Datatype="&quot;UDT_Service_ParameterDataMedium&quot;">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Configuration configuration parameters</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Configuration parameters</MultiLanguageText>
+                <MultiLanguageText Lang="fr-FR">Configuration configuration parameters</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="processValueInData" Datatype="&quot;UDT_Service_ValueDataMedium&quot;">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Configuration configuration parameters</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">ProcessIn Values</MultiLanguageText>
+                <MultiLanguageText Lang="fr-FR">Configuration configuration parameters</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="processValueOutData" Datatype="&quot;UDT_Service_ValueDataMedium&quot;">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Configuration configuration parameters</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">ProcessOut Values</MultiLanguageText>
+                <MultiLanguageText Lang="fr-FR">Configuration configuration parameters</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="reportValueData" Datatype="&quot;UDT_Service_ValueDataMedium&quot;">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Configuration configuration parameters</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Report Values</MultiLanguageText>
+                <MultiLanguageText Lang="fr-FR">Configuration configuration parameters</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="serviceInteraction" Datatype="Array[1..30] of DWord">
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Service Interaction Information Variable</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Service Interaction Information Variable</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="plcGuid" Datatype="String">
+              <Comment>
+                <MultiLanguageText Lang="en-US">PLC Guid value stored from the tool, used to find the PLC name changes</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="serviceGuid" Datatype="String">
+              <Comment>
+                <MultiLanguageText Lang="en-US">Service Guid value stored from the tool, used to find the setup DB name changes</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="serviceDbNumber" Datatype="Int">
+              <Comment>
+                <MultiLanguageText Lang="en-US">Linked Service IDB number stored from the tool, used to find the service name changes</MultiLanguageText>
+              </Comment>
+            </Member>
+          </Section>
+        </Sections>
+      </Interface>
+      <Name>UDT_Service_ControlBlockMedium</Name>
+      <Namespace />
+    </AttributeList>
+    <ObjectList>
+      <MultilingualText ID="1" CompositionName="Comment">
+        <ObjectList>
+          <MultilingualTextItem ID="2" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="3" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="4" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+      <MultilingualText ID="5" CompositionName="Title">
+        <ObjectList>
+          <MultilingualTextItem ID="6" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="7" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="8" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+    </ObjectList>
+  </SW.Types.PlcStruct>
+</Document>

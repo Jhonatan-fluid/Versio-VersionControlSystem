@@ -24,8 +24,16 @@ public sealed class TiaPortalFormatTests
         Assert.Equal(@"C:\plc\Station", payload);
         Assert.False(TiaPortalProjectFormat.Instance.CountsTowardProjectHash("Logs/run.log"));
         Assert.False(TiaPortalProjectFormat.Instance.CountsTowardProjectHash("Vci/workspace.bin"));
+        Assert.False(TiaPortalProjectFormat.Instance.CountsTowardProjectHash("Station.info"));
+        Assert.False(TiaPortalProjectFormat.Instance.CountsTowardProjectHash("System/~PEData.1"));
         Assert.True(TiaPortalProjectFormat.Instance.CountsTowardProjectHash("System/PEData.plf"));
-        Assert.Null(TiaPortalProjectFormat.Instance.OccupancyMarkerFor(@"C:\plc\Station.ap21"));
+        Assert.Equal(@"C:\plc\Station\Station.info",
+            TiaPortalProjectFormat.Instance.OccupancyMarkerFor(@"C:\plc\Station\Station.ap21"));
+        Assert.Equal(OccupancyVerdict.Held,
+            TiaPortalProjectFormat.Instance.ParseOccupancy("anything").Verdict);
+        var transients = TiaPortalProjectFormat.Instance.TransientPatternsFor(@"C:\plc\Station\Station.ap21");
+        Assert.Contains(transients, p => p.Replace('\\', '/').EndsWith("/Station.info", StringComparison.Ordinal));
+        Assert.Contains(transients, p => p.Replace('\\', '/').EndsWith("/System/~*", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -297,6 +305,10 @@ public sealed class TiaPortalNativeScrubberTests
         const string a = """<Block DateModified="1"><Body/></Block>""";
         const string b = """<Block DateModified="2"><Body/></Block>""";
         Assert.Equal(TiaPortalNativeScrubber.Hash(a), TiaPortalNativeScrubber.Hash(b));
-        Assert.Equal("7", TiaPortalNativeScrubber.TryReadUid("""<Block UId="7"/>"""));
+        Assert.Null(TiaPortalNativeScrubber.TryReadUid("""<Block UId="7"/>"""));
+        Assert.Null(TiaPortalNativeScrubber.TryReadUid("""<Doc UId="0"><Block UId="1"/></Doc>"""));
+        Assert.Null(TiaPortalNativeScrubber.TryReadUid("""<Block UId="0"/>"""));
+        Assert.Equal("a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            TiaPortalNativeScrubber.TryReadUid("""<Block UId="a1b2c3d4-e5f6-7890-abcd-ef1234567890"/>"""));
     }
 }

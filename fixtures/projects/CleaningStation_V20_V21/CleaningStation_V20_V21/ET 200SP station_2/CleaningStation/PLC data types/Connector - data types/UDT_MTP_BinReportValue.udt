@@ -1,0 +1,12 @@
+﻿TYPE "UDT_MTP_BinReportValue"
+VERSION : 0.1
+   STRUCT
+      WQC { ExternalWritable := 'False'} : Byte := 16#FF;   // Worst Quality Code
+      V { ExternalWritable := 'False'} : Bool;   // Value
+      VState0 { ExternalWritable := 'False'} : String[16];   // text replacement for false
+      VState1 { ExternalWritable := 'False'} : String[16];   // text replacement for true
+      MissedValue { ExternalWritable := 'False'} : Bool;   // MissedValueFeature
+   END_STRUCT;
+
+END_TYPE
+

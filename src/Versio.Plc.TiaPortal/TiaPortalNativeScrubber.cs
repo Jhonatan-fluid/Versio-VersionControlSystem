@@ -59,11 +59,16 @@ public static class TiaPortalNativeScrubber
     public static string Hash(string? xml) => ContentHash.Of(Normalize(xml));
 
     /// <summary>
-    /// The composition identity when SimaticML carries one, otherwise null.
+    /// The composition identity when SimaticML carries a <em>project</em> identity, otherwise null.
     /// </summary>
     /// <remarks>
-    /// Prefer this over name+number. A rename must not change the manifest identity, and
-    /// a key built from the name would turn every rename into a delete plus a create.
+    /// Prefer this over name+number if it ever appears. A rename must not change the
+    /// manifest identity, and a key built from the name would turn every rename into a
+    /// delete plus a create.
+    /// SimaticML's <c>UId</c> is not that: it is a document-local integer. CleaningStation
+    /// first exported every guid as <c>"0"</c> (wrapper), then as <c>"1"</c> once zero was
+    /// skipped — 26,661 distinct UId values in 159 files, the most common being <c>"35"</c>.
+    /// Only a GUID-shaped value is accepted.
     /// </remarks>
     public static string? TryReadUid(string? xml)
     {
@@ -75,15 +80,34 @@ public static class TiaPortalNativeScrubber
         try
         {
             var doc = XDocument.Parse(xml);
-            var uid = doc.Descendants()
+            return doc.Descendants()
                 .Select(e => (string?)e.Attribute("UId") ?? (string?)e.Attribute("ID")
                     ?? (string?)e.Attribute("Id"))
-                .FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
-            return uid;
+                .Select(v => v?.Trim())
+                .FirstOrDefault(LooksLikeProjectIdentity);
         }
         catch (System.Xml.XmlException)
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// Integers, including 0 and 1, are SimaticML's per-document numbering. A UUID or a
+    /// 32-character hex blob would be a project identity if this vendor ever wrote one.
+    /// </summary>
+    internal static bool LooksLikeProjectIdentity(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        if (value.All(char.IsDigit))
+        {
+            return false;
+        }
+
+        return value.Length >= 8 && (value.Contains('-', StringComparison.Ordinal) || value.Length >= 32);
     }
 }

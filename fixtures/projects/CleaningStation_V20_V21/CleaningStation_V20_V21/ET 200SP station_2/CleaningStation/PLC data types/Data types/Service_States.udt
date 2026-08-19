@@ -1,0 +1,23 @@
+﻿TYPE "Service_States"
+VERSION : 0.1
+   STRUCT
+      Starting { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DWord := 16#0000_0008;
+      Idle { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DWord := 16#0000_0010;
+      Execute { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DWord := 16#0000_0040;
+      Stopping { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DWord := 16#0000_0080;
+      Aborting { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DWord := 16#0000_0100;
+      Holding { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DWord := 16#0000_0400;
+      Unholding { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DWord := 16#0000_1000;
+      Pausing { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DWord := 16#0000_2000;
+      Resuming { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DWord := 16#0000_4000;
+      Resetting { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DWord := 16#0000_8000;
+      Completing { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DWord := 16#0001_0000;
+      Paused { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DWord := 16#0000_0020;
+      Aborted { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DWord := 16#0000_0200;
+      Completed { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DWord := 16#0002_0000;
+      Stopped { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DWord := 16#0000_0004;
+      Held { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DWord := 16#0000_0800;
+   END_STRUCT;
+
+END_TYPE
+

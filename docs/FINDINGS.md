@@ -17,6 +17,45 @@ produce a diff touching everything else.
 
 ---
 
+### SimaticML UId is a document-local integer, not a project identity
+
+**Found 2026-08-19**, first inspectable export of CleaningStation. Manifest `guid` preferred
+the first `UId` in the SimaticML. Every object recorded `"0"` — a wrapper attribute, not an
+identity. Skipping `"0"` made every object `"1"`. Counting the XML: 159 files, **26,661**
+distinct `UId` values, the most common `"35"`. They number elements inside a document.
+They do not survive as a project-wide key, and they collide across objects.
+
+**Fix:** the host records `{device}/{plc}/{type}/{name}#{number}` and never takes an
+integer UId. `TryReadUid` only accepts a GUID-shaped value, which this vendor's XML does
+not currently carry. Rename pairing stays on content hash / line sketch.
+
+**What was rejected:** using the first non-zero UId (that is `"1"`); treating a small
+integer as "probably unique enough".
+
+---
+
+### TIA occupancy is a .info sidecar, measured while Openness held the project
+
+**Found 2026-08-19**, polling the scratch tree while the net48 host held
+`Projects.Open`. `OccupancyMarkerFor` returned null because the closed-tree listing had
+no `.~u`. With the project actually open:
+
+- `<stem>.info` appeared beside the `.ap21` 16 s after open and vanished when the host
+  exited
+- `System/~PEData.1` appeared two seconds later and vanished on close
+
+Existence of `.info` is Held. The body is not parsed — guessing Free from an unknown
+format is how two writers would share a project. The tilde file is a transient inside
+`System/`, excluded from the project hash so an in-flight export is not a program change.
+
+**What was rejected:** leaving the marker null and relying on `Projects.Open` failing
+(that reports after a multi-minute wait, and the panel cannot watch it); hashing `.info`
+into the project (it is occupancy, not the program).
+
+GUI-open occupancy (Portal with a window, no Openness) is still unmeasured.
+
+---
+
 ### Restoring a backup in the same second overwrote the backup
 
 **Found 2026-08-19**, writing the directory-payload restore test. `BackUpProjectAsync`
@@ -43,9 +82,13 @@ product able to eat the copy it is restoring.
 
 ### TIA Portal Openness: the group is empty, so the host cannot open a project yet
 
+**Closed 2026-08-19.** `elli_` is in `Siemens TIA Openness` and this logon token carries
+the group. Probe 42 s, export 37 s, after a first unanswered AllowList dialog that timed
+out at 8 min 53 s.
+
 **Found 2026-08-19**, first probe of a real V21 install. Local group `Siemens TIA Openness`
-exists and has **zero members**. `net localgroup ... /add` returned Access denied (error 5).
-Until `elli_` is in that group and the session is logged off and on, `Projects.Open` is the
+exists and had **zero members**. `net localgroup ... /add` returned Access denied (error 5).
+Until `elli_` was in that group and the session was logged off and on, `Projects.Open` was the
 failure, not a product bug.
 
 The first successful connect also needs Yes-to-all on the Openness firewall AllowList

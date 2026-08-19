@@ -1,0 +1,52 @@
+﻿FUNCTION_BLOCK "Service_Interaction_FB"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      Startbit { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      AnswerID { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DWord;
+   END_VAR
+
+   VAR_OUTPUT 
+      P100_Start : Bool;
+      P101_Start : Bool;
+   END_VAR
+
+   VAR_IN_OUT 
+      Pump_100 : "MotL";
+      Pump_101 : "MotL";
+   END_VAR
+
+   VAR_TEMP 
+      State : "Service_States";
+   END_VAR
+
+
+BEGIN
+	//if positive edge, then trigger service interaction (set Question and info text)
+	IF #Startbit AND NOT #Pump_100.Run.Value AND NOT #Pump_101.Run.Value THEN
+	    "Dose".InteractAddInfoLi := 'Select the available Pump for the operation';
+	    "Dose".InteractQuestionIdLi := 1;
+	END_IF;
+	
+	//if answer ID 1 or 3 is selected, start pump_100
+	IF ((#AnswerID = 1 OR #AnswerID = 3) AND #Startbit) THEN
+	    #P100_Start := True;
+	END_IF;
+	//if answer ID 2 or 3 is selected, start pump_101
+	IF ((#AnswerID = 2 OR #AnswerID = 3) AND #Startbit) THEN
+	    #P101_Start := True;
+	END_IF;
+	
+	//if answer ID 0 or service in state stopping/resetting/aborting/completing then reset question ID and info
+	IF (#AnswerID <> 0 AND #Startbit) OR "Dose".MTP.ServiceControl.StateCur <> #State.Execute THEN
+	    "Dose".InteractQuestionIdLi := 0;
+	    "Dose".InteractAddInfoLi := '';
+	END_IF;
+	
+	//reset start aut of pumps, if no positive edge
+	IF NOT #Startbit AND (#Pump_100.Run.Value = True OR #Pump_101.Run.Value = True) THEN
+	    #P100_Start := false;
+	    #P101_Start := false;
+	END_IF;
+END_FUNCTION_BLOCK
+

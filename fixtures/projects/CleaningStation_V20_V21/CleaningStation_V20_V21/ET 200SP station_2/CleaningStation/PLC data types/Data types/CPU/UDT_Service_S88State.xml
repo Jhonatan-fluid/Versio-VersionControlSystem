@@ -1,0 +1,266 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Document>
+  <Engineering version="V21" />
+  <DocumentInfo>
+    <Created>2026-08-19T17:13:19.6922855Z</Created>
+    <ExportSetting>None</ExportSetting>
+    <InstalledProducts>
+      <Product>
+        <DisplayName>Totally Integrated Automation Portal</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>STEP 7 Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <OptionPackage>
+        <DisplayName>STEP 7 Safety</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <OptionPackage>
+        <DisplayName>Tech WebApplication</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <Product>
+        <DisplayName>WinCC Basic/Comfort/Advanced</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Unified</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+    </InstalledProducts>
+  </DocumentInfo>
+  <SW.Types.PlcStruct ID="0">
+    <AttributeList>
+      <Interface>
+        <Sections xmlns="http://www.siemens.com/automation/Openness/SW/Interface/v5">
+          <Section Name="None">
+            <Member Name="nostate" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">No state; not defined</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">No state; not defined</MultiLanguageText>
+                <MultiLanguageText Lang="fr-FR">No state; not defined</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="idle" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Idle state</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Idle state</MultiLanguageText>
+                <MultiLanguageText Lang="fr-FR">Idle state</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="starting" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Starting state</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Starting state</MultiLanguageText>
+                <MultiLanguageText Lang="fr-FR">Starting state</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="execute" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Execute state</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Execute state</MultiLanguageText>
+                <MultiLanguageText Lang="fr-FR">Execute state</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="completed" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Completed state</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Completed state</MultiLanguageText>
+                <MultiLanguageText Lang="fr-FR">Completed state</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="held" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Held state</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Held state</MultiLanguageText>
+                <MultiLanguageText Lang="fr-FR">Held state</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="aborted" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Aborted state</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Aborted state</MultiLanguageText>
+                <MultiLanguageText Lang="fr-FR">Aborted state</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="stopped" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Stopped state</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Stopped state</MultiLanguageText>
+                <MultiLanguageText Lang="fr-FR">Stopped state</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="resuming" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Resuming state</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Resuming state</MultiLanguageText>
+                <MultiLanguageText Lang="fr-FR">Resuming state</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="completing" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Completing state</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Completing state</MultiLanguageText>
+                <MultiLanguageText Lang="fr-FR">Completing state</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="holding" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Holding state</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Holding state</MultiLanguageText>
+                <MultiLanguageText Lang="fr-FR">Holding state</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="stopping" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Stopping state</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Stopping state</MultiLanguageText>
+                <MultiLanguageText Lang="fr-FR">Stopping state</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="aborting" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Aborting state</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Aborting state</MultiLanguageText>
+                <MultiLanguageText Lang="fr-FR">Aborting state</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="unholding" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Unholding state</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Unholding state</MultiLanguageText>
+                <MultiLanguageText Lang="fr-FR">Unholding state</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="paused" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Paused state</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Paused state</MultiLanguageText>
+                <MultiLanguageText Lang="fr-FR">Paused state</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="pausing" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Pausing state</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Pausing state</MultiLanguageText>
+                <MultiLanguageText Lang="fr-FR">Pausing state</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="resetting" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE">Resetting state</MultiLanguageText>
+                <MultiLanguageText Lang="en-US">Resetting state</MultiLanguageText>
+                <MultiLanguageText Lang="fr-FR">Resetting state</MultiLanguageText>
+              </Comment>
+            </Member>
+          </Section>
+        </Sections>
+      </Interface>
+      <Name>UDT_Service_S88State</Name>
+      <Namespace />
+    </AttributeList>
+    <ObjectList>
+      <MultilingualText ID="1" CompositionName="Comment">
+        <ObjectList>
+          <MultilingualTextItem ID="2" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="3" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="4" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+      <MultilingualText ID="5" CompositionName="Title">
+        <ObjectList>
+          <MultilingualTextItem ID="6" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="7" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="8" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+    </ObjectList>
+  </SW.Types.PlcStruct>
+</Document>

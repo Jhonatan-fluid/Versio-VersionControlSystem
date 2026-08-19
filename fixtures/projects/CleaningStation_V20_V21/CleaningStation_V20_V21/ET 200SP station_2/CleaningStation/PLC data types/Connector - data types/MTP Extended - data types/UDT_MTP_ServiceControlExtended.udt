@@ -1,0 +1,9 @@
+﻿TYPE "UDT_MTP_ServiceControlExtended"
+VERSION : 0.1
+   STRUCT
+      ServiceControl { S7_SetPoint := 'False'} : "UDT_MTP_ServiceControl";
+      ServiceSetup : "UDT_Service_Setup";
+   END_STRUCT;
+
+END_TYPE
+

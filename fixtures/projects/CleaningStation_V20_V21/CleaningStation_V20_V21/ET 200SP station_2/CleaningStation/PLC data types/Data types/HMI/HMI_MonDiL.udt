@@ -1,0 +1,24 @@
+﻿TYPE "HMI_MonDiL"
+VERSION : 0.1
+   STRUCT
+      FlutTmIn : Real;   // Flutter Suppression Time [s]
+      FlutFactor : Int := 2;   // Fluttering Factor
+      Out_DC { CFC_Visible := 'false'} : Real;   // Out Delay Time Coming [s]
+      Out_DG { CFC_Visible := 'false'} : Real;   // Out Delay Time Going [s]
+      OnOp : Bool;   // 1=On Mode: On Mode by Operator
+      OosOp : Bool;   // 1=Oos Mode: Oos Mode by Operator
+      SimIn { CFC_Visible := 'false'} : Bool;   // Simulation Value
+      Out_ST { ExternalWritable := 'False'} : Byte := BYTE#16#80;   // Out Signal Status
+      OS_PermOut { ExternalWritable := 'False'; CFC_Visible := 'false'} : DWord := DWORD#16#FFFF_FFFF;   // Operator Permission: Output for OS
+      OS_PermLog { ExternalWritable := 'False'; CFC_Visible := 'false'} : DWord := DWORD#16#FFFF_FFFF;   // Operator Permission: Output for OS
+      OpSt_Out { ExternalWritable := 'False'} : DWord;   // Enabled operator stations
+      ST_Worst { ExternalWritable := 'False'} : Byte := BYTE#16#80;   // Worst Signal Status
+      Status1 { ExternalWritable := 'False'} : DWord;   // Status1 Word
+      Status2 { ExternalWritable := 'False'} : DWord;   // Status2 Word
+      Status3 { ExternalWritable := 'False'} : DWord;   // Status3 Word
+      Status4 { ExternalWritable := 'False'} : DWord;   // Status4 Word
+      AlarmState { ExternalWritable := 'False'} : Word;   // Alarm Status for group display
+   END_STRUCT;
+
+END_TYPE
+

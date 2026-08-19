@@ -1,0 +1,9 @@
+﻿TYPE "UDT_Service_IndexElement"
+VERSION : 0.1
+   STRUCT
+      startIndex : Int := -1;   // Start index  for addressing parameter
+      endIndex : Int := -1;   // End index  for addressing parameter
+   END_STRUCT;
+
+END_TYPE
+

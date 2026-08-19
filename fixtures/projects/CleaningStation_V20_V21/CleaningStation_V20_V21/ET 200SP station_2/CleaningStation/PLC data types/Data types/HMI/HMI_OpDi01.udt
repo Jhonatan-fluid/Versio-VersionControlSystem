@@ -1,0 +1,20 @@
+﻿TYPE "HMI_OpDi01"
+VERSION : 0.1
+   STRUCT
+      SetOp : Bool := FALSE;   //  Operator Digital Input
+      RstOp : Bool := FALSE;   //  Operator Reset Signal
+      SetLi : Bool;   //  Linkable Digital Input
+      RstLi : Bool;   //  Linkable Reset Signal
+      Intlock : Bool := true;   //  0=Interlocked, 1=Not Interlocked
+      Intlock_ST : Byte := BYTE#16#FF;   //  Intlock Signal Status
+      OnOp : Bool := FALSE;   //  1=On Mode: On Mode by Operator
+      OosOp : Bool := FALSE;   //  1=Oos Mode: Oos Mode by Operator
+      OS_PermOut { ExternalWritable := 'False'} : DWord := DWORD#16#FFFF_FFFF;   //  Operator Permission: Output for OS
+      OS_PermLog { ExternalWritable := 'False'} : DWord := DWORD#16#FFFF_FFFF;   //  Operator Permission: Output for OS
+      OpSt_Out { ExternalWritable := 'False'} : DWord := 16#0;   //  Enabled operator stations
+      ST_Worst { ExternalWritable := 'False'} : Byte := 16#80;   //  Worst Signal Status
+      Status { ExternalWritable := 'False'} : DWord := 16#0;   //  Status Word
+   END_STRUCT;
+
+END_TYPE
+

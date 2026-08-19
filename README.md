@@ -208,10 +208,14 @@ Versio.sln
 │                               probes. New-VersioIcon.ps1 generates the app icon.
 ├─ assets/                      versio.svg (reference drawing) and versio.ico
 │                               (the build input — generated, never hand-edited)
-├─ fixtures/projects/           the CODESYS projects the suite runs against, plus their
-│                               committed export mirrors. The .project files are GIT LFS
-│                               POINTERS — a clone without git-lfs installed gets 130-byte
-│                               stubs and the integration suite fails confusingly
+├─ fixtures/projects/           the PLC projects the suite runs against, plus their
+│                               committed export mirrors. RefrigeratorControl.project
+│                               (CODESYS) and CleaningStation_V20_V21/ (TIA Portal,
+│                               a directory) are GIT LFS — a clone without git-lfs
+│                               gets 130-byte stubs and the toolchain gate skips
+│                               rather than opening a pointer. This repository's
+│                               .versio/repo.json ignores the TIA tree so opening
+│                               Versio here does not start a 37 s Portal export
 ├─ phase0/                      GITIGNORED scratch, created on demand by the tools/ harnesses
 │                               and safe to delete whole — it reached 150 MB of scratch
 │                               project copies before it was cleaned out on 2026-08-17. The
@@ -223,7 +227,7 @@ Versio.sln
    ├─ PHASE2.md                 THE FORWARD QUEUE — what is left, in order, and the
    │                            decisions already taken with their why
    ├─ STATUS.md                 where the project is; audits and the findings index
-   ├─ FINDINGS.md               109 defects with their evidence, newest first — the
+   ├─ FINDINGS.md               111 defects with their evidence, newest first — the
    │                            engineering log, split out of STATUS.md when it reached
    │                            77% of that file
    ├─ SAFEGUARDS.md             what Versio refuses, asks about, or waits for
@@ -232,8 +236,9 @@ Versio.sln
    │                            PHASE0-FINDINGS), each marked done, plus probes/ holding
    │                            the raw measurements behind every P-numbered claim.
    │                            Reasoning and evidence, never current state
-   └─ vendors/codesys/          ONE VENDOR's documentation, beside its two projects
-      └─ DRIVING.md             how CODESYS is driven end to end, and the audit of it
+   └─ vendors/                  ONE VENDOR's documentation per pack
+      ├─ codesys/DRIVING.md     how CODESYS is driven end to end, and the audit of it
+      └─ tia/DRIVING.md         how TIA Portal is driven — Openness, host, occupancy
 ```
 
 `Versio.App` holds the WPF shell: `Theme/tokens/` for the design tokens, `Theme/controls/` for
@@ -403,6 +408,19 @@ Native fidelity is *semantic*, and that check lives once, in C#: `dotnet test te
 
 > The profile string cannot be guessed from the install folder: `CODESYS 3.5.22.20` on disk is profile `CODESYS V3.5 SP22 Patch 2`. Read it from `…\CODESYS\Profiles\*.profile.xml`, or let `CodesysLocator` find it.
 
+### Running the TIA Portal pipeline by hand
+
+Same layered-verdict rule. Default project is the committed fixture. Close Versio **and**
+TIA Portal first. Openness membership and the host AllowList are required; see
+[`docs/vendors/tia/DRIVING.md`](docs/vendors/tia/DRIVING.md).
+
+```
+pwsh tools/tia/Test-RoundTrip.ps1 -MutateFirst
+```
+
+That writes the committed `CleaningStation_V20_V21` tree. For a disposable copy, pass
+`-Project` at a tree under `.versio/local/tia/` — never the OneDrive original.
+
 ---
 
 ## Dependencies
@@ -417,10 +435,11 @@ Deliberately few. Every one is a thing that can break a build or a publish.
 
 **`Versio.Core` and `Versio.Infrastructure` have no third-party dependencies at all.**
 
-**One tool is a prerequisite rather than a package: `git-lfs`.** The `.project` fixtures are
-stored in LFS, so a clone on a machine without it gets 130-byte pointer files instead. Nothing
-fails at build time — the integration suite fails later, complaining that a CODESYS project it
-was handed is not a project, which is a long way from the cause.
+**One tool is a prerequisite rather than a package: `git-lfs`.** The `.project` fixtures and
+the TIA Portal `System/*.plf` payload are stored in LFS, so a clone on a machine without it
+gets 130-byte pointer files instead. Nothing fails at build time — the CODESYS suite fails
+later, complaining that a project it was handed is not a project; the TIA gate **skips**
+when `TestPaths.TiaPortalProject()` sees a pointer.
 
 Two absences are decisions, not omissions:
 

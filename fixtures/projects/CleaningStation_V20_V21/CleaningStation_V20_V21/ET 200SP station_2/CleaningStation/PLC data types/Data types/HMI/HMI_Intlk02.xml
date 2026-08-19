@@ -1,0 +1,282 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Document>
+  <Engineering version="V21" />
+  <DocumentInfo>
+    <Created>2026-08-19T17:13:21.1866243Z</Created>
+    <ExportSetting>None</ExportSetting>
+    <InstalledProducts>
+      <Product>
+        <DisplayName>Totally Integrated Automation Portal</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>STEP 7 Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <OptionPackage>
+        <DisplayName>STEP 7 Safety</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <OptionPackage>
+        <DisplayName>Tech WebApplication</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <Product>
+        <DisplayName>WinCC Basic/Comfort/Advanced</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Unified</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+    </InstalledProducts>
+  </DocumentInfo>
+  <SW.Types.PlcStruct ID="0">
+    <AttributeList>
+      <Interface>
+        <Sections xmlns="http://www.siemens.com/automation/Openness/SW/Interface/v5">
+          <Section Name="None">
+            <Member Name="In01_Text" Datatype="String[16]">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> In01 text</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> In01 text</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="BypIn01" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Bypass In01 (via operator)</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Bypass In01 (via operator)</MultiLanguageText>
+              </Comment>
+              <StartValue>FALSE</StartValue>
+            </Member>
+            <Member Name="AV01" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Analog value for In01</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Analog value for In01</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="AV01_Unit" Datatype="Int">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Engineering unit of AV01</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Engineering unit of AV01</MultiLanguageText>
+              </Comment>
+              <StartValue>0</StartValue>
+            </Member>
+            <Member Name="In02_Text" Datatype="String[16]">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> In02 text</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> In02 text</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="BypIn02" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Bypass In02 (via operator)</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Bypass In02 (via operator)</MultiLanguageText>
+              </Comment>
+              <StartValue>FALSE</StartValue>
+            </Member>
+            <Member Name="AV02" Datatype="Real">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Analog value for In02</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Analog value for In02</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="AV02_Unit" Datatype="Int">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Engineering unit of AV02</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Engineering unit of AV02</MultiLanguageText>
+              </Comment>
+              <StartValue>0</StartValue>
+            </Member>
+            <Member Name="RstOp" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Reset FirstIn (operator)</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Reset FirstIn (operator)</MultiLanguageText>
+              </Comment>
+              <StartValue>FALSE</StartValue>
+            </Member>
+            <Member Name="RstBypOp" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Reset all Bypasses (Operator)</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Reset all Bypasses (Operator)</MultiLanguageText>
+              </Comment>
+              <StartValue>FALSE</StartValue>
+            </Member>
+            <Member Name="OS_PermOut" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Operator Permission: Output for OS</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Operator Permission: Output for OS</MultiLanguageText>
+              </Comment>
+              <StartValue>DWORD#16#FFFF_FFFF</StartValue>
+            </Member>
+            <Member Name="OS_PermLog" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Operator Permission: Output for OS</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Operator Permission: Output for OS</MultiLanguageText>
+              </Comment>
+              <StartValue>DWORD#16#FFFF_FFFF</StartValue>
+            </Member>
+            <Member Name="OpSt_Out" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Enabled operator stations</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Enabled operator stations</MultiLanguageText>
+              </Comment>
+              <StartValue>16#0</StartValue>
+            </Member>
+            <Member Name="ST_Worst" Datatype="Byte">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Worst Signal Status</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Worst Signal Status</MultiLanguageText>
+              </Comment>
+              <StartValue>16#80</StartValue>
+            </Member>
+            <Member Name="Status1" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Status1</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Status1</MultiLanguageText>
+              </Comment>
+              <StartValue>16#0</StartValue>
+            </Member>
+            <Member Name="Status2" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Status2</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Status2</MultiLanguageText>
+              </Comment>
+              <StartValue>16#0</StartValue>
+            </Member>
+            <Member Name="Status3" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Status3</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Status3</MultiLanguageText>
+              </Comment>
+              <StartValue>16#0</StartValue>
+            </Member>
+            <Member Name="Status4" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Status4</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Status4</MultiLanguageText>
+              </Comment>
+              <StartValue>16#0</StartValue>
+            </Member>
+            <Member Name="Status5" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Status5</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Status5</MultiLanguageText>
+              </Comment>
+              <StartValue>16#0</StartValue>
+            </Member>
+            <Member Name="Status6" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Status6</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Status6</MultiLanguageText>
+              </Comment>
+              <StartValue>16#0</StartValue>
+            </Member>
+            <Member Name="Status7" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Status7</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Status7</MultiLanguageText>
+              </Comment>
+              <StartValue>16#0</StartValue>
+            </Member>
+            <Member Name="Status8" Datatype="DWord">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="de-DE"> Status8</MultiLanguageText>
+                <MultiLanguageText Lang="en-US"> Status8</MultiLanguageText>
+              </Comment>
+              <StartValue>16#0</StartValue>
+            </Member>
+          </Section>
+        </Sections>
+      </Interface>
+      <Name>HMI_Intlk02</Name>
+      <Namespace />
+    </AttributeList>
+    <ObjectList>
+      <MultilingualText ID="1" CompositionName="Comment">
+        <ObjectList>
+          <MultilingualTextItem ID="2" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="3" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="4" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+      <MultilingualText ID="5" CompositionName="Title">
+        <ObjectList>
+          <MultilingualTextItem ID="6" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="7" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="8" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+    </ObjectList>
+  </SW.Types.PlcStruct>
+</Document>

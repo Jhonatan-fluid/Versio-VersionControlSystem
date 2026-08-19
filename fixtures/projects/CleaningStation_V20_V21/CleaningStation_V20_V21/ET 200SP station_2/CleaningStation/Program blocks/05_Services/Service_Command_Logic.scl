@@ -1,0 +1,51 @@
+﻿FUNCTION_BLOCK "Service_Command_Logic"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      Level : Real;
+      ProcedureID_cur : DWord;
+   END_VAR
+
+   VAR_TEMP 
+      i : Int;
+      State : "Service_States";
+   END_VAR
+
+
+BEGIN
+	//Set service to hold, if the level of the tank falls under 0,45 during the 
+	//procedures DoseByVolume and DoseByFlow
+	IF #Level < 45 AND "Dose".Information.state = #State.Execute AND "Dose".MTP.ServiceControl.ProcedureCur <> 3 THEN
+	    "Dose".CommandForce.hold := TRUE;
+	    FOR #i := 0 TO 1 BY 1 DO
+	        "Dose"."Procedure"[#i].ProcedureEnable.Unhold.ST := 16#80;
+	        "Dose"."Procedure"[#i].ProcedureEnable.Unhold.Value := false;
+	    END_FOR;
+	END_IF;
+	IF "Dose".Information.state = #State.Held THEN
+	    "Dose".CommandForce.hold := FALSE;
+	END_IF;
+	IF "Dose".Information.state = #State.Held AND #Level >= 1.0 THEN
+	    FOR #i := 0 TO 1 BY 1 DO
+	        "Dose"."Procedure"[#i].ProcedureEnable.Unhold.ST := 16#80;
+	        "Dose"."Procedure"[#i].ProcedureEnable.Unhold.Value := true;
+	    END_FOR;
+	END_IF;
+	
+	
+	//Set service to abort, if the pump is in failure
+	IF "P100_Type".GrpErr = True OR "P101_Type".GrpErr THEN
+	    "Dose".CommandForce.abort := TRUE;
+	    FOR #i := 0 TO 2 BY 1 DO
+	        "Dose"."Procedure"[#i].ProcedureEnable.Start.ST := 16#80;
+	        "Dose"."Procedure"[#i].ProcedureEnable.Start.Value := false;
+	    END_FOR;
+	ELSIF ("Dose".Information.state = #State.Aborted OR "Dose".Information.state = #State.Idle) AND ("P100_Type".GrpErr = False OR "P101_Type".GrpErr) THEN
+	    "Dose".CommandForce.abort := false;
+	    FOR #i := 0 TO 2 BY 1 DO
+	        "Dose"."Procedure"[#i].ProcedureEnable.Start.ST := 16#80;
+	        "Dose"."Procedure"[#i].ProcedureEnable.Start.Value := true;
+	    END_FOR;
+	END_IF;
+END_FUNCTION_BLOCK
+

@@ -1,0 +1,52 @@
+﻿TYPE "UDT_MTP_PIDCtrl"
+TITLE = MTPDataObjectSUCLibrary/DataAssembly/MTPPID
+VERSION : 0.1
+   STRUCT
+      SPInt { ExternalWritable := 'False'} : Real := 0.0;   // Internal Setpoint (relevant, if SrcIntAct & StateAutAct)
+      SPIntMax { ExternalWritable := 'False'} : Real := 100.0;   // Internal setpoint high limit
+      SPIntMin { ExternalWritable := 'False'} : Real := 0.0;   // Internal setpoint low limit
+      SPManMax { ExternalWritable := 'False'} : Real := 100.0;   // Manual setpoint high limit
+      SPManMin { ExternalWritable := 'False'} : Real := 0.0;   // Manual setpoint low limit
+      MVMan : Real := 0.0;   // (relevant, if StateOpAct) Manipulated Value from Operator
+      MVMax { ExternalWritable := 'False'} : Real := 100.0;   // Maximum manipulated value
+      MVMin { ExternalWritable := 'False'} : Real := 0.0;   // Minimally manipulated value
+      P : Real := 1.0;   // (relevant, if StateAutAct) Proportional parameters [1]
+      Ti : Real := 100.0;   // (relevant, if StateAutAct) Integration parameters [s]
+      Td : Real := 0.0;   // (relevant, if StateAutAct) Derivation parameter [s]
+      OSLevel : Byte := 16#00;   // OS Level variable
+      StateChannel { ExternalWritable := 'False'} : Bool;   // Selection of the active Operation Mode interaction channel 0: the operator switches (*Op) shall be used 1: the automatic switches (*Aut) shall be used 
+      StateOffAut { ExternalWritable := 'False'} : Bool;   // Set OperationMode to Offline by automatic interaction (relevant, if StateChannel) 1:OperationMode is set to Offline 0:no operation
+      StateOffOp : Bool;   // Set OperationMode to Offline by operator interaction (relevant, if not StateChannel) 0-->1:request to set OperationMode to Offline 1-->0:acknowledge by PEA
+      StateOpAut { ExternalWritable := 'False'} : Bool;   // Set OperationMode to Operator by automatic interaction (relevant, if StateChannel) 1:OperationMode is set to Manual 0:no operation
+      StateOpOp : Bool;   // Set OperationMode to Operator by operator interaction (relevant, if not StateChannel) 0-->1:request to set OperationMode to Manual 1-->0:acknowledge by PEA
+      StateAutAut { ExternalWritable := 'False'} : Bool;   // Set OperationMode to Automtic by automatic interaction (relevant, if StateChannel) 1:OperationMode is set to Automatic 0:no operation
+      StateAutOp : Bool;   // Set OperationMode to Automatic by operator interaction (relevant, if not StateChannel) 0-->1:request to set OperationMode is to Automatic 1-->0:acknowledge by PEA
+      StateOpAct { ExternalWritable := 'False'} : Bool;   // 1: current mode is Operator 0: current mode is not Operator 
+      StateAutAct { ExternalWritable := 'False'} : Bool;   // 1: current mode is Automatic 0: current mode is not Automatic 
+      StateOffAct { ExternalWritable := 'False'} : Bool;   // 1: current mode is Offline 0: current mode is not Offline 
+      SrcChannel { ExternalWritable := 'False'} : Bool;   // Selection of the active SourceMode interaction channel 0:The operator switches (*Op) shall be used 1:The automatic switches (*Aut) shall be used
+      SrcManAut { ExternalWritable := 'False'} : Bool;   // Set SourceMode to Manual by automatic interaction (relevant, if SrcChannel is true) 1:SourceMode is set to Manual 0:no operation 
+      SrcIntAut { ExternalWritable := 'False'} : Bool;   // Set SourceMode to Internal by automatic interaction (relevant, if SrcChannel is true) 1:SourceMode is set to Internal 0:no operation
+      SrcIntOp : Bool;   // Set SourceMode to Internal by operator interaction (relevant, if SrcChannel is false) 0-->1:request to set OperationMode to Internal 1-->0:acknowledge by PEA
+      SrcManOp : Bool;   // Set SourceMode to Manual by operator interaction (relevant, if SrcChannel is false) 0-->1:request to set OperationMode to Manual 1-->0:acknowledge by PEA
+      SrcIntAct { ExternalWritable := 'False'} : Bool;   // 1: current mode is Internal 0: current mode is not Internal 
+      SrcManAct { ExternalWritable := 'False'} : Bool;   // 1: current mode is Manual 0: current mode is not Manual 
+      CSF { ExternalWritable := 'False'} : Bool;   // Reserved
+      WQC { ExternalWritable := 'False'} : Byte := 16#FF;   // Worst Quality Code variable
+      PV { ExternalWritable := 'False'} : Real := 0.0;   // Process value
+      PVSclMax { ExternalWritable := 'False'} : Real := 100.0;   // Process Value Scale High Limit
+      PVSclMin { ExternalWritable := 'False'} : Real := 0.0;   // Process Value Scale Low Limit
+      PVUnit { ExternalWritable := 'False'} : Int := 1001;   // Process Value Unit
+      SP { ExternalWritable := 'False'} : Real := 0.0;   // Setpoint If SrcIntAct Then SP = SPInt If SrcManAct Then SP = SPMan
+      SPSclMax { ExternalWritable := 'False'} : Real := 100.0;   // Setpoint scale high limit
+      SPSclMin { ExternalWritable := 'False'} : Real := 0.0;   // Setpoint scale low limit
+      SPUnit { ExternalWritable := 'False'} : Int := 1001;   // Setpoint unit
+      SPMan : Real := 0.0;   // Manual Setpoint (relevant, if SrcManAct & StateAutAct)
+      MV { ExternalWritable := 'False'} : Real := 0.0;   // Manipulated Value If StateAutAct then MV = from PID Algorithm If StateOpAct then MV = MVOp 
+      MVSclMax { ExternalWritable := 'False'} : Real := 100.0;   // Manipulated Value Scale High Limit
+      MVSclMin { ExternalWritable := 'False'} : Real := 0.0;   // Manipulated Value Scale Low Limit
+      MVUnit { ExternalWritable := 'False'} : Int := 1001;   // Manipulated value unit
+   END_STRUCT;
+
+END_TYPE
+

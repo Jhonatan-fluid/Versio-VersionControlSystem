@@ -1,0 +1,655 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Document>
+  <Engineering version="V21" />
+  <DocumentInfo>
+    <Created>2026-08-19T17:13:11.0587983Z</Created>
+    <ExportSetting>None</ExportSetting>
+    <InstalledProducts>
+      <Product>
+        <DisplayName>Totally Integrated Automation Portal</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>STEP 7 Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <OptionPackage>
+        <DisplayName>STEP 7 Safety</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <OptionPackage>
+        <DisplayName>Tech WebApplication</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <Product>
+        <DisplayName>WinCC Basic/Comfort/Advanced</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Unified</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+    </InstalledProducts>
+  </DocumentInfo>
+  <SW.Blocks.FB ID="0">
+    <AttributeList>
+      <Interface>
+        <Sections xmlns="http://www.siemens.com/automation/Openness/SW/Interface/v5">
+          <Section Name="Input">
+            <Member Name="Fill_Start" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">1 = Starts fill process</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="Release_Start" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">1 = Starts release prozess</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="T_Fill" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Time constant</MultiLanguageText>
+              </Comment>
+              <StartValue>1.0</StartValue>
+            </Member>
+            <Member Name="T_Release" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Execution cycle @ OB3x. E.g. 100 ms = 0.1s</MultiLanguageText>
+              </Comment>
+              <StartValue>1.0</StartValue>
+            </Member>
+            <Member Name="Fill_Spd" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Filling speed in %</MultiLanguageText>
+              </Comment>
+              <StartValue>100.0</StartValue>
+            </Member>
+            <Member Name="Release_Spd_Raw" Datatype="Int">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Releasing speed in %</MultiLanguageText>
+              </Comment>
+              <StartValue>27648</StartValue>
+            </Member>
+            <Member Name="Level_Max" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Max Level</MultiLanguageText>
+              </Comment>
+              <StartValue>100.0</StartValue>
+            </Member>
+            <Member Name="Raw_Scale" Datatype="&quot;ScaVal_Raw&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Sections>
+                <Section Name="None">
+                  <Member Name="High" Datatype="DInt">
+                    <StartValue>27648</StartValue>
+                  </Member>
+                  <Member Name="Low" Datatype="DInt">
+                    <StartValue>0</StartValue>
+                  </Member>
+                </Section>
+              </Sections>
+            </Member>
+            <Member Name="Reset" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Reset level to 0.0</MultiLanguageText>
+              </Comment>
+              <StartValue>False</StartValue>
+            </Member>
+          </Section>
+          <Section Name="Output">
+            <Member Name="Fill_Level" Datatype="Real">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <StartValue>1500.0</StartValue>
+            </Member>
+            <Member Name="Fill_Level_Raw" Datatype="Int">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+            </Member>
+          </Section>
+          <Section Name="InOut" />
+          <Section Name="Static" />
+          <Section Name="Temp">
+            <Member Name="Release_Spd" Datatype="Real" />
+            <Member Name="ReleaseSpd_Real" Datatype="Real" />
+          </Section>
+          <Section Name="Constant" />
+        </Sections>
+      </Interface>
+      <MemoryLayout>Optimized</MemoryLayout>
+      <MemoryReserve>100</MemoryReserve>
+      <Name>Level</Name>
+      <Namespace />
+      <Number>11</Number>
+      <ProgrammingLanguage>SCL</ProgrammingLanguage>
+      <SetENOAutomatically>false</SetENOAutomatically>
+    </AttributeList>
+    <ObjectList>
+      <MultilingualText ID="1" CompositionName="Comment">
+        <ObjectList>
+          <MultilingualTextItem ID="2" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="3" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="4" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+      <SW.Blocks.CompileUnit ID="5" CompositionName="CompileUnits">
+        <AttributeList>
+          <NetworkSource>
+            <StructuredText xmlns="http://www.siemens.com/automation/Openness/SW/NetworkSource/StructuredText/v4">
+              <Access Scope="LocalVariable" UId="21">
+                <Symbol UId="22">
+                  <Component Name="ReleaseSpd_Real" UId="23" />
+                </Symbol>
+              </Access>
+              <Blank UId="24" />
+              <Token Text=":=" UId="25" />
+              <Blank UId="26" />
+              <Access Scope="Call" UId="27">
+                <Instruction Name="INT_TO_REAL" UId="28">
+                  <Token Text="(" UId="29" />
+                  <NamelessParameter UId="30">
+                    <Access Scope="LocalVariable" UId="31">
+                      <Symbol UId="32">
+                        <Component Name="Release_Spd_Raw" UId="33" />
+                      </Symbol>
+                    </Access>
+                  </NamelessParameter>
+                  <Token Text=")" UId="35" />
+                </Instruction>
+              </Access>
+              <Token Text=";" UId="36" />
+              <NewLine UId="37" />
+              <Access Scope="LocalVariable" UId="38">
+                <Symbol UId="39">
+                  <Component Name="Release_Spd" UId="40" />
+                </Symbol>
+              </Access>
+              <Blank UId="41" />
+              <Token Text=":=" UId="42" />
+              <Blank UId="43" />
+              <Token Text="(" UId="44" />
+              <Access Scope="LocalVariable" UId="45">
+                <Symbol UId="46">
+                  <Component Name="ReleaseSpd_Real" UId="47" />
+                </Symbol>
+              </Access>
+              <Blank UId="48" />
+              <Token Text="/" UId="49" />
+              <Blank UId="50" />
+              <Access Scope="LiteralConstant" UId="51">
+                <Constant UId="52">
+                  <ConstantValue UId="54">27648</ConstantValue>
+                </Constant>
+              </Access>
+              <Token Text=")" UId="55" />
+              <Blank UId="56" />
+              <Token Text="*" UId="57" />
+              <Blank UId="58" />
+              <Access Scope="LiteralConstant" UId="59">
+                <Constant UId="60">
+                  <ConstantValue UId="62">100</ConstantValue>
+                </Constant>
+              </Access>
+              <Token Text=";" UId="63" />
+              <NewLine Num="2" UId="64" />
+              <LineComment UId="65">
+                <Text UId="66"> Fill</Text>
+              </LineComment>
+              <NewLine UId="67" />
+              <Token Text="IF" UId="68" />
+              <Blank UId="69" />
+              <Access Scope="LocalVariable" UId="70">
+                <Symbol UId="71">
+                  <Component Name="Fill_Start" UId="72" />
+                </Symbol>
+              </Access>
+              <Blank UId="73" />
+              <Token Text="=" UId="74" />
+              <Blank UId="75" />
+              <Access Scope="LiteralConstant" UId="76">
+                <Constant UId="77">
+                  <ConstantValue UId="79">True</ConstantValue>
+                </Constant>
+              </Access>
+              <Blank UId="80" />
+              <Token Text="AND" UId="81" />
+              <Blank UId="82" />
+              <Access Scope="LocalVariable" UId="83">
+                <Symbol UId="84">
+                  <Component Name="Fill_Level" UId="85" />
+                </Symbol>
+              </Access>
+              <Blank UId="86" />
+              <Token Text="&lt;=" UId="87" />
+              <Blank UId="88" />
+              <Access Scope="LocalVariable" UId="89">
+                <Symbol UId="90">
+                  <Component Name="Level_Max" UId="91" />
+                </Symbol>
+              </Access>
+              <Blank UId="92" />
+              <Token Text="THEN" UId="93" />
+              <NewLine UId="94" />
+              <Blank Num="4" UId="95" />
+              <Access Scope="LocalVariable" UId="96">
+                <Symbol UId="97">
+                  <Component Name="Fill_Level" UId="98" />
+                </Symbol>
+              </Access>
+              <Blank UId="99" />
+              <Token Text=":=" UId="100" />
+              <Blank UId="101" />
+              <Access Scope="LocalVariable" UId="102">
+                <Symbol UId="103">
+                  <Component Name="Fill_Level" UId="104" />
+                </Symbol>
+              </Access>
+              <Blank UId="105" />
+              <Token Text="+" UId="106" />
+              <Blank UId="107" />
+              <Token Text="(" UId="108" />
+              <Access Scope="LocalVariable" UId="109">
+                <Symbol UId="110">
+                  <Component Name="T_Fill" UId="111" />
+                </Symbol>
+              </Access>
+              <Blank UId="112" />
+              <Token Text="*" UId="113" />
+              <Blank UId="114" />
+              <Token Text="(" UId="115" />
+              <Access Scope="LocalVariable" UId="116">
+                <Symbol UId="117">
+                  <Component Name="Fill_Spd" UId="118" />
+                </Symbol>
+              </Access>
+              <Token Text=")" UId="119" />
+              <Blank UId="120" />
+              <Token Text="*" UId="121" />
+              <Blank UId="122" />
+              <Access Scope="LiteralConstant" UId="123">
+                <Constant UId="124">
+                  <ConstantValue UId="126">3.1</ConstantValue>
+                </Constant>
+              </Access>
+              <Token Text=")" UId="127" />
+              <Token Text=";" UId="128" />
+              <NewLine UId="129" />
+              <Token Text="END_IF" UId="130" />
+              <Token Text=";" UId="131" />
+              <NewLine Num="2" UId="132" />
+              <LineComment UId="133">
+                <Text UId="134"> Release</Text>
+              </LineComment>
+              <NewLine UId="135" />
+              <Token Text="IF" UId="136" />
+              <Blank UId="137" />
+              <Access Scope="LocalVariable" UId="138">
+                <Symbol UId="139">
+                  <Component Name="Release_Start" UId="140" />
+                </Symbol>
+              </Access>
+              <Blank UId="141" />
+              <Token Text="=" UId="142" />
+              <Blank UId="143" />
+              <Access Scope="LiteralConstant" UId="144">
+                <Constant UId="145">
+                  <ConstantValue UId="147">True</ConstantValue>
+                </Constant>
+              </Access>
+              <Blank UId="148" />
+              <Token Text="AND" UId="149" />
+              <Blank UId="150" />
+              <Access Scope="LocalVariable" UId="151">
+                <Symbol UId="152">
+                  <Component Name="Fill_Level" UId="153" />
+                </Symbol>
+              </Access>
+              <Blank UId="154" />
+              <Token Text="&gt;=" UId="155" />
+              <Blank UId="156" />
+              <Access Scope="LiteralConstant" UId="157">
+                <Constant UId="158">
+                  <ConstantValue UId="160">0.0</ConstantValue>
+                </Constant>
+              </Access>
+              <Blank UId="161" />
+              <Token Text="THEN" UId="162" />
+              <NewLine UId="163" />
+              <Blank Num="4" UId="164" />
+              <Access Scope="LocalVariable" UId="165">
+                <Symbol UId="166">
+                  <Component Name="Fill_Level" UId="167" />
+                </Symbol>
+              </Access>
+              <Blank UId="168" />
+              <Token Text=":=" UId="169" />
+              <Blank UId="170" />
+              <Access Scope="LocalVariable" UId="171">
+                <Symbol UId="172">
+                  <Component Name="Fill_Level" UId="173" />
+                </Symbol>
+              </Access>
+              <Blank UId="174" />
+              <Token Text="-" UId="175" />
+              <Blank UId="176" />
+              <Token Text="(" UId="177" />
+              <Access Scope="LocalVariable" UId="178">
+                <Symbol UId="179">
+                  <Component Name="T_Release" UId="180" />
+                </Symbol>
+              </Access>
+              <Blank UId="181" />
+              <Token Text="*" UId="182" />
+              <Blank UId="183" />
+              <Token Text="(" UId="184" />
+              <Access Scope="LocalVariable" UId="185">
+                <Symbol UId="186">
+                  <Component Name="Release_Spd" UId="187" />
+                </Symbol>
+              </Access>
+              <Blank UId="188" />
+              <Token Text="/" UId="189" />
+              <Blank UId="190" />
+              <Access Scope="LiteralConstant" UId="191">
+                <Constant UId="192">
+                  <ConstantValue UId="194">10.0</ConstantValue>
+                </Constant>
+              </Access>
+              <Blank UId="195" />
+              <Token Text="*" UId="196" />
+              <Blank UId="197" />
+              <Access Scope="LiteralConstant" UId="198">
+                <Constant UId="199">
+                  <ConstantValue UId="201">3.1</ConstantValue>
+                </Constant>
+              </Access>
+              <Token Text=")" UId="202" />
+              <Token Text=")" UId="203" />
+              <Token Text=";" UId="204" />
+              <NewLine UId="205" />
+              <Token Text="END_IF" UId="206" />
+              <Token Text=";" UId="207" />
+              <NewLine Num="2" UId="208" />
+              <LineComment UId="209">
+                <Text UId="210"> Prevent negative fill level / Reset</Text>
+              </LineComment>
+              <NewLine UId="211" />
+              <Token Text="IF" UId="212" />
+              <Blank UId="213" />
+              <Access Scope="LocalVariable" UId="214">
+                <Symbol UId="215">
+                  <Component Name="Fill_Level" UId="216" />
+                </Symbol>
+              </Access>
+              <Blank UId="217" />
+              <Token Text="&lt;" UId="218" />
+              <Blank UId="219" />
+              <Access Scope="LiteralConstant" UId="220">
+                <Constant UId="221">
+                  <ConstantValue UId="223">0.0</ConstantValue>
+                </Constant>
+              </Access>
+              <Blank UId="224" />
+              <Token Text="OR" UId="225" />
+              <Blank UId="226" />
+              <Access Scope="LocalVariable" UId="227">
+                <Symbol UId="228">
+                  <Component Name="Reset" UId="229" />
+                </Symbol>
+              </Access>
+              <Blank UId="230" />
+              <Token Text="=" UId="231" />
+              <Blank UId="232" />
+              <Access Scope="LiteralConstant" UId="233">
+                <Constant UId="234">
+                  <ConstantValue UId="236">True</ConstantValue>
+                </Constant>
+              </Access>
+              <Blank UId="237" />
+              <Token Text="THEN" UId="238" />
+              <NewLine UId="239" />
+              <Blank Num="4" UId="240" />
+              <Access Scope="LocalVariable" UId="241">
+                <Symbol UId="242">
+                  <Component Name="Fill_Level" UId="243" />
+                </Symbol>
+              </Access>
+              <Blank UId="244" />
+              <Token Text=":=" UId="245" />
+              <Blank UId="246" />
+              <Access Scope="LiteralConstant" UId="247">
+                <Constant UId="248">
+                  <ConstantValue UId="250">0.0</ConstantValue>
+                </Constant>
+              </Access>
+              <Token Text=";" UId="251" />
+              <NewLine UId="252" />
+              <Token Text="END_IF" UId="253" />
+              <Token Text=";" UId="254" />
+              <NewLine Num="2" UId="255" />
+              <LineComment UId="256">
+                <Text UId="257"> Prevent overfilling</Text>
+              </LineComment>
+              <NewLine UId="258" />
+              <Token Text="IF" UId="259" />
+              <Blank UId="260" />
+              <Access Scope="LocalVariable" UId="261">
+                <Symbol UId="262">
+                  <Component Name="Fill_Level" UId="263" />
+                </Symbol>
+              </Access>
+              <Blank UId="264" />
+              <Token Text="&gt;" UId="265" />
+              <Blank UId="266" />
+              <Access Scope="LocalVariable" UId="267">
+                <Symbol UId="268">
+                  <Component Name="Level_Max" UId="269" />
+                </Symbol>
+              </Access>
+              <Blank UId="270" />
+              <Token Text="THEN" UId="271" />
+              <NewLine UId="272" />
+              <Blank Num="4" UId="273" />
+              <Access Scope="LocalVariable" UId="274">
+                <Symbol UId="275">
+                  <Component Name="Fill_Level" UId="276" />
+                </Symbol>
+              </Access>
+              <Blank UId="277" />
+              <Token Text=":=" UId="278" />
+              <Blank UId="279" />
+              <Access Scope="LocalVariable" UId="280">
+                <Symbol UId="281">
+                  <Component Name="Level_Max" UId="282" />
+                </Symbol>
+              </Access>
+              <Token Text=";" UId="283" />
+              <NewLine UId="284" />
+              <Token Text="END_IF" UId="285" />
+              <Token Text=";" UId="286" />
+              <NewLine Num="2" UId="287" />
+              <LineComment UId="288">
+                <Text UId="289"> Raw output</Text>
+              </LineComment>
+              <NewLine UId="290" />
+              <Access Scope="LocalVariable" UId="291">
+                <Symbol UId="292">
+                  <Component Name="Fill_Level_Raw" UId="293" />
+                </Symbol>
+              </Access>
+              <Blank UId="294" />
+              <Token Text=":=" UId="295" />
+              <Blank UId="296" />
+              <Token Text="(" UId="297" />
+              <Token Text="(" UId="298" />
+              <Access Scope="LocalVariable" UId="299">
+                <Symbol UId="300">
+                  <Component Name="Fill_Level" UId="301" />
+                </Symbol>
+              </Access>
+              <Blank UId="302" />
+              <Token Text="/" UId="303" />
+              <Blank UId="304" />
+              <Access Scope="LocalVariable" UId="305">
+                <Symbol UId="306">
+                  <Component Name="Level_Max" UId="307" />
+                </Symbol>
+              </Access>
+              <Token Text=")" UId="308" />
+              <Blank UId="309" />
+              <Token Text="*" UId="310" />
+              <Blank UId="311" />
+              <Access Scope="LocalVariable" UId="312">
+                <Symbol UId="313">
+                  <Component Name="Raw_Scale" UId="314" />
+                  <Token Text="." UId="315" />
+                  <Component Name="High" UId="316" />
+                </Symbol>
+              </Access>
+              <Token Text=")" UId="317" />
+              <Token Text=";" UId="318" />
+            </StructuredText>
+          </NetworkSource>
+          <ProgrammingLanguage>SCL</ProgrammingLanguage>
+        </AttributeList>
+        <ObjectList>
+          <MultilingualText ID="6" CompositionName="Comment">
+            <ObjectList>
+              <MultilingualTextItem ID="7" CompositionName="Items">
+                <AttributeList>
+                  <Culture>de-DE</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+              <MultilingualTextItem ID="8" CompositionName="Items">
+                <AttributeList>
+                  <Culture>en-US</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+              <MultilingualTextItem ID="9" CompositionName="Items">
+                <AttributeList>
+                  <Culture>fr-FR</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+            </ObjectList>
+          </MultilingualText>
+          <MultilingualText ID="A" CompositionName="Title">
+            <ObjectList>
+              <MultilingualTextItem ID="B" CompositionName="Items">
+                <AttributeList>
+                  <Culture>de-DE</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+              <MultilingualTextItem ID="C" CompositionName="Items">
+                <AttributeList>
+                  <Culture>en-US</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+              <MultilingualTextItem ID="D" CompositionName="Items">
+                <AttributeList>
+                  <Culture>fr-FR</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+            </ObjectList>
+          </MultilingualText>
+        </ObjectList>
+      </SW.Blocks.CompileUnit>
+      <MultilingualText ID="E" CompositionName="Title">
+        <ObjectList>
+          <MultilingualTextItem ID="F" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="10" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="11" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+    </ObjectList>
+  </SW.Blocks.FB>
+</Document>

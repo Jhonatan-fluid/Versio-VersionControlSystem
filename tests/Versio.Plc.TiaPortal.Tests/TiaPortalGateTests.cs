@@ -25,18 +25,14 @@ public sealed class TiaPortalGateTests
     }
 
     [SkippableFact]
-    public async Task Probe_opens_the_scratch_fixture_or_explains_why_not()
+    public async Task Probe_opens_the_committed_fixture_or_explains_why_not()
     {
         Skip.IfNot(OperatingSystem.IsWindows(), "TIA Portal is Windows-only");
         var installs = new TiaPortalLocator().FindInstalls();
         Skip.If(installs.Count == 0, "no TIA Portal install");
 
-        var fixture = Directory.EnumerateFiles(
-                Path.Combine(TestPaths.Root, ".versio", "local", "tia"),
-                "*.ap21",
-                SearchOption.AllDirectories)
-            .FirstOrDefault();
-        Skip.If(fixture is null, "scratch TIA fixture is not on this machine");
+        var fixture = TestPaths.TiaPortalProject();
+        Skip.If(fixture is null, "committed TIA fixture is missing or is an LFS pointer — git lfs pull");
 
         var host = LocalTiaPortalRunner.FindHost();
         Skip.If(host is null, "TIA Portal host was not copied to the output directory");
@@ -74,10 +70,15 @@ public sealed class TiaPortalGateTests
             {
                 // Openness membership and the first-connect firewall AllowList are measured
                 // blockers, not product bugs. The failure reason is the record.
+                // "Security error. The operation has timed out." is the unanswered
+                // AllowList dialog — it names neither Access nor Openness, so the first
+                // probe of this machine went red instead of skip until that string was added.
                 Skip.If(
                     result.FailureReason?.Contains("Openness", StringComparison.OrdinalIgnoreCase) == true
                     || result.FailureReason?.Contains("Access", StringComparison.OrdinalIgnoreCase) == true
-                    || result.FailureReason?.Contains("held", StringComparison.OrdinalIgnoreCase) == true,
+                    || result.FailureReason?.Contains("held", StringComparison.OrdinalIgnoreCase) == true
+                    || result.FailureReason?.Contains("Security error", StringComparison.OrdinalIgnoreCase) == true
+                    || result.FailureReason?.Contains("timed out", StringComparison.OrdinalIgnoreCase) == true,
                     result.FailureReason);
             }
 
@@ -104,12 +105,8 @@ public sealed class TiaPortalGateTests
         var installs = new TiaPortalLocator().FindInstalls();
         Skip.If(installs.Count == 0, "no TIA Portal install");
 
-        var fixture = Directory.EnumerateFiles(
-                Path.Combine(TestPaths.Root, ".versio", "local", "tia"),
-                "*.ap21",
-                SearchOption.AllDirectories)
-            .FirstOrDefault();
-        Skip.If(fixture is null, "scratch TIA fixture is not on this machine");
+        var fixture = TestPaths.TiaPortalProject();
+        Skip.If(fixture is null, "committed TIA fixture is missing or is an LFS pointer — git lfs pull");
 
         var toolchain = new TiaPortalToolchain(NullLogger.Instance);
         var status = await toolchain.ProbeAsync(CancellationToken.None);
@@ -146,7 +143,9 @@ public sealed class TiaPortalGateTests
                 Skip.If(
                     result.FailureReason?.Contains("Openness", StringComparison.OrdinalIgnoreCase) == true
                     || result.FailureReason?.Contains("Access", StringComparison.OrdinalIgnoreCase) == true
-                    || result.FailureReason?.Contains("held", StringComparison.OrdinalIgnoreCase) == true,
+                    || result.FailureReason?.Contains("held", StringComparison.OrdinalIgnoreCase) == true
+                    || result.FailureReason?.Contains("Security error", StringComparison.OrdinalIgnoreCase) == true
+                    || result.FailureReason?.Contains("timed out", StringComparison.OrdinalIgnoreCase) == true,
                     result.FailureReason);
             }
 

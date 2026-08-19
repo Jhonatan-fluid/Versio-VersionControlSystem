@@ -1,0 +1,348 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Document>
+  <Engineering version="V21" />
+  <DocumentInfo>
+    <Created>2026-08-19T17:13:18.3750901Z</Created>
+    <ExportSetting>None</ExportSetting>
+    <InstalledProducts>
+      <Product>
+        <DisplayName>Totally Integrated Automation Portal</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>STEP 7 Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <OptionPackage>
+        <DisplayName>STEP 7 Safety</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <OptionPackage>
+        <DisplayName>Tech WebApplication</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <Product>
+        <DisplayName>WinCC Basic/Comfort/Advanced</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Unified</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+    </InstalledProducts>
+  </DocumentInfo>
+  <SW.Types.PlcStruct ID="0">
+    <AttributeList>
+      <Interface>
+        <Sections xmlns="http://www.siemens.com/automation/Openness/SW/Interface/v5">
+          <Section Name="None">
+            <Member Name="WQC" Datatype="Byte">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Worst Quality Code</MultiLanguageText>
+              </Comment>
+              <StartValue>16#FF</StartValue>
+            </Member>
+            <Member Name="OSLevel" Datatype="Byte">
+              <Comment>
+                <MultiLanguageText Lang="en-US">OSLevel variable</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="ApplyEn" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Flag to signalize if a new value can be applied; 1: new value can be applied; 0: currently, no new value can be applied</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="ApplyExt" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="en-US">External Value Application Flag; 0 to 1: request to apply value of VExt; 1 to 0: acknowledge by PEA; relevant, if StateAutAct is true and SrcExtAct is true</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="ApplyOp" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="en-US">Operator Value Application Flag; 0 to 1: request to apply value of VOp; 1 to 0: acknowledge by PEA; relevant, if StateOpAct is true</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="ApplyInt" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Internal Value Application Flag; 0 to 1: request to apply value of VInt; 1 to 0: acknowledge by PEA; relevant, if StateAutAct is true and SrcIntAct is true</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="Sync" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="en-US">synchronisation mode</MultiLanguageText>
+              </Comment>
+              <StartValue>true</StartValue>
+            </Member>
+            <Member Name="StateChannel" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Current operation mode interaction channel; 0: The operator switches (*Op) shall be used; 1: The automatic switches (*Aut) shall be used</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="StateOffAut" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Set operation mode to Offline by automatic interaction (relevant, if StateChannel is true).</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="StateOpAut" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Set operation mode to Operator by automatic interaction (relevant, if StateChannel is true).</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="StateAutAut" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Set operation mode to Automatic by automatic interaction (relevant, if StateChannel is true); 1: Operation mode is set to Automatic; 0: no operation</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="StateOffOp" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="en-US">Set operation mode to Offline by operator interaction (relevant, if StateChannel is false); 0 to 1: request to set operation mode to Offline; 1 to 0: acknowledge by PEA</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="StateOpOp" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="en-US">Set operation mode to Operator by operator interaction (relevant, if StateChannel Is false); 0 to 1: request to set operation mode to Operator; 1 to 0: acknowledge by PEA</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="StateAutOp" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="en-US">Set operation mode to Automatic by operator interaction (relevant, if StateChannel is false); 0 to 1: request to set operation mode is to Automatic; 1 to 0: acknowledge by PEA</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="StateOffAct" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">1: current mode is Offline; 0: current mode is not Offline</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="StateOpAct" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">1: current mode is Operator; 0: current mode is not Operator</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="StateAutAct" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">1: current mode is Automatic; 0: current mode is not Automatic</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="SrcChannel" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">selection of the active source mode interaction channel; 0: The operator switches (*Op) shall be used; 1: The automatic switches (*Aut) shall be used.</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="SrcExtAut" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Set source mode to External by automatic interaction (relevant, if SrcChannel is true); 1: Source mode is set to External; 0: no operation</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="SrcIntAut" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Set source mode to Internal by automatic interaction (relevant, if SrcChannel is true); 1: Source mode is set to Internal; 0: no operation</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="SrcIntOp" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="en-US">Set source mode to Internal by operator interaction (relevant, if SrcChannel is false); 0 to 1: request to set operation mode to Internal; 1 to 0: acknowledge by PEA</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="SrcExtOp" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="en-US">Set source mode to External by operator interaction (relevant, if SrcChannel is false); 0 to 1: request to set operation mode to External; 1 to 0: acknowledge by PEA</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="SrcIntAct" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">relevant if service operation mode is Automatic; 1: current mode is Internal; 0: current mode is not Internal; relevant if service operation mode is not Automatic; 0: current mode is not Internal</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="SrcExtAct" Datatype="Bool">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">relevant if service operation mode is Automatic; 1: current mode is External; 0: current mode is not External; relevant if service operation mode is not Automatic; 0: current mode is not External</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="VExt" Datatype="DInt">
+              <Comment>
+                <MultiLanguageText Lang="en-US">External parameter value variable; relevant, if StateAutAct is true and SrcExtAct is true</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="VOp" Datatype="DInt">
+              <Comment>
+                <MultiLanguageText Lang="en-US">Manual Parameter Value variable; relevant, if StateOpAct is true</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="VInt" Datatype="DInt">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Internal parameter value variable; relevant, if StateAutAct is true and SrcIntAct is true</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="VReq" Datatype="DInt">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Requested parameter value variable</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="VOut" Datatype="DInt">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Current parameter value variable</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="VFbk" Datatype="DInt">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">Feedback value variable</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="VSclMin" Datatype="DInt">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">value scale low limit</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="VSclMax" Datatype="DInt">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">value scale high limit</MultiLanguageText>
+              </Comment>
+              <StartValue>100</StartValue>
+            </Member>
+            <Member Name="VUnit" Datatype="Int">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">value unit</MultiLanguageText>
+              </Comment>
+              <StartValue>1998</StartValue>
+            </Member>
+            <Member Name="VMin" Datatype="DInt">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">value low limit</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="VMax" Datatype="DInt">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+              </AttributeList>
+              <Comment>
+                <MultiLanguageText Lang="en-US">value high limit</MultiLanguageText>
+              </Comment>
+              <StartValue>100</StartValue>
+            </Member>
+          </Section>
+        </Sections>
+      </Interface>
+      <Name>UDT_MTP_DIntServParam</Name>
+      <Namespace />
+    </AttributeList>
+    <ObjectList>
+      <MultilingualText ID="1" CompositionName="Comment">
+        <ObjectList>
+          <MultilingualTextItem ID="2" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="3" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="4" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+      <MultilingualText ID="5" CompositionName="Title">
+        <ObjectList>
+          <MultilingualTextItem ID="6" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="7" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="8" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+    </ObjectList>
+  </SW.Types.PlcStruct>
+</Document>

@@ -24,7 +24,7 @@ suite is seven projects, 2,319 tests, split by need — the half-hour CODESYS ga
 | [`FINDINGS.md`](FINDINGS.md) | Every defect with its evidence, newest first — search it |
 | [`SAFEGUARDS.md`](SAFEGUARDS.md) | What Versio refuses, asks about or waits for |
 | [`vendors/codesys/DRIVING.md`](vendors/codesys/DRIVING.md) | How CODESYS is driven — API traps, forms, events, manifest schema |
-| [`vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md) | How TIA Portal is driven — Openness, directory payload, occupancy unmeasured |
+| [`vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md) | How TIA Portal is driven — Openness, directory payload, occupancy is `<stem>.info` |
 
 ---
 
@@ -200,8 +200,10 @@ or restored as one file. That widening (`IPlcProjectFormat.PayloadPathFor`,
 
 The pack is `Versio.Plc.TiaPortal` + Infrastructure + a net48 Host that loads Openness from
 the install. PLC software (SCL, types, tags) is the round-trip subject; hardware, HMI and
-safety are coverage skips. Driving notes and the measured blockers (empty Openness group,
-AllowList) live in [`docs/vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md).
+safety are coverage skips. The gate fixture is committed at
+`fixtures/projects/CleaningStation_V20_V21/` (Git LFS; ignored by this repo's Versio
+adoption). Driving notes — setup, Openness members, occupancy, identity — live in
+[`docs/vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md).
 
 The first vendor's rule still holds: nothing in `Sync/`, `Git/`, `Locking/`, `Watching/`,
 `Projects/` or `Diff/` may learn a vendor's name.

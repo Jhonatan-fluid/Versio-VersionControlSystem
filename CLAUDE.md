@@ -56,6 +56,7 @@ questions about "why is this like this" are already answered there.
 | `docs/FINDINGS.md` | **Every defect written up with its evidence**, newest first. 116 of them. Search it rather than reading it; `STATUS.md` carries the index |
 | `docs/SAFEGUARDS.md` | What Versio refuses, asks about, or waits for |
 | `docs/vendors/codesys/DRIVING.md` | **One vendor's docs**, beside its two projects. How CODESYS is driven end to end, and the audit of it |
+| `docs/vendors/tia/DRIVING.md` | **One vendor's docs**, beside its three projects. How TIA Portal is driven — Openness, host, occupancy, fixture |
 | `docs/phase1/` | **The Phase 1 archive** — four completed plans, marked done, kept for reasoning and evidence: `PLAN.md` (the founding architecture), `IMPORT-PLAN.md` (thirteen gaps, the feature checklist, and the measurements — its raw probe logs are in `probes/`), `GIT-PANEL-PLAN.md`, `PHASE0-FINDINGS.md`. Read them for why, never for state |
 | `README.md` | Repository layout, vendor boundaries, the one architectural rule |
 
@@ -233,8 +234,11 @@ stays that way.
 | `Versio.Plc.Codesys.Pure.Tests` | 260 | under a second | nothing — the planner, the codecs, the protocol |
 | `Versio.Plc.Codesys.Parity.Tests` | 92 | ~15 s | `python` on PATH — **skips cleanly without it, so check the count, not the colour** |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 13 | instant | nothing — format, planner, protocol |
-| `Versio.Plc.TiaPortal.Tests` | 3 | seconds when skipped | **real TIA Portal** — skips cleanly without Openness membership |
+| `Versio.Plc.TiaPortal.Tests` | 3 | seconds when skipped; ~45 s when Portal opens | **real TIA Portal** — skips cleanly without Openness membership or LFS content |
 | `Versio.Plc.Codesys.Tests` | 54 | **~30 min** | **real CODESYS** — every test launches it, which is the whole cost |
+
+The TIA gate fixture is `fixtures/projects/CleaningStation_V20_V21/` (Git LFS). Never the
+OneDrive original. `docs/vendors/tia/DRIVING.md` is this vendor's driving notes.
 
 **The loop to work in is everything except the last one:**
 

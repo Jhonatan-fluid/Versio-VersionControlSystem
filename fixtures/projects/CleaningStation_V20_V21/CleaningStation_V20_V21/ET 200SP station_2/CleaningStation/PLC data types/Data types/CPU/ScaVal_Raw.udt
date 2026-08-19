@@ -1,0 +1,9 @@
+﻿TYPE "ScaVal_Raw"
+VERSION : 0.1
+   STRUCT
+      High : DInt := 32767;   // High Value
+      Low : DInt := -32768;   // Low Value
+   END_STRUCT;
+
+END_TYPE
+

@@ -1,0 +1,2797 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Document>
+  <Engineering version="V21" />
+  <DocumentInfo>
+    <Created>2026-08-19T17:13:17.4331832Z</Created>
+    <ExportSetting>None</ExportSetting>
+    <InstalledProducts>
+      <Product>
+        <DisplayName>Totally Integrated Automation Portal</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>STEP 7 Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <OptionPackage>
+        <DisplayName>STEP 7 Safety</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <OptionPackage>
+        <DisplayName>Tech WebApplication</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </OptionPackage>
+      <Product>
+        <DisplayName>WinCC Basic/Comfort/Advanced</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Professional</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+      <Product>
+        <DisplayName>WinCC Unified</DisplayName>
+        <DisplayVersion>V21</DisplayVersion>
+      </Product>
+    </InstalledProducts>
+  </DocumentInfo>
+  <SW.Blocks.FB ID="0">
+    <AttributeList>
+      <HeaderAuthor>Siemens AG</HeaderAuthor>
+      <HeaderFamily>ServiceControl</HeaderFamily>
+      <HeaderVersion>1.0</HeaderVersion>
+      <Interface>
+        <Sections xmlns="http://www.siemens.com/automation/Openness/SW/Interface/v5">
+          <Section Name="Input">
+            <Member Name="ProcessValueOutAnalogIn" Datatype="Array[0..#NUMBER_PARAMETERS_OUT_ANALOG_NOT_MAPPED] of &quot;UDT_MTP_AnaProcessValueOut&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+                <StringAttribute Name="S7_HiddenAssignment" SystemDefined="true">HideIfNoParamAssigned</StringAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="ProcessValueOutDigitalIn" Datatype="Array[0..#NUMBER_PARAMETERS_OUT_DIGITAL_NOT_MAPPED] of &quot;UDT_MTP_DIntProcessValueOut&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+                <StringAttribute Name="S7_HiddenAssignment" SystemDefined="true">HideIfNoParamAssigned</StringAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="ProcessValueOutBinaryIn" Datatype="Array[0..#NUMBER_PARAMETERS_OUT_BINARY_NOT_MAPPED] of &quot;UDT_MTP_BinProcessValueOut&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+                <StringAttribute Name="S7_HiddenAssignment" SystemDefined="true">HideIfNoParamAssigned</StringAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="ProcessValueOutStringIn" Datatype="Array[0..#NUMBER_PARAMETERS_OUT_STRING_NOT_MAPPED] of &quot;UDT_MTP_StringProcessValueOut&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+                <StringAttribute Name="S7_HiddenAssignment" SystemDefined="true">HideIfNoParamAssigned</StringAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="ProcessValueInAnalogApply" Datatype="Array[0..#NUMBER_PARAMETERS_IN_ANALOG_NOT_MAPPED] of &quot;UDT_Service_ProcessValueInApply&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+                <StringAttribute Name="S7_HiddenAssignment" SystemDefined="true">HideIfNoParamAssigned</StringAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="ProcessValueInDigitalApply" Datatype="Array[0..#NUMBER_PARAMETERS_IN_DIGITAL_NOT_MAPPED] of &quot;UDT_Service_ProcessValueInApply&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+                <StringAttribute Name="S7_HiddenAssignment" SystemDefined="true">HideIfNoParamAssigned</StringAttribute>
+              </AttributeList>
+            </Member>
+          </Section>
+          <Section Name="Output">
+            <Member Name="ProcessValueInAnalogOut" Datatype="Array[0..#NUMBER_PARAMETERS_IN_ANALOG_NOT_MAPPED] of &quot;UDT_MTP_AnaProcessValueOut&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+                <StringAttribute Name="S7_HiddenAssignment" SystemDefined="true">HideIfNoParamAssigned</StringAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="ProcessValueInDigitalOut" Datatype="Array[0..#NUMBER_PARAMETERS_IN_DIGITAL_NOT_MAPPED] of &quot;UDT_MTP_DIntProcessValueOut&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+                <StringAttribute Name="S7_HiddenAssignment" SystemDefined="true">HideIfNoParamAssigned</StringAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="ProcessValueInBinaryOut" Datatype="Array[0..#NUMBER_PARAMETERS_IN_BINARY_NOT_MAPPED] of &quot;UDT_MTP_BinProcessValueOut&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+                <StringAttribute Name="S7_HiddenAssignment" SystemDefined="true">HideIfNoParamAssigned</StringAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="ProcessValueInStringOut" Datatype="Array[0..#NUMBER_PARAMETERS_IN_STRING_NOT_MAPPED] of &quot;UDT_MTP_StringProcessValueOut&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+                <StringAttribute Name="S7_HiddenAssignment" SystemDefined="true">HideIfNoParamAssigned</StringAttribute>
+              </AttributeList>
+            </Member>
+          </Section>
+          <Section Name="InOut" />
+          <Section Name="Static">
+            <Member Name="MTPAnalogIn" Datatype="Array[0..#NUMBER_PARAMETERS_IN_ANALOG_TOTAL] of &quot;UDT_MTP_AnaProcessValueIn&quot;" />
+            <Member Name="MTPDigitalIn" Datatype="Array[0..#NUMBER_PARAMETERS_IN_DIGITAL_TOTAL] of &quot;UDT_MTP_DIntProcessValueIn&quot;" />
+            <Member Name="MTPBinaryIn" Datatype="Array[0..#NUMBER_PARAMETERS_IN_BINARY_TOTAL] of &quot;UDT_MTP_BinProcessValueIn&quot;" />
+            <Member Name="MTPStringIn" Datatype="Array[0..#NUMBER_PARAMETERS_IN_STRING_TOTAL] of &quot;UDT_MTP_StringProcessValueIn&quot;" />
+            <Member Name="AnalogIn" Datatype="Array[0..#NUMBER_PARAMETERS_IN_ANALOG_NOT_MAPPED] of &quot;ProcessValueInAnalog&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="SetPoint" SystemDefined="true">true</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="DigitalIn" Datatype="Array[0..#NUMBER_PARAMETERS_IN_DIGITAL_NOT_MAPPED] of &quot;ProcessValueInDigital&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="SetPoint" SystemDefined="true">true</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="BinaryIn" Datatype="Array[0..#NUMBER_PARAMETERS_IN_BINARY_NOT_MAPPED] of &quot;ProcessValueInBinary&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="SetPoint" SystemDefined="true">true</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="StringIn" Datatype="Array[0..#NUMBER_PARAMETERS_IN_STRING_NOT_MAPPED] of &quot;ProcessValueInString&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="SetPoint" SystemDefined="true">true</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="MTPAnalogOut" Datatype="Array[0..#NUMBER_PARAMETERS_OUT_ANALOG_TOTAL] of &quot;UDT_MTP_AnaProcessValueOut&quot;" />
+            <Member Name="MTPDigitalOut" Datatype="Array[0..#NUMBER_PARAMETERS_OUT_DIGITAL_TOTAL] of &quot;UDT_MTP_DIntProcessValueOut&quot;" />
+            <Member Name="MTPBinaryOut" Datatype="Array[0..#NUMBER_PARAMETERS_OUT_BINARY_TOTAL] of &quot;UDT_MTP_BinProcessValueOut&quot;" />
+            <Member Name="MTPStringOut" Datatype="Array[0..#NUMBER_PARAMETERS_OUT_STRING_TOTAL] of &quot;UDT_MTP_StringProcessValueOut&quot;" />
+            <Member Name="AnalogOut" Datatype="Array[0..#NUMBER_PARAMETERS_OUT_ANALOG_NOT_MAPPED] of &quot;ProcessValueOutAnalog&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="SetPoint" SystemDefined="true">true</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="DigitalOut" Datatype="Array[0..#NUMBER_PARAMETERS_OUT_DIGITAL_NOT_MAPPED] of &quot;ProcessValueOutDigital&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="SetPoint" SystemDefined="true">true</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="BinaryOut" Datatype="Array[0..#NUMBER_PARAMETERS_OUT_BINARY_NOT_MAPPED] of &quot;ProcessValueOutBinary&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="SetPoint" SystemDefined="true">true</BooleanAttribute>
+              </AttributeList>
+            </Member>
+            <Member Name="StringOut" Datatype="Array[0..#NUMBER_PARAMETERS_OUT_STRING_NOT_MAPPED] of &quot;ProcessValueOutString&quot;">
+              <AttributeList>
+                <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalVisible" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+                <BooleanAttribute Name="SetPoint" SystemDefined="true">true</BooleanAttribute>
+              </AttributeList>
+            </Member>
+          </Section>
+          <Section Name="Temp">
+            <Member Name="i" Datatype="Int" />
+            <Member Name="tempUpperLimit" Datatype="Int">
+              <Comment>
+                <MultiLanguageText Lang="en-US">Upper limit for FOR - loop</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="tempModuloNumber" Datatype="Int">
+              <Comment>
+                <MultiLanguageText Lang="en-US">Number for modulo calculation</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="tempIndexExt" Datatype="Int">
+              <Comment>
+                <MultiLanguageText Lang="en-US">Index for external interface of not mapped process values</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="tempTVO" Datatype="Bool">
+              <Comment>
+                <MultiLanguageText Lang="en-US">Transfer value only from Ext to MTP (instead of whole UDT)</MultiLanguageText>
+              </Comment>
+            </Member>
+          </Section>
+          <Section Name="Constant">
+            <Member Name="NUMBER_PARAMETERS_IN_ANALOG_TOTAL" Datatype="Int">
+              <StartValue>1</StartValue>
+            </Member>
+            <Member Name="NUMBER_PARAMETERS_IN_DIGITAL_TOTAL" Datatype="Int">
+              <StartValue>0</StartValue>
+            </Member>
+            <Member Name="NUMBER_PARAMETERS_IN_BINARY_TOTAL" Datatype="Int">
+              <StartValue>1</StartValue>
+            </Member>
+            <Member Name="NUMBER_PARAMETERS_IN_STRING_TOTAL" Datatype="Int">
+              <StartValue>0</StartValue>
+            </Member>
+            <Member Name="NUMBER_PARAMETERS_OUT_ANALOG_TOTAL" Datatype="Int">
+              <StartValue>1</StartValue>
+            </Member>
+            <Member Name="NUMBER_PARAMETERS_OUT_DIGITAL_TOTAL" Datatype="Int">
+              <StartValue>0</StartValue>
+            </Member>
+            <Member Name="NUMBER_PARAMETERS_OUT_BINARY_TOTAL" Datatype="Int">
+              <StartValue>0</StartValue>
+            </Member>
+            <Member Name="NUMBER_PARAMETERS_OUT_STRING_TOTAL" Datatype="Int">
+              <StartValue>0</StartValue>
+            </Member>
+            <Member Name="NUMBER_PARAMETERS_IN_ANALOG_NOT_MAPPED" Datatype="Int">
+              <Comment>
+                <MultiLanguageText Lang="en-US">Not mapped to a service</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="NUMBER_PARAMETERS_IN_DIGITAL_NOT_MAPPED" Datatype="Int">
+              <Comment>
+                <MultiLanguageText Lang="en-US">Not mapped to a service</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="NUMBER_PARAMETERS_IN_BINARY_NOT_MAPPED" Datatype="Int">
+              <Comment>
+                <MultiLanguageText Lang="en-US">Not mapped to a service</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="NUMBER_PARAMETERS_IN_STRING_NOT_MAPPED" Datatype="Int">
+              <Comment>
+                <MultiLanguageText Lang="en-US">Not mapped to a service</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="NUMBER_PARAMETERS_OUT_ANALOG_NOT_MAPPED" Datatype="Int">
+              <Comment>
+                <MultiLanguageText Lang="en-US">Not mapped to a service</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="NUMBER_PARAMETERS_OUT_DIGITAL_NOT_MAPPED" Datatype="Int">
+              <Comment>
+                <MultiLanguageText Lang="en-US">Not mapped to a service</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="NUMBER_PARAMETERS_OUT_BINARY_NOT_MAPPED" Datatype="Int">
+              <Comment>
+                <MultiLanguageText Lang="en-US">Not mapped to a service</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="NUMBER_PARAMETERS_OUT_STRING_NOT_MAPPED" Datatype="Int">
+              <Comment>
+                <MultiLanguageText Lang="en-US">Not mapped to a service</MultiLanguageText>
+              </Comment>
+            </Member>
+            <Member Name="NUMBER_PARAMETERS_IN_MIN" Datatype="Int" />
+            <Member Name="NUMBER_PARAMETERS_OUT_MIN" Datatype="Int" />
+          </Section>
+        </Sections>
+      </Interface>
+      <MemoryLayout>Optimized</MemoryLayout>
+      <MemoryReserve>100</MemoryReserve>
+      <Name>ProcessValues</Name>
+      <Namespace />
+      <Number>1720</Number>
+      <ProgrammingLanguage>SCL</ProgrammingLanguage>
+      <SetENOAutomatically>false</SetENOAutomatically>
+    </AttributeList>
+    <ObjectList>
+      <MultilingualText ID="1" CompositionName="Comment">
+        <ObjectList>
+          <MultilingualTextItem ID="2" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="3" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text>Handling of ProcessValues</Text>
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="4" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+      <SW.Blocks.CompileUnit ID="5" CompositionName="CompileUnits">
+        <AttributeList>
+          <NetworkSource>
+            <StructuredText xmlns="http://www.siemens.com/automation/Openness/SW/NetworkSource/StructuredText/v4">
+              <Token Text="REGION" UId="21" />
+              <Blank UId="22" />
+              <Text UId="23">Block Info Header</Text>
+              <NewLine UId="24" />
+              <Blank Num="2" UId="25" />
+              <LineComment UId="26">
+                <Text UId="27">===============================================================================</Text>
+              </LineComment>
+              <NewLine UId="28" />
+              <Blank Num="2" UId="29" />
+              <LineComment UId="30">
+                <Text UId="31"> Siemens AG / (c)Copyright 2021</Text>
+              </LineComment>
+              <NewLine UId="32" />
+              <Blank Num="2" UId="33" />
+              <LineComment UId="34">
+                <Text UId="35">-------------------------------------------------------------------------------</Text>
+              </LineComment>
+              <NewLine UId="36" />
+              <Blank Num="2" UId="37" />
+              <LineComment UId="38">
+                <Text UId="39"> Title:            ProcessValues</Text>
+              </LineComment>
+              <NewLine UId="40" />
+              <Blank Num="2" UId="41" />
+              <LineComment UId="42">
+                <Text UId="43"> Comment/Function: Handling of ProcessValues</Text>
+              </LineComment>
+              <NewLine UId="44" />
+              <Blank Num="2" UId="45" />
+              <LineComment UId="46">
+                <Text UId="47"> Library/Family:   ServiceControl</Text>
+              </LineComment>
+              <NewLine UId="48" />
+              <Blank Num="2" UId="49" />
+              <LineComment UId="50">
+                <Text UId="51"> Author:           Siemens AG</Text>
+              </LineComment>
+              <NewLine UId="52" />
+              <Blank Num="2" UId="53" />
+              <LineComment UId="54">
+                <Text UId="55"> Tested with:      S7-PLCSIM Advanced 4.0</Text>
+              </LineComment>
+              <NewLine UId="56" />
+              <Blank Num="2" UId="57" />
+              <LineComment UId="58">
+                <Text UId="59"> Engineering:      TIA Portal V17</Text>
+              </LineComment>
+              <NewLine UId="60" />
+              <Blank Num="2" UId="61" />
+              <LineComment UId="62">
+                <Text UId="63"> Restrictions:     MTP</Text>
+              </LineComment>
+              <NewLine UId="64" />
+              <Blank Num="2" UId="65" />
+              <LineComment UId="66">
+                <Text UId="67"> Requirements:     PLC (S7-1200 / S7-1500)</Text>
+              </LineComment>
+              <NewLine UId="68" />
+              <Blank Num="2" UId="69" />
+              <LineComment UId="70">
+                <Text UId="71">-------------------------------------------------------------------------------</Text>
+              </LineComment>
+              <NewLine UId="72" />
+              <Blank Num="2" UId="73" />
+              <LineComment UId="74">
+                <Text UId="75"> Change log table:</Text>
+              </LineComment>
+              <NewLine UId="76" />
+              <Blank Num="2" UId="77" />
+              <LineComment UId="78">
+                <Text UId="79"> Version  | Date       | Expert in charge        | Changes applied</Text>
+              </LineComment>
+              <NewLine UId="80" />
+              <Blank Num="2" UId="81" />
+              <LineComment UId="82">
+                <Text UId="83">----------|------------|-------------------------|-----------------------------</Text>
+              </LineComment>
+              <NewLine UId="84" />
+              <Blank Num="2" UId="85" />
+              <LineComment UId="86">
+                <Text UId="87"> 01.00.00 | 29.07.2021 | Michael Schlosser       | First released version</Text>
+              </LineComment>
+              <NewLine UId="88" />
+              <Blank Num="2" UId="89" />
+              <LineComment UId="90">
+                <Text UId="91"> 01.00.01 | 20.09.2021 | Michael Schlosser       | change: comment in region "Description"; new comments of for-loops</Text>
+              </LineComment>
+              <NewLine UId="92" />
+              <Blank Num="2" UId="93" />
+              <LineComment UId="94">
+                <Text UId="95"> 01.00.02 | 19.10.2021 | Markus Krause           | change: New Outputs for PV Inputs without Service</Text>
+              </LineComment>
+              <NewLine UId="96" />
+              <Blank Num="2" UId="97" />
+              <LineComment UId="98">
+                <Text UId="99"> 01.00.03 | 21.10.2021 | Markus Krause           | change: New concept for Standalone mode of the Process Values Inputs / Outputs</Text>
+              </LineComment>
+              <NewLine UId="100" />
+              <Blank Num="2" UId="101" />
+              <LineComment UId="102">
+                <Text UId="103"> 01.00.04 | 22.10.2021 | Markus Krause           | change: Bugfix for Standalone mode of the Process Values Inputs / Outputs</Text>
+              </LineComment>
+              <NewLine UId="104" />
+              <Blank Num="2" UId="105" />
+              <LineComment UId="106">
+                <Text UId="107"> 01.00.05 | 22.10.2021 | Markus Krause           | change: Bugfix for Standalone mode of the Process Values Inputs / Outputs</Text>
+              </LineComment>
+              <NewLine UId="108" />
+              <Blank Num="2" UId="109" />
+              <LineComment UId="110">
+                <Text UId="111"> 01.00.06 | 22.10.2021 | Markus Krause           | change: ApplyEn changed from Bool to UDT_Service_ProcessValueInApply</Text>
+              </LineComment>
+              <NewLine UId="112" />
+              <Blank Num="2" UId="113" />
+              <LineComment UId="114">
+                <Text UId="115"> 01.00.07 | 25.10.2021 | Michael Schlosser       | change: process out values are now connected via InOut interface "Ext" to process value out FBs</Text>
+              </LineComment>
+              <NewLine UId="116" />
+              <Blank Num="2" UId="117" />
+              <LineComment UId="118">
+                <Text UId="119"> 01.00.08 | 26.10.2021 | Michael Schlosser       | change: differentiation between "mapped" and "not mapped" for process values out</Text>
+              </LineComment>
+              <NewLine UId="120" />
+              <Blank Num="2" UId="121" />
+              <LineComment UId="122">
+                <Text UId="123"> 01.00.09 | 27.10.2021 | Michael Schlosser       | change: process in values are now connected via InOut interface "Ext" to process value in FBs; differentiation between "mapped" and "not mapped" for process values in</Text>
+              </LineComment>
+              <NewLine UId="124" />
+              <Blank Num="2" UId="125" />
+              <LineComment UId="126">
+                <Text UId="127"> 01.00.10 | 28.10.2021 | Michael Schlosser       | rename: interface "isMapped" to "TVO" (transfer value only) for process values out</Text>
+              </LineComment>
+              <NewLine UId="128" />
+              <Blank Num="2" UId="129" />
+              <LineComment UId="130">
+                <Text UId="131"> 01.00.11 | 22.11.2021 | Michael Schlosser       | change: extend comment in region "Description"</Text>
+              </LineComment>
+              <NewLine UId="132" />
+              <Blank Num="2" UId="133" />
+              <LineComment UId="134">
+                <Text UId="135">===============================================================================</Text>
+              </LineComment>
+              <NewLine UId="136" />
+              <Token Text="END_REGION" UId="137" />
+              <Blank UId="138" />
+              <Text UId="139">Block Info Header</Text>
+              <NewLine Num="2" UId="140" />
+              <Token Text="REGION" UId="141" />
+              <Blank UId="142" />
+              <Text UId="143">Description</Text>
+              <NewLine UId="144" />
+              <Blank Num="2" UId="145" />
+              <LineComment UId="146">
+                <Text UId="147"> ProcessValues provides the MTP-Interface and the number of values of each type of process in/out value</Text>
+              </LineComment>
+              <NewLine UId="148" />
+              <Blank Num="2" UId="149" />
+              <LineComment UId="150">
+                <Text UId="151"> and calls the FB for each analog, digital, binary and string process in/out value which is not mapped to any service</Text>
+              </LineComment>
+              <NewLine UId="152" />
+              <Token Text="END_REGION" UId="153" />
+              <Blank UId="154" />
+              <Text UId="155">Description</Text>
+              <NewLine Num="2" UId="156" />
+              <Token Text="REGION" UId="157" />
+              <Blank UId="158" />
+              <Text UId="159">BLOCK INITIALIZATION</Text>
+              <NewLine UId="160" />
+              <Blank Num="2" UId="161" />
+              <Access Scope="LocalVariable" UId="162">
+                <Symbol UId="163">
+                  <Component Name="tempTVO" UId="164" />
+                </Symbol>
+              </Access>
+              <Blank UId="165" />
+              <Token Text=":=" UId="166" />
+              <Blank UId="167" />
+              <Access Scope="LiteralConstant" UId="168">
+                <Constant UId="169">
+                  <ConstantValue UId="171">false</ConstantValue>
+                </Constant>
+              </Access>
+              <Token Text=";" UId="172" />
+              <Blank Num="2" UId="173" />
+              <LineComment UId="174">
+                <Text UId="175"> Transfer whole UDT from Ext to MTP for not mapped (to a service) process values out</Text>
+              </LineComment>
+              <NewLine UId="176" />
+              <Token Text="END_REGION" UId="177" />
+              <Blank UId="178" />
+              <Text UId="179">BLOCK INITIALIZATION</Text>
+              <NewLine Num="2" UId="180" />
+              <Token Text="REGION" UId="181" />
+              <Blank UId="182" />
+              <Text UId="183">BEHAVIOR LOGIC</Text>
+              <NewLine UId="184" />
+              <Blank Num="2" UId="185" />
+              <NewLine UId="186" />
+              <Blank Num="2" UId="187" />
+              <LineComment UId="188">
+                <Text UId="189"> Call of process value FB for each not mapped analog in value</Text>
+              </LineComment>
+              <NewLine UId="190" />
+              <Blank Num="2" UId="191" />
+              <Access Scope="LocalVariable" UId="192">
+                <Symbol UId="193">
+                  <Component Name="tempUpperLimit" UId="194" />
+                </Symbol>
+              </Access>
+              <Blank UId="195" />
+              <Token Text=":=" UId="196" />
+              <Blank UId="197" />
+              <Access Scope="LocalConstant" UId="198">
+                <Constant Name="NUMBER_PARAMETERS_IN_ANALOG_TOTAL" UId="199" />
+              </Access>
+              <Blank UId="202" />
+              <Token Text="-" UId="203" />
+              <Blank UId="204" />
+              <Access Scope="LiteralConstant" UId="205">
+                <Constant UId="206">
+                  <ConstantValue UId="208">1</ConstantValue>
+                </Constant>
+              </Access>
+              <Blank UId="209" />
+              <Token Text="+" UId="210" />
+              <Blank UId="211" />
+              <Access Scope="LocalConstant" UId="212">
+                <Constant Name="NUMBER_PARAMETERS_IN_MIN" UId="213" />
+              </Access>
+              <Token Text=";" UId="216" />
+              <NewLine UId="217" />
+              <Blank Num="2" UId="218" />
+              <Access Scope="LocalVariable" UId="219">
+                <Symbol UId="220">
+                  <Component Name="tempModuloNumber" UId="221" />
+                </Symbol>
+              </Access>
+              <Blank UId="222" />
+              <Token Text=":=" UId="223" />
+              <Blank UId="224" />
+              <Access Scope="LocalConstant" UId="225">
+                <Constant Name="NUMBER_PARAMETERS_IN_ANALOG_TOTAL" UId="226" />
+              </Access>
+              <Token Text=";" UId="229" />
+              <Blank Num="2" UId="230" />
+              <LineComment UId="231">
+                <Text UId="232"> without this trick, the compiler throws error division by zero </Text>
+              </LineComment>
+              <NewLine UId="233" />
+              <Blank Num="2" UId="234" />
+              <Token Text="FOR" UId="235" />
+              <Blank UId="236" />
+              <Access Scope="LocalVariable" UId="237">
+                <Symbol UId="238">
+                  <Component Name="i" UId="239" />
+                </Symbol>
+              </Access>
+              <Blank UId="240" />
+              <Token Text=":=" UId="241" />
+              <Blank UId="242" />
+              <Access Scope="LocalConstant" UId="243">
+                <Constant Name="NUMBER_PARAMETERS_IN_MIN" UId="244" />
+              </Access>
+              <Blank UId="247" />
+              <Token Text="TO" UId="248" />
+              <Blank UId="249" />
+              <Access Scope="LocalVariable" UId="250">
+                <Symbol UId="251">
+                  <Component Name="tempUpperLimit" UId="252" />
+                </Symbol>
+              </Access>
+              <Blank UId="253" />
+              <Token Text="DO" UId="254" />
+              <NewLine UId="255" />
+              <Blank Num="4" UId="256" />
+              <Token Text="IF" UId="257" />
+              <Blank UId="258" />
+              <Token Text="(" UId="259" />
+              <Access Scope="LocalVariable" UId="260">
+                <Symbol UId="261">
+                  <Component Name="i" UId="262" />
+                </Symbol>
+              </Access>
+              <Blank UId="263" />
+              <Token Text="&gt;" UId="264" />
+              <Blank UId="265" />
+              <Access Scope="LocalVariable" UId="266">
+                <Symbol UId="267">
+                  <Component Name="tempUpperLimit" UId="268" />
+                </Symbol>
+              </Access>
+              <Blank UId="269" />
+              <Token Text="-" UId="270" />
+              <Blank UId="271" />
+              <Access Scope="LocalConstant" UId="272">
+                <Constant Name="NUMBER_PARAMETERS_IN_ANALOG_NOT_MAPPED" UId="273" />
+              </Access>
+              <Token Text=")" UId="276" />
+              <Blank UId="277" />
+              <Token Text="AND" UId="278" />
+              <Blank UId="279" />
+              <Token Text="(" UId="280" />
+              <Access Scope="LocalVariable" UId="281">
+                <Symbol UId="282">
+                  <Component Name="tempModuloNumber" UId="283" />
+                </Symbol>
+              </Access>
+              <Blank UId="284" />
+              <Token Text="&gt;" UId="285" />
+              <Blank UId="286" />
+              <Access Scope="LiteralConstant" UId="287">
+                <Constant UId="288">
+                  <ConstantValue UId="290">0</ConstantValue>
+                </Constant>
+              </Access>
+              <Token Text=")" UId="291" />
+              <Blank UId="292" />
+              <Token Text="AND" UId="293" />
+              <Blank UId="294" />
+              <Token Text="(" UId="295" />
+              <Access Scope="LocalVariable" UId="296">
+                <Symbol UId="297">
+                  <Component Name="tempModuloNumber" UId="298" />
+                </Symbol>
+              </Access>
+              <Blank UId="299" />
+              <Token Text="&gt;=" UId="300" />
+              <Blank UId="301" />
+              <Access Scope="LocalConstant" UId="302">
+                <Constant Name="NUMBER_PARAMETERS_IN_ANALOG_NOT_MAPPED" UId="303" />
+              </Access>
+              <Token Text=")" UId="306" />
+              <Blank UId="307" />
+              <Token Text="THEN" UId="308" />
+              <NewLine UId="309" />
+              <Blank Num="6" UId="310" />
+              <LineComment UId="311">
+                <Text UId="312"> Number_Mapped + Number_not_Mapped = Number_Total</Text>
+              </LineComment>
+              <NewLine UId="313" />
+              <Blank Num="6" UId="314" />
+              <LineComment UId="315">
+                <Text UId="316"> Call FB only in case that the values of the constants are consistent and that no division by zero is possible</Text>
+              </LineComment>
+              <NewLine UId="317" />
+              <Blank Num="6" UId="318" />
+              <Access Scope="LocalVariable" UId="319">
+                <Symbol UId="320">
+                  <Component Name="tempIndexExt" UId="321" />
+                </Symbol>
+              </Access>
+              <Blank UId="322" />
+              <Token Text=":=" UId="323" />
+              <Blank UId="324" />
+              <Token Text="(" UId="325" />
+              <Token Text="(" UId="326" />
+              <Access Scope="LocalVariable" UId="327">
+                <Symbol UId="328">
+                  <Component Name="i" UId="329" />
+                </Symbol>
+              </Access>
+              <Blank UId="330" />
+              <Token Text="+" UId="331" />
+              <Blank UId="332" />
+              <Access Scope="LocalConstant" UId="333">
+                <Constant Name="NUMBER_PARAMETERS_IN_ANALOG_NOT_MAPPED" UId="334" />
+              </Access>
+              <Token Text=")" UId="337" />
+              <Blank UId="338" />
+              <Token Text="MOD" UId="339" />
+              <Blank UId="340" />
+              <Access Scope="LocalVariable" UId="341">
+                <Symbol UId="342">
+                  <Component Name="tempModuloNumber" UId="343" />
+                </Symbol>
+              </Access>
+              <Token Text=")" UId="344" />
+              <Blank UId="345" />
+              <Token Text="+" UId="346" />
+              <Blank UId="347" />
+              <Access Scope="LocalConstant" UId="348">
+                <Constant Name="NUMBER_PARAMETERS_IN_MIN" UId="349" />
+              </Access>
+              <Token Text=";" UId="352" />
+              <NewLine UId="353" />
+              <Blank Num="6" UId="354" />
+              <LineComment UId="355">
+                <Text UId="356"> Not-mapped (to a service) process values in are located at upper MTP-indices and must be mapped to their external output area</Text>
+              </LineComment>
+              <NewLine UId="357" />
+              <Blank Num="6" UId="358" />
+              <Access Scope="Call" UId="359">
+                <CallInfo UId="360" BlockType="FB" Name="ProcessValueInAnalog">
+                  <Instance Scope="LocalVariable" UId="361">
+                    <Component Name="AnalogIn" UId="362">
+                      <Token Text="[" UId="363" />
+                      <Access Scope="LocalVariable" UId="364">
+                        <Symbol UId="365">
+                          <Component Name="tempIndexExt" UId="366" />
+                        </Symbol>
+                      </Access>
+                      <Token Text="]" UId="367" />
+                    </Component>
+                  </Instance>
+                  <Token Text="(" UId="368" />
+                  <Parameter Name="Apply" UId="369">
+                    <Blank UId="370" />
+                    <Token Text=":=" UId="371" />
+                    <Blank UId="372" />
+                    <Access Scope="LocalVariable" UId="373">
+                      <Symbol UId="374">
+                        <Component Name="ProcessValueInAnalogApply" UId="375">
+                          <Token Text="[" UId="376" />
+                          <Access Scope="LocalVariable" UId="377">
+                            <Symbol UId="378">
+                              <Component Name="tempIndexExt" UId="379" />
+                            </Symbol>
+                          </Access>
+                          <Token Text="]" UId="380" />
+                        </Component>
+                      </Symbol>
+                    </Access>
+                  </Parameter>
+                  <Token Text="," UId="381" />
+                  <NewLine UId="382" />
+                  <Blank Num="31" UId="383" />
+                  <Parameter Name="MTP" UId="384">
+                    <Blank Num="3" UId="385" />
+                    <Token Text=":=" UId="386" />
+                    <Blank UId="387" />
+                    <Access Scope="LocalVariable" UId="388">
+                      <Symbol UId="389">
+                        <Component Name="MTPAnalogIn" UId="390">
+                          <Token Text="[" UId="391" />
+                          <Access Scope="LocalVariable" UId="392">
+                            <Symbol UId="393">
+                              <Component Name="i" UId="394" />
+                            </Symbol>
+                          </Access>
+                          <Token Text="]" UId="395" />
+                        </Component>
+                      </Symbol>
+                    </Access>
+                  </Parameter>
+                  <Token Text="," UId="396" />
+                  <NewLine UId="397" />
+                  <Blank Num="31" UId="398" />
+                  <Parameter Name="Ext" UId="399">
+                    <Blank Num="3" UId="400" />
+                    <Token Text=":=" UId="401" />
+                    <Blank UId="402" />
+                    <Access Scope="LocalVariable" UId="403">
+                      <Symbol UId="404">
+                        <Component Name="ProcessValueInAnalogOut" UId="405">
+                          <Token Text="[" UId="406" />
+                          <Access Scope="LocalVariable" UId="407">
+                            <Symbol UId="408">
+                              <Component Name="tempIndexExt" UId="409" />
+                            </Symbol>
+                          </Access>
+                          <Token Text="]" UId="410" />
+                        </Component>
+                      </Symbol>
+                    </Access>
+                  </Parameter>
+                  <Token Text=")" UId="411" />
+                </CallInfo>
+              </Access>
+              <Token Text=";" UId="412" />
+              <NewLine UId="413" />
+              <Blank Num="4" UId="414" />
+              <Token Text="END_IF" UId="415" />
+              <Token Text=";" UId="416" />
+              <NewLine UId="417" />
+              <Blank Num="2" UId="418" />
+              <Token Text="END_FOR" UId="419" />
+              <Token Text=";" UId="420" />
+              <NewLine UId="421" />
+              <Blank Num="2" UId="422" />
+              <NewLine UId="423" />
+              <Blank Num="2" UId="424" />
+              <LineComment UId="425">
+                <Text UId="426"> Call of process value FB for each not mapped digital in value</Text>
+              </LineComment>
+              <NewLine UId="427" />
+              <Blank Num="2" UId="428" />
+              <Access Scope="LocalVariable" UId="429">
+                <Symbol UId="430">
+                  <Component Name="tempUpperLimit" UId="431" />
+                </Symbol>
+              </Access>
+              <Blank UId="432" />
+              <Token Text=":=" UId="433" />
+              <Blank UId="434" />
+              <Access Scope="LocalConstant" UId="435">
+                <Constant Name="NUMBER_PARAMETERS_IN_DIGITAL_TOTAL" UId="436" />
+              </Access>
+              <Blank UId="439" />
+              <Token Text="-" UId="440" />
+              <Blank UId="441" />
+              <Access Scope="LiteralConstant" UId="442">
+                <Constant UId="443">
+                  <ConstantValue UId="445">1</ConstantValue>
+                </Constant>
+              </Access>
+              <Blank UId="446" />
+              <Token Text="+" UId="447" />
+              <Blank UId="448" />
+              <Access Scope="LocalConstant" UId="449">
+                <Constant Name="NUMBER_PARAMETERS_IN_MIN" UId="450" />
+              </Access>
+              <Token Text=";" UId="453" />
+              <NewLine UId="454" />
+              <Blank Num="2" UId="455" />
+              <Access Scope="LocalVariable" UId="456">
+                <Symbol UId="457">
+                  <Component Name="tempModuloNumber" UId="458" />
+                </Symbol>
+              </Access>
+              <Blank UId="459" />
+              <Token Text=":=" UId="460" />
+              <Blank UId="461" />
+              <Access Scope="LocalConstant" UId="462">
+                <Constant Name="NUMBER_PARAMETERS_IN_DIGITAL_TOTAL" UId="463" />
+              </Access>
+              <Token Text=";" UId="466" />
+              <Blank Num="2" UId="467" />
+              <LineComment UId="468">
+                <Text UId="469"> without this trick, the compiler throws error division by zero </Text>
+              </LineComment>
+              <NewLine UId="470" />
+              <Blank Num="2" UId="471" />
+              <Token Text="FOR" UId="472" />
+              <Blank UId="473" />
+              <Access Scope="LocalVariable" UId="474">
+                <Symbol UId="475">
+                  <Component Name="i" UId="476" />
+                </Symbol>
+              </Access>
+              <Blank UId="477" />
+              <Token Text=":=" UId="478" />
+              <Blank UId="479" />
+              <Access Scope="LocalConstant" UId="480">
+                <Constant Name="NUMBER_PARAMETERS_IN_MIN" UId="481" />
+              </Access>
+              <Blank UId="484" />
+              <Token Text="TO" UId="485" />
+              <Blank UId="486" />
+              <Access Scope="LocalVariable" UId="487">
+                <Symbol UId="488">
+                  <Component Name="tempUpperLimit" UId="489" />
+                </Symbol>
+              </Access>
+              <Blank UId="490" />
+              <Token Text="DO" UId="491" />
+              <NewLine UId="492" />
+              <Blank Num="4" UId="493" />
+              <Token Text="IF" UId="494" />
+              <Blank UId="495" />
+              <Token Text="(" UId="496" />
+              <Access Scope="LocalVariable" UId="497">
+                <Symbol UId="498">
+                  <Component Name="i" UId="499" />
+                </Symbol>
+              </Access>
+              <Blank UId="500" />
+              <Token Text="&gt;" UId="501" />
+              <Blank UId="502" />
+              <Access Scope="LocalVariable" UId="503">
+                <Symbol UId="504">
+                  <Component Name="tempUpperLimit" UId="505" />
+                </Symbol>
+              </Access>
+              <Blank UId="506" />
+              <Token Text="-" UId="507" />
+              <Blank UId="508" />
+              <Access Scope="LocalConstant" UId="509">
+                <Constant Name="NUMBER_PARAMETERS_IN_DIGITAL_NOT_MAPPED" UId="510" />
+              </Access>
+              <Token Text=")" UId="513" />
+              <Blank UId="514" />
+              <Token Text="AND" UId="515" />
+              <Blank UId="516" />
+              <Token Text="(" UId="517" />
+              <Access Scope="LocalVariable" UId="518">
+                <Symbol UId="519">
+                  <Component Name="tempModuloNumber" UId="520" />
+                </Symbol>
+              </Access>
+              <Blank UId="521" />
+              <Token Text="&gt;" UId="522" />
+              <Blank UId="523" />
+              <Access Scope="LiteralConstant" UId="524">
+                <Constant UId="525">
+                  <ConstantValue UId="527">0</ConstantValue>
+                </Constant>
+              </Access>
+              <Token Text=")" UId="528" />
+              <Blank UId="529" />
+              <Token Text="AND" UId="530" />
+              <Blank UId="531" />
+              <Token Text="(" UId="532" />
+              <Access Scope="LocalVariable" UId="533">
+                <Symbol UId="534">
+                  <Component Name="tempModuloNumber" UId="535" />
+                </Symbol>
+              </Access>
+              <Blank UId="536" />
+              <Token Text="&gt;=" UId="537" />
+              <Blank UId="538" />
+              <Access Scope="LocalConstant" UId="539">
+                <Constant Name="NUMBER_PARAMETERS_IN_DIGITAL_NOT_MAPPED" UId="540" />
+              </Access>
+              <Token Text=")" UId="543" />
+              <Blank UId="544" />
+              <Token Text="THEN" UId="545" />
+              <NewLine UId="546" />
+              <Blank Num="6" UId="547" />
+              <LineComment UId="548">
+                <Text UId="549"> Number_Mapped + Number_not_Mapped = Number_Total</Text>
+              </LineComment>
+              <NewLine UId="550" />
+              <Blank Num="6" UId="551" />
+              <LineComment UId="552">
+                <Text UId="553"> Call FB only in case that the values of the constants are consistent and that no division by zero is possible</Text>
+              </LineComment>
+              <NewLine UId="554" />
+              <Blank Num="6" UId="555" />
+              <Access Scope="LocalVariable" UId="556">
+                <Symbol UId="557">
+                  <Component Name="tempIndexExt" UId="558" />
+                </Symbol>
+              </Access>
+              <Blank UId="559" />
+              <Token Text=":=" UId="560" />
+              <Blank UId="561" />
+              <Token Text="(" UId="562" />
+              <Token Text="(" UId="563" />
+              <Access Scope="LocalVariable" UId="564">
+                <Symbol UId="565">
+                  <Component Name="i" UId="566" />
+                </Symbol>
+              </Access>
+              <Blank UId="567" />
+              <Token Text="+" UId="568" />
+              <Blank UId="569" />
+              <Access Scope="LocalConstant" UId="570">
+                <Constant Name="NUMBER_PARAMETERS_IN_DIGITAL_NOT_MAPPED" UId="571" />
+              </Access>
+              <Token Text=")" UId="574" />
+              <Blank UId="575" />
+              <Token Text="MOD" UId="576" />
+              <Blank UId="577" />
+              <Access Scope="LocalVariable" UId="578">
+                <Symbol UId="579">
+                  <Component Name="tempModuloNumber" UId="580" />
+                </Symbol>
+              </Access>
+              <Token Text=")" UId="581" />
+              <Blank UId="582" />
+              <Token Text="+" UId="583" />
+              <Blank UId="584" />
+              <Access Scope="LocalConstant" UId="585">
+                <Constant Name="NUMBER_PARAMETERS_IN_MIN" UId="586" />
+              </Access>
+              <Token Text=";" UId="589" />
+              <NewLine UId="590" />
+              <Blank Num="6" UId="591" />
+              <LineComment UId="592">
+                <Text UId="593"> Not-mapped (to a service) process values in are located at upper MTP-indices and must be mapped to their external output area</Text>
+              </LineComment>
+              <NewLine UId="594" />
+              <Blank Num="6" UId="595" />
+              <Access Scope="Call" UId="596">
+                <CallInfo UId="597" BlockType="FB" Name="ProcessValueInDigital">
+                  <Instance Scope="LocalVariable" UId="598">
+                    <Component Name="DigitalIn" UId="599">
+                      <Token Text="[" UId="600" />
+                      <Access Scope="LocalVariable" UId="601">
+                        <Symbol UId="602">
+                          <Component Name="tempIndexExt" UId="603" />
+                        </Symbol>
+                      </Access>
+                      <Token Text="]" UId="604" />
+                    </Component>
+                  </Instance>
+                  <Token Text="(" UId="605" />
+                  <Parameter Name="Apply" UId="606">
+                    <Blank UId="607" />
+                    <Token Text=":=" UId="608" />
+                    <Blank UId="609" />
+                    <Access Scope="LocalVariable" UId="610">
+                      <Symbol UId="611">
+                        <Component Name="ProcessValueInDigitalApply" UId="612">
+                          <Token Text="[" UId="613" />
+                          <Access Scope="LocalVariable" UId="614">
+                            <Symbol UId="615">
+                              <Component Name="tempIndexExt" UId="616" />
+                            </Symbol>
+                          </Access>
+                          <Token Text="]" UId="617" />
+                        </Component>
+                      </Symbol>
+                    </Access>
+                  </Parameter>
+                  <Token Text="," UId="618" />
+                  <NewLine UId="619" />
+                  <Blank Num="32" UId="620" />
+                  <Parameter Name="MTP" UId="621">
+                    <Blank Num="3" UId="622" />
+                    <Token Text=":=" UId="623" />
+                    <Blank UId="624" />
+                    <Access Scope="LocalVariable" UId="625">
+                      <Symbol UId="626">
+                        <Component Name="MTPDigitalIn" UId="627">
+                          <Token Text="[" UId="628" />
+                          <Access Scope="LocalVariable" UId="629">
+                            <Symbol UId="630">
+                              <Component Name="i" UId="631" />
+                            </Symbol>
+                          </Access>
+                          <Token Text="]" UId="632" />
+                        </Component>
+                      </Symbol>
+                    </Access>
+                  </Parameter>
+                  <Token Text="," UId="633" />
+                  <NewLine UId="634" />
+                  <Blank Num="32" UId="635" />
+                  <Parameter Name="Ext" UId="636">
+                    <Blank Num="3" UId="637" />
+                    <Token Text=":=" UId="638" />
+                    <Blank UId="639" />
+                    <Access Scope="LocalVariable" UId="640">
+                      <Symbol UId="641">
+                        <Component Name="ProcessValueInDigitalOut" UId="642">
+                          <Token Text="[" UId="643" />
+                          <Access Scope="LocalVariable" UId="644">
+                            <Symbol UId="645">
+                              <Component Name="tempIndexExt" UId="646" />
+                            </Symbol>
+                          </Access>
+                          <Token Text="]" UId="647" />
+                        </Component>
+                      </Symbol>
+                    </Access>
+                  </Parameter>
+                  <Token Text=")" UId="648" />
+                </CallInfo>
+              </Access>
+              <Token Text=";" UId="649" />
+              <NewLine UId="650" />
+              <Blank Num="4" UId="651" />
+              <Token Text="END_IF" UId="652" />
+              <Token Text=";" UId="653" />
+              <NewLine UId="654" />
+              <Blank Num="2" UId="655" />
+              <Token Text="END_FOR" UId="656" />
+              <Token Text=";" UId="657" />
+              <NewLine UId="658" />
+              <Blank Num="2" UId="659" />
+              <NewLine UId="660" />
+              <Blank Num="2" UId="661" />
+              <LineComment UId="662">
+                <Text UId="663"> Call of process value FB for each not mapped binary in value</Text>
+              </LineComment>
+              <NewLine UId="664" />
+              <Blank Num="2" UId="665" />
+              <Access Scope="LocalVariable" UId="666">
+                <Symbol UId="667">
+                  <Component Name="tempUpperLimit" UId="668" />
+                </Symbol>
+              </Access>
+              <Blank UId="669" />
+              <Token Text=":=" UId="670" />
+              <Blank UId="671" />
+              <Access Scope="LocalConstant" UId="672">
+                <Constant Name="NUMBER_PARAMETERS_IN_BINARY_TOTAL" UId="673" />
+              </Access>
+              <Blank UId="676" />
+              <Token Text="-" UId="677" />
+              <Blank UId="678" />
+              <Access Scope="LiteralConstant" UId="679">
+                <Constant UId="680">
+                  <ConstantValue UId="682">1</ConstantValue>
+                </Constant>
+              </Access>
+              <Blank UId="683" />
+              <Token Text="+" UId="684" />
+              <Blank UId="685" />
+              <Access Scope="LocalConstant" UId="686">
+                <Constant Name="NUMBER_PARAMETERS_IN_MIN" UId="687" />
+              </Access>
+              <Token Text=";" UId="690" />
+              <NewLine UId="691" />
+              <Blank Num="2" UId="692" />
+              <Access Scope="LocalVariable" UId="693">
+                <Symbol UId="694">
+                  <Component Name="tempModuloNumber" UId="695" />
+                </Symbol>
+              </Access>
+              <Blank UId="696" />
+              <Token Text=":=" UId="697" />
+              <Blank UId="698" />
+              <Access Scope="LocalConstant" UId="699">
+                <Constant Name="NUMBER_PARAMETERS_IN_BINARY_TOTAL" UId="700" />
+              </Access>
+              <Token Text=";" UId="703" />
+              <Blank Num="2" UId="704" />
+              <LineComment UId="705">
+                <Text UId="706"> without this trick, the compiler throws error division by zero </Text>
+              </LineComment>
+              <NewLine UId="707" />
+              <Blank Num="2" UId="708" />
+              <Token Text="FOR" UId="709" />
+              <Blank UId="710" />
+              <Access Scope="LocalVariable" UId="711">
+                <Symbol UId="712">
+                  <Component Name="i" UId="713" />
+                </Symbol>
+              </Access>
+              <Blank UId="714" />
+              <Token Text=":=" UId="715" />
+              <Blank UId="716" />
+              <Access Scope="LocalConstant" UId="717">
+                <Constant Name="NUMBER_PARAMETERS_IN_MIN" UId="718" />
+              </Access>
+              <Blank UId="721" />
+              <Token Text="TO" UId="722" />
+              <Blank UId="723" />
+              <Access Scope="LocalVariable" UId="724">
+                <Symbol UId="725">
+                  <Component Name="tempUpperLimit" UId="726" />
+                </Symbol>
+              </Access>
+              <Blank UId="727" />
+              <Token Text="DO" UId="728" />
+              <NewLine UId="729" />
+              <Blank Num="4" UId="730" />
+              <Token Text="IF" UId="731" />
+              <Blank UId="732" />
+              <Token Text="(" UId="733" />
+              <Access Scope="LocalVariable" UId="734">
+                <Symbol UId="735">
+                  <Component Name="i" UId="736" />
+                </Symbol>
+              </Access>
+              <Blank UId="737" />
+              <Token Text="&gt;" UId="738" />
+              <Blank UId="739" />
+              <Access Scope="LocalVariable" UId="740">
+                <Symbol UId="741">
+                  <Component Name="tempUpperLimit" UId="742" />
+                </Symbol>
+              </Access>
+              <Blank UId="743" />
+              <Token Text="-" UId="744" />
+              <Blank UId="745" />
+              <Access Scope="LocalConstant" UId="746">
+                <Constant Name="NUMBER_PARAMETERS_IN_BINARY_NOT_MAPPED" UId="747" />
+              </Access>
+              <Token Text=")" UId="750" />
+              <Blank UId="751" />
+              <Token Text="AND" UId="752" />
+              <Blank UId="753" />
+              <Token Text="(" UId="754" />
+              <Access Scope="LocalVariable" UId="755">
+                <Symbol UId="756">
+                  <Component Name="tempModuloNumber" UId="757" />
+                </Symbol>
+              </Access>
+              <Blank UId="758" />
+              <Token Text="&gt;" UId="759" />
+              <Blank UId="760" />
+              <Access Scope="LiteralConstant" UId="761">
+                <Constant UId="762">
+                  <ConstantValue UId="764">0</ConstantValue>
+                </Constant>
+              </Access>
+              <Token Text=")" UId="765" />
+              <Blank UId="766" />
+              <Token Text="AND" UId="767" />
+              <Blank UId="768" />
+              <Token Text="(" UId="769" />
+              <Access Scope="LocalVariable" UId="770">
+                <Symbol UId="771">
+                  <Component Name="tempModuloNumber" UId="772" />
+                </Symbol>
+              </Access>
+              <Blank UId="773" />
+              <Token Text="&gt;=" UId="774" />
+              <Blank UId="775" />
+              <Access Scope="LocalConstant" UId="776">
+                <Constant Name="NUMBER_PARAMETERS_IN_BINARY_NOT_MAPPED" UId="777" />
+              </Access>
+              <Token Text=")" UId="780" />
+              <Blank UId="781" />
+              <Token Text="THEN" UId="782" />
+              <NewLine UId="783" />
+              <Blank Num="6" UId="784" />
+              <LineComment UId="785">
+                <Text UId="786"> Number_Mapped + Number_not_Mapped = Number_Total</Text>
+              </LineComment>
+              <NewLine UId="787" />
+              <Blank Num="6" UId="788" />
+              <LineComment UId="789">
+                <Text UId="790"> Call FB only in case that the values of the constants are consistent and that no division by zero is possible</Text>
+              </LineComment>
+              <NewLine UId="791" />
+              <Blank Num="6" UId="792" />
+              <Access Scope="LocalVariable" UId="793">
+                <Symbol UId="794">
+                  <Component Name="tempIndexExt" UId="795" />
+                </Symbol>
+              </Access>
+              <Blank UId="796" />
+              <Token Text=":=" UId="797" />
+              <Blank UId="798" />
+              <Token Text="(" UId="799" />
+              <Token Text="(" UId="800" />
+              <Access Scope="LocalVariable" UId="801">
+                <Symbol UId="802">
+                  <Component Name="i" UId="803" />
+                </Symbol>
+              </Access>
+              <Blank UId="804" />
+              <Token Text="+" UId="805" />
+              <Blank UId="806" />
+              <Access Scope="LocalConstant" UId="807">
+                <Constant Name="NUMBER_PARAMETERS_IN_BINARY_NOT_MAPPED" UId="808" />
+              </Access>
+              <Token Text=")" UId="811" />
+              <Blank UId="812" />
+              <Token Text="MOD" UId="813" />
+              <Blank UId="814" />
+              <Access Scope="LocalVariable" UId="815">
+                <Symbol UId="816">
+                  <Component Name="tempModuloNumber" UId="817" />
+                </Symbol>
+              </Access>
+              <Token Text=")" UId="818" />
+              <Blank UId="819" />
+              <Token Text="+" UId="820" />
+              <Blank UId="821" />
+              <Access Scope="LocalConstant" UId="822">
+                <Constant Name="NUMBER_PARAMETERS_IN_MIN" UId="823" />
+              </Access>
+              <Token Text=";" UId="826" />
+              <NewLine UId="827" />
+              <Blank Num="6" UId="828" />
+              <LineComment UId="829">
+                <Text UId="830"> Not-mapped (to a service) process values in are located at upper MTP-indices and must be mapped to their external output area</Text>
+              </LineComment>
+              <NewLine UId="831" />
+              <Blank Num="6" UId="832" />
+              <Access Scope="Call" UId="833">
+                <CallInfo UId="834" BlockType="FB" Name="ProcessValueInBinary">
+                  <Instance Scope="LocalVariable" UId="835">
+                    <Component Name="BinaryIn" UId="836">
+                      <Token Text="[" UId="837" />
+                      <Access Scope="LocalVariable" UId="838">
+                        <Symbol UId="839">
+                          <Component Name="tempIndexExt" UId="840" />
+                        </Symbol>
+                      </Access>
+                      <Token Text="]" UId="841" />
+                    </Component>
+                  </Instance>
+                  <Token Text="(" UId="842" />
+                  <Parameter Name="MTP" UId="843">
+                    <Blank UId="844" />
+                    <Token Text=":=" UId="845" />
+                    <Blank UId="846" />
+                    <Access Scope="LocalVariable" UId="847">
+                      <Symbol UId="848">
+                        <Component Name="MTPBinaryIn" UId="849">
+                          <Token Text="[" UId="850" />
+                          <Access Scope="LocalVariable" UId="851">
+                            <Symbol UId="852">
+                              <Component Name="i" UId="853" />
+                            </Symbol>
+                          </Access>
+                          <Token Text="]" UId="854" />
+                        </Component>
+                      </Symbol>
+                    </Access>
+                  </Parameter>
+                  <Token Text="," UId="855" />
+                  <NewLine UId="856" />
+                  <Blank Num="31" UId="857" />
+                  <Parameter Name="Ext" UId="858">
+                    <Blank UId="859" />
+                    <Token Text=":=" UId="860" />
+                    <Blank UId="861" />
+                    <Access Scope="LocalVariable" UId="862">
+                      <Symbol UId="863">
+                        <Component Name="ProcessValueInBinaryOut" UId="864">
+                          <Token Text="[" UId="865" />
+                          <Access Scope="LocalVariable" UId="866">
+                            <Symbol UId="867">
+                              <Component Name="tempIndexExt" UId="868" />
+                            </Symbol>
+                          </Access>
+                          <Token Text="]" UId="869" />
+                        </Component>
+                      </Symbol>
+                    </Access>
+                  </Parameter>
+                  <Token Text=")" UId="870" />
+                </CallInfo>
+              </Access>
+              <Token Text=";" UId="871" />
+              <NewLine UId="872" />
+              <Blank Num="4" UId="873" />
+              <Token Text="END_IF" UId="874" />
+              <Token Text=";" UId="875" />
+              <NewLine UId="876" />
+              <Blank Num="2" UId="877" />
+              <Token Text="END_FOR" UId="878" />
+              <Token Text=";" UId="879" />
+              <NewLine UId="880" />
+              <Blank Num="2" UId="881" />
+              <NewLine UId="882" />
+              <Blank Num="2" UId="883" />
+              <LineComment UId="884">
+                <Text UId="885"> Call of process value FB for each not mapped string in value</Text>
+              </LineComment>
+              <NewLine UId="886" />
+              <Blank Num="2" UId="887" />
+              <Access Scope="LocalVariable" UId="888">
+                <Symbol UId="889">
+                  <Component Name="tempUpperLimit" UId="890" />
+                </Symbol>
+              </Access>
+              <Blank UId="891" />
+              <Token Text=":=" UId="892" />
+              <Blank UId="893" />
+              <Access Scope="LocalConstant" UId="894">
+                <Constant Name="NUMBER_PARAMETERS_IN_STRING_TOTAL" UId="895" />
+              </Access>
+              <Blank UId="898" />
+              <Token Text="-" UId="899" />
+              <Blank UId="900" />
+              <Access Scope="LiteralConstant" UId="901">
+                <Constant UId="902">
+                  <ConstantValue UId="904">1</ConstantValue>
+                </Constant>
+              </Access>
+              <Blank UId="905" />
+              <Token Text="+" UId="906" />
+              <Blank UId="907" />
+              <Access Scope="LocalConstant" UId="908">
+                <Constant Name="NUMBER_PARAMETERS_IN_MIN" UId="909" />
+              </Access>
+              <Token Text=";" UId="912" />
+              <NewLine UId="913" />
+              <Blank Num="2" UId="914" />
+              <Access Scope="LocalVariable" UId="915">
+                <Symbol UId="916">
+                  <Component Name="tempModuloNumber" UId="917" />
+                </Symbol>
+              </Access>
+              <Blank UId="918" />
+              <Token Text=":=" UId="919" />
+              <Blank UId="920" />
+              <Access Scope="LocalConstant" UId="921">
+                <Constant Name="NUMBER_PARAMETERS_IN_STRING_TOTAL" UId="922" />
+              </Access>
+              <Token Text=";" UId="925" />
+              <Blank Num="2" UId="926" />
+              <LineComment UId="927">
+                <Text UId="928"> without this trick, the compiler throws error division by zero </Text>
+              </LineComment>
+              <NewLine UId="929" />
+              <Blank Num="2" UId="930" />
+              <Token Text="FOR" UId="931" />
+              <Blank UId="932" />
+              <Access Scope="LocalVariable" UId="933">
+                <Symbol UId="934">
+                  <Component Name="i" UId="935" />
+                </Symbol>
+              </Access>
+              <Blank UId="936" />
+              <Token Text=":=" UId="937" />
+              <Blank UId="938" />
+              <Access Scope="LocalConstant" UId="939">
+                <Constant Name="NUMBER_PARAMETERS_IN_MIN" UId="940" />
+              </Access>
+              <Blank UId="943" />
+              <Token Text="TO" UId="944" />
+              <Blank UId="945" />
+              <Access Scope="LocalVariable" UId="946">
+                <Symbol UId="947">
+                  <Component Name="tempUpperLimit" UId="948" />
+                </Symbol>
+              </Access>
+              <Blank UId="949" />
+              <Token Text="DO" UId="950" />
+              <NewLine UId="951" />
+              <Blank Num="4" UId="952" />
+              <Token Text="IF" UId="953" />
+              <Blank UId="954" />
+              <Token Text="(" UId="955" />
+              <Access Scope="LocalVariable" UId="956">
+                <Symbol UId="957">
+                  <Component Name="i" UId="958" />
+                </Symbol>
+              </Access>
+              <Blank UId="959" />
+              <Token Text="&gt;" UId="960" />
+              <Blank UId="961" />
+              <Access Scope="LocalVariable" UId="962">
+                <Symbol UId="963">
+                  <Component Name="tempUpperLimit" UId="964" />
+                </Symbol>
+              </Access>
+              <Blank UId="965" />
+              <Token Text="-" UId="966" />
+              <Blank UId="967" />
+              <Access Scope="LocalConstant" UId="968">
+                <Constant Name="NUMBER_PARAMETERS_IN_STRING_NOT_MAPPED" UId="969" />
+              </Access>
+              <Token Text=")" UId="972" />
+              <Blank UId="973" />
+              <Token Text="AND" UId="974" />
+              <Blank UId="975" />
+              <Token Text="(" UId="976" />
+              <Access Scope="LocalVariable" UId="977">
+                <Symbol UId="978">
+                  <Component Name="tempModuloNumber" UId="979" />
+                </Symbol>
+              </Access>
+              <Blank UId="980" />
+              <Token Text="&gt;" UId="981" />
+              <Blank UId="982" />
+              <Access Scope="LiteralConstant" UId="983">
+                <Constant UId="984">
+                  <ConstantValue UId="986">0</ConstantValue>
+                </Constant>
+              </Access>
+              <Token Text=")" UId="987" />
+              <Blank UId="988" />
+              <Token Text="AND" UId="989" />
+              <Blank UId="990" />
+              <Token Text="(" UId="991" />
+              <Access Scope="LocalVariable" UId="992">
+                <Symbol UId="993">
+                  <Component Name="tempModuloNumber" UId="994" />
+                </Symbol>
+              </Access>
+              <Blank UId="995" />
+              <Token Text="&gt;=" UId="996" />
+              <Blank UId="997" />
+              <Access Scope="LocalConstant" UId="998">
+                <Constant Name="NUMBER_PARAMETERS_IN_STRING_NOT_MAPPED" UId="999" />
+              </Access>
+              <Token Text=")" UId="1002" />
+              <Blank UId="1003" />
+              <Token Text="THEN" UId="1004" />
+              <NewLine UId="1005" />
+              <Blank Num="6" UId="1006" />
+              <LineComment UId="1007">
+                <Text UId="1008"> Number_Mapped + Number_not_Mapped = Number_Total</Text>
+              </LineComment>
+              <NewLine UId="1009" />
+              <Blank Num="6" UId="1010" />
+              <LineComment UId="1011">
+                <Text UId="1012"> Call FB only in case that the values of the constants are consistent and that no division by zero is possible</Text>
+              </LineComment>
+              <NewLine UId="1013" />
+              <Blank Num="6" UId="1014" />
+              <Access Scope="LocalVariable" UId="1015">
+                <Symbol UId="1016">
+                  <Component Name="tempIndexExt" UId="1017" />
+                </Symbol>
+              </Access>
+              <Blank UId="1018" />
+              <Token Text=":=" UId="1019" />
+              <Blank UId="1020" />
+              <Token Text="(" UId="1021" />
+              <Token Text="(" UId="1022" />
+              <Access Scope="LocalVariable" UId="1023">
+                <Symbol UId="1024">
+                  <Component Name="i" UId="1025" />
+                </Symbol>
+              </Access>
+              <Blank UId="1026" />
+              <Token Text="+" UId="1027" />
+              <Blank UId="1028" />
+              <Access Scope="LocalConstant" UId="1029">
+                <Constant Name="NUMBER_PARAMETERS_IN_STRING_NOT_MAPPED" UId="1030" />
+              </Access>
+              <Token Text=")" UId="1033" />
+              <Blank UId="1034" />
+              <Token Text="MOD" UId="1035" />
+              <Blank UId="1036" />
+              <Access Scope="LocalVariable" UId="1037">
+                <Symbol UId="1038">
+                  <Component Name="tempModuloNumber" UId="1039" />
+                </Symbol>
+              </Access>
+              <Token Text=")" UId="1040" />
+              <Blank UId="1041" />
+              <Token Text="+" UId="1042" />
+              <Blank UId="1043" />
+              <Access Scope="LocalConstant" UId="1044">
+                <Constant Name="NUMBER_PARAMETERS_IN_MIN" UId="1045" />
+              </Access>
+              <Token Text=";" UId="1048" />
+              <NewLine UId="1049" />
+              <Blank Num="6" UId="1050" />
+              <LineComment UId="1051">
+                <Text UId="1052"> Not-mapped (to a service) process values in are located at upper MTP-indices and must be mapped to their external output area</Text>
+              </LineComment>
+              <NewLine UId="1053" />
+              <Blank Num="6" UId="1054" />
+              <Access Scope="Call" UId="1055">
+                <CallInfo UId="1056" BlockType="FB" Name="ProcessValueInString">
+                  <Instance Scope="LocalVariable" UId="1057">
+                    <Component Name="StringIn" UId="1058">
+                      <Token Text="[" UId="1059" />
+                      <Access Scope="LocalVariable" UId="1060">
+                        <Symbol UId="1061">
+                          <Component Name="tempIndexExt" UId="1062" />
+                        </Symbol>
+                      </Access>
+                      <Token Text="]" UId="1063" />
+                    </Component>
+                  </Instance>
+                  <Token Text="(" UId="1064" />
+                  <Parameter Name="MTP" UId="1065">
+                    <Blank UId="1066" />
+                    <Token Text=":=" UId="1067" />
+                    <Blank UId="1068" />
+                    <Access Scope="LocalVariable" UId="1069">
+                      <Symbol UId="1070">
+                        <Component Name="MTPStringIn" UId="1071">
+                          <Token Text="[" UId="1072" />
+                          <Access Scope="LocalVariable" UId="1073">
+                            <Symbol UId="1074">
+                              <Component Name="i" UId="1075" />
+                            </Symbol>
+                          </Access>
+                          <Token Text="]" UId="1076" />
+                        </Component>
+                      </Symbol>
+                    </Access>
+                  </Parameter>
+                  <Token Text="," UId="1077" />
+                  <NewLine UId="1078" />
+                  <Blank Num="31" UId="1079" />
+                  <Parameter Name="Ext" UId="1080">
+                    <Blank UId="1081" />
+                    <Token Text=":=" UId="1082" />
+                    <Blank UId="1083" />
+                    <Access Scope="LocalVariable" UId="1084">
+                      <Symbol UId="1085">
+                        <Component Name="ProcessValueInStringOut" UId="1086">
+                          <Token Text="[" UId="1087" />
+                          <Access Scope="LocalVariable" UId="1088">
+                            <Symbol UId="1089">
+                              <Component Name="tempIndexExt" UId="1090" />
+                            </Symbol>
+                          </Access>
+                          <Token Text="]" UId="1091" />
+                        </Component>
+                      </Symbol>
+                    </Access>
+                  </Parameter>
+                  <Token Text=")" UId="1092" />
+                </CallInfo>
+              </Access>
+              <Token Text=";" UId="1093" />
+              <NewLine UId="1094" />
+              <Blank Num="4" UId="1095" />
+              <Token Text="END_IF" UId="1096" />
+              <Token Text=";" UId="1097" />
+              <NewLine UId="1098" />
+              <Blank Num="2" UId="1099" />
+              <Token Text="END_FOR" UId="1100" />
+              <Token Text=";" UId="1101" />
+              <NewLine UId="1102" />
+              <Blank Num="2" UId="1103" />
+              <NewLine UId="1104" />
+              <Blank Num="2" UId="1105" />
+              <NewLine UId="1106" />
+              <Blank Num="2" UId="1107" />
+              <NewLine UId="1108" />
+              <Blank Num="2" UId="1109" />
+              <LineComment UId="1110">
+                <Text UId="1111"> Call of process value FB for each not mapped analog out value</Text>
+              </LineComment>
+              <NewLine UId="1112" />
+              <Blank Num="2" UId="1113" />
+              <Access Scope="LocalVariable" UId="1114">
+                <Symbol UId="1115">
+                  <Component Name="tempUpperLimit" UId="1116" />
+                </Symbol>
+              </Access>
+              <Blank UId="1117" />
+              <Token Text=":=" UId="1118" />
+              <Blank UId="1119" />
+              <Access Scope="LocalConstant" UId="1120">
+                <Constant Name="NUMBER_PARAMETERS_OUT_ANALOG_TOTAL" UId="1121" />
+              </Access>
+              <Blank UId="1124" />
+              <Token Text="-" UId="1125" />
+              <Blank UId="1126" />
+              <Access Scope="LiteralConstant" UId="1127">
+                <Constant UId="1128">
+                  <ConstantValue UId="1130">1</ConstantValue>
+                </Constant>
+              </Access>
+              <Blank UId="1131" />
+              <Token Text="+" UId="1132" />
+              <Blank UId="1133" />
+              <Access Scope="LocalConstant" UId="1134">
+                <Constant Name="NUMBER_PARAMETERS_OUT_MIN" UId="1135" />
+              </Access>
+              <Token Text=";" UId="1138" />
+              <NewLine UId="1139" />
+              <Blank Num="2" UId="1140" />
+              <Access Scope="LocalVariable" UId="1141">
+                <Symbol UId="1142">
+                  <Component Name="tempModuloNumber" UId="1143" />
+                </Symbol>
+              </Access>
+              <Blank UId="1144" />
+              <Token Text=":=" UId="1145" />
+              <Blank UId="1146" />
+              <Access Scope="LocalConstant" UId="1147">
+                <Constant Name="NUMBER_PARAMETERS_OUT_ANALOG_TOTAL" UId="1148" />
+              </Access>
+              <Token Text=";" UId="1151" />
+              <Blank Num="2" UId="1152" />
+              <LineComment UId="1153">
+                <Text UId="1154"> without this trick, the compiler throws error division by zero </Text>
+              </LineComment>
+              <NewLine UId="1155" />
+              <Blank Num="2" UId="1156" />
+              <Token Text="FOR" UId="1157" />
+              <Blank UId="1158" />
+              <Access Scope="LocalVariable" UId="1159">
+                <Symbol UId="1160">
+                  <Component Name="i" UId="1161" />
+                </Symbol>
+              </Access>
+              <Blank UId="1162" />
+              <Token Text=":=" UId="1163" />
+              <Blank UId="1164" />
+              <Access Scope="LocalConstant" UId="1165">
+                <Constant Name="NUMBER_PARAMETERS_OUT_MIN" UId="1166" />
+              </Access>
+              <Blank UId="1169" />
+              <Token Text="TO" UId="1170" />
+              <Blank UId="1171" />
+              <Access Scope="LocalVariable" UId="1172">
+                <Symbol UId="1173">
+                  <Component Name="tempUpperLimit" UId="1174" />
+                </Symbol>
+              </Access>
+              <Blank UId="1175" />
+              <Token Text="DO" UId="1176" />
+              <NewLine UId="1177" />
+              <Blank Num="4" UId="1178" />
+              <Token Text="IF" UId="1179" />
+              <Blank UId="1180" />
+              <Token Text="(" UId="1181" />
+              <Access Scope="LocalVariable" UId="1182">
+                <Symbol UId="1183">
+                  <Component Name="i" UId="1184" />
+                </Symbol>
+              </Access>
+              <Blank UId="1185" />
+              <Token Text="&gt;" UId="1186" />
+              <Blank UId="1187" />
+              <Access Scope="LocalVariable" UId="1188">
+                <Symbol UId="1189">
+                  <Component Name="tempUpperLimit" UId="1190" />
+                </Symbol>
+              </Access>
+              <Blank UId="1191" />
+              <Token Text="-" UId="1192" />
+              <Blank UId="1193" />
+              <Access Scope="LocalConstant" UId="1194">
+                <Constant Name="NUMBER_PARAMETERS_OUT_ANALOG_NOT_MAPPED" UId="1195" />
+              </Access>
+              <Token Text=")" UId="1198" />
+              <Blank UId="1199" />
+              <Token Text="AND" UId="1200" />
+              <Blank UId="1201" />
+              <Token Text="(" UId="1202" />
+              <Access Scope="LocalVariable" UId="1203">
+                <Symbol UId="1204">
+                  <Component Name="tempModuloNumber" UId="1205" />
+                </Symbol>
+              </Access>
+              <Blank UId="1206" />
+              <Token Text="&gt;" UId="1207" />
+              <Blank UId="1208" />
+              <Access Scope="LiteralConstant" UId="1209">
+                <Constant UId="1210">
+                  <ConstantValue UId="1212">0</ConstantValue>
+                </Constant>
+              </Access>
+              <Token Text=")" UId="1213" />
+              <Blank UId="1214" />
+              <Token Text="AND" UId="1215" />
+              <Blank UId="1216" />
+              <Token Text="(" UId="1217" />
+              <Access Scope="LocalVariable" UId="1218">
+                <Symbol UId="1219">
+                  <Component Name="tempModuloNumber" UId="1220" />
+                </Symbol>
+              </Access>
+              <Blank UId="1221" />
+              <Token Text="&gt;=" UId="1222" />
+              <Blank UId="1223" />
+              <Access Scope="LocalConstant" UId="1224">
+                <Constant Name="NUMBER_PARAMETERS_OUT_ANALOG_NOT_MAPPED" UId="1225" />
+              </Access>
+              <Token Text=")" UId="1228" />
+              <Blank UId="1229" />
+              <Token Text="THEN" UId="1230" />
+              <NewLine UId="1231" />
+              <Blank Num="6" UId="1232" />
+              <LineComment UId="1233">
+                <Text UId="1234"> Number_Mapped + Number_not_Mapped = Number_Total</Text>
+              </LineComment>
+              <NewLine UId="1235" />
+              <Blank Num="6" UId="1236" />
+              <LineComment UId="1237">
+                <Text UId="1238"> Call FB only in case that the values of the constants are consistent and that no division by zero is possible</Text>
+              </LineComment>
+              <NewLine UId="1239" />
+              <Blank Num="6" UId="1240" />
+              <Access Scope="LocalVariable" UId="1241">
+                <Symbol UId="1242">
+                  <Component Name="tempIndexExt" UId="1243" />
+                </Symbol>
+              </Access>
+              <Blank UId="1244" />
+              <Token Text=":=" UId="1245" />
+              <Blank UId="1246" />
+              <Token Text="(" UId="1247" />
+              <Token Text="(" UId="1248" />
+              <Access Scope="LocalVariable" UId="1249">
+                <Symbol UId="1250">
+                  <Component Name="i" UId="1251" />
+                </Symbol>
+              </Access>
+              <Blank UId="1252" />
+              <Token Text="+" UId="1253" />
+              <Blank UId="1254" />
+              <Access Scope="LocalConstant" UId="1255">
+                <Constant Name="NUMBER_PARAMETERS_OUT_ANALOG_NOT_MAPPED" UId="1256" />
+              </Access>
+              <Token Text=")" UId="1259" />
+              <Blank UId="1260" />
+              <Token Text="MOD" UId="1261" />
+              <Blank UId="1262" />
+              <Access Scope="LocalVariable" UId="1263">
+                <Symbol UId="1264">
+                  <Component Name="tempModuloNumber" UId="1265" />
+                </Symbol>
+              </Access>
+              <Token Text=")" UId="1266" />
+              <Blank UId="1267" />
+              <Token Text="+" UId="1268" />
+              <Blank UId="1269" />
+              <Access Scope="LocalConstant" UId="1270">
+                <Constant Name="NUMBER_PARAMETERS_OUT_MIN" UId="1271" />
+              </Access>
+              <Token Text=";" UId="1274" />
+              <NewLine UId="1275" />
+              <Blank Num="6" UId="1276" />
+              <LineComment UId="1277">
+                <Text UId="1278"> Not-mapped (to a service) process values out are located at upper MTP-indices and must be mapped to their external input area</Text>
+              </LineComment>
+              <NewLine UId="1279" />
+              <Blank Num="6" UId="1280" />
+              <Access Scope="Call" UId="1281">
+                <CallInfo UId="1282" BlockType="FB" Name="ProcessValueOutAnalog">
+                  <Instance Scope="LocalVariable" UId="1283">
+                    <Component Name="AnalogOut" UId="1284">
+                      <Token Text="[" UId="1285" />
+                      <Access Scope="LocalVariable" UId="1286">
+                        <Symbol UId="1287">
+                          <Component Name="tempIndexExt" UId="1288" />
+                        </Symbol>
+                      </Access>
+                      <Token Text="]" UId="1289" />
+                    </Component>
+                  </Instance>
+                  <Token Text="(" UId="1290" />
+                  <Parameter Name="TVO" UId="1291">
+                    <Blank UId="1292" />
+                    <Token Text=":=" UId="1293" />
+                    <Blank UId="1294" />
+                    <Access Scope="LocalVariable" UId="1295">
+                      <Symbol UId="1296">
+                        <Component Name="tempTVO" UId="1297" />
+                      </Symbol>
+                    </Access>
+                  </Parameter>
+                  <Token Text="," UId="1298" />
+                  <NewLine UId="1299" />
+                  <Blank Num="32" UId="1300" />
+                  <Parameter Name="Ext" UId="1301">
+                    <Blank UId="1302" />
+                    <Token Text=":=" UId="1303" />
+                    <Blank UId="1304" />
+                    <Access Scope="LocalVariable" UId="1305">
+                      <Symbol UId="1306">
+                        <Component Name="ProcessValueOutAnalogIn" UId="1307">
+                          <Token Text="[" UId="1308" />
+                          <Access Scope="LocalVariable" UId="1309">
+                            <Symbol UId="1310">
+                              <Component Name="tempIndexExt" UId="1311" />
+                            </Symbol>
+                          </Access>
+                          <Token Text="]" UId="1312" />
+                        </Component>
+                      </Symbol>
+                    </Access>
+                  </Parameter>
+                  <Token Text="," UId="1313" />
+                  <NewLine UId="1314" />
+                  <Blank Num="32" UId="1315" />
+                  <Parameter Name="MTP" UId="1316">
+                    <Blank UId="1317" />
+                    <Token Text=":=" UId="1318" />
+                    <Blank UId="1319" />
+                    <Access Scope="LocalVariable" UId="1320">
+                      <Symbol UId="1321">
+                        <Component Name="MTPAnalogOut" UId="1322">
+                          <Token Text="[" UId="1323" />
+                          <Access Scope="LocalVariable" UId="1324">
+                            <Symbol UId="1325">
+                              <Component Name="i" UId="1326" />
+                            </Symbol>
+                          </Access>
+                          <Token Text="]" UId="1327" />
+                        </Component>
+                      </Symbol>
+                    </Access>
+                  </Parameter>
+                  <Token Text=")" UId="1328" />
+                </CallInfo>
+              </Access>
+              <Token Text=";" UId="1329" />
+              <NewLine UId="1330" />
+              <Blank Num="4" UId="1331" />
+              <Token Text="END_IF" UId="1332" />
+              <Token Text=";" UId="1333" />
+              <NewLine UId="1334" />
+              <Blank Num="2" UId="1335" />
+              <Token Text="END_FOR" UId="1336" />
+              <Token Text=";" UId="1337" />
+              <NewLine UId="1338" />
+              <Blank Num="2" UId="1339" />
+              <NewLine UId="1340" />
+              <Blank Num="2" UId="1341" />
+              <LineComment UId="1342">
+                <Text UId="1343"> Call of process value FB for each not mapped digital out value</Text>
+              </LineComment>
+              <NewLine UId="1344" />
+              <Blank Num="2" UId="1345" />
+              <Access Scope="LocalVariable" UId="1346">
+                <Symbol UId="1347">
+                  <Component Name="tempUpperLimit" UId="1348" />
+                </Symbol>
+              </Access>
+              <Blank UId="1349" />
+              <Token Text=":=" UId="1350" />
+              <Blank UId="1351" />
+              <Access Scope="LocalConstant" UId="1352">
+                <Constant Name="NUMBER_PARAMETERS_OUT_DIGITAL_TOTAL" UId="1353" />
+              </Access>
+              <Blank UId="1356" />
+              <Token Text="-" UId="1357" />
+              <Blank UId="1358" />
+              <Access Scope="LiteralConstant" UId="1359">
+                <Constant UId="1360">
+                  <ConstantValue UId="1362">1</ConstantValue>
+                </Constant>
+              </Access>
+              <Blank UId="1363" />
+              <Token Text="+" UId="1364" />
+              <Blank UId="1365" />
+              <Access Scope="LocalConstant" UId="1366">
+                <Constant Name="NUMBER_PARAMETERS_OUT_MIN" UId="1367" />
+              </Access>
+              <Token Text=";" UId="1370" />
+              <NewLine UId="1371" />
+              <Blank Num="2" UId="1372" />
+              <Access Scope="LocalVariable" UId="1373">
+                <Symbol UId="1374">
+                  <Component Name="tempModuloNumber" UId="1375" />
+                </Symbol>
+              </Access>
+              <Blank UId="1376" />
+              <Token Text=":=" UId="1377" />
+              <Blank UId="1378" />
+              <Access Scope="LocalConstant" UId="1379">
+                <Constant Name="NUMBER_PARAMETERS_OUT_DIGITAL_TOTAL" UId="1380" />
+              </Access>
+              <Token Text=";" UId="1383" />
+              <Blank Num="2" UId="1384" />
+              <LineComment UId="1385">
+                <Text UId="1386"> without this trick, the compiler throws error division by zero </Text>
+              </LineComment>
+              <NewLine UId="1387" />
+              <Blank Num="2" UId="1388" />
+              <Token Text="FOR" UId="1389" />
+              <Blank UId="1390" />
+              <Access Scope="LocalVariable" UId="1391">
+                <Symbol UId="1392">
+                  <Component Name="i" UId="1393" />
+                </Symbol>
+              </Access>
+              <Blank UId="1394" />
+              <Token Text=":=" UId="1395" />
+              <Blank UId="1396" />
+              <Access Scope="LocalConstant" UId="1397">
+                <Constant Name="NUMBER_PARAMETERS_OUT_MIN" UId="1398" />
+              </Access>
+              <Blank UId="1401" />
+              <Token Text="TO" UId="1402" />
+              <Blank UId="1403" />
+              <Access Scope="LocalVariable" UId="1404">
+                <Symbol UId="1405">
+                  <Component Name="tempUpperLimit" UId="1406" />
+                </Symbol>
+              </Access>
+              <Blank UId="1407" />
+              <Token Text="DO" UId="1408" />
+              <NewLine UId="1409" />
+              <Blank Num="4" UId="1410" />
+              <Token Text="IF" UId="1411" />
+              <Blank UId="1412" />
+              <Token Text="(" UId="1413" />
+              <Access Scope="LocalVariable" UId="1414">
+                <Symbol UId="1415">
+                  <Component Name="i" UId="1416" />
+                </Symbol>
+              </Access>
+              <Blank UId="1417" />
+              <Token Text="&gt;" UId="1418" />
+              <Blank UId="1419" />
+              <Access Scope="LocalVariable" UId="1420">
+                <Symbol UId="1421">
+                  <Component Name="tempUpperLimit" UId="1422" />
+                </Symbol>
+              </Access>
+              <Blank UId="1423" />
+              <Token Text="-" UId="1424" />
+              <Blank UId="1425" />
+              <Access Scope="LocalConstant" UId="1426">
+                <Constant Name="NUMBER_PARAMETERS_OUT_DIGITAL_NOT_MAPPED" UId="1427" />
+              </Access>
+              <Token Text=")" UId="1430" />
+              <Blank UId="1431" />
+              <Token Text="AND" UId="1432" />
+              <Blank UId="1433" />
+              <Token Text="(" UId="1434" />
+              <Access Scope="LocalVariable" UId="1435">
+                <Symbol UId="1436">
+                  <Component Name="tempModuloNumber" UId="1437" />
+                </Symbol>
+              </Access>
+              <Blank UId="1438" />
+              <Token Text="&gt;" UId="1439" />
+              <Blank UId="1440" />
+              <Access Scope="LiteralConstant" UId="1441">
+                <Constant UId="1442">
+                  <ConstantValue UId="1444">0</ConstantValue>
+                </Constant>
+              </Access>
+              <Token Text=")" UId="1445" />
+              <Blank UId="1446" />
+              <Token Text="AND" UId="1447" />
+              <Blank UId="1448" />
+              <Token Text="(" UId="1449" />
+              <Access Scope="LocalVariable" UId="1450">
+                <Symbol UId="1451">
+                  <Component Name="tempModuloNumber" UId="1452" />
+                </Symbol>
+              </Access>
+              <Blank UId="1453" />
+              <Token Text="&gt;=" UId="1454" />
+              <Blank UId="1455" />
+              <Access Scope="LocalConstant" UId="1456">
+                <Constant Name="NUMBER_PARAMETERS_OUT_DIGITAL_NOT_MAPPED" UId="1457" />
+              </Access>
+              <Token Text=")" UId="1460" />
+              <Blank UId="1461" />
+              <Token Text="THEN" UId="1462" />
+              <NewLine UId="1463" />
+              <Blank Num="6" UId="1464" />
+              <LineComment UId="1465">
+                <Text UId="1466"> Number_Mapped + Number_not_Mapped = Number_Total</Text>
+              </LineComment>
+              <NewLine UId="1467" />
+              <Blank Num="6" UId="1468" />
+              <LineComment UId="1469">
+                <Text UId="1470"> Call FB only in case that the values of the constants are consistent and that no division by zero is possible</Text>
+              </LineComment>
+              <NewLine UId="1471" />
+              <Blank Num="6" UId="1472" />
+              <Access Scope="LocalVariable" UId="1473">
+                <Symbol UId="1474">
+                  <Component Name="tempIndexExt" UId="1475" />
+                </Symbol>
+              </Access>
+              <Blank UId="1476" />
+              <Token Text=":=" UId="1477" />
+              <Blank UId="1478" />
+              <Token Text="(" UId="1479" />
+              <Token Text="(" UId="1480" />
+              <Access Scope="LocalVariable" UId="1481">
+                <Symbol UId="1482">
+                  <Component Name="i" UId="1483" />
+                </Symbol>
+              </Access>
+              <Blank UId="1484" />
+              <Token Text="+" UId="1485" />
+              <Blank UId="1486" />
+              <Access Scope="LocalConstant" UId="1487">
+                <Constant Name="NUMBER_PARAMETERS_OUT_DIGITAL_NOT_MAPPED" UId="1488" />
+              </Access>
+              <Token Text=")" UId="1491" />
+              <Blank UId="1492" />
+              <Token Text="MOD" UId="1493" />
+              <Blank UId="1494" />
+              <Access Scope="LocalVariable" UId="1495">
+                <Symbol UId="1496">
+                  <Component Name="tempModuloNumber" UId="1497" />
+                </Symbol>
+              </Access>
+              <Token Text=")" UId="1498" />
+              <Blank UId="1499" />
+              <Token Text="+" UId="1500" />
+              <Blank UId="1501" />
+              <Access Scope="LocalConstant" UId="1502">
+                <Constant Name="NUMBER_PARAMETERS_OUT_MIN" UId="1503" />
+              </Access>
+              <Token Text=";" UId="1506" />
+              <NewLine UId="1507" />
+              <Blank Num="6" UId="1508" />
+              <LineComment UId="1509">
+                <Text UId="1510"> Not-mapped (to a service) process values out are located at upper MTP-indices and must be mapped to their external input area</Text>
+              </LineComment>
+              <NewLine UId="1511" />
+              <Blank Num="6" UId="1512" />
+              <Access Scope="Call" UId="1513">
+                <CallInfo UId="1514" BlockType="FB" Name="ProcessValueOutDigital">
+                  <Instance Scope="LocalVariable" UId="1515">
+                    <Component Name="DigitalOut" UId="1516">
+                      <Token Text="[" UId="1517" />
+                      <Access Scope="LocalVariable" UId="1518">
+                        <Symbol UId="1519">
+                          <Component Name="tempIndexExt" UId="1520" />
+                        </Symbol>
+                      </Access>
+                      <Token Text="]" UId="1521" />
+                    </Component>
+                  </Instance>
+                  <Token Text="(" UId="1522" />
+                  <Parameter Name="TVO" UId="1523">
+                    <Blank UId="1524" />
+                    <Token Text=":=" UId="1525" />
+                    <Blank UId="1526" />
+                    <Access Scope="LocalVariable" UId="1527">
+                      <Symbol UId="1528">
+                        <Component Name="tempTVO" UId="1529" />
+                      </Symbol>
+                    </Access>
+                  </Parameter>
+                  <Token Text="," UId="1530" />
+                  <NewLine UId="1531" />
+                  <Blank Num="33" UId="1532" />
+                  <Parameter Name="Ext" UId="1533">
+                    <Blank UId="1534" />
+                    <Token Text=":=" UId="1535" />
+                    <Blank UId="1536" />
+                    <Access Scope="LocalVariable" UId="1537">
+                      <Symbol UId="1538">
+                        <Component Name="ProcessValueOutDigitalIn" UId="1539">
+                          <Token Text="[" UId="1540" />
+                          <Access Scope="LocalVariable" UId="1541">
+                            <Symbol UId="1542">
+                              <Component Name="tempIndexExt" UId="1543" />
+                            </Symbol>
+                          </Access>
+                          <Token Text="]" UId="1544" />
+                        </Component>
+                      </Symbol>
+                    </Access>
+                  </Parameter>
+                  <Token Text="," UId="1545" />
+                  <NewLine UId="1546" />
+                  <Blank Num="33" UId="1547" />
+                  <Parameter Name="MTP" UId="1548">
+                    <Blank UId="1549" />
+                    <Token Text=":=" UId="1550" />
+                    <Blank UId="1551" />
+                    <Access Scope="LocalVariable" UId="1552">
+                      <Symbol UId="1553">
+                        <Component Name="MTPDigitalOut" UId="1554">
+                          <Token Text="[" UId="1555" />
+                          <Access Scope="LocalVariable" UId="1556">
+                            <Symbol UId="1557">
+                              <Component Name="i" UId="1558" />
+                            </Symbol>
+                          </Access>
+                          <Token Text="]" UId="1559" />
+                        </Component>
+                      </Symbol>
+                    </Access>
+                  </Parameter>
+                  <Token Text=")" UId="1560" />
+                </CallInfo>
+              </Access>
+              <Token Text=";" UId="1561" />
+              <NewLine UId="1562" />
+              <Blank Num="4" UId="1563" />
+              <Token Text="END_IF" UId="1564" />
+              <Token Text=";" UId="1565" />
+              <NewLine UId="1566" />
+              <Blank Num="2" UId="1567" />
+              <Token Text="END_FOR" UId="1568" />
+              <Token Text=";" UId="1569" />
+              <NewLine UId="1570" />
+              <Blank Num="2" UId="1571" />
+              <NewLine UId="1572" />
+              <Blank Num="2" UId="1573" />
+              <LineComment UId="1574">
+                <Text UId="1575"> Call of process value FB for each not mapped binary out value</Text>
+              </LineComment>
+              <NewLine UId="1576" />
+              <Blank Num="2" UId="1577" />
+              <Access Scope="LocalVariable" UId="1578">
+                <Symbol UId="1579">
+                  <Component Name="tempUpperLimit" UId="1580" />
+                </Symbol>
+              </Access>
+              <Blank UId="1581" />
+              <Token Text=":=" UId="1582" />
+              <Blank UId="1583" />
+              <Access Scope="LocalConstant" UId="1584">
+                <Constant Name="NUMBER_PARAMETERS_OUT_BINARY_TOTAL" UId="1585" />
+              </Access>
+              <Blank UId="1588" />
+              <Token Text="-" UId="1589" />
+              <Blank UId="1590" />
+              <Access Scope="LiteralConstant" UId="1591">
+                <Constant UId="1592">
+                  <ConstantValue UId="1594">1</ConstantValue>
+                </Constant>
+              </Access>
+              <Blank UId="1595" />
+              <Token Text="+" UId="1596" />
+              <Blank UId="1597" />
+              <Access Scope="LocalConstant" UId="1598">
+                <Constant Name="NUMBER_PARAMETERS_OUT_MIN" UId="1599" />
+              </Access>
+              <Token Text=";" UId="1602" />
+              <NewLine UId="1603" />
+              <Blank Num="2" UId="1604" />
+              <Access Scope="LocalVariable" UId="1605">
+                <Symbol UId="1606">
+                  <Component Name="tempModuloNumber" UId="1607" />
+                </Symbol>
+              </Access>
+              <Blank UId="1608" />
+              <Token Text=":=" UId="1609" />
+              <Blank UId="1610" />
+              <Access Scope="LocalConstant" UId="1611">
+                <Constant Name="NUMBER_PARAMETERS_OUT_BINARY_TOTAL" UId="1612" />
+              </Access>
+              <Token Text=";" UId="1615" />
+              <Blank Num="2" UId="1616" />
+              <LineComment UId="1617">
+                <Text UId="1618"> without this trick, the compiler throws error division by zero </Text>
+              </LineComment>
+              <NewLine UId="1619" />
+              <Blank Num="2" UId="1620" />
+              <Token Text="FOR" UId="1621" />
+              <Blank UId="1622" />
+              <Access Scope="LocalVariable" UId="1623">
+                <Symbol UId="1624">
+                  <Component Name="i" UId="1625" />
+                </Symbol>
+              </Access>
+              <Blank UId="1626" />
+              <Token Text=":=" UId="1627" />
+              <Blank UId="1628" />
+              <Access Scope="LocalConstant" UId="1629">
+                <Constant Name="NUMBER_PARAMETERS_OUT_MIN" UId="1630" />
+              </Access>
+              <Blank UId="1633" />
+              <Token Text="TO" UId="1634" />
+              <Blank UId="1635" />
+              <Access Scope="LocalVariable" UId="1636">
+                <Symbol UId="1637">
+                  <Component Name="tempUpperLimit" UId="1638" />
+                </Symbol>
+              </Access>
+              <Blank UId="1639" />
+              <Token Text="DO" UId="1640" />
+              <NewLine UId="1641" />
+              <Blank Num="4" UId="1642" />
+              <Token Text="IF" UId="1643" />
+              <Blank UId="1644" />
+              <Token Text="(" UId="1645" />
+              <Access Scope="LocalVariable" UId="1646">
+                <Symbol UId="1647">
+                  <Component Name="i" UId="1648" />
+                </Symbol>
+              </Access>
+              <Blank UId="1649" />
+              <Token Text="&gt;" UId="1650" />
+              <Blank UId="1651" />
+              <Access Scope="LocalVariable" UId="1652">
+                <Symbol UId="1653">
+                  <Component Name="tempUpperLimit" UId="1654" />
+                </Symbol>
+              </Access>
+              <Blank UId="1655" />
+              <Token Text="-" UId="1656" />
+              <Blank UId="1657" />
+              <Access Scope="LocalConstant" UId="1658">
+                <Constant Name="NUMBER_PARAMETERS_OUT_BINARY_NOT_MAPPED" UId="1659" />
+              </Access>
+              <Token Text=")" UId="1662" />
+              <Blank UId="1663" />
+              <Token Text="AND" UId="1664" />
+              <Blank UId="1665" />
+              <Token Text="(" UId="1666" />
+              <Access Scope="LocalVariable" UId="1667">
+                <Symbol UId="1668">
+                  <Component Name="tempModuloNumber" UId="1669" />
+                </Symbol>
+              </Access>
+              <Blank UId="1670" />
+              <Token Text="&gt;" UId="1671" />
+              <Blank UId="1672" />
+              <Access Scope="LiteralConstant" UId="1673">
+                <Constant UId="1674">
+                  <ConstantValue UId="1676">0</ConstantValue>
+                </Constant>
+              </Access>
+              <Token Text=")" UId="1677" />
+              <Blank UId="1678" />
+              <Token Text="AND" UId="1679" />
+              <Blank UId="1680" />
+              <Token Text="(" UId="1681" />
+              <Access Scope="LocalVariable" UId="1682">
+                <Symbol UId="1683">
+                  <Component Name="tempModuloNumber" UId="1684" />
+                </Symbol>
+              </Access>
+              <Blank UId="1685" />
+              <Token Text="&gt;=" UId="1686" />
+              <Blank UId="1687" />
+              <Access Scope="LocalConstant" UId="1688">
+                <Constant Name="NUMBER_PARAMETERS_OUT_BINARY_NOT_MAPPED" UId="1689" />
+              </Access>
+              <Token Text=")" UId="1692" />
+              <Blank UId="1693" />
+              <Token Text="THEN" UId="1694" />
+              <NewLine UId="1695" />
+              <Blank Num="6" UId="1696" />
+              <LineComment UId="1697">
+                <Text UId="1698"> Number_Mapped + Number_not_Mapped = Number_Total</Text>
+              </LineComment>
+              <NewLine UId="1699" />
+              <Blank Num="6" UId="1700" />
+              <LineComment UId="1701">
+                <Text UId="1702"> Call FB only in case that the values of the constants are consistent and that no division by zero is possible</Text>
+              </LineComment>
+              <NewLine UId="1703" />
+              <Blank Num="6" UId="1704" />
+              <Access Scope="LocalVariable" UId="1705">
+                <Symbol UId="1706">
+                  <Component Name="tempIndexExt" UId="1707" />
+                </Symbol>
+              </Access>
+              <Blank UId="1708" />
+              <Token Text=":=" UId="1709" />
+              <Blank UId="1710" />
+              <Token Text="(" UId="1711" />
+              <Token Text="(" UId="1712" />
+              <Access Scope="LocalVariable" UId="1713">
+                <Symbol UId="1714">
+                  <Component Name="i" UId="1715" />
+                </Symbol>
+              </Access>
+              <Blank UId="1716" />
+              <Token Text="+" UId="1717" />
+              <Blank UId="1718" />
+              <Access Scope="LocalConstant" UId="1719">
+                <Constant Name="NUMBER_PARAMETERS_OUT_BINARY_NOT_MAPPED" UId="1720" />
+              </Access>
+              <Token Text=")" UId="1723" />
+              <Blank UId="1724" />
+              <Token Text="MOD" UId="1725" />
+              <Blank UId="1726" />
+              <Access Scope="LocalVariable" UId="1727">
+                <Symbol UId="1728">
+                  <Component Name="tempModuloNumber" UId="1729" />
+                </Symbol>
+              </Access>
+              <Token Text=")" UId="1730" />
+              <Blank UId="1731" />
+              <Token Text="+" UId="1732" />
+              <Blank UId="1733" />
+              <Access Scope="LocalConstant" UId="1734">
+                <Constant Name="NUMBER_PARAMETERS_OUT_MIN" UId="1735" />
+              </Access>
+              <Token Text=";" UId="1738" />
+              <NewLine UId="1739" />
+              <Blank Num="6" UId="1740" />
+              <LineComment UId="1741">
+                <Text UId="1742"> Not-mapped (to a service) process values out are located at upper MTP-indices and must be mapped to their external input area</Text>
+              </LineComment>
+              <NewLine UId="1743" />
+              <Blank Num="6" UId="1744" />
+              <Access Scope="Call" UId="1745">
+                <CallInfo UId="1746" BlockType="FB" Name="ProcessValueOutBinary">
+                  <Instance Scope="LocalVariable" UId="1747">
+                    <Component Name="BinaryOut" UId="1748">
+                      <Token Text="[" UId="1749" />
+                      <Access Scope="LocalVariable" UId="1750">
+                        <Symbol UId="1751">
+                          <Component Name="tempIndexExt" UId="1752" />
+                        </Symbol>
+                      </Access>
+                      <Token Text="]" UId="1753" />
+                    </Component>
+                  </Instance>
+                  <Token Text="(" UId="1754" />
+                  <Parameter Name="TVO" UId="1755">
+                    <Blank UId="1756" />
+                    <Token Text=":=" UId="1757" />
+                    <Blank UId="1758" />
+                    <Access Scope="LocalVariable" UId="1759">
+                      <Symbol UId="1760">
+                        <Component Name="tempTVO" UId="1761" />
+                      </Symbol>
+                    </Access>
+                  </Parameter>
+                  <Token Text="," UId="1762" />
+                  <NewLine UId="1763" />
+                  <Blank Num="32" UId="1764" />
+                  <Parameter Name="Ext" UId="1765">
+                    <Blank UId="1766" />
+                    <Token Text=":=" UId="1767" />
+                    <Blank UId="1768" />
+                    <Access Scope="LocalVariable" UId="1769">
+                      <Symbol UId="1770">
+                        <Component Name="ProcessValueOutBinaryIn" UId="1771">
+                          <Token Text="[" UId="1772" />
+                          <Access Scope="LocalVariable" UId="1773">
+                            <Symbol UId="1774">
+                              <Component Name="tempIndexExt" UId="1775" />
+                            </Symbol>
+                          </Access>
+                          <Token Text="]" UId="1776" />
+                        </Component>
+                      </Symbol>
+                    </Access>
+                  </Parameter>
+                  <Token Text="," UId="1777" />
+                  <NewLine UId="1778" />
+                  <Blank Num="32" UId="1779" />
+                  <Parameter Name="MTP" UId="1780">
+                    <Blank UId="1781" />
+                    <Token Text=":=" UId="1782" />
+                    <Blank UId="1783" />
+                    <Access Scope="LocalVariable" UId="1784">
+                      <Symbol UId="1785">
+                        <Component Name="MTPBinaryOut" UId="1786">
+                          <Token Text="[" UId="1787" />
+                          <Access Scope="LocalVariable" UId="1788">
+                            <Symbol UId="1789">
+                              <Component Name="i" UId="1790" />
+                            </Symbol>
+                          </Access>
+                          <Token Text="]" UId="1791" />
+                        </Component>
+                      </Symbol>
+                    </Access>
+                  </Parameter>
+                  <Token Text=")" UId="1792" />
+                </CallInfo>
+              </Access>
+              <Token Text=";" UId="1793" />
+              <NewLine UId="1794" />
+              <Blank Num="4" UId="1795" />
+              <Token Text="END_IF" UId="1796" />
+              <Token Text=";" UId="1797" />
+              <NewLine UId="1798" />
+              <Blank Num="2" UId="1799" />
+              <Token Text="END_FOR" UId="1800" />
+              <Token Text=";" UId="1801" />
+              <NewLine UId="1802" />
+              <Blank Num="2" UId="1803" />
+              <NewLine UId="1804" />
+              <Blank Num="2" UId="1805" />
+              <LineComment UId="1806">
+                <Text UId="1807"> Call of process value FB for each not mapped string out value</Text>
+              </LineComment>
+              <NewLine UId="1808" />
+              <Blank Num="2" UId="1809" />
+              <Access Scope="LocalVariable" UId="1810">
+                <Symbol UId="1811">
+                  <Component Name="tempUpperLimit" UId="1812" />
+                </Symbol>
+              </Access>
+              <Blank UId="1813" />
+              <Token Text=":=" UId="1814" />
+              <Blank UId="1815" />
+              <Access Scope="LocalConstant" UId="1816">
+                <Constant Name="NUMBER_PARAMETERS_OUT_STRING_TOTAL" UId="1817" />
+              </Access>
+              <Blank UId="1820" />
+              <Token Text="-" UId="1821" />
+              <Blank UId="1822" />
+              <Access Scope="LiteralConstant" UId="1823">
+                <Constant UId="1824">
+                  <ConstantValue UId="1826">1</ConstantValue>
+                </Constant>
+              </Access>
+              <Blank UId="1827" />
+              <Token Text="+" UId="1828" />
+              <Blank UId="1829" />
+              <Access Scope="LocalConstant" UId="1830">
+                <Constant Name="NUMBER_PARAMETERS_OUT_MIN" UId="1831" />
+              </Access>
+              <Token Text=";" UId="1834" />
+              <NewLine UId="1835" />
+              <Blank Num="2" UId="1836" />
+              <Access Scope="LocalVariable" UId="1837">
+                <Symbol UId="1838">
+                  <Component Name="tempModuloNumber" UId="1839" />
+                </Symbol>
+              </Access>
+              <Blank UId="1840" />
+              <Token Text=":=" UId="1841" />
+              <Blank UId="1842" />
+              <Access Scope="LocalConstant" UId="1843">
+                <Constant Name="NUMBER_PARAMETERS_OUT_STRING_TOTAL" UId="1844" />
+              </Access>
+              <Token Text=";" UId="1847" />
+              <Blank Num="2" UId="1848" />
+              <LineComment UId="1849">
+                <Text UId="1850"> without this trick, the compiler throws error division by zero </Text>
+              </LineComment>
+              <NewLine UId="1851" />
+              <Blank Num="2" UId="1852" />
+              <Token Text="FOR" UId="1853" />
+              <Blank UId="1854" />
+              <Access Scope="LocalVariable" UId="1855">
+                <Symbol UId="1856">
+                  <Component Name="i" UId="1857" />
+                </Symbol>
+              </Access>
+              <Blank UId="1858" />
+              <Token Text=":=" UId="1859" />
+              <Blank UId="1860" />
+              <Access Scope="LocalConstant" UId="1861">
+                <Constant Name="NUMBER_PARAMETERS_OUT_MIN" UId="1862" />
+              </Access>
+              <Blank UId="1865" />
+              <Token Text="TO" UId="1866" />
+              <Blank UId="1867" />
+              <Access Scope="LocalVariable" UId="1868">
+                <Symbol UId="1869">
+                  <Component Name="tempUpperLimit" UId="1870" />
+                </Symbol>
+              </Access>
+              <Blank UId="1871" />
+              <Token Text="DO" UId="1872" />
+              <NewLine UId="1873" />
+              <Blank Num="4" UId="1874" />
+              <Token Text="IF" UId="1875" />
+              <Blank UId="1876" />
+              <Token Text="(" UId="1877" />
+              <Access Scope="LocalVariable" UId="1878">
+                <Symbol UId="1879">
+                  <Component Name="i" UId="1880" />
+                </Symbol>
+              </Access>
+              <Blank UId="1881" />
+              <Token Text="&gt;" UId="1882" />
+              <Blank UId="1883" />
+              <Access Scope="LocalVariable" UId="1884">
+                <Symbol UId="1885">
+                  <Component Name="tempUpperLimit" UId="1886" />
+                </Symbol>
+              </Access>
+              <Blank UId="1887" />
+              <Token Text="-" UId="1888" />
+              <Blank UId="1889" />
+              <Access Scope="LocalConstant" UId="1890">
+                <Constant Name="NUMBER_PARAMETERS_OUT_STRING_NOT_MAPPED" UId="1891" />
+              </Access>
+              <Token Text=")" UId="1894" />
+              <Blank UId="1895" />
+              <Token Text="AND" UId="1896" />
+              <Blank UId="1897" />
+              <Token Text="(" UId="1898" />
+              <Access Scope="LocalVariable" UId="1899">
+                <Symbol UId="1900">
+                  <Component Name="tempModuloNumber" UId="1901" />
+                </Symbol>
+              </Access>
+              <Blank UId="1902" />
+              <Token Text="&gt;" UId="1903" />
+              <Blank UId="1904" />
+              <Access Scope="LiteralConstant" UId="1905">
+                <Constant UId="1906">
+                  <ConstantValue UId="1908">0</ConstantValue>
+                </Constant>
+              </Access>
+              <Token Text=")" UId="1909" />
+              <Blank UId="1910" />
+              <Token Text="AND" UId="1911" />
+              <Blank UId="1912" />
+              <Token Text="(" UId="1913" />
+              <Access Scope="LocalVariable" UId="1914">
+                <Symbol UId="1915">
+                  <Component Name="tempModuloNumber" UId="1916" />
+                </Symbol>
+              </Access>
+              <Blank UId="1917" />
+              <Token Text="&gt;=" UId="1918" />
+              <Blank UId="1919" />
+              <Access Scope="LocalConstant" UId="1920">
+                <Constant Name="NUMBER_PARAMETERS_OUT_STRING_NOT_MAPPED" UId="1921" />
+              </Access>
+              <Token Text=")" UId="1924" />
+              <Blank UId="1925" />
+              <Token Text="THEN" UId="1926" />
+              <NewLine UId="1927" />
+              <Blank Num="6" UId="1928" />
+              <LineComment UId="1929">
+                <Text UId="1930"> Number_Mapped + Number_not_Mapped = Number_Total</Text>
+              </LineComment>
+              <NewLine UId="1931" />
+              <Blank Num="6" UId="1932" />
+              <LineComment UId="1933">
+                <Text UId="1934"> Call FB only in case that the values of the constants are consistent and that no division by zero is possible</Text>
+              </LineComment>
+              <NewLine UId="1935" />
+              <Blank Num="6" UId="1936" />
+              <Access Scope="LocalVariable" UId="1937">
+                <Symbol UId="1938">
+                  <Component Name="tempIndexExt" UId="1939" />
+                </Symbol>
+              </Access>
+              <Blank UId="1940" />
+              <Token Text=":=" UId="1941" />
+              <Blank UId="1942" />
+              <Token Text="(" UId="1943" />
+              <Token Text="(" UId="1944" />
+              <Access Scope="LocalVariable" UId="1945">
+                <Symbol UId="1946">
+                  <Component Name="i" UId="1947" />
+                </Symbol>
+              </Access>
+              <Blank UId="1948" />
+              <Token Text="+" UId="1949" />
+              <Blank UId="1950" />
+              <Access Scope="LocalConstant" UId="1951">
+                <Constant Name="NUMBER_PARAMETERS_OUT_STRING_NOT_MAPPED" UId="1952" />
+              </Access>
+              <Token Text=")" UId="1955" />
+              <Blank UId="1956" />
+              <Token Text="MOD" UId="1957" />
+              <Blank UId="1958" />
+              <Access Scope="LocalVariable" UId="1959">
+                <Symbol UId="1960">
+                  <Component Name="tempModuloNumber" UId="1961" />
+                </Symbol>
+              </Access>
+              <Token Text=")" UId="1962" />
+              <Blank UId="1963" />
+              <Token Text="+" UId="1964" />
+              <Blank UId="1965" />
+              <Access Scope="LocalConstant" UId="1966">
+                <Constant Name="NUMBER_PARAMETERS_OUT_MIN" UId="1967" />
+              </Access>
+              <Token Text=";" UId="1970" />
+              <NewLine UId="1971" />
+              <Blank Num="6" UId="1972" />
+              <LineComment UId="1973">
+                <Text UId="1974"> Not-mapped (to a service) process values out are located at upper MTP-indices and must be mapped to their external input area</Text>
+              </LineComment>
+              <NewLine UId="1975" />
+              <Blank Num="6" UId="1976" />
+              <Access Scope="Call" UId="1977">
+                <CallInfo UId="1978" BlockType="FB" Name="ProcessValueOutString">
+                  <Instance Scope="LocalVariable" UId="1979">
+                    <Component Name="StringOut" UId="1980">
+                      <Token Text="[" UId="1981" />
+                      <Access Scope="LocalVariable" UId="1982">
+                        <Symbol UId="1983">
+                          <Component Name="tempIndexExt" UId="1984" />
+                        </Symbol>
+                      </Access>
+                      <Token Text="]" UId="1985" />
+                    </Component>
+                  </Instance>
+                  <Token Text="(" UId="1986" />
+                  <Parameter Name="TVO" UId="1987">
+                    <Blank UId="1988" />
+                    <Token Text=":=" UId="1989" />
+                    <Blank UId="1990" />
+                    <Access Scope="LocalVariable" UId="1991">
+                      <Symbol UId="1992">
+                        <Component Name="tempTVO" UId="1993" />
+                      </Symbol>
+                    </Access>
+                  </Parameter>
+                  <Token Text="," UId="1994" />
+                  <NewLine UId="1995" />
+                  <Blank Num="32" UId="1996" />
+                  <Parameter Name="Ext" UId="1997">
+                    <Blank UId="1998" />
+                    <Token Text=":=" UId="1999" />
+                    <Blank UId="2000" />
+                    <Access Scope="LocalVariable" UId="2001">
+                      <Symbol UId="2002">
+                        <Component Name="ProcessValueOutStringIn" UId="2003">
+                          <Token Text="[" UId="2004" />
+                          <Access Scope="LocalVariable" UId="2005">
+                            <Symbol UId="2006">
+                              <Component Name="tempIndexExt" UId="2007" />
+                            </Symbol>
+                          </Access>
+                          <Token Text="]" UId="2008" />
+                        </Component>
+                      </Symbol>
+                    </Access>
+                  </Parameter>
+                  <Token Text="," UId="2009" />
+                  <NewLine UId="2010" />
+                  <Blank Num="32" UId="2011" />
+                  <Parameter Name="MTP" UId="2012">
+                    <Blank UId="2013" />
+                    <Token Text=":=" UId="2014" />
+                    <Blank UId="2015" />
+                    <Access Scope="LocalVariable" UId="2016">
+                      <Symbol UId="2017">
+                        <Component Name="MTPStringOut" UId="2018">
+                          <Token Text="[" UId="2019" />
+                          <Access Scope="LocalVariable" UId="2020">
+                            <Symbol UId="2021">
+                              <Component Name="i" UId="2022" />
+                            </Symbol>
+                          </Access>
+                          <Token Text="]" UId="2023" />
+                        </Component>
+                      </Symbol>
+                    </Access>
+                  </Parameter>
+                  <Token Text=")" UId="2024" />
+                </CallInfo>
+              </Access>
+              <Token Text=";" UId="2025" />
+              <NewLine UId="2026" />
+              <Blank Num="4" UId="2027" />
+              <Token Text="END_IF" UId="2028" />
+              <Token Text=";" UId="2029" />
+              <NewLine UId="2030" />
+              <Blank Num="2" UId="2031" />
+              <Token Text="END_FOR" UId="2032" />
+              <Token Text=";" UId="2033" />
+              <NewLine UId="2034" />
+              <Blank Num="2" UId="2035" />
+              <NewLine UId="2036" />
+              <Token Text="END_REGION" UId="2037" />
+              <Blank UId="2038" />
+              <Text UId="2039">BEHAVIOR LOGIC</Text>
+              <NewLine UId="2040" />
+            </StructuredText>
+          </NetworkSource>
+          <ProgrammingLanguage>SCL</ProgrammingLanguage>
+        </AttributeList>
+        <ObjectList>
+          <MultilingualText ID="6" CompositionName="Comment">
+            <ObjectList>
+              <MultilingualTextItem ID="7" CompositionName="Items">
+                <AttributeList>
+                  <Culture>de-DE</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+              <MultilingualTextItem ID="8" CompositionName="Items">
+                <AttributeList>
+                  <Culture>en-US</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+              <MultilingualTextItem ID="9" CompositionName="Items">
+                <AttributeList>
+                  <Culture>fr-FR</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+            </ObjectList>
+          </MultilingualText>
+          <MultilingualText ID="A" CompositionName="Title">
+            <ObjectList>
+              <MultilingualTextItem ID="B" CompositionName="Items">
+                <AttributeList>
+                  <Culture>de-DE</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+              <MultilingualTextItem ID="C" CompositionName="Items">
+                <AttributeList>
+                  <Culture>en-US</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+              <MultilingualTextItem ID="D" CompositionName="Items">
+                <AttributeList>
+                  <Culture>fr-FR</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+            </ObjectList>
+          </MultilingualText>
+        </ObjectList>
+      </SW.Blocks.CompileUnit>
+      <MultilingualText ID="E" CompositionName="Title">
+        <ObjectList>
+          <MultilingualTextItem ID="F" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text>ProcessValues</Text>
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="10" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-US</Culture>
+              <Text>ProcessValues</Text>
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="11" CompositionName="Items">
+            <AttributeList>
+              <Culture>fr-FR</Culture>
+              <Text>ProcessValues</Text>
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+    </ObjectList>
+  </SW.Blocks.FB>
+</Document>

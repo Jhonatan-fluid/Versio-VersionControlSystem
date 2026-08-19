@@ -1,0 +1,17 @@
+﻿TYPE "UDT_Service_Command"
+VERSION : 0.1
+   STRUCT
+      reset : Bool;
+      start : Bool;
+      stop : Bool;
+      hold : Bool;
+      unhold : Bool;
+      pause : Bool;
+      resume : Bool;
+      abort : Bool;
+      restart : Bool;
+      complete : Bool;
+   END_STRUCT;
+
+END_TYPE
+
