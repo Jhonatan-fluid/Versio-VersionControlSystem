@@ -1,15 +1,15 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-19 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,616 across nine
-projects — UxPlan counts plus the TIA suites; re-derive after the merge's test run. TIA Portal
+**Date:** 2026-08-19 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,631 across nine
+projects — re-derived by running each after merging `UxPlan` into `Siemens`. TIA Portal
 gate: 4 tests; the import/re-export Fact is **red** (generate does not overwrite). The CODESYS
-gate (54) was not re-run this session. `UxPlan` merged in on 2026-08-19.
+gate (54) was not re-run this session.
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,421 | under a second | nothing |
-| `Versio.Integration.Tests` | 147 | ~10 s | real git |
-| `Versio.App.Tests` | 609 | ~50 s | nothing |
+| `Versio.Core.Tests` | 1,432 | under a second | nothing |
+| `Versio.Integration.Tests` | 148 | ~10 s | real git |
+| `Versio.App.Tests` | 612 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 14 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 260 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 92 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
