@@ -599,9 +599,22 @@ public sealed class GitPanelChromeTests : IDisposable
 
             var toggle = Assert.IsType<ToggleButton>(panel.FindName("BranchMenuButton"));
 
-            // Not "More…": a caption has to say what is behind it, or an overflow hides its
-            // own contents from the one person trying to find them.
-            Assert.Contains("Branch", toggle.Content?.ToString() ?? string.Empty);
+            // THE MEANING MOVED FROM THE CAPTION TO THE TOOLTIP, AND THIS TEST MOVED WITH IT.
+            //
+            // It read `Assert.Contains("Branch", toggle.Content)` while the button said
+            // "Branch ⌄", protecting the rule that an overflow must not hide its own
+            // contents - the reason it was never called "More…". The button became a glyph
+            // when it moved onto the fetch/pull/push row, because measured at 260 px there
+            // were 49 px for it and the caption wanted 68, so Push sat underneath it.
+            //
+            // The rule did not change; where it is kept did. The tooltip has to NAME THE
+            // ENTRIES rather than describe the button, or the overflow is exactly the anonymous
+            // lid the caption existed to prevent - and a screen reader gets nothing at all.
+            var tip = toggle.ToolTip?.ToString() ?? string.Empty;
+
+            Assert.Contains("merge", tip, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("delete", tip, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal("Branch actions", System.Windows.Automation.AutomationProperties.GetName(toggle));
 
             // NEITHER VERB IS ON THE CARD. A Popup lives in its own visual tree, so a walk
             // from the panel cannot reach its contents at all — which is the assertion, not a

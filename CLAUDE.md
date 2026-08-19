@@ -224,7 +224,7 @@ stays that way.
 | `Versio.Core.Tests` | 1,410 | under a second | nothing |
 | `Versio.Integration.Tests` | 147 | ~10 s | real git |
 | `Versio.Arch.Tests` | 14 | instant | nothing — it reads assembly metadata, IL and the `.csproj` files |
-| `Versio.App.Tests` | 578 | ~50 s, STA, no window shown | nothing |
+| `Versio.App.Tests` | 581 | ~50 s, STA, no window shown | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 260 | under a second | nothing — the planner, the codecs, the protocol |
 | `Versio.Plc.Codesys.Parity.Tests` | 92 | ~15 s | `python` on PATH — **skips cleanly without it, so check the count, not the colour** |
 | `Versio.Plc.Codesys.Tests` | 54 | **~30 min** | **real CODESYS** — every test launches it, which is the whole cost |

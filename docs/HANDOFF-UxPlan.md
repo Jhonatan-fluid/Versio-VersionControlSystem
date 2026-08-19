@@ -29,9 +29,12 @@ The suite proves these resolve, lay out and are reachable. It cannot say whether
   `Brush.Surface.Hover` under the pointer and `Brush.Accent.Muted` while the panel is showing,
   and no single colour works against all three. Check it reads in all three states, and in both
   themes.
-- **The `Branch ⌄` overflow** in the git panel's branch card. A popup with its own window
-  handle, so it inherits none of the app's palette and paints itself from tokens. Check it is
-  not a white slab.
+- **The branch overflow** — the chevron at the right-hand end of the Fetch / Pull / Push row.
+  Two things to judge: the popup carries its own window handle so it inherits none of the app's
+  palette (check it is not a white slab), and **the button is a bare glyph** because the caption
+  would not fit there. Measured at 260 px: 49 px available, `Branch ⌄` wanted 68, so Push sat
+  underneath it. The meaning moved to the tooltip. If an anonymous chevron reads badly, the
+  alternative is to put it back on its own line with its caption.
 - **The staged / not-staged headers at 260 px.** Drag the panel divider fully left. The header
   should trim with an ellipsis and the buttons stay inside the card.
 - **The merge dialog** (`Branch ⌄ → Merge a branch into …`). Never opened by a human.
@@ -86,7 +89,7 @@ top.
 
 ## What is on the branch
 
-Nineteen commits. The git log is the documentation; each message says why, what it cost, and
+Twenty-one commits. The git log is the documentation; each message says why, what it cost, and
 what was rejected.
 
 **Built:** UX-2 + UX-11 (the change count moved to the rail, the panel-title pill deleted),
@@ -117,7 +120,7 @@ the reason LOCK-1 exists.
 | `Versio.Core.Tests` | 1,410 |
 | `Versio.Integration.Tests` | 147 |
 | `Versio.Arch.Tests` | 14 |
-| `Versio.App.Tests` | 578 |
+| `Versio.App.Tests` | 581 |
 | `Versio.Plc.Codesys.Pure.Tests` | 260 |
 | `Versio.Plc.Codesys.Parity.Tests` | 92 |
 | `Versio.Plc.Codesys.Tests` | **54, unverified — not run on this branch** |

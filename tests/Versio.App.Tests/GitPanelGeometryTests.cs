@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using Versio.App.ViewModels;
 using Versio.App.Views;
@@ -270,6 +271,101 @@ public sealed class GitPanelGeometryTests(ITestOutputHelper output)
             // A pixel of tolerance for rounding at the boundary.
             Assert.True(widest <= panelRight + 1,
                         $"{offender} reaches {widest:F0} px, past the panel's {panelRight:F0} px");
+        });
+    }
+
+    /// <summary>
+    /// Nothing in the remote row sits on top of anything else, at either width.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The overflow test above cannot see this.</b> It asks whether anything crosses the
+    /// panel's right edge, and two buttons can collide perfectly happily well inside it — a
+    /// StackPanel hands every child the width it asks for and then overflows <i>itself</i>,
+    /// leaving the children drawn over one another with the panel none the wiser. That is what
+    /// was happening here.
+    /// </para>
+    /// <para>
+    /// <b>The captions are set directly, and that is the point rather than a shortcut.</b>
+    /// <c>Remote.Standing</c> has a private setter, so a test cannot manufacture a diverged
+    /// branch — but the question is what the row does with <i>those strings</i>, and measured
+    /// at 260 px it is decisive: Fetch, <c>Pull (12)</c> and <c>Push (127)</c> want 207 px in
+    /// a 206 px row. The three verbs alone were a pixel over before anything was put beside
+    /// them.
+    /// </para>
+    /// <para>
+    /// They wrap now, so the row takes a second line in exactly the case that could not fit on
+    /// one and stays on a single line everywhere else — which the third case here pins.
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [InlineData(NarrowPanelWidth, true)]
+    [InlineData(PanelWidth, true)]
+    [InlineData(NarrowPanelWidth, false)]
+    public void Nothing_in_the_remote_row_overlaps(double width, bool diverged)
+    {
+        StaHarness.Run(() =>
+        {
+            var (window, _, panel, content) = Loaded(panelWidth: width);
+
+            var toggle = Assert.IsType<ToggleButton>(panel.FindName("BranchMenuButton"));
+            var row = Assert.IsAssignableFrom<FrameworkElement>(
+                VisualTreeHelper.GetParent(toggle));
+
+            if (diverged)
+            {
+                foreach (var b in AllOf<Button>(row))
+                {
+                    if ((b.Content as string) == "Pull")
+                    {
+                        b.Content = "Pull (12)";
+                    }
+                    else if ((b.Content as string) == "Push")
+                    {
+                        b.Content = "Push (127)";
+                    }
+                }
+
+                content.Measure(new Size(1400, 900));
+                content.Arrange(new Rect(0, 0, 1400, 900));
+                content.UpdateLayout();
+            }
+
+            var boxes = new List<(string Name, Rect Box)>();
+
+            foreach (var b in AllOf<ButtonBase>(row).Where(b => b.ActualWidth > 0))
+            {
+                var origin = b.TransformToAncestor(row).Transform(new Point(0, 0));
+                boxes.Add((b is ToggleButton ? "Branch" : b.Content?.ToString() ?? "?",
+                           new Rect(origin, new Size(b.ActualWidth, b.ActualHeight))));
+            }
+
+            Assert.True(boxes.Count >= 3, "the remote row realised almost nothing");
+
+            foreach (var (name, box) in boxes)
+            {
+                output.WriteLine($"  {name,-12} {box}");
+            }
+
+            for (var i = 0; i < boxes.Count; i++)
+            {
+                for (var j = i + 1; j < boxes.Count; j++)
+                {
+                    var overlap = Rect.Intersect(boxes[i].Box, boxes[j].Box);
+
+                    // Half a pixel of tolerance for rounding where two edges meet.
+                    Assert.False(overlap is { Width: > 0.5, Height: > 0.5 },
+                                 $"{boxes[i].Name} and {boxes[j].Name} overlap at {overlap}");
+                }
+            }
+
+            // One line unless the captions genuinely cannot fit on one. A row that wrapped
+            // whenever it felt like it would cost the file lists height for nothing.
+            if (!diverged)
+            {
+                Assert.True(row.ActualHeight < 40,
+                            $"the remote row wrapped at {row.ActualHeight:F0} px with ordinary captions");
+            }
         });
     }
 

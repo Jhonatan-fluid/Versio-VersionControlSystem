@@ -537,99 +537,6 @@
                             </TextBlock.Style>
                         </TextBlock>
 
-                        <!-- BRANCH HOUSEKEEPING, ON THE BRANCH LINE, BEHIND ONE OVERFLOW.
-
-                             WHY NOT IN THE FETCH/PULL/PUSH ROW - the argument the
-                             bare Delete button carried, still load-bearing and now
-                             covering two verbs rather than one. The geometry test
-                             settled it: a fourth button on that row overflowed the
-                             380 px panel outright. It does not belong in that
-                             rhythm anyway - branch housekeeping is about which
-                             branches exist, not about the remote's state - and a
-                             destructive action sitting where Fetch sits gives it
-                             the same weight as a fetch.
-
-                             Right-aligned and quiet: reached deliberately, not
-                             stumbled into.
-
-                             WHY AN OVERFLOW RATHER THAN THE BUTTON IT REPLACES.
-
-                             `Delete branches…` was a permanent top-level control in a 380 px
-                             column for something reached a few times a month, and it was the
-                             only one of its kind. Merging a branch makes two. Every future
-                             infrequent branch verb - rename, set upstream, copy the name,
-                             prune the remotes - would make another, and the card degrades one
-                             row at a time. The stashes section one border up already won this
-                             argument and answered it with zero permanent controls.
-
-                             NOT LABELLED "More…". This codebase's rule is that a caption says
-                             what will happen; "More" says nothing and makes the contents
-                             unguessable, which is the one thing an overflow must not do.
-
-                             Same slot, same right alignment, same quiet ghost styling, so the
-                             card's geometry does not move - which the panel's own geometry
-                             test asserts.
-
-                             Create-a-branch is deliberately NOT in here. It stays in the top
-                             bar beside the branch dropdown, because it is frequent, cheap and
-                             reversible, and grouping it with a rare destructive act by family
-                             would give both the wrong weight. Frequency decides prominence;
-                             family decides grouping. -->
-                        <ToggleButton x:Name="BranchMenuButton" Content="Branch ⌄"
-                                      Padding="8,2" Margin="0,6,0,0"
-                                      HorizontalAlignment="Right"
-                                      Style="{StaticResource GhostButton}"
-                                      Height="{DynamicResource Size.Control.Compact}"
-                                      ToolTipService.ShowOnDisabled="True"
-                                      ToolTip="Merge a branch in, or delete branches" />
-
-                        <Popup x:Name="BranchMenuPopup"
-                               PlacementTarget="{Binding ElementName=BranchMenuButton}"
-                               Placement="Bottom" HorizontalOffset="-120" VerticalOffset="4"
-                               StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade"
-                               IsOpen="{Binding IsChecked, ElementName=BranchMenuButton,
-                                   Mode=TwoWay}">
-                            <!-- A Popup rather than a ContextMenu: the log panel's category
-                                 filter already does exactly this, so the shape and its theming
-                                 are precedented. A popup carries its own HWND and inherits
-                                 none of the window's palette, which is why the Border paints
-                                 itself from the tokens rather than relying on anything. -->
-                            <Border Background="{DynamicResource Brush.Surface.Raised}"
-                                    BorderBrush="{DynamicResource Brush.Border.Subtle}"
-                                    BorderThickness="1" Padding="4" Width="220"
-                                    CornerRadius="{DynamicResource Radius.Card}">
-                                <Border.Effect>
-                                    <DropShadowEffect BlurRadius="18" ShadowDepth="4"
-                                                      Opacity="0.24" Direction="270" />
-                                </Border.Effect>
-                                <StackPanel>
-                                    <Button Content="{Binding MergeBranchLabel}"
-                                            HorizontalContentAlignment="Left"
-                                            Padding="8,4" Margin="0,0,0,2"
-                                            Style="{StaticResource GhostButton}"
-                                            ToolTipService.ShowOnDisabled="True"
-                                            ToolTip="Bring another branch's commits into this one"
-                                            Command="{Binding MergeBranchCommand}"
-                                            Click="OnBranchMenuItem" />
-
-                                    <Border Height="1" Margin="4,3"
-                                            Background="{DynamicResource Brush.Border.Subtle}" />
-
-                                    <!-- Destructive last and separated, the same order the
-                                         delete dialog itself uses for its force checkbox. -->
-                                    <Button Content="Delete branches…"
-                                            HorizontalContentAlignment="Left"
-                                            Padding="8,4"
-                                            Style="{StaticResource GhostButton}"
-                                            Foreground="{DynamicResource Brush.Status.Deleted}"
-                                            ToolTipService.ShowOnDisabled="True"
-                                            ToolTip="Remove branches from this machine, and optionally from the remote"
-                                            Command="{Binding DeleteBranchesCommand}"
-                                            Click="OnBranchMenuItem" />
-                                </StackPanel>
-                            </Border>
-                        </Popup>
-
                         <!-- WHERE THIS BRANCH STANDS, IN WORDS.
 
                              The arrows above are compact and ask the reader to
@@ -727,7 +634,27 @@
                              inside a 380 px panel. At the full 32 px they set the
                              height of the whole card and pushed the file lists
                              down for nothing. -->
-                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <Grid Margin="0,8,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                        <!-- A WrapPanel, AND IT FIXES SOMETHING THAT PREDATES THIS ROW.
+
+                             Measured at the panel's MinWidth of 260 px, where the row is
+                             206 px: on a DIVERGED branch the captions carry their counts, and
+                             Fetch + "Pull (12)" + "Push (127)" want 207 px with their margins.
+                             The three verbs alone were already a pixel over before anything
+                             was added beside them - a StackPanel hands every child the width
+                             it asks for and then overflows, so Push simply drew past the row.
+
+                             Wrapping is the honest answer for a row of fixed-width verbs whose
+                             captions grow with the repository's state. It costs a second line
+                             of height in exactly the case that could not fit on one, and the
+                             lists below give up 24 px only while a branch is diverged at the
+                             narrowest panel width. Nothing ever overlaps. -->
+                        <WrapPanel Grid.Column="0" Orientation="Horizontal">
                             <!-- ToolTipService.ShowOnDisabled on every one of
                                  these. A dead button with no reason is what sends
                                  somebody to the command line, which is the thing
@@ -768,7 +695,93 @@
                                     Command="{Binding Remote.PublishCommand}"
                                     Visibility="{Binding Remote.ShowPublish,
                                         Converter={StaticResource BoolToVisibility}}" />
-                        </StackPanel>
+                        </WrapPanel>
+
+                        <!-- A GLYPH, NOT A WORD, AND THAT IS THE WHOLE COST OF MOVING IT HERE.
+
+                             Measured at the panel's own MinWidth of 260 px: the row is 206 px
+                             and Fetch, Pull and Push need 151 of it with their margins. That
+                             leaves 49 px, and `Branch ⌄` wanted 68 - so Push sat underneath
+                             it. With real counts on the labels ("Pull (12)", "Push (127)")
+                             there is less again, and GP-H had already measured a fourth button
+                             on this row overflowing outright at 380.
+
+                             So the container gives way rather than the verbs. Fetch, Pull and
+                             Push are the things somebody presses all day; this is a lid on a
+                             box opened a few times a month, and it is the only control here
+                             that is not itself an action.
+
+                             It loses its caption to do it, which is a real cost - "a caption
+                             says what will happen" is why it was not called `More…`. What
+                             replaces it is the same bargain every icon in the top bar makes:
+                             the tooltip carries the meaning, and it now NAMES THE ENTRIES
+                             rather than describing the button, so the answer to "what is
+                             behind this" arrives on hover instead of on click.
+
+                             ButtonBase, not Button: GhostButton targets ButtonBase so a
+                             ToggleButton may wear it, and IconButton targets Button and would
+                             throw at construction. That is the crash MainWindowTests exists
+                             for. -->
+                        <ToggleButton Grid.Column="1" x:Name="BranchMenuButton"
+                                      Padding="7,2" Margin="6,0,0,0"
+                                      VerticalAlignment="Top"
+                                      HorizontalAlignment="Right"
+                                      Style="{StaticResource GhostButton}"
+                                      Height="{DynamicResource Size.Control.Compact}"
+                                      AutomationProperties.Name="Branch actions"
+                                      ToolTipService.ShowOnDisabled="True"
+                                      ToolTip="Branch actions — merge a branch in, or delete branches">
+                            <TextBlock Text="{DynamicResource Icon.ChevronDown}"
+                                       Style="{StaticResource IconText}" FontSize="11" />
+                        </ToggleButton>
+
+                        <Popup x:Name="BranchMenuPopup"
+                               PlacementTarget="{Binding ElementName=BranchMenuButton}"
+                               Placement="Bottom" HorizontalOffset="-120" VerticalOffset="4"
+                               StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade"
+                               IsOpen="{Binding IsChecked, ElementName=BranchMenuButton,
+                                   Mode=TwoWay}">
+                            <!-- A Popup rather than a ContextMenu: the log panel's category
+                                 filter already does exactly this, so the shape and its theming
+                                 are precedented. A popup carries its own HWND and inherits
+                                 none of the window's palette, which is why the Border paints
+                                 itself from the tokens rather than relying on anything. -->
+                            <Border Background="{DynamicResource Brush.Surface.Raised}"
+                                    BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                                    BorderThickness="1" Padding="4" Width="220"
+                                    CornerRadius="{DynamicResource Radius.Card}">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="18" ShadowDepth="4"
+                                                      Opacity="0.24" Direction="270" />
+                                </Border.Effect>
+                                <StackPanel>
+                                    <Button Content="{Binding MergeBranchLabel}"
+                                            HorizontalContentAlignment="Left"
+                                            Padding="8,4" Margin="0,0,0,2"
+                                            Style="{StaticResource GhostButton}"
+                                            ToolTipService.ShowOnDisabled="True"
+                                            ToolTip="Bring another branch's commits into this one"
+                                            Command="{Binding MergeBranchCommand}"
+                                            Click="OnBranchMenuItem" />
+
+                                    <Border Height="1" Margin="4,3"
+                                            Background="{DynamicResource Brush.Border.Subtle}" />
+
+                                    <!-- Destructive last and separated, the same order the
+                                         delete dialog itself uses for its force checkbox. -->
+                                    <Button Content="Delete branches…"
+                                            HorizontalContentAlignment="Left"
+                                            Padding="8,4"
+                                            Style="{StaticResource GhostButton}"
+                                            Foreground="{DynamicResource Brush.Status.Deleted}"
+                                            ToolTipService.ShowOnDisabled="True"
+                                            ToolTip="Remove branches from this machine, and optionally from the remote"
+                                            Command="{Binding DeleteBranchesCommand}"
+                                            Click="OnBranchMenuItem" />
+                                </StackPanel>
+                            </Border>
+                        </Popup>
+                        </Grid>
 
                         <!-- ITS OWN ROW, FULL WIDTH, AND NOT BESIDE FETCH.
 
