@@ -1,0 +1,264 @@
+using Versio.Core.Abstractions;
+using Versio.Core.Bindings;
+using Versio.Core.Locking;
+using Versio.Core.Logging;
+using Versio.Core.Plc;
+using Versio.Core.Sync;
+using Versio.Core.Tests.Fakes;
+using Xunit;
+
+namespace Versio.Core.Tests.Sync;
+
+/// <summary>
+/// A project that is a directory, not a file — the seam the second vendor proved was missing.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>No vendor is named here, on purpose.</b> The orchestrator copies, hashes, backs up and
+/// restores whatever <see cref="IPlcProjectFormat.PayloadPathFor"/> returns. A test that
+/// constructed a branded format would be the leak this widening exists to avoid; a stand-in
+/// with a unique extension is enough to prove the tree path, and the file path stays the
+/// existing scenario suite.
+/// </para>
+/// <para>
+/// Break file-copy and only the first vendor's scenarios go red. Break tree-copy and only
+/// this file goes red. That split is the mutation check the seam needs.
+/// </para>
+/// </remarks>
+public sealed class TreePayloadTests
+{
+    private const string Root = @"C:\repo";
+    private const string BindingId = "tree-1";
+
+    [Fact]
+    public async Task A_tree_payload_hash_ignores_logs_and_notices_the_program()
+    {
+        var h = Harness.Create();
+        h.WritePayload("System/program.bin", "the program");
+        h.WritePayload("Logs/session.log", "noise");
+        h.Runner.EnqueueSuccess("plc/plant-export/Main.scl");
+
+        var first = await h.ProjectChanged();
+        Assert.Equal(SyncVerdict.Completed, first.Verdict);
+
+        h.WritePayload("Logs/session.log", "different noise");
+        var idle = await h.ProjectChanged();
+        Assert.Equal(SyncVerdict.NoChange, idle.Verdict);
+
+        h.WritePayload("System/program.bin", "edited program");
+        h.Runner.EnqueueSuccess("plc/plant-export/Main.scl");
+        var moved = await h.ProjectChanged();
+        Assert.Equal(SyncVerdict.Completed, moved.Verdict);
+    }
+
+    [Fact]
+    public async Task Copying_an_open_tree_takes_the_directory_not_the_pointer()
+    {
+        var h = Harness.Create();
+        h.WritePayload("System/program.bin", "the program");
+        h.Occupancy.Hold();
+
+        var sawTree = false;
+        h.Runner.BeforeRun = job =>
+        {
+            var dir = Path.GetDirectoryName(job.Projects[0].ProjectPath)!;
+            sawTree = h.Fs.FileExists(Path.Combine(dir, "System", "program.bin"));
+            return Task.CompletedTask;
+        };
+        h.Runner.EnqueueSuccess("plc/plant-export/Main.scl");
+
+        var outcome = await h.ProjectChanged();
+
+        Assert.Equal(SyncVerdict.Completed, outcome.Verdict);
+        Assert.True(sawTree, "the scratch copy did not include the tree under the pointer file");
+
+        var job = Assert.Single(h.Runner.Jobs);
+        Assert.Contains(
+            Path.Combine(".versio", "local", "open", BindingId),
+            job.Projects[0].ProjectPath,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("Station.treeproj", Path.GetFileName(job.Projects[0].ProjectPath));
+        Assert.False(h.Fs.FileExists(job.Projects[0].ProjectPath));
+    }
+
+    [Fact]
+    public async Task A_tree_backup_is_a_directory_and_restore_puts_the_tree_back()
+    {
+        var h = Harness.Create();
+        h.WritePayload("System/program.bin", "the good version");
+        h.Runner.EnqueueSuccess("plc/plant-export/Main.scl");
+        Assert.Equal(SyncVerdict.Completed, (await h.ProjectChanged()).Verdict);
+        await h.Orchestrator.ReleaseAfterPushAsync("c1", CancellationToken.None);
+
+        h.Fs.Write(Path.Combine(Root, "plc", "plant-export", "Main.scl"), "edited");
+        h.Runner.EnqueueSuccess();
+        Assert.Equal(SyncVerdict.Completed, (await h.TextChanged()).Verdict);
+
+        var backup = Assert.Single(h.Orchestrator.BackupsFor(BindingId));
+        var backupAbs = Path.Combine(Root, backup.Path.Replace('/', Path.DirectorySeparatorChar));
+        Assert.True(h.Fs.DirectoryExists(backupAbs));
+        Assert.False(h.Fs.FileExists(backupAbs));
+
+        h.WritePayload("System/program.bin", "damaged by the import");
+
+        var outcome = await h.Orchestrator.RestoreBackupAsync(
+            BindingId, backup.Path, CancellationToken.None);
+
+        Assert.Equal(SyncVerdict.Completed, outcome.Verdict);
+        Assert.Equal(
+            "the good version",
+            await h.Fs.ReadAllTextAsync(h.PayloadFile("System/program.bin"), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task A_file_payload_is_still_copied_as_one_file()
+    {
+        // The mutation check the other way: tree support must not rewrite the file path
+        // the first vendor has used since the export pipeline existed.
+        var h = new SyncOrchestratorTests.Harness();
+        h.Codesys.EnqueueSuccess("plc/A/Main.st");
+
+        var outcome = await h.ProjectChanged();
+
+        Assert.Equal(SyncVerdict.Completed, outcome.Verdict);
+        Assert.True(h.Fs.FileExists(Path.Combine(Root, "plc", "A.project")));
+        Assert.False(h.Fs.DirectoryExists(Path.Combine(Root, "plc", "A.project")));
+    }
+
+    /// <summary>A format whose project is the directory containing the pointer file.</summary>
+    private sealed class TreeFormat : IPlcProjectFormat
+    {
+        public PlcVendor Vendor => new("TreeStandIn");
+
+        public string DisplayName => "Tree stand-in";
+
+        public PlcCapabilities Capabilities => new()
+        {
+            TextualExport = true,
+            TextualImport = true,
+            ObjectCreation = true,
+            Headless = true,
+            TypicalStartupCost = TimeSpan.FromSeconds(1),
+        };
+
+        public IReadOnlyList<string> ProjectExtensions => [".treeproj"];
+
+        public bool IsTemplate(string path) => false;
+
+        public string ConventionalExportPath(string projectPath)
+        {
+            var normalised = projectPath.Replace('\\', '/');
+            return normalised.EndsWith(".treeproj", StringComparison.OrdinalIgnoreCase)
+                ? normalised[..^".treeproj".Length] + "-export"
+                : normalised + ".export";
+        }
+
+        public string PayloadPathFor(string projectPath)
+        {
+            var dir = Path.GetDirectoryName(projectPath);
+            return string.IsNullOrEmpty(dir) ? projectPath : dir;
+        }
+
+        public bool CountsTowardProjectHash(string relativePath)
+        {
+            var first = relativePath.Replace('\\', '/').Split('/')[0];
+            return !string.Equals(first, "Logs", StringComparison.OrdinalIgnoreCase);
+        }
+
+        public string? OccupancyMarkerFor(string projectPath) => null;
+
+        public IReadOnlyList<string> TransientPatternsFor(string projectPath) => [];
+
+        public ProjectOccupancy ParseOccupancy(string markerContents) => ProjectOccupancy.Free;
+
+        public bool NeedsTextToPlan(string relativePath) =>
+            relativePath.EndsWith(".scl", StringComparison.OrdinalIgnoreCase);
+
+        public ImportPlan PlanImport(
+            Versio.Core.Projects.ProjectManifest? manifest,
+            IReadOnlyList<MirrorFile> mirror,
+            IReadOnlyDictionary<string, string> departed) =>
+            new()
+            {
+                Files =
+                [
+                    new PlannedFile
+                    {
+                        Path = "Main.scl",
+                        Action = PlannedAction.ApplyText,
+                        Name = "Main",
+                    },
+                ],
+            };
+
+        public Versio.Core.Projects.ObjectTypeName? DisplayNameFor(string type) => null;
+    }
+
+    private sealed class Harness
+    {
+        public FakeFileSystem Fs { get; } = new();
+        public FakeCodesysRunner Runner { get; } = new();
+        public SyncOrchestratorTests.StubOccupancy Occupancy { get; } = new();
+        public SyncOrchestrator Orchestrator { get; }
+
+        private Harness()
+        {
+            var clock = new FakeClock();
+            var binding = new ProjectBinding
+            {
+                Id = BindingId,
+                ProjectPath = "plc/plant/Station.treeproj",
+                ExportPath = "plc/plant-export",
+                Profile = "V21",
+            };
+
+            Fs.Write(PayloadFile("Station.treeproj"), "pointer");
+            Fs.Write(Path.Combine(Root, "plc", "plant-export", "_manifest.json"), "{}");
+            Fs.Write(Path.Combine(Root, "plc", "plant-export", "Main.scl"),
+                "FUNCTION_BLOCK \"Main\"");
+
+            Orchestrator = new SyncOrchestrator(
+                Root, [binding],
+                new LockOwner
+                {
+                    Machine = "TEST-PC", User = "tester", SessionId = "s1",
+                    ProcessId = 4242,
+                    BootId = new DateTimeOffset(2026, 8, 11, 6, 0, 0, TimeSpan.Zero),
+                },
+                clock, Fs, Runner, new InMemoryLockStore(),
+                new OrchestratorOptions { RequireImportConfirmation = false },
+                logger: new VersioLogger(clock).AddSink(new InMemoryLogSink()),
+                occupancy: Occupancy,
+                formats: _ => new TreeFormat());
+        }
+
+        public static Harness Create() => new();
+
+        public string PayloadFile(string relative) =>
+            Path.Combine(Root, "plc", "plant", relative.Replace('/', Path.DirectorySeparatorChar));
+
+        public void WritePayload(string relative, string content) =>
+            Fs.Write(PayloadFile(relative), content);
+
+        public Task<SyncOutcome> ProjectChanged() =>
+            Orchestrator.HandleChangeAsync(
+                new SyncJob
+                {
+                    BindingId = BindingId,
+                    Source = ChangeSource.Project,
+                    Synchronous = true,
+                },
+                CancellationToken.None);
+
+        public Task<SyncOutcome> TextChanged() =>
+            Orchestrator.HandleChangeAsync(
+                new SyncJob
+                {
+                    BindingId = BindingId,
+                    Source = ChangeSource.ExportedText,
+                    Confirmed = true,
+                    Synchronous = true,
+                },
+                CancellationToken.None);
+    }
+}

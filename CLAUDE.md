@@ -14,13 +14,18 @@ distinction is the project's central architectural rule rather than an aspiratio
 | `Versio.Core` (`Iec/`) | The IEC 61131-3 **standard**, shared by every vendor — ST codec, declaration parser, the standard's object-type names |
 | `Versio.Plc.Codesys` | **One vendor, pure.** Object-type GUIDs, native XML shape, import planner, ScriptEngine protocol, CODESYS's own tree vocabulary |
 | `Versio.Plc.Codesys.Infrastructure` | **One vendor, driven.** `CODESYS.exe`, the install locator, the embedded python |
+| `Versio.Plc.TiaPortal` | **One vendor, pure.** `.apXX` conventions, directory payload, import planner, SCL header, native-XML scrubber |
+| `Versio.Plc.TiaPortal.Infrastructure` | **One vendor, driven.** Portal locator, net48 host spawn, Openness session |
+| `Versio.Plc.TiaPortal.Host` | **One vendor, net48 exe.** Loads Openness from the install; never shipped as Siemens DLLs |
 | everything else | Vendor-neutral: git, diff, sync, locking, watching, logging, bindings |
 
-Structured Text is a standard, not a CODESYS feature. Adding a vendor means a new project
-implementing `IPlcRunner`, `IPlcProjectFormat` and `IPlcToolchain`, one `ProjectReference` from
-`Versio.App`, and one `Register()` call in `App.xaml.cs` beside `CodesysPack.Register()` —
-**nothing in `Sync/`, `Git/`, `Locking/`, `Watching/`, `Projects/` or `Diff/` may change. If it
-does, vendor knowledge has leaked past the seam, and the leak is the bug.**
+Adding a vendor means a new project implementing `IPlcRunner`, `IPlcProjectFormat` and
+`IPlcToolchain`, one `ProjectReference` from `Versio.App`, and one `Register()` call in
+`App.xaml.cs` beside `CodesysPack.Register()` —
+**nothing in `Sync/`, `Git/`, `Locking/`, `Watching/`, `Projects/` or `Diff/` may learn a
+vendor's name. If it does, vendor knowledge has leaked past the seam, and the leak is the
+bug.** A directory project (TIA Portal, and TwinCAT later) widens `IPlcProjectFormat.PayloadPathFor`
+and `IFileSystem.CopyTreeAsync`; that is the seam growing, not a brand leaking.
 
 **`Versio.Core` has no project reference to a vendor pack**, so that is a compiler error rather
 than an opinion. `VendorSeamTests` and `VendorSeamInfrastructureTests` read assembly metadata on
@@ -221,12 +226,14 @@ stays that way.
 
 | Suite | Count | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,381 | under a second | nothing |
+| `Versio.Core.Tests` | 1,388 | under a second | nothing |
 | `Versio.Integration.Tests` | 147 | ~10 s | real git |
 | `Versio.Arch.Tests` | 14 | instant | nothing — it reads assembly metadata, IL and the `.csproj` files |
 | `Versio.App.Tests` | 546 | ~50 s, STA, no window shown | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 260 | under a second | nothing — the planner, the codecs, the protocol |
 | `Versio.Plc.Codesys.Parity.Tests` | 92 | ~15 s | `python` on PATH — **skips cleanly without it, so check the count, not the colour** |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 13 | instant | nothing — format, planner, protocol |
+| `Versio.Plc.TiaPortal.Tests` | 3 | seconds when skipped | **real TIA Portal** — skips cleanly without Openness membership |
 | `Versio.Plc.Codesys.Tests` | 54 | **~30 min** | **real CODESYS** — every test launches it, which is the whole cost |
 
 **The loop to work in is everything except the last one:**
@@ -237,6 +244,7 @@ C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Integ
 C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Arch.Tests
 C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Plc.Codesys.Pure.Tests
 C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Plc.Codesys.Parity.Tests
+C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Plc.TiaPortal.Pure.Tests
 ```
 
 About thirty seconds together, plus fifty for `Versio.App.Tests` when the UI is in play.

@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using Versio.App.Mvvm;
 using Versio.Core.Logging;
 using Versio.Plc.Codesys;
+using Versio.Plc.TiaPortal;
 
 namespace Versio.App.ViewModels;
 
@@ -102,6 +103,7 @@ public sealed class LogFilterViewModel : ObservableObject
         LogCategory.Sync,
         LogCategory.Plc,
         CodesysLog.Category,
+        TiaPortalLog.Category,
         LogCategory.Git,
         LogCategory.Lock,
         LogCategory.Watch,

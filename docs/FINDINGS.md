@@ -17,6 +17,50 @@ produce a diff touching everything else.
 
 ---
 
+### Restoring a backup in the same second overwrote the backup
+
+**Found 2026-08-19**, writing the directory-payload restore test. `BackUpProjectAsync`
+names copies `yyyyMMdd-HHmmss-<Name>`. Restore takes a safety copy of the live project
+*before* it copies the chosen backup back, and on a frozen test clock — and on any
+restore that lands in the same second as the backup it is restoring — that safety copy
+was the **same path**. The good tree was replaced with the damaged one, then copied
+onto itself. The verdict was `Completed`. The project stayed damaged.
+
+The same collision exists for a file payload (the first vendor) if two imports, or an
+import and a restore, share a second. Unlikely with a wall clock, guaranteed with
+`FakeClock`, and a real restore done immediately after the import that created the
+copy.
+
+**Fix:** if the destination already exists, append `-2`, `-3`, … rather than overwrite.
+The stamp stays second-resolution so the pruner's ordinal sort still matches
+chronology; uniqueness is a suffix, not a finer clock.
+
+**What was rejected:** putting milliseconds in the stamp (a format change the catalogue
+parser would have to learn); advancing the fake clock in the test and leaving the
+product able to eat the copy it is restoring.
+
+---
+
+### TIA Portal Openness: the group is empty, so the host cannot open a project yet
+
+**Found 2026-08-19**, first probe of a real V21 install. Local group `Siemens TIA Openness`
+exists and has **zero members**. `net localgroup ... /add` returned Access denied (error 5).
+Until `elli_` is in that group and the session is logged off and on, `Projects.Open` is the
+failure, not a product bug.
+
+The first successful connect also needs Yes-to-all on the Openness firewall AllowList
+(path + hash + timestamp). Rebuilding the net48 host changes the hash and drops off that
+list — the same class of "it worked yesterday" as a CODESYS profile rename.
+
+Recorded in `docs/vendors/tia/DRIVING.md`. The gate test skips with the host's reason rather
+than going red, so a machine without membership is still a green suite.
+
+**What was rejected:** loading Openness in-process in net9 (the assemblies are net48);
+shipping `Siemens.Engineering.dll`; calling `OpenWithUpgrade`; treating an open failure as
+"the project is free".
+
+---
+
 ### Properties are readable now: the payload imports, the text is for people
 
 **Asked for by the product owner on 2026-08-18**, looking at the panel: *"properties are still

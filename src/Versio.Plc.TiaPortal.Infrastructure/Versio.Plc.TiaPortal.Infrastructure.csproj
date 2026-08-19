@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Versio.Plc.TiaPortal.Infrastructure</RootNamespace>
+    <!-- Driving TIA Portal: finding the install, starting the net48 host, speaking the
+         JSON-lines protocol. Everything here touches a process or a disk. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Versio.Infrastructure\Versio.Infrastructure.csproj" />
+    <ProjectReference Include="..\Versio.Plc.TiaPortal\Versio.Plc.TiaPortal.csproj" />
+    <ProjectReference Include="..\Versio.Plc.TiaPortal.Host\Versio.Plc.TiaPortal.Host.csproj">
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <SkipGetTargetFrameworkProperties>true</SkipGetTargetFrameworkProperties>
+      <GlobalPropertiesToRemove>TargetFramework</GlobalPropertiesToRemove>
+    </ProjectReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Versio.Plc.TiaPortal.Tests" />
+    <InternalsVisibleTo Include="Versio.Plc.TiaPortal.Pure.Tests" />
+  </ItemGroup>
+
+  <Import Project="..\Versio.Plc.TiaPortal.Host\CopyHostToReferrer.targets" />
+
+</Project>

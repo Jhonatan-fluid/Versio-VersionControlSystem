@@ -1,24 +1,25 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-17 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,494 across seven
-projects, 0 skipped — re-derived by running each, not carried forward
+**Date:** 2026-08-19 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,517 across nine
+projects, 2 skipped on this machine (Openness group empty) — re-derived by running each, not carried forward
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,381 | under a second | nothing |
+| `Versio.Core.Tests` | 1,388 | under a second | nothing |
 | `Versio.Integration.Tests` | 147 | ~10 s | real git |
 | `Versio.App.Tests` | 546 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 14 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 260 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 92 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 13 | instant | nothing |
+| `Versio.Plc.TiaPortal.Tests` | 3 | seconds when skipped; minutes when Portal opens | **real TIA Portal** — skips cleanly without Openness membership |
 | `Versio.Plc.Codesys.Tests` | 54 | **~30 min** | **real CODESYS** |
 
-*The first six are the loop to work in — about thirty seconds plus the UI suite. The last is
-the gate before a commit. Until 2026-08-17 the fast/slow split was a `--filter` expression over
-one integration project; it is three project boundaries now, split by need — nothing / python /
-the real toolchain. Of the 386 tests that sat behind the half-hour gate, 334 needed no
-toolchain and surface in seconds now; the 52 that remain each launch real CODESYS, which is
-the whole cost.*
+*The first eight are the loop to work in — about thirty seconds plus the UI suite. The last is
+the CODESYS gate before a commit. `Versio.Plc.TiaPortal.Tests` is the same kind of gate for the
+second vendor and skips when Openness membership is missing. Until 2026-08-17 the fast/slow split was a `--filter` expression over
+one integration project; it is project boundaries now, split by need — nothing / python /
+the real toolchain.*
 
 > **⚠️ Versio removes, renames and moves objects in projects — Phases 2 and 3 of the import
 > plan, and the first things it does that destroy work.** Delete a `.st` from the mirror,
@@ -542,6 +543,10 @@ has a window before believing a clean binding trace — see *Verifying the UI* b
 Small, specific, and none of them blocking. Written down because an audit that finds things and
 does not record them has to be run again.
 
+- **TIA Portal Openness group is empty on this machine** (2026-08-19). The pack, host and
+  seam are in; `Projects.Open` waits on group membership + AllowList. See
+  [`vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md).
+
 - ~~**Launching the app against this repository adopts the 21 `phase0/` scratch projects and
   starts exporting all of them.**~~ — **closed 2026-08-17, and the closing found a defect.**
   `.versio/repo.json` has always had an `ignore` array that `Adoption` and `OrphanScanner` both
@@ -1002,7 +1007,7 @@ would have gone on passing while checking one fewer every time a panel moved out
 ## Findings
 
 Every defect worth understanding, written down with its evidence, lives in
-**[`FINDINGS.md`](FINDINGS.md)** — 107 of them, newest first. (Said 99 until 2026-08-17,
+**[`FINDINGS.md`](FINDINGS.md)** — 109 of them, newest first. (Said 99 until 2026-08-17,
 when it was re-derived rather than incremented: the number had gone stale during the split
 itself, which is the one edit that could not have been an oversight.)
 
@@ -1013,6 +1018,8 @@ actually do.
 
 The full list, newest first:
 
+- [Restoring a backup in the same second overwrote the backup](FINDINGS.md#restoring-a-backup-in-the-same-second-overwrote-the-backup)
+- [TIA Portal Openness: the group is empty, so the host cannot open a project yet](FINDINGS.md#tia-portal-openness-the-group-is-empty-so-the-host-cannot-open-a-project-yet)
 - [Properties are readable now: the payload imports, the text is for people](FINDINGS.md#properties-are-readable-now-the-payload-imports-the-text-is-for-people)
 - [An import destroyed a method, and the summary said seven native, zero warnings](FINDINGS.md#an-import-destroyed-a-method-and-the-summary-said-seven-native-zero-warnings)
 - [Ownership was spelled three ways in one tree, and the panel could only read one](FINDINGS.md#ownership-was-spelled-three-ways-in-one-tree-and-the-panel-could-only-read-one)

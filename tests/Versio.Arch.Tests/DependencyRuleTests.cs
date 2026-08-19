@@ -53,6 +53,9 @@ public sealed class DependencyRuleTests
 
         Assert.DoesNotContain("Versio.Plc.Codesys", core);
         Assert.DoesNotContain("Versio.Plc.Codesys.Infrastructure", core);
+        Assert.DoesNotContain("Versio.Plc.TiaPortal", core);
+        Assert.DoesNotContain("Versio.Plc.TiaPortal.Infrastructure", core);
+        Assert.DoesNotContain("Versio.Plc.TiaPortal.Host", core);
 
         // Versio.Infrastructure too, which the first version of this test forgot. It holds the
         // git client, the watchers, the filesystem and PlcToolchains — and PlcToolchains is
@@ -62,6 +65,9 @@ public sealed class DependencyRuleTests
 
         Assert.DoesNotContain("Versio.Plc.Codesys", infrastructure);
         Assert.DoesNotContain("Versio.Plc.Codesys.Infrastructure", infrastructure);
+        Assert.DoesNotContain("Versio.Plc.TiaPortal", infrastructure);
+        Assert.DoesNotContain("Versio.Plc.TiaPortal.Infrastructure", infrastructure);
+        Assert.DoesNotContain("Versio.Plc.TiaPortal.Host", infrastructure);
     }
 
     [Fact]

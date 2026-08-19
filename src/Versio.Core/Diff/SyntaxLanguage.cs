@@ -232,6 +232,12 @@ public static class LanguageCatalog
         new(StringComparer.OrdinalIgnoreCase)
         {
             [".st"] = StructuredText,
+            // Textual declaration files that are Structured Text under another extension.
+            // Mapping them here, with no vendor name, is what lets the diff highlighter
+            // light up a second vendor's objects without Diff/ learning who wrote them.
+            [".scl"] = StructuredText,
+            [".s7dcl"] = StructuredText,
+            [".udt"] = StructuredText,
             [".cs"] = CSharp,
             [".csx"] = CSharp,
             [".py"] = Python,

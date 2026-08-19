@@ -12,6 +12,7 @@ using Versio.Infrastructure.FileSystem;
 using Versio.Infrastructure.Logging;
 using Versio.Infrastructure.Platform;
 using Versio.Plc.Codesys.Infrastructure;
+using Versio.Plc.TiaPortal.Infrastructure;
 
 namespace Versio.App;
 
@@ -69,18 +70,20 @@ public partial class App : Application
         InstallCrashHandlers(logger);
         LogStartupBanner(logger, e.Args);
 
-        // WHICH VENDORS THIS BUILD HAS. The one line in the application that names a toolchain,
-        // and the whole of "Versio supports CODESYS".
+        // WHICH VENDORS THIS BUILD HAS. The lines in the application that name a toolchain.
         //
         // It used to be a hardcoded entry inside PlcFormats and another inside PlcToolchains,
         // which put a vendor's name in Versio.Core - the assembly the architectural rule exists
         // to keep free of exactly that - and made "adding a vendor means registering" a
-        // description of something nothing ever did. Adding Rockwell or TwinCAT is a second
-        // line here and no change anywhere above it.
+        // description of something nothing ever did. Adding a vendor is one reference in the
+        // csproj, one Register() call here, and no change anywhere above it. CODESYS stays
+        // first so PlcFormats.All[0] remains the default for anything that still picks the
+        // first registered format.
         //
         // Registered before the shell, because opening a repository scans it for every known
         // format and a shell built first would scan for none.
         CodesysPack.Register();
+        TiaPortalPack.Register();
         logger.Info(LogCategory.App,
             $"vendors registered: {string.Join(", ", PlcFormats.All.Select(f => f.DisplayName))}");
 

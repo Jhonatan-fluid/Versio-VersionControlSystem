@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Versio.Plc.TiaPortal.Tests</RootNamespace>
+    <!-- Every test that launches TIA Portal. Skips cleanly when the install or the
+         scratch fixture is absent, so a machine without Portal still has a green suite. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="Xunit.SkippableFact" Version="1.5.23" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Versio.Core\Versio.Core.csproj" />
+    <ProjectReference Include="..\..\src\Versio.Infrastructure\Versio.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Versio.Plc.TiaPortal\Versio.Plc.TiaPortal.csproj" />
+    <ProjectReference Include="..\..\src\Versio.Plc.TiaPortal.Infrastructure\Versio.Plc.TiaPortal.Infrastructure.csproj" />
+    <ProjectReference Include="..\Versio.TestSupport\Versio.TestSupport.csproj" />
+  </ItemGroup>
+
+  <Import Project="..\..\src\Versio.Plc.TiaPortal.Host\CopyHostToReferrer.targets" />
+
+</Project>

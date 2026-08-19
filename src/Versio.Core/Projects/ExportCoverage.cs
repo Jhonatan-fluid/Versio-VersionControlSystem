@@ -299,6 +299,28 @@ public static class ExportCoverage
     public const string PropertyTextForm = "PROPERTY_TEXT";
 
     /// <summary>
+    /// The manifest's <c>form</c> for a native payload kept for review and never applied
+    /// back, because a textual sibling is the importable half.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Vendor-neutral on purpose: it is the G12 invariant as a form name rather than as a
+    /// vendor's private spelling. A two-file object that exported both halves as
+    /// importable used to apply the text and then overwrite it with the native copy of
+    /// the old body. The textual file is the one that imports; this one is the lock
+    /// glyph and the diff.
+    /// </para>
+    /// <para>
+    /// Named here rather than invented per vendor so the coverage report and the planner
+    /// cannot disagree about whether a file is one-way — the same reason
+    /// <see cref="GvlNativeForm"/> lives here instead of only in a vendor pack. It is
+    /// deliberately not in the CODESYS python table: that table is one vendor's exporter,
+    /// and the parity test lists the forms the two languages share.
+    /// </para>
+    /// </remarks>
+    public const string NativeReviewForm = "XML_REVIEW";
+
+    /// <summary>
     /// True for a manifest <c>form</c> whose file is written for review and never applied back.
     /// </summary>
     /// <remarks>
@@ -322,7 +344,8 @@ public static class ExportCoverage
         || string.Equals(form, TaskNativeForm, StringComparison.Ordinal)
         || string.Equals(form, GvlNativeForm, StringComparison.Ordinal)
         || string.Equals(form, ExternalNativeForm, StringComparison.Ordinal)
-        || string.Equals(form, PropertyTextForm, StringComparison.Ordinal);
+        || string.Equals(form, PropertyTextForm, StringComparison.Ordinal)
+        || string.Equals(form, NativeReviewForm, StringComparison.Ordinal);
 
     /// <summary>What an export covers, from its manifest alone.</summary>
     public static CoverageReport Of(ProjectManifest? manifest)

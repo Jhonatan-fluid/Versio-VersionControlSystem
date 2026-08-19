@@ -24,6 +24,7 @@ suite is seven projects, 2,319 tests, split by need — the half-hour CODESYS ga
 | [`FINDINGS.md`](FINDINGS.md) | Every defect with its evidence, newest first — search it |
 | [`SAFEGUARDS.md`](SAFEGUARDS.md) | What Versio refuses, asks about or waits for |
 | [`vendors/codesys/DRIVING.md`](vendors/codesys/DRIVING.md) | How CODESYS is driven — API traps, forms, events, manifest schema |
+| [`vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md) | How TIA Portal is driven — Openness, directory payload, occupancy unmeasured |
 
 ---
 
@@ -189,14 +190,21 @@ be manufactured — they close when reality produces a specimen, not before.
   whole (closing the `GetTempFileName` base-file leak), and the python probe cached per
   process. The parity suite dropped from ~15 s to ~8 s with it.
 
-### 7. A second vendor — deliberately last (decided 2026-08-17)
+### 7. A second vendor — TIA Portal, opened 2026-08-19
 
-**Not started until everything above is complete** — the owner's call: the first vendor's
-product surface gets finished before the seam takes on a second. When it does start: the seam
-is ready and unproven, and only a real second implementation shows whether `PlcJob` and
-`PlcResult` are the right shape. TwinCAT is the cheapest test (CODESYS-derived), Studio 5000
-the harshest. `STATUS.md` §6, `README.md` *Vendor boundaries*, and the rule in `CLAUDE.md`:
-nothing in `Sync/`, `Git/`, `Locking/`, `Watching/`, `Projects/` or `Diff/` may change.
+~~**Not started until everything above is complete**~~ — **started 2026-08-19**, owner's call
+once a real TIA Portal V21 was on the machine. The seam was ready and unproven; the second
+implementation showed it: a project that is a directory cannot be copied, hashed, backed up
+or restored as one file. That widening (`IPlcProjectFormat.PayloadPathFor`,
+`IFileSystem.CopyTreeAsync`) names no vendor. TwinCAT will use it too.
+
+The pack is `Versio.Plc.TiaPortal` + Infrastructure + a net48 Host that loads Openness from
+the install. PLC software (SCL, types, tags) is the round-trip subject; hardware, HMI and
+safety are coverage skips. Driving notes and the measured blockers (empty Openness group,
+AllowList) live in [`docs/vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md).
+
+The first vendor's rule still holds: nothing in `Sync/`, `Git/`, `Locking/`, `Watching/`,
+`Projects/` or `Diff/` may learn a vendor's name.
 
 ### 8. Packaging — deliberately last (decided 2026-08-17)
 
