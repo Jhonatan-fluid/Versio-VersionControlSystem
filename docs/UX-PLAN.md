@@ -97,11 +97,50 @@ it by an import, rather than both being adopted as though a commit had vetted th
 > that line, and **fixed** — one token deleted, plus this repository's own committed
 > `.gitattributes`.
 >
-> **P-M1 itself has still not run.** The prediction above is neither confirmed nor refuted: it
-> remains true that resolving a `.project` conflict by picking a side leaves one branch's
-> project against a three-way-merged mirror, and `AdoptExternalStateAsync` still re-baselines
-> both. What changed is that the first link was broken in a different way and had to be repaired
-> before the rest could be measured at all. **UX-1 stays gated.**
+> ### P-M1, run properly — 2026-08-18. **The prediction holds.**
+>
+> Measured on a sparse clone of this repository, using two genuine CODESYS-produced states of
+> the fixture (`c24d822` as side A, `045ed08` as side B) branched from a common base
+> (`7c45ec8`), with the **fixed** attribute line in force so `-merge` actually applies.
+>
+> `git merge` behaved exactly as the corrected attributes intend: *"Cannot merge binary files"*,
+> the `.project` left intact and conflicted, **and it was the only conflict**. The mirror
+> three-way merged clean — `_manifest.json` included, with no conflict reported.
+>
+> The `.project` was then resolved the way the panel's *Keep theirs* does — `git checkout
+> --theirs`, taking side A's project wholesale — and the merge committed. Provenance of the
+> 41 committed mirror files against each side:
+>
+> | | files |
+> |---|---|
+> | content only from A | 0 |
+> | **content only from B** | **2** |
+> | blended (neither side) | 0 |
+>
+> The two are `_manifest.json` and
+> `…/POUs/FB_Alarm/Private/_M_UpdateState.st` — a real POU method body, 7 lines from B where
+> A's is 15, differing in its declaration block and its whole implementation.
+>
+> **So: the committed project is side A's, and the committed mirror contains side B's method
+> and side B's manifest. The mirror describes a project that does not exist on disk** — which
+> is precisely what this section predicted.
+>
+> **What is measured and what is still inferred, stated separately.** The git half above is
+> measured. The Versio half — that `AdoptExternalStateAsync` then records this state as synced
+> and the commit gate consequently never exports — is **inference from reading those methods**,
+> not a run: P-M2 needs a real export and therefore real CODESYS. It is well-founded (the chain
+> of five links at the top of this box is quoted from the code) but it is not the same claim,
+> and it should not be written up as one.
+>
+> **What it means for UX-1, now with evidence behind it.** A merge must not go through the plain
+> `WhileGitRewritesTheTreeAsync` → adopt path. After a merge that touched a tracked project the
+> mirror is the merged truth and the project is one side of it, so the project has to be
+> regenerated from the mirror by an import the user confirms — the pending-import banner, not a
+> re-baseline. Note the direction: importing the merged mirror is the *correct* outcome, which
+> is why leaving it un-imported is the harm. The next export after this state would overwrite
+> B's method from A's project and lose it silently.
+>
+> **UX-1 is unblocked to design, with that requirement as part of it.**
 
 ---
 
