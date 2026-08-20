@@ -11,14 +11,16 @@ owes. After that: owner eyeballs (item 2), then UX-6 / UX-7 `Ctrl+F` / UX-8 / UX
 (item 3), unless the owner picks packaging (item 5) instead. Do not start from
 `archive/` or a handoff.
 
-**Tests:** 2,640 across nine projects, last counted 2026-08-19 after the TIA PLC-software loop.
-TIA Portal gate: 5 tests, import/re-export Fact **green**. The CODESYS gate (54) was not re-run
-on that branch.
+**Tests:** 2,638 across nine projects, last counted 2026-08-19 after the TIA PLC-software loop
+(the 2,640 first written down double-counted Integration at 152; a re-run prints 150).
+TIA Portal gate: 5 tests, **green** — the import/re-export Fact now also round-trips a UDT
+member and a deletion (an audit found both paths unverified; see Findings, 2026-08-19).
+The CODESYS gate (54) was not re-run on `Siemens2`.
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
 | `Versio.Core.Tests` | 1,434 | under a second | nothing |
-| `Versio.Integration.Tests` | 152 | ~10 s | real git |
+| `Versio.Integration.Tests` | 150 | ~10 s | real git |
 | `Versio.App.Tests` | 613 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 14 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 260 | under a second | nothing |

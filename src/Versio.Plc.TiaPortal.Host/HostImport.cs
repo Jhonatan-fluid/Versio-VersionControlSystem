@@ -124,29 +124,43 @@ internal static partial class HostApp
         var objectName = SclObjectName(applied) ?? Path.GetFileNameWithoutExtension(path);
         var isType = IsTypeSource(path, applied);
         var existing = FindSoftware(plc, objectName, isType);
-        var before = existing is { } hit ? TryGenerateSourceText(plc, hit.Obj) : null;
+        var before = existing is { } hit ? TryGenerateSourceText(plc, hit.Obj, isType) : null;
 
         var staged = StageSourceFile(path);
         var srcName = Path.GetFileName(path);
-        var existingSource = FindNamed(GetProp(group, "ExternalSources"), srcName);
-        existingSource ??= FindNamed(GetEnumerable(group, "Sources"), srcName);
-        if (existingSource is not null)
+        try
         {
-            Call(existingSource, "Delete");
-        }
+            var existingSource = FindNamed(GetProp(group, "ExternalSources"), srcName);
+            existingSource ??= FindNamed(GetEnumerable(group, "Sources"), srcName);
+            if (existingSource is not null)
+            {
+                Call(existingSource, "Delete");
+            }
 
-        var source = CreateExternalSource(group, srcName, staged);
-        if (source is null)
-        {
-            throw new InvalidOperationException("could not create external source from " + path);
-        }
+            var source = CreateExternalSource(group, srcName, staged);
+            if (source is null)
+            {
+                throw new InvalidOperationException("could not create external source from " + path);
+            }
 
-        // Prefer the overload that names the destination group. Zero-arg overwrite
-        // on V21 left Level unexportable on the next host process; KeepOnError
-        // cloned BoolToDigVal_1. None is the other enum value.
-        if (!TryGenerateBlocks(source, existing?.Group, isType))
+            // Prefer the overload that names the destination group. Zero-arg overwrite
+            // on V21 left Level unexportable on the next host process; KeepOnError
+            // cloned BoolToDigVal_1. None is the other enum value.
+            if (!TryGenerateBlocks(source, existing?.Group, isType))
+            {
+                throw new InvalidOperationException("GenerateBlocksFromSource did not run on " + srcName);
+            }
+        }
+        finally
         {
-            throw new InvalidOperationException("GenerateBlocksFromSource did not run on " + srcName);
+            try
+            {
+                File.Delete(staged);
+            }
+            catch (IOException)
+            {
+                // Temp.
+            }
         }
 
         var live = FindSoftware(plc, objectName, isType);
@@ -191,7 +205,9 @@ internal static partial class HostApp
     }
 
     /// <summary>
-    /// Object exists, can emit source, and every line the applied file added is in that source.
+    /// Object exists, can emit source, every line the applied file added is in that
+    /// source — and, when the applied file changed anything at all, the source has
+    /// moved off its pre-generate text, so a deletion-only edit cannot no-op silently.
     /// </summary>
     private static bool LiveCarriesApplied(
         PlcRef plc, string objectName, bool isType, string applied, string? before,
@@ -212,7 +228,7 @@ internal static partial class HostApp
         }
 
         TryCompile(live.Obj);
-        var after = TryGenerateSourceText(plc, live.Obj);
+        var after = TryGenerateSourceText(plc, live.Obj, isType);
         if (string.IsNullOrWhiteSpace(after))
         {
             Emit("info", "msg", objectName + " cannot emit source after generate");
@@ -223,6 +239,20 @@ internal static partial class HostApp
         if (missing is not null)
         {
             Emit("warning", "msg", objectName + " source is missing applied line: " + missing);
+            return false;
+        }
+
+        // An edit that only REMOVES lines adds nothing for the check above to look for,
+        // so a generate that silently no-ops would still report success — and the next
+        // export would rewrite the mirror from the unchanged object, resurrecting the
+        // deleted line: a silent revert of the user's edit. If the source changed the
+        // object, the object's own source must have moved off its old text. Compared
+        // whitespace-collapsed, so a re-indent by generate is not a false refusal.
+        if (before is not null
+            && !CollapsedEquals(applied, before)
+            && CollapsedEquals(after!, before))
+        {
+            Emit("warning", "msg", objectName + " is unchanged after generate (edit not applied)");
             return false;
         }
 
@@ -252,6 +282,10 @@ internal static partial class HostApp
 
         return null;
     }
+
+    private static bool CollapsedEquals(string left, string right) =>
+        string.Join("\n", CollapsedLines(left))
+            .Equals(string.Join("\n", CollapsedLines(right)), StringComparison.Ordinal);
 
     private static IEnumerable<string> CollapsedLines(string text) =>
         text.Replace('\r', '\n').Split('\n')
@@ -387,10 +421,14 @@ internal static partial class HostApp
         }
     }
 
-    private static string? TryGenerateSourceText(PlcRef plc, object item)
+    private static string? TryGenerateSourceText(PlcRef plc, object item, bool isType)
     {
+        // Openness validates the target extension: a type generates to .udt, a block
+        // to .scl — the same split the export walk writes. Asking a UDT for .scl
+        // refused every textual type import as "cannot emit source after generate".
         var dest = Path.Combine(Path.GetTempPath(),
-            "versio-tia-gs-" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".scl");
+            "versio-tia-gs-" + Guid.NewGuid().ToString("N").Substring(0, 8)
+            + (isType ? ".udt" : ".scl"));
         try
         {
             return GenerateSource(plc, item, dest) ? File.ReadAllText(dest) : null;

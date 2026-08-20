@@ -359,8 +359,12 @@ The C# gate is `tests/Versio.Plc.TiaPortal.Tests` (5 tests, `[Collection("tia-po
 Skip is the success path when Portal, Openness membership, AllowList, or LFS content is
 missing. Probe, export, same-tree textual determinism, and the mutating import/re-export
 Fact are **green** on this machine. The import Fact copies the committed fixture aside,
-mutates one `.scl` with a compiling body assignment, imports the planner's plan,
-re-exports, and asserts the mutation in **textual** files — never native XML. Session
+mutates one `.scl` with a compiling body assignment **and one `.udt` with a real member**
+(a comment might not survive generate), imports the planner's plan, re-exports, and
+asserts both mutations in **textual** files — never native XML. It then runs the
+**inverse edit**: the added statement is deleted from the mirror, imported, and must be
+gone from the next re-export — a deletion adds no line the verify can look for, so this
+is the only proof a no-op generate cannot fake (see Findings, 2026-08-19). Session
 notes: [`archive/HANDOFF-Siemens2.md`](../../archive/HANDOFF-Siemens2.md).
 
 ---

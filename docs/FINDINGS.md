@@ -19,6 +19,52 @@ produce a diff touching everything else.
 
 ---
 
+### A deletion-only mirror edit could report success while the object kept the line
+
+**Found 2026-08-19**, by a code audit of the import verification — not by a test, because
+the gate only ever *added* lines. `LiveCarriesApplied` checked that every line the applied
+file added was present in the regenerated source. An edit that only removes a statement
+adds nothing, so a generate that silently no-ops — the same failure mode the overwrite
+defect had measured hours earlier — would verify vacuously, list the path in
+`ChangedPaths`, and the next export would rewrite the mirror from the unchanged object,
+**resurrecting the deleted line**: a silent revert of the user's edit, the exact defect
+class this project exists to refuse.
+
+**Fix:** when the applied file differs from the pre-generate source, the post-generate
+source must differ from that pre-generate text too — compared whitespace-collapsed on
+both sides, so a re-indent by generate is not a false refusal. The gate Fact grew the
+inverse phase: add the marker statement, round-trip it, then delete it, import, and
+re-export — the marker must be gone. Green against live Portal (5/5, 4 m 20 s).
+
+**What was rejected:** a per-line "removed lines must be absent afterwards" check —
+`END_IF;` appears dozens of times in any real block, so the *presence* of a common line
+proves nothing without occurrence counting, and counting breaks the moment generate
+re-wraps one line. The whole-text inequality is the claim that is actually true.
+
+---
+
+### UDT textual apply verified itself against a source no type can generate
+
+**Found 2026-08-19**, same audit. The import verification regenerated source to a temp
+file whose extension was hardcoded `.scl`; the export walk generates types to `.udt`,
+and Openness validates the target extension per object kind. A textual `.udt` edit —
+the planner marks every one of the fixture's 93 as `ApplyText` — would have the verify's
+`GenerateSource` refuse and the import throw "cannot emit source after generate" for an
+edit that had in fact applied. Never observed live, because no test had ever imported a
+UDT: the gate mutated only `Level.scl`, an FB.
+
+**Fix:** the verify's extension follows the object kind (`.udt` for a type). The gate
+Fact now mutates the smallest `.udt` beside the `.scl` — a real member before
+`END_STRUCT`, because a comment might not survive generate — imports both in one plan,
+and asserts both markers on re-export. Green against live Portal. The staged source
+copies the import writes to `%TEMP%` are deleted after generate now, too — three had
+already leaked.
+
+**What was rejected:** a separate UDT Fact — another 488 MB fixture copy and three more
+Portal sessions for what one import job can carry.
+
+---
+
 ### A successful TIA export still read as "not exported"
 
 **Found 2026-08-19**, owner screenshot of CleaningStation after 159 objects were
