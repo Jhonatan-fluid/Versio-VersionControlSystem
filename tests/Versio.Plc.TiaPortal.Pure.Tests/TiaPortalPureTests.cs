@@ -42,6 +42,14 @@ public sealed class TiaPortalFormatTests
         Assert.Equal("plc/Station",
             TiaPortalProjectFormat.Instance.ConventionalExportPath("plc/Station.ap21"));
     }
+
+    [Fact]
+    public void A_held_export_waits_rather_than_copying_the_directory_payload()
+    {
+        // Exclusive open, and the program is the folder. Copy-aside is the first
+        // vendor's sidecar trick; this format refuses it so Sync waits both ways.
+        Assert.False(TiaPortalProjectFormat.Instance.Capabilities.ExportHeldViaCopy);
+    }
 }
 
 public sealed class TiaPortalSclHeaderTests

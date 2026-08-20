@@ -1169,8 +1169,19 @@ public sealed class SyncOrchestrator
                 attempt.State), null);
         }
 
-        // Export only reads, and the lock is a sidecar on the path - so a copy at another
-        // path is unencumbered and exports byte-identically. Measured; see STATUS.
+        // Export only reads, and a sidecar lock means a copy at another path is
+        // unencumbered. A format that opens the payload exclusively cannot use that
+        // trick — asked of Capabilities so this file never names a vendor.
+        var format = _formats(binding.ProjectPath);
+        if (format is not null && !format.Capabilities.ExportHeldViaCopy)
+        {
+            return (Refuse(LogLevel.Information, SyncVerdict.BlockedByOpenProject,
+                attempt.Job.BindingId,
+                $"{ProjectName(binding)} is open in the IDE ({occupancy.Owner}), so it " +
+                "cannot be exported until it is closed. Close it and the export will run.",
+                attempt.State), null);
+        }
+
         var scratchProject = await CopyOpenProjectAsync(binding, ct).ConfigureAwait(false);
 
         if (scratchProject is null)
@@ -1349,7 +1360,17 @@ public sealed class SyncOrchestrator
         // suppressed are raised by the directory swap in the middle and settle whenever the
         // watcher's quiet period lets them - which is long after the toolchain has exited.
         using var writing = BeginOwnWrite(binding.Id, ChangeSource.ExportedText);
+        IDisposable? writingProject = null;
+        if (_formats(binding.ProjectPath)?.Capabilities.ExportHeldViaCopy == false)
+        {
+            // The run opens the live payload, so the toolchain writes the project
+            // while it exports. Those settles are ours; leaving them as Project
+            // changes re-exported the tree after every run.
+            writingProject = BeginOwnWrite(binding.Id, ChangeSource.Project);
+        }
 
+        try
+        {
         var result = await RunnerFor(binding).RunAsync(job, _progress, ct).ConfigureAwait(false);
         var elapsed = _clock.UtcNow - started;
 
@@ -1377,6 +1398,14 @@ public sealed class SyncOrchestrator
         var mirrorHash = await ExportTreeHashAsync(binding, ct).ConfigureAwait(false);
         _suppressor.Register(binding.ExportPath, mirrorHash);
 
+        if (_formats(binding.ProjectPath)?.Capabilities.ExportHeldViaCopy == false)
+        {
+            // The host has exited but the occupancy sidecar can linger while the
+            // payload is still being written. Hashing then records a mid-write
+            // tree and the commit gate reports the project unexported.
+            await WaitUntilProjectFreeAsync(binding, ct).ConfigureAwait(false);
+        }
+
         var projectHash = await ProjectHashAsync(binding, ct).ConfigureAwait(false);
         await ApplyAsync(binding.Id, SyncTrigger.ExportSucceeded, projectHash, ct)
             .ConfigureAwait(false);
@@ -1402,6 +1431,11 @@ public sealed class SyncOrchestrator
             Warnings = LogWarnings(binding.Id, result),
             Duration = elapsed,
         };
+        }
+        finally
+        {
+            writingProject?.Dispose();
+        }
         }
         finally
         {
@@ -2303,6 +2337,31 @@ public sealed class SyncOrchestrator
         }
     }
 
+    private async Task WaitUntilProjectFreeAsync(ProjectBinding binding, CancellationToken ct)
+    {
+        if (_occupancy is null)
+        {
+            return;
+        }
+
+        var path = Absolute(binding.ProjectPath);
+        // Bounded by iterations, not by the clock: a fake clock does not advance during
+        // Delay, and a deadline against it would wait forever in the suite.
+        for (var attempt = 0; attempt < 120; attempt++)
+        {
+            var occupancy = await _occupancy.CheckAsync(binding, path, ct).ConfigureAwait(false);
+            if (!occupancy.IsHeld)
+            {
+                return;
+            }
+
+            await Task.Delay(250, ct).ConfigureAwait(false);
+        }
+
+        _log.Info(LogCategory.Sync,
+            $"{binding.Id}: occupancy still held after waiting to hash; hashing anyway");
+    }
+
     private async Task<string> ProjectHashAsync(ProjectBinding binding, CancellationToken ct)
     {
         var path = PayloadPath(binding);
@@ -2320,7 +2379,23 @@ public sealed class SyncOrchestrator
                     continue;
                 }
 
-                var bytes = await _fs.ReadAllBytesAsync(file, ct).ConfigureAwait(false);
+                byte[] bytes;
+                try
+                {
+                    bytes = await _fs.ReadAllBytesAsync(file, ct).ConfigureAwait(false);
+                }
+                catch (IOException ex)
+                {
+                    // The pointer of a directory payload stays exclusive for seconds after
+                    // the toolchain reports done. Skipping one locked file keeps the export
+                    // that already succeeded from becoming a failed session; the next hash
+                    // (occupancy released) includes it. Logging rather than swallowing:
+                    // a silent omission would look like the program never changed.
+                    _log.Info(LogCategory.Sync,
+                        $"{binding.Id}: skipped hashing {relative} — {ex.Message}");
+                    continue;
+                }
+
                 files.Add((relative, ContentHash.Of(bytes)));
             }
 

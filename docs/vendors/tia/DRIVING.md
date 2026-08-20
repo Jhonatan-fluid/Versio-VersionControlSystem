@@ -7,7 +7,7 @@ projects. How TIA Portal is driven, and what was measured rather than assumed.
 |---|---|
 | Document | **The TIA Portal integration, end to end.** Which Openness surface Versio uses, how the net48 host is launched, what crosses the boundary, what every job does, and where the seams and the gaps are |
 | Audience | An engineer who has to change the export, the import, the host or the runner — or add a third vendor beside the first two |
-| Related | [`STATUS.md`](../../STATUS.md) · [`PHASE2.md`](../../PHASE2.md) §7 · [`SAFEGUARDS.md`](../../SAFEGUARDS.md) · the first vendor's [`vendors/codesys/DRIVING.md`](../codesys/DRIVING.md) |
+| Related | [`STATUS.md`](../../STATUS.md) · [`archive/HANDOFF-Siemens2.md`](../../archive/HANDOFF-Siemens2.md) · [`SAFEGUARDS.md`](../../SAFEGUARDS.md) · the first vendor's [`vendors/codesys/DRIVING.md`](../codesys/DRIVING.md) |
 
 Versio is not a TIA Portal tool. Neutral code must not grow any of this. TwinCAT will be a
 directory project too; that is `PayloadPathFor` / `CopyTreeAsync` growing, not a brand leaking.
@@ -226,9 +226,21 @@ recovery needs a pid, which this marker has not been shown to carry.
 
 `System/~PEData.*` is a transient inside the program folder, not the marker the probe watches.
 
-Export-while-open **in the GUI** is still a wait: exclusive `Projects.Open`, and a 488 MB copy
-is not the first vendor's sidecar copy. GUI occupancy (Portal with a window, no Openness) is
-unmeasured.
+Export-while-open **in the GUI** is a wait (`ExportHeldViaCopy` is false): exclusive
+`Projects.Open`, and a 488 MB copy is not the first vendor's sidecar copy.
+
+**GUI occupancy — measured 2026-08-19 evening, Portal V21 with a window, no Openness.**
+`Siemens.Automation.Portal.exe <project.ap21>` against a scratch copy, a filesystem poll
+every 3 s beside it. The GUI writes **the same `<stem>.info` marker** — first seen ~20 s
+after launch, while the project was still loading (Openness measured 16 s) — and deletes
+it when the project closes (graceful `taskkill`, no `/F`). So a project an engineer holds
+in the Portal window reads Held, and closing Portal is the retry, the same as the first
+vendor. One nuance: a Portal *process* outlived the project close by minutes; the marker
+tracks the project, not the process, which is the fact Versio actually needs. And one
+honesty note: Portal treated that `taskkill` as an abnormal end (its "uncritical problem"
+reporter appeared afterwards) — yet it still deleted the marker on the way out. A hard
+kill (`/F`) is the case that would leave the marker behind, and a leftover reads Held
+until cleared, which is the safe side.
 
 Closed, top-level names: `.ap21`, `System/`, `IM/`, `Logs/`, `tmp/`, `Vci/`, `XRef/`,
 `AdditionalFiles/`, `UserFiles/`, `src/`, `ProjectInfo.txt`. `System/` then is `PEData.idx`
@@ -354,42 +366,41 @@ Layered verdict: textual must match; native XML is expected to differ; never a s
 `Lossless: False`. `-MutateFirst` is mandatory — without it a round trip that writes nothing
 passes vacuously.
 
-The C# gate is `tests/Versio.Plc.TiaPortal.Tests` (4 tests, `[Collection("tia-portal")]`).
+The C# gate is `tests/Versio.Plc.TiaPortal.Tests` (5 tests, `[Collection("tia-portal")]`).
 Skip is the success path when Portal, Openness membership, AllowList, or LFS content is
-missing. Probe and export Facts are green on this machine. The fourth Fact copies the
-committed fixture aside, mutates one `.scl`, imports the planner's plan, re-exports, and
-asserts the mutation in **textual** files — never native XML. **It is red:** generate
-does not put the body back (Findings).
+missing. Probe, export, same-tree textual determinism, and the mutating import/re-export
+Fact are **green** on this machine. The import Fact copies the committed fixture aside,
+mutates one `.scl` with a compiling body assignment **and one `.udt` with a real member**
+(a comment might not survive generate), imports the planner's plan, re-exports, and
+asserts both mutations in **textual** files — never native XML. It then runs the
+**inverse edit**: the added statement is deleted from the mirror, imported, and must be
+gone from the next re-export — a deletion adds no line the verify can look for, so this
+is the only proof a no-op generate cannot fake (see Findings, 2026-08-19). Session
+notes: [`archive/HANDOFF-Siemens2.md`](../../archive/HANDOFF-Siemens2.md).
 
 ---
 
 ## 12. What is left
 
-The ordered queue is [`PHASE2.md`](../../PHASE2.md) item 7. This section is the evidence
-that queue was derived from — next vs never vs friction — so a later session does not
-have to re-derive it.
+The PLC-software loop is done. Remaining TIA is coverage skips, not a build
+queue — see [`STATUS.md`](../../STATUS.md). This section is the evidence that
+queue was derived from, so a later session does not have to re-derive it.
 
-### Next (PLC-program parity with the first vendor)
+### Done (PLC-program parity with the first vendor)
 
-1. **`GenerateBlocksFromSource` does not overwrite.** The C# Fact ran against live
-   Portal and failed: KeepOnError cloned `BoolToDigVal_1`; zero-arg dropped `Level.scl`
-   from the re-export while reporting success. Fix that, then
-   `Measure-ImportStability.ps1` (P7 SETTLES) on a copy under `.versio/local/tia/`.
-   Never the OneDrive original. A host rebuild needs **Yes to all** on Openness access.
-2. ~~**The host's import only finds blocks.**~~ — **done 2026-08-19.** `FindObject`
-   walks `TypeGroup` and `TagTableGroup` as well as `BlockGroup`. Native apply routes
-   tag tables to `TagTables.Import` (`Blocks.Import` was "out of context"). `TryDelete`
-   keeps the object and warns when `Delete()` is missing or throws. Export emits
-   `progress`. Host is split along those methods.
-3. **Two unchanged textual exports have not been shown byte-identical.** Native XML is
-   expected to differ (G12: SimaticML beside SCL is `XML_REVIEW` and is never applied).
-4. **The app has not been eyeballed against a TIA project it is allowed to adopt.** This
-   repository ignores the fixture on purpose. Directory payload, confirmation dialog and
-   tree backups are the neutral seam; they are unproven with a 500 MB TIA tree in the UI.
-5. **GUI occupancy and export-while-the-IDE-holds-it.** `.info` was measured under
-   Openness `Projects.Open`, not with a Portal window. Exclusive open: no sidecar copy
-   the way the first vendor exports while open. Attach-to-running is a different design
-   and is not used.
+1. ~~**`GenerateBlocksFromSource` does not overwrite.**~~ — **done 2026-08-19.** Compiling
+   body mutation, group+`None`, verify-before-Save. Fact green; P7 SETTLES.
+2. ~~**The host's import only finds blocks.**~~ — **done 2026-08-19.**
+3. ~~**Two unchanged textual exports have not been shown byte-identical.**~~ —
+   **done 2026-08-19.** Native XML still churns (G12). The Fact re-exports into the same
+   tree so an existing XML file is overwritten.
+4. ~~**The app has not been eyeballed against a TIA project it is allowed to adopt.**~~ —
+   **done 2026-08-19** on a temp copy. Zero `ERR` after hashing with share/retry, warning
+   records, and XML overwrite. Coverage skips no longer paint `HasGaps` on every tree.
+5. ~~**GUI occupancy and export-while-the-IDE-holds-it.**~~ — **wait, not copy.**
+   `.info` measured under Openness. `ExportHeldViaCopy = false`. ~~A Portal window (no
+   host) was not separately measured this session~~ — **measured 2026-08-19 evening: the
+   GUI writes and deletes the same `.info` marker** (§5). Nothing left open here.
 
 ### Not this queue (coverage skips)
 

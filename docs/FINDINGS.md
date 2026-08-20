@@ -9,11 +9,155 @@ cost, and what was rejected.
 **Split out of `STATUS.md` on 2026-08-17.** It had grown to 3,681 lines of that document's 4,782
 — 77% of a file whose job is to answer "where is the project now", and which `CLAUDE.md` opens by
 telling every reader to go through before starting. That instruction had quietly stopped being
-followable, which is the failure it was written to prevent. `STATUS.md` keeps a linked index.
+followable, which is the failure it was written to prevent. The live page is `STATUS.md`; this
+file is the search log. The index that used to live in STATUS was dropped when that file was
+slimmed on 2026-08-19 — search here, do not look for a table of contents there.
 
 Nothing here was edited in the move. The same argument, one file along, as the `Controls.xaml`
-split already recorded in `STATUS.md`: concentration is what makes a change to any one thing
+split already recorded in [`archive/STATUS-2026-08.md`](archive/STATUS-2026-08.md): concentration is what makes a change to any one thing
 produce a diff touching everything else.
+
+---
+
+### A deletion-only mirror edit could report success while the object kept the line
+
+**Found 2026-08-19**, by a code audit of the import verification — not by a test, because
+the gate only ever *added* lines. `LiveCarriesApplied` checked that every line the applied
+file added was present in the regenerated source. An edit that only removes a statement
+adds nothing, so a generate that silently no-ops — the same failure mode the overwrite
+defect had measured hours earlier — would verify vacuously, list the path in
+`ChangedPaths`, and the next export would rewrite the mirror from the unchanged object,
+**resurrecting the deleted line**: a silent revert of the user's edit, the exact defect
+class this project exists to refuse.
+
+**Fix:** when the applied file differs from the pre-generate source, the post-generate
+source must differ from that pre-generate text too — compared whitespace-collapsed on
+both sides, so a re-indent by generate is not a false refusal. The gate Fact grew the
+inverse phase: add the marker statement, round-trip it, then delete it, import, and
+re-export — the marker must be gone. Green against live Portal (5/5, 4 m 20 s).
+
+**What was rejected:** a per-line "removed lines must be absent afterwards" check —
+`END_IF;` appears dozens of times in any real block, so the *presence* of a common line
+proves nothing without occurrence counting, and counting breaks the moment generate
+re-wraps one line. The whole-text inequality is the claim that is actually true.
+
+---
+
+### UDT textual apply verified itself against a source no type can generate
+
+**Found 2026-08-19**, same audit. The import verification regenerated source to a temp
+file whose extension was hardcoded `.scl`; the export walk generates types to `.udt`,
+and Openness validates the target extension per object kind. A textual `.udt` edit —
+the planner marks every one of the fixture's 93 as `ApplyText` — would have the verify's
+`GenerateSource` refuse and the import throw "cannot emit source after generate" for an
+edit that had in fact applied. Never observed live, because no test had ever imported a
+UDT: the gate mutated only `Level.scl`, an FB.
+
+**Fix:** the verify's extension follows the object kind (`.udt` for a type). The gate
+Fact now mutates the smallest `.udt` beside the `.scl` — a real member before
+`END_STRUCT`, because a comment might not survive generate — imports both in one plan,
+and asserts both markers on re-export. Green against live Portal. The staged source
+copies the import writes to `%TEMP%` are deleted after generate now, too — three had
+already leaked.
+
+**What was rejected:** a separate UDT Fact — another 488 MB fixture copy and three more
+Portal sessions for what one import job can carry.
+
+---
+
+### A successful TIA export still read as "not exported"
+
+**Found 2026-08-19**, owner screenshot of CleaningStation after 159 objects were
+written. The project row said `not exported · 4 objects not exported`; the banner
+named Hardware / HMI / Safety / Technology; PLC data types (93) sat underneath as
+if they had not been exported. Two independent causes, stacked:
+
+1. **Coverage.** The host recorded those four categories as `NOT_IMPLEMENTED`. That
+   reason is a hole, so `ExportCoverage` paints `HasGaps` on every TIA tree even
+   when the PLC-software loop succeeded. They are decisions for this product slice,
+   the same bargain `SERVICE_OBJECT` makes on the first vendor. `_coverage.md`
+   still names them.
+2. **Staleness.** Openness rewrites `System/` while it holds the project. Hashing
+   the payload before the occupancy sidecar vanished recorded a mid-write tree;
+   the commit gate then reported "1 project has changes that have not been
+   exported." Occupancy-release used to retry the export in a loop (separate
+   finding); after that wait was gated, the yellow banner remained.
+
+**Fix:** category and `F_*` skips are `SERVICE_OBJECT`. After an exclusive-open
+export, the orchestrator suppresses Project echoes for the run, waits until
+occupancy is Free, then hashes. Sync still does not spell a vendor —
+`ExportHeldViaCopy` is the seam.
+
+---
+
+### Occupancy vanish retried a finished TIA export
+
+**Found 2026-08-19**, app loop on `%TEMP%\versio-tia-p7`. PHASE2 item 3 retries
+both directions when the occupancy marker vanishes, which is closing the IDE.
+Every host `Projects.Open` writes `<stem>.info` and deletes it on the way out.
+Each finished export therefore looked like the engineer shutting Portal:
+four cycles of 159 objects / ~32 s, nobody saving.
+
+**Fix:** `SyncViewModel` remembers `BlockedByOpenProject` and ignores a vanish
+that was not a wait. Tests:
+`IdeReleaseRetryTests.A_vanished_marker_with_nothing_waiting_stays_quiet`.
+Mutation-checked: deleting the remember/remove pair leaves the suite green
+on the old tests and red on that one.
+
+**What was rejected:** special-casing a vendor's sidecar in `Sync/` (the
+marker path still comes from the format); treating every occupancy rewrite
+as Held (that is the storm the wait was meant to end).
+
+---
+
+### Openness Export(None) refuses an existing file
+
+**Found 2026-08-19**, second export of CleaningStation into the tree the first
+export had just written. 159 `XML_EXPORT_FAILED` ("file already exists"),
+**zero objects** in the manifest. The determinism gate used two empty
+directories, so it never saw overwrite.
+
+**Fix:** delete the dest before `Export` / `GenerateSource`. The same-tree
+Fact (`Two_unchanged_textual_exports_match_byte_for_byte`) is the mutation
+check.
+
+**What was rejected:** `ExportOptions` other than `None` (not measured as
+overwrite on V21); asserting on two fresh dirs and calling that
+determinism.
+
+---
+
+### TIA host warnings were strings, so the panel said the manifest was unreadable
+
+**Found 2026-08-19**, first App export of CleaningStation. The host wrote
+`"warnings": [ "Level: SCL export failed: …" ]`. Core `ExportWarning` is
+`{code, path, detail}`. The panel logged `manifest not fully readable` and
+dropped the objects behind the parse failure.
+
+**Fix:** `HostExport.Warn()` writes the record shape. After the overwrite
+fix: 270 objects, 0 string-warning parse failures.
+
+**What was rejected:** loosening the parser to accept a string (that hides
+the next host that ships the wrong shape).
+
+---
+
+### Hashing a directory payload took an exclusive lock on the pointer
+
+**Found 2026-08-19**, first App session against `%TEMP%\versio-tia-p7`. Export
+finished; `ProjectHashAsync` used `File.ReadAllBytesAsync` on the `.ap21`
+while Openness still held it. Logged `failed to open … at startup`. Copy
+already retried a share lock; hash did not.
+
+**Fix:** `WindowsFileSystem.ReadAllBytesAsync` opens `FileShare.ReadWrite`
+and retries the way copy does. A pointer that is still exclusive is skipped
+in the tree hash and logged, not thrown. Tests:
+`WindowsFileSystemTests` (share + retry) and
+`TreePayloadTests.Hashing_a_tree_skips_a_pointer_the_toolchain_still_holds`.
+
+**What was rejected:** hashing only `System/` and ignoring the pointer (the
+pointer moving is a real project change); waiting on a timer instead of
+share/retry.
 
 ---
 
@@ -41,8 +185,12 @@ Header comments and extra interface members were already the wrong mutation: gen
 rebuilds the interface from the object. A body statement should have been the right
 one. It still did not round-trip.
 
-**Still open.** The next session starts here. Scratch copy only; never the OneDrive
-original. A host rebuild needs **Yes to all** on Openness access.
+**Closed 2026-08-19.** The empty `IF FALSE THEN … END_IF` does not compile; Save then
+left the block unexportable, so the next host wrote no `.scl`. The mutation that
+survives is an assignment on an existing TEMP plus a `//` marker. Group+`None` is
+the overwrite; KeepOnError is refused; generate verifies via `GenerateSource`
+before Save and throws rather than listing a no-op in `ChangedPaths`. P7 SETTLES.
+The Fact is green.
 
 **What was rejected:** asserting the whole textual tree byte-identical (that is item 7.3,
 and the file *set* already differed); treating AllowList as the failure (runs finished in
@@ -114,7 +262,9 @@ format is how two writers would share a project. The tilde file is a transient i
 (that reports after a multi-minute wait, and the panel cannot watch it); hashing `.info`
 into the project (it is occupancy, not the program).
 
-GUI-open occupancy (Portal with a window, no Openness) is still unmeasured.
+~~GUI-open occupancy (Portal with a window, no Openness) is still unmeasured.~~ —
+**measured 2026-08-19 evening: the GUI writes and deletes the same `.info` marker**
+(`vendors/tia/DRIVING.md` §5).
 
 ---
 
@@ -292,7 +442,7 @@ and the merge verb it touches already owes a real-CODESYS gate run.
 
 **It is written into the enum's own remarks**, at the declaration, so the next reader meets it
 before the next caller is added. The prediction that this would happen was already in
-`UX-PLAN.md`'s second pass — *"a new intent would also have to be added to
+`archive/UX-PLAN.md`'s second pass — *"a new intent would also have to be added to
 `InterruptionGuard.RewritesWorkingTree` or the guard has a silent hole"* — and the merge verb
 shipped without one.
 
@@ -324,7 +474,7 @@ confirmation, two commits earlier, and neither of the two passes in between noti
 were reading the code rather than the comment.
 
 **Four passes, four defects, one feature.** The list is in
-[`HANDOFF-UxPlan.md`](HANDOFF-UxPlan.md). The useful conclusion is not that reviewing works — it
+[`archive/HANDOFF-UxPlan.md`](archive/HANDOFF-UxPlan.md). The useful conclusion is not that reviewing works — it
 is that a lot of code was written quickly in the most dangerous subsystem here, and that the
 things still owed (the real-CODESYS gate, a human looking at it) are worth more than another
 read by the same reader.

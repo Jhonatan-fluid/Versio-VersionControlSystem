@@ -146,9 +146,73 @@ public sealed class TiaPortalGateTests
         }
     }
 
+    [SkippableFact(Timeout = 1_200_000)]
+    public async Task Two_unchanged_textual_exports_match_byte_for_byte()
+    {
+        // Native XML is expected to churn (G12). Textual bytes of an unchanged
+        // project must not. Do not fold a generate failure into this: the import
+        // Fact already saw the textual set move.
+        Skip.IfNot(OperatingSystem.IsWindows(), "TIA Portal is Windows-only");
+        var installs = new TiaPortalLocator().FindInstalls();
+        Skip.If(installs.Count == 0, "no TIA Portal install");
+
+        var fixture = TestPaths.TiaPortalProject();
+        Skip.If(fixture is null, "committed TIA fixture is missing or is an LFS pointer — git lfs pull");
+
+        var toolchain = new TiaPortalToolchain(NullLogger.Instance);
+        var status = await toolchain.ProbeAsync(CancellationToken.None);
+        Skip.If(!status.Available, status.Explanation);
+        Skip.If(LocalTiaPortalRunner.FindHost() is null, "TIA Portal host was not copied to the output directory");
+
+        var stamp = Guid.NewGuid().ToString("N")[..8];
+        var exportDir = Path.Combine(Path.GetTempPath(), "versio-tia-det-" + stamp);
+        Directory.CreateDirectory(exportDir);
+
+        try
+        {
+            var runner = toolchain.CreateRunner(status);
+            var first = await runner.RunAsync(
+                Job(PlcOperation.Export, status.Profile ?? "", fixture!, exportDir),
+                progress: null,
+                CancellationToken.None);
+            SkipIfMeasuredBlocker(first);
+            Assert.True(first.Succeeded, first.FailureReason);
+
+            var a = TextualBytes(exportDir);
+
+            // Second export into the same tree — that is what the app does. A fresh
+            // directory would hide Openness refusing an existing XML file.
+            var second = await runner.RunAsync(
+                Job(PlcOperation.Export, status.Profile ?? "", fixture!, exportDir),
+                progress: null,
+                CancellationToken.None);
+            SkipIfMeasuredBlocker(second);
+            Assert.True(second.Succeeded, second.FailureReason);
+
+            var b = TextualBytes(exportDir);
+            Assert.True(a.Count > 0, "first export wrote no textual files");
+            Assert.Equal(a.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase),
+                b.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase));
+
+            foreach (var key in a.Keys)
+            {
+                Assert.True(b.TryGetValue(key, out var right), key);
+                Assert.True(
+                    TextFromUtf8(a[key]) == TextFromUtf8(right!),
+                    "textual export differed: " + key);
+            }
+        }
+        finally
+        {
+            TryDeleteTree(exportDir);
+        }
+    }
+
     /// <summary>
-    /// Export, mutate one textual file, import the planner's plan, re-export.
-    /// Textual bytes must match. Native XML is expected to churn and is not compared.
+    /// Export, mutate one <c>.scl</c> and one <c>.udt</c>, import the planner's plan,
+    /// re-export and find both mutations — then delete the added statement, import
+    /// again, and prove the deletion round-trips too. Native XML is expected to churn
+    /// and is not compared.
     /// </summary>
     /// <remarks>
     /// Runs against a copy of the committed fixture, never the OneDrive original and
@@ -174,9 +238,11 @@ public sealed class TiaPortalGateTests
         var copyDir = Path.Combine(Path.GetTempPath(), "versio-tia-copy-" + stamp);
         var export1 = Path.Combine(Path.GetTempPath(), "versio-tia-imp1-" + stamp);
         var export2 = Path.Combine(Path.GetTempPath(), "versio-tia-imp2-" + stamp);
+        var export3 = Path.Combine(Path.GetTempPath(), "versio-tia-imp3-" + stamp);
         Directory.CreateDirectory(copyDir);
         Directory.CreateDirectory(export1);
         Directory.CreateDirectory(export2);
+        Directory.CreateDirectory(export3);
 
         try
         {
@@ -201,31 +267,36 @@ public sealed class TiaPortalGateTests
                     .FirstOrDefault()?.FullName;
             Skip.If(scl is null, "export wrote no .scl — cannot mutate textual");
 
-            var utf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
-            var raw = File.ReadAllBytes(scl);
-            var hasBom = raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF;
-            var original = hasBom
-                ? Encoding.UTF8.GetString(raw, 3, raw.Length - 3)
-                : utf8.GetString(raw);
             var marker = "versio_mutate_" + stamp;
-            var mutated = InsertTextualMutation(original, marker);
-            File.WriteAllText(scl, mutated, new UTF8Encoding(encoderShouldEmitUTF8Identifier: hasBom));
+            MutateInPlace(scl!, text => InsertTextualMutation(text, marker));
+
+            // A UDT beside the block: the type path generates through the same door
+            // but verifies via a .udt source, which a block-shaped verify cannot
+            // stand in for — a hardcoded .scl there refused every type import.
+            var udt = Directory.EnumerateFiles(export1, "*.udt", SearchOption.AllDirectories)
+                .Select(p => new FileInfo(p))
+                .OrderBy(f => f.Length)
+                .ThenBy(f => f.FullName, StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault()?.FullName;
+            Skip.If(udt is null, "export wrote no .udt — cannot mutate a type");
+            var udtMarker = "versio_udt_" + stamp;
+            MutateInPlace(udt!, text => InsertUdtMember(text, udtMarker));
 
             var fs = new WindowsFileSystem();
             var plan = await ImportPlanReader.ReadAsync(
                 fs, TiaPortalProjectFormat.Instance, export1, NullLogger.Instance,
                 TiaPortalLog.Category, "tia-import", CancellationToken.None);
 
-            // The planner's answer for the mutated file — ApplyText, not a hand-built
-            // action. The rest of a full export plan would re-apply every native XML;
+            // The planner's answer for the mutated files — ApplyText, not hand-built
+            // actions. The rest of a full export plan would re-apply every native XML;
             // this Fact is the textual mutation, and native XML is expected to churn.
-            var mutatedRel = Path.GetRelativePath(export1, scl).Replace('\\', '/');
-            var chosen = Assert.Single(plan.Files, f =>
-                f.Path.Equals(mutatedRel, StringComparison.OrdinalIgnoreCase)
-                && f.Action == PlannedAction.ApplyText);
             var textual = plan with
             {
-                Files = [chosen],
+                Files =
+                [
+                    PlannedApplyText(plan, export1, scl!),
+                    PlannedApplyText(plan, export1, udt!),
+                ],
                 Deletions = [],
                 Renames = [],
             };
@@ -263,12 +334,59 @@ public sealed class TiaPortalGateTests
                 + string.Join(", ", imported.ChangedPaths)
                 + (imported.Warnings.Count == 0 ? "" : "; warnings: " + string.Join("; ", imported.Warnings))
                 + "; re-export of " + name + ":" + Environment.NewLine + snippet);
+            Assert.True(
+                after.Any(kv => TextFromUtf8(kv.Value).Contains(udtMarker, StringComparison.Ordinal)),
+                "UDT member " + udtMarker + " missing after re-export. import wrote: "
+                + string.Join(", ", imported.ChangedPaths)
+                + (imported.Warnings.Count == 0 ? "" : "; warnings: " + string.Join("; ", imported.Warnings)));
+
+            // The inverse edit. An added line is something the host's verify can look
+            // FOR; a deletion adds nothing, so a generate that silently no-ops would
+            // read as success — and the next export would rewrite the mirror from the
+            // unchanged object, resurrecting the line. Delete the marker statement
+            // from the re-exported mirror, import, re-export: the marker must be gone.
+            var sclAfter = Directory.EnumerateFiles(export2, "*.scl", SearchOption.AllDirectories)
+                .First(p => TextFromUtf8(File.ReadAllBytes(p)).Contains(marker, StringComparison.Ordinal));
+            MutateInPlace(sclAfter, text => RemoveLinesContaining(text, marker));
+
+            var plan2 = await ImportPlanReader.ReadAsync(
+                fs, TiaPortalProjectFormat.Instance, export2, NullLogger.Instance,
+                TiaPortalLog.Category, "tia-import", CancellationToken.None);
+            var removal = plan2 with
+            {
+                Files = [PlannedApplyText(plan2, export2, sclAfter)],
+                Deletions = [],
+                Renames = [],
+            };
+
+            var imported2 = await runner.RunAsync(
+                Job(PlcOperation.Import, status.Profile ?? "", copyProject, export2, removal),
+                progress: null,
+                CancellationToken.None);
+            SkipIfMeasuredBlocker(imported2);
+            Assert.True(imported2.Succeeded, imported2.FailureReason +
+                (imported2.Warnings.Count == 0 ? "" : " warnings: " + string.Join("; ", imported2.Warnings)));
+
+            var reexported2 = await runner.RunAsync(
+                Job(PlcOperation.Export, status.Profile ?? "", copyProject, export3),
+                progress: null,
+                CancellationToken.None);
+            SkipIfMeasuredBlocker(reexported2);
+            Assert.True(reexported2.Succeeded, reexported2.FailureReason);
+
+            var final = TextualBytes(export3);
+            Assert.True(final.Count > 0, "re-export after the deletion wrote no textual files");
+            Assert.False(
+                final.Any(kv => TextFromUtf8(kv.Value).Contains(marker, StringComparison.Ordinal)),
+                "deleted line " + marker + " came back after re-export — the generate "
+                + "no-opped and the mirror would silently revert the user's edit");
         }
         finally
         {
             TryDeleteTree(copyDir);
             TryDeleteTree(export1);
             TryDeleteTree(export2);
+            TryDeleteTree(export3);
         }
     }
 
@@ -336,9 +454,11 @@ public sealed class TiaPortalGateTests
     }
 
     /// <summary>
-    /// A statement in the body. Extra VAR members are ignored: GenerateBlocksFromSource
-    /// on an existing FC/FB updates the implementation, and GenerateSource rebuilds the
-    /// interface from the object. Header comments die the same way.
+    /// A statement in the body that must compile. Empty IF / extra VAR / header comments
+    /// are ignored: GenerateBlocksFromSource rebuilds the interface from the object, and
+    /// an IF whose body is only a comment left the block unexportable after Save.
+    /// A self-assignment on an existing TEMP plus a // marker matches Siemens's own
+    /// comment shape in Level.scl.
     /// </summary>
     private static string InsertTextualMutation(string original, string ident)
     {
@@ -349,13 +469,53 @@ public sealed class TiaPortalGateTests
             var eol = original.IndexOfAny(['\r', '\n'], begin);
             if (eol >= 0)
             {
-                return original[..eol] + nl
-                    + "    IF FALSE THEN (* " + ident + " *)" + nl
-                    + "    END_IF;" + original[eol..];
+                var statement = original.Contains("#ReleaseSpd_Real", StringComparison.Ordinal)
+                    ? "\t#ReleaseSpd_Real := #ReleaseSpd_Real; // " + ident
+                    : "\t// " + ident;
+                return original[..eol] + nl + statement + nl + original[eol..];
             }
         }
 
-        return original.TrimEnd() + nl + "REGION " + ident + nl + "END_REGION" + nl;
+        return original.TrimEnd() + nl + "// " + ident + nl;
+    }
+
+    /// <summary>BOM-preserving edit: the mirror is written without one, Siemens with one.</summary>
+    private static void MutateInPlace(string path, Func<string, string> transform)
+    {
+        var raw = File.ReadAllBytes(path);
+        var hasBom = raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF;
+        var original = hasBom
+            ? Encoding.UTF8.GetString(raw, 3, raw.Length - 3)
+            : new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetString(raw);
+        File.WriteAllText(path, transform(original),
+            new UTF8Encoding(encoderShouldEmitUTF8Identifier: hasBom));
+    }
+
+    /// <summary>A real member before the first END_STRUCT — a comment might not survive generate.</summary>
+    private static string InsertUdtMember(string original, string ident)
+    {
+        var nl = original.Contains('\r') ? "\r\n" : "\n";
+        var idx = original.IndexOf("END_STRUCT", StringComparison.OrdinalIgnoreCase);
+        Assert.True(idx >= 0, "UDT source has no END_STRUCT to grow a member in");
+        var lineStart = original.LastIndexOfAny(['\r', '\n'], idx) + 1;
+        return original[..lineStart] + "      " + ident + " : Bool;" + nl + original[lineStart..];
+    }
+
+    private static string RemoveLinesContaining(string text, string needle)
+    {
+        var nl = text.Contains('\r') ? "\r\n" : "\n";
+        var kept = text.Replace("\r\n", "\n").Split('\n')
+            .Where(line => !line.Contains(needle, StringComparison.Ordinal));
+        return string.Join(nl, kept);
+    }
+
+    /// <summary>The planner's own ApplyText row for this file — never a hand-built action.</summary>
+    private static PlannedFile PlannedApplyText(ImportPlan plan, string root, string absolute)
+    {
+        var rel = Path.GetRelativePath(root, absolute).Replace('\\', '/');
+        return Assert.Single(plan.Files, f =>
+            f.Path.Equals(rel, StringComparison.OrdinalIgnoreCase)
+            && f.Action == PlannedAction.ApplyText);
     }
 
     private static string TextFromUtf8(byte[] bytes)

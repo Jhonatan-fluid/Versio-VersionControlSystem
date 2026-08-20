@@ -1,3 +1,5 @@
+> **ARCHIVED — 2026-08-19.** Record, not state. The live page for where the project is and what is next is [`../STATUS.md`](../STATUS.md). Read this for reasoning and evidence from the work that closed it.
+
 # Handoff — `UxPlan`, merged into `Siemens`
 
 **Date:** 2026-08-19 · **Merged:** `UxPlan` into `Siemens`, then `Siemens` into `main`
@@ -71,7 +73,7 @@ each came from asking a different question rather than from looking harder.
 | 3 | what happens on the *undo*? what does this return value mean? | abandoning a merge **left the lock with no way out**; and `NoteMergedTextAsync` **silently did nothing** when the project already had unexported edits |
 | 4 | what happens when it *throws*? | a cancelled merge ran **straight past the marking**, leaving the merged mirror open to the export gate |
 
-Every one is written up in [`FINDINGS.md`](FINDINGS.md).
+Every one is written up in [`FINDINGS.md`](../FINDINGS.md).
 
 **The honest inference is about the writing, not the reviewing.** Four defects in one feature is
 a signal that a lot of code was produced quickly in the subsystem this repository calls its most

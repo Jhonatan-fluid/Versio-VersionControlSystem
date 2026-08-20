@@ -30,6 +30,10 @@ public sealed class CodesysProjectFormat : IPlcProjectFormat
         TextualImport = true,
         ObjectCreation = true,
         Headless = true,
+        // The occupancy marker is a sidecar on the path. A copy at another path is
+        // unencumbered and exports byte-identically — measured against a real IDE
+        // holding the original.
+        ExportHeldViaCopy = true,
         TypicalStartupCost = TimeSpan.FromSeconds(20),
     };
 

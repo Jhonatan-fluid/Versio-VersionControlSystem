@@ -1737,6 +1737,7 @@ public sealed class SyncViewModel : ObservableObject
         _deferredTick?.Stop();
         _deferredTick = null;
         _occupancyMarkers.Clear();
+        _waitingOnIde.Clear();
 
         if (_watcher is null)
         {
@@ -1752,6 +1753,18 @@ public sealed class SyncViewModel : ObservableObject
     private readonly Dictionary<string, ProjectBinding> _occupancyMarkers =
         new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Bindings that last returned <see cref="SyncVerdict.BlockedByOpenProject"/>.
+    /// </summary>
+    /// <remarks>
+    /// The occupancy marker vanishing is the retry for <b>that wait</b> (PHASE2 item 3).
+    /// A toolchain that writes the same sidecar while it works — then deletes it on the
+    /// way out — is not a wait: treating it as one re-exported a directory payload every
+    /// thirty seconds on 2026-08-19, because each run's own close looked like the engineer
+    /// shutting the IDE. Remember the refusal, not the file.
+    /// </remarks>
+    private readonly HashSet<string> _waitingOnIde = new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>The markers being watched, for the test that proves the watch is wired.</summary>
     /// <remarks>
     /// Internal for <c>IgnoredPaths()</c>'s reason: trusting that a dictionary populated in
@@ -1761,6 +1774,22 @@ public sealed class SyncViewModel : ObservableObject
     /// </remarks>
     internal IReadOnlyDictionary<string, ProjectBinding> WatchedOccupancyMarkers =>
         _occupancyMarkers;
+
+    /// <summary>
+    /// Record that a direction waited on the IDE, so a later occupancy-marker
+    /// vanishing retries. Tests drive this; production sets it from
+    /// <see cref="SyncVerdict.BlockedByOpenProject"/>.
+    /// </summary>
+    internal void RememberWaitingOnIde(string bindingId) => _waitingOnIde.Add(bindingId);
+
+    private void RememberIfWaitingOnIde(SyncOutcome outcome)
+    {
+        if (outcome.Verdict is SyncVerdict.BlockedByOpenProject
+            && !string.IsNullOrEmpty(outcome.BindingId))
+        {
+            _waitingOnIde.Add(outcome.BindingId);
+        }
+    }
 
     /// <summary>
     /// Ask the engine whether a throttled change is now due, and run it if so.
@@ -1784,6 +1813,11 @@ public sealed class SyncViewModel : ObservableObject
         {
             var outcomes = await _orchestrator.RunDeferredAsync(cancel.Token)
                 .ConfigureAwait(true);
+
+            foreach (var outcome in outcomes)
+            {
+                RememberIfWaitingOnIde(outcome);
+            }
 
             if (outcomes.Any(o => o.DidWork || o.IsFailure))
             {
@@ -1837,15 +1871,23 @@ public sealed class SyncViewModel : ObservableObject
     }
 
     /// <summary>
-    /// The vendor's open-project marker settled. If it is gone, the IDE let go — retry what
-    /// waited for it.
+    /// The vendor's open-project marker settled. If it is gone <b>and a direction waited
+    /// on it</b>, retry what waited.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>Closing CODESYS is the retry now</b> (PHASE2 item 3): an import refused with "close
+    /// <b>Closing the IDE is the retry now</b> (PHASE2 item 3): an import refused with "close
     /// it and the import will run" used to sit until the next save or the next repository
     /// open, with the panel saying so and nothing listening. The marker vanishing is that
     /// same fact as a filesystem event.
+    /// </para>
+    /// <para>
+    /// <b>Only a recorded wait.</b> The first vendor's occupancy is a sidecar the IDE
+    /// writes while the engineer works and we never touch. A directory-payload host writes
+    /// the same kind of marker for the length of its session, then deletes it — which is
+    /// our run finishing, not the engineer closing the IDE. Retrying that unconditionally
+    /// re-exported a 500 MB tree every thirty seconds on 2026-08-19. The wait is
+    /// remembered when the orchestrator returns <see cref="SyncVerdict.BlockedByOpenProject"/>.
     /// </para>
     /// <para>
     /// <b>Both directions are submitted, through every gate a save goes through.</b> The
@@ -1868,6 +1910,12 @@ public sealed class SyncViewModel : ObservableObject
     {
         if (File.Exists(markerPath))
         {
+            return;
+        }
+
+        if (!_waitingOnIde.Remove(binding.Id))
+        {
+            // Our own toolchain run wrote and deleted this marker. Nothing waited.
             return;
         }
 
@@ -2763,6 +2811,7 @@ public sealed class SyncViewModel : ObservableObject
 
         foreach (var outcome in outcomes)
         {
+            RememberIfWaitingOnIde(outcome);
             var sentence = SyncNarrative.Describe(outcome);
             if (outcome.IsFailure)
             {
@@ -3032,6 +3081,8 @@ public sealed class SyncViewModel : ObservableObject
                 Confirmed = false,
                 Reason = reason,
             }, cancel.Token).ConfigureAwait(true);
+
+            RememberIfWaitingOnIde(outcome);
 
             var sentence = SyncNarrative.Describe(outcome);
 
@@ -3422,6 +3473,8 @@ public sealed class SyncViewModel : ObservableObject
             Plan = plan,
         }, busy.Token).ConfigureAwait(true);
 
+        RememberIfWaitingOnIde(outcome);
+
         Summary = SyncNarrative.Describe(outcome);
 
         if (outcome.IsFailure)
@@ -3522,6 +3575,7 @@ public sealed class SyncViewModel : ObservableObject
 
         if (outcome.IsFailure || outcome.Verdict is SyncVerdict.BlockedByOpenProject)
         {
+            RememberIfWaitingOnIde(outcome);
             _logger.Warn(LogCategory.Sync, Summary);
         }
         else

@@ -15,6 +15,12 @@ public sealed class FakeFileSystem : IFileSystem
     /// <summary>Set to make the next copy fail, standing in for a share-locked project.</summary>
     public int FailCopyTimes { get; set; }
 
+    /// <summary>
+    /// Paths that throw on read, standing in for a pointer the toolchain still holds
+    /// after the export child has exited.
+    /// </summary>
+    public HashSet<string> LockedFiles { get; } = new(StringComparer.OrdinalIgnoreCase);
+
     public void Write(string path, string content)
     {
         _files[path] = Encoding.UTF8.GetBytes(content);
@@ -34,8 +40,15 @@ public sealed class FakeFileSystem : IFileSystem
 
     public bool DirectoryExists(string path) => _dirs.Contains(path);
 
-    public Task<byte[]> ReadAllBytesAsync(string path, CancellationToken ct) =>
-        Task.FromResult(_files.TryGetValue(path, out var b) ? b : []);
+    public Task<byte[]> ReadAllBytesAsync(string path, CancellationToken ct)
+    {
+        if (LockedFiles.Contains(path))
+        {
+            throw new IOException("the file is in use by another process");
+        }
+
+        return Task.FromResult(_files.TryGetValue(path, out var b) ? b : []);
+    }
 
     public Task<string> ReadAllTextAsync(string path, CancellationToken ct) =>
         Task.FromResult(_files.TryGetValue(path, out var b) ? Encoding.UTF8.GetString(b) : "");

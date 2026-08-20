@@ -93,6 +93,27 @@ public sealed class IdeReleaseRetryTests
     }
 
     [Fact]
+    public async Task A_vanished_marker_with_nothing_waiting_stays_quiet()
+    {
+        // A directory-payload host writes and deletes the same occupancy sidecar for
+        // the length of its own run. That is not a wait, and retrying it is a loop.
+        using var repo = new TempRepo();
+        GivenATrackedProject(repo);
+
+        InMemoryLogSink sink;
+        using var shell = TestShell.Build(out sink);
+        await shell.OpenAsync(repo.Path);
+
+        var lines = new List<string>();
+        sink.Emitted += e => lines.Add(e.Message);
+
+        var binding = shell.Sync.WatchedOccupancyMarkers.Values.Single();
+        await shell.Sync.RetryAfterIdeReleaseAsync(binding, MarkerPath(repo));
+
+        Assert.DoesNotContain(lines, l => l.Contains("released"));
+    }
+
+    [Fact]
     public async Task A_vanished_marker_submits_both_sides_through_the_ordinary_gates()
     {
         using var repo = new TempRepo();
@@ -106,6 +127,7 @@ public sealed class IdeReleaseRetryTests
         sink.Emitted += e => lines.Add(e.Message);
 
         var binding = shell.Sync.WatchedOccupancyMarkers.Values.Single();
+        shell.Sync.RememberWaitingOnIde(binding.Id);
         await shell.Sync.RetryAfterIdeReleaseAsync(binding, MarkerPath(repo));
 
         // The release is announced — the reason travels with the jobs, so the log can say
@@ -138,6 +160,7 @@ public sealed class IdeReleaseRetryTests
         };
 
         File.WriteAllText(MarkerPath(repo), "user\nmachine\n1234\n");
+        shell.Sync.RememberWaitingOnIde(shell.Sync.WatchedOccupancyMarkers.Values.Single().Id);
 
         // Let the creation settle first, so the deletion is its own event rather than
         // part of one write burst the watcher coalesces.

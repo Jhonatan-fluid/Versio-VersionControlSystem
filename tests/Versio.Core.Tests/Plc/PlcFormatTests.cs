@@ -62,6 +62,7 @@ public class PlcFormatTests
         Assert.True(capabilities.TextualImport);
         Assert.True(capabilities.ObjectCreation);
         Assert.True(capabilities.Headless);
+        Assert.True(capabilities.ExportHeldViaCopy);
     }
 
     [Fact]

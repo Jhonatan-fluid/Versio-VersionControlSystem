@@ -15,6 +15,14 @@ public interface IFileSystem
 
     bool DirectoryExists(string path);
 
+    /// <summary>
+    /// Read a file's bytes, retrying while it is share-locked.
+    /// </summary>
+    /// <remarks>
+    /// Hashing a directory payload includes the pointer file, and the toolchain that just
+    /// exported may still hold it after the child process has exited. Exclusive
+    /// <c>File.ReadAllBytes</c> is how that became a failed session rather than a hash.
+    /// </remarks>
     Task<byte[]> ReadAllBytesAsync(string path, CancellationToken ct);
 
     Task<string> ReadAllTextAsync(string path, CancellationToken ct);

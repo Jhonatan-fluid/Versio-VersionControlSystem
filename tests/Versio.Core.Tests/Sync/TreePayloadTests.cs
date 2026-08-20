@@ -52,6 +52,23 @@ public sealed class TreePayloadTests
     }
 
     [Fact]
+    public async Task Hashing_a_tree_skips_a_pointer_the_toolchain_still_holds()
+    {
+        // After export the child has exited, but the pointer at the top of a directory
+        // payload stays exclusive for seconds. Throwing there used to turn a finished
+        // export into "failed to open at startup". The program under the pointer still
+        // hashes; the lock on the pointer does not.
+        var h = Harness.Create();
+        h.WritePayload("System/program.bin", "the program");
+        h.Fs.LockedFiles.Add(h.PayloadFile("Station.treeproj"));
+        h.Runner.EnqueueSuccess("plc/plant-export/Main.scl");
+
+        var outcome = await h.ProjectChanged();
+
+        Assert.Equal(SyncVerdict.Completed, outcome.Verdict);
+    }
+
+    [Fact]
     public async Task Copying_an_open_tree_takes_the_directory_not_the_pointer()
     {
         var h = Harness.Create();

@@ -1,10 +1,10 @@
 # Git panel — functionality and UX plan
 
-> **ARCHIVED — PHASE 1, COMPLETE.** Moved to `docs/phase1/` on 2026-08-17 with eleven of its
-> twelve phases built and verified. The remaining piece — GP-K/GP-L, the ahead/behind previews
-> and the small-UX list — is item 2 of [`../PHASE2.md`](../PHASE2.md)'s queue, and this
-> document is where it is scoped. Read the GP-E log before extracting anything from the shell;
-> its borrow-count method is the reason three extractions were declined.
+> **ARCHIVED — PHASE 1, COMPLETE.** Moved to `docs/phase1/` on 2026-08-17. All twelve phases
+> are built, including GP-K/GP-L (ahead/behind previews and the small-UX list), which closed
+> as PHASE2 item 2 on 2026-08-17. The live page is [`../STATUS.md`](../STATUS.md). Read the
+> GP-E log before extracting anything from the shell; its borrow-count method is the reason
+> three extractions were declined.
 
 **Date:** 2026-08-13 · **Scope:** `ShellViewModel` git region, `MainWindow.xaml` `GitPanel`,
 `IGitClient`/`GitCliClient` where the panel needs something git can already do but the
@@ -1602,7 +1602,8 @@ which are geometry and wording and cannot be.
 > Off the critical path, not abandoned. Eleven of twelve phases are built and the panel does its
 > job; these are the refinements on top. §9d is the smallest thing left in this document —
 > `RecentCommitsAsync` already takes a count and a skip, so it needs a revision range and a place
-> to put the list. See *Deferred, and not on the critical path* in `docs/STATUS.md` for the
+> to put the list. See *Deferred, and not on the critical path* in
+> [`../archive/STATUS-2026-08.md`](../archive/STATUS-2026-08.md) for the
 > decision and what would bring it back.
 
 

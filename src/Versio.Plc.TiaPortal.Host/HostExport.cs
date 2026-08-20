@@ -17,7 +17,10 @@ internal static partial class HostApp
         Directory.CreateDirectory(outDir);
         var objects = new List<Dictionary<string, object?>>();
         var skipped = new List<Dictionary<string, string>>();
-        var warnings = new List<string>();
+        // Same record shape versio_export.py writes and ProjectManifest.Parse reads.
+        // A list of strings used to discard every warning (CleaningStation, 2026-08-19)
+        // and log "manifest not fully readable" once per row.
+        var warnings = new List<Dictionary<string, string>>();
 
         foreach (var plc in WalkPlcSoftware(project))
         {
@@ -32,10 +35,17 @@ internal static partial class HostApp
             WalkTags(plc, root, objects, skipped, warnings);
         }
 
-        skipped.Add(Skip("Hardware", "NOT_IMPLEMENTED", "devices and networks are a coverage skip"));
-        skipped.Add(Skip("HMI", "NOT_IMPLEMENTED", "WinCC screens are a coverage skip"));
-        skipped.Add(Skip("Safety", "NOT_IMPLEMENTED", "F-programs are a coverage skip"));
-        skipped.Add(Skip("Technology", "NOT_IMPLEMENTED", "technology objects are a coverage skip"));
+        // NOT_IMPLEMENTED is a hole the panel paints as "this project is missing
+        // objects". Hardware, HMI, safety and technology are decisions for this
+        // product slice, not holes in the PLC-software loop — the same bargain
+        // SERVICE_OBJECT makes for a template-only object on the first vendor.
+        // _coverage.md still names them. Using the gap reason made every TIA
+        // tree read "not exported · 4 objects not exported" after a successful
+        // export (CleaningStation, 2026-08-19).
+        skipped.Add(Skip("Hardware", "SERVICE_OBJECT", "devices and networks are a coverage skip"));
+        skipped.Add(Skip("HMI", "SERVICE_OBJECT", "WinCC screens are a coverage skip"));
+        skipped.Add(Skip("Safety", "SERVICE_OBJECT", "F-programs are a coverage skip"));
+        skipped.Add(Skip("Technology", "SERVICE_OBJECT", "technology objects are a coverage skip"));
 
         var manifest = new Dictionary<string, object?>
         {
@@ -63,7 +73,7 @@ internal static partial class HostApp
         PlcRef plc, string root,
         List<Dictionary<string, object?>> objects,
         List<Dictionary<string, string>> skipped,
-        List<string> warnings)
+        List<Dictionary<string, string>> warnings)
     {
         var group = GetProp(plc.Software, "BlockGroup");
         WalkBlockGroup(plc, group, Path.Combine(root, "Program blocks"), objects, skipped, warnings);
@@ -73,7 +83,7 @@ internal static partial class HostApp
         PlcRef plc, object? group, string dir,
         List<Dictionary<string, object?>> objects,
         List<Dictionary<string, string>> skipped,
-        List<string> warnings)
+        List<Dictionary<string, string>> warnings)
     {
         if (group is null)
         {
@@ -97,7 +107,7 @@ internal static partial class HostApp
         PlcRef plc, object block, string dir,
         List<Dictionary<string, object?>> objects,
         List<Dictionary<string, string>> skipped,
-        List<string> warnings)
+        List<Dictionary<string, string>> warnings)
     {
         var name = Str(block, "Name") ?? "Block";
         var number = Str(block, "Number") ?? "0";
@@ -113,7 +123,7 @@ internal static partial class HostApp
 
         if (language.StartsWith("F_", StringComparison.OrdinalIgnoreCase))
         {
-            skipped.Add(Skip(name, "NOT_IMPLEMENTED", "safety blocks are a coverage skip"));
+            skipped.Add(Skip(name, "SERVICE_OBJECT", "safety blocks are a coverage skip"));
             return;
         }
 
@@ -124,7 +134,7 @@ internal static partial class HostApp
         }
         catch (Exception ex)
         {
-            warnings.Add(name + ": XML export failed: " + Innermost(ex));
+            Warn(warnings, "XML_EXPORT_FAILED", RelTo(xmlPath), Innermost(ex));
             skipped.Add(Skip(name, "EXPORT_FAILED", Innermost(ex)));
             return;
         }
@@ -134,11 +144,13 @@ internal static partial class HostApp
         // most common "35"). The first export keyed every object as "0"; skipping 0
         // keyed them as "1". A rename is paired by content hash, not by this key.
         var guid = $"{plc.DeviceName}/{plc.PlcName}/{typeName}/{name}#{number}";
-        var isScl = language.Equals("SCL", StringComparison.OrdinalIgnoreCase);
+        // Exact "SCL" missed the block after generate on the import gate: the in-session
+        // GenerateSource still worked, the next export keyed off ProgrammingLanguage
+        // and wrote no .scl. Treat any language that names SCL / Structured Text the
+        // same, and still try GenerateSource when the property is blank.
         var sclPath = Path.Combine(dir, Sanitize(name) + ".scl");
         var wroteScl = false;
-
-        if (isScl)
+        if (LooksLikeScl(language) || language.Length == 0)
         {
             try
             {
@@ -146,7 +158,7 @@ internal static partial class HostApp
             }
             catch (Exception ex)
             {
-                warnings.Add(name + ": SCL export failed: " + Innermost(ex));
+                Warn(warnings, "SCL_EXPORT_FAILED", RelTo(sclPath), Innermost(ex));
             }
         }
 
@@ -169,7 +181,7 @@ internal static partial class HostApp
         PlcRef plc, string root,
         List<Dictionary<string, object?>> objects,
         List<Dictionary<string, string>> skipped,
-        List<string> warnings)
+        List<Dictionary<string, string>> warnings)
     {
         _ = skipped;
         var group = GetProp(plc.Software, "TypeGroup");
@@ -179,7 +191,7 @@ internal static partial class HostApp
     private static void WalkTypeGroup(
         PlcRef plc, object? group, string dir,
         List<Dictionary<string, object?>> objects,
-        List<string> warnings)
+        List<Dictionary<string, string>> warnings)
     {
         if (group is null)
         {
@@ -204,7 +216,7 @@ internal static partial class HostApp
                 }
                 catch (Exception ex)
                 {
-                    warnings.Add(name + ": UDT source failed: " + Innermost(ex));
+                    Warn(warnings, "UDT_SOURCE_FAILED", RelTo(udtPath), Innermost(ex));
                 }
 
                 if (wrote)
@@ -223,7 +235,7 @@ internal static partial class HostApp
             }
             catch (Exception ex)
             {
-                warnings.Add(name + ": type export failed: " + Innermost(ex));
+                Warn(warnings, "TYPE_EXPORT_FAILED", RelTo(xmlPath), Innermost(ex));
             }
         }
 
@@ -238,7 +250,7 @@ internal static partial class HostApp
         PlcRef plc, string root,
         List<Dictionary<string, object?>> objects,
         List<Dictionary<string, string>> skipped,
-        List<string> warnings)
+        List<Dictionary<string, string>> warnings)
     {
         _ = skipped;
         var group = GetProp(plc.Software, "TagTableGroup");
@@ -248,7 +260,7 @@ internal static partial class HostApp
     private static void WalkTagGroup(
         PlcRef plc, object? group, string dir,
         List<Dictionary<string, object?>> objects,
-        List<string> warnings)
+        List<Dictionary<string, string>> warnings)
     {
         if (group is null)
         {
@@ -271,7 +283,7 @@ internal static partial class HostApp
             }
             catch (Exception ex)
             {
-                warnings.Add(name + ": tag table export failed: " + Innermost(ex));
+                Warn(warnings, "TAG_TABLE_EXPORT_FAILED", RelTo(xmlPath), Innermost(ex));
             }
         }
 
@@ -285,6 +297,11 @@ internal static partial class HostApp
     private static bool GenerateSource(PlcRef plc, object item, string dest)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+        if (File.Exists(dest))
+        {
+            File.Delete(dest);
+        }
+
         var file = new FileInfo(dest);
 
         // V21 exposes IGenerateSource.GenerateSource(FileInfo) on the block itself.
@@ -348,9 +365,23 @@ internal static partial class HostApp
         return File.Exists(dest) && new FileInfo(dest).Length > 0;
     }
 
+    private static bool LooksLikeScl(string language) =>
+        language.IndexOf("SCL", StringComparison.OrdinalIgnoreCase) >= 0
+        || language.IndexOf("StructuredText", StringComparison.OrdinalIgnoreCase) >= 0
+        || language.IndexOf("Structured Text", StringComparison.OrdinalIgnoreCase) >= 0;
+
     private static void ExportXml(object item, string dest)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+        if (File.Exists(dest))
+        {
+            // Openness Export(..., None) refuses an existing file. The app re-exports
+            // into the same tree the previous run left behind; deleting first is
+            // overwrite. Without this, CleaningStation's second export recorded
+            // 159 XML_EXPORT_FAILED warnings and zero objects (2026-08-19).
+            File.Delete(dest);
+        }
+
         var export = item.GetType().GetMethods()
             .FirstOrDefault(m => m.Name == "Export" && m.GetParameters().Length == 2);
         if (export is null)
@@ -401,6 +432,10 @@ internal static partial class HostApp
 
     private static Dictionary<string, string> Skip(string path, string reason, string detail) =>
         new() { ["path"] = path, ["reason"] = reason, ["detail"] = detail };
+
+    private static void Warn(
+        List<Dictionary<string, string>> warnings, string code, string path, string detail) =>
+        warnings.Add(new() { ["code"] = code, ["path"] = path, ["detail"] = detail });
 
     private static void Record(
         List<Dictionary<string, object?>> objects,

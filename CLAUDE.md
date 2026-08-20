@@ -51,19 +51,21 @@ questions about "why is this like this" are already answered there.
 
 | File | What it holds |
 |---|---|
-| `docs/PHASE2.md` | **The forward queue** — what is left, in order, and the decisions already taken with their why. Start here for "what next" |
-| `docs/STATUS.md` | Where the project is, and **Known loose ends** — an audit of the repository |
-| `docs/FINDINGS.md` | **Every defect written up with its evidence**, newest first. Search it rather than reading it; `STATUS.md` carries the index |
-| `docs/SAFEGUARDS.md` | What Versio refuses, asks about, or waits for |
+| `docs/STATUS.md` | **Where the project is, and what is next.** The only live status page. Start here — the next session's first act is *What is next* item 1. |
+| `docs/FINDINGS.md` | **Every defect written up with its evidence**, newest first. Search it rather than reading it. |
+| `docs/SAFEGUARDS.md` | What Versio refuses, asks about, or waits for. Phases 1–9 built; §5.H deferred on purpose. |
 | `docs/vendors/codesys/DRIVING.md` | **One vendor's docs**, beside its two projects. How CODESYS is driven end to end, and the audit of it |
-| `docs/vendors/tia/DRIVING.md` | **One vendor's docs**, beside its three projects. How TIA Portal is driven. Remaining work is ordered in `PHASE2.md` item 7; §12 here is the evidence |
+| `docs/vendors/tia/DRIVING.md` | **One vendor's docs**, beside its three projects. How TIA Portal is driven. PLC-software loop is done; §12 is evidence; coverage skips stay out of scope |
 | `docs/phase1/` | **The Phase 1 archive** — four completed plans, marked done, kept for reasoning and evidence: `PLAN.md` (the founding architecture), `IMPORT-PLAN.md` (thirteen gaps, the feature checklist, and the measurements — its raw probe logs are in `probes/`), `GIT-PANEL-PLAN.md`, `PHASE0-FINDINGS.md`. Read them for why, never for state |
+| `docs/archive/` | **Completed later plans** — Phase 2 queue, UX plan, session handoffs, the long STATUS diary. Record, not state |
 | `README.md` | Repository layout, vendor boundaries, the one architectural rule |
 
 **This is a rule because ignoring it has already cost.** An audit was asked for and re-derived
-from scratch what `STATUS.md` already had under *"Known loose ends, from an audit of the
-repository"* — including a suite flake whose three failing test classes were named there by
-name. An hour went into rediscovering it.
+from scratch what [`docs/archive/STATUS-2026-08.md`](docs/archive/STATUS-2026-08.md) already had
+under *"Known loose ends, from an audit of the repository"* — including a suite flake whose
+three failing test classes were named there by name. An hour went into rediscovering it.
+Search [`docs/FINDINGS.md`](docs/FINDINGS.md) and the live [`docs/STATUS.md`](docs/STATUS.md)
+before deriving state from the archive.
 
 ---
 
@@ -132,7 +134,7 @@ Any change that alters what the docs claim updates the docs in the same session.
 
 - Test counts in `README.md` and `docs/STATUS.md` go stale silently — re-derive, never trust.
 - A defect worth understanding gets a **Finding** in `docs/FINDINGS.md`, at the TOP — newest
-  first — with its evidence, and a line in `STATUS.md`'s index.
+  first, with its evidence. Search that file; do not add an index to `STATUS.md`.
 - A structural change gets whatever a future reader needs before editing that file.
 - A loose end that is closed gets struck through, not deleted, with what actually happened.
 
@@ -227,14 +229,14 @@ stays that way.
 
 | Suite | Count | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,432 | under a second | nothing |
-| `Versio.Integration.Tests` | 148 | ~10 s | real git |
+| `Versio.Core.Tests` | 1,434 | under a second | nothing |
+| `Versio.Integration.Tests` | 150 | ~10 s | real git |
 | `Versio.Arch.Tests` | 14 | instant | nothing — it reads assembly metadata, IL and the `.csproj` files |
-| `Versio.App.Tests` | 612 | ~50 s, STA, no window shown | nothing |
+| `Versio.App.Tests` | 613 | ~50 s, STA, no window shown | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 260 | under a second | nothing — the planner, the codecs, the protocol |
 | `Versio.Plc.Codesys.Parity.Tests` | 92 | ~15 s | `python` on PATH — **skips cleanly without it, so check the count, not the colour** |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 15 | instant | nothing — format, planner, protocol |
-| `Versio.Plc.TiaPortal.Tests` | 4 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips cleanly without Openness membership or LFS content. Import Fact is red: generate does not overwrite |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 16 | instant | nothing — format, planner, protocol |
+| `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips cleanly without Openness membership or LFS content. Import Fact is green |
 | `Versio.Plc.Codesys.Tests` | 54 | **~30 min** | **real CODESYS** — every test launches it, which is the whole cost |
 
 The TIA gate fixture is `fixtures/projects/CleaningStation_V20_V21/` (Git LFS). Never the

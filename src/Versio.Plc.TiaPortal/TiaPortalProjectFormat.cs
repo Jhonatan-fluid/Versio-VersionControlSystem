@@ -30,6 +30,10 @@ public sealed class TiaPortalProjectFormat : IPlcProjectFormat
         TextualImport = true,
         ObjectCreation = true,
         Headless = true,
+        // Exclusive Projects.Open, and the payload is a directory (~500 MB on the
+        // gate fixture). A copy-aside export is the first vendor's sidecar trick;
+        // it is not valid here. Occupancy waits both directions instead.
+        ExportHeldViaCopy = false,
         TypicalStartupCost = TimeSpan.FromSeconds(45),
     };
 

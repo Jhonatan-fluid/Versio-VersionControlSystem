@@ -4,7 +4,8 @@
 > founding document — the research, the hard truths, and the architecture as first conceived.
 > Its successors took over long ago: what was built is in [`../STATUS.md`](../STATUS.md), what
 > the import became is in [`IMPORT-PLAN.md`](IMPORT-PLAN.md), and what remains is
-> [`../PHASE2.md`](../PHASE2.md). Sections still worth reading on their own: the CODESYS
+> [`../STATUS.md`](../STATUS.md). The Phase 2 completion log is
+> [`../archive/PHASE2.md`](../archive/PHASE2.md). Sections still worth reading on their own: the CODESYS
 > scripting research (§2), the hard truths (§3), and the diff-view design PHASE2's queue
 > item 4 refers back to.
 
