@@ -98,11 +98,14 @@ public sealed class TwinCatProjectFormat : IPlcProjectFormat
             return false;
         }
 
+        // The transient pattern below claims "stem.~u*"; this filter must not claim
+        // less, or a suffixed marker variant counts toward the project hash and every
+        // in-flight export reads as a program change.
         if (file.StartsWith('~')
             || file.EndsWith(".suo", StringComparison.OrdinalIgnoreCase)
             || file.EndsWith(".user", StringComparison.OrdinalIgnoreCase)
             || file.Equals("LineIDs.dbg", StringComparison.OrdinalIgnoreCase)
-            || file.EndsWith(".~u", StringComparison.OrdinalIgnoreCase))
+            || System.IO.Path.GetExtension(file).StartsWith(".~", StringComparison.Ordinal))
         {
             return false;
         }

@@ -27,6 +27,9 @@ public sealed class TwinCatFormatTests
         Assert.False(TwinCatProjectFormat.Instance.CountsTowardProjectHash("_CompileInfo/x"));
         Assert.False(TwinCatProjectFormat.Instance.CountsTowardProjectHash(".vs/slnx.sqlite"));
         Assert.False(TwinCatProjectFormat.Instance.CountsTowardProjectHash("Station.~u"));
+        // The transient pattern claims "stem.~u*"; the hash filter must agree, or an
+        // in-flight marker variant makes an unchanged project hash as changed.
+        Assert.False(TwinCatProjectFormat.Instance.CountsTowardProjectHash("Station.~u2"));
         Assert.False(TwinCatProjectFormat.Instance.CountsTowardProjectHash("LineIDs.dbg"));
         Assert.True(TwinCatProjectFormat.Instance.CountsTowardProjectHash("LibraryDocumentationSample/MAIN.TcPOU"));
         Assert.Equal(@"C:\plc\Station\Station.~u",
