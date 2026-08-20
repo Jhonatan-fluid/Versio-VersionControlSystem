@@ -326,9 +326,10 @@ internal static partial class HostApp
             : full.Replace('\\', '/');
     }
 
-    private static string HashTextFile(string path)
+    private static string HashTextFile(string path) => HashText(File.ReadAllText(path));
+
+    private static string HashText(string text)
     {
-        var text = File.ReadAllText(path);
         var bytes = Encoding.UTF8.GetBytes(text);
         var hash = SHA256.HashData(bytes);
         var sb = new StringBuilder(hash.Length * 2);

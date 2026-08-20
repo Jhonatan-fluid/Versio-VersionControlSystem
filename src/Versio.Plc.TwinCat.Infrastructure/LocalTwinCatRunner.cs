@@ -80,10 +80,16 @@ public sealed class LocalTwinCatRunner(
             return PlcResult.Failure("TwinCAT XAE is not installed on this machine.");
         }
 
+        // The orchestrator leaves the plan null only when no format claims the path any
+        // more, and "the runner decides" what that means. Fabricating an empty plan here
+        // decided it was a successful no-op — an import that applies nothing, saves, and
+        // reports green. Refusing with a sentence is the honest decision.
         var plan = only.Plan;
         if (job.Operation == PlcOperation.Import && plan is null)
         {
-            plan = TwinCatProjectFormat.Instance.PlanImport(null, [], new Dictionary<string, string>());
+            return PlcResult.Failure(
+                "an import without a plan is refused — nothing was planned, so nothing would "
+                + "be applied.");
         }
 
         var native = new TwinCatJob
