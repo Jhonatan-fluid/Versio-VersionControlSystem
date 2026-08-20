@@ -32,6 +32,9 @@ public sealed record WorkspaceProject
     /// <summary>The project's parsed task catalogs. Same contract as <see cref="Libraries"/>.</summary>
     public IReadOnlyList<TaskSnapshot> Tasks { get; init; } = [];
 
+    /// <summary>The project's parsed device catalogs. Same contract as <see cref="Libraries"/>.</summary>
+    public IReadOnlyList<DeviceSnapshot> Devices { get; init; } = [];
+
     /// <summary>Export state in a few words, shown on the project row instead of a diff.</summary>
     public string ExportState { get; init; } = string.Empty;
 
@@ -184,7 +187,7 @@ public static class WorkspaceTreeBuilder
 
         var manifest = project.Manifest ?? ProjectManifest.Empty;
         var tree = ProjectTreeBuilder.Build(
-            manifest, exportRoot, changes, opts, project.Libraries, project.Tasks);
+            manifest, exportRoot, changes, opts, project.Libraries, project.Tasks, project.Devices);
 
         // Everything the manifest accounted for is now represented by an object node.
         foreach (var file in manifest.Objects

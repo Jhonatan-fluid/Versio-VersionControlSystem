@@ -1,0 +1,24 @@
+# Device tree, exported by Versio. Do not edit - it is rewritten on
+# every export, and importing this file back into the project is NOT supported: change
+# devices in the IDE.
+#
+# NOT recorded here, on purpose:
+#   * which device description the node is (identification was missing on this
+#     ScriptEngine)
+#   * driver_info fields we could not read
+#   * IEC %I/%Q mapping as a separate table - it is not on io_mapping here; compound
+#     parameter values are recorded as their value strings
+#   * parameter id, except as a suffix on a duplicate name - the id is stable on this
+#     install but it is not what a reviewer reads
+schema: 1
+vendor: codesys
+name: Device
+path: Device
+connectorCount: 2
+connectors:
+  - connectorId: 0
+    interface: Common.PCI
+    moduleType: 256
+  - connectorId: 1
+    interface: SafetyInterface
+    moduleType: 769

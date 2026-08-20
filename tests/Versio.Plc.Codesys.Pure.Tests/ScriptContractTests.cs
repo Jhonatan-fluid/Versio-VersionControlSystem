@@ -133,7 +133,7 @@ public sealed class ScriptContractTests(ITestOutputHelper output)
         // than through `warn`, so it never enters `self.warnings` and never reaches the
         // manifest. It is a protocol event, not a coverage fact.
         var extractor = new ScriptExtractor();
-        var sources = new[] { "versio_export.py", "versio_libraries.py", "versio_tasks.py" }
+        var sources = new[] { "versio_export.py", "versio_libraries.py", "versio_tasks.py", "versio_devices.py" }
             .Select(name => WithoutComments(File.ReadAllText(extractor.PathFor(name))));
 
         var codes = sources
@@ -162,6 +162,10 @@ public sealed class ScriptContractTests(ITestOutputHelper output)
             "LIBRARY_REFERENCES_PARTIAL",
             "TASK_CHILDREN_UNAVAILABLE",
             "TASK_LIST_PARTIAL",
+            "DEVICE_CONNECTORS_UNAVAILABLE",
+            "DEVICE_CONNECTORS_PARTIAL",
+            "DEVICE_SLOT_HAS_CHILDREN",
+            "DEVICE_SLOT_INDEX_UNREADABLE",
 
             // G9's machine-independent guard. It fires BEFORE the write and does not stop
             // it, so on a machine where the path still fits the object is written and
@@ -214,6 +218,27 @@ public sealed class ScriptContractTests(ITestOutputHelper output)
         // what it was when it was not "every".
         Assert.Contains("TASK_LIST_PARTIAL", codes, StringComparer.Ordinal);
         Assert.Contains("LIBRARY_REFERENCES_PARTIAL", codes, StringComparer.Ordinal);
+        Assert.Contains("DEVICE_CONNECTORS_PARTIAL", codes, StringComparer.Ordinal);
+    }
+
+    [Fact]
+    public void A_failed_device_yaml_write_still_walks_the_subtree()
+    {
+        // Device used to be FORM_CONTAINER: no write, children walked anyway. The
+        // FORM_DEVICES except used to return before the walk, so a disk error on
+        // Device.devices.yaml dropped Plc Logic from the swapped mirror. The except
+        // must warn and fall through to `for child in children`.
+        var source = WithoutComments(Exporter());
+        var devices = source.IndexOf("if form == FORM_DEVICES:", StringComparison.Ordinal);
+        Assert.True(devices >= 0, "FORM_DEVICES branch missing from versio_export.py");
+
+        var exceptAt = source.IndexOf("except Exception", devices, StringComparison.Ordinal);
+        var walkAt = source.IndexOf("for child in children:", devices, StringComparison.Ordinal);
+        Assert.True(exceptAt >= 0 && walkAt > exceptAt,
+            "FORM_DEVICES must warn on EXPORT_FAILED and then walk children");
+
+        var exceptBlock = source[exceptAt..walkAt];
+        Assert.DoesNotContain("return", exceptBlock, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -32,6 +32,11 @@ GUID_TYPE_MAPPING = {
     "085afe48-c5d8-4ea5-ab0d-b35701fa6009": "PROJECT_INFORMATION",
     "8753fe6f-4a22-4320-8103-e553c4fc8e04": "PROJECT_SETTINGS",
     "225bfe47-7336-4dbc-9419-4105a7c831fa": "DEVICE",
+    # [VERSIO] Empty IO-Link / module slots under a coupler. Measured 2026-08-20 on
+    # RefrigeratorControl: eight siblings all named <Empty>, GUID 085766fd-…, obj.index
+    # 0..7. Native export collided them onto one %3CEmpty%3E.xml. Listed in the parent
+    # device YAML instead of written as files.
+    "085766fd-043e-4545-8e8d-d651d56d5d3b": "DEVICE_SLOT",
     "738bea1e-99bb-4f04-90bb-a7a567e74e3a": "FOLDER",
     "413e2a7d-adb1-4d2c-be29-6ae6e4fab820": "CALL_TO_POU",
     "f18bec89-9fef-401d-9953-2f11739a6808": "VISUALISATION",
@@ -86,6 +91,7 @@ FORM_NATIVE = "NATIVE"
 FORM_NATIVE_R = "NATIVE_R"
 FORM_CONTAINER = "CONTAINER"
 FORM_LIBRARIES = "LIBRARIES"
+FORM_DEVICES = "DEVICES"
 FORM_SKIP = "SKIP"
 
 # TASK_NATIVE - the .xml half of a TASK_BOTH pair. RECORDED, NEVER DECIDED: decide_form
@@ -167,7 +173,7 @@ FORM_PROPERTY_TEXT = "PROPERTY_TEXT"
 # panel's lock glyph reads. The two are compared in TypeTableParityTests - a form added
 # here and not there means the file is announced in _coverage.md and still looks editable
 # in the app, which is half a warning and worse than none.
-EXPORT_ONLY_FORMS = (FORM_LIBRARIES, FORM_TASK_NATIVE, FORM_GVL_NATIVE,
+EXPORT_ONLY_FORMS = (FORM_LIBRARIES, FORM_DEVICES, FORM_TASK_NATIVE, FORM_GVL_NATIVE,
                      FORM_EXTERNAL_NATIVE, FORM_PROPERTY_TEXT)
 
 # NATIVE_WITH_CHILDREN - export the node itself natively, non-recursively, AND descend into
@@ -252,7 +258,8 @@ def can_verify(form, normalized_hash=None):
 
 TYPE_FORM = {
     "FOLDER": FORM_CONTAINER,
-    "DEVICE": FORM_CONTAINER,
+    "DEVICE": FORM_DEVICES,
+    "DEVICE_SLOT": FORM_SKIP,
     "PLC_LOGIC": FORM_CONTAINER,
     "APPLICATION": FORM_CONTAINER,
 
@@ -388,6 +395,7 @@ SKIP_REASON = {
 
     "TASK": SKIP_ELSEWHERE,          # inside TASK_CONFIGURATION's recursive export
     "CALL_TO_POU": SKIP_ELSEWHERE,   # ditto
+    "DEVICE_SLOT": SKIP_ELSEWHERE,   # listed in the parent device's .devices.yaml
 
     # A GRAPHICAL accessor only. One with a textual body is exported as readable text
     # (FORM_PROPERTY_TEXT); this reason is reached through decide_form when there is no body
@@ -442,6 +450,7 @@ SUFFIX = {
     # in the member fixture keep their names, so retyping the form renamed nothing.
     FORM_EXTERNAL_NATIVE: ".xml",
     FORM_LIBRARIES: ".libraries.yaml",
+    FORM_DEVICES: ".devices.yaml",
     FORM_TASK_BOTH: ".tasks.yaml",
     FORM_PROPERTY_BOTH: ".st",
     FORM_PROPERTY_TEXT: ".st",

@@ -27,7 +27,8 @@ from versio_text import (content_hash, join_st, normalize_decl_only,  # noqa: E4
                          scrub_native_xml, split_st, too_long_for_any_machine,
                          too_long_for_this_machine)
 from versio_types import (EXPORT_ONLY_FORMS, FORM_CONTAINER,  # noqa: E402
-                          FORM_EXTERNAL_NATIVE, FORM_GVL_BOTH, FORM_GVL_NATIVE,
+                          FORM_DEVICES, FORM_EXTERNAL_NATIVE, FORM_GVL_BOTH,
+                          FORM_GVL_NATIVE,
                           FORM_PROPERTY_BOTH, FORM_PROPERTY_TEXT,
                           FORM_LIBRARIES, FORM_NATIVE, FORM_NATIVE_R,
                           FORM_NATIVE_WITH_CHILDREN, FORM_SKIP, FORM_ST_DECL,
@@ -38,6 +39,7 @@ from versio_types import (EXPORT_ONLY_FORMS, FORM_CONTAINER,  # noqa: E402
 from versio_native_equiv import are_equivalent, normalize  # noqa: E402
 import versio_libraries  # noqa: E402
 import versio_tasks  # noqa: E402
+import versio_devices  # noqa: E402
 import versio_yaml  # noqa: E402
 
 
@@ -475,6 +477,26 @@ class Exporter(object):
         emit({"t": "tasks", "path": rel_path.replace("\\", "/"), "count": len(tasks)})
         return text
 
+    def export_devices(self, obj, obj_path, rel_path):
+        """Render one device's connectors, parameters and empty slots as YAML.
+
+        EXPORT-ONLY, like libraries: a wrong mapping can brick a machine, and the
+        write API has not been measured. The file exists so a cycle-time change
+        diffs under the device that owns it rather than vanishing into native XML
+        — or, for eight <Empty> IO-Link slots, colliding onto one file.
+        """
+        slots, connectors = versio_devices.read_device(
+            obj, safe, type_of,
+            on_error=lambda code, detail: self.warn(code, rel_path, detail))
+
+        name = safe(lambda: obj.get_name(), u"Device")
+        text = versio_devices.catalog_document(
+            versio_yaml, name, obj_path, slots, connectors)
+
+        emit({"t": "devices", "path": rel_path.replace("\\", "/"),
+              "connectors": len(connectors), "slots": len(slots)})
+        return text
+
     def handle(self, obj, rel_dir, parent_guid=None):
         """Export one object and recurse into its children.
 
@@ -553,6 +575,14 @@ class Exporter(object):
                 "reason": reason,
             })
             emit({"t": "skip", "path": skip_path, "type": obj_type, "reason": reason})
+            # DEVICE_SLOT used to be the unmapped native-export path, which walked children.
+            # FORM_SKIP returns without walking. Empty slots on the measured coupler have
+            # none; a description that parents anything under the slot would otherwise lose
+            # that subtree behind COVERED_ELSEWHERE. Warn and walk into this device folder.
+            if obj_type == "DEVICE_SLOT" and children:
+                self.warn("DEVICE_SLOT_HAS_CHILDREN", skip_path, str(len(children)))
+                for child in children:
+                    self.handle(child, rel_dir, parent_guid)
             return
 
         if form == FORM_CONTAINER:
@@ -562,6 +592,36 @@ class Exporter(object):
             # object is shown, the owner GUID says what it belongs to, and a method grouped
             # into `Private` needs both said.
             child_dir = os.path.join(rel_dir, safe_file_stem(name))
+            for child in children:
+                self.handle(child, child_dir, parent_guid)
+            return
+
+        if form == FORM_DEVICES:
+            # YAML inside the device directory, then walk children with the INCOMING
+            # parent_guid - the same walk FORM_CONTAINER does. Passing this device's
+            # GUID would stamp it onto Plc Logic and every POU; parent_guid means
+            # "sub-POU member owner", not "folder I live in". Writing Device.devices.yaml
+            # beside a Device/ folder would draw two sibling rows named Device.
+            child_dir = os.path.join(rel_dir, safe_file_stem(name))
+            stem_name = safe_file_stem(name)
+            fname = file_name_for(stem_name, obj_type, form)
+            rel_path = os.path.join(child_dir, fname)
+            abs_path = os.path.join(self.out_root, rel_path)
+            self.check_path_length(rel_path, abs_path)
+            obj_path = object_path(rel_dir, name)
+            try:
+                text = self.export_devices(obj, obj_path, rel_path)
+                write_text(abs_path, text)
+                self.record(obj, obj_type, form, rel_path, text, parent_guid)
+            except Exception as e:
+                # Warn and KEEP WALKING. Device used to be FORM_CONTAINER — no write, children
+                # walked unconditionally. Gating the walk on the YAML write would drop Plc
+                # Logic, Application and every POU from the swapped mirror on a disk error,
+                # an AV lock, or a path-length IOError past the warn-only pre-check: the
+                # object reaches neither records nor skipped, and the next commit can look
+                # like a mass deletion. EXPORT_FAILED still names the device; the subtree
+                # must not vanish with it.
+                self.warn("EXPORT_FAILED", object_path(rel_dir, name), str(e))
             for child in children:
                 self.handle(child, child_dir, parent_guid)
             return

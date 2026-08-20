@@ -126,12 +126,27 @@ public class ExportFormRulesTests
 
     [Theory]
     [InlineData(CodesysObjectType.Folder)]
-    [InlineData(CodesysObjectType.Device)]
     [InlineData(CodesysObjectType.PlcLogic)]
     [InlineData(CodesysObjectType.Application)]
     public void Structural_nodes_become_directories(CodesysObjectType type)
     {
         Assert.Equal(ExportForm.Container, ExportFormRules.Decide(type, false, false));
+    }
+
+    [Fact]
+    public void A_device_writes_its_connectors_as_yaml_and_still_walks_its_children()
+    {
+        Assert.Equal(ExportForm.Devices,
+            ExportFormRules.Decide(CodesysObjectType.Device, false, false, hasChildren: true));
+        Assert.Equal(ExportForm.Devices,
+            ExportFormRules.Decide(CodesysObjectType.Device, false, false));
+    }
+
+    [Fact]
+    public void An_empty_device_slot_is_skipped_because_the_parent_yaml_covers_it()
+    {
+        Assert.Equal(ExportForm.Skip,
+            ExportFormRules.Decide(CodesysObjectType.DeviceSlot, false, false));
     }
 
     [Fact]

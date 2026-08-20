@@ -64,6 +64,11 @@ public enum CodesysObjectType
     /// machine-dependent by construction; a file added by a relative path gets no companion
     /// at all.</summary>
     ExternalFileSource,
+
+    /// <summary>[VERSIO] Empty IO-Link / module slot under a coupler. Measured 2026-08-20:
+    /// eight siblings all named &lt;Empty&gt;, GUID 085766fd-… . Listed in the parent
+    /// device YAML instead of written as files.</summary>
+    DeviceSlot,
 }
 
 /// <summary>
@@ -100,6 +105,10 @@ public static class CodesysObjectTypes
             ["085afe48-c5d8-4ea5-ab0d-b35701fa6009"] = CodesysObjectType.ProjectInformation,
             ["8753fe6f-4a22-4320-8103-e553c4fc8e04"] = CodesysObjectType.ProjectSettings,
             ["225bfe47-7336-4dbc-9419-4105a7c831fa"] = CodesysObjectType.Device,
+            // [VERSIO] Empty IO-Link / module slots under a coupler. Measured 2026-08-20:
+            // eight siblings all named <Empty>, GUID 085766fd-… . Native export collided
+            // them onto one %3CEmpty%3E.xml. Listed in the parent device YAML instead.
+            ["085766fd-043e-4545-8e8d-d651d56d5d3b"] = CodesysObjectType.DeviceSlot,
             ["738bea1e-99bb-4f04-90bb-a7a567e74e3a"] = CodesysObjectType.Folder,
             ["413e2a7d-adb1-4d2c-be29-6ae6e4fab820"] = CodesysObjectType.CallToPou,
             ["f18bec89-9fef-401d-9953-2f11739a6808"] = CodesysObjectType.Visualisation,

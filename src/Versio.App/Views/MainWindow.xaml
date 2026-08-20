@@ -1014,6 +1014,79 @@
                                 </ScrollViewer>
                             </DataTemplate>
 
+                            <DataTemplate DataType="{x:Type projects:DeviceCatalog}">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Auto">
+                                    <StackPanel Margin="8,4">
+                                        <TextBlock Text="{Binding Name}"
+                                                   FontFamily="{DynamicResource Font.UI}"
+                                                   FontSize="{DynamicResource Font.Size.Body}"
+                                                   FontWeight="{DynamicResource Font.Weight.Semibold}"
+                                                   Foreground="{DynamicResource Brush.Text.Primary}" />
+                                        <TextBlock Text="Export-only: edit devices in the IDE. This file records connectors, parameters and empty slots for review."
+                                                   TextWrapping="Wrap" Margin="0,2,0,8"
+                                                   FontFamily="{DynamicResource Font.UI}"
+                                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                                   Foreground="{DynamicResource Brush.Text.Disabled}" />
+                                        <Grid Margin="0,0,0,4">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="220" />
+                                                <ColumnDefinition Width="80" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="CONNECTOR" Style="{StaticResource SectionLabel}" />
+                                            <TextBlock Grid.Column="1" Text="ID" Style="{StaticResource SectionLabel}" />
+                                            <TextBlock Grid.Column="2" Text="PARAMETERS" Style="{StaticResource SectionLabel}" />
+                                        </Grid>
+                                        <ItemsControl ItemsSource="{Binding Connectors}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid Margin="0,2">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="220" />
+                                                            <ColumnDefinition Width="80" />
+                                                            <ColumnDefinition Width="*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Text="{Binding DisplayName}"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   FontFamily="{DynamicResource Font.UI}"
+                                                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                                                   Foreground="{DynamicResource Brush.Text.Primary}" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding ConnectorId}"
+                                                                   FontFamily="{DynamicResource Font.Mono}"
+                                                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                                                   Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                                        <TextBlock Grid.Column="2"
+                                                                   FontFamily="{DynamicResource Font.Mono}"
+                                                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                                                   Foreground="{DynamicResource Brush.Text.Secondary}">
+                                                            <TextBlock.Text>
+                                                                <Binding Path="Parameters.Count" StringFormat="{}{0} param(s)" />
+                                                            </TextBlock.Text>
+                                                        </TextBlock>
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </ScrollViewer>
+                            </DataTemplate>
+
+                            <DataTemplate DataType="{x:Type vm:DeviceDetailRender}">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <StackPanel Margin="8,4">
+                                        <TextBlock Text="{Binding Title}"
+                                                   FontFamily="{DynamicResource Font.UI}"
+                                                   FontSize="{DynamicResource Font.Size.Body}"
+                                                   FontWeight="{DynamicResource Font.Weight.Semibold}"
+                                                   Foreground="{DynamicResource Brush.Text.Primary}"
+                                                   Margin="0,0,0,6" />
+                                        <ItemsControl ItemsSource="{Binding Facts}"
+                                                      ItemTemplate="{StaticResource FactRows}" />
+                                    </StackPanel>
+                                </ScrollViewer>
+                            </DataTemplate>
+
                             <DataTemplate DataType="{x:Type vm:ProjectSummaryRender}">
                                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                                     <StackPanel Margin="8,4">

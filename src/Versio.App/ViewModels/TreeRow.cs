@@ -191,7 +191,8 @@ public sealed class TreeRow : ObservableObject
     /// </remarks>
     public string Annotation => Node.Kind switch
     {
-        ProjectNodeKind.Project or ProjectNodeKind.Library or ProjectNodeKind.Task => Detail,
+        ProjectNodeKind.Project or ProjectNodeKind.Library or ProjectNodeKind.Task
+            or ProjectNodeKind.Device => Detail,
         _ => TypeLabel,
     };
 
@@ -200,8 +201,8 @@ public sealed class TreeRow : ObservableObject
     /// </summary>
     /// <remarks>
     /// Only for a row that stands for files of its own with changes of its own — an object
-    /// or a loose file. A library or task row shares its catalog's file, and staging "one
-    /// reference" would silently stage every change in the file beside it; the manager's
+    /// or a loose file. A library, task or device row shares its catalog's file, and staging
+    /// "one reference" would silently stage every change in the file beside it; the manager's
     /// own row is where that operation honestly lives. Folders and projects group things,
     /// and per-file is the discard rule everywhere else in the app.
     /// </remarks>

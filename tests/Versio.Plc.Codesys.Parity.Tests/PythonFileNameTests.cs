@@ -466,6 +466,7 @@ public sealed class PythonFileNameParityTests(ITestOutputHelper output)
         ExportForm.Native => "NATIVE",
         ExportForm.NativeRecursive => "NATIVE_R",
         ExportForm.Libraries => "LIBRARIES",
+        ExportForm.Devices => "DEVICES",
         ExportForm.NativeWithChildren => "NATIVE_WITH_CHILDREN",
         ExportForm.TaskBoth => "TASK_BOTH",
         ExportForm.ExternalNative => "EXTERNAL_NATIVE",

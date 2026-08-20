@@ -22,6 +22,7 @@ public class ObjectTypeTests
     [Theory]
     [InlineData("40b404f9-e5dc-42c6-907f-c89f4a517386", CodesysObjectType.PlcLogic)]
     [InlineData("639b491f-5557-464c-af91-1471bac9f549", CodesysObjectType.Application)]
+    [InlineData("085766fd-043e-4545-8e8d-d651d56d5d3b", CodesysObjectType.DeviceSlot)]
     public void Types_discovered_by_probing_a_real_SP22_project_are_mapped(
         string guid, CodesysObjectType expected)
     {
@@ -178,6 +179,7 @@ public class TypeTableParityTests
         foreach (var form in new[]
                  {
                      ExportCoverage.LibrariesForm,
+                     ExportCoverage.DevicesForm,
                      ExportCoverage.TaskNativeForm,
                      ExportCoverage.GvlNativeForm,
                      ExportCoverage.ExternalNativeForm,

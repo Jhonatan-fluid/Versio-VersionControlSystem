@@ -83,7 +83,8 @@ public sealed class WorkspaceTreeFromCommittedExportTests(ITestOutputHelper outp
 
         // The folder chain CODESYS itself shows, not paths on disk. If this ever flattens,
         // the panel has regressed to a file list with extra steps.
-        Assert.Contains(all, n => n is { Kind: ProjectNodeKind.Folder, Name: "Device" });
+        Assert.Contains(all, n => n is { Kind: ProjectNodeKind.Object, Name: "Device" }
+            && n.Files.Any(f => f.EndsWith(DeviceCatalog.FileSuffix, StringComparison.OrdinalIgnoreCase)));
         Assert.Contains(all, n => n is { Kind: ProjectNodeKind.Folder, Name: "Plc Logic" });
         Assert.Contains(all, n => n is { Kind: ProjectNodeKind.Folder, Name: "Application" });
 
@@ -248,9 +249,15 @@ public sealed class WorkspaceTreeFromCommittedExportTests(ITestOutputHelper outp
             report.ExportOnlyFiles);
 
         // And there really are some, or the agreement above is between two zeroes.
-        Assert.True(report.ExportOnlyFiles >= 4,
+        Assert.True(report.ExportOnlyFiles >= 7,
                     $"only {report.ExportOnlyFiles} one-way file(s) — the fixture must carry "
-                    + "the two library managers, the task XML and the GVL XML");
+                    + "the two library managers, the task XML, the GVL XML and the three "
+                    + "device YAML files");
+        Assert.Equal(3, manifest.Objects.Count(o => o.Form == ExportCoverage.DevicesForm));
+        Assert.Equal(8, manifest.Skipped.Count(s => s.Type == "DEVICE_SLOT"));
+        Assert.DoesNotContain(manifest.Warnings, w =>
+            w.Code == "UNKNOWN_TYPE_GUID" &&
+            w.Detail.Contains("085766fd", StringComparison.OrdinalIgnoreCase));
         Assert.Equal(2, manifest.Objects.Count(o => o.Type == "LIBRARY_MANAGER"));
 
         // The two that are not library managers, named rather than left as arithmetic — and
@@ -263,11 +270,15 @@ public sealed class WorkspaceTreeFromCommittedExportTests(ITestOutputHelper outp
             o => o.Form == ExportCoverage.GvlNativeForm
                  && o.Path == "Device/Plc Logic/Application/Glob_Var.gvl.xml");
 
-        // The deliberate skips are still present and still NOT counted as gaps. If that
-        // distinction ever collapses, this repository's own panel starts crying wolf about a
-        // visualisation manager that is skipped on purpose.
-        Assert.Equal(4, report.DeliberateSkips);
-        Assert.DoesNotContain(report.Gaps, g => g.Reason != ExportCoverage.GapReason);
+        // Named types, not Of's own arithmetic restated. Counting Skipped.Reason != Gap
+        // and comparing it to DeliberateSkips can never fail — both sides move together —
+        // and a type that slid from "written" into a benign skip would satisfy it.
+        Assert.Contains(manifest.Skipped,
+            s => s.Type == "VISUALISATION_MANAGER" && s.Reason == "SERVICE_OBJECT");
+        Assert.Equal(8, manifest.Skipped.Count(s => s.Type == "DEVICE_SLOT"));
+        Assert.True(report.DeliberateSkips >= 12,
+                    $"only {report.DeliberateSkips} deliberate skip(s) — the fixture must still "
+                    + "carry the visualisation manager and the eight empty IO-Link slots");
     }
 
     [SkippableFact]
@@ -408,6 +419,59 @@ public sealed class WorkspaceTreeFromCommittedExportTests(ITestOutputHelper outp
     }
 
     [SkippableFact]
+    public void The_committed_device_catalogs_hang_under_the_device_that_owns_them()
+    {
+        // Same argument as the library and task tests: the two halves of one file format
+        // never meet in the same process, and the committed export is where they are
+        // checked against each other. The folder+yaml merge is load-bearing here — without
+        // it Device is a folder containing another Device, and the eight empty slots hang
+        // on the inner object nobody clicks.
+        Skip.If(!File.Exists(ManifestPath), "the fixture's export is not committed");
+
+        var manifest = ProjectManifest.Parse(File.ReadAllText(ManifestPath));
+        var records = manifest.Objects
+            .Where(o => o.Form == ExportCoverage.DevicesForm)
+            .ToList();
+
+        Assert.Equal(3, records.Count);
+
+        var snapshots = records
+            .Select(o => new DeviceSnapshot
+            {
+                Path = $"{ExportPath}/{o.Path}",
+                Current = DeviceCatalog.Parse(File.ReadAllText(Path.Combine(
+                    TestPaths.Root,
+                    ExportPath.Replace('/', Path.DirectorySeparatorChar),
+                    o.Path.Replace('/', Path.DirectorySeparatorChar)))),
+            })
+            .ToList();
+
+        Assert.All(snapshots, s => Assert.True(s.Current.IsValid));
+        var coupler = Assert.Single(snapshots, s => s.Current.Slots.Count == 8);
+
+        var roots = WorkspaceTreeBuilder.Build(
+            [Fixture() with { Devices = snapshots }],
+            [], KeepClean);
+
+        var device = Flatten(Assert.Single(roots))
+            .Single(n => n.Name == "Device" && n.Kind == ProjectNodeKind.Object);
+
+        Assert.Contains(device.Children, c => c.Name == "EtherCAT_Master");
+        Assert.Contains(device.Children, c => c.Name == "Plc Logic");
+        Assert.DoesNotContain(device.Children, c => c.Name == "Device");
+
+        var bni = Flatten(device).Single(n => n.Name == coupler.Current.Name);
+        var empties = bni.Children
+            .Where(c => c.Kind == ProjectNodeKind.Device && c.Name == "<Empty>")
+            .ToList();
+
+        Assert.Equal(8, empties.Count);
+        Assert.Equal(
+            Enumerable.Range(0, 8).Select(i => i.ToString()).ToArray(),
+            empties.Select(e => e.Detail).ToArray());
+    }
+
+    [SkippableFact]
     public void The_coverage_report_is_committed_beside_the_manifest()
     {
         // It is a markdown file in the repository on purpose: a coverage regression then
@@ -424,6 +488,9 @@ public sealed class WorkspaceTreeFromCommittedExportTests(ITestOutputHelper outp
 
         var text = File.ReadAllText(path);
         Assert.Contains("LIBRARY_MANAGER", text, StringComparison.Ordinal);
+        Assert.Contains("DEVICE_SLOT", text, StringComparison.Ordinal);
+        Assert.Contains("DEVICES", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("085766fd", text, StringComparison.OrdinalIgnoreCase);
 
         // In the one-way section now, not the gap section. The committed report is the
         // evidence a reviewer sees, so which section a type appears under is the assertion

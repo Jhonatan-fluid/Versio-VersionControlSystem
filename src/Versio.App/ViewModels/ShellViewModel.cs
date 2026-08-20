@@ -5791,7 +5791,10 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// One object, dispatched by type through XAML data templates: a
     /// <see cref="Versio.Core.Projects.LibraryCatalog"/> renders as the libraries table, a
     /// <see cref="Versio.Core.Projects.TaskCatalog"/> as the task table,
-    /// <see cref="TaskDetailRender"/> as one task's facts, <see cref="SourceRender"/> as the
+    /// <see cref="Versio.Core.Projects.DeviceCatalog"/> as the device table,
+    /// <see cref="TaskDetailRender"/> as one task's facts,
+    /// <see cref="DeviceDetailRender"/> as one connector, parameter or slot,
+    /// <see cref="SourceRender"/> as the
     /// file's own highlighted content, and <see cref="ProjectSummaryRender"/> as the project
     /// card. The data is parsed on the click, from the same readers the tree already trusts
     /// — a second interpretation of a catalog would be a second answer to what it says.
@@ -5904,6 +5907,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                             t => t.Name == node.Name) is { } task:
                 return new TaskDetailRender { Task = task };
 
+            case ProjectNodeKind.Device
+                when CatalogFile(DeviceCatalog.FileSuffix) is { } deviceYaml
+                     && ReadOrNull(deviceYaml) is { } deviceText
+                     && DeviceCatalog.Parse(deviceText) is { IsValid: true } deviceCatalog:
+                return DeviceDetail(deviceCatalog, node);
+
             case ProjectNodeKind.Object or ProjectNodeKind.File:
                 if (CatalogFile(LibraryCatalog.FileSuffix) is { } libraries
                     && ReadOrNull(libraries) is { } libText
@@ -5917,6 +5926,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                     && TaskCatalog.Parse(taskText) is { IsValid: true } taskCatalog)
                 {
                     return taskCatalog;
+                }
+
+                if (CatalogFile(DeviceCatalog.FileSuffix) is { } devices
+                    && ReadOrNull(devices) is { } devicesText
+                    && DeviceCatalog.Parse(devicesText) is { IsValid: true } devicesCatalog)
+                {
+                    return devicesCatalog;
                 }
 
                 if (row.PrimaryFile is { } primary
@@ -5935,6 +5951,57 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             default:
                 return null;
         }
+    }
+
+    /// <summary>
+    /// One grafted device row: the catalog is the file, this is the highlight.
+    /// </summary>
+    /// <remarks>
+    /// Deleting the <c>ProjectNodeKind.Device</c> arm above returns null for these rows and
+    /// <c>DeviceTreeFlowTests</c> goes red — the same class of silent-green as a dropped
+    /// subscription. The Object/File <c>*.devices.yaml</c> arm is a second door: selecting
+    /// the device itself must still open the table.
+    /// </remarks>
+    private static DeviceDetailRender DeviceDetail(
+        Versio.Core.Projects.DeviceCatalog catalog,
+        Versio.Core.Projects.ProjectTreeNode node)
+    {
+        var facts = new List<FactRow> { new("Device", catalog.Name) };
+        var path = node.Path;
+        var slotAt = path.LastIndexOf(DeviceCatalog.SlotRowMarker, StringComparison.Ordinal);
+        var paramAt = path.LastIndexOf(DeviceCatalog.ParamRowMarker, StringComparison.Ordinal);
+        var connAt = path.LastIndexOf(DeviceCatalog.ConnectorRowMarker, StringComparison.Ordinal);
+
+        if (slotAt >= 0)
+        {
+            facts.Insert(0, new("Slot", path[(slotAt + DeviceCatalog.SlotRowMarker.Length)..]));
+        }
+        else if (paramAt >= 0)
+        {
+            facts.Insert(0, new("Value", node.Detail.Length > 0 ? node.Detail : "—"));
+        }
+        else if (connAt >= 0)
+        {
+            var key = path[(connAt + DeviceCatalog.ConnectorRowMarker.Length)..];
+            var connector = catalog.Connectors.FirstOrDefault(c =>
+                string.Equals(c.Key, key, StringComparison.Ordinal));
+            if (connector is not null)
+            {
+                if (connector.ConnectorId.Length > 0)
+                {
+                    facts.Add(new("Connector id", connector.ConnectorId));
+                }
+
+                if (connector.ModuleType.Length > 0)
+                {
+                    facts.Add(new("Module type", connector.ModuleType));
+                }
+
+                facts.Add(new("Parameters", connector.Parameters.Count.ToString()));
+            }
+        }
+
+        return new DeviceDetailRender { Title = node.Name, Facts = facts };
     }
 
     /// <summary>The project card: what a glance at the row should answer.</summary>

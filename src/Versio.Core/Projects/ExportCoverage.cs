@@ -213,6 +213,18 @@ public static class ExportCoverage
     public const string TaskBothForm = "TASK_BOTH";
 
     /// <summary>
+    /// The manifest's <c>form</c> for a device's connectors, parameters and empty slots —
+    /// exported, never applied back.
+    /// </summary>
+    /// <remarks>
+    /// The third catalog form, after libraries and tasks. A wrong mapping can brick a
+    /// machine, and the write API has not been measured, so there is no import path.
+    /// Counted and said out loud for the same reason <see cref="LibrariesForm"/> is: a
+    /// file that looks editable and is silently ignored is its own kind of gap.
+    /// </remarks>
+    public const string DevicesForm = "DEVICES";
+
+    /// <summary>
     /// The manifest's <c>form</c> for the native <c>.xml</c> half of a task configuration.
     /// </summary>
     /// <remarks>
@@ -341,6 +353,7 @@ public static class ExportCoverage
     /// </remarks>
     public static bool IsExportOnly(string? form) =>
         string.Equals(form, LibrariesForm, StringComparison.Ordinal)
+        || string.Equals(form, DevicesForm, StringComparison.Ordinal)
         || string.Equals(form, TaskNativeForm, StringComparison.Ordinal)
         || string.Equals(form, GvlNativeForm, StringComparison.Ordinal)
         || string.Equals(form, ExternalNativeForm, StringComparison.Ordinal)

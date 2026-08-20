@@ -13,31 +13,36 @@ skip). That run is also the counted gate `LOCK-1` owed. After the eyeballs: UX-6
 UX-7 `Ctrl+F` / UX-8 / UX-12 (item 3), unless the owner picks packaging (item 5)
 instead. Do not start from `archive/` or a handoff.
 
-**Tests:** 2,661 across eleven projects, last counted 2026-08-20 after the TwinCAT hardening
-pass (2,654 was the TwinCAT-loop count). TwinCAT XAE gate: 5 tests, **green in 3 m 17 s on
+**Tests:** 2,688 across eleven projects, last counted 2026-08-20 after the I/O export review
+fixes (2,680 was the I/O-export count earlier the same day). TwinCAT XAE gate: 5 tests, **green in 3 m 17 s on
 2026-08-20** over the hardened host — probe, export, two unchanged textual exports
 byte-identical, import/re-export of an ST mutation and its deletion. TIA Portal gate: 5 tests,
-**green**. The CODESYS gate: **54/54 green, 2026-08-19 evening**.
+**green**. The CODESYS gate last full run is **54/54, 2026-08-19 evening**. I/O export adds
+one live Fact (`Empty_IO_Link_slots_are_listed_in_the_parent_yaml_rather_than_colliding`);
+that gate has not been re-run this session.
 
 A 2026-08-20 code review of the TwinCAT pack found and fixed four defects the same day —
 an import that could delete or overwrite a wrong same-named object, a conversion check that
 failed open when a version could not be read, a dead lazy-TIPC wait whose empty export
-reported success, and a runner output race shared with TIA. All four are in
+reported success, and a runner output race shared with TIA. A review of the same day's
+CODESYS I/O export found a failed Device YAML write that would drop Plc Logic from the
+swapped mirror, plus quoted-colon split, name-vs-encoded-stem merge, added-connector
+marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 [`FINDINGS.md`](FINDINGS.md), newest first.
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,434 | under a second | nothing |
-| `Versio.Integration.Tests` | 150 | ~10 s | real git |
-| `Versio.App.Tests` | 613 | ~50 s | nothing |
+| `Versio.Core.Tests` | 1,446 | under a second | nothing |
+| `Versio.Integration.Tests` | 151 | ~10 s | real git |
+| `Versio.App.Tests` | 618 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 14 | instant | nothing |
-| `Versio.Plc.Codesys.Pure.Tests` | 260 | under a second | nothing |
-| `Versio.Plc.Codesys.Parity.Tests` | 92 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
+| `Versio.Plc.Codesys.Pure.Tests` | 263 | under a second | nothing |
+| `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 16 | instant | nothing |
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.TwinCat.Pure.Tests` | 18 | instant | nothing |
 | `Versio.Plc.TwinCat.Tests` | 5 | seconds when skipped; ~3 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
-| `Versio.Plc.Codesys.Tests` | 54 | **~30 min** | **real CODESYS** |
+| `Versio.Plc.Codesys.Tests` | 55 | **~30 min** | **real CODESYS** |
 
 The first ten are the loop to work in — about thirty seconds plus the UI suite. The last is
 the CODESYS gate before a commit. `Versio.Plc.TiaPortal.Tests` and `Versio.Plc.TwinCat.Tests`
@@ -53,6 +58,7 @@ real toolchain.
 | File | Role |
 |---|---|
 | **This page** | Where the project is, and what is next |
+| [`dev.md`](dev.md) | How the running app works — layers, sync, git, scripts, roundtrip |
 | [`FINDINGS.md`](FINDINGS.md) | Every defect with its evidence, newest first — **search it** |
 | [`SAFEGUARDS.md`](SAFEGUARDS.md) | What Versio refuses, asks about, or waits for |
 | [`vendors/codesys/DRIVING.md`](vendors/codesys/DRIVING.md) | How CODESYS is driven |
@@ -73,7 +79,10 @@ guessed wherever the toolchain is silent.
 - **CODESYS 3.5** — export, plan-driven import (create / update / delete / rename / move),
   occupancy wait while the IDE holds the project, retry when it closes. Proven against
   `RefrigeratorControl`. That file is both the gate fixture and the daily project; it is not a
-  test-only artefact to "clean up".
+  test-only artefact to "clean up". **I/O export 2026-08-20:** each device writes
+  `*.devices.yaml` inside its directory (export-only); eight empty IO-Link slots are distinct
+  YAML keys rather than one collided `%3CEmpty%3E.xml`. Parameter import and IEC mapping are
+  not this pass.
 - **TIA Portal** — the same product loop for SCL, UDTs and tag tables, through a net48 Openness
   host. PLC-software loop closed 2026-08-19 on `Siemens2`. Hardware, HMI, safety and technology
   are coverage skips (`SERVICE_OBJECT`), not holes. Gate fixture:
@@ -165,6 +174,10 @@ Close Versio **and** Portal before a host rebuild. Click **Yes to all** on Openn
 
 - **Library references are export-only.** Editing `Library Manager.libraries.yaml` changes
   nothing in the project. The changed-files row carries a lock glyph saying so.
+- **Device YAML is export-only.** Editing `Device.devices.yaml` changes nothing in the
+  project. Parameter `setattr` and IEC `%I/%Q` mapping are not built. Identification is
+  missing on this ScriptEngine, so the file does not record which `.device` description a
+  node is.
 - **How a library reference resolves is not recorded.** The file carries what the project asks
   for, not what this machine resolved it to — two engineers with different libraries installed
   would otherwise disagree in bytes.

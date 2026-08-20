@@ -571,6 +571,12 @@ public sealed class LocalCodesysRunner(
                         $"({evt.Int("system")} added by plug-ins) in {evt.String("path")}");
                     break;
 
+                case "devices":
+                    _log.Info(CodesysLog.Category,
+                        $"device connectors recorded: {evt.Int("connectors")} connector(s), " +
+                        $"{evt.Int("slots")} empty slot(s) in {evt.String("path")}");
+                    break;
+
                 case "not_imported":
                     // An export-only file the import left alone. Logged rather than
                     // warned: it happens on every import of every project that has a

@@ -41,13 +41,26 @@ public enum ExportForm
     /// libraries installed would produce different bytes from the same project.
     /// </para>
     /// <para>
-    /// <b>One way.</b> Alone among the forms, this one is exported and never imported: the file
-    /// is for review, and libraries are changed in the IDE (plan §3.10, Tier 3). The importer
+    /// <b>One way.</b> This form is exported and never imported: the file is for review,
+    /// and libraries are changed in the IDE (plan §3.10, Tier 3). The importer
     /// skips it by suffix, and the coverage report says so out loud, because a file that looks
-    /// editable and is silently ignored is its own kind of gap.
+    /// editable and is silently ignored is its own kind of gap. <see cref="Devices"/> is the
+    /// same bargain one catalog along.
     /// </para>
     /// </remarks>
     Libraries,
+
+    /// <summary>
+    /// The object's connectors, parameters and empty slots, written as vendor-neutral YAML.
+    /// </summary>
+    /// <remarks>
+    /// Export-only, like <see cref="Libraries"/>: a wrong mapping can brick a machine, and
+    /// the write API has not been measured. Recorded as
+    /// <see cref="Versio.Core.Projects.ExportCoverage.DevicesForm"/>. Walking children
+    /// still happens — Plc Logic stays a directory under the device — which is why this is
+    /// not a flavour of <see cref="Container"/>.
+    /// </remarks>
+    Devices,
 
     /// <summary>
     /// Export the node itself natively (non-recursive) <b>and</b> descend into a
@@ -143,7 +156,8 @@ public static class ExportFormRules
     private static readonly Dictionary<CodesysObjectType, ExportForm> Table = new()
     {
         [CodesysObjectType.Folder] = ExportForm.Container,
-        [CodesysObjectType.Device] = ExportForm.Container,
+        [CodesysObjectType.Device] = ExportForm.Devices,
+        [CodesysObjectType.DeviceSlot] = ExportForm.Skip,
         [CodesysObjectType.PlcLogic] = ExportForm.Container,
         [CodesysObjectType.Application] = ExportForm.Container,
 

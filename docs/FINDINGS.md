@@ -19,6 +19,76 @@ produce a diff touching everything else.
 
 ---
 
+### I/O export review: a failed Device write could delete the application from the mirror
+
+**Found 2026-08-20**, by a second-pass review of the same day's I/O export, before anyone
+ran it against a failing write. `FORM_DEVICES` warned `EXPORT_FAILED` and returned
+before walking children. Device used to be `FORM_CONTAINER` — no write, children walked
+unconditionally. A disk error, AV lock, or path-length `IOError` on the root Device YAML
+would swap in a mirror missing Plc Logic, Application and every POU; coverage would name
+only the device; the next commit could look like a mass deletion.
+
+The same review found five quieter holes in the same delivery: `CatalogYaml.Split` cut
+quoted parameter keys at the first colon (library keys were IEC identifiers; device names
+are free text); folder+yaml merge compared the encoded path segment to the manifest's
+verbatim name, so `COM1` / `foo<bar>` never merged; an added connector's parameters stayed
+`Unmodified` (`markBaseline` meant the opposite of its name); a third same-named parameter
+with no id overwrote the second's `#dup` key; the detail pane looked up connectors by id or
+interface only, missing the `DisplayName` fallback the tree uses.
+
+**What we did.** Warn and walk children after a failed device write. Quote-aware split in
+C# and `versio_yaml._split`. Merge on `{folder}/{stem}.devices.yaml`, not on `Name`.
+`hasBaseline` marks an added connector's params Added. Duplicate keys uniquify with `#2`,
+`#3`. Pane lookup uses `DeviceConnector.Key` and shared path markers. Unreadable slot
+indexes key `unindexed-n` rather than collapsing on `<Empty>`. A skipped slot that reports
+children warns and walks them.
+
+**What we rejected.** Teaching `Versio.Core` to percent-decode CODESYS stems — that is a
+vendor decoder. The encoded path is already the folder's identity. Uniquifying colliding
+connector keys in the tree — the fixture's ids are distinct, and collapsing on `Key` is
+the same rule libraries already use.
+
+---
+
+### Eight empty IO-Link slots collided onto one file, and the founding plan named APIs that do not exist
+
+**Found 2026-08-20**, by a probe of RefrigeratorControl on CODESYS V3.5 SP22 Patch 2 before
+writing the I/O export. The coupler `BNI_XG3_508_0C5_R015` has eight children, all named
+`<Empty>`, all GUID `085766fd-043e-4545-8e8d-d651d56d5d3b`, all `connector_id: 1`. Native
+export percent-encodes that name to `%3CEmpty%3E.xml` and writes every sibling onto the same
+path — last write wins, seven slots vanish, and the manifest records eight
+`UNKNOWN_TYPE_GUID` warnings for one leftover file. Identity is the child's `obj.index`
+(0–7), not the name and not `connector_id`.
+
+The founding plan's ScriptEngine names were also wrong on this install. `parameters`,
+`get_all_parameters`, `device_identification` / `identification`, and `io_mapping` are
+missing. The payload that exists is `connector.host_parameters` (`name` / `id` / `value` /
+`description` / `unit`). Parameter `id` is stable across two untouched exports; names are
+not unique (`---` and `Cycle Time` both recur on the coupler). Two consecutive probe runs
+were byte-identical.
+
+**What we did.** Empty slots map as `DEVICE_SLOT` / `FORM_SKIP` / `COVERED_ELSEWHERE` and are
+listed in the parent `*.devices.yaml` (`slots:` nested map, keys `"0"`…`"7"`). Each real
+device writes `Device/Device.devices.yaml` *inside* its directory (a YAML beside the folder
+would be two sibling rows named Device). Duplicate parameter names key as `name#id`. The
+walk is CONTAINER-style: incoming `parent_guid` only — passing the device GUID would make
+Plc Logic look like a member of Device. The form is `DEVICES`, export-only; parameter
+`setattr` and IEC `%I/%Q` mapping are not this pass. Identification is still missing — the
+YAML does not record which `.device` description a node is.
+
+**What we rejected.** Analogizing `DEVICE` to a POU (`Main.st` + `Main/`) — one YAML, not
+two, and the YAML must live inside the directory. Nested lists of parameter maps — the YAML
+subset has one top-level list of mappings (`connectors`) and nested *scalar* maps for
+parameters and slots. Treating `id` as the displayed identity — it is the disambiguator, not
+what a reviewer reads.
+
+**Evidence.** Two untouched exports of the fixture copy, 2026-08-20: 3 YAML files,
+SHA-256-identical across runs; 8 `DEVICE_SLOT` skips; 0 warnings; the collided
+`%3CEmpty%3E.xml` gone. Probe scripts kept at `tools/codesys/versio_probe_devices.py` and
+`Probe-Devices.ps1`.
+
+---
+
 ### A TwinCAT import could delete or overwrite the wrong same-named object
 
 **Found 2026-08-20**, by a code review of commit `73741e4` — before any user ran a TwinCAT

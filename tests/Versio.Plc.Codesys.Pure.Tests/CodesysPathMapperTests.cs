@@ -314,6 +314,8 @@ public class PathMapperTests
         // allowed to see both — Core cannot reference this project to check.
         Assert.Equal(Versio.Core.Projects.LibraryCatalog.FileSuffix,
             PathMapper.SuffixFor(ExportForm.Libraries));
+        Assert.Equal(Versio.Core.Projects.DeviceCatalog.FileSuffix,
+            PathMapper.SuffixFor(ExportForm.Devices));
     }
 
     [Theory]

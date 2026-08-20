@@ -254,11 +254,36 @@ def unquote(text):
 
 
 def _split(text):
-    """`key: value` -> (key, value), or None when the line is not a mapping entry."""
-    colon = text.find(u":")
-    if colon < 0:
-        return None
-    return unquote(text[:colon].strip()), text[colon + 1:].strip()
+    """`key: value` -> (key, value), or None when the line is not a mapping entry.
+
+    The separator is the first colon NOT inside quotes. Device parameter names are
+    free text and get quoted when they contain a colon (`"Mode: DC-Synchron": "1"`);
+    splitting on IndexOf(':') used to take the colon inside the key.
+    """
+    in_quotes = False
+    escape = False
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if escape:
+            escape = False
+            i += 1
+            continue
+        if in_quotes:
+            if ch == u"\\":
+                escape = True
+            elif ch == u'"':
+                in_quotes = False
+            i += 1
+            continue
+        if ch == u'"':
+            in_quotes = True
+            i += 1
+            continue
+        if ch == u":":
+            return unquote(text[:i].strip()), text[i + 1:].strip()
+        i += 1
+    return None
 
 
 def parse_document(text):
