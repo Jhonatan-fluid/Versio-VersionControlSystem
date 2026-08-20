@@ -54,6 +54,17 @@ public sealed class TwinCatLocator(IVersioLogger? logger = null)
 
     private static string? FindInstallFolder()
     {
+        // TWINCAT3DIR is set machine-wide by the Beckhoff installer and covers layouts
+        // the folder candidates below do not. It matters more than it used to: the host
+        // now refuses to open a project when the install version is unknown, so a
+        // locator that cannot find the folder used to skip the conversion check and now
+        // blocks the open instead.
+        var fromEnv = Environment.GetEnvironmentVariable("TWINCAT3DIR");
+        if (!string.IsNullOrWhiteSpace(fromEnv) && Directory.Exists(fromEnv))
+        {
+            return fromEnv;
+        }
+
         var candidates = new[]
         {
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
@@ -98,20 +109,38 @@ public sealed class TwinCatLocator(IVersioLogger? logger = null)
             var build = Directory.EnumerateDirectories(plc, "Build_*")
                 .Select(Path.GetFileName)
                 .OfType<string>()
-                .OrderByDescending(n => n, StringComparer.OrdinalIgnoreCase)
+                .Where(n => n.StartsWith("Build_", StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(BuildOrdinal)
                 .FirstOrDefault();
-            if (build is not null && build.StartsWith("Build_", StringComparison.OrdinalIgnoreCase))
+            if (build is not null)
             {
                 return "3.1." + build["Build_".Length..];
             }
         }
 
-        var versionTxt = Path.Combine(installFolder, "Version.txt");
-        if (File.Exists(versionTxt))
+        try
         {
-            return File.ReadAllText(versionTxt).Trim();
+            var versionTxt = Path.Combine(installFolder, "Version.txt");
+            if (File.Exists(versionTxt))
+            {
+                return File.ReadAllText(versionTxt).Trim();
+            }
+        }
+        catch (IOException)
+        {
+            // An unreadable Version.txt must degrade to "unknown", not fault ProbeAsync.
         }
 
         return null;
+    }
+
+    // "Build_4026.25" → (4026, 25). An ordinal string sort would put a five-digit build
+    // below a four-digit one. Duplicated in the host's InstallTcVersion, which cannot
+    // reference this assembly.
+    private static (int Major, int Minor) BuildOrdinal(string name)
+    {
+        var parts = name["Build_".Length..].Split('.');
+        return (int.TryParse(parts[0], out var major) ? major : 0,
+                parts.Length > 1 && int.TryParse(parts[1], out var minor) ? minor : 0);
     }
 }

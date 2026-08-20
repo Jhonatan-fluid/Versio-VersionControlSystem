@@ -35,12 +35,9 @@ internal static partial class HostApp
                 return 3;
             }
 
-            if (!job.AllowConvert && WouldConvert(job.Project!, job.Version, job.Install))
+            if (!job.AllowConvert && ConvertRefusal(job.Project!, job.Version, job.Install) is { } refusal)
             {
-                EmitFatal(
-                    "this project is TwinCAT " + ProjectTcVersion(job.Project!) +
-                    " and the install is " + (string.IsNullOrEmpty(job.Version) ? "unknown" : job.Version) +
-                    "; refusing to open it so it is not silently converted. Convert a copy if you mean to.");
+                EmitFatal(refusal);
                 return 7;
             }
 
@@ -363,22 +360,44 @@ internal static partial class HostApp
     }
 
     /// <summary>
-    /// Compare the project's <c>TcVersion</c> to the install folder name. A 4024 project
+    /// Compare the project's <c>TcVersion</c> to the install's build. A 4024 project
     /// opened on 4026 is the conversion we refuse — the same class of mistake as
-    /// OpenWithUpgrade.
+    /// OpenWithUpgrade. Null means the open may proceed; a sentence is the refusal.
     /// </summary>
-    private static bool WouldConvert(string tsproj, string installVersion, string installFolder)
+    /// <remarks>
+    /// Unknown refuses. This used to return "no conversion" when either version could
+    /// not be read — and missing information is exactly when the mistake happens: with
+    /// SuppressUI set, a mismatched project converts headless with nobody asked. The
+    /// mitigations for a false refusal live in version discovery (the job's version,
+    /// Build_*, Version.txt, TWINCAT3DIR), not in skipping the check.
+    /// </remarks>
+    private static string? ConvertRefusal(string tsproj, string installVersion, string installFolder)
     {
+        const string tail = "; refusing to open it so it is not silently converted. " +
+                            "Convert a copy under %TEMP% if you mean to.";
+
         var project = ProjectTcVersion(tsproj);
+        if (project is null)
+        {
+            return "the project's TcVersion could not be read from " +
+                   Path.GetFileName(tsproj) + tail;
+        }
+
         var install = string.IsNullOrWhiteSpace(installVersion) || installVersion == "unknown"
             ? InstallTcVersion(installFolder)
             : installVersion;
-        if (project is null || install is null)
+        if (install is null)
         {
-            return false;
+            return "this project is TwinCAT " + project + " and the install's version is " +
+                   "unknown — no Build_* folder, Version.txt or TWINCAT3DIR was found" + tail;
         }
 
-        return !string.Equals(MajorMinorBuild(project), MajorMinorBuild(install), StringComparison.Ordinal);
+        if (!string.Equals(MajorMinorBuild(project), MajorMinorBuild(install), StringComparison.Ordinal))
+        {
+            return "this project is TwinCAT " + project + " and the install is " + install + tail;
+        }
+
+        return null;
     }
 
     private static string? ProjectTcVersion(string tsproj)
@@ -403,27 +422,56 @@ internal static partial class HostApp
     /// </summary>
     private static string? InstallTcVersion(string installFolder)
     {
-        if (string.IsNullOrEmpty(installFolder) || !Directory.Exists(installFolder))
+        // Unknown now refuses the open, so a layout the locator's folder candidates do
+        // not cover must still resolve. The Beckhoff installer sets TWINCAT3DIR
+        // machine-wide; it is the fallback, never the override of what the job carries.
+        var folder = !string.IsNullOrEmpty(installFolder) && Directory.Exists(installFolder)
+            ? installFolder
+            : TwinCatDirFromEnvironment();
+        if (folder is null)
         {
             return null;
         }
 
-        var plc = Path.Combine(installFolder, "Components", "Plc");
+        var plc = Path.Combine(folder, "Components", "Plc");
         if (Directory.Exists(plc))
         {
             var build = Directory.EnumerateDirectories(plc, "Build_*")
                 .Select(Path.GetFileName)
                 .OfType<string>()
-                .OrderByDescending(n => n, StringComparer.OrdinalIgnoreCase)
+                .Where(n => n.StartsWith("Build_", StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(BuildOrdinal)
                 .FirstOrDefault();
-            if (build is not null && build.StartsWith("Build_", StringComparison.OrdinalIgnoreCase))
+            if (build is not null)
             {
                 return "3.1." + build["Build_".Length..];
             }
         }
 
-        var versionTxt = Path.Combine(installFolder, "Version.txt");
-        return File.Exists(versionTxt) ? File.ReadAllText(versionTxt).Trim() : null;
+        try
+        {
+            var versionTxt = Path.Combine(folder, "Version.txt");
+            return File.Exists(versionTxt) ? File.ReadAllText(versionTxt).Trim() : null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+    }
+
+    private static string? TwinCatDirFromEnvironment()
+    {
+        var dir = Environment.GetEnvironmentVariable("TWINCAT3DIR");
+        return !string.IsNullOrWhiteSpace(dir) && Directory.Exists(dir) ? dir : null;
+    }
+
+    // "Build_4026.25" → (4026, 25). An ordinal string sort would put a five-digit build
+    // below a four-digit one.
+    private static (int Major, int Minor) BuildOrdinal(string name)
+    {
+        var parts = name["Build_".Length..].Split('.');
+        return (int.TryParse(parts[0], out var major) ? major : 0,
+                parts.Length > 1 && int.TryParse(parts[1], out var minor) ? minor : 0);
     }
 
     private static string MajorMinorBuild(string version)
