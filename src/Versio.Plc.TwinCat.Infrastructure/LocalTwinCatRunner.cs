@@ -243,6 +243,12 @@ public sealed class LocalTwinCatRunner(
             return PlcResult.Failure("the TwinCAT host did not finish within the timeout");
         }
 
+        // WaitForExit(int) can return before the async readers have delivered their last
+        // lines; only the parameterless overload is documented to wait for them. Without
+        // it the final done line is sometimes still in flight when the buffer is read,
+        // and a fully successful import reports "host exited 0" as a failure.
+        process.WaitForExit();
+
         cancellationToken.ThrowIfCancellationRequested();
 
         string stdout;
