@@ -236,7 +236,11 @@ after launch, while the project was still loading (Openness measured 16 s) — a
 it when the project closes (graceful `taskkill`, no `/F`). So a project an engineer holds
 in the Portal window reads Held, and closing Portal is the retry, the same as the first
 vendor. One nuance: a Portal *process* outlived the project close by minutes; the marker
-tracks the project, not the process, which is the fact Versio actually needs.
+tracks the project, not the process, which is the fact Versio actually needs. And one
+honesty note: Portal treated that `taskkill` as an abnormal end (its "uncritical problem"
+reporter appeared afterwards) — yet it still deleted the marker on the way out. A hard
+kill (`/F`) is the case that would leave the marker behind, and a leftover reads Held
+until cleared, which is the safe side.
 
 Closed, top-level names: `.ap21`, `System/`, `IM/`, `Logs/`, `tmp/`, `Vci/`, `XRef/`,
 `AdditionalFiles/`, `UserFiles/`, `src/`, `ProjectInfo.txt`. `System/` then is `PEData.idx`
