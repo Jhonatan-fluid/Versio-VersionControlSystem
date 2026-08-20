@@ -1,11 +1,11 @@
 # Versio — safeguards
 
-**Date:** 2026-08-13 · **Phases 1–8 built; phase 9 is what remains** — start at §0
+**Date:** 2026-08-13 · **Phases 1–9 built; §5.H deferred on purpose** — start at §0
 
 | | |
 |---|---|
 | Document | **The interruption and destructive-action plan.** What Versio must refuse, ask about, or wait for — and why each answer is the one it is |
-| Status | **Phases 1–8 built and verified against real CODESYS** (§6) — the guard and its narrative, the cancellation plumbing, the dialog, the close guard, the context-switch guard, the repository reset, the conflict gate, the git-write window, the auto-stash in both directions, and the swap that can no longer leave a project with no mirror. **Phase 9 is what remains**, and it is features rather than guards: a real import confirmation (§5.C), a backup restore path (§5.E), a read-only second instance (§5.G). **§0 is the handover note.** Every "today" below is a reading of the code as it was when that section was written, with each phase's *"as built"* notes appended where it was planned |
+| Status | **Phases 1–9 built and verified against real CODESYS** (§6, §0) — the guard and its narrative, the cancellation plumbing, the dialog, the close guard, the context-switch guard, the repository reset, the conflict gate, the git-write window, the auto-stash in both directions, the swap that can no longer leave a project with no mirror, and phase 9's features: a real import confirmation (§5.C), a backup restore path (§5.E), a one-repository-one-Versio guard (§5.G). **§5.H (the repository disappearing while it is open) is costed and deliberately not built** — detection is a day; classifying a mid-run toolchain failure against a vanished share as environmental rather than feeding it to the circuit breaker is not a side quest. **§0 is the handover note.** Every "today" below is a reading of the code as it was when that section was written, with each phase's *"as built"* notes appended where it was planned |
 | Related | [`phase1/PLAN.md`](phase1/PLAN.md) — the architecture · [`STATUS.md`](STATUS.md) — where the project is · [`phase1/PHASE0-FINDINGS.md`](phase1/PHASE0-FINDINGS.md) — what was measured |
 
 ---
@@ -32,7 +32,10 @@ the code, two of which (§5.A and §5.D) can lose work with no user error at all
 end of §4 and *Phase 8, as built* below it — and phase 9 in full on 2026-08-14: §5.C the import
 confirmation, §5.E the backup restore path, and §5.G a one-repository-one-Versio guard in place
 of the read-only mode the enum had been promising. **What remains in §5** is §5.H, the repository
-disappearing while it is open, which nobody has costed.
+disappearing while it is open — **costed and deliberately not built.** Detection and the
+suspended state are roughly a day; the hard part is classifying a mid-run toolchain failure
+against a vanished share as environmental rather than feeding it to the circuit breaker. It
+moves up the first time a real share drop bites somebody. Live queue: [`STATUS.md`](STATUS.md).
 
 > **Versio no longer answers its own confirmation.** `RequireImportConfirmation` shipped as
 > `true` and was answered `Confirmed = true` by its only caller for the whole life of the
@@ -137,8 +140,8 @@ sense: each added a capability the app described and did not have. **All three a
   than a read-only mode, and §5.G says why that trade is the safer one. **What it cost:**
   `RepositoryPresence` in Core, a JSON marker store, a claim in the open path, and 17 tests.
 
-Nothing in phase 9 is blocked. §5.H (the repository disappearing while it is open) is still
-unwritten and is the one remaining item in §5 that nobody has costed.
+§5.C–§5.G are built. §5.H (the repository disappearing while it is open) is costed and
+deliberately not built — see §0.
 
 ### Starting phase 7 (kept for its reasoning)
 

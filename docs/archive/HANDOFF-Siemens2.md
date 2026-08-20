@@ -1,3 +1,5 @@
+> **ARCHIVED — 2026-08-19.** Record, not state. The live page for where the project is and what is next is [`../STATUS.md`](../STATUS.md). Read this for reasoning and evidence from the work that closed it.
+
 # Handoff — `Siemens2`, TIA Portal PLC-software loop
 
 **Date:** 2026-08-19 · **Branch:** `Siemens2` (off `main` at `1180418`).
@@ -63,7 +65,7 @@ Sync, Git, Locking, Watching, Projects and Diff still do not spell a vendor.
 
 ## Defects this session found, all closed
 
-Written up in [`FINDINGS.md`](FINDINGS.md), newest first. None was findable by
+Written up in [`FINDINGS.md`](../FINDINGS.md), newest first. None was findable by
 running the gate against two empty directories.
 
 | | What | Why it mattered |
@@ -118,7 +120,7 @@ reasoning.
 | [`PHASE2.md`](PHASE2.md) item 6 | Merge dialog, both themes on the rail badge, headers dragged to 260 px |
 | [`UX-PLAN.md`](UX-PLAN.md) | UX-6, UX-7's second half (`Ctrl+F` / Escape), UX-8, UX-12 (amend-while-unpushed — a decision, not a gap) |
 | [`HANDOFF-UxPlan.md`](HANDOFF-UxPlan.md) | P-M2 (commit gate skip after merge — needs a real CODESYS export); counted CODESYS gate for `LOCK-1` |
-| [`STATUS.md`](STATUS.md) loose ends | `RefrigeratorControl.project` is the gate fixture and the daily project |
+| [`STATUS.md`](../STATUS.md) loose ends | `RefrigeratorControl.project` is the gate fixture and the daily project |
 
 ### Friction to remember, not to fix next
 

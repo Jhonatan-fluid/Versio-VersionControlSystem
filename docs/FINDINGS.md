@@ -9,10 +9,12 @@ cost, and what was rejected.
 **Split out of `STATUS.md` on 2026-08-17.** It had grown to 3,681 lines of that document's 4,782
 — 77% of a file whose job is to answer "where is the project now", and which `CLAUDE.md` opens by
 telling every reader to go through before starting. That instruction had quietly stopped being
-followable, which is the failure it was written to prevent. `STATUS.md` keeps a linked index.
+followable, which is the failure it was written to prevent. The live page is `STATUS.md`; this
+file is the search log. The index that used to live in STATUS was dropped when that file was
+slimmed on 2026-08-19 — search here, do not look for a table of contents there.
 
 Nothing here was edited in the move. The same argument, one file along, as the `Controls.xaml`
-split already recorded in `STATUS.md`: concentration is what makes a change to any one thing
+split already recorded in [`archive/STATUS-2026-08.md`](archive/STATUS-2026-08.md): concentration is what makes a change to any one thing
 produce a diff touching everything else.
 
 ---
@@ -392,7 +394,7 @@ and the merge verb it touches already owes a real-CODESYS gate run.
 
 **It is written into the enum's own remarks**, at the declaration, so the next reader meets it
 before the next caller is added. The prediction that this would happen was already in
-`UX-PLAN.md`'s second pass — *"a new intent would also have to be added to
+`archive/UX-PLAN.md`'s second pass — *"a new intent would also have to be added to
 `InterruptionGuard.RewritesWorkingTree` or the guard has a silent hole"* — and the merge verb
 shipped without one.
 
@@ -424,7 +426,7 @@ confirmation, two commits earlier, and neither of the two passes in between noti
 were reading the code rather than the comment.
 
 **Four passes, four defects, one feature.** The list is in
-[`HANDOFF-UxPlan.md`](HANDOFF-UxPlan.md). The useful conclusion is not that reviewing works — it
+[`archive/HANDOFF-UxPlan.md`](archive/HANDOFF-UxPlan.md). The useful conclusion is not that reviewing works — it
 is that a lot of code was written quickly in the most dangerous subsystem here, and that the
 things still owed (the real-CODESYS gate, a human looking at it) are worth more than another
 read by the same reader.

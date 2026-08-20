@@ -7,7 +7,7 @@ projects. How TIA Portal is driven, and what was measured rather than assumed.
 |---|---|
 | Document | **The TIA Portal integration, end to end.** Which Openness surface Versio uses, how the net48 host is launched, what crosses the boundary, what every job does, and where the seams and the gaps are |
 | Audience | An engineer who has to change the export, the import, the host or the runner — or add a third vendor beside the first two |
-| Related | [`STATUS.md`](../../STATUS.md) · [`PHASE2.md`](../../PHASE2.md) §7 · [`SAFEGUARDS.md`](../../SAFEGUARDS.md) · the first vendor's [`vendors/codesys/DRIVING.md`](../codesys/DRIVING.md) |
+| Related | [`STATUS.md`](../../STATUS.md) · [`archive/HANDOFF-Siemens2.md`](../../archive/HANDOFF-Siemens2.md) · [`SAFEGUARDS.md`](../../SAFEGUARDS.md) · the first vendor's [`vendors/codesys/DRIVING.md`](../codesys/DRIVING.md) |
 
 Versio is not a TIA Portal tool. Neutral code must not grow any of this. TwinCAT will be a
 directory project too; that is `PayloadPathFor` / `CopyTreeAsync` growing, not a brand leaking.
@@ -360,16 +360,15 @@ Skip is the success path when Portal, Openness membership, AllowList, or LFS con
 missing. Probe, export, same-tree textual determinism, and the mutating import/re-export
 Fact are **green** on this machine. The import Fact copies the committed fixture aside,
 mutates one `.scl` with a compiling body assignment, imports the planner's plan,
-re-exports, and asserts the mutation in **textual** files — never native XML. Handoff:
-[`HANDOFF-Siemens2.md`](../../HANDOFF-Siemens2.md).
+re-exports, and asserts the mutation in **textual** files — never native XML. Session
+notes: [`archive/HANDOFF-Siemens2.md`](../../archive/HANDOFF-Siemens2.md).
 
 ---
 
 ## 12. What is left
 
-The PLC-software loop is done. The ordered remainder is coverage skips, not a build
-queue — see [`PHASE2.md`](../../PHASE2.md) item 7 and
-[`HANDOFF-Siemens2.md`](../../HANDOFF-Siemens2.md). This section is the evidence that
+The PLC-software loop is done. Remaining TIA is coverage skips, not a build
+queue — see [`STATUS.md`](../../STATUS.md). This section is the evidence that
 queue was derived from, so a later session does not have to re-derive it.
 
 ### Done (PLC-program parity with the first vendor)

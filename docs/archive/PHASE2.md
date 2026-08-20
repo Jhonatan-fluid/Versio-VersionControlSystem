@@ -1,7 +1,9 @@
+> **ARCHIVED — 2026-08-19.** Record, not state. The live page for where the project is and what is next is [`../STATUS.md`](../STATUS.md). Read this for reasoning and evidence from the work that closed it.
+
 # Versio — Phase 2
 
 **Date opened:** 2026-08-17 · **This is the forward queue.** Phase 1 is complete and its four
-planning documents are archived in [`phase1/`](phase1/), each marked done at the top. They are
+planning documents are archived in [`phase1/`](../phase1/), each marked done at the top. They are
 records now — read them for reasoning, never for state. What is still open lives HERE, and only
 here: `STATUS.md`'s old "What remains" queue points at this file instead of carrying a copy,
 because one claim in two places is the defect Phase 1's documents caught in themselves five
@@ -20,11 +22,11 @@ suite is nine projects, 2,640 tests, split by need — the half-hour CODESYS gat
 
 | File | Role |
 |---|---|
-| [`STATUS.md`](STATUS.md) | Where the project is: what works, the audits, the findings index |
-| [`FINDINGS.md`](FINDINGS.md) | Every defect with its evidence, newest first — search it |
-| [`SAFEGUARDS.md`](SAFEGUARDS.md) | What Versio refuses, asks about or waits for |
-| [`vendors/codesys/DRIVING.md`](vendors/codesys/DRIVING.md) | How CODESYS is driven — API traps, forms, events, manifest schema |
-| [`vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md) | How TIA Portal is driven — Openness, occupancy, identity. §12 is evidence; the PLC-software loop is done — remaining TIA is coverage skips, not the queue |
+| [`STATUS.md`](../STATUS.md) | Where the project is: what works, the audits, the findings index |
+| [`FINDINGS.md`](../FINDINGS.md) | Every defect with its evidence, newest first — search it |
+| [`SAFEGUARDS.md`](../SAFEGUARDS.md) | What Versio refuses, asks about or waits for |
+| [`vendors/codesys/DRIVING.md`](../vendors/codesys/DRIVING.md) | How CODESYS is driven — API traps, forms, events, manifest schema |
+| [`vendors/tia/DRIVING.md`](../vendors/tia/DRIVING.md) | How TIA Portal is driven — Openness, occupancy, identity. §12 is evidence; the PLC-software loop is done — remaining TIA is coverage skips, not the queue |
 | [`HANDOFF-Siemens2.md`](HANDOFF-Siemens2.md) | What `Siemens2` closed on 2026-08-19, and what is still open. Start here after this branch |
 | [`HANDOFF-UxPlan.md`](HANDOFF-UxPlan.md) | What `UxPlan` built, merged into `Siemens` on 2026-08-19. Owner saw the window; UX-12 and P-M2 remain. The CODESYS gate was not re-run on `Siemens2` |
 | [`UX-PLAN.md`](UX-PLAN.md) | **A plan, and the one live one** — thirteen UX findings over the running shell, ranked, each with its evidence. Opened 2026-08-18. What is left: UX-6, UX-7's second half, UX-8, UX-12 |
@@ -74,7 +76,7 @@ complete.
 ~~Two finished readers are idling with no consumer~~ — **both consumed as of 2026-08-17**:
 `LibraryCatalog.Parse` feeds one row per reference, and `TaskCatalog.cs` — the import plan's
 last blocked item, deliberately not built until the panel existed to consume it
-([`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md), *What is left*, item 3) — was built *with*
+([`phase1/IMPORT-PLAN.md`](../phase1/IMPORT-PLAN.md), *What is left*, item 3) — was built *with*
 its rows in one change, honouring that document's warning that `LibraryCatalog` had already
 broken the "no reader without a consumer" rule.
 
@@ -117,7 +119,7 @@ What the panel needs, from `STATUS.md` §4 (*Finish the project tree*):
 
 ### 2. ~~The git panel's last phase — GP-K/GP-L~~ — **done, 2026-08-17. Twelve of twelve.**
 
-~~Eleven of twelve phases are built ([`phase1/GIT-PANEL-PLAN.md`](phase1/GIT-PANEL-PLAN.md)).
+~~Eleven of twelve phases are built ([`phase1/GIT-PANEL-PLAN.md`](../phase1/GIT-PANEL-PLAN.md)).
 What is left: the **ahead/behind previews** and the small-UX list.~~ What landed, and what
 turned out to be already built:
 
@@ -187,7 +189,7 @@ Every field bug becomes a fixture before it is fixed (`STATUS.md` §8). The chec
 remaining NOT REACHED row is **C5** (`DELETE_UNREADABLE` — needs an object that refuses to
 yield its text; none has been observed). The `native_partial` branch is likewise uncovered
 because its only known trigger (G11) was removed. Both are labelled where they live
-([`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md), checklist and honesty-fix 1) and neither can
+([`phase1/IMPORT-PLAN.md`](../phase1/IMPORT-PLAN.md), checklist and honesty-fix 1) and neither can
 be manufactured — they close when reality produces a specimen, not before.
 
 ### 6. Small, real, and unowned — **all four owned items closed 2026-08-17**
@@ -233,7 +235,7 @@ the install. PLC software (SCL, types, tags) is the round-trip subject; hardware
 safety are coverage skips. The gate fixture is committed at
 `fixtures/projects/CleaningStation_V20_V21/` (Git LFS; ignored by this repo's Versio
 adoption). Driving notes — setup, Openness members, occupancy, identity — live in
-[`docs/vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md).
+[`docs/vendors/tia/DRIVING.md`](../vendors/tia/DRIVING.md).
 
 **What is left, in order** — the pack, the directory seam, the App session pin, SCL
 overwrite, textual determinism, the app loop, and held-export-as-a-wait are done
@@ -354,12 +356,12 @@ listed here even though every one lives in an archived document.
 
 | Decision | Why | Where the full reasoning lives |
 |---|---|---|
-| **G9's 190-character file name: report-only, permanently** (2026-08-17) | Preventing it means shrinking `MaxStem` or dropping the parent prefix — either renames committed member files in every mirror and makes every file name worse, to prevent a case the two guards already report. Decided *now* deliberately, because "later" was quietly "never" | [`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md), *What is left* item 1 |
-| **E2 (percent-encoded stems): closed as measured-unreachable** (2026-08-17) | Every character the encoding exists for is illegal in a Windows filename, refused by CODESYS's validator on both creation doors (P5, P12), or triggers the shortened form. No producer exists on 3.5.22.20. The machinery stays, proven by unit tests | [`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md), E2 row and P12/P13 |
-| **Visualisation bindings after a rename: unmeasured, by decision** (2026-08-17) | The owner does not use CODESYS visualisations. The risk sentence stays in every document that carried it — a project that *does* use them inherits the question before trusting a rename | `STATUS.md` (import block), [`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md) §Phase 3 notes |
-| **External-file objects: export-only (`EXTERNAL_NATIVE`), IDE-managed** (2026-08-17) | Measured, not chosen: `import_native` **duplicates** the object instead of replacing it — one more copy per import (G13). No importable sibling exists; the payload is metadata nobody could meaningfully edit | `FINDINGS.md` (G13 entry), [`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md) G13 row |
-| **Libraries: export-only; tasks: never created by an import** | Rewiring what the machine compiles against, and adding to what it runs, are changes an import must not smuggle in. Both deliberate, both announced when skipped | [`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md), *Not doing* and Phase 4 |
-| **Deletion: named confirmation, no cap — and refusals as the architecture** | P3 measured `remove()` dangling referenced objects silently, so the five planner preconditions and the in-process content check are the *only* protection that exists. A threshold was declined deliberately | [`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md), *Decisions taken* and Phase 2; `SAFEGUARDS.md` |
+| **G9's 190-character file name: report-only, permanently** (2026-08-17) | Preventing it means shrinking `MaxStem` or dropping the parent prefix — either renames committed member files in every mirror and makes every file name worse, to prevent a case the two guards already report. Decided *now* deliberately, because "later" was quietly "never" | [`phase1/IMPORT-PLAN.md`](../phase1/IMPORT-PLAN.md), *What is left* item 1 |
+| **E2 (percent-encoded stems): closed as measured-unreachable** (2026-08-17) | Every character the encoding exists for is illegal in a Windows filename, refused by CODESYS's validator on both creation doors (P5, P12), or triggers the shortened form. No producer exists on 3.5.22.20. The machinery stays, proven by unit tests | [`phase1/IMPORT-PLAN.md`](../phase1/IMPORT-PLAN.md), E2 row and P12/P13 |
+| **Visualisation bindings after a rename: unmeasured, by decision** (2026-08-17) | The owner does not use CODESYS visualisations. The risk sentence stays in every document that carried it — a project that *does* use them inherits the question before trusting a rename | `STATUS.md` (import block), [`phase1/IMPORT-PLAN.md`](../phase1/IMPORT-PLAN.md) §Phase 3 notes |
+| **External-file objects: export-only (`EXTERNAL_NATIVE`), IDE-managed** (2026-08-17) | Measured, not chosen: `import_native` **duplicates** the object instead of replacing it — one more copy per import (G13). No importable sibling exists; the payload is metadata nobody could meaningfully edit | `FINDINGS.md` (G13 entry), [`phase1/IMPORT-PLAN.md`](../phase1/IMPORT-PLAN.md) G13 row |
+| **Libraries: export-only; tasks: never created by an import** | Rewiring what the machine compiles against, and adding to what it runs, are changes an import must not smuggle in. Both deliberate, both announced when skipped | [`phase1/IMPORT-PLAN.md`](../phase1/IMPORT-PLAN.md), *Not doing* and Phase 4 |
+| **Deletion: named confirmation, no cap — and refusals as the architecture** | P3 measured `remove()` dangling referenced objects silently, so the five planner preconditions and the in-process content check are the *only* protection that exists. A threshold was declined deliberately | [`phase1/IMPORT-PLAN.md`](../phase1/IMPORT-PLAN.md), *Decisions taken* and Phase 2; `SAFEGUARDS.md` |
 | **The phase-split save: unconditional** (2026-08-17) | The old condition (`created or updated`) had the dirty-test bug's shape — it did not count renames, which mutate the very dictionary the guard protects. A condition that cannot be wrong beats one that every new phase must remember to extend | git log `f62eb05`; `versio_import.py`'s comment at the save |
 | **Three vendor test projects, split by need** (2026-08-17) | 334 of the old gate's 386 tests needed no toolchain and hid behind a half-hour wall. Need — nothing / python / real CODESYS — is the same axis the repo already splits Core/Integration/App on | `STATUS.md` table; git log `d480afe` |
 | **Staging not extracted; `SyncViewModel` not split; repository session not extracted** | Measured borrow counts, not taste: each is "a move dressed as a decomposition" (GP-E's phrase). The instruments the effort produced (`CollaboratorSeamTests`, the binding-path test) outlast any line count | `STATUS.md`, *the code-shape queue* |

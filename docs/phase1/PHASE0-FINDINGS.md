@@ -2,7 +2,7 @@
 
 > **ARCHIVED — PHASE 1, COMPLETE.** Moved to `docs/phase1/` on 2026-08-17. This was always a
 > record rather than a live limitation list — its supersession notes say which measurements
-> later work overturned. The live queue is [`../PHASE2.md`](../PHASE2.md); the raw probe
+> later work overturned. The live page is [`../STATUS.md`](../STATUS.md); the raw probe
 > outputs are in [`probes/`](probes/).
 
 **Date:** 2026-08-11
@@ -454,7 +454,7 @@ path is ever unavailable, and because the measurement cost real time to get.
 > `.tasks.yaml` authoritative made `Task Configuration.xml` a file the export writes and the
 > import discards, with nothing recording it: the manifest still said `NATIVE_R`, so
 > `_coverage.md` skipped it and the panel drew it as editable. **Closed the same day** by
-> recording it `TASK_NATIVE`; see the finding in [`STATUS.md`](../STATUS.md). The general form is
+> recording it `TASK_NATIVE`; see the finding in [`FINDINGS.md`](../FINDINGS.md). The general form is
 > worth carrying into Phases 1–3: *a measurement aimed at the defect will not see what the fix
 > changed about anything else.*
 

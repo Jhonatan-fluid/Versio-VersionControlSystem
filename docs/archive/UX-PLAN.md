@@ -1,3 +1,5 @@
+> **ARCHIVED — 2026-08-19.** Record, not state. The live page for where the project is and what is next is [`../STATUS.md`](../STATUS.md). Read this for reasoning and evidence from the work that closed it.
+
 # Versio — a UX pass over the running shell
 
 **Date opened:** 2026-08-17 · **Status, as of 2026-08-18: ten of thirteen built, one half.**
@@ -34,17 +36,17 @@ Auditing UX-1 meant reading what happens *after* git rewrites the tree, and the 
 end to end as follows. Every link is quoted from the code; only the conclusion is inference.
 
 1. `ReconcileAsync` runs its merge inside `Sync.WhileGitRewritesTheTreeAsync("merge", …)`
-   ([`ShellViewModel.cs:3232`](../src/Versio.App/ViewModels/ShellViewModel.cs)).
+   ([`ShellViewModel.cs:3232`](../../src/Versio.App/ViewModels/ShellViewModel.cs)).
 2. That helper calls `AdoptExternalStateAsync` **unconditionally** once the operation returns,
-   success or failure ([`SyncViewModel.cs:1180`](../src/Versio.App/ViewModels/SyncViewModel.cs)).
+   success or failure ([`SyncViewModel.cs:1180`](../../src/Versio.App/ViewModels/SyncViewModel.cs)).
 3. Adopt overwrites `Baseline` **and** `LastSynced` with whatever the project and mirror hash to
-   right now ([`SyncOrchestrator.cs:679–691`](../src/Versio.Core/Sync/SyncOrchestrator.cs)).
+   right now ([`SyncOrchestrator.cs:679–691`](../../src/Versio.Core/Sync/SyncOrchestrator.cs)).
 4. The commit gate decides whether to export by comparing the project's hash against
    `LastSynced.ProjectHash` — stated in that file's own comment
-   ([`SyncOrchestrator.cs:448`](../src/Versio.Core/Sync/SyncOrchestrator.cs)). After step 3 they
+   ([`SyncOrchestrator.cs:448`](../../src/Versio.Core/Sync/SyncOrchestrator.cs)). After step 3 they
    are equal, so **nothing is stale and no export runs**.
 5. The `.project` is written `binary -diff -merge`
-   ([`GitAttributesPlan.cs:101`](../src/Versio.Core/Git/GitAttributesPlan.cs)), so git **cannot**
+   ([`GitAttributesPlan.cs:101`](../../src/Versio.Core/Git/GitAttributesPlan.cs)), so git **cannot**
    merge it. It conflicts, and whichever side is kept is that side *verbatim* — while the mirror
    beside it gets a real three-way merge of both branches.
 
@@ -197,16 +199,16 @@ it by an import, rather than both being adopted as though a commit had vetted th
 > reasoning the refusal was built on and it is still why the confirmation exists.
 
 **Today.** `IGitClient` has `MergeUpstreamAsync` and `RebaseOntoUpstreamAsync`
-([`IGitClient.cs:212`](../src/Versio.Core/Abstractions/IGitClient.cs), `:220`), and both are
+([`IGitClient.cs:212`](../../src/Versio.Core/Abstractions/IGitClient.cs), `:220`), and both are
 reachable only through `ReconcileCommand`, which the git panel shows **only while the branch is
-diverged from its own upstream** ([`GitPanelView.xaml:292`](../src/Versio.App/Views/Panels/GitPanelView.xaml)).
+diverged from its own upstream** ([`GitPanelView.xaml:292`](../../src/Versio.App/Views/Panels/GitPanelView.xaml)).
 There is no `MergeBranchAsync`. So: finish `feature/alarm-rework`, switch to `main`, and there
 is no way from inside Versio to bring the work in. The answer today is a terminal, which is the
 thing the panel exists to remove.
 
 **Why this one ranks first, and why it is not a generic git feature.** `GitAttributesPlan`
 writes `binary -diff -merge` beside every `.project`
-([`GitAttributesPlan.cs:101`](../src/Versio.Core/Git/GitAttributesPlan.cs)) — deliberately, so
+([`GitAttributesPlan.cs:101`](../../src/Versio.Core/Git/GitAttributesPlan.cs)) — deliberately, so
 git never line-merges a compound document into something that opens in neither CODESYS nor an
 editor. The consequence is that **any merge touching a tracked project conflicts on the
 `.project` by construction, while the mirror beside it merges cleanly.** That is not a problem
@@ -233,22 +235,22 @@ panel plan — *the reason to use Versio instead of a generic git client*.
 - A **`Merge a branch into <current>…`** entry in the branch overflow UX-3 proposes, opening a
   picker with the shape `BranchDeleteWindow` already has: local and remote branches, a
   `WhereText` column, and — free, because `MergedBranchesAsync` already exists and the delete
-  dialog already calls it ([`IGitClient.cs:253`](../src/Versio.Core/Abstractions/IGitClient.cs)) —
+  dialog already calls it ([`IGitClient.cs:253`](../../src/Versio.Core/Abstractions/IGitClient.cs)) —
   an *already merged* marker, so nobody merges a branch that is a no-op.
 - Through **the existing guard**, not around it — and there is precedent to copy rather than a
   decision to take. `ReconcileAsync` already reuses `GuardIntent.Pull` for its own merge, with
   the comment saying why: *"both rewrite the project and its mirror together"*
-  ([`ShellViewModel.cs:3223`](../src/Versio.App/ViewModels/ShellViewModel.cs)). Reuse it again.
+  ([`ShellViewModel.cs:3223`](../../src/Versio.App/ViewModels/ShellViewModel.cs)). Reuse it again.
   **One consequence to accept knowingly:** `GuardNarrative` maps that intent to the literal word
-  *"pull"* ([`GuardNarrative.cs:50`](../src/Versio.Core/Guarding/GuardNarrative.cs)), so the
+  *"pull"* ([`GuardNarrative.cs:50`](../../src/Versio.Core/Guarding/GuardNarrative.cs)), so the
   guard dialog will say *pull* during a merge. It already does today for reconcile. Either add a
   `GuardIntent.Merge` — which then also has to be added to `InterruptionGuard.RewritesWorkingTree`
-  ([`InterruptionGuard.cs:147`](../src/Versio.Core/Guarding/InterruptionGuard.cs)), and forgetting
+  ([`InterruptionGuard.cs:147`](../../src/Versio.Core/Guarding/InterruptionGuard.cs)), and forgetting
   that is a silent hole in the guard — or accept the wording. **Do not leave it unnoticed**,
   which is what the first draft's one-line "existing guard" would have done.
 - The conflict section is **already built** and will pick the result up unchanged: `MergeState`,
   the conflicted list, `Keep mine` / `Keep theirs` / `Abandon`
-  ([`GitPanelView.xaml:145–209`](../src/Versio.App/Views/Panels/GitPanelView.xaml)). Nothing new
+  ([`GitPanelView.xaml:145–209`](../../src/Versio.App/Views/Panels/GitPanelView.xaml)). Nothing new
   is needed there.
 - **The new piece is step 3, and the second pass found its real reason.** The first draft called
   it a convenience — the project left stale against a merged mirror. It is worse than that, and
@@ -307,10 +309,10 @@ justifies the whole feature is unwatched.
 ### The finding as first written
 
 **Today.** The only count on screen is a pill in the **panel title**
-([`MainWindow.xaml:465–478`](../src/Versio.App/Views/MainWindow.xaml)), and code-behind shows it
-**only on the Project panel** ([`MainWindow.xaml.cs:348`](../src/Versio.App/Views/MainWindow.xaml.cs)).
+([`MainWindow.xaml:465–478`](../../src/Versio.App/Views/MainWindow.xaml)), and code-behind shows it
+**only on the Project panel** ([`MainWindow.xaml.cs:348`](../../src/Versio.App/Views/MainWindow.xaml.cs)).
 The three rail buttons carry an icon and a tooltip and nothing else
-([`MainWindow.xaml:405–430`](../src/Versio.App/Views/MainWindow.xaml)).
+([`MainWindow.xaml:405–430`](../../src/Versio.App/Views/MainWindow.xaml)).
 
 **Why it is wrong.** Sit on the History panel — reading what happened, which is exactly when
 somebody is about to act — and the app tells you nothing about the working tree. Twelve changed
@@ -321,11 +323,11 @@ is least needed.
 
 **Proposal.** An attached property on the rail button — `Rail.Badge` (int) and
 `Rail.BadgeKind` — rendered as a small pill in the top-right of the existing 40×40 template
-grid ([`Buttons.xaml:150`](../src/Versio.App/Theme/controls/Buttons.xaml)), which already has the
+grid ([`Buttons.xaml:150`](../../src/Versio.App/Theme/controls/Buttons.xaml)), which already has the
 room and needs no relayout.
 
 - **Git** — `Changes.Count`. Red rather than accent while `HasConflicts`
-  ([`ShellViewModel.cs:2136`](../src/Versio.App/ViewModels/ShellViewModel.cs)), because a
+  ([`ShellViewModel.cs:2136`](../../src/Versio.App/ViewModels/ShellViewModel.cs)), because a
   conflicted tree is a different fact from a busy one and the count alone hides it.
 - **Project** — the existing panel-title pill, kept, and **suppressed at zero** (UX-11).
 - **History** — nothing. The behind-count belongs to the branch card, which already has two
@@ -344,9 +346,9 @@ zero-suppression test must fail.
 ## UX-3 · The rare branch actions have no container, so each one lands as furniture
 
 **Today.** *Create a branch* is a `+` in the top bar beside the branch dropdown
-([`MainWindow.xaml:295–300`](../src/Versio.App/Views/MainWindow.xaml)). *Delete branches…* is a
+([`MainWindow.xaml:295–300`](../../src/Versio.App/Views/MainWindow.xaml)). *Delete branches…* is a
 right-aligned ghost button in its own row inside the git panel's branch card
-([`GitPanelView.xaml:461`](../src/Versio.App/Views/Panels/GitPanelView.xaml)).
+([`GitPanelView.xaml:461`](../../src/Versio.App/Views/Panels/GitPanelView.xaml)).
 
 **What this finding used to say, and why it changed.** The first version proposed hoisting both
 into one branch group in the top bar, on the argument that create and delete are the same
@@ -464,8 +466,8 @@ overflows.
 ### 4a · The headers do not say how many
 
 **Today.** `StagingSelection.Caption` returns the empty string unless something is ticked
-([`StagingSelection.cs:90`](../src/Versio.Core/Git/StagingSelection.cs)), and it is the only
-number beside either header ([`GitPanelView.xaml:846`](../src/Versio.App/Views/Panels/GitPanelView.xaml),
+([`StagingSelection.cs:90`](../../src/Versio.Core/Git/StagingSelection.cs)), and it is the only
+number beside either header ([`GitPanelView.xaml:846`](../../src/Versio.App/Views/Panels/GitPanelView.xaml),
 `:903`). So a forty-file stage reads `STAGED`, and the way to learn it is forty is to count it.
 
 **Why it is wrong.** The count is the first thing anybody wants from either list and the one
@@ -476,7 +478,7 @@ commit (3)"* — so the panel already knows it, and states it only in the place 
 ### 4b · The header controls collide once the labels grow — reported from the running app
 
 **Today**, the header of each list is a four-column grid — `Auto | Auto | * | Auto`
-([`GitPanelView.xaml:830`](../src/Versio.App/Views/Panels/GitPanelView.xaml), and the same shape
+([`GitPanelView.xaml:830`](../../src/Versio.App/Views/Panels/GitPanelView.xaml), and the same shape
 at `:889`): checkbox, section label, caption, action buttons.
 
 **The mechanism.** A WPF `Grid` measures its `Auto` columns against infinity and hands each one
@@ -490,15 +492,15 @@ splitter and the diff pane. Nothing here clips, so nothing stops it.
 the lists fill and not before:
 
 - The button labels are counts, not fixed strings.
-  `Label` renders `"{verb} {selected}"` ([`StagingSelection.cs:73`](../src/Versio.Core/Git/StagingSelection.cs)),
+  `Label` renders `"{verb} {selected}"` ([`StagingSelection.cs:73`](../../src/Versio.Core/Git/StagingSelection.cs)),
   so `Discard` becomes `Discard 127` and `Stage` becomes `Stage 127`. The unstaged header
   carries **two** of those side by side.
 - The section label cannot give way. `NOT STAGED` sits in an `Auto` column in the letter-spaced
   `SectionLabel` face, with no trimming and no ceiling — so it is rigid while everything around
   it is growing, and it is by some distance the least informative thing in the row.
 - The column is narrower than the test believes. `PanelColumn` is `Width="380" MinWidth="260"`
-  ([`MainWindow.xaml:436`](../src/Versio.App/Views/MainWindow.xaml)) and the width is
-  **persisted** ([`MainWindow.xaml.cs:245`](../src/Versio.App/Views/MainWindow.xaml.cs)), so a
+  ([`MainWindow.xaml:436`](../../src/Versio.App/Views/MainWindow.xaml)) and the width is
+  **persisted** ([`MainWindow.xaml.cs:245`](../../src/Versio.App/Views/MainWindow.xaml.cs)), so a
   panel dragged narrow once stays narrow across every later launch. 120 px of the budget can be
   gone before a single row is drawn.
 
@@ -509,7 +511,7 @@ independent reasons, and each one is worth writing down because the same trap is
 the next fixture:
 
 1. **It measures one width.** `PanelWidth = 380`
-   ([`GitPanelGeometryTests.cs:38`](../tests/Versio.App.Tests/GitPanelGeometryTests.cs)), and
+   ([`GitPanelGeometryTests.cs:38`](../../tests/Versio.App.Tests/GitPanelGeometryTests.cs)), and
    the class comment calls it *"the panel's real column width"*. It is the **default** width, not
    the only one — the control is user-resizable to 260 and remembers it.
 2. **Nothing in the fixture is ticked.** It adds 4 staged and 12 unstaged rows and never sets
@@ -553,7 +555,7 @@ and the *safe* case: the count is explicit in the header and the ticks are on sc
 clipping is a fix that hides its own failure — but the guarantee that a label nobody predicted
 produces a clipped button instead of text painted across the diff pane. **The status bar already
 took exactly this lesson**, has `ClipToBounds="True"` on `StatusState` and a comment recording
-why ([`MainWindow.xaml:1181`](../src/Versio.App/Views/MainWindow.xaml)); the git panel's headers
+why ([`MainWindow.xaml:1181`](../../src/Versio.App/Views/MainWindow.xaml)); the git panel's headers
 never got the same treatment. Carry the reasoning across, do not re-derive it.
 
 **Cost:** small — one Core rule, one column merge, two attributes. The test work is the larger
@@ -603,7 +605,7 @@ below it is worth believing.
 
 
 **Today.** The project tree grew Stage / Discard / Reveal in Explorer / Copy path this session
-([`ProjectPanelView.xaml:237–249`](../src/Versio.App/Views/Panels/ProjectPanelView.xaml)). The
+([`ProjectPanelView.xaml:237–249`](../../src/Versio.App/Views/Panels/ProjectPanelView.xaml)). The
 git panel's two lists have no `ContextMenu` and no `MouseDoubleClick` anywhere in the file.
 
 **Why it is wrong.** Two lists of the same files, in the same app, answering right-click
@@ -626,7 +628,7 @@ regression this change can cause.
 ## UX-6 · Nothing in the git panel or the history can be searched
 
 **Today.** The project panel has *Find an object or a file…*
-([`ProjectPanelView.xaml:144`](../src/Versio.App/Views/Panels/ProjectPanelView.xaml)). The git
+([`ProjectPanelView.xaml:144`](../../src/Versio.App/Views/Panels/ProjectPanelView.xaml)). The git
 panel's only text boxes are the two identity fields and the commit message. The history panel
 has none at all.
 
@@ -660,9 +662,9 @@ would take — the trap, and the reason the filter must never touch the ticks.
 > ahead/behind preview. Both popups already close on a click outside (`StaysOpen="False"`), so
 > Escape is a refinement rather than a gap.
 
-**Today.** `F5` refresh ([`MainWindow.xaml.cs:71`](../src/Versio.App/Views/MainWindow.xaml.cs)),
+**Today.** `F5` refresh ([`MainWindow.xaml.cs:71`](../../src/Versio.App/Views/MainWindow.xaml.cs)),
 `Ctrl+Enter` commit, `Ctrl+Shift+P` push
-([`GitPanelView.xaml:38`](../src/Versio.App/Views/Panels/GitPanelView.xaml)). That is the
+([`GitPanelView.xaml:38`](../../src/Versio.App/Views/Panels/GitPanelView.xaml)). That is the
 complete list.
 
 **Why it is wrong.** Switching panels is the most frequent thing anybody does in this window and
@@ -683,9 +685,9 @@ is disabled.
 ## UX-8 · A commit in the history cannot be acted on, or even copied
 
 **Today.** The history panel renders commits and their files and offers `Load older commits`
-([`HistoryPanelView.xaml:29`](../src/Versio.App/Views/Panels/HistoryPanelView.xaml)). There is no
+([`HistoryPanelView.xaml:29`](../../src/Versio.App/Views/Panels/HistoryPanelView.xaml)). There is no
 context menu, no command of any kind. The commit id is in a tooltip
-([`HistoryPanelView.xaml:131`](../src/Versio.App/Views/Panels/HistoryPanelView.xaml)) and cannot
+([`HistoryPanelView.xaml:131`](../../src/Versio.App/Views/Panels/HistoryPanelView.xaml)) and cannot
 be copied out of it.
 
 **Why it is wrong, and where the line is.** Read-only history is a defensible decision and
@@ -718,7 +720,7 @@ so that sentence describes an app this one is not. Worth correcting whichever wa
 > test; there is one now, tied to `PillText`'s own value.
 
 **Today.** When more than three notifications are live the rest become a pill reading
-`+2 more` ([`MainWindow.xaml:1128–1137`](../src/Versio.App/Views/MainWindow.xaml)). It is a
+`+2 more` ([`MainWindow.xaml:1128–1137`](../../src/Versio.App/Views/MainWindow.xaml)). It is a
 `Border` with a `TextBlock`. There is nothing behind it.
 
 **Why it is wrong.** It is a count of things that happened, offered at the moment several
@@ -728,7 +730,7 @@ somebody wants to read them. Every one of them *is* in the log, mirrored there b
 
 **Proposal.** Make the pill a button: open the log panel, filtered to the notification
 categories. The log filter, the category popup and the counts all exist already
-([`LogPanelView.xaml:115`](../src/Versio.App/Views/Panels/LogPanelView.xaml)); this is a
+([`LogPanelView.xaml:115`](../../src/Versio.App/Views/Panels/LogPanelView.xaml)); this is a
 `Command` and a call into the existing filter.
 
 **Cost:** trivial. **Tests.** App: pressing it opens the log and sets the filter.
@@ -746,7 +748,7 @@ categories. The log filter, the category popup and the counts all exist already
 **Today.** `RemoteStanding` produces the amber sentence, and the gating works — with no upstream
 recorded, `CanPull`, `CanPush` and `CanPublish` are all false, so the remote row is dead and
 `Fetch` stays live, exactly as §9e specified
-([`TrackingState.cs:171–183`](../src/Versio.Core/Git/TrackingState.cs)).
+([`TrackingState.cs:171–183`](../../src/Versio.Core/Git/TrackingState.cs)).
 
 **What is missing** is the half §9e called the point: *"the create-branch action sits in the
 badge, pre-filled, because that is the only route out and making the user find it in a menu is
@@ -769,7 +771,7 @@ state.
 > panel alone had nothing left to add. See UX-2.
 
 **Today.** The pill has no zero-suppression of any kind
-([`MainWindow.xaml:465–478`](../src/Versio.App/Views/MainWindow.xaml)) — on the Project panel
+([`MainWindow.xaml:465–478`](../../src/Versio.App/Views/MainWindow.xaml)) — on the Project panel
 with a clean tree it draws a pill containing `0`, beside a panel whose empty state already says
 so in words.
 
@@ -780,14 +782,14 @@ so in words.
 ## UX-12 · The last commit cannot be amended
 
 **Today.** `CommitAsync(message, ct)` takes no amend flag
-([`IGitClient.cs:87`](../src/Versio.Core/Abstractions/IGitClient.cs)) and nothing offers one.
+([`IGitClient.cs:87`](../../src/Versio.Core/Abstractions/IGitClient.cs)) and nothing offers one.
 
 **Why it is here at all.** It is the most-reached-for git verb after `commit`, and the case is
 narrow and common: a typo in the subject, thirty seconds after pressing the button. It is also
 **history rewriting**, which is a genuine hazard once a commit has been pushed — and Versio
 already knows which commits those are, because `UnpushedCommitIdsAsync` exists and the history
-panel already marks them ([`IGitClient.cs:453`](../src/Versio.Core/Abstractions/IGitClient.cs),
-[`HistoryPanelView.xaml:123`](../src/Versio.App/Views/Panels/HistoryPanelView.xaml)).
+panel already marks them ([`IGitClient.cs:453`](../../src/Versio.Core/Abstractions/IGitClient.cs),
+[`HistoryPanelView.xaml:123`](../../src/Versio.App/Views/Panels/HistoryPanelView.xaml)).
 
 So the safe version is available for free: **offer amend only while HEAD is unpushed.** That is
 a rule this app can enforce and a terminal will not.
@@ -808,10 +810,10 @@ written down, so a future session finds the decision instead of re-deriving it.
 
 **Found by the second pass, while checking UX-1's guard claim.** `GuardIntent.Pull`'s remarks
 read *"**Implemented and deliberately not yet wired.** … wiring it now would offer a button that
-cannot do what it says"* ([`GuardVerdict.cs:40`](../src/Versio.Core/Guarding/GuardVerdict.cs)).
+cannot do what it says"* ([`GuardVerdict.cs:40`](../../src/Versio.Core/Guarding/GuardVerdict.cs)).
 
-It has two callers: [`GitRemoteViewModel.cs:497`](../src/Versio.App/ViewModels/GitRemoteViewModel.cs)
-and [`ShellViewModel.cs:3223`](../src/Versio.App/ViewModels/ShellViewModel.cs). Both carry their
+It has two callers: [`GitRemoteViewModel.cs:497`](../../src/Versio.App/ViewModels/GitRemoteViewModel.cs)
+and [`ShellViewModel.cs:3223`](../../src/Versio.App/ViewModels/ShellViewModel.cs). Both carry their
 own comments saying it *is* wired now — the pull one even opens *"Guarded at last"* and
 recounts the history the enum's comment is still telling in the present tense.
 

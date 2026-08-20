@@ -51,20 +51,21 @@ questions about "why is this like this" are already answered there.
 
 | File | What it holds |
 |---|---|
-| `docs/PHASE2.md` | **The forward queue** — what is left, in order, and the decisions already taken with their why. Start here for "what next" |
-| `docs/STATUS.md` | Where the project is, and **Known loose ends** — an audit of the repository |
-| `docs/FINDINGS.md` | **Every defect written up with its evidence**, newest first. Search it rather than reading it; `STATUS.md` carries the index |
-| `docs/SAFEGUARDS.md` | What Versio refuses, asks about, or waits for |
+| `docs/STATUS.md` | **Where the project is, and what is next.** The only live status page. Start here — the next session's first act is *What is next* item 1. |
+| `docs/FINDINGS.md` | **Every defect written up with its evidence**, newest first. Search it rather than reading it. |
+| `docs/SAFEGUARDS.md` | What Versio refuses, asks about, or waits for. Phases 1–9 built; §5.H deferred on purpose. |
 | `docs/vendors/codesys/DRIVING.md` | **One vendor's docs**, beside its two projects. How CODESYS is driven end to end, and the audit of it |
 | `docs/vendors/tia/DRIVING.md` | **One vendor's docs**, beside its three projects. How TIA Portal is driven. PLC-software loop is done; §12 is evidence; coverage skips stay out of scope |
-| `docs/HANDOFF-Siemens2.md` | What `Siemens2` closed on 2026-08-19, and what is still open. Start here after that branch |
 | `docs/phase1/` | **The Phase 1 archive** — four completed plans, marked done, kept for reasoning and evidence: `PLAN.md` (the founding architecture), `IMPORT-PLAN.md` (thirteen gaps, the feature checklist, and the measurements — its raw probe logs are in `probes/`), `GIT-PANEL-PLAN.md`, `PHASE0-FINDINGS.md`. Read them for why, never for state |
+| `docs/archive/` | **Completed later plans** — Phase 2 queue, UX plan, session handoffs, the long STATUS diary. Record, not state |
 | `README.md` | Repository layout, vendor boundaries, the one architectural rule |
 
 **This is a rule because ignoring it has already cost.** An audit was asked for and re-derived
-from scratch what `STATUS.md` already had under *"Known loose ends, from an audit of the
-repository"* — including a suite flake whose three failing test classes were named there by
-name. An hour went into rediscovering it.
+from scratch what [`docs/archive/STATUS-2026-08.md`](docs/archive/STATUS-2026-08.md) already had
+under *"Known loose ends, from an audit of the repository"* — including a suite flake whose
+three failing test classes were named there by name. An hour went into rediscovering it.
+Search [`docs/FINDINGS.md`](docs/FINDINGS.md) and the live [`docs/STATUS.md`](docs/STATUS.md)
+before deriving state from the archive.
 
 ---
 
@@ -133,7 +134,7 @@ Any change that alters what the docs claim updates the docs in the same session.
 
 - Test counts in `README.md` and `docs/STATUS.md` go stale silently — re-derive, never trust.
 - A defect worth understanding gets a **Finding** in `docs/FINDINGS.md`, at the TOP — newest
-  first — with its evidence, and a line in `STATUS.md`'s index.
+  first, with its evidence. Search that file; do not add an index to `STATUS.md`.
 - A structural change gets whatever a future reader needs before editing that file.
 - A loose end that is closed gets struck through, not deleted, with what actually happened.
 

@@ -6,8 +6,9 @@ A PLC project file is a binary compound document. Git can store it, but it canno
 
 **CODESYS 3.5 is implemented today. TIA Portal is the second pack** — seen, probed,
 exported and imported for PLC software (SCL, UDTs, tag tables) once Openness
-membership is granted. Hardware, HMI and safety stay coverage skips (`PHASE2.md`
-item 7). Rockwell Studio 5000 and
+membership is granted. Hardware, HMI and safety stay coverage skips
+([`docs/STATUS.md`](docs/STATUS.md); [`docs/vendors/tia/DRIVING.md`](docs/vendors/tia/DRIVING.md)
+§12). Rockwell Studio 5000 and
 Beckhoff TwinCAT remain intended next vendors. The code is organised so adding one is additive
 — a rule enforced by a test that reads assembly metadata, not by a paragraph here.
 
@@ -92,7 +93,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | **Export coverage stated, not assumed** — `_coverage.md` + every skip in the manifest | ✅ a gap is distinguished from a deliberate omission; an old manifest reports "unknown", never "complete"; and **an object the export could not write at all is reported rather than counted as covered** — it reaches neither the records nor the skips, so until 2026-08-16 a lost object left a verdict of "everything reaches the mirror" |
 | **Library references exported** (`<manager>.libraries.yaml`) | ✅ **the gap is closed.** One file per library manager, beside the object that owns it — 21 references on the fixture's application, 13 on its project, **all 34 placeholders**. Hand-written YAML on both sides, no third-party dependency. Export-only: change libraries in the IDE. A **fixed-version** reference records its version, company and title parsed from its own name, which is project state — reading them off `managed_library` reports what the exporting machine has *installed*, and answers nothing at all for a library it does not have |
 | Template generation | ⛔ needs a new operation and script — not assembly |
-| A second vendor — TIA Portal | ✅ the second pack; probe, export and SCL generate overwrite are gated. Hardware / HMI / safety stay coverage skips — see `PHASE2.md` item 7. TwinCAT / Studio 5000 are not started |
+| A second vendor — TIA Portal | ✅ the second pack; probe, export and SCL generate overwrite are gated. Hardware / HMI / safety stay coverage skips — see [`docs/STATUS.md`](docs/STATUS.md) and [`docs/vendors/tia/DRIVING.md`](docs/vendors/tia/DRIVING.md). TwinCAT / Studio 5000 are not started |
 | **Git side panel** — staging, commit message, fetch/pull/push | ✅ one operation at a time across every button |
 | **Changed files named as objects** — `FB_Motor · POU`, not `src/…/POU/FB_Motor.st` | ✅ resolved through the export manifest, so it costs no extra read. A file the manifest does not describe stays a path and is **never** guessed at. A library-reference file carries a lock: editing it does not reach the project |
 | **Change summary and drafted commit subject** — *"1 GVL and 1 POU changed in RefrigeratorControl"*, and a **Draft** button that writes `Modify FB_Motor, Glob_Var` | ✅ counted by object, not by file — one GVL is two files and one edit. Both describe exactly what the commit button will record, and Draft refuses to overwrite anything you have typed |
@@ -115,14 +116,14 @@ Both directions run automatically and deterministically. A per-project **directi
 | **Library and task rows, layer chips, context menu** | ✅ one node per library reference and per task, chips in the diff header for ST / native / tasks / libraries, a themed context menu on changed rows. Device and IO YAML are still unwritten |
 | Packaging | ⛔ not built |
 
-**[docs/STATUS.md](docs/STATUS.md)** has the current state and the route to completion.
+**[docs/STATUS.md](docs/STATUS.md)** has the current state and what is next — the only live
+status page.
 **[docs/SAFEGUARDS.md](docs/SAFEGUARDS.md)** is what Versio refuses, asks about or waits for —
-the interruption guard, the auto-stash, and the ways this could lose work. Eight of its nine
-phases are built, and so is the ninth. What is left in its scenario list is §5.H, a repository
-that disappears while it is open.
-**[docs/PHASE2.md](docs/PHASE2.md)** is the forward queue. **[docs/HANDOFF-Siemens2.md](docs/HANDOFF-Siemens2.md)**
-is what closed on the TIA PLC-software loop (2026-08-19) and what is still open. Phase 1's four planning documents
-are archived in [`docs/phase1/`](docs/phase1/) — read them for reasoning, never for state.
+the interruption guard, the auto-stash, and the ways this could lose work. All nine phases are
+built. §5.H, a repository that disappears while it is open, is costed and deliberately not built.
+Phase 1's four planning documents are archived in [`docs/phase1/`](docs/phase1/) — read them for
+reasoning, never for state. Later completed plans (Phase 2, the UX pass, session handoffs) are in
+[`docs/archive/`](docs/archive/).
 **[docs/phase1/GIT-PANEL-PLAN.md](docs/phase1/GIT-PANEL-PLAN.md)** is the git panel's
 functionality and UX. **Twelve of twelve phases are built**, including the ahead/behind
 previews.
@@ -230,20 +231,19 @@ Versio.sln
 ├─ .versio/                     Versio's own state for this repository, because it tracks
 │                               its own fixtures. repo.json is committed; local/ is not
 └─ docs/
-   ├─ PHASE2.md                 THE FORWARD QUEUE — what is left, in order, and the
-   │                            decisions already taken with their why
-   ├─ HANDOFF-Siemens2.md       TIA PLC-software loop closed 2026-08-19 — start here
-   │                            after that branch; what is still open is listed there
-   ├─ STATUS.md                 where the project is; audits and the findings index
-   ├─ FINDINGS.md               139 defects with their evidence, newest first — the
+   ├─ STATUS.md                 where the project is, and what is next — the only live
+   │                            status page
+   ├─ FINDINGS.md               defects with their evidence, newest first — the
    │                            engineering log, split out of STATUS.md when it reached
-   │                            77% of that file
+   │                            77% of that file. Search it
    ├─ SAFEGUARDS.md             what Versio refuses, asks about, or waits for
    ├─ phase1/                   THE PHASE 1 ARCHIVE, closed 2026-08-17 — four completed
    │                            plans (PLAN, IMPORT-PLAN, GIT-PANEL-PLAN,
    │                            PHASE0-FINDINGS), each marked done, plus probes/ holding
    │                            the raw measurements behind every P-numbered claim.
    │                            Reasoning and evidence, never current state
+   ├─ archive/                  completed later plans — Phase 2 queue, UX plan, session
+   │                            handoffs, the long STATUS diary they replaced
    └─ vendors/                  ONE VENDOR's documentation per pack
       ├─ codesys/DRIVING.md     how CODESYS is driven end to end, and the audit of it
       └─ tia/DRIVING.md         how TIA Portal is driven — Openness, host, occupancy

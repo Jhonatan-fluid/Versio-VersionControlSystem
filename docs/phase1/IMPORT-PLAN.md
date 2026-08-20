@@ -3,9 +3,9 @@
 > **ARCHIVED — PHASE 1, COMPLETE.** Moved to `docs/phase1/` on 2026-08-17, the day its last
 > two reachable checklist rows closed. Every gap (G1–G13) is closed, guarded or decided; C5 is
 > the one row waiting on an object nobody has observed. **Read this for reasoning and
-> evidence, never for current state** — the live queue is [`../PHASE2.md`](../PHASE2.md), live
-> status is [`../STATUS.md`](../STATUS.md), and the raw probe measurements this file
-> summarizes are in [`probes/`](probes/).
+> evidence, never for current state** — the live page is [`../STATUS.md`](../STATUS.md),
+> the Phase 2 completion log is [`../archive/PHASE2.md`](../archive/PHASE2.md), and the raw
+> probe measurements this file summarizes are in [`probes/`](probes/).
 
 **Date:** 2026-08-17 · **Phases 0, 4, 1, 2, 3, 5 and 6 are COMPLETE, and the checklist has no
 NOT REACHED row left that a fixture can reach.** The codec parity test and the integration
@@ -274,7 +274,7 @@ already exists.**
 | # | What | Why here |
 |---|---|---|
 | ~~1st~~ | ✅ **Phase 4 — typed task configuration.** Landed 2026-08-15, both halves. **G7 and G11 measured closed** | The only phase that fixes **two live, user-facing defects**: G7 changes CPU core affinity nobody asked to change, and G11 makes every import after the first silently fail. P6 proved the typed path works; a direct experiment proved removing the file from `import_native` fixes G11 without relocating the fault. Independent of everything else here |
-| ~~2nd~~ | ✅ **The task XML's one-wayness, recorded.** Landed 2026-08-15, immediately after | **Not planned — found by re-reading Phase 4 as if somebody else had written it.** Making the YAML importable made the `.xml` a file the export writes and the import discards, and nothing said so: not `_coverage.md`, not the manifest, not the panel's lock glyph. It went first because it is a **live silent-data-loss path introduced by the commit that had just landed**, where the honesty fixes below make *future* failures visible. See the finding in [`STATUS.md`](../STATUS.md) |
+| ~~2nd~~ | ✅ **The task XML's one-wayness, recorded.** Landed 2026-08-15, immediately after | **Not planned — found by re-reading Phase 4 as if somebody else had written it.** Making the YAML importable made the `.xml` a file the export writes and the import discards, and nothing said so: not `_coverage.md`, not the manifest, not the panel's lock glyph. It went first because it is a **live silent-data-loss path introduced by the commit that had just landed**, where the honesty fixes below make *future* failures visible. See the finding in [`FINDINGS.md`](../FINDINGS.md) |
 | ~~3rd~~ | ✅ **The committed fixture mirror, regenerated.** Landed 2026-08-15 | It was asserting against a mirror the current exporter cannot produce. **The feared cost did not materialise: every existing content file came back byte-identical**, `Task Configuration.xml` included — the only changes are the new `.tasks.yaml`, one `form` field (`NATIVE_R` → `TASK_NATIVE`), `objectCount` 12 → 13, and the coverage report. One assertion moved, exactly as predicted. It also unlocked the reader test below |
 | ~~4th~~ | ✅ **`.tasks.yaml` parsed by its own reader, against committed bytes.** Landed 2026-08-15 | The cheap half of the typed path's missing coverage, and it needs **no CODESYS** — the same shape as the library test that has run for months. Verified non-vacuous by perturbing an expected value. ~~The expensive half, a real mutation applied to a project, stays in Phase 6~~ — it did not: it came next instead, as the row below |
 | ~~5th~~ | ✅ **The write, tested against a real project — and the two axes G11 hid behind, in the same run.** Landed 2026-08-15 | **Pulled forward from Phase 6, where it was scheduled dead last.** It was the third honesty fix and the expensive half of Phase 4's coverage, and they turned out to be **one test**: the same fixture, the same adopt-and-export scaffolding, the same CODESYS launches. Splitting them would have paid for that setup twice. It is also the item every other document already called load-bearing — the single step the whole G7/G11 argument rests on. See below |
@@ -282,7 +282,7 @@ already exists.**
 | ~~7th~~ | ✅ **Phase 1 — manifest-driven importer.** Landed 2026-08-15, both halves: the pure planner behind the seam, then schema 2 and the script executing exactly the plan | The foundation. The walk that inferred everything from file names is deleted, not bypassed — a planless import job now refuses to serialize, so there is no door back to it |
 | ~~8th~~ | ✅ **`versio_native_equiv.py`.** Landed 2026-08-15, with its parity test in the same commit | A shared prerequisite, not a phase. Phase 2's native content check needs it and so does Phase 5 — it was written down as a Phase 5 artifact and is needed earlier. **Moved up from 8th to next for that reason, then built** |
 | ~~9th~~ | ✅ **Phase 2 — deletes.** Landed 2026-08-15 in six commits: the seam, the delete set, the dialog, the executing half, the dialog's honesty, the native half | Planned to land with Phase 3 and split from it deliberately. Deletion is the first thing Versio does that destroys work, and the safety argument is entirely its own — five planner preconditions and a content check only the CODESYS process can make. Renames share the detection input, not the risk |
-| ~~10th~~ | ✅ **The dialog corrected.** Landed 2026-08-15 | **Not planned — found by re-reading the executing half as if somebody else had written it.** The script grew `remove()` and no sentence moved, so the confirmation dialog told people their objects would stay and then deleted them. Same shape as the 2nd row: a live defect introduced by the commit that had just landed. See the finding in [`STATUS.md`](../STATUS.md) |
+| ~~10th~~ | ✅ **The dialog corrected.** Landed 2026-08-15 | **Not planned — found by re-reading the executing half as if somebody else had written it.** The script grew `remove()` and no sentence moved, so the confirmation dialog told people their objects would stay and then deleted them. Same shape as the 2nd row: a live defect introduced by the commit that had just landed. See the finding in [`FINDINGS.md`](../FINDINGS.md) |
 | ~~11th~~ | ✅ **The native content check — Phase 2's open half.** Landed 2026-08-15, manifest schema 5 | It went before Phase 3 because it makes deletion **whole** rather than a feature that works on 2 of the fixture's 13 objects, and because the alternative design would have dragged git into the script to serve a phase that had not been written yet. Verified four ways against real CODESYS, including a falsification case |
 | ~~12th~~ | ✅ **Phase 3 — renames and moves, all three passes.** Landed 2026-08-15 | Split from step 2 deliberately: exact-content matching needs nothing but the manifest and the mirror, covers most real renames, and does not drag git into the planner. It also turned up `move()` succeeding silently without moving anything — see the box in Phase 3 |
 | ~~**14th**~~ | ✅ **Phase 5 — a mirror that stops churning.** Landed 2026-08-16 | Its prerequisite was proven twice over: `versio_native_equiv` exists, and Phase 2 measured that normalisation is stable across round trips. `Measure-ImportStability.ps1` prints `P7: SETTLES` with the counter flat at 44 across all three cycles |
@@ -407,7 +407,7 @@ Mirrors the library-reference design exactly, which is the precedent to copy:
   recursive export carries, so the coverage report skipped it and the panel drew it as an
   ordinary editable row. **Recorded `TASK_NATIVE` now**, one-wayness is read from a single
   list on each side (`EXPORT_ONLY_FORMS` ↔ `ExportCoverage.IsExportOnly`), and the two are
-  compared in a unit test. See the finding in [`STATUS.md`](../STATUS.md).
+  compared in a unit test. See the finding in [`FINDINGS.md`](../FINDINGS.md).
   - **A side effect worth having:** the importer currently probes the disk for a typed
     sibling, with a comment saying the check can go once Phase 1 reads the manifest. The
     manifest now carries the answer, so Phase 1 inherits it rather than having to derive it.
@@ -732,7 +732,7 @@ is the only moment the walk is worth paying for.
 > green at 1,443 + 480**, because both pinning assertions were on the *old* sentence — an
 > assertion that a dialog says `will stay` cannot fail when the behaviour changes underneath
 > it, only when somebody fixes it. For one commit Versio named an object, said it would stay,
-> and then deleted it. Written up as a Finding in [`STATUS.md`](../STATUS.md).
+> and then deleted it. Written up as a Finding in [`FINDINGS.md`](../FINDINGS.md).
 >
 > **The lesson is about the shape of the tripwire, not the diligence of the author.** A test
 > written to catch a future change has to assert the property that will become false, and
@@ -882,7 +882,7 @@ destroyed and rebuilt.
 > visualisation binding may refer by name too and that has not been measured — **and will not
 > be, by decision (2026-08-17): visualisations are not in use here.** The dialog's precise
 > wording is what keeps that decision safe — it promises exactly what was measured and nothing
-> more. See the Finding in [`STATUS.md`](../STATUS.md).
+> more. See the Finding in [`FINDINGS.md`](../FINDINGS.md).
 
 | Pass | Sees | Needs |
 |---|---|---|

@@ -304,7 +304,7 @@ on, because a script that dies mid-write is exactly when the diagnostics matter:
 | **`removed`**, **`renamed`**, `already_gone` | import | `removed` and `renamed` are **Info**: they are the two structural changes an import can make, and they are the lines somebody goes looking for when an object is not where they expect. `renamed` says "moved X to Y" or "renamed X to Y" depending on which it was, because being told "renamed" about a file that only changed folder reads as a bug in the tool. `already_gone` is Debug — the mirror and the project agree, so nothing happened |
 | `not_imported` | import | Info — an export-only file the import left alone. **Not** a warning, on purpose: one that fires on every import is how a real one gets read past |
 | `nothing_to_save`, `saved` | import | `saved` and `nothing_to_save` are Info — "I edited the mirror and nothing happened" is a question somebody asks, and `nothing_to_save` is the line that answers it. `phase_saved` stays Debug |
-| `summary` | export, import, probe | Info — the roll-up line, **and it has two forms.** It is keyed on the job's operation, not on which fields are present: the export's `walked / wrote / skipped / gaps`, and the import's `import: N updated, N native, … — N warning(s)` with zero-valued fields omitted. Reading an import's summary with the exporter's field names logged a line of blanks for the whole life of the import path; see the finding in [`STATUS.md`](../../STATUS.md) |
+| `summary` | export, import, probe | Info — the roll-up line, **and it has two forms.** It is keyed on the job's operation, not on which fields are present: the export's `walked / wrote / skipped / gaps`, and the import's `import: N updated, N native, … — N warning(s)` with zero-valued fields omitted. Reading an import's summary with the exporter's field names logged a line of blanks for the whole life of the import path; see the finding in [`FINDINGS.md`](../../FINDINGS.md) |
 | `fatal` | all | **Error**, and becomes `CodesysResult.FailureReason` |
 | `exit` | all | `ScriptOutput.ScriptExitCode` |
 | `done` | all | `ScriptOutput.Completed` |
@@ -409,14 +409,14 @@ CPython.
 | `ST_DECL` | declaration only, one `.st` | `DUT` |
 | `ST_IMPL` | implementation only (no declaration exists) | `ACTION`, `TRANSITION` |
 | `GVL_BOTH` | **two files** — `.gvl.xml` for structure, `.gvl.st` for a readable diff **and for import**. The *decision* is `GVL_BOTH`; the two files are **recorded** `GVL_NATIVE` and `ST_DECL`, because only the `.st` is applied back | `GVL`, `GVL_PERSISTENT` |
-| `GVL_NATIVE` | **recorded, never decided.** The `.gvl.xml` half above, marked so the manifest says it is export-only. It carried plain `NATIVE` until 2026-08-16 — an *importable* form, so both halves were applied and the later phase won. That is G12; see the finding in [`STATUS.md`](../../STATUS.md) | — |
+| `GVL_NATIVE` | **recorded, never decided.** The `.gvl.xml` half above, marked so the manifest says it is export-only. It carried plain `NATIVE` until 2026-08-16 — an *importable* form, so both halves were applied and the later phase won. That is G12; see the finding in [`FINDINGS.md`](../../FINDINGS.md) | — |
 | `EXTERNAL_NATIVE` | **decided, and export-only from birth.** An external-file object's one and only file — no importable sibling exists, so the object is IDE-managed entirely. Export-only because the first E4 round trip measured `import_native` **duplicating** the object instead of replacing it (G13, 2026-08-17): same name, same parent, a re-minted GUID, one more copy per import. The payload is metadata — a `FileId` and a download flag — so a mirror edit had nothing to say anyway | `EXTERNAL_FILE`, `EXTERNAL_FILE_SOURCE` |
 | `NATIVE` | `obj.export_native(path, False)` | `EVC`, `VISUALISATION`, `TEXTLIST`, `GLOBAL_TEXTLIST`, `IMAGEPOOL`, `PROJECT_INFORMATION` |
 | `NATIVE_R` | `obj.export_native(path, True)` — owns children not walked separately | `PROPERTY` |
 | `NATIVE_WITH_CHILDREN` | the node natively **and** a subdirectory for its children | **no type maps to it** — only an *unmapped* type that has children |
 | `LIBRARIES` | `<manager>.libraries.yaml`, **export-only** | `LIBRARY_MANAGER` |
 | `TASK_BOTH` | **two files** — `.xml` (recursive) for fidelity, `<name>.tasks.yaml` for review **and for import**. The *decision* is `TASK_BOTH`; the two files are **recorded** `TASK_NATIVE` and `TASK_BOTH`, because only the YAML is applied back | `TASK_CONFIGURATION` |
-| `TASK_NATIVE` | **recorded, never decided.** The `.xml` half above, marked so the manifest says it is export-only. It carried `NATIVE_R` until 2026-08-15, which is an *importable* form — see the finding in [`STATUS.md`](../../STATUS.md) | — |
+| `TASK_NATIVE` | **recorded, never decided.** The `.xml` half above, marked so the manifest says it is export-only. It carried `NATIVE_R` until 2026-08-15, which is an *importable* form — see the finding in [`FINDINGS.md`](../../FINDINGS.md) | — |
 | `SKIP` | nothing, but the reason is recorded | see below |
 
 **The fallbacks are the interesting part.** A POU declared in ST but *drawn* in CFC / LD / FBD
@@ -494,7 +494,7 @@ CODESYS names are much freer than file names, so:
 > is guarded by `too_long_for_any_machine` and `too_long_for_this_machine`, per **file** rather
 > than per object — a `GVL_BOTH` writes two, and its `.gvl.xml` is the longer of the pair.
 > `The_longest_legal_file_name_leaves_no_room_for_an_ordinary_checkout` derives the number
-> rather than asserting it. See the Finding in [`STATUS.md`](../../STATUS.md).
+> rather than asserting it. See the Finding in [`FINDINGS.md`](../../FINDINGS.md).
 
 Then a **type infix** keeps same-named objects of different kinds apart — a `Main`
 visualisation and a `Main` POU are a common real collision:
@@ -546,7 +546,7 @@ is what CODESYS shows, segment for segment.
 > member pays `FB_Alarm/` in the path where it used to pay `FB_Alarm.` in the file name, which
 > is the same nine characters. Only a folder inside a POU adds a level, and the two guards
 > (200 and 260) are checked per file regardless. See the Findings in
-> [`STATUS.md`](../../STATUS.md).
+> [`FINDINGS.md`](../../FINDINGS.md).
 
 > **The bug this table caused once.** `FORM_GVL_BOTH` was missing from the Python `SUFFIX`
 > table, so `file_name_for()` fell through to the `.xml` default. A GVL writes two files; both
@@ -1077,7 +1077,7 @@ Seven C# types restate logic that also exists in Python:
 > row here**: a bug in `split_st` silently moves code between a declaration and an
 > implementation, and the test found one on its first run. Two languages' default `trim`
 > disagreed about four characters, which would have cost a renamed POU its GUID. See the
-> Finding in [`STATUS.md`](../../STATUS.md). **This row is why the remaining two are worth doing
+> Finding in [`FINDINGS.md`](../../FINDINGS.md). **This row is why the remaining two are worth doing
 > rather than reasoning about**: reading the two sources side by side had caught none of the
 > four drifts below, and it did not catch this one either.
 
@@ -1458,7 +1458,7 @@ listed here because only one of them is currently written down anywhere.
 | D3 | ~~**A dot in an object name breaks the owner split.**~~ — **closed 2026-08-15 for recorded objects**: the manifest's `parent` GUID chain decides ownership, and for pre-schema-4 mirrors the recorded *name* disambiguates the split — a name equal to the whole stem is not split, however many dots the filename carries. **Still true for a manifest-absent create**, where only the filename exists; P5 measured that such names cannot be created, so that residue is unreachable by the only door left | `My.Thing.xml` recorded as `My.Thing` resolves as one object. A brand-new dotted file with no manifest record would still be read as owner and member — and CODESYS would refuse to create it anyway |
 | D4 | ~~**Any stray non-`.st` file in the mirror is handed to `import_native`.**~~ — **closed 2026-08-15.** The planner classifies from the manifest, and a file that is neither a recorded object, bookkeeping, nor a recognisable source is **skipped with a warning, never handed to the toolchain** — including a YAML the manifest does not record, and including files that appear between planning and execution (`NOT_IN_PLAN`) | Proven live: a `README.md` dropped into the mirror is warned about and never imported, in the same run that catches a corrupt native file — see `ImportLoggingTests` |
 | D5 | **`*.libraries.yaml` is export-only** | Editing it changes nothing. Stated in the file's own header, in `_coverage.md`, in the manifest and by a lock glyph in the UI |
-| D6 | ~~**Task Configuration is diff-only**~~ — **closed 2026-08-15**, both halves of it | This row carried two defects. `import_native` mutated `Core2` (§7); and — *not* the same defect, though this row said so for an afternoon — every import run with a `<project>_project.precompilecache` beside the project threw on `MainTask` and `VISU_TASK` while reporting `failed: 0`. **Phase 4 removed both by removing the shared cause**: task configuration exports as `TASK_BOTH` and imports through typed property assignment, so `import_native` is never handed the object. Measured over three cycles with the cache present: **zero warnings**, where cycles 2 and 3 used to throw twice each. Versio deletes nothing of CODESYS's. See G7 and G11 in [`vendors/codesys/IMPORT-PLAN.md`](../../phase1/IMPORT-PLAN.md) and the findings in [`STATUS.md`](../../STATUS.md). **What replaces it, and it is smaller:** the `.xml` half is export-only, a task named in the YAML but absent from the project is warned about rather than created, and a task deleted from the YAML is left alone until Phase 2 |
+| D6 | ~~**Task Configuration is diff-only**~~ — **closed 2026-08-15**, both halves of it | This row carried two defects. `import_native` mutated `Core2` (§7); and — *not* the same defect, though this row said so for an afternoon — every import run with a `<project>_project.precompilecache` beside the project threw on `MainTask` and `VISU_TASK` while reporting `failed: 0`. **Phase 4 removed both by removing the shared cause**: task configuration exports as `TASK_BOTH` and imports through typed property assignment, so `import_native` is never handed the object. Measured over three cycles with the cache present: **zero warnings**, where cycles 2 and 3 used to throw twice each. Versio deletes nothing of CODESYS's. See G7 and G11 in [`vendors/codesys/IMPORT-PLAN.md`](../../phase1/IMPORT-PLAN.md) and the findings in [`FINDINGS.md`](../../FINDINGS.md). **What replaces it, and it is smaller:** the `.xml` half is export-only, a task named in the YAML but absent from the project is warned about rather than created, and a task deleted from the YAML is left alone until Phase 2 |
 
 ### E. Smaller observations
 
