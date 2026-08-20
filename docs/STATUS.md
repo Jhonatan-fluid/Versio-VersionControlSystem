@@ -5,17 +5,19 @@ here and only here. Search [`FINDINGS.md`](FINDINGS.md) for defects. Completed p
 handoffs are records in [`phase1/`](phase1/) and [`archive/`](archive/) — read them for why,
 never for state.
 
-**Continue from here — item 1 of *What is next*.** Run `Versio.Plc.Codesys.Tests`
-(~30 min). It was not run on `Siemens2`, and it is the counted gate `LOCK-1` still
-owes. After that: owner eyeballs (item 2), then UX-6 / UX-7 `Ctrl+F` / UX-8 / UX-12
-(item 3), unless the owner picks packaging (item 5) instead. Do not start from
-`archive/` or a handoff.
+**Continue from here — item 2 of *What is next*: the owner eyeballs.** Item 1 is done:
+`Versio.Plc.Codesys.Tests` ran on `Siemens2` on 2026-08-19 evening — **54/54 green in
+39 m 33 s, zero skips**, on an idle machine with the IDE closed, over the Core seam
+changes (`ExportHeldViaCopy`, the held-wait, occupancy-then-hash, the locked-pointer
+skip). That run is also the counted gate `LOCK-1` owed. After the eyeballs: UX-6 /
+UX-7 `Ctrl+F` / UX-8 / UX-12 (item 3), unless the owner picks packaging (item 5)
+instead. Do not start from `archive/` or a handoff.
 
 **Tests:** 2,638 across nine projects, last counted 2026-08-19 after the TIA PLC-software loop
 (the 2,640 first written down double-counted Integration at 152; a re-run prints 150).
 TIA Portal gate: 5 tests, **green** — the import/re-export Fact now also round-trips a UDT
 member and a deletion (an audit found both paths unverified; see Findings, 2026-08-19).
-The CODESYS gate (54) was not re-run on `Siemens2`.
+The CODESYS gate: **54/54 green, 2026-08-19 evening**.
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
@@ -79,9 +81,10 @@ and word-level diff, and a UX pass over the running window. The owner saw the me
 `UxPlan` window on 2026-08-19 and said it looks right. What that look did not include is in the
 queue below.
 
-**Packaging is the remaining product *build*** (item 5). The next session's first act is
-still item 1 — the CODESYS gate — because `Siemens2` did not run it. Code signing is
-procurement lead time: start it before it is needed, not instead of the gate.
+**Packaging is the remaining product *build*** (item 5). The CODESYS gate ran on
+`Siemens2` (item 1, done); what stands between here and packaging is the owner's eyeballs
+and the UX remainder. Code signing is procurement lead time: start it before it is
+needed.
 
 ```
   CODESYS pipeline    ████████████████████  proven on a real project
@@ -98,11 +101,10 @@ procurement lead time: start it before it is needed, not instead of the gate.
 
 One list. Reorder it; do not copy it into another file.
 
-1. **Run `Versio.Plc.Codesys.Tests` — this is where the next session starts.** Not run on
-   `Siemens2`. Core grew `ExportHeldViaCopy`, the held-wait, and the occupancy-then-hash path —
-   vendor-blind and covered in Core / App, but the first vendor's gate has not seen them. The
-   same run is the counted gate `LOCK-1` still owes: that change touches `SyncOrchestrator` and
-   the direction lock.
+1. ~~**Run `Versio.Plc.Codesys.Tests`.**~~ — **done 2026-08-19 evening: 54/54 green in
+   39 m 33 s, zero skips**, IDE closed, machine otherwise idle. The first vendor's gate has
+   now seen `ExportHeldViaCopy`, the held-wait, the occupancy-then-hash path and the
+   locked-pointer skip, and the run is the counted gate `LOCK-1` owed.
 2. **Owner eyeball leftovers.** Merge dialog; both themes on the rail badge; staged / not-staged
    headers dragged to 260 px. TIA confirm-import and restore of the ~500 MB tree (the existing
    directory-payload seam; export was seen on `%TEMP%\versio-tia-p7`).
@@ -173,8 +175,9 @@ and Studio 5000 remain additive next vendors, not this queue.
 ## How to start
 
 1. Read `CLAUDE.md` end to end — the rules are load-bearing and each one names what it cost.
-2. **This page, item 1** — run `Versio.Plc.Codesys.Tests`. Then item 2 (eyeballs) or item 3
-   (UX), unless the owner says packaging. Do not re-derive this list from the archive.
+2. **This page, item 2** — the owner eyeballs (item 1, the CODESYS gate, ran green on
+   2026-08-19). Then item 3 (UX), unless the owner says packaging. Do not re-derive this
+   list from the archive.
 3. The loop: `Versio.Core.Tests` + `Versio.Integration.Tests` + `Versio.Arch.Tests` +
    `Versio.Plc.Codesys.Pure.Tests` + `Versio.Plc.Codesys.Parity.Tests` +
    `Versio.Plc.TiaPortal.Pure.Tests`, about thirty seconds; `Versio.App.Tests` when the UI is in
