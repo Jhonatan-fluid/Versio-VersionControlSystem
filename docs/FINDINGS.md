@@ -262,7 +262,9 @@ format is how two writers would share a project. The tilde file is a transient i
 (that reports after a multi-minute wait, and the panel cannot watch it); hashing `.info`
 into the project (it is occupancy, not the program).
 
-GUI-open occupancy (Portal with a window, no Openness) is still unmeasured.
+~~GUI-open occupancy (Portal with a window, no Openness) is still unmeasured.~~ —
+**measured 2026-08-19 evening: the GUI writes and deletes the same `.info` marker**
+(`vendors/tia/DRIVING.md` §5).
 
 ---
 

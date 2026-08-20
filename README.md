@@ -370,7 +370,7 @@ dotnet test tests/Versio.Core.Tests
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|
 | `Versio.Core.Tests` | 1,434 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
-| `Versio.Integration.Tests` | 152 | a real `git.exe` and the real filesystem | ~10 s |
+| `Versio.Integration.Tests` | 150 | a real `git.exe` and the real filesystem | ~10 s |
 | `Versio.Arch.Tests` | 14 | nothing — it reads assembly metadata, IL, and the project files | instant |
 | `Versio.App.Tests` | 613 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
 | `Versio.Plc.Codesys.Pure.Tests` | 260 | nothing — the vendor's planner, codecs and protocol, pure | under a second |
