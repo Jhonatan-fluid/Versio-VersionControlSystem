@@ -1082,6 +1082,31 @@ public class SyncOrchestratorTests
     }
 
     [Fact]
+    public async Task An_export_waits_when_the_format_cannot_copy_a_held_project()
+    {
+        // A format that opens the payload exclusively cannot export a copy the IDE
+        // is not holding. Sync asks Capabilities, not a vendor name; the wait is
+        // both directions, same verdict as an import.
+        var h = new Harness();
+        h.Formats = _ => ExclusiveOpenFormat.Instance;
+        h.Build();
+        h.Occupancy.Hold();
+        h.SetProject("v2");
+
+        var outcome = await h.Orchestrator.HandleChangeAsync(
+            new SyncJob { BindingId = BindingId, Source = ChangeSource.Project,
+                          Synchronous = true },
+            CancellationToken.None);
+
+        Assert.Equal(SyncVerdict.BlockedByOpenProject, outcome.Verdict);
+        Assert.False(outcome.IsFailure);
+        Assert.Empty(h.Codesys.Jobs);
+        Assert.Contains("cannot be exported", SyncNarrative.Describe(outcome), StringComparison.Ordinal);
+        Assert.DoesNotContain("copied", string.Join(" ", h.Log.Select(e => e.Message)),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task An_export_reads_the_project_itself_when_nobody_has_it_open()
     {
         // The copy is for the awkward case only. Paying it always would double the IO on
@@ -1157,4 +1182,50 @@ public class SyncOrchestratorTests
         Assert.NotNull(PlcFormats.ForPath("plc/A.project"));
     }
 
+    /// <summary>
+    /// A format that cannot export via a scratch copy while the IDE holds the project.
+    /// </summary>
+    /// <remarks>
+    /// Stand-in, not a brand: Sync must wait because Capabilities says so, not because
+    /// this test named a vendor.
+    /// </remarks>
+    private sealed class ExclusiveOpenFormat : IPlcProjectFormat
+    {
+        public static readonly ExclusiveOpenFormat Instance = new();
+
+        public PlcVendor Vendor => new("ExclusiveOpen");
+
+        public string DisplayName => "exclusive-open stand-in";
+
+        public PlcCapabilities Capabilities => new()
+        {
+            TextualExport = true,
+            TextualImport = true,
+            ObjectCreation = true,
+            Headless = true,
+            ExportHeldViaCopy = false,
+            TypicalStartupCost = TimeSpan.FromSeconds(1),
+        };
+
+        public IReadOnlyList<string> ProjectExtensions => [".project"];
+
+        public bool IsTemplate(string path) => false;
+
+        public string ConventionalExportPath(string projectPath) => projectPath;
+
+        public string? OccupancyMarkerFor(string projectPath) => null;
+
+        public IReadOnlyList<string> TransientPatternsFor(string projectPath) => [];
+
+        public ProjectOccupancy ParseOccupancy(string markerContents) => ProjectOccupancy.Free;
+
+        public bool NeedsTextToPlan(string relativePath) => false;
+
+        public ImportPlan PlanImport(
+            Versio.Core.Projects.ProjectManifest? manifest,
+            IReadOnlyList<MirrorFile> mirror,
+            IReadOnlyDictionary<string, string> departed) => new() { Files = [] };
+
+        public Versio.Core.Projects.ObjectTypeName? DisplayNameFor(string type) => null;
+    }
 }

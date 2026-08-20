@@ -20,6 +20,18 @@ public sealed record PlcCapabilities
     /// <summary>The toolchain runs headlessly, without a visible IDE.</summary>
     public bool Headless { get; init; }
 
+    /// <summary>
+    /// Whether an export may read a copy of the project while the IDE holds the original.
+    /// </summary>
+    /// <remarks>
+    /// Default is true: the first vendor's occupancy is a sidecar on the path, so a copy
+    /// at another path is unencumbered and exports byte-identically. A format that opens
+    /// the payload exclusively cannot use that trick — copying a directory project to
+    /// discover the open will fail is the expensive way to wait. Asked of the format so
+    /// Sync never learns which vendors are which.
+    /// </remarks>
+    public bool ExportHeldViaCopy { get; init; } = true;
+
     /// <summary>Typical cost of one toolchain invocation. Drives the sync-mode default:
     /// CODESYS measures 17–31 s, which is why export-on-save is not the default.</summary>
     public TimeSpan TypicalStartupCost { get; init; }

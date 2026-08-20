@@ -1,20 +1,20 @@
 # Versio — status and route to completion
 
-**Date:** 2026-08-19 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,631 across nine
-projects — re-derived by running each after merging `UxPlan` into `Siemens`. TIA Portal
-gate: 4 tests; the import/re-export Fact is **red** (generate does not overwrite). The CODESYS
-gate (54) was not re-run this session.
+**Date:** 2026-08-19 · **Commits:** `git rev-list --count HEAD` · **Tests:** 2,640 across nine
+projects — re-derived this session after the TIA PLC-software loop. TIA Portal
+gate: 5 tests, import/re-export Fact **green**. The CODESYS gate (54) was not re-run
+this session. Handoff: [`HANDOFF-Siemens2.md`](HANDOFF-Siemens2.md).
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,432 | under a second | nothing |
-| `Versio.Integration.Tests` | 148 | ~10 s | real git |
-| `Versio.App.Tests` | 612 | ~50 s | nothing |
+| `Versio.Core.Tests` | 1,434 | under a second | nothing |
+| `Versio.Integration.Tests` | 152 | ~10 s | real git |
+| `Versio.App.Tests` | 613 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 14 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 260 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 92 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 15 | instant | nothing |
-| `Versio.Plc.TiaPortal.Tests` | 4 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 16 | instant | nothing |
+| `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.Codesys.Tests` | 54 | **~30 min** | **real CODESYS** |
 
 *The first eight are the loop to work in — about thirty seconds plus the UI suite. The last is
@@ -200,31 +200,19 @@ which is also what `TaskCatalog.cs` and `LibraryCatalog.cs` are waiting for.
   Packaging           ██░░░░░░░░░░░░░░░░░░  icon and publish profile only
 ```
 
-### Handoff — 2026-08-19 afternoon (TIA session seam)
+### Handoff — 2026-08-19 evening (TIA PLC-software loop)
 
-The **session** now follows the pack split: `SyncOrchestrator` takes `runnerFor`, the App
-probes every registered vendor, `RepoSetup` uses `ForPath`, orphans ask `format.IsTemplate`,
-watch uses `PayloadPathFor`. The Host finds UDTs and tag tables, emits `progress`, and is
-split (`HostApp` / `HostExport` / `HostImport` / `HostReflection`). Hygiene: `TiaPortalJob`
-/ `TiaPortalProtocol` / `TiaPortalSclHeader`; `Versio.Core.Guarding` is in the seam scan.
+PHASE2 item 7's PLC-software loop is done. The page to read next is
+[`HANDOFF-Siemens2.md`](HANDOFF-Siemens2.md): what landed, the defects the app
+loop found, and what is still open. Owner saw the panel on
+`%TEMP%\versio-tia-p7` after the "not exported" fix.
 
-**The next build is TIA SCL apply, not another seam pass.** Locator / probe / export are
-green on this machine. `Import_then_reexport_keeps_textual_bytes` is **red**: import
-reports success, re-export does not carry the mutation. Evidence in Findings. Work only
-on a copy of `fixtures/projects/CleaningStation_V20_V21/` — never the OneDrive original.
-A host rebuild changes the exe hash; click **Yes to all** on Openness access, do not
-dismiss the dialog (that is the ~9 minute timeout).
+**Next is packaging (PHASE2 item 8)** unless the owner wants the coverage skips
+opened. Close Versio and Portal before a host rebuild; click **Yes to all** on
+Openness access. Confirm-import and restore of the tree were not clicked.
 
-Ordered next, then the rest of [`PHASE2.md`](PHASE2.md) item 7:
-
-1. Make `GenerateBlocksFromSource()` overwrite the live block so a mutated `.scl` is
-   present on re-export (the Fact above is the gate).
-2. `tools/tia/Measure-ImportStability.ps1` on a copy under `.versio/local/tia/` (P7 SETTLES).
-3. Two textual exports of an unchanged project, byte-identical.
-4. Eyeball the app on a TIA project this repo is allowed to adopt.
-5. Occupancy with a Portal window, not only Openness `Projects.Open`.
-
-Fast suites were re-derived this session (2,525). `Versio.Plc.Codesys.Tests` was not run.
+Fast suites this session: Core 1,434, Integration 152, Arch 14, TIA Pure 16, TIA
+gate 5 green, App 613. `Versio.Plc.Codesys.Tests` was not run.
 
 ### Proven by measurement, not assertion
 
@@ -578,11 +566,13 @@ does not record them has to be run again.
   `UId` is not a project identity — see the findings. The gate fixture is committed at
   `fixtures/projects/CleaningStation_V20_V21/` (LFS; ignored by this repo's adoption so
   opening Versio here does not export it).
-  - **What is still open is not this bullet.** Item 7's remaining queue is in
-    [`PHASE2.md`](PHASE2.md). The session pin on `PlcFormats.All[0]` is closed. Host
-    import finds UDTs and tag tables. **The mutating import/re-export Fact is red** —
-    `GenerateBlocksFromSource` does not put the edited SCL back (see Findings). AllowList
-    after a host rebuild is friction: **Yes to all**, never dismiss.
+  - **What is still open is not this bullet.** Item 7's PLC-software loop closed
+    2026-08-19 — see [`HANDOFF-Siemens2.md`](HANDOFF-Siemens2.md). The session pin
+    on `PlcFormats.All[0]` is closed. Host import finds UDTs and tag tables. The
+    mutating import/re-export Fact is **green** (group+`None`, compiling body
+    mutation). AllowList after a host rebuild is friction: **Yes to all**, never
+    dismiss. Coverage skips and a Portal-window occupancy measurement stay out of
+    the queue.
 
 - ~~**Launching the app against this repository adopts the 21 `phase0/` scratch projects and
   starts exporting all of them.**~~ — **closed 2026-08-17, and the closing found a defect.**
@@ -1066,6 +1056,11 @@ actually do.
 
 The full list, newest first:
 
+- [A successful TIA export still read as "not exported"](FINDINGS.md#a-successful-tia-export-still-read-as-not-exported)
+- [Occupancy vanish retried a finished TIA export](FINDINGS.md#occupancy-vanish-retried-a-finished-tia-export)
+- [Openness Export(None) refuses an existing file](FINDINGS.md#openness-exportnone-refuses-an-existing-file)
+- [TIA host warnings were strings, so the panel said the manifest was unreadable](FINDINGS.md#tia-host-warnings-were-strings-so-the-panel-said-the-manifest-was-unreadable)
+- [Hashing a directory payload took an exclusive lock on the pointer](FINDINGS.md#hashing-a-directory-payload-took-an-exclusive-lock-on-the-pointer)
 - [TIA GenerateBlocksFromSource does not put a mutated SCL back on re-export](FINDINGS.md#tia-generateblocksfromsource-does-not-put-a-mutated-scl-back-on-re-export)
 - [The App session treated every repository as the first vendor](FINDINGS.md#the-app-session-treated-every-repository-as-the-first-vendor)
 - [SimaticML UId is a document-local integer, not a project identity](FINDINGS.md#simaticml-uid-is-a-document-local-integer-not-a-project-identity)

@@ -146,6 +146,68 @@ public sealed class TiaPortalGateTests
         }
     }
 
+    [SkippableFact(Timeout = 1_200_000)]
+    public async Task Two_unchanged_textual_exports_match_byte_for_byte()
+    {
+        // Native XML is expected to churn (G12). Textual bytes of an unchanged
+        // project must not. Do not fold a generate failure into this: the import
+        // Fact already saw the textual set move.
+        Skip.IfNot(OperatingSystem.IsWindows(), "TIA Portal is Windows-only");
+        var installs = new TiaPortalLocator().FindInstalls();
+        Skip.If(installs.Count == 0, "no TIA Portal install");
+
+        var fixture = TestPaths.TiaPortalProject();
+        Skip.If(fixture is null, "committed TIA fixture is missing or is an LFS pointer — git lfs pull");
+
+        var toolchain = new TiaPortalToolchain(NullLogger.Instance);
+        var status = await toolchain.ProbeAsync(CancellationToken.None);
+        Skip.If(!status.Available, status.Explanation);
+        Skip.If(LocalTiaPortalRunner.FindHost() is null, "TIA Portal host was not copied to the output directory");
+
+        var stamp = Guid.NewGuid().ToString("N")[..8];
+        var exportDir = Path.Combine(Path.GetTempPath(), "versio-tia-det-" + stamp);
+        Directory.CreateDirectory(exportDir);
+
+        try
+        {
+            var runner = toolchain.CreateRunner(status);
+            var first = await runner.RunAsync(
+                Job(PlcOperation.Export, status.Profile ?? "", fixture!, exportDir),
+                progress: null,
+                CancellationToken.None);
+            SkipIfMeasuredBlocker(first);
+            Assert.True(first.Succeeded, first.FailureReason);
+
+            var a = TextualBytes(exportDir);
+
+            // Second export into the same tree — that is what the app does. A fresh
+            // directory would hide Openness refusing an existing XML file.
+            var second = await runner.RunAsync(
+                Job(PlcOperation.Export, status.Profile ?? "", fixture!, exportDir),
+                progress: null,
+                CancellationToken.None);
+            SkipIfMeasuredBlocker(second);
+            Assert.True(second.Succeeded, second.FailureReason);
+
+            var b = TextualBytes(exportDir);
+            Assert.True(a.Count > 0, "first export wrote no textual files");
+            Assert.Equal(a.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase),
+                b.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase));
+
+            foreach (var key in a.Keys)
+            {
+                Assert.True(b.TryGetValue(key, out var right), key);
+                Assert.True(
+                    TextFromUtf8(a[key]) == TextFromUtf8(right!),
+                    "textual export differed: " + key);
+            }
+        }
+        finally
+        {
+            TryDeleteTree(exportDir);
+        }
+    }
+
     /// <summary>
     /// Export, mutate one textual file, import the planner's plan, re-export.
     /// Textual bytes must match. Native XML is expected to churn and is not compared.
@@ -336,9 +398,11 @@ public sealed class TiaPortalGateTests
     }
 
     /// <summary>
-    /// A statement in the body. Extra VAR members are ignored: GenerateBlocksFromSource
-    /// on an existing FC/FB updates the implementation, and GenerateSource rebuilds the
-    /// interface from the object. Header comments die the same way.
+    /// A statement in the body that must compile. Empty IF / extra VAR / header comments
+    /// are ignored: GenerateBlocksFromSource rebuilds the interface from the object, and
+    /// an IF whose body is only a comment left the block unexportable after Save.
+    /// A self-assignment on an existing TEMP plus a // marker matches Siemens's own
+    /// comment shape in Level.scl.
     /// </summary>
     private static string InsertTextualMutation(string original, string ident)
     {
@@ -349,13 +413,14 @@ public sealed class TiaPortalGateTests
             var eol = original.IndexOfAny(['\r', '\n'], begin);
             if (eol >= 0)
             {
-                return original[..eol] + nl
-                    + "    IF FALSE THEN (* " + ident + " *)" + nl
-                    + "    END_IF;" + original[eol..];
+                var statement = original.Contains("#ReleaseSpd_Real", StringComparison.Ordinal)
+                    ? "\t#ReleaseSpd_Real := #ReleaseSpd_Real; // " + ident
+                    : "\t// " + ident;
+                return original[..eol] + nl + statement + nl + original[eol..];
             }
         }
 
-        return original.TrimEnd() + nl + "REGION " + ident + nl + "END_REGION" + nl;
+        return original.TrimEnd() + nl + "// " + ident + nl;
     }
 
     private static string TextFromUtf8(byte[] bytes)

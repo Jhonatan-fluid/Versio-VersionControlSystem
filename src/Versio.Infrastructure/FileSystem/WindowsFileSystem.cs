@@ -8,10 +8,10 @@ namespace Versio.Infrastructure.FileSystem;
 /// </summary>
 /// <remarks>
 /// Thin by design — this is verified by integration tests rather than unit tests, so every
-/// line here is a line that cannot be cheaply proven. The only non-obvious behaviour is the
-/// copy retry, and it exists for a specific reason: CODESYS holds the <c>.project</c> open
-/// while the engineer works, so the export pipeline copies it rather than reading in place,
-/// and that copy has to survive a transient share lock instead of failing the whole sync.
+/// line here is a line that cannot be cheaply proven. The non-obvious behaviour is surviving
+/// a share lock: CODESYS holds the <c>.project</c> open while the engineer works, and a
+/// directory payload includes a pointer file the toolchain still holds after its host has
+/// exited. Copy and hash both have to wait that out rather than failing the whole sync.
 /// </remarks>
 public sealed class WindowsFileSystem(int copyRetries = 5) : IFileSystem
 {
@@ -21,8 +21,69 @@ public sealed class WindowsFileSystem(int copyRetries = 5) : IFileSystem
 
     public bool DirectoryExists(string path) => Directory.Exists(path);
 
-    public Task<byte[]> ReadAllBytesAsync(string path, CancellationToken ct) =>
-        File.ReadAllBytesAsync(path, ct);
+    /// <summary>
+    /// Read a file that another process may still be holding.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="File.ReadAllBytesAsync(string, CancellationToken)"/> opens exclusive.
+    /// Hashing a directory payload includes the pointer sitting at the top of it, and the
+    /// toolchain that just exported still holds that pointer — measured 2026-08-19: host
+    /// <c>WaitForExit</c> had returned, export had written the mirror, then
+    /// <c>ProjectHashAsync</c> threw and the session was logged as "failed to open at
+    /// startup". The watcher already reads with <see cref="FileShare.ReadWrite"/>; hashing
+    /// must too, and retry the way <see cref="CopyAsync"/> already does, because an
+    /// exclusive holder refuses even a sharing reader until it lets go.
+    /// </remarks>
+    public async Task<byte[]> ReadAllBytesAsync(string path, CancellationToken ct)
+    {
+        var delay = TimeSpan.FromMilliseconds(250);
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                await using var stream = new FileStream(
+                    path,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.ReadWrite,
+                    bufferSize: 4096,
+                    options: FileOptions.Asynchronous | FileOptions.SequentialScan);
+                var length = stream.Length;
+                if (length > int.MaxValue)
+                {
+                    throw new IOException($"'{path}' is too large to read as one buffer.");
+                }
+
+                var bytes = new byte[length];
+                var offset = 0;
+                while (offset < bytes.Length)
+                {
+                    var n = await stream.ReadAsync(bytes.AsMemory(offset), ct)
+                        .ConfigureAwait(false);
+                    if (n == 0)
+                    {
+                        break;
+                    }
+
+                    offset += n;
+                }
+
+                if (offset == bytes.Length)
+                {
+                    return bytes;
+                }
+
+                var slice = new byte[offset];
+                Buffer.BlockCopy(bytes, 0, slice, 0, offset);
+                return slice;
+            }
+            catch (IOException) when (attempt < copyRetries)
+            {
+                await Task.Delay(delay, ct).ConfigureAwait(false);
+                delay = TimeSpan.FromMilliseconds(Math.Min(delay.TotalMilliseconds * 2, 2000));
+            }
+        }
+    }
 
     public Task<string> ReadAllTextAsync(string path, CancellationToken ct) =>
         File.ReadAllTextAsync(path, Utf8NoBom, ct);

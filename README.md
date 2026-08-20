@@ -4,9 +4,10 @@
 
 A PLC project file is a binary compound document. Git can store it, but it cannot diff it, merge it, or tell you what changed — so version control degrades to "upload a zip with a date in the name". Versio keeps a **textual mirror** of the project inside the same repository, kept in sync automatically, so git becomes genuinely useful for PLC work: line diffs, blame, history, review.
 
-**CODESYS 3.5 is implemented today. TIA Portal is the second pack** — seen, probed, and
-exported for PLC software once Openness membership is granted; SCL import generate is
-the remaining hole (`PHASE2.md` item 7). Rockwell Studio 5000 and
+**CODESYS 3.5 is implemented today. TIA Portal is the second pack** — seen, probed,
+exported and imported for PLC software (SCL, UDTs, tag tables) once Openness
+membership is granted. Hardware, HMI and safety stay coverage skips (`PHASE2.md`
+item 7). Rockwell Studio 5000 and
 Beckhoff TwinCAT remain intended next vendors. The code is organised so adding one is additive
 — a rule enforced by a test that reads assembly metadata, not by a paragraph here.
 
@@ -91,7 +92,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | **Export coverage stated, not assumed** — `_coverage.md` + every skip in the manifest | ✅ a gap is distinguished from a deliberate omission; an old manifest reports "unknown", never "complete"; and **an object the export could not write at all is reported rather than counted as covered** — it reaches neither the records nor the skips, so until 2026-08-16 a lost object left a verdict of "everything reaches the mirror" |
 | **Library references exported** (`<manager>.libraries.yaml`) | ✅ **the gap is closed.** One file per library manager, beside the object that owns it — 21 references on the fixture's application, 13 on its project, **all 34 placeholders**. Hand-written YAML on both sides, no third-party dependency. Export-only: change libraries in the IDE. A **fixed-version** reference records its version, company and title parsed from its own name, which is project state — reading them off `managed_library` reports what the exporting machine has *installed*, and answers nothing at all for a library it does not have |
 | Template generation | ⛔ needs a new operation and script — not assembly |
-| A second vendor — TIA Portal | ✅ the second pack; probe and export are gated. **SCL import generate does not yet overwrite** — see `PHASE2.md` item 7. TwinCAT / Studio 5000 are not started |
+| A second vendor — TIA Portal | ✅ the second pack; probe, export and SCL generate overwrite are gated. Hardware / HMI / safety stay coverage skips — see `PHASE2.md` item 7. TwinCAT / Studio 5000 are not started |
 | **Git side panel** — staging, commit message, fetch/pull/push | ✅ one operation at a time across every button |
 | **Changed files named as objects** — `FB_Motor · POU`, not `src/…/POU/FB_Motor.st` | ✅ resolved through the export manifest, so it costs no extra read. A file the manifest does not describe stays a path and is **never** guessed at. A library-reference file carries a lock: editing it does not reach the project |
 | **Change summary and drafted commit subject** — *"1 GVL and 1 POU changed in RefrigeratorControl"*, and a **Draft** button that writes `Modify FB_Motor, Glob_Var` | ✅ counted by object, not by file — one GVL is two files and one edit. Both describe exactly what the commit button will record, and Draft refuses to overwrite anything you have typed |
@@ -119,7 +120,8 @@ Both directions run automatically and deterministically. A per-project **directi
 the interruption guard, the auto-stash, and the ways this could lose work. Eight of its nine
 phases are built, and so is the ninth. What is left in its scenario list is §5.H, a repository
 that disappears while it is open.
-**[docs/PHASE2.md](docs/PHASE2.md)** is the forward queue. Phase 1's four planning documents
+**[docs/PHASE2.md](docs/PHASE2.md)** is the forward queue. **[docs/HANDOFF-Siemens2.md](docs/HANDOFF-Siemens2.md)**
+is what closed on the TIA PLC-software loop (2026-08-19) and what is still open. Phase 1's four planning documents
 are archived in [`docs/phase1/`](docs/phase1/) — read them for reasoning, never for state.
 **[docs/phase1/GIT-PANEL-PLAN.md](docs/phase1/GIT-PANEL-PLAN.md)** is the git panel's
 functionality and UX. **Twelve of twelve phases are built**, including the ahead/behind
@@ -196,7 +198,7 @@ Versio.sln
 │  ├─ Versio.Integration.Tests/ 148 tests against real git and the real filesystem, ~10 s.
 │  │                            NO CODESYS: that is a different project now, so this one
 │  │                            needs no filter and cannot accidentally cost half an hour
-│  ├─ Versio.App.Tests/         612 tests that build the real windows and panels against
+│  ├─ Versio.App.Tests/         613 tests that build the real windows and panels against
 │  │                            the real stylesheet on an STA thread — none is ever shown
 │  ├─ Versio.Plc.Codesys.Pure.Tests/ 260 pure vendor tests — the planner, the codecs, the
 │  │                            protocol — under a second, needing nothing
@@ -204,8 +206,8 @@ Versio.sln
 │  │                            ~15 s, no CODESYS — python on PATH, skips cleanly without
 │  ├─ Versio.Plc.Codesys.Tests/ 54 tests against real CODESYS, ~30 min. The CODESYS gate
 │  │                            before a commit, and the only suite that needs that toolchain
-│  ├─ Versio.Plc.TiaPortal.Pure.Tests/ 15 pure vendor tests — format, planner, protocol
-│  └─ Versio.Plc.TiaPortal.Tests/ 4 tests against real TIA Portal; skip with a count when
+│  ├─ Versio.Plc.TiaPortal.Pure.Tests/ 16 pure vendor tests — format, planner, protocol
+│  └─ Versio.Plc.TiaPortal.Tests/ 5 tests against real TIA Portal; skip with a count when
 │                               Openness membership or the install is missing
 ├─ tools/                       PowerShell and python harnesses. tools/tia/ is the second
 │                               vendor's round-trip and P7 harness; the rest are CODESYS
@@ -230,8 +232,10 @@ Versio.sln
 └─ docs/
    ├─ PHASE2.md                 THE FORWARD QUEUE — what is left, in order, and the
    │                            decisions already taken with their why
+   ├─ HANDOFF-Siemens2.md       TIA PLC-software loop closed 2026-08-19 — start here
+   │                            after that branch; what is still open is listed there
    ├─ STATUS.md                 where the project is; audits and the findings index
-   ├─ FINDINGS.md               134 defects with their evidence, newest first — the
+   ├─ FINDINGS.md               139 defects with their evidence, newest first — the
    │                            engineering log, split out of STATUS.md when it reached
    │                            77% of that file
    ├─ SAFEGUARDS.md             what Versio refuses, asks about, or waits for
@@ -365,17 +369,17 @@ dotnet test tests/Versio.Core.Tests
 
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,432 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
-| `Versio.Integration.Tests` | 148 | a real `git.exe` and the real filesystem | ~10 s |
+| `Versio.Core.Tests` | 1,434 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
+| `Versio.Integration.Tests` | 152 | a real `git.exe` and the real filesystem | ~10 s |
 | `Versio.Arch.Tests` | 14 | nothing — it reads assembly metadata, IL, and the project files | instant |
-| `Versio.App.Tests` | 612 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
+| `Versio.App.Tests` | 613 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
 | `Versio.Plc.Codesys.Pure.Tests` | 260 | nothing — the vendor's planner, codecs and protocol, pure | under a second |
 | `Versio.Plc.Codesys.Parity.Tests` | 92 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 15 | nothing — format, planner, protocol, scrubber | instant |
-| `Versio.Plc.TiaPortal.Tests` | 4 | **a real TIA Portal**; skips cleanly without Openness membership | seconds when skipped |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 16 | nothing — format, planner, protocol, scrubber | instant |
+| `Versio.Plc.TiaPortal.Tests` | 5 | **a real TIA Portal**; skips cleanly without Openness membership | seconds when skipped |
 | `Versio.Plc.Codesys.Tests` | 54 | **a real CODESYS**, and **skips cleanly** without one | **~30 min** |
 
-The first six are the loop to work in. The last is the gate before a commit — and it is a
+The first eight are the loop to work in. The last is the gate before a commit — and it is a
 separate project precisely so that running the loop cannot cost you half an hour by accident.
 Of the 386 tests that used to sit behind that half-hour wall, **334 needed no toolchain at
 all**; they surface in seconds now.

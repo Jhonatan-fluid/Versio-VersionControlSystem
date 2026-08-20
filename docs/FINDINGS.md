@@ -17,6 +17,102 @@ produce a diff touching everything else.
 
 ---
 
+### A successful TIA export still read as "not exported"
+
+**Found 2026-08-19**, owner screenshot of CleaningStation after 159 objects were
+written. The project row said `not exported · 4 objects not exported`; the banner
+named Hardware / HMI / Safety / Technology; PLC data types (93) sat underneath as
+if they had not been exported. Two independent causes, stacked:
+
+1. **Coverage.** The host recorded those four categories as `NOT_IMPLEMENTED`. That
+   reason is a hole, so `ExportCoverage` paints `HasGaps` on every TIA tree even
+   when the PLC-software loop succeeded. They are decisions for this product slice,
+   the same bargain `SERVICE_OBJECT` makes on the first vendor. `_coverage.md`
+   still names them.
+2. **Staleness.** Openness rewrites `System/` while it holds the project. Hashing
+   the payload before the occupancy sidecar vanished recorded a mid-write tree;
+   the commit gate then reported "1 project has changes that have not been
+   exported." Occupancy-release used to retry the export in a loop (separate
+   finding); after that wait was gated, the yellow banner remained.
+
+**Fix:** category and `F_*` skips are `SERVICE_OBJECT`. After an exclusive-open
+export, the orchestrator suppresses Project echoes for the run, waits until
+occupancy is Free, then hashes. Sync still does not spell a vendor —
+`ExportHeldViaCopy` is the seam.
+
+---
+
+### Occupancy vanish retried a finished TIA export
+
+**Found 2026-08-19**, app loop on `%TEMP%\versio-tia-p7`. PHASE2 item 3 retries
+both directions when the occupancy marker vanishes, which is closing the IDE.
+Every host `Projects.Open` writes `<stem>.info` and deletes it on the way out.
+Each finished export therefore looked like the engineer shutting Portal:
+four cycles of 159 objects / ~32 s, nobody saving.
+
+**Fix:** `SyncViewModel` remembers `BlockedByOpenProject` and ignores a vanish
+that was not a wait. Tests:
+`IdeReleaseRetryTests.A_vanished_marker_with_nothing_waiting_stays_quiet`.
+Mutation-checked: deleting the remember/remove pair leaves the suite green
+on the old tests and red on that one.
+
+**What was rejected:** special-casing a vendor's sidecar in `Sync/` (the
+marker path still comes from the format); treating every occupancy rewrite
+as Held (that is the storm the wait was meant to end).
+
+---
+
+### Openness Export(None) refuses an existing file
+
+**Found 2026-08-19**, second export of CleaningStation into the tree the first
+export had just written. 159 `XML_EXPORT_FAILED` ("file already exists"),
+**zero objects** in the manifest. The determinism gate used two empty
+directories, so it never saw overwrite.
+
+**Fix:** delete the dest before `Export` / `GenerateSource`. The same-tree
+Fact (`Two_unchanged_textual_exports_match_byte_for_byte`) is the mutation
+check.
+
+**What was rejected:** `ExportOptions` other than `None` (not measured as
+overwrite on V21); asserting on two fresh dirs and calling that
+determinism.
+
+---
+
+### TIA host warnings were strings, so the panel said the manifest was unreadable
+
+**Found 2026-08-19**, first App export of CleaningStation. The host wrote
+`"warnings": [ "Level: SCL export failed: …" ]`. Core `ExportWarning` is
+`{code, path, detail}`. The panel logged `manifest not fully readable` and
+dropped the objects behind the parse failure.
+
+**Fix:** `HostExport.Warn()` writes the record shape. After the overwrite
+fix: 270 objects, 0 string-warning parse failures.
+
+**What was rejected:** loosening the parser to accept a string (that hides
+the next host that ships the wrong shape).
+
+---
+
+### Hashing a directory payload took an exclusive lock on the pointer
+
+**Found 2026-08-19**, first App session against `%TEMP%\versio-tia-p7`. Export
+finished; `ProjectHashAsync` used `File.ReadAllBytesAsync` on the `.ap21`
+while Openness still held it. Logged `failed to open … at startup`. Copy
+already retried a share lock; hash did not.
+
+**Fix:** `WindowsFileSystem.ReadAllBytesAsync` opens `FileShare.ReadWrite`
+and retries the way copy does. A pointer that is still exclusive is skipped
+in the tree hash and logged, not thrown. Tests:
+`WindowsFileSystemTests` (share + retry) and
+`TreePayloadTests.Hashing_a_tree_skips_a_pointer_the_toolchain_still_holds`.
+
+**What was rejected:** hashing only `System/` and ignoring the pointer (the
+pointer moving is a real project change); waiting on a timer instead of
+share/retry.
+
+---
+
 ### TIA GenerateBlocksFromSource does not put a mutated SCL back on re-export
 
 **Found 2026-08-19**, `TiaPortalGateTests.Import_then_reexport_keeps_textual_bytes` on a
@@ -41,8 +137,12 @@ Header comments and extra interface members were already the wrong mutation: gen
 rebuilds the interface from the object. A body statement should have been the right
 one. It still did not round-trip.
 
-**Still open.** The next session starts here. Scratch copy only; never the OneDrive
-original. A host rebuild needs **Yes to all** on Openness access.
+**Closed 2026-08-19.** The empty `IF FALSE THEN … END_IF` does not compile; Save then
+left the block unexportable, so the next host wrote no `.scl`. The mutation that
+survives is an assignment on an existing TEMP plus a `//` marker. Group+`None` is
+the overwrite; KeepOnError is refused; generate verifies via `GenerateSource`
+before Save and throws rather than listing a no-op in `ChangedPaths`. P7 SETTLES.
+The Fact is green.
 
 **What was rejected:** asserting the whole textual tree byte-identical (that is item 7.3,
 and the file *set* already differed); treating AllowList as the failure (runs finished in

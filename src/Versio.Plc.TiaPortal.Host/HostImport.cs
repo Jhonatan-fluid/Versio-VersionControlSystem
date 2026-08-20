@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Reflection;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Versio.Plc.TiaPortal.Host;
 
@@ -67,6 +68,9 @@ internal static partial class HostApp
             var plc = MatchPlc(plcs, Str(file, "resolve"), rel) ?? plcs[0];
             if (action is "text" or "ApplyText" or "create" or "Create")
             {
+                // Throws rather than emitting success: import used to report the path
+                // in ChangedPaths after a generate that left the live block unchanged
+                // or unexportable. A throw skips Save, so the file on disk is intact.
                 ApplyScl(plc, abs);
                 Emit("object", "path", rel, "action", action);
             }
@@ -116,22 +120,146 @@ internal static partial class HostApp
             throw new InvalidOperationException("PlcSoftware.ExternalSourceGroup missing");
         }
 
-        var name = Path.GetFileName(path);
-        var existing = FindNamed(GetProp(group, "ExternalSources"), name);
-        existing ??= FindNamed(GetEnumerable(group, "Sources"), name);
-        if (existing is not null)
+        var applied = File.ReadAllText(path);
+        var objectName = SclObjectName(applied) ?? Path.GetFileNameWithoutExtension(path);
+        var isType = IsTypeSource(path, applied);
+        var existing = FindSoftware(plc, objectName, isType);
+        var before = existing is { } hit ? TryGenerateSourceText(plc, hit.Obj) : null;
+
+        var staged = StageSourceFile(path);
+        var srcName = Path.GetFileName(path);
+        var existingSource = FindNamed(GetProp(group, "ExternalSources"), srcName);
+        existingSource ??= FindNamed(GetEnumerable(group, "Sources"), srcName);
+        if (existingSource is not null)
         {
-            Call(existing, "Delete");
+            Call(existingSource, "Delete");
         }
 
-        var source = CreateExternalSource(group, name, path);
+        var source = CreateExternalSource(group, srcName, staged);
         if (source is null)
         {
             throw new InvalidOperationException("could not create external source from " + path);
         }
 
-        InvokeGenerateBlocks(source);
+        // Prefer the overload that names the destination group. Zero-arg overwrite
+        // on V21 left Level unexportable on the next host process; KeepOnError
+        // cloned BoolToDigVal_1. None is the other enum value.
+        if (!TryGenerateBlocks(source, existing?.Group, isType))
+        {
+            throw new InvalidOperationException("GenerateBlocksFromSource did not run on " + srcName);
+        }
+
+        var live = FindSoftware(plc, objectName, isType);
+        var language = live is null ? "" : Str(live.Obj, "ProgrammingLanguage") ?? "";
+        Emit("info", "msg",
+            objectName + " after generate language=" + language
+            + " before=" + (before is null ? "none" : "snapshot"));
+
+        if (!LiveCarriesApplied(plc, objectName, isType, applied, before, expectScl: !isType))
+        {
+            throw new InvalidOperationException(
+                "generate did not apply " + srcName + " onto " + objectName
+                + " (language=" + language + ")");
+        }
     }
+
+    /// <summary>
+    /// Siemens documents external sources as ASCII. GenerateSource writes UTF-8 with a
+    /// BOM; CreateFromFile from a no-BOM edit is a different encoding than the one
+    /// the block was exported with. Stage a BOM copy so generate sees the same shape.
+    /// </summary>
+    private static string StageSourceFile(string path)
+    {
+        var raw = File.ReadAllBytes(path);
+        var hasBom = raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF;
+        var staged = Path.Combine(Path.GetTempPath(),
+            "versio-tia-src-" + Guid.NewGuid().ToString("N").Substring(0, 8)
+            + Path.GetExtension(path));
+        if (hasBom)
+        {
+            File.Copy(path, staged, overwrite: true);
+        }
+        else
+        {
+            var bom = new byte[] { 0xEF, 0xBB, 0xBF };
+            using var output = new FileStream(staged, FileMode.Create, FileAccess.Write, FileShare.Read);
+            output.Write(bom, 0, 3);
+            output.Write(raw, 0, raw.Length);
+        }
+
+        return staged;
+    }
+
+    /// <summary>
+    /// Object exists, can emit source, and every line the applied file added is in that source.
+    /// </summary>
+    private static bool LiveCarriesApplied(
+        PlcRef plc, string objectName, bool isType, string applied, string? before,
+        bool expectScl)
+    {
+        var live = FindSoftware(plc, objectName, isType);
+        if (live is null)
+        {
+            Emit("info", "msg", objectName + " is not in the project after generate");
+            return false;
+        }
+
+        var language = Str(live.Obj, "ProgrammingLanguage") ?? "";
+        if (expectScl && language.Length > 0 && !LooksLikeScl(language))
+        {
+            Emit("info", "msg", objectName + " language after generate is " + language);
+            return false;
+        }
+
+        TryCompile(live.Obj);
+        var after = TryGenerateSourceText(plc, live.Obj);
+        if (string.IsNullOrWhiteSpace(after))
+        {
+            Emit("info", "msg", objectName + " cannot emit source after generate");
+            return false;
+        }
+
+        var missing = NewLinesNotPresent(applied, before ?? "", after!);
+        if (missing is not null)
+        {
+            Emit("warning", "msg", objectName + " source is missing applied line: " + missing);
+            return false;
+        }
+
+        var marker = after!.IndexOf("versio_mutate_", StringComparison.Ordinal) >= 0;
+        Emit("info", "msg",
+            objectName + " verify length=" + after.Length + " marker=" + marker
+            + " language=" + (Str(live.Obj, "ProgrammingLanguage") ?? ""));
+        return true;
+    }
+
+    private static string? NewLinesNotPresent(string applied, string? before, string after)
+    {
+        var beforeSet = new HashSet<string>(CollapsedLines(before ?? ""), StringComparer.Ordinal);
+        var afterCollapsed = CollapseWhite(after);
+        foreach (var line in CollapsedLines(applied))
+        {
+            if (beforeSet.Contains(line))
+            {
+                continue;
+            }
+
+            if (afterCollapsed.IndexOf(line, StringComparison.Ordinal) < 0)
+            {
+                return line;
+            }
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<string> CollapsedLines(string text) =>
+        text.Replace('\r', '\n').Split('\n')
+            .Select(CollapseWhite)
+            .Where(s => s.Length > 0);
+
+    private static string CollapseWhite(string text) =>
+        Regex.Replace(text.Trim(), @"\s+", " ");
 
     private static object? CreateExternalSource(object group, string name, string path)
     {
@@ -172,37 +300,212 @@ internal static partial class HostApp
         return null;
     }
 
-    private static void InvokeGenerateBlocks(object source)
+    private static bool TryGenerateBlocks(object source, object? parentGroup, bool isType)
     {
         var methods = source.GetType().GetMethods()
             .Where(m => m.Name == "GenerateBlocksFromSource")
             .ToList();
 
-        // V21 documents the zero-argument call as overwriting existing blocks.
-        // GenerateBlockOptions is None | KeepOnError — KeepOnError is what created
-        // BoolToDigVal_1 beside the live block. Do not fall through to it.
-        TargetInvocationException? last = null;
+        if (parentGroup is not null)
+        {
+            foreach (var method in methods)
+            {
+                var ps = method.GetParameters();
+                if (ps.Length != 2
+                    || !ps[0].ParameterType.IsInstanceOfType(parentGroup)
+                    || !ps[1].ParameterType.IsEnum)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var none = Enum.Parse(ps[1].ParameterType, "None");
+                    method.Invoke(source, [parentGroup, none]);
+                    Emit("info", "msg",
+                        "GenerateBlocksFromSource(" + (isType ? "type-group" : "block-group") + ", None)");
+                    return true;
+                }
+                catch (TargetInvocationException ex)
+                {
+                    Emit("warning", "msg",
+                        "GenerateBlocksFromSource(group, None): " + Innermost(ex));
+                }
+            }
+        }
+
         foreach (var method in methods.Where(m => m.GetParameters().Length == 0))
         {
             try
             {
                 method.Invoke(source, null);
-                return;
+                Emit("info", "msg", "GenerateBlocksFromSource()");
+                return true;
             }
             catch (TargetInvocationException ex)
             {
-                last = ex;
+                Emit("warning", "msg", "GenerateBlocksFromSource(): " + Innermost(ex));
             }
         }
 
-        if (last is not null)
+        return false;
+    }
+
+    private static SoftwareHit? FindSoftware(PlcRef plc, string name, bool isType)
+    {
+        var root = GetProp(plc.Software, isType ? "TypeGroup" : "BlockGroup");
+        var items = isType ? "Types" : "Blocks";
+        foreach (var (item, group) in NamedWithGroup(root, items))
         {
-            throw last.InnerException ?? last;
+            if (string.Equals(Str(item, "Name"), name, StringComparison.OrdinalIgnoreCase))
+            {
+                return new SoftwareHit(item, group);
+            }
         }
 
-        throw new InvalidOperationException(
-            "GenerateBlocksFromSource() is missing on " + source.GetType().Name);
+        return null;
     }
+
+    private static IEnumerable<(object Item, object Group)> NamedWithGroup(object? group, string items)
+    {
+        if (group is null)
+        {
+            yield break;
+        }
+
+        foreach (var item in Enumerate(GetProp(group, items)))
+        {
+            yield return (item, group);
+        }
+
+        foreach (var child in Enumerate(GetProp(group, "Groups")))
+        {
+            foreach (var nested in NamedWithGroup(child, items))
+            {
+                yield return nested;
+            }
+        }
+    }
+
+    private static string? TryGenerateSourceText(PlcRef plc, object item)
+    {
+        var dest = Path.Combine(Path.GetTempPath(),
+            "versio-tia-gs-" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".scl");
+        try
+        {
+            return GenerateSource(plc, item, dest) ? File.ReadAllText(dest) : null;
+        }
+        catch (Exception ex)
+        {
+            Emit("info", "msg", "GenerateSource: " + Innermost(ex));
+            return null;
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(dest);
+            }
+            catch (IOException)
+            {
+                // Temp.
+            }
+        }
+    }
+
+    private static void TryCompile(object obj)
+    {
+        object? compilable = obj;
+        var viaService = GetService(obj, "Siemens.Engineering.Compiler.ICompilable");
+        if (viaService is not null)
+        {
+            compilable = viaService;
+        }
+
+        MethodInfo? compile = null;
+        foreach (var iface in compilable.GetType().GetInterfaces())
+        {
+            if (string.Equals(iface.Name, "ICompilable", StringComparison.Ordinal))
+            {
+                compile = iface.GetMethod("Compile", Type.EmptyTypes);
+                break;
+            }
+        }
+
+        compile ??= compilable.GetType().GetMethod("Compile", Type.EmptyTypes);
+        if (compile is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var result = compile.Invoke(compilable, null);
+            var state = result is null ? "" : Str(result, "State") ?? "";
+            var errors = result is null ? "" : Str(result, "ErrorCount") ?? "";
+            if (!string.IsNullOrEmpty(state) || !string.IsNullOrEmpty(errors))
+            {
+                Emit("info", "msg", "compile " + state + " errors=" + errors);
+            }
+        }
+        catch (TargetInvocationException ex)
+        {
+            Emit("warning", "msg", "compile: " + Innermost(ex));
+        }
+    }
+
+    private static readonly Regex SclHeader = new(
+        @"^\s*(FUNCTION_BLOCK|FUNCTION|ORGANIZATION_BLOCK|DATA_BLOCK|TYPE)\s+""?([^\s"";:]+)""?",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    /// <summary>
+    /// Same rule as <c>TiaPortalSclHeader</c>. Duplicated because this host is net48
+    /// and cannot reference the net9 pack.
+    /// </summary>
+    private static string? SclObjectName(string text)
+    {
+        using var reader = new StringReader(text);
+        string? line;
+        while ((line = reader.ReadLine()) is not null)
+        {
+            var trimmed = line.Trim();
+            if (trimmed.Length == 0 || trimmed.StartsWith("//", StringComparison.Ordinal)
+                || trimmed.StartsWith("(*", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var match = SclHeader.Match(trimmed);
+            return match.Success ? match.Groups[2].Value : null;
+        }
+
+        return null;
+    }
+
+    private static bool IsTypeSource(string path, string text)
+    {
+        if (path.EndsWith(".udt", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        using var reader = new StringReader(text);
+        string? line;
+        while ((line = reader.ReadLine()) is not null)
+        {
+            var trimmed = line.Trim();
+            if (trimmed.Length == 0 || trimmed.StartsWith("//", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            return trimmed.StartsWith("TYPE", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
+    }
+
+    private sealed record SoftwareHit(object Obj, object Group);
 
     private static void ApplyNative(PlcRef plc, string path, string? guid)
     {

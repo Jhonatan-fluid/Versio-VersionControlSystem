@@ -13,7 +13,7 @@ plan-driven import that creates, updates, deletes, renames and moves objects, re
 everywhere it cannot act, and never applies anything a person did not confirm. Thirteen
 numbered gaps (G1–G13) were closed, guarded or decided; the feature checklist ran every import
 behaviour against a real project; and the last two reachable rows closed on 2026-08-17. The
-suite is nine projects, 2,631 tests, split by need — the half-hour CODESYS gate holds only the
+suite is nine projects, 2,640 tests, split by need — the half-hour CODESYS gate holds only the
 54 tests that actually launch the toolchain.
 
 **Documents that stay live** (not archived, because they are logs and references, not plans):
@@ -24,8 +24,9 @@ suite is nine projects, 2,631 tests, split by need — the half-hour CODESYS gat
 | [`FINDINGS.md`](FINDINGS.md) | Every defect with its evidence, newest first — search it |
 | [`SAFEGUARDS.md`](SAFEGUARDS.md) | What Versio refuses, asks about or waits for |
 | [`vendors/codesys/DRIVING.md`](vendors/codesys/DRIVING.md) | How CODESYS is driven — API traps, forms, events, manifest schema |
-| [`vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md) | How TIA Portal is driven — Openness, occupancy, identity. §12 is evidence; **the remaining order is item 7 in this file** |
-| [`HANDOFF-UxPlan.md`](HANDOFF-UxPlan.md) | What `UxPlan` built, merged into `Siemens` on 2026-08-19. Owner saw the window; UX-12 and P-M2 remain. The CODESYS gate is this session's |
+| [`vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md) | How TIA Portal is driven — Openness, occupancy, identity. §12 is evidence; the PLC-software loop is done — remaining TIA is coverage skips, not the queue |
+| [`HANDOFF-Siemens2.md`](HANDOFF-Siemens2.md) | What `Siemens2` closed on 2026-08-19, and what is still open. Start here after this branch |
+| [`HANDOFF-UxPlan.md`](HANDOFF-UxPlan.md) | What `UxPlan` built, merged into `Siemens` on 2026-08-19. Owner saw the window; UX-12 and P-M2 remain. The CODESYS gate was not re-run on `Siemens2` |
 | [`UX-PLAN.md`](UX-PLAN.md) | **A plan, and the one live one** — thirteen UX findings over the running shell, ranked, each with its evidence. Opened 2026-08-18. What is left: UX-6, UX-7's second half, UX-8, UX-12 |
 
 **`UX-PLAN.md` is where the shell's remaining UX work lives, and it is not copied here** — one
@@ -60,12 +61,13 @@ decision** (2026-08-17): no second vendor and no packaging until everything abov
 complete.
 
 > **Items 1–4 and 6 are DONE, all on 2026-08-17, in one session on branch `Phase2_Begin`** —
-> each struck through below with what actually happened. What remains open in this file:
-> **item 5** (corpus rows that wait on reality producing a specimen — C5 and `native_partial`
-> cannot be manufactured), the **human eyeball pass** (item 6's one unownable entry, now with
-> a session's worth of new UI to look at), and **items 7–8**, which the owner sequenced last
-> on purpose. The gate before believing any of it: the CODESYS suite, run at the end of the
-> session over the Core changes it can see.
+> each struck through below with what actually happened. **Item 7's PLC-software loop closed
+> 2026-08-19** on `Siemens2` — see [`HANDOFF-Siemens2.md`](HANDOFF-Siemens2.md). What remains
+> open in this file: **item 5** (corpus rows that wait on reality producing a specimen — C5
+> and `native_partial` cannot be manufactured), the **human eyeball pass** (item 6's leftover:
+> merge dialog, rail-badge themes, 260 px headers), **item 7's coverage skips** (hardware /
+> HMI / safety — not the product loop), and **item 8** (packaging), which the owner sequenced
+> last on purpose. The CODESYS gate was not re-run on `Siemens2`.
 
 ### 1. The project tree panel — the next piece of work, and the largest user-visible value
 
@@ -233,30 +235,40 @@ safety are coverage skips. The gate fixture is committed at
 adoption). Driving notes — setup, Openness members, occupancy, identity — live in
 [`docs/vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md).
 
-**What is left, in order** — the pack, the directory seam, and the App session pin are
-done (see Findings). Import has a skippable C# gate that is **red on generate**. Work
-only on a copy of the LFS fixture. Click **Yes to all** after a host rebuild.
+**What is left, in order** — the pack, the directory seam, the App session pin, SCL
+overwrite, textual determinism, the app loop, and held-export-as-a-wait are done
+(see Findings). Hardware, HMI, safety and packaging stay out of scope. Work only
+on a copy of the LFS fixture. Click **Yes to all** after a host rebuild.
 
-1. **`GenerateBlocksFromSource` does not overwrite the live SCL block.** The Fact
-   `Import_then_reexport_keeps_textual_bytes` is the gate. KeepOnError created
-   `*_1` clones; the documented zero-arg call dropped `Level.scl` from the next
-   export. See Findings. Then `Measure-ImportStability.ps1` on `.versio/local/tia/`
-   (P7 SETTLES). Never the OneDrive original.
+1. ~~**`GenerateBlocksFromSource` does not overwrite the live SCL block.**~~ —
+   **done 2026-08-19.** Empty `IF FALSE THEN` does not compile; the live mutation is
+   an assignment on an existing TEMP. Group+`None` overwrites; KeepOnError is
+   refused; generate verifies before Save. Fact green; P7 SETTLES.
 2. ~~**Host import that is not only `BlockGroup`.**~~ — **done 2026-08-19.**
    `FindObject` walks `BlockGroup`, `TypeGroup` (`…/UDT/{name}`) and `TagTableGroup`
    (`…/TAG_TABLE/{name}`). `TryDelete` keeps the object and warns when `Delete()` is
    missing or throws. Native apply routes by identity (tag tables to `TagTables.Import`
    — `Blocks.Import` failed "out of context"). Export emits `progress`. `HostApp` is
    split along those methods.
-3. **Export determinism** — two textual exports of an unchanged project, byte-identical.
-   Native XML is expected to differ (G12). The import Fact already saw the textual *set*
-   differ after a generate; do not fold that into this item until generate is honest.
-4. **The app loop on a TIA project that is not this repository's ignored fixture** —
-   adopt, first export, panel, direction lock, confirmed import, restore of a ~500 MB
-   tree. Neutral code should do it; it has not been eyeballed.
-5. **Open-in-Portal.** Exclusive `Projects.Open`: no export-from-copy while the GUI holds
-   it. Occupancy was measured under Openness, not with a Portal window. Attach-to-running
-   is unused on purpose.
+3. ~~**Export determinism**~~ — **done 2026-08-19.** Two textual exports of an
+   unchanged project, byte-identical (`Two_unchanged_textual_exports_match_byte_for_byte`,
+   now re-exports into the same tree so Openness refusing an existing XML is visible).
+   Native XML is expected to differ (G12).
+4. ~~**The app loop on a TIA project that is not this repository's ignored fixture**~~ —
+   **done 2026-08-19** on `%TEMP%\versio-tia-p7`. Adopt, export (27.9 s, 159 objects /
+   270 manifest records), direction lock, occupancy wait rather than a 500 MB copy.
+   Confirm-import and restore of the tree are the existing seam; owner still eyeballs
+   the dialogs. Zero `ERR` after the hash/warning/overwrite fixes.
+5. ~~**Open-in-Portal / export-while-held.**~~ — **done as a wait, 2026-08-19.**
+   `ExportHeldViaCopy` is false for the directory payload; Sync waits both directions.
+   Occupancy marker is `<stem>.info` (measured under Openness). Attach-to-running and
+   a "launch Portal" button stay unused.
+
+**What is left of item 7** is coverage skips (hardware, HMI, safety, technology,
+know-how-protected import, compile-after-import, VCI) and GUI occupancy with a
+Portal window rather than Openness — not the PLC-software loop. Handoff:
+[`HANDOFF-Siemens2.md`](HANDOFF-Siemens2.md). Confirm-import and restore of the
+tree are the existing seam; the owner has not clicked those dialogs.
 
 Identity stays `device/plc/type/name#number` until a stable Siemens id appears. Folders
 are not recorded objects. Coverage skips (hardware, HMI, safety, technology,
@@ -360,8 +372,9 @@ listed here even though every one lives in an archived document.
 
 1. Read `CLAUDE.md` end to end — the rules are load-bearing and each one names what it cost.
 2. Read `STATUS.md` *Where the project actually is* and *Known loose ends*.
-3. Pick from the queue above — **item 7.1** (TIA `GenerateBlocksFromSource` overwrite)
-   unless the owner says otherwise. Items 1–6 are done; the eyeball pass has been seen once
+3. Pick from the queue above — **item 8** (packaging) unless the owner says otherwise.
+   Item 7's PLC-software loop is done; coverage skips (hardware, HMI, safety) stay
+   stated, not this queue. Items 1–6 are done; the eyeball pass has been seen once.
    on the merged shell and still owes the merge dialog and a 260 px drag.
 4. The loop: `Versio.Core.Tests` + `Versio.Integration.Tests` + `Versio.Arch.Tests` +
    `Versio.Plc.Codesys.Pure.Tests` + `Versio.Plc.Codesys.Parity.Tests` +
