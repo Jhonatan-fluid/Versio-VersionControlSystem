@@ -227,9 +227,16 @@ recovery needs a pid, which this marker has not been shown to carry.
 `System/~PEData.*` is a transient inside the program folder, not the marker the probe watches.
 
 Export-while-open **in the GUI** is a wait (`ExportHeldViaCopy` is false): exclusive
-`Projects.Open`, and a 488 MB copy is not the first vendor's sidecar copy. GUI occupancy
-(Portal with a window, no Openness) was not re-measured this session; the marker path is
-the same exclusive-open lock file Openness writes.
+`Projects.Open`, and a 488 MB copy is not the first vendor's sidecar copy.
+
+**GUI occupancy — measured 2026-08-19 evening, Portal V21 with a window, no Openness.**
+`Siemens.Automation.Portal.exe <project.ap21>` against a scratch copy, a filesystem poll
+every 3 s beside it. The GUI writes **the same `<stem>.info` marker** — first seen ~20 s
+after launch, while the project was still loading (Openness measured 16 s) — and deletes
+it when the project closes (graceful `taskkill`, no `/F`). So a project an engineer holds
+in the Portal window reads Held, and closing Portal is the retry, the same as the first
+vendor. One nuance: a Portal *process* outlived the project close by minutes; the marker
+tracks the project, not the process, which is the fact Versio actually needs.
 
 Closed, top-level names: `.ap21`, `System/`, `IM/`, `Logs/`, `tmp/`, `Vci/`, `XRef/`,
 `AdditionalFiles/`, `UserFiles/`, `src/`, `ProjectInfo.txt`. `System/` then is `PEData.idx`
@@ -387,9 +394,9 @@ queue was derived from, so a later session does not have to re-derive it.
    **done 2026-08-19** on a temp copy. Zero `ERR` after hashing with share/retry, warning
    records, and XML overwrite. Coverage skips no longer paint `HasGaps` on every tree.
 5. ~~**GUI occupancy and export-while-the-IDE-holds-it.**~~ — **wait, not copy.**
-   `.info` measured under Openness. `ExportHeldViaCopy = false`. A Portal window (no
-   host) was not separately measured this session; the marker path is the exclusive-open
-   lock file.
+   `.info` measured under Openness. `ExportHeldViaCopy = false`. ~~A Portal window (no
+   host) was not separately measured this session~~ — **measured 2026-08-19 evening: the
+   GUI writes and deletes the same `.info` marker** (§5). Nothing left open here.
 
 ### Not this queue (coverage skips)
 

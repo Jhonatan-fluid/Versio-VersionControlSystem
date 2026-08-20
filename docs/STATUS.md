@@ -125,8 +125,10 @@ One list. Reorder it; do not copy it into another file.
    [`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md).
 7. **Not this queue.** TIA hardware / HMI / safety (`F_*`) / technology / know-how-protected
    import / compile-after-import / VCI / Project Server. `_coverage.md` names them. They are
-   `SERVICE_OBJECT`. GUI occupancy with a Portal window (no Openness) was not separately
-   measured — treat a different sidecar as a new measurement, not an assumption.
+   `SERVICE_OBJECT`. ~~GUI occupancy with a Portal window (no Openness) was not separately
+   measured~~ — **measured 2026-08-19 evening: the Portal GUI writes and deletes the same
+   `.info` marker Openness does** (`vendors/tia/DRIVING.md` §5), so a project held in the
+   window reads Held and closing Portal is the retry.
 
 Close Versio **and** Portal before a host rebuild. Click **Yes to all** on Openness access (path
 + hash — a rebuild drops the host off the AllowList).
