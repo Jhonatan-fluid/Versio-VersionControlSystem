@@ -1,6 +1,6 @@
 # Versio — status and what is next
 
-**Date:** 2026-08-19 · **This is the live page.** Where the project is, and what is next, live
+**Date:** 2026-08-20 · **This is the live page.** Where the project is, and what is next, live
 here and only here. Search [`FINDINGS.md`](FINDINGS.md) for defects. Completed plans and session
 handoffs are records in [`phase1/`](phase1/) and [`archive/`](archive/) — read them for why,
 never for state.
@@ -13,11 +13,17 @@ skip). That run is also the counted gate `LOCK-1` owed. After the eyeballs: UX-6
 UX-7 `Ctrl+F` / UX-8 / UX-12 (item 3), unless the owner picks packaging (item 5)
 instead. Do not start from `archive/` or a handoff.
 
-**Tests:** 2,654 across eleven projects, last counted 2026-08-19 after the TwinCAT PLC-software
-loop (2,638 was the TIA-loop count). TwinCAT XAE gate: 5 tests, **green** in 3 m 14 s — probe,
-export, two unchanged textual exports byte-identical, import/re-export of an ST mutation and
-its deletion. TIA Portal gate: 5 tests, **green**. The CODESYS gate: **54/54 green, 2026-08-19
-evening**.
+**Tests:** 2,661 across eleven projects, last counted 2026-08-20 after the TwinCAT hardening
+pass (2,654 was the TwinCAT-loop count). TwinCAT XAE gate: 5 tests, **green in 3 m 17 s on
+2026-08-20** over the hardened host — probe, export, two unchanged textual exports
+byte-identical, import/re-export of an ST mutation and its deletion. TIA Portal gate: 5 tests,
+**green**. The CODESYS gate: **54/54 green, 2026-08-19 evening**.
+
+A 2026-08-20 code review of the TwinCAT pack found and fixed four defects the same day —
+an import that could delete or overwrite a wrong same-named object, a conversion check that
+failed open when a version could not be read, a dead lazy-TIPC wait whose empty export
+reported success, and a runner output race shared with TIA. All four are in
+[`FINDINGS.md`](FINDINGS.md), newest first.
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
@@ -29,7 +35,7 @@ evening**.
 | `Versio.Plc.Codesys.Parity.Tests` | 92 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 16 | instant | nothing |
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
-| `Versio.Plc.TwinCat.Pure.Tests` | 11 | instant | nothing |
+| `Versio.Plc.TwinCat.Pure.Tests` | 18 | instant | nothing |
 | `Versio.Plc.TwinCat.Tests` | 5 | seconds when skipped; ~3 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
 | `Versio.Plc.Codesys.Tests` | 54 | **~30 min** | **real CODESYS** |
 
@@ -74,12 +80,14 @@ guessed wherever the toolchain is silent.
   `fixtures/projects/CleaningStation_V20_V21/` (Git LFS). Work only on a **copy**. Never the
   OneDrive original. Session notes: [`archive/HANDOFF-Siemens2.md`](archive/HANDOFF-Siemens2.md).
 - **TwinCAT 3** — the same product loop for ST, through a net9 COM host into
-  `TcXaeShell.DTE.17.0`. **Gated 2026-08-19:** probe, export, two unchanged `.st`
-  files byte-identical, ST overwrite and the inverse deletion. Create / object-delete
-  / rename are in the planner and host, not an XAE Fact yet. 4024.4 opened on 4026.25
-  only as a disposable `%TEMP%` copy. I/O, NC, safety, C++ and visualisation are
-  coverage skips. Gate fixture: `fixtures/projects/TC3_PlcSample_reStrText/`. Work
-  only on a **copy**. Session notes:
+  `TcXaeShell.DTE.17.0`. **Gated 2026-08-19, re-gated 2026-08-20** after the hardening
+  pass: probe, export, two unchanged `.st` files byte-identical, ST overwrite and the
+  inverse deletion. Destructive import actions are identity-only and hash-verified
+  against the last export since 2026-08-20; the conversion check fails closed. Create /
+  object-delete / rename are in the planner and host, not an XAE Fact yet. 4024.4
+  opened on 4026.25 only as a disposable `%TEMP%` copy. I/O, NC, safety, C++ and
+  visualisation are coverage skips. Gate fixture:
+  `fixtures/projects/TC3_PlcSample_reStrText/`. Work only on a **copy**. Session notes:
   [`vendors/twincat/DRIVING.md`](vendors/twincat/DRIVING.md).
 
 Versio **deletes, renames and moves objects**. Delete a `.st` from the mirror, confirm the

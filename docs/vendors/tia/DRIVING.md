@@ -115,6 +115,10 @@ Versio.Plc.TiaPortal.Host.exe <job.json>
 `Global\Versio.TiaPortal.SingleInstance` (15 min wait), and reads stdout for `@@VERSIO@@`
 lines. Timeout floor is **20 minutes** — a 488 MB project is not the first vendor's 20-second
 session. `TypicalStartupCost` is **45 s** (measured warm probe 42 s, warm export 37 s).
+Since 2026-08-20 the runner drains the async readers with a parameterless `WaitForExit()`
+before reading the buffer (the timed overload is not a flush barrier — a successful run
+could report "host exited 0"), logs malformed protocol lines instead of dropping them, and
+refuses a plan-less import instead of fabricating an empty plan. Findings, 2026-08-20.
 
 The job schema (`TiaPortalJob` / `JobReader`):
 

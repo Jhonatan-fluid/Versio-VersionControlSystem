@@ -19,6 +19,108 @@ produce a diff touching everything else.
 
 ---
 
+### A TwinCAT import could delete or overwrite the wrong same-named object
+
+**Found 2026-08-20**, by a code review of commit `73741e4` — before any user ran a TwinCAT
+import with deletions. The host's delete and ApplyText both fell back to a **display-name
+index** when the identity lookup missed: `index.ByGuid.TryGetValue(guid, out found) ||
+index.ByName.TryGetValue(n, out found)`. The "guid" is an Automation Interface `PathName`
+(`TIPC^PLC^PLC Project^Motor`), which goes stale the moment the user moves or renames
+anything in XAE — precisely when the fallback fired. The name index was
+first-encountered-wins over *every* tree node, folders included, and POU member names
+recur (`Init`, `Execute`), so a planned deletion of a departed POU could `Delete()` a
+folder or a newer same-named object, and an edit could land on the wrong FB's method. The
+ApplyText read-back could not catch it: it verifies the text landed on the item written
+to, not that the item was the right one. TIA's host is deliberately guid-only on delete;
+the fallback was TwinCAT's addition.
+
+The same review found the host never honoured the contract `DeletedFile.Hash` documents
+("the executing side compares the *live* object against it before removing anything") —
+CODESYS does, via `why_not_delete`; TwinCAT deleted without comparing, so an object
+edited in XAE after the last export went down with its unexported edits. And planned
+work could drop silently: a missing source file warned and continued, an unmatched
+rename or a null guid skipped with no event, an unrecognised action (`ApplyNative`
+included) fell through both branches — then the run saved and emitted `done ok`.
+"Import job has no plan" was worse: `EmitFatal` then *return*, after which `Run`
+emitted `done` and exited 0.
+
+**Fix (same day):** delete is identity-only and compares the live packed-text hash to
+the recorded one before `Delete()` — miss or mismatch keeps the object with a sentence.
+ApplyText resolves guid, then a session rename map (a rename changes the live `PathName`
+mid-import, which is the one legitimate reason the name fallback existed), then a name
+only when it is unique in the tree; ambiguity throws. Every silent drop now throws
+before anything is saved — `Solution.Close(false)` discards the half-applied session,
+so disk stays untouched. Both directory-vendor runners refuse a plan-less import
+instead of fabricating an empty plan that no-ops, saves and reports green.
+
+**What was rejected:** a "unique name" fallback for delete. A unique-named survivor is
+still not the object the plan named, and `Delete()` is the call P3 measured to destroy a
+referenced object with no exception and no cascade.
+
+The gate's import Fact exercises ApplyText only, so the delete-verify and rename
+preconditions are code-reviewed, not XAE-gated — they join create/delete/rename in
+[`vendors/twincat/DRIVING.md`](vendors/twincat/DRIVING.md) §9 as Facts still owed.
+
+---
+
+### The TwinCAT conversion refusal failed open exactly when it knew the least
+
+**Found 2026-08-20**, same review. `WouldConvert` ended in `if (project is null ||
+install is null) return false` — proceed. `ProjectTcVersion` swallowed every exception,
+and the locator returned `Version = "unknown", InstallFolder = ""` for any TwinCAT
+outside its three hardcoded folders. On such a machine a 4024 project on a 4026 shell
+opened **on the bound path** with `SuppressUI` set and converted headless, nobody asked —
+the OpenWithUpgrade class of mistake the check exists to refuse, disabled by exactly the
+missing information that makes the mistake likely. The refusal message even had wording
+for an unknown install; that branch was unreachable in the unknown case.
+
+**Fix:** `ConvertRefusal` returns a sentence naming which side could not be read — unknown
+refuses. The false-refusal cost is paid in discovery, not by skipping the check:
+`TWINCAT3DIR` (set machine-wide by the Beckhoff installer) is a fallback in both the
+locator and the host's own walk, `Build_*` is picked numerically rather than by ordinal
+string sort (a five-digit build would have sorted below `Build_4026`), and an unreadable
+`Version.txt` degrades to unknown instead of faulting `ProbeAsync`. `AllowConvert` — the
+`%TEMP%` copy — bypasses as designed. Gate re-ran 5/5 green.
+
+---
+
+### The lazy-TIPC wait was dead code, and an empty export reported success
+
+**Found 2026-08-20**, same review. `WaitForPlcProject`'s generic branch ended its
+coalesce in `?? child`, so it returned on the first pass for any named TIPC child — the
+90 × 500 ms retry loop could never retry, and the node returned could be the outer child
+whose lazy children had not loaded. `Export` would then walk zero children, write a
+mirror with no objects, and emit `done ok`: the next diff reads as **every object
+deleted**, the one failure this project exists to prevent. The gate never saw any of it
+because the fixture's name was compiled into a fast path (`TIPC^LibraryDocumentationSample^…`),
+so the gate proved a branch no real project would take.
+
+**Fix:** fast path deleted, the loop actually retries the nested `<name> Project`
+lookup, an outer child may stand in only after half the wait *and* only with
+demonstrably loaded children — and `Export` now refuses to write a mirror with zero
+objects at all, so even a wrongly-accepted node cannot produce the mass-deletion diff
+silently. Cost accepted: a genuinely empty PLC project cannot export; it has nothing to
+lose by the refusal. Gate re-ran green through the generic branch it now actually
+exercises — 3 m 17 s against 3 m 14 s before, so the fast path was buying nothing.
+
+---
+
+### WaitForExit(int) let the TIA and TwinCAT runners read a truncated stream
+
+**Found 2026-08-20**, same review. `WaitForExit(int)` is not a flush barrier — the async
+`OutputDataReceived` handlers can still hold the last lines when it returns, and only
+the parameterless `WaitForExit()` is documented to wait for them. On that race the final
+`@@VERSIO@@` `done` line is missing, `Completed` is false, and a fully successful import
+— one that changed the project — returns `Succeeded = false, "host exited 0"`.
+`LocalCodesysRunner` and `GitCliClient` already carry the follow-up wait with the same
+reasoning in a comment; the two newer runners were copied from a shape predating it.
+Both drain now, both log malformed protocol lines (previously dropped without a trace —
+the "failure arrives with no message" shape the quiet-verbosity finding already
+records), and the hosts' JSON escaping covers control characters, which COM error
+messages do carry.
+
+---
+
 ### TwinCAT version taken from the Visual Studio shell refused every open
 
 **Found 2026-08-19**, first TwinCAT host open of `TC3_PlcSample_reStrText`

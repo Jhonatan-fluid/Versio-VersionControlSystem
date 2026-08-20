@@ -1,8 +1,8 @@
 # Driving TwinCAT 3
 
-**Date:** 2026-08-20 · Beside `Versio.Plc.TwinCat*` — one vendor's docs, beside its
-projects. How TwinCAT XAE is driven, what the Automation Interface actually does in
-this host, and what is still open.
+**Date:** 2026-08-20 (hardening pass same day) · Beside `Versio.Plc.TwinCat*` — one
+vendor's docs, beside its projects. How TwinCAT XAE is driven, what the Automation
+Interface actually does in this host, and what is still open.
 
 | | |
 |---|---|
@@ -80,9 +80,19 @@ The committed gate fixture is Beckhoff's `TC3_PlcSample_reStrText` (`TcVersion="
 Opening it on 4026 is a conversion. The host **refuses** that on the path the user bound —
 the OpenWithUpgrade class of mistake.
 
+**The check fails closed since 2026-08-20.** It used to return "no conversion" when either
+version could not be read — and with `SuppressUI` set, that is exactly when a mismatched
+project converts headless with nobody asked. Unknown refuses now, with a sentence naming
+which side could not be read; the false-refusal cost is paid in discovery instead:
+`TWINCAT3DIR` (set machine-wide by the Beckhoff installer) is a fallback in both the locator
+and the host's own walk, `Build_*` is picked numerically, and an unreadable `Version.txt`
+degrades to unknown rather than faulting the probe. See Findings, 2026-08-20.
+
 A **`%TEMP%` copy** is the conscious conversion the product allows: the runner sets
 `allowConvert` only when the `.tsproj` sits under `Path.GetTempPath()`. Gate Facts copy the
-fixture there first. The committed tree is never opened.
+fixture there first. The committed tree is never opened. Carried deliberately: any path
+under `%TEMP%` qualifies, so a project somebody *binds* from their temp directory loses the
+refusal — scoping the grant to Versio-created copies is the tighter rule if that ever bites.
 
 ### 2.4 Sibling `.sln`
 
@@ -183,9 +193,15 @@ TwinCAT's System Manager is a forest. Only the PLC branch is the round-trip subj
 **Lazy load.** `LookupTreeItem("TIPC^Name^Name Project")` fails until the nested PLC
 project is touched. Measured: `Child` is a **1-based property indexer**
 (`item.Child[i]`); `Child(i)` as a method did not. The host waits up to ~45 s (90 ×
-500 ms): it looks up the gate fixture's known path first, then enumerates `TIPC`'s
-children, reads `Name` / `ChildCount`, and calls `ProduceXml` to force the nested
-`… Project` node into existence.
+500 ms): it enumerates `TIPC`'s children, reads `Name` / `ChildCount`, and calls
+`ProduceXml` to force the nested `… Project` node into existence. The first cut ended
+its coalesce in `?? child`, which made the retry loop dead code and could hand export a
+node whose children never loaded — and fast-pathed the fixture by name so the gate never
+saw the generic branch (Findings, 2026-08-20). Now: the nested lookup gets the first
+half of the wait exclusively; only after that may the outer child stand in, and only
+with demonstrably loaded children. **Export refuses a zero-object mirror outright** —
+an empty mirror reads as every object deleted, so a genuinely empty PLC project cannot
+export, on purpose.
 
 Identity in the manifest is that Automation Interface **`PathName`**
 (`TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^…`), not a GUID
@@ -209,16 +225,26 @@ textual exports match.
 
 | Member | Used by | Notes |
 |---|---|---|
-| Index by `PathName` (manifest `guid`) and `Name` | apply / delete / rename | Rebuild after each create |
+| Index by `PathName` (manifest `guid`), ambiguity-aware `Name` | apply / delete / rename | Rebuild after renames and each create. A name carried by more than one node resolves **nothing** |
 | `DeclarationText` / `ImplementationText` set | `ApplyText` / create | No `ConsumeXml` fallback. If IDispatch rejects the set, the import fails rather than writing `.TcPOU` on disk |
-| `CreateChild(name, 1, "", subType)` | create | `TREEITEMINSERT` last = 1. Subtype from the ST header |
-| `item.Name = newName` | rename | **Name only.** A folder move is planned as `IsMove`; relocating under a new parent is not gated |
-| `item.Delete()` | delete | Skipped when `cannotVerify` is set. Failure emits a warning and **keeps** the object |
+| `CreateChild(name, 1, "", subType)` | create | `TREEITEMINSERT` last = 1. Subtype from the ST header. Parent walked segment-by-segment down the recorded `resolve` chain, never a tree-wide name lookup |
+| `item.Name = newName` | rename | **Name only.** A folder move is planned as `IsMove`; relocating under a new parent is not gated. A missing target aborts the whole import — renaming a guess is how a different POU gets somebody else's name |
+| `item.Delete()` | delete | **Identity-only, hash-verified** (2026-08-20): `PathName` lookup, then the live packed text is hashed and compared to what the plan recorded — miss or mismatch keeps the object with a sentence, honouring `DeletedFile.Hash`'s contract. Skipped when `cannotVerify` is set. Failure emits a warning and **keeps** the object |
 | `File.SaveAll` | when `save` | See §4.1 |
+
+`ApplyText` resolves its target as: `PathName` → this session's rename map (a rename
+changes the live `PathName` mid-import — the one legitimate reason a fallback exists) →
+display name only when unique in the tree. Ambiguity throws, and every throw lands before
+the save: `Solution.Close(false)` discards the half-applied session, so disk stays
+untouched. Planned work that cannot be carried out — a missing source file, an unmatched
+rename, an action this host does not apply (`ApplyNative` included) — refuses the same
+way rather than importing less than was confirmed. See Findings, 2026-08-20.
 
 The planner is the same `ImportPlan` the other vendors fill (`ApplyText` / `Create` /
 `Skip` / `Deletions` / `Renames`). Five deletion preconditions stay in the planner, not
-in Sync.
+in Sync — and the planner's refusal paths are pinned by mutation-verified pure tests
+since 2026-08-20. The runner refuses a plan-less import outright instead of fabricating
+an empty plan that no-ops, saves and reports green.
 
 ---
 
@@ -285,7 +311,9 @@ refuses. Work only on a **copy** under `%TEMP%`. Do not adopt it into this repos
 ## 8. What the gate proved (2026-08-19)
 
 `tests/Versio.Plc.TwinCat.Tests` — **5/5 green in 3 m 14 s**, zero skips, on a `%TEMP%`
-copy. Close XAE and Versio first.
+copy. Close XAE and Versio first. **Re-gated 2026-08-20 in 3 m 17 s** over the hardened
+host — through the generic TIPC branch this time, the fixture fast path being gone, so
+the three extra seconds bought the branch real projects actually take.
 
 | Job | Cost on this install |
 |---|---|
@@ -321,9 +349,9 @@ existing confirm-import dialog. They have **not** been walked against live XAE.
 
 | Item | What the host does | Gap |
 |---|---|---|
-| **Create** | `CreateChild` + set texts | No Fact that a new `.st` becomes a live POU |
-| **Object delete** | `Delete()` when `cannotVerify` is empty | The gate deleted a *line*, not a POU |
-| **Rename** | `Name = newName` | No Fact |
+| **Create** | `CreateChild` + set texts, parent walked down the `resolve` chain | No Fact that a new `.st` becomes a live POU |
+| **Object delete** | `Delete()` after `PathName` lookup **and a live-hash match** (2026-08-20) | The gate deleted a *line*, not a POU — the verify-then-delete path is code-reviewed, not XAE-gated |
+| **Rename** | `Name = newName`; missing target aborts the import | No Fact |
 | **Folder move** | Planned as `IsMove`; host sets `Name` only | Relocating under a new parent is unmeasured, same first-loop bargain as TIA |
 
 ### Not measured
