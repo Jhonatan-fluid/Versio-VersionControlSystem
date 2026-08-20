@@ -1,0 +1,56 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.18">
+  <POU Name="FB_Libdoc_Substitution_Images" Id="{e3783533-6e6d-4a07-a16e-c2eab163d7b2}" SpecialFunc="None">
+    <Declaration><![CDATA[(*
+**Substitution in paragraphs**
+
+Images are a common use for substitution references: |Beckhoff|_.
+
+.. |Beckhoff| image:: ../../LibPics/BeckhoffLogo.png
+ :height: 16
+ :width: 64
+.. _Beckhoff: http://www.beckhoff.de/
+
+The |safety| symbol indicates a hazardous situation which,
+if not avoided, could result in minor or moderate injury.
+
+.. |safety| image:: ../../LibPics/safetysymbol.png
+
+
+**Substitution in lists or tables**
+
+* |Run mode| Run mode
+* |Stop mode| Stop mode
+* |Config mode| Config mode
+
+============= ======
+Symbol        Status
+============= ======
+|Run mode|    Run mode
+|Stop mode|   Stop mode
+|Config mode| Config mode
+============= ======
+
+.. |Run mode| image:: ../../LibPics/tc3runmode.png
+.. |Stop mode| image:: ../../LibPics/tc3stopmode.png
+.. |Config mode| image:: ../../LibPics/tc3configmode.png
+*)
+
+FUNCTION_BLOCK FB_Libdoc_Substitution_Images
+VAR_INPUT
+    nVarA : INT;
+    nVarB : INT;
+END_VAR
+VAR_OUTPUT
+    nSum : INT;
+END_VAR
+VAR
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <LineIds Name="FB_Libdoc_Substitution_Images">
+      <LineId Id="9" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

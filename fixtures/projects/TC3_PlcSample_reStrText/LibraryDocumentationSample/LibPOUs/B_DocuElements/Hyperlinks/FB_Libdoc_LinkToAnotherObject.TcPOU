@@ -1,0 +1,29 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.0">
+  <POU Name="FB_Libdoc_LinkToAnotherObject" Id="{851ead59-f7ea-441b-880b-caa7e299586b}" SpecialFunc="None">
+    <Declaration><![CDATA[(*
+| It is also possible to create a reference to the documentation of another object which is also part of this library.
+| For example, by clicking on this link :ref:`FB_Libdoc_InlineHyperlinks`, the documentation of this FB will be shown.
+| Or you can also create a link to :ref:`FB_Libdoc_CodeBlock` which is part of another folder.
+
+*)
+
+FUNCTION_BLOCK FB_Libdoc_LinkToAnotherObject
+VAR_INPUT
+    nVarA : INT;
+    nVarB : INT;
+END_VAR
+VAR_OUTPUT
+    nSum : INT;
+END_VAR
+VAR
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <LineIds Name="FB_Libdoc_LinkToAnotherObject">
+      <LineId Id="9" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

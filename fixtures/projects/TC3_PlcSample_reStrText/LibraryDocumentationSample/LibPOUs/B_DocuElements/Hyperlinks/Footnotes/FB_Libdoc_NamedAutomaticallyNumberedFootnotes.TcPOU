@@ -1,0 +1,35 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.17">
+  <POU Name="FB_Libdoc_NamedAutomaticallyNumberedFootnotes" Id="{2437e105-852f-45f4-95c4-17ab47dc4611}" SpecialFunc="None">
+    <Declaration><![CDATA[(*
+
+**Autonumbered labeled footnotes**
+
+They may be assigned 'autonumber labels' - for instance, [#first]_ and [#second]_. 
+
+--------
+
+.. [#first] a.k.a. first_ 
+
+.. [#second] a.k.a. second_
+*)
+
+FUNCTION_BLOCK FB_Libdoc_NamedAutomaticallyNumberedFootnotes
+VAR_INPUT
+    nVarA : INT;
+    nVarB : INT;
+END_VAR
+VAR_OUTPUT
+    nSum : INT;
+END_VAR
+VAR
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <LineIds Name="FB_Libdoc_NamedAutomaticallyNumberedFootnotes">
+      <LineId Id="9" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

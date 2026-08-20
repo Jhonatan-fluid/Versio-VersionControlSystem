@@ -6,11 +6,12 @@ projects. How TIA Portal is driven, and what was measured rather than assumed.
 | | |
 |---|---|
 | Document | **The TIA Portal integration, end to end.** Which Openness surface Versio uses, how the net48 host is launched, what crosses the boundary, what every job does, and where the seams and the gaps are |
-| Audience | An engineer who has to change the export, the import, the host or the runner — or add a third vendor beside the first two |
-| Related | [`STATUS.md`](../../STATUS.md) · [`archive/HANDOFF-Siemens2.md`](../../archive/HANDOFF-Siemens2.md) · [`SAFEGUARDS.md`](../../SAFEGUARDS.md) · the first vendor's [`vendors/codesys/DRIVING.md`](../codesys/DRIVING.md) |
+| Audience | An engineer who has to change the export, the import, the host or the runner — or add a fourth vendor beside the first three |
+| Related | [`STATUS.md`](../../STATUS.md) · [`archive/HANDOFF-Siemens2.md`](../../archive/HANDOFF-Siemens2.md) · [`SAFEGUARDS.md`](../../SAFEGUARDS.md) · the first vendor's [`vendors/codesys/DRIVING.md`](../codesys/DRIVING.md) · TwinCAT's [`vendors/twincat/DRIVING.md`](../twincat/DRIVING.md) |
 
-Versio is not a TIA Portal tool. Neutral code must not grow any of this. TwinCAT will be a
-directory project too; that is `PayloadPathFor` / `CopyTreeAsync` growing, not a brand leaking.
+Versio is not a TIA Portal tool. Neutral code must not grow any of this. TwinCAT is the same
+kind of directory project; that is `PayloadPathFor` / `CopyTreeAsync` growing, not a brand
+leaking.
 
 ---
 

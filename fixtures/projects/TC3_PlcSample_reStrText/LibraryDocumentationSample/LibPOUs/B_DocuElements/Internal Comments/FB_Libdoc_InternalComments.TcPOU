@@ -1,0 +1,31 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.17">
+  <POU Name="FB_Libdoc_InternalComments" Id="{de5e302c-4818-48ff-9782-b97755e017a5}" SpecialFunc="None">
+    <Declaration><![CDATA[(*
+This is the first paragraph.
+
+.. Comments begin with two dots and one space. Anything can
+   follow, except for the syntax of footnotes/citations,
+   hyperlink targets, directives, or substitution definitions.
+
+Since comments are not shown, this paragraph follows the previous paragraph directly.
+*)
+
+FUNCTION_BLOCK FB_Libdoc_InternalComments
+VAR_INPUT
+    nVarA : INT;
+    nVarB : INT;
+END_VAR
+VAR_OUTPUT
+    nSum : INT;
+END_VAR
+VAR
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <LineIds Name="FB_Libdoc_InternalComments">
+      <LineId Id="9" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

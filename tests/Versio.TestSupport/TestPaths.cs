@@ -65,6 +65,37 @@ public static class TestPaths
     }
 
     /// <summary>
+    /// The committed TwinCAT gate fixture, or null when the <c>.tsproj</c> is missing.
+    /// </summary>
+    /// <remarks>
+    /// The tree lives at <c>fixtures/projects/TC3_PlcSample_reStrText/</c>. No LFS — this is
+    /// XML plus a few images. Work only on a <b>copy</b> under %TEMP%; do not adopt it into
+    /// this repository's own bindings.
+    /// </remarks>
+    public static string? TwinCatProject()
+    {
+        var dir = Path.Combine(Fixtures, "projects", "TC3_PlcSample_reStrText");
+        if (!Directory.Exists(dir))
+        {
+            return null;
+        }
+
+        var tsproj = Directory.EnumerateFiles(dir, "*.tsproj").FirstOrDefault();
+        if (tsproj is null)
+        {
+            return null;
+        }
+
+        var sln = Path.ChangeExtension(tsproj, ".sln");
+        if (!File.Exists(sln))
+        {
+            return null;
+        }
+
+        return tsproj;
+    }
+
+    /// <summary>
     /// The python, on disk rather than embedded.
     /// </summary>
     /// <remarks>

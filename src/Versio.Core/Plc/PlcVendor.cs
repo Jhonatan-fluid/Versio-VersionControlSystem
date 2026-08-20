@@ -22,11 +22,12 @@ namespace Versio.Core.Plc;
 /// the rule exists to keep untouched. You cannot register what you cannot name.
 /// </para>
 /// <para>
-/// <b>The four well-known vendors are kept as statics, deliberately.</b> Three of them are not
-/// implemented and cost nothing; they are how the abstraction gets judged against real second
-/// vendors rather than a hypothetical one, and <c>VendorSeamTests</c> asserts they are still
-/// here so nobody tidies the list down to the one that works. <see cref="Known"/> is that list;
-/// it is not a limit on what may be constructed.
+    /// <b>The four well-known vendors are kept as statics, deliberately.</b> Studio 5000
+    /// is not implemented and costs nothing; TIA and TwinCAT are packs. They are how the
+    /// abstraction gets judged against real second vendors rather than a hypothetical one,
+    /// and <c>VendorSeamTests</c> asserts they are still here so nobody tidies the list
+    /// down to the one that first worked. <see cref="Known"/> is that list;
+    /// it is not a limit on what may be constructed.
 /// </para>
 /// <para>
 /// <b>Comparison is case-insensitive</b>, because the name survives a round trip through
@@ -64,8 +65,7 @@ public readonly struct PlcVendor : IEquatable<PlcVendor>
     /// <summary>Rockwell Studio 5000. Not implemented.</summary>
     public static PlcVendor Studio5000 { get; } = new("Studio5000");
 
-    /// <summary>Beckhoff TwinCAT. Not implemented. Note it is CODESYS-derived but has
-    /// diverged enough to need its own handling.</summary>
+    /// <summary>Beckhoff TwinCAT 3. CODESYS-derived, but diverged enough to need its own pack.</summary>
     public static PlcVendor TwinCat { get; } = new("TwinCat");
 
     /// <summary>

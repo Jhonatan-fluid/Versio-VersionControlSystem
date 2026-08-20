@@ -16,7 +16,9 @@
     "fixtures/projects/MachineWithMembers",
     "fixtures/projects/MachineWithMembers.project",
     "fixtures/projects/CleaningStation_V20_V21",
-    "fixtures/projects/CleaningStation_V20_V21/**"
+    "fixtures/projects/CleaningStation_V20_V21/**",
+    "fixtures/projects/TC3_PlcSample_reStrText",
+    "fixtures/projects/TC3_PlcSample_reStrText/**"
   ],
   "autoAdoptNewProjects": false
 }

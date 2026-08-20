@@ -1,0 +1,41 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.18">
+  <POU Name="FB_Libdoc_CSVTable" Id="{cc79733d-6960-4b21-815d-460c9c7605ef}" SpecialFunc="None">
+    <Declaration><![CDATA[(*
+.. csv-table:: Property list
+   :header: "Items", "Property 1", "Property 2", "Property 3"
+   :widths: 10, 15, 15, 15
+
+   "Item 1", 1.67, angular, red
+   "Item 2", "not specified", round, blue
+
+|
+
+.. csv-table:: Property list
+   :header-rows: 1
+   :widths: 10, 15, 15, 15
+
+   "Items", "Property 1", "Property 2", "Property 3"
+   "Item 1", 1.67, angular, red
+   "Item 2", "not specified", round, blue
+*)
+
+FUNCTION_BLOCK FB_Libdoc_CSVTable
+VAR_INPUT
+    nVarA : INT;
+    nVarB : INT;
+END_VAR
+VAR_OUTPUT
+    nSum : INT;
+END_VAR
+VAR
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <LineIds Name="FB_Libdoc_CSVTable">
+      <LineId Id="9" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

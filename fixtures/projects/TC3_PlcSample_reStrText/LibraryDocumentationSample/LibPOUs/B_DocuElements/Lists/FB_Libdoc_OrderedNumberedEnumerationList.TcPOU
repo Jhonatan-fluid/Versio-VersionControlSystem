@@ -1,0 +1,36 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.17">
+  <POU Name="FB_Libdoc_OrderedNumberedEnumerationList" Id="{0b69690e-3bd4-4925-997e-bf4fd3f61cfd}" SpecialFunc="None">
+    <Declaration><![CDATA[(*
+1) This is the first item in the list.
+
+   (a) This is the first subitem (1a).
+   (b) This is the second subitem (1b).
+
+2) This is the second item in the list.
+
+   (a) This is the first subitem (2a).
+   (b) This is the second subitem (2b).
+
+#) This item is auto-enumerated.
+*)
+
+FUNCTION_BLOCK FB_Libdoc_OrderedNumberedEnumerationList
+VAR_INPUT
+    nVarA : INT;
+    nVarB : INT;
+END_VAR
+VAR_OUTPUT
+    nSum : INT;
+END_VAR
+VAR
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <LineIds Name="FB_Libdoc_OrderedNumberedEnumerationList">
+      <LineId Id="9" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

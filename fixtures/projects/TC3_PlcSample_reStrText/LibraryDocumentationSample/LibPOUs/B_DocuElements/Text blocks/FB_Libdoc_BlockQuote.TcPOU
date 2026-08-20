@@ -1,0 +1,40 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.18">
+  <POU Name="FB_Libdoc_BlockQuote" Id="{f16f8a72-abf4-4e11-b54c-928318ad3314}" SpecialFunc="None">
+    <Declaration><![CDATA[(*
+This is a top-level paragraph.
+
+    This paragraph belongs to a first-level block quote.
+
+    This is the second paragraph of the first-level block quote.
+
+        This paragraph belongs to a second-level block quote.
+
+Another top-level paragraph.
+
+        This paragraph belongs to a second-level block quote.
+
+    This paragraph belongs to a first-level block quote. The
+    second-level block quote above is inside this first-level
+    block quote.
+*)
+
+FUNCTION_BLOCK FB_Libdoc_BlockQuote
+VAR_INPUT
+    nVarA : INT;
+    nVarB : INT;
+END_VAR
+VAR_OUTPUT
+    nSum : INT;
+END_VAR
+VAR
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <LineIds Name="FB_Libdoc_BlockQuote">
+      <LineId Id="9" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

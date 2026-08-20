@@ -19,6 +19,35 @@ produce a diff touching everything else.
 
 ---
 
+### TwinCAT version taken from the Visual Studio shell refused every open
+
+**Found 2026-08-19**, first TwinCAT host open of `TC3_PlcSample_reStrText`
+(`TcVersion="3.1.4024.4"`) on a 3.1.4026.25 install. The locator compared the
+project to `TcXaeShell.exe` ProductVersion, which is **`15.0.0.0`** — the Visual
+Studio shell, not TwinCAT. Every open looked like a conversion and was refused,
+including the `%TEMP%` copies the gate is allowed to convert.
+
+**Fix:** read `Components\Plc\Build_4026.25` (and `Version.txt` if that folder is
+missing). Probe of a TEMP copy then succeeded in ~19 s. Conversion of the path the
+user bound stays refused; only `Path.GetTempPath()` copies set `AllowConvert`. The
+host's own convert-check had the same ProductVersion fallback until 2026-08-20 —
+a locator-supplied version hid it on the gate path; an `unknown` version would have
+compared `3.1.4026.25` to `15.0.0.0` and refused a matching project. Both walks
+now use `Build_*`.
+
+**What was rejected:** treating several TwinCAT shells as TIA's "several Portal
+versions → refuse" case. 17.0 and 15.0 on this machine are the same TwinCAT
+build; 17.0 is the 64-bit host and is preferred, logged, never a silent swap.
+
+Related traps measured the same day, kept in
+[`vendors/twincat/DRIVING.md`](vendors/twincat/DRIVING.md) rather than as
+separate findings: no `IOleMessageFilter` → `RPC_E_CALL_REJECTED` after a 2.6 s
+DTE create; `ITcSysManager.Save` is `DISP_E_UNKNOWNNAME`, `File.SaveAll` works;
+`DeclarationText` often missing on IDispatch, `ProduceXml` is the fallback —
+still the Automation Interface, not a disk parse of `.TcPOU`.
+
+---
+
 ### A deletion-only mirror edit could report success while the object kept the line
 
 **Found 2026-08-19**, by a code audit of the import verification — not by a test, because

@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Versio.Plc.TwinCat.Infrastructure</RootNamespace>
+    <!-- Driving TwinCAT: finding TcXaeShell, starting the helper host, speaking the
+         JSON-lines protocol. Everything here touches a process or a disk. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Versio.Infrastructure\Versio.Infrastructure.csproj" />
+    <ProjectReference Include="..\Versio.Plc.TwinCat\Versio.Plc.TwinCat.csproj" />
+    <ProjectReference Include="..\Versio.Plc.TwinCat.Host\Versio.Plc.TwinCat.Host.csproj">
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <SkipGetTargetFrameworkProperties>true</SkipGetTargetFrameworkProperties>
+      <GlobalPropertiesToRemove>TargetFramework</GlobalPropertiesToRemove>
+    </ProjectReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Versio.Plc.TwinCat.Tests" />
+  </ItemGroup>
+
+  <Import Project="..\Versio.Plc.TwinCat.Host\CopyHostToReferrer.targets" />
+
+</Project>

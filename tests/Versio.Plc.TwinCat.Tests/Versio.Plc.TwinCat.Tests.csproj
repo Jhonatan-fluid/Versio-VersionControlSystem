@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Versio.Plc.TwinCat.Tests</RootNamespace>
+    <!-- Every test that launches TwinCAT XAE. Skips cleanly when the install or the
+         fixture is absent, so a machine without XAE still has a green suite. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="Xunit.SkippableFact" Version="1.5.23" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Versio.Core\Versio.Core.csproj" />
+    <ProjectReference Include="..\..\src\Versio.Infrastructure\Versio.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Versio.Plc.TwinCat\Versio.Plc.TwinCat.csproj" />
+    <ProjectReference Include="..\..\src\Versio.Plc.TwinCat.Infrastructure\Versio.Plc.TwinCat.Infrastructure.csproj" />
+    <ProjectReference Include="..\Versio.TestSupport\Versio.TestSupport.csproj" />
+  </ItemGroup>
+
+  <Import Project="..\..\src\Versio.Plc.TwinCat.Host\CopyHostToReferrer.targets" />
+
+</Project>

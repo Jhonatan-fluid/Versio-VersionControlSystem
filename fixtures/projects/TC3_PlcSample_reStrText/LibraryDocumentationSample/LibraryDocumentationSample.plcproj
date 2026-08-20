@@ -1,0 +1,215 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <FileVersion>1.0.0.0</FileVersion>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{f57a6259-ac13-4536-a103-33e5ebee8c9a}</ProjectGuid>
+    <SubObjectsSortedByName>True</SubObjectsSortedByName>
+    <Name>LibraryDocumentationSample</Name>
+    <ProgramVersion>3.1.4026.25</ProgramVersion>
+    <Application>{409f75e5-1392-40e2-b2ff-81d62cd88fcc}</Application>
+    <TypeSystem>{a6ffdffb-34b6-4a62-b91f-ac794cfd9e3e}</TypeSystem>
+    <Implicit_Task_Info>{7db0ddeb-06db-4f40-aa5b-0c7bea221dd3}</Implicit_Task_Info>
+    <Implicit_KindOfTask>{0795d50c-760a-4e02-b79f-99bb0202a7d1}</Implicit_KindOfTask>
+    <Implicit_Jitter_Distribution>{86238f26-49c6-4713-bc26-4f3607654113}</Implicit_Jitter_Distribution>
+    <LibraryReferences>{8b056457-cfbd-4a64-ac1c-9274007d7f3c}</LibraryReferences>
+    <CombineIds>false</CombineIds>
+    <Released>false</Released>
+    <Company>Beckhoff Automation GmbH &amp; Co. KG</Company>
+    <Title>LibraryDocumentationSample</Title>
+    <Description>This library contains various function blocks ...</Description>
+    <DocFormat>reStructuredText</DocFormat>
+    <ProjectVersion>1.0.0.0</ProjectVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="LibPOUs\A_Samples\FB_DocuSample_FunctionBlock.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\A_Samples\FB_DocuSample_SyntaxReminder.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Code block\FB_Libdoc_CodeBlock.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Hyperlinks\FB_Libdoc_LinkToAnotherObject.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Internal Comments\FB_Libdoc_InternalComments.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Font style\FB_Libdoc_FontStyle.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Hyperlinks\FB_Libdoc_AnonymousHyperlinks.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Hyperlinks\FB_Libdoc_Citation.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Hyperlinks\FB_Libdoc_ExternalHyperlinks.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Hyperlinks\FB_Libdoc_IndirectHyperlinks.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Hyperlinks\FB_Libdoc_InlineHyperlinks.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Hyperlinks\FB_Libdoc_InternalHyperlinks.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Hyperlinks\Footnotes\FB_Libdoc_AutomaticallyNumberedFootnotes.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Hyperlinks\Footnotes\FB_Libdoc_AutomaticallySymbolFootnotes.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Hyperlinks\Footnotes\FB_Libdoc_ManuallyAndAutomaticallyNumberedFootnotes.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Hyperlinks\Footnotes\FB_Libdoc_ManuallyNumberedFootnotes.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Hyperlinks\Footnotes\FB_Libdoc_NamedAutomaticallyNumberedFootnotes.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Images\FB_Libdoc_Images.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Lists\FB_Libdoc_DefinitionList.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Lists\FB_Libdoc_FieldList.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Lists\FB_Libdoc_OrderedNumberedEnumerationList.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Lists\FB_Libdoc_UnorderedEnumerationList.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Note elements\FB_Libdoc_SpecificNotes.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Note elements\FB_Libdoc_GenericNotes.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Comment structure\FB_Libdoc_Sections.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Comment structure\FB_Libdoc_Transitions.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Substitution\FB_Libdoc_Substitution_ReplacementText.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Substitution\FB_Libdoc_Substitution_Images.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Tables\FB_Libdoc_CSVTable.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Tables\FB_Libdoc_GridTable.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Tables\FB_Libdoc_ListTable.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Tables\FB_Libdoc_SimpleTables.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Text blocks\FB_Libdoc_LineBlock.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Text blocks\FB_Libdoc_Paragraph.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="LibPOUs\B_DocuElements\Text blocks\FB_Libdoc_BlockQuote.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="LibPics" />
+    <Folder Include="LibPOUs" />
+    <Folder Include="LibPOUs\A_Samples" />
+    <Folder Include="LibPOUs\B_DocuElements" />
+    <Folder Include="LibPOUs\B_DocuElements\Hyperlinks" />
+    <Folder Include="LibPOUs\B_DocuElements\Hyperlinks\Footnotes" />
+    <Folder Include="LibPOUs\B_DocuElements\Lists" />
+    <Folder Include="LibPOUs\B_DocuElements\Images" />
+    <Folder Include="LibPOUs\B_DocuElements\Code block" />
+    <Folder Include="LibPOUs\B_DocuElements\Internal Comments" />
+    <Folder Include="LibPOUs\B_DocuElements\Font style" />
+    <Folder Include="LibPOUs\B_DocuElements\Comment structure" />
+    <Folder Include="LibPOUs\B_DocuElements\Substitution" />
+    <Folder Include="LibPOUs\B_DocuElements\Note elements" />
+    <Folder Include="LibPOUs\B_DocuElements\Text blocks" />
+    <Folder Include="LibPOUs\B_DocuElements\Tables" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="LibPics\BeckhoffLogo.png">
+      <SubType>Content</SubType>
+    </Content>
+    <Content Include="LibPics\desert.jpg">
+      <SubType>Content</SubType>
+    </Content>
+    <Content Include="LibPics\penguins.jpg">
+      <SubType>Content</SubType>
+    </Content>
+    <Content Include="LibPics\safetysymbol.png">
+      <SubType>Content</SubType>
+    </Content>
+    <Content Include="LibPics\tc3configmode.png">
+      <SubType>Content</SubType>
+    </Content>
+    <Content Include="LibPics\tc3runmode.png">
+      <SubType>Content</SubType>
+    </Content>
+    <Content Include="LibPics\tc3stopmode.png">
+      <SubType>Content</SubType>
+    </Content>
+    <Content Include="LibPics\tulips.jpg">
+      <SubType>Content</SubType>
+    </Content>
+    <None Include="LibraryDocumentationSample.tmc">
+      <SubType>Content</SubType>
+    </None>
+  </ItemGroup>
+  <ProjectExtensions>
+    <PlcProjectOptions>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="OptionKey">
+      <v n="Name">"&lt;ProjectRoot&gt;"</v>
+      <d n="SubKeys" t="Hashtable" ckt="String" cvt="OptionKey">
+        <v>{40450F57-0AA3-4216-96F3-5444ECB29763}</v>
+        <o>
+          <v n="Name">"{40450F57-0AA3-4216-96F3-5444ECB29763}"</v>
+          <d n="SubKeys" t="Hashtable" />
+          <d n="Values" t="Hashtable" ckt="String">
+            <v>ActiveVisuExtensionsLength</v>
+            <v>0</v>
+            <v>ActiveVisuProfile</v>
+            <v>"IR0whWr8bwfwBwAAhiaVXgAAAABVAgAAWdTSaQAAAAABAAAAAAAAAAEaUwB5AHMAdABlAG0ALgBTAHQAcgBpAG4AZwACTHsAZgA5ADUAYgBiADQAMgA2AC0ANQA1ADIANAAtADQAYgA0ADUALQA5ADQAMAAwAC0AZgBiADAAZgAyAGUANwA3AGUANQAxAGIAfQADCE4AYQBtAGUABDBUAHcAaQBuAEMAQQBUACAAMwAuADEAIABCAHUAaQBsAGQAIAA0ADAAMgA0AC4AMAAFFlAAcgBvAGYAaQBsAGUARABhAHQAYQAGTHsAMQA2AGUANQA1AGIANgAwAC0ANwAwADQAMwAtADQAYQA2ADMALQBiADYANQBiAC0ANgAxADQANwAxADMAOAA3ADgAZAA0ADIAfQAHEkwAaQBiAHIAYQByAGkAZQBzAAhMewAzAGIAZgBkADUANAA1ADkALQBiADAANwBmAC0ANABkADYAZQAtAGEAZQAxAGEALQBhADgAMwAzADUANgBhADUANQAxADQAMgB9AAlMewA5AGMAOQA1ADgAOQA2ADgALQAyAGMAOAA1AC0ANAAxAGIAYgAtADgAOAA3ADEALQA4ADkANQBmAGYAMQBmAGUAZABlADEAYQB9AAoOVgBlAHIAcwBpAG8AbgALBmkAbgB0AAwKVQBzAGEAZwBlAA0KVABpAHQAbABlAA4aVgBpAHMAdQBFAGwAZQBtAE0AZQB0AGUAcgAPDkMAbwBtAHAAYQBuAHkAEAxTAHkAcwB0AGUAbQARElYAaQBzAHUARQBsAGUAbQBzABIwVgBpAHMAdQBFAGwAZQBtAHMAUwBwAGUAYwBpAGEAbABDAG8AbgB0AHIAbwBsAHMAEyhWAGkAcwB1AEUAbABlAG0AcwBXAGkAbgBDAG8AbgB0AHIAbwBsAHMAFCRWAGkAcwB1AEUAbABlAG0AVABlAHgAdABFAGQAaQB0AG8AcgAVIlYAaQBzAHUATgBhAHQAaQB2AGUAQwBvAG4AdAByAG8AbAAWFHYAaQBzAHUAaQBuAHAAdQB0AHMAFwxzAHkAcwB0AGUAbQAYGFYAaQBzAHUARQBsAGUAbQBCAGEAcwBlABkmRABlAHYAUABsAGEAYwBlAGgAbwBsAGQAZQByAHMAVQBzAGUAZAAaCGIAbwBvAGwAGyJQAGwAdQBnAGkAbgBDAG8AbgBzAHQAcgBhAGkAbgB0AHMAHEx7ADQAMwBkADUAMgBiAGMAZQAtADkANAAyAGMALQA0ADQAZAA3AC0AOQBlADkANAAtADEAYgBmAGQAZgAzADEAMABlADYAMwBjAH0AHRxBAHQATABlAGEAcwB0AFYAZQByAHMAaQBvAG4AHhRQAGwAdQBnAGkAbgBHAHUAaQBkAB8WUwB5AHMAdABlAG0ALgBHAHUAaQBkACBIYQBmAGMAZAA1ADQANAA2AC0ANAA5ADEANAAtADQAZgBlADcALQBiAGIANwA4AC0AOQBiAGYAZgBlAGIANwAwAGYAZAAxADcAIRRVAHAAZABhAHQAZQBJAG4AZgBvACJMewBiADAAMwAzADYANgBhADgALQBiADUAYwAwAC0ANABiADkAYQAtAGEAMAAwAGUALQBlAGIAOAA2ADAAMQAxADEAMAA0AGMAMwB9ACMOVQBwAGQAYQB0AGUAcwAkTHsAMQA4ADYAOABmAGYAYwA5AC0AZQA0AGYAYwAtADQANQAzADIALQBhAGMAMAA2AC0AMQBlADMAOQBiAGIANQA1ADcAYgA2ADkAfQAlTHsAYQA1AGIAZAA0ADgAYwAzAC0AMABkADEANwAtADQAMQBiADUALQBiADEANgA0AC0ANQBmAGMANgBhAGQAMgBiADkANgBiADcAfQAmFk8AYgBqAGUAYwB0AHMAVAB5AHAAZQAnVFUAcABkAGEAdABlAEwAYQBuAGcAdQBhAGcAZQBNAG8AZABlAGwARgBvAHIAQwBvAG4AdgBlAHIAdABpAGIAbABlAEwAaQBiAHIAYQByAGkAZQBzACgQTABpAGIAVABpAHQAbABlACkUTABpAGIAQwBvAG0AcABhAG4AeQAqHlUAcABkAGEAdABlAFAAcgBvAHYAaQBkAGUAcgBzACs4UwB5AHMAdABlAG0ALgBDAG8AbABsAGUAYwB0AGkAbwBuAHMALgBIAGEAcwBoAHQAYQBiAGwAZQAsEnYAaQBzAHUAZQBsAGUAbQBzAC1INgBjAGIAMQBjAGQAZQAxAC0AZAA1AGQAYwAtADQAYQAzAGIALQA5ADAANQA0AC0AMgAxAGYAYQA3ADUANgBhADMAZgBhADQALihJAG4AdABlAHIAZgBhAGMAZQBWAGUAcgBzAGkAbwBuAEkAbgBmAG8AL0x7AGMANgAxADEAZQA0ADAAMAAtADcAZgBiADkALQA0AGMAMwA1AC0AYgA5AGEAYwAtADQAZQAzADEANABiADUAOQA5ADYANAAzAH0AMBhNAGEAagBvAHIAVgBlAHIAcwBpAG8AbgAxGE0AaQBuAG8AcgBWAGUAcgBzAGkAbwBuADIMTABlAGcAYQBjAHkAMzBMAGEAbgBnAHUAYQBnAGUATQBvAGQAZQBsAFYAZQByAHMAaQBvAG4ASQBuAGYAbwA0MEwAbwBhAGQATABpAGIAcgBhAHIAaQBlAHMASQBuAHQAbwBQAHIAbwBqAGUAYwB0ADUaQwBvAG0AcABhAHQAaQBiAGkAbABpAHQAeQDQAAIaA9ADAS0E0AUGGgfQBwgaAUUHCQjQAAkaBEUKCwQDAAAABQAAAA0AAAAAAAAA0AwLrQIAAADQDQEtDtAPAS0Q0AAJGgRFCgsEAwAAAAUAAAANAAAAFQAAANAMC60BAAAA0A0BLRHQDwEtENAACRoERQoLBAMAAAAFAAAADQAAAAAAAADQDAutAgAAANANAS0S0A8BLRDQAAkaBEUKCwQDAAAABQAAAA0AAAAUAAAA0AwLrQIAAADQDQEtE9APAS0Q0AAJGgRFCgsEAwAAAAUAAAANAAAAAAAAANAMC60CAAAA0A0BLRTQDwEtENAACRoERQoLBAMAAAAFAAAADQAAAAAAAADQDAutAgAAANANAS0V0A8BLRDQAAkaBEUKCwQDAAAABQAAAA0AAAAAAAAA0AwLrQIAAADQDQEtFtAPAS0X0AAJGgRFCgsEAwAAAAUAAAANAAAAFQAAANAMC60EAAAA0A0BLRjQDwEtENAZGq0BRRscAdAAHBoCRR0LBAMAAAAFAAAADQAAAAAAAADQHh8tINAhIhoCRSMkAtAAJRoFRQoLBAMAAAADAAAAAAAAAAoAAADQJgutAAAAANADAS0n0CgBLRHQKQEtENAAJRoFRQoLBAMAAAADAAAAAAAAAAoAAADQJgutAQAAANADAS0n0CgBLRHQKQEtEJoqKwFFAAEC0AABLSzQAAEtF9AAHy0t0C4vGgPQMAutAQAAANAxC60XAAAA0DIarQDQMy8aA9AwC60CAAAA0DELrQMAAADQMhqtANA0Gq0A0DUarQA="</v>
+          </d>
+        </o>
+        <v>{192FAD59-8248-4824-A8DE-9177C94C195A}</v>
+        <o>
+          <v n="Name">"{192FAD59-8248-4824-A8DE-9177C94C195A}"</v>
+          <d n="SubKeys" t="Hashtable" />
+          <d n="Values" t="Hashtable" />
+        </o>
+      </d>
+      <d n="Values" t="Hashtable" />
+    </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="Int32">System.Int32</Type>
+          <Type n="OptionKey">{54dd0eac-a6d8-46f2-8c27-2f43c7e49861}</Type>
+          <Type n="String">System.String</Type>
+        </TypeList>
+      </XmlArchive>
+    </PlcProjectOptions>
+  </ProjectExtensions>
+</Project>

@@ -61,6 +61,9 @@ public sealed class ProjectReferenceTests
         Assert.DoesNotContain("Versio.Plc.TiaPortal", referenced);
         Assert.DoesNotContain("Versio.Plc.TiaPortal.Infrastructure", referenced);
         Assert.DoesNotContain("Versio.Plc.TiaPortal.Host", referenced);
+        Assert.DoesNotContain("Versio.Plc.TwinCat", referenced);
+        Assert.DoesNotContain("Versio.Plc.TwinCat.Infrastructure", referenced);
+        Assert.DoesNotContain("Versio.Plc.TwinCat.Host", referenced);
     }
 
     [Fact]
@@ -78,6 +81,7 @@ public sealed class ProjectReferenceTests
         // has. App.xaml.cs turns these references into Register() calls, one per pack.
         Assert.Contains("Versio.Plc.Codesys.Infrastructure", ReferencesOf("Versio.App"));
         Assert.Contains("Versio.Plc.TiaPortal.Infrastructure", ReferencesOf("Versio.App"));
+        Assert.Contains("Versio.Plc.TwinCat.Infrastructure", ReferencesOf("Versio.App"));
     }
 
     [Fact]
@@ -88,5 +92,6 @@ public sealed class ProjectReferenceTests
         // there, and this says which direction was intended.
         Assert.Equal(["Versio.Core"], ReferencesOf("Versio.Plc.Codesys"));
         Assert.Equal(["Versio.Core"], ReferencesOf("Versio.Plc.TiaPortal"));
+        Assert.Equal(["Versio.Core"], ReferencesOf("Versio.Plc.TwinCat"));
     }
 }

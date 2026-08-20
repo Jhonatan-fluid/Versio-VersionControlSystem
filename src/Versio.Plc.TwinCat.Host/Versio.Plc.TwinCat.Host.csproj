@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Versio.Plc.TwinCat.Host</RootNamespace>
+    <AssemblyName>Versio.Plc.TwinCat.Host</AssemblyName>
+    <PlatformTarget>x64</PlatformTarget>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!-- 17.0 is the 64-bit shell. AnyCPU can load as 32-bit on some hosts and then
+         fail to bind TcXaeShell.DTE.17.0. Isolation from WPF is the reason this is
+         a helper exe, not a TFM constraint — COM works from net9. -->
+  </PropertyGroup>
+
+</Project>

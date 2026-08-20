@@ -8,8 +8,9 @@ A PLC project file is a binary compound document. Git can store it, but it canno
 exported and imported for PLC software (SCL, UDTs, tag tables) once Openness
 membership is granted. Hardware, HMI and safety stay coverage skips
 ([`docs/STATUS.md`](docs/STATUS.md); [`docs/vendors/tia/DRIVING.md`](docs/vendors/tia/DRIVING.md)
-§12). Rockwell Studio 5000 and
-Beckhoff TwinCAT remain intended next vendors. The code is organised so adding one is additive
+§12). **TwinCAT 3 is the third pack** — the same PLC-software loop through
+`TcXaeShell.DTE.17.0` ([`docs/vendors/twincat/DRIVING.md`](docs/vendors/twincat/DRIVING.md)).
+Rockwell Studio 5000 remains an intended next vendor. The code is organised so adding one is additive
 — a rule enforced by a test that reads assembly metadata, not by a paragraph here.
 
 > **Status: pre-alpha, and the round trip works automatically.** A project in the repository is tracked without ceremony, exported to its reviewable mirror when it changes, and edits to that mirror flow back into the project — driven by the direction lock, proven end to end against a real project with real CODESYS. See [What works today](#what-works-today).
@@ -93,7 +94,8 @@ Both directions run automatically and deterministically. A per-project **directi
 | **Export coverage stated, not assumed** — `_coverage.md` + every skip in the manifest | ✅ a gap is distinguished from a deliberate omission; an old manifest reports "unknown", never "complete"; and **an object the export could not write at all is reported rather than counted as covered** — it reaches neither the records nor the skips, so until 2026-08-16 a lost object left a verdict of "everything reaches the mirror" |
 | **Library references exported** (`<manager>.libraries.yaml`) | ✅ **the gap is closed.** One file per library manager, beside the object that owns it — 21 references on the fixture's application, 13 on its project, **all 34 placeholders**. Hand-written YAML on both sides, no third-party dependency. Export-only: change libraries in the IDE. A **fixed-version** reference records its version, company and title parsed from its own name, which is project state — reading them off `managed_library` reports what the exporting machine has *installed*, and answers nothing at all for a library it does not have |
 | Template generation | ⛔ needs a new operation and script — not assembly |
-| A second vendor — TIA Portal | ✅ the second pack; probe, export and SCL generate overwrite are gated. Hardware / HMI / safety stay coverage skips — see [`docs/STATUS.md`](docs/STATUS.md) and [`docs/vendors/tia/DRIVING.md`](docs/vendors/tia/DRIVING.md). TwinCAT / Studio 5000 are not started |
+| A second vendor — TIA Portal | ✅ the second pack; probe, export and SCL generate overwrite are gated. Hardware / HMI / safety stay coverage skips — see [`docs/STATUS.md`](docs/STATUS.md) and [`docs/vendors/tia/DRIVING.md`](docs/vendors/tia/DRIVING.md) |
+| A third vendor — TwinCAT 3 | ✅ the third pack; probe, export and ST overwrite are gated. I/O / NC / safety / C++ stay coverage skips — see [`docs/vendors/twincat/DRIVING.md`](docs/vendors/twincat/DRIVING.md). Studio 5000 is not started |
 | **Git side panel** — staging, commit message, fetch/pull/push | ✅ one operation at a time across every button |
 | **Changed files named as objects** — `FB_Motor · POU`, not `src/…/POU/FB_Motor.st` | ✅ resolved through the export manifest, so it costs no extra read. A file the manifest does not describe stays a path and is **never** guessed at. A library-reference file carries a lock: editing it does not reach the project |
 | **Change summary and drafted commit subject** — *"1 GVL and 1 POU changed in RefrigeratorControl"*, and a **Draft** button that writes `Modify FB_Motor, Glob_Var` | ✅ counted by object, not by file — one GVL is two files and one edit. Both describe exactly what the commit button will record, and Draft refuses to overwrite anything you have typed |
@@ -191,12 +193,17 @@ Versio.sln
 │  │                            SCL header, native-XML scrubber.
 │  ├─ Versio.Plc.TiaPortal.Infrastructure/
 │  │                            ONE VENDOR, driven. Locator, runner, TiaPortalPack.
-│  └─ Versio.Plc.TiaPortal.Host/ ONE VENDOR, net48 exe. Loads Openness from the install.
+│  ├─ Versio.Plc.TiaPortal.Host/ ONE VENDOR, net48 exe. Loads Openness from the install.
+│  ├─ Versio.Plc.TwinCat/        ONE VENDOR, pure. Directory payload, import planner,
+│  │                            ST header, TwinCAT's own tree vocabulary.
+│  ├─ Versio.Plc.TwinCat.Infrastructure/
+│  │                            ONE VENDOR, driven. Locator, runner, TwinCatPack.
+│  └─ Versio.Plc.TwinCat.Host/   ONE VENDOR, net9 x64 exe. COM into TcXaeShell.DTE.17.0.
 ├─ tests/
 │  ├─ Versio.TestSupport/       not a test project: the three helpers more than one suite
 │  │                            needs (TestPaths, TestLogger, VendorSeamScanner)
-│  ├─ Versio.Core.Tests/        1,432 unit tests — pure, no IO, under a second
-│  ├─ Versio.Integration.Tests/ 148 tests against real git and the real filesystem, ~10 s.
+│  ├─ Versio.Core.Tests/        1,434 unit tests — pure, no IO, under a second
+│  ├─ Versio.Integration.Tests/ 150 tests against real git and the real filesystem, ~10 s.
 │  │                            NO CODESYS: that is a different project now, so this one
 │  │                            needs no filter and cannot accidentally cost half an hour
 │  ├─ Versio.App.Tests/         613 tests that build the real windows and panels against
@@ -208,8 +215,11 @@ Versio.sln
 │  ├─ Versio.Plc.Codesys.Tests/ 54 tests against real CODESYS, ~30 min. The CODESYS gate
 │  │                            before a commit, and the only suite that needs that toolchain
 │  ├─ Versio.Plc.TiaPortal.Pure.Tests/ 16 pure vendor tests — format, planner, protocol
-│  └─ Versio.Plc.TiaPortal.Tests/ 5 tests against real TIA Portal; skip with a count when
+│  ├─ Versio.Plc.TiaPortal.Tests/ 5 tests against real TIA Portal; skip with a count when
 │                               Openness membership or the install is missing
+│  ├─ Versio.Plc.TwinCat.Pure.Tests/ 11 pure vendor tests — format, planner, protocol
+│  └─ Versio.Plc.TwinCat.Tests/ 5 tests against real TwinCAT XAE; skip with a count when
+│                               TcXaeShell.DTE.17.0 or the fixture is missing
 ├─ tools/                       PowerShell and python harnesses. tools/tia/ is the second
 │                               vendor's round-trip and P7 harness; the rest are CODESYS
 │                               probes. New-VersioIcon.ps1 generates the app icon.
@@ -220,9 +230,11 @@ Versio.sln
 │                               (CODESYS) and CleaningStation_V20_V21/ (TIA Portal,
 │                               a directory) are GIT LFS — a clone without git-lfs
 │                               gets 130-byte stubs and the toolchain gate skips
-│                               rather than opening a pointer. This repository's
-│                               .versio/repo.json ignores the TIA tree so opening
-│                               Versio here does not start a 37 s Portal export
+│                               rather than opening a pointer. TwinCAT's
+│                               TC3_PlcSample_reStrText/ is XML, not LFS. This
+│                               repository's .versio/repo.json ignores both directory
+│                               fixtures so opening Versio here does not start a
+│                               Portal or XAE export
 ├─ phase0/                      GITIGNORED scratch, created on demand by the tools/ harnesses
 │                               and safe to delete whole — it reached 150 MB of scratch
 │                               project copies before it was cleaned out on 2026-08-17. The
@@ -246,7 +258,8 @@ Versio.sln
    │                            handoffs, the long STATUS diary they replaced
    └─ vendors/                  ONE VENDOR's documentation per pack
       ├─ codesys/DRIVING.md     how CODESYS is driven end to end, and the audit of it
-      └─ tia/DRIVING.md         how TIA Portal is driven — Openness, host, occupancy
+      ├─ tia/DRIVING.md         how TIA Portal is driven — Openness, host, occupancy
+      └─ twincat/DRIVING.md     how TwinCAT 3 is driven — DTE, message filter, TIPC
 ```
 
 `Versio.App` holds the WPF shell: `Theme/tokens/` for the design tokens, `Theme/controls/` for
@@ -295,14 +308,17 @@ three ways and the namespaces say which is which:
 | **`Versio.Plc.TiaPortal`** | **One vendor, pure.** Directory payload, import planner, SCL header, native-XML scrubber | `TiaPortalProjectFormat`, `TiaPortalImportPlanner` |
 | **`Versio.Plc.TiaPortal.Infrastructure`** | **One vendor, driven.** Finding Portal, starting the net48 host | `LocalTiaPortalRunner`, `TiaPortalPack` |
 | **`Versio.Plc.TiaPortal.Host`** | **One vendor, net48.** Loads Openness from the install; Siemens DLLs are never shipped | `HostApp` |
+| **`Versio.Plc.TwinCat`** | **One vendor, pure.** Directory payload, import planner, ST header | `TwinCatProjectFormat`, `TwinCatImportPlanner` |
+| **`Versio.Plc.TwinCat.Infrastructure`** | **One vendor, driven.** Finding TcXaeShell, starting the helper host | `LocalTwinCatRunner`, `TwinCatPack` |
+| **`Versio.Plc.TwinCat.Host`** | **One vendor, net9 x64.** COM into `TcXaeShell.DTE.17.0`; Beckhoff DLLs are never shipped | `HostApp` |
 | everything else | **Vendor-neutral.** git, diff, sync, locking, watching, logging, bindings | `SyncOrchestrator`, `GitCliClient` |
 
 **Those are projects, not folders, and that is the whole point.** Until 2026-08-17 the vendor
 lived in the namespace `Versio.Core.Plc.Codesys` *inside* `Versio.Core`, so the rule below was
 checkable only by a reflection test reading namespace strings — and such a test cannot see a
 static call, a string literal, or a type hiding inside a generic until somebody teaches it to,
-which took three separate goes. `Versio.Core` now has **no project reference** to either pack, so
-a leak is a compiler error.
+which took three separate goes. `Versio.Core` now has **no project reference** to a vendor
+pack, so a leak is a compiler error.
 
 Structured Text is a *standard*, not a CODESYS feature — putting it under `Iec` means a
 second vendor inherits the codec, the declaration parser and the syntax highlighting rather
@@ -349,7 +365,9 @@ That is not tidiness for its own sake — it is what makes the risky parts (the 
   everything, so a machine without it starts and says so rather than working. Nothing is
   vendored: that is what makes Git Credential Manager, SSH agents, 2FA and corporate proxies
   behave exactly as they do in your own terminal. |
-| CODESYS | 3.5 SP22 — **`Versio.Plc.Codesys.Tests` only**; the other four suites need none |
+| CODESYS | 3.5 SP22 — **`Versio.Plc.Codesys.Tests` only**; the fast loop needs none |
+| TIA Portal | Openness membership — **`Versio.Plc.TiaPortal.Tests` only**; skips cleanly without it |
+| TwinCAT 3 | `TcXaeShell.DTE.17.0` — **`Versio.Plc.TwinCat.Tests` only**; skips cleanly without it |
 
 ```bash
 dotnet build
@@ -365,7 +383,7 @@ dotnet test tests/Versio.Core.Tests
 > `%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe`, or set `DOTNET_ROOT` to it — the same install
 > layout that makes a framework-dependent `Versio.exe` fail to start, noted again below.
 
-**Nine suites, and they need different things:**
+**Eleven suites, and they need different things:**
 
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|
@@ -377,9 +395,11 @@ dotnet test tests/Versio.Core.Tests
 | `Versio.Plc.Codesys.Parity.Tests` | 92 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 16 | nothing — format, planner, protocol, scrubber | instant |
 | `Versio.Plc.TiaPortal.Tests` | 5 | **a real TIA Portal**; skips cleanly without Openness membership | seconds when skipped |
+| `Versio.Plc.TwinCat.Pure.Tests` | 11 | nothing — the vendor's planner, format and protocol, pure | instant |
+| `Versio.Plc.TwinCat.Tests` | 5 | **a real TwinCAT XAE**; skips cleanly without `TcXaeShell.DTE.17.0` | seconds when skipped; ~3 min when XAE runs the import gate |
 | `Versio.Plc.Codesys.Tests` | 54 | **a real CODESYS**, and **skips cleanly** without one | **~30 min** |
 
-The first eight are the loop to work in. The last is the gate before a commit — and it is a
+The first ten are the loop to work in. The last is the gate before a commit — and it is a
 separate project precisely so that running the loop cannot cost you half an hour by accident.
 Of the 386 tests that used to sit behind that half-hour wall, **334 needed no toolchain at
 all**; they surface in seconds now.

@@ -1,0 +1,18 @@
+<Project>
+  <!-- The host exe does not travel with a ProjectReference: ReferenceOutputAssembly
+       is false so DTE/STA never leak into the WPF process as types. Copy it beside
+       any project that has to spawn it — Infrastructure, the app, the real-XAE tests. -->
+  <Target Name="CopyTwinCatHostToReferrer" AfterTargets="Build">
+    <PropertyGroup>
+      <_TwinCatHostOut>$(MSBuildThisFileDirectory)bin\$(Configuration)\net9.0-windows\</_TwinCatHostOut>
+    </PropertyGroup>
+    <ItemGroup>
+      <_TwinCatHostFiles Include="$(_TwinCatHostOut)**\*.*"
+                         Condition="Exists('$(_TwinCatHostOut)Versio.Plc.TwinCat.Host.exe')" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_TwinCatHostFiles)"
+          DestinationFolder="$(OutputPath)twincat\%(RecursiveDir)"
+          SkipUnchangedFiles="true"
+          Condition="'@(_TwinCatHostFiles)' != ''" />
+  </Target>
+</Project>
