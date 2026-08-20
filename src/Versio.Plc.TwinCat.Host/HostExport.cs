@@ -43,6 +43,17 @@ internal static partial class HostApp
             Emit("info", "msg", "TINC present — coverage skip");
         }
 
+        // A mirror with zero objects is worse than no mirror: it looks like a successful
+        // export in which every object was deleted, and the next import would offer to
+        // make the project match. A tree that walked to nothing means the PLC branch was
+        // not really loaded — refuse rather than write it.
+        if (objects.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "the export found no PLC software under " + plcName + " — refusing to " +
+                "write an empty mirror, which would read as every object deleted");
+        }
+
         var manifest = new Dictionary<string, object?>
         {
             ["schema"] = 10,

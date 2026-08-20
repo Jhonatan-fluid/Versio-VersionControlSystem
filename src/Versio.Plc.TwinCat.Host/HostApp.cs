@@ -166,28 +166,25 @@ internal static partial class HostApp
         return project is null ? null : Com.Get(project, "Object");
     }
 
+    /// <summary>
+    /// TIPC is lazy: the nested "&lt;name&gt; Project" node does not exist until the branch
+    /// is touched. This loop touches and retries. What it must never do is return a node
+    /// whose children have not loaded — an export walking one writes an empty mirror,
+    /// reports success, and the resulting diff reads as every object deleted. The first
+    /// cut ended its coalesce in "?? child", which made the retry loop dead code and did
+    /// exactly that; it also fast-pathed the gate fixture by name, so the gate never saw
+    /// the generic branch it was supposed to prove.
+    /// </summary>
     private static object? WaitForPlcProject(object sysMan)
     {
-        var known = new[]
-        {
-            "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project",
-            "TIPC^LibraryDocumentationSample",
-            "TIPC",
-        };
+        const int Tries = 90;
 
-        for (var i = 0; i < 90; i++)
-        {
-            foreach (var path in known)
-            {
-                var hit = Lookup(sysMan, path);
-                if (hit is not null && LooksLikePlcProject(hit, path))
-                {
-                    Emit("info", "phase", "tipc", "detail",
-                        "loaded " + path + " after " + (i * 500) + "ms");
-                    return NestedProjectOf(sysMan, hit, path);
-                }
-            }
+        // The first half of the wait belongs to the nested node exclusively; only after
+        // that may an outer child with demonstrably loaded children stand in for it.
+        const int Grace = 45;
 
+        for (var i = 0; i < Tries; i++)
+        {
             var tipc = Lookup(sysMan, "TIPC");
             if (tipc is not null)
             {
@@ -214,13 +211,21 @@ internal static partial class HostApp
                     }
 
                     var nestedPath = "TIPC^" + name + "^" + name + " Project";
-                    var nested = Lookup(sysMan, nestedPath) ?? ChildNamed(child, name + " Project") ?? child;
+                    var nested = Lookup(sysMan, nestedPath) ?? ChildNamed(child, name + " Project");
                     if (nested is not null)
                     {
                         Touch(nested);
                         Emit("info", "phase", "tipc", "detail",
                             "loaded " + nestedPath + " after " + (i * 500) + "ms");
                         return nested;
+                    }
+
+                    if (i >= Grace && ChildCountOf(child) > 0)
+                    {
+                        Emit("warning", "msg",
+                            "no nested '" + name + " Project' node appeared; exporting from " +
+                            "the loaded '" + name + "' node instead");
+                        return child;
                     }
                 }
             }
@@ -229,29 +234,6 @@ internal static partial class HostApp
         }
 
         return null;
-    }
-
-    private static bool LooksLikePlcProject(object item, string path) =>
-        path.EndsWith(" Project", StringComparison.Ordinal)
-        || ChildCountOf(item) > 0
-        || TryText(item, "DeclarationText") is not null;
-
-    private static object NestedProjectOf(object sysMan, object item, string path)
-    {
-        if (path.EndsWith(" Project", StringComparison.Ordinal))
-        {
-            return item;
-        }
-
-        var name = Com.Str(item, "Name");
-        if (string.IsNullOrEmpty(name))
-        {
-            return item;
-        }
-
-        return Lookup(sysMan, "TIPC^" + name + "^" + name + " Project")
-               ?? ChildNamed(item, name + " Project")
-               ?? item;
     }
 
     private static void Touch(object item)
