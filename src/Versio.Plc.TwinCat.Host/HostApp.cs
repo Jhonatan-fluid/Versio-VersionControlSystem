@@ -537,6 +537,36 @@ internal static partial class HostApp
 
     private static void EmitDone() => Emit("done", "ok", "true");
 
-    private static string Esc(string value) =>
-        value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", " ").Replace("\n", " ");
+    // COM error messages carry tabs and stranger control characters; unescaped they make
+    // the one protocol line that mattered malformed JSON, and the runner then reports the
+    // generic "host exited 1" instead of the message.
+    private static string Esc(string value)
+    {
+        var sb = new StringBuilder(value.Length);
+        foreach (var ch in value)
+        {
+            if (ch == '\\')
+            {
+                sb.Append("\\\\");
+            }
+            else if (ch == '"')
+            {
+                sb.Append("\\\"");
+            }
+            else if (ch is '\r' or '\n')
+            {
+                sb.Append(' ');
+            }
+            else if (ch < ' ')
+            {
+                sb.Append("\\u").Append(((int)ch).ToString("x4"));
+            }
+            else
+            {
+                sb.Append(ch);
+            }
+        }
+
+        return sb.ToString();
+    }
 }

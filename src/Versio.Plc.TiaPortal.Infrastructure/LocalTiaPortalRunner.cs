@@ -261,6 +261,13 @@ public sealed class LocalTiaPortalRunner(
             _log.Debug(TiaPortalLog.Category, line);
         }
 
+        // A malformed protocol line may be the fatal that explains everything else —
+        // dropping it silently is how a failure arrives with no message at all.
+        foreach (var line in output.Malformed)
+        {
+            _log.Warn(TiaPortalLog.Category, "malformed protocol line: " + line);
+        }
+
         if (output.Fatal is { } fatal)
         {
             var msg = fatal.String("msg") ?? fatal.Raw;

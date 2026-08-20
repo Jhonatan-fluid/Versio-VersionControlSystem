@@ -50,6 +50,36 @@ public static class Program
         return ex.Message;
     }
 
-    private static string JsonEscape(string value) =>
-        value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", " ").Replace("\n", " ");
+    // Same escaping as HostApp.Esc, duplicated because this fatal fires before HostApp
+    // is involved: a control character in an exception message must not make the one
+    // line explaining the failure unparseable.
+    private static string JsonEscape(string value)
+    {
+        var sb = new System.Text.StringBuilder(value.Length);
+        foreach (var ch in value)
+        {
+            if (ch == '\\')
+            {
+                sb.Append("\\\\");
+            }
+            else if (ch == '"')
+            {
+                sb.Append("\\\"");
+            }
+            else if (ch is '\r' or '\n')
+            {
+                sb.Append(' ');
+            }
+            else if (ch < ' ')
+            {
+                sb.Append("\\u").Append(((int)ch).ToString("x4"));
+            }
+            else
+            {
+                sb.Append(ch);
+            }
+        }
+
+        return sb.ToString();
+    }
 }
