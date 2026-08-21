@@ -71,37 +71,63 @@ public sealed class CloseGuardTests
     // ------------------------------------------------------------------ an import runs
 
     [Fact]
-    public async Task An_import_refuses_the_close_outright()
+    public async Task An_import_asks_before_closing()
     {
-        // The one write that can leave a project the IDE will not open. No answer makes it
-        // safe, so the dialog states rather than asks.
-        //
-        // The hook deliberately answers Proceed — the most permissive thing it could say — and
-        // must be ignored. This is not hypothetical: the first version of the shell returned
-        // whatever the hook handed back, so a handler answering out of habit would have closed
-        // the window over a running import. The refusal has to BE the decision.
-        var fixture = Fixture.Build(GuardChoice.Proceed);
+        var fixture = Fixture.Build(GuardChoice.Cancel);
 
         using var importing = fixture.Shell.Busy.Begin(WorkKind.Import, "Importing into Machine…");
 
         Assert.False(await fixture.Shell.RequestCloseAsync());
 
         var prompt = Assert.Single(fixture.Asked);
-        Assert.Empty(prompt.Choices);
+        Assert.Contains(GuardChoice.CancelWorkAndProceed, prompt.Choices);
+        Assert.Contains("restore", prompt.Body, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public async Task A_refused_close_leaves_the_import_running()
+    public async Task Choosing_to_stop_it_cancels_the_import()
     {
-        // The refusal must not have the side effect the user was refused.
-        var fixture = Fixture.Build(GuardChoice.Proceed);
+        var fixture = Fixture.Build(GuardChoice.CancelWorkAndProceed);
+
+        var importing = fixture.Shell.Busy.Begin(WorkKind.Import, "Importing…");
+
+        var closing = fixture.Shell.RequestCloseAsync();
+
+        Assert.True(importing.Token.IsCancellationRequested);
+
+        importing.Dispose();
+
+        Assert.True(await Within(closing, "the close to complete after the import stopped"));
+    }
+
+    [Fact]
+    public async Task Backing_out_of_close_leaves_the_import_running()
+    {
+        var fixture = Fixture.Build(GuardChoice.Cancel);
 
         using var importing = fixture.Shell.Busy.Begin(WorkKind.Import, "Importing…");
 
-        await fixture.Shell.RequestCloseAsync();
+        Assert.False(await fixture.Shell.RequestCloseAsync());
 
         Assert.False(importing.Token.IsCancellationRequested);
         Assert.True(fixture.Shell.Busy.IsBusy);
+    }
+
+    [Fact]
+    public async Task Choosing_to_wait_closes_when_the_import_finishes()
+    {
+        var fixture = Fixture.Build(GuardChoice.WaitThenProceed);
+
+        var importing = fixture.Shell.Busy.Begin(WorkKind.Import, "Importing…");
+
+        var closing = fixture.Shell.RequestCloseAsync();
+
+        Assert.False(closing.IsCompleted);
+        Assert.False(importing.Token.IsCancellationRequested);
+
+        importing.Dispose();
+
+        Assert.True(await Within(closing, "the close to complete after the import ended"));
     }
 
     // ------------------------------------------------------------------ an export runs
@@ -186,6 +212,26 @@ public sealed class CloseGuardTests
     }
 
     // ------------------------------------------------------------------ session ending
+
+    [Fact]
+    public async Task A_second_close_while_waiting_does_not_ask_again()
+    {
+        // Every X used to start another RequestCloseAsync. The first wait still owns the
+        // close; a second one must be a no-op.
+        var fixture = Fixture.Build(GuardChoice.WaitThenProceed);
+
+        var exporting = fixture.Shell.Busy.Begin(WorkKind.Export, "Exporting…");
+
+        var first = fixture.Shell.RequestCloseAsync();
+        var second = await fixture.Shell.RequestCloseAsync();
+
+        Assert.False(second);
+        Assert.Single(fixture.Asked);
+
+        exporting.Dispose();
+
+        Assert.True(await Within(first, "the first close to complete"));
+    }
 
     [Fact]
     public void A_session_ending_stops_even_an_import()

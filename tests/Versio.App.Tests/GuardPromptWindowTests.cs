@@ -99,6 +99,13 @@ public sealed class GuardPromptWindowTests
         target: "feature/pumps");
 
     private static GuardVerdict RunningImport() => InterruptionGuard.Evaluate(
+        GuardIntent.SwitchBranch,
+        WorkSnapshot.Of(new ActiveWork(WorkKind.Import, "Importing into Machine…",
+                                       TimeSpan.FromSeconds(12))),
+        WorkingTreeSnapshot.Clean,
+        target: "feature/pumps");
+
+    private static GuardVerdict ClosingDuringImport() => InterruptionGuard.Evaluate(
         GuardIntent.CloseApp,
         WorkSnapshot.Of(new ActiveWork(WorkKind.Import, "Importing into Machine…",
                                        TimeSpan.FromSeconds(12))),
@@ -168,8 +175,7 @@ public sealed class GuardPromptWindowTests
     [Fact]
     public void A_refusal_offers_one_acknowledgement_and_no_choice()
     {
-        // Nothing would make closing safe while an import is writing, so the dialog states
-        // rather than asks. A Cancel beside an OK would imply an alternative that is not there.
+        // Switching branch while an import writes the project. Closing asks instead.
         StaHarness.Run(() =>
         {
             var window = new GuardPromptWindow(PromptFor(RunningImport()));
@@ -178,6 +184,20 @@ public sealed class GuardPromptWindowTests
             Assert.Equal("OK", (string)button.Content);
             Assert.True(button.IsDefault);
             Assert.True(button.IsCancel);
+        });
+    }
+
+    [Fact]
+    public void Closing_during_an_import_offers_stop_wait_and_dont_close()
+    {
+        StaHarness.Run(() =>
+        {
+            var window = new GuardPromptWindow(PromptFor(ClosingDuringImport()));
+            var labels = Buttons(window).Select(b => (string)b.Content).ToList();
+
+            Assert.Contains(GuardNarrative.Label(GuardChoice.CancelWorkAndProceed), labels);
+            Assert.Contains(GuardNarrative.Label(GuardChoice.WaitThenProceed), labels);
+            Assert.Contains(GuardNarrative.Label(GuardChoice.Cancel), labels);
         });
     }
 

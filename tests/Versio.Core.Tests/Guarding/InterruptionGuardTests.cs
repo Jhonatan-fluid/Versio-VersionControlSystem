@@ -57,8 +57,10 @@ public sealed class InterruptionGuardTests
     // ---------------------------------------------------------------- work in flight
 
     [Theory]
-    [MemberData(nameof(AllIntents))]
-    public void Work_that_must_finish_refuses_every_intent(GuardIntent intent)
+    [InlineData(GuardIntent.SwitchBranch)]
+    [InlineData(GuardIntent.SwitchRepository)]
+    [InlineData(GuardIntent.Pull)]
+    public void Work_that_must_finish_refuses_intents_that_are_not_closing(GuardIntent intent)
     {
         var verdict = InterruptionGuard.Evaluate(
             intent, WorkSnapshot.Of(Importing), WorkingTreeSnapshot.Clean);
@@ -69,15 +71,33 @@ public sealed class InterruptionGuardTests
     }
 
     [Fact]
-    public void A_refusal_offers_no_choices_at_all()
+    public void Closing_during_an_import_asks_rather_than_refusing()
     {
-        // The point of refusing rather than asking: there is no option that would make it
-        // safe, so presenting one would be a lie with a button on it.
+        // The process is leaving. Stop is offered because the backup is the recovery;
+        // branch-switch still refuses, which is the test above.
         var verdict = InterruptionGuard.Evaluate(
             GuardIntent.CloseApp, WorkSnapshot.Of(Importing), WorkingTreeSnapshot.Clean);
 
+        Assert.Equal(GuardDecision.Ask, verdict.Decision);
+        Assert.Equal(GuardReason.UninterruptibleWork, verdict.Reason);
+        Assert.Equal(
+            [GuardChoice.WaitThenProceed, GuardChoice.CancelWorkAndProceed, GuardChoice.Cancel],
+            verdict.Choices);
+        Assert.Contains(Importing, verdict.Work);
+    }
+
+    [Fact]
+    public void A_refusal_offers_no_choices_at_all()
+    {
+        // The point of refusing rather than asking: there is no option that would make it
+        // safe, so presenting one would be a lie with a button on it. CloseApp is the
+        // exception — it asks — so this is a switch, which still refuses.
+        var verdict = InterruptionGuard.Evaluate(
+            GuardIntent.SwitchBranch, WorkSnapshot.Of(Importing), WorkingTreeSnapshot.Clean);
+
         Assert.Empty(verdict.Choices);
         Assert.Null(verdict.Recommended);
+        Assert.Equal(GuardDecision.Refuse, verdict.Decision);
     }
 
     [Theory]
@@ -109,16 +129,19 @@ public sealed class InterruptionGuardTests
     [Fact]
     public void Work_that_must_finish_wins_over_work_that_could_be_cancelled()
     {
-        // Both running. Offering to cancel the export would be answering a question nobody
-        // can act on while the import is still writing into the project.
+        // Both running. Closing still names the import and offers Stop; a switch would
+        // refuse. Wait remains recommended — an import that is about to finish is safer
+        // to let finish than to kill.
         var verdict = InterruptionGuard.Evaluate(
             GuardIntent.CloseApp,
             WorkSnapshot.Of(Exporting, Importing),
             WorkingTreeSnapshot.Clean);
 
-        Assert.Equal(GuardDecision.Refuse, verdict.Decision);
+        Assert.Equal(GuardDecision.Ask, verdict.Decision);
         Assert.Equal(GuardReason.UninterruptibleWork, verdict.Reason);
-        Assert.Equal(Importing, Assert.Single(verdict.Work));
+        Assert.Contains(Importing, verdict.Work);
+        Assert.Equal(GuardChoice.WaitThenProceed, verdict.Recommended);
+        Assert.Contains(GuardChoice.CancelWorkAndProceed, verdict.Choices);
     }
 
     [Fact]

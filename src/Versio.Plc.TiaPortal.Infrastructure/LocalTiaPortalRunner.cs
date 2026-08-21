@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text;
 using Versio.Core.Logging;
 using Versio.Core.Plc;
+using Versio.Infrastructure.Platform;
 using Versio.Plc.TiaPortal;
 
 namespace Versio.Plc.TiaPortal.Infrastructure;
@@ -138,7 +139,7 @@ public sealed class LocalTiaPortalRunner(
         {
             try
             {
-                acquired = mutex.WaitOne(MutexWait);
+                acquired = ChildProcess.WaitMutex(mutex, MutexWait, cancellationToken);
             }
             catch (AbandonedMutexException)
             {
@@ -146,6 +147,12 @@ public sealed class LocalTiaPortalRunner(
                 _log.Warn(TiaPortalLog.Category,
                     "recovered an abandoned TIA Portal lock — a previous Versio process died " +
                     "while holding it");
+            }
+            catch (OperationCanceledException)
+            {
+                _log.Warn(TiaPortalLog.Category,
+                    "cancelled while waiting for the machine-wide TIA Portal lock");
+                throw;
             }
 
             waited.Stop();
@@ -182,6 +189,7 @@ public sealed class LocalTiaPortalRunner(
             Arguments = Quote(jobFile),
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            RedirectStandardInput = true,
             UseShellExecute = false,
             CreateNoWindow = true,
             WindowStyle = ProcessWindowStyle.Hidden,
@@ -221,33 +229,34 @@ public sealed class LocalTiaPortalRunner(
         process.ErrorDataReceived += OnData;
 
         _log.Debug(TiaPortalLog.Category, $"exec {hostExecutablePath} {psi.Arguments}");
+        ChildProcess.StampParent(psi);
+        // Portal is a COM server, not a child of Host.exe. Snapshot before start so a
+        // later kill reaps only the instance this run created, not one the user had open.
+        var portalBefore = ChildProcess.PidsNamed("Siemens.Automation.Portal");
         process.Start();
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
 
         var timeout = TimeSpan.FromSeconds(job.TimeoutSeconds);
-        if (!process.WaitForExit((int)timeout.TotalMilliseconds))
+        try
         {
-            try
+            if (!ChildProcess.WaitForExitOrKill(
+                    process, timeout, cancellationToken, closeStdinOnCancel: true))
             {
-                process.Kill(entireProcessTree: true);
+                LogReaped(ChildProcess.KillNew(portalBefore, "Siemens.Automation.Portal"),
+                    "Siemens.Automation.Portal");
+                _log.Error(TiaPortalLog.Category, $"timed out after {timeout} — killed the host");
+                return PlcResult.Failure("the TIA Portal host did not finish within the timeout");
             }
-            catch (InvalidOperationException)
-            {
-                // Already gone.
-            }
-
-            _log.Error(TiaPortalLog.Category, $"timed out after {timeout} — killed the host");
-            return PlcResult.Failure("the TIA Portal host did not finish within the timeout");
         }
-
-        // WaitForExit(int) can return before the async readers have delivered their last
-        // lines; only the parameterless overload is documented to wait for them. Without
-        // it the final done line is sometimes still in flight when the buffer is read,
-        // and a fully successful import reports "host exited 0" as a failure.
-        process.WaitForExit();
-
-        cancellationToken.ThrowIfCancellationRequested();
+        catch (OperationCanceledException)
+        {
+            LogReaped(ChildProcess.KillNew(portalBefore, "Siemens.Automation.Portal"),
+                "Siemens.Automation.Portal");
+            _log.Warn(TiaPortalLog.Category,
+                "cancelled — closed stdin so the host can Quit COM, then killed the host if it stayed up");
+            throw;
+        }
 
         string stdout;
         lock (gate)
@@ -309,6 +318,20 @@ public sealed class LocalTiaPortalRunner(
 
     private static string Quote(string path) =>
         path.Contains(' ', StringComparison.Ordinal) ? "\"" + path + "\"" : path;
+
+    private void LogReaped(int count, string processName)
+    {
+        if (count <= 0)
+        {
+            return;
+        }
+
+        // KillTree on Host.exe does not reach the COM server. Zero is the usual
+        // case: the host Quit and Portal went with it. A number here is the hole
+        // that used to leave Siemens.Automation.Portal running after Stop.
+        _log.Warn(TiaPortalLog.Category,
+            $"reaped {count} leftover {processName} process(es) this run started — not ones already open");
+    }
 
     private static string WriteJobFile(TiaPortalJob job)
     {

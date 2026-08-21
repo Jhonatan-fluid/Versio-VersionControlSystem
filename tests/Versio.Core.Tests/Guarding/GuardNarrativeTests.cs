@@ -135,7 +135,7 @@ public sealed class GuardNarrativeTests
     }
 
     [Fact]
-    public void Refusing_for_a_run_says_when_it_can_be_tried_again()
+    public void Closing_during_a_run_says_how_long_and_that_restore_is_the_recovery()
     {
         var verdict = InterruptionGuard.Evaluate(
             GuardIntent.CloseApp,
@@ -146,7 +146,7 @@ public sealed class GuardNarrativeTests
 
         Assert.Contains("Importing into Machine…", body, StringComparison.Ordinal);
         Assert.Contains("12 seconds", body, StringComparison.Ordinal);
-        Assert.Contains(GuardNarrative.Action(GuardIntent.CloseApp), body, StringComparison.Ordinal);
+        Assert.Contains("restore", body, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -230,6 +230,21 @@ public sealed class GuardNarrativeTests
 
         Assert.Contains("Importing", body, StringComparison.Ordinal);
         Assert.DoesNotContain("  ", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Closing_during_uninterruptible_work_names_restore_not_never_interrupted()
+    {
+        var verdict = Verdict(GuardDecision.Ask, GuardReason.UninterruptibleWork,
+            intent: GuardIntent.CloseApp,
+            work: [new ActiveWork(WorkKind.Import, "Importing into Machine…", TimeSpan.FromSeconds(8))]);
+
+        var body = GuardNarrative.Body(verdict);
+
+        Assert.Contains("restore", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("never interrupted", body, StringComparison.Ordinal);
+        Assert.Contains("asking before close Versio", GuardNarrative.Describe(verdict),
+            StringComparison.Ordinal);
     }
 
     [Fact]

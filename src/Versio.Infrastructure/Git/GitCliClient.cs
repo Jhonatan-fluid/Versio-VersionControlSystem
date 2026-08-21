@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using Versio.Core.Abstractions;
 using Versio.Core.Git;
 using Versio.Core.Logging;
+using Versio.Infrastructure.Platform;
 
 namespace Versio.Infrastructure.Git;
 
@@ -689,6 +690,7 @@ public sealed partial class GitCliClient(
         var announced = AnnounceIfSlowAsync(display, announce.Token);
 
         process.Start();
+        ChildProcess.AssignToSession(process);
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
 
@@ -723,6 +725,11 @@ public sealed partial class GitCliClient(
 
             if (!timedOut)
             {
+                // The success path cancels the slow-announce after the wait. Throwing
+                // here used to skip that, so a cancelled command could still log
+                // "still running" a second later — a line that looks like the kill missed.
+                await announce.CancelAsync().ConfigureAwait(false);
+                _log.Warn(LogCategory.Git, $"{display} cancelled — killed the process tree");
                 throw;
             }
         }

@@ -19,6 +19,7 @@ internal static partial class HostApp
         Emit("info", "op", job.Op, "project", job.Project ?? "", "progId", job.ProgId);
 
         object? dte = null;
+        using var lifetime = HostLifetime.Attach(() => TryQuit(dte));
         try
         {
             if (string.IsNullOrWhiteSpace(job.Project) || !File.Exists(job.Project))

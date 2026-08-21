@@ -119,6 +119,7 @@ public partial class MainWindow : Window
     /// they wanted to wait for the thing they had just finished waiting for.
     /// </remarks>
     private bool _closeApproved;
+    private bool _closeInFlight;
 
     /// <summary>
     /// Do not close while Versio is in the middle of something.
@@ -162,12 +163,22 @@ public partial class MainWindow : Window
             return;
         }
 
+        // A second X while the first wait is in flight used to start another
+        // RequestCloseAsync. Ignore it; the first answer still owns the close.
+        if (_closeInFlight)
+        {
+            e.Cancel = true;
+            return;
+        }
+
         // Vetoed first, always. The answer may involve waiting 20 seconds for an export, and
         // there is no way to hold the close open while we find out.
         e.Cancel = true;
+        _closeInFlight = true;
 
         if (!await _shell.RequestCloseAsync())
         {
+            _closeInFlight = false;
             return;
         }
 

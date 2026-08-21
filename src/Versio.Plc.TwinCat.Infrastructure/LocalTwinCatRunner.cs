@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text;
 using Versio.Core.Logging;
 using Versio.Core.Plc;
+using Versio.Infrastructure.Platform;
 using Versio.Plc.TwinCat;
 
 namespace Versio.Plc.TwinCat.Infrastructure;
@@ -141,7 +142,7 @@ public sealed class LocalTwinCatRunner(
         {
             try
             {
-                acquired = mutex.WaitOne(MutexWait);
+                acquired = ChildProcess.WaitMutex(mutex, MutexWait, cancellationToken);
             }
             catch (AbandonedMutexException)
             {
@@ -149,6 +150,12 @@ public sealed class LocalTwinCatRunner(
                 _log.Warn(TwinCatLog.Category,
                     "recovered an abandoned TwinCAT lock — a previous Versio process died " +
                     "while holding it");
+            }
+            catch (OperationCanceledException)
+            {
+                _log.Warn(TwinCatLog.Category,
+                    "cancelled while waiting for the machine-wide TwinCAT lock");
+                throw;
             }
 
             waited.Stop();
@@ -185,6 +192,7 @@ public sealed class LocalTwinCatRunner(
             Arguments = Quote(jobFile),
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            RedirectStandardInput = true,
             UseShellExecute = false,
             CreateNoWindow = true,
             WindowStyle = ProcessWindowStyle.Hidden,
@@ -224,33 +232,32 @@ public sealed class LocalTwinCatRunner(
         process.ErrorDataReceived += OnData;
 
         _log.Debug(TwinCatLog.Category, $"exec {hostExecutablePath} {psi.Arguments}");
+        ChildProcess.StampParent(psi);
+        // XAE is a COM server, not a child of Host.exe. Snapshot before start so a later
+        // kill reaps only the instance this run created, not one the user had open.
+        var xaeBefore = ChildProcess.PidsNamed("TcXaeShell");
         process.Start();
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
 
         var timeout = TimeSpan.FromSeconds(job.TimeoutSeconds);
-        if (!process.WaitForExit((int)timeout.TotalMilliseconds))
+        try
         {
-            try
+            if (!ChildProcess.WaitForExitOrKill(
+                    process, timeout, cancellationToken, closeStdinOnCancel: true))
             {
-                process.Kill(entireProcessTree: true);
+                LogReaped(ChildProcess.KillNew(xaeBefore, "TcXaeShell"), "TcXaeShell");
+                _log.Error(TwinCatLog.Category, $"timed out after {timeout} — killed the host");
+                return PlcResult.Failure("the TwinCAT host did not finish within the timeout");
             }
-            catch (InvalidOperationException)
-            {
-                // Already gone.
-            }
-
-            _log.Error(TwinCatLog.Category, $"timed out after {timeout} — killed the host");
-            return PlcResult.Failure("the TwinCAT host did not finish within the timeout");
         }
-
-        // WaitForExit(int) can return before the async readers have delivered their last
-        // lines; only the parameterless overload is documented to wait for them. Without
-        // it the final done line is sometimes still in flight when the buffer is read,
-        // and a fully successful import reports "host exited 0" as a failure.
-        process.WaitForExit();
-
-        cancellationToken.ThrowIfCancellationRequested();
+        catch (OperationCanceledException)
+        {
+            LogReaped(ChildProcess.KillNew(xaeBefore, "TcXaeShell"), "TcXaeShell");
+            _log.Warn(TwinCatLog.Category,
+                "cancelled — closed stdin so the host can Quit COM, then killed the host if it stayed up");
+            throw;
+        }
 
         string stdout;
         lock (gate)
@@ -327,6 +334,17 @@ public sealed class LocalTwinCatRunner(
 
     private static string Quote(string path) =>
         path.Contains(' ', StringComparison.Ordinal) ? "\"" + path + "\"" : path;
+
+    private void LogReaped(int count, string processName)
+    {
+        if (count <= 0)
+        {
+            return;
+        }
+
+        _log.Warn(TwinCatLog.Category,
+            $"reaped {count} leftover {processName} process(es) this run started — not ones already open");
+    }
 
     private static string WriteJobFile(TwinCatJob job)
     {

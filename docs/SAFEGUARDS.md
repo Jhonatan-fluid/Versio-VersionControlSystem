@@ -254,13 +254,13 @@ asymmetry is the whole design:**
 | Operation | Interruption | Why |
 |---|---|---|
 | **Export** | `Cancellable` | Stages into `<mirror>.versio_staging` and swaps only on success. Killing it loses nothing but time. |
-| **Import** | `MustFinish` | Writes into the binary `.project`. A kill mid-write can leave it unopenable; the backup exists but has no restore path in the UI (§5.E). |
+| **Import** | `MustFinish` | Writes into the binary project. Branch-switch still refuses. Stop and CloseApp may kill it — the backup taken before import is the recovery (Restore is on the project panel). |
 | clone / fetch / status / diff | `Cancellable` | Read-only, or writes somewhere nothing depends on yet. |
 | push | `MustFinish` | Cancelling is safe locally but can leave the remote half-updated. |
 | commit / stage / discard | `MustFinish` | Sub-second, and git holds its own index and ref locks. |
 
-So the prompt for a running **import** offers *wait*, never *cancel* — and says how long it has
-been going, which `HeartbeatService` already produces.
+So the prompt for a running **import** on a branch switch offers *wait*, never *cancel*.
+Closing the app, and the status-bar Stop button, may kill it — Restore is the recovery.
 
 ### 2.4 A three-way prompt hook
 
@@ -361,12 +361,19 @@ is orphaned — hidden, holding the project, and mid-write if it was importing.
 - Add `MainWindow.OnClosing`, same guard, `Intent.CloseApp`: *Cancel the export and close* /
   *Wait — N seconds so far* / *Don't close*. `e.Cancel = true` while waiting, with the existing busy
   caption as the wait UI.
-- **An import in flight is a hard refusal, not a confirmation.** It is the one write that can
-  destroy work git cannot restore, and "are you sure" is the wrong question when the honest answer
-  is "twenty more seconds".
+- **As built 2026-08-21:** an import in flight **asks**, it does not refuse. Stop kills it
+  (restore a backup if the project will not open); Wait is still offered; Don't close leaves
+  it running. Branch-switch still refuses. Close-Stop and the status-bar Stop call
+  `CancelRunning`, not `CancelCancellable` — the latter skips an import, which is why
+  "Stop it and continue" used to wait out the job. The log names the operation
+  (`cancelled '…' on request`); an import Stop is Error and tells you to restore.
+  Logoff still writes `the session is ending: stopped '…' mid-flight`.
 - Handle `SessionEnding` separately — Windows will not wait indefinitely. Best effort: kill the
   CODESYS tree deliberately rather than orphan it, and flush lock state so the next open recovers
-  cleanly.
+  cleanly. A session Job Object with `KILL_ON_JOB_CLOSE` reaps CODESYS.exe and git.exe if Versio
+  is Task-Manager-killed. Host.exe is not in that job; it watches the parent PID and Quits COM.
+  Stop also snapshots Portal/XAE PIDs before Host starts and reaps only the ones this run
+  created — `Kill(entireProcessTree)` on Host does not reach those COM servers.
 - On every path out, kill orphaned CODESYS children explicitly. `KillTree` already exists.
 
 ---
@@ -1140,8 +1147,10 @@ Three findings came out of doing it:
   it registers a fallback the run scope uses when there is no per-binding entry.
 
 **`CancelCancellable()` skips work that must finish**, rather than relying on the guard never
-asking. The guard is the courtesy; the filter is the guarantee — this is the only method in the app
-that can kill a CODESYS process tree.
+asking. That is still the branch-switch path. **Stop and close-Stop call `CancelRunning`**, which
+cancels an import too — the backup is the recovery. `CancelCancellable` is no longer the only
+method that can kill a toolchain tree, and treating it as the Stop button is how close-Stop
+used to wait out an import.
 
 **Cancellation stopped being an error.** `ReportError` reports `OperationCanceledException` at Info
 as "Cancelled.", and the deferred sync catches it separately. A red error line for something the
@@ -1192,21 +1201,22 @@ its completion still has to be reported, and the user is still looking at the wi
 
 **`SessionEnding` does not go through the guard at all.** Windows gives a process a few seconds and
 will not read a dialog, so `AbandonForShutdown()` cancels *everything*, including the import —
-`CancelEverythingForShutdown()` is the one place `CancelCancellable`'s guarantee is deliberately set
-aside. It is not a good outcome; it is the better of the two available, because the alternative is a
-hidden CODESYS orphaned and still holding the project after its parent has gone. The shutdown is
+`CancelRunning` / `CancelEverythingForShutdown()`. It is not a good outcome; it is the better of
+the two available, because the alternative is a hidden IDE orphaned and still holding the project
+after its parent has gone. The shutdown is
 **not vetoed**, though `SessionEndingCancelEventArgs` would allow it: an application that blocks a
 shutdown to protect its own work is one people learn to force-quit, and the direction locks are
 already on disk and recovered on the next open.
 
-**One defect found by its own test.** `An_import_refuses_the_close_outright` failed on first run:
-`Ask` returned whatever the `AskGuard` hook handed back, so a handler answering `Proceed` — which
-the test does deliberately, as the most permissive thing it could say — closed the window over a
-running import. **A refusal is not a question.** It is still shown, because the user has to be told
-why nothing happened, but the answer is now discarded. The shipped dialog returns null for a
-refusal's acknowledgement, so this changes nothing in the real path; it matters because the hook is
-a delegate anybody can set, and the refusal has to *be* the decision rather than a strong suggestion
-the caller is trusted to respect.
+**One defect found by its own test.** Close-during-import used to refuse
+(`An_import_refuses_the_close_outright`). **2026-08-21 it asks** — Stop / Wait / Don't
+close; the test is `An_import_asks_before_closing`. The Proceed-while-busy hook still
+must not close: `Ask` returned whatever the `AskGuard` hook handed back, so a handler
+answering `Proceed` — which the test does deliberately, as the most permissive thing
+it could say — closed the window over a running import. **A refusal is not a question,
+and neither is a Proceed answer on a dialog that is still asking.** The shipped dialog
+returns null for a refusal's acknowledgement; it matters because the hook is a delegate
+anybody can set.
 
 **9 new tests** (143 → 152). Verified able to fail: treating "Cancel" as permission to close failed
 three of them.

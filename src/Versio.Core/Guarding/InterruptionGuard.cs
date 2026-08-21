@@ -16,9 +16,10 @@ namespace Versio.Core.Guarding;
 /// <b>Order of checks matters and is not arbitrary.</b>
 /// </para>
 /// <list type="number">
-///   <item><b>Work that cannot be cut short comes first.</b> No answer about the repository is
-///     interesting while a CODESYS import is writing into a <c>.project</c> — the only correct
-///     response is "not yet", whatever else is true.</item>
+///   <item><b>Work that cannot be cut short comes first.</b> Switching or pulling while an
+    ///     import writes the project is still "not yet". Closing is the exception: the process
+    ///     is leaving, so the question is Stop (restore a backup if the project will not open)
+    ///     or Wait.</item>
 ///   <item><b>Then work that can.</b> Offering to cancel is only honest once we know nothing
 ///     uninterruptible is also running.</item>
 ///   <item><b>Then unmerged paths</b>, before the lock, because a conflicted tree is the more
@@ -48,10 +49,24 @@ public static class InterruptionGuard
         WorkingTreeSnapshot repo,
         string target = "")
     {
-        // 1. Work that must be allowed to finish. No choice makes this safe, so it is the one
-        //    branch here that refuses outright rather than asking.
+        // 1. Work that must be allowed to finish. Switching or pulling over a live import
+        //    has no safe answer, so those intents refuse. Closing is leaving anyway: Stop
+        //    kills the toolchain (the backup is the recovery) and Wait is still offered.
         if (work.HasUninterruptible)
         {
+            if (intent == GuardIntent.CloseApp)
+            {
+                return new GuardVerdict
+                {
+                    Decision = GuardDecision.Ask,
+                    Intent = intent,
+                    Reason = GuardReason.UninterruptibleWork,
+                    Choices = [GuardChoice.WaitThenProceed, GuardChoice.CancelWorkAndProceed, GuardChoice.Cancel],
+                    Work = work.Running,
+                    Target = target,
+                };
+            }
+
             return new GuardVerdict
             {
                 Decision = GuardDecision.Refuse,

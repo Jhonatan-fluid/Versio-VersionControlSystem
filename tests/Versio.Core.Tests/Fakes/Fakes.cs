@@ -198,6 +198,7 @@ public sealed class InMemoryLockStore : ILockStore
 
     public Task WriteAsync(LockState state, CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
         State = state;
         Writes++;
         return Task.CompletedTask;

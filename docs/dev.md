@@ -172,8 +172,10 @@ Read [`App.xaml.cs`](../src/Versio.App/App.xaml.cs). The order is not decorative
    directory if it is a clone, then the most recent path that still exists.
 
 Windows logoff does **not** go through the close guard. The process has a few seconds.
-`AbandonForShutdown` kills the toolchain tree so a hidden CODESYS is not left holding the
-project. Direction locks are already on disk and recovered next time.
+`AbandonForShutdown` kills the toolchain tree so a hidden IDE is not left holding the
+project. Direction locks are already on disk and recovered next time. A session Job Object
+reaps CODESYS.exe and git.exe if Versio is killed; the TIA/TwinCAT hosts watch the parent
+PID and Quit COM.
 
 ### Opening a repository
 
@@ -1084,7 +1086,7 @@ gate. Pure, so every combination is a unit test.
 
 ```mermaid
 flowchart TB
-  Intent[user intent] --> Unint[import running? refuse]
+  Intent[user intent] --> Unint[import running? refuse switch, ask on close]
   Unint --> Cancel[export running? wait or stop]
   Cancel --> Merge[unmerged paths?]
   Merge --> DirLock[direction lock held?]
@@ -1094,10 +1096,10 @@ flowchart TB
 
 Check order (do not invent a nicer one):
 
-1. **Uninterruptible work** — an import is writing the binary project. Answer: not yet.
-   Closing does not offer cancel.
+1. **Uninterruptible work** — an import is writing the binary project. Branch-switch and
+   pull: not yet. Closing asks Stop / Wait / Don't close.
 2. **Cancellable work** — an export. Offer wait or stop. Export stages and swaps; stopping
-   it is honest. Import is not.
+   it is honest. Import stays `MustFinish` for a switch; Stop and CloseApp may kill it.
 3. **Unmerged paths** — before the lock, because git will refuse anyway and a lock
    sentence would send the user to the wrong remedy.
 4. **Direction lock** — before the dirty tree. Stashing does not fix a held lock.
@@ -1111,7 +1113,8 @@ Other guards in the running app:
 | If you… | What happens |
 |---|---|
 | Close during export | Wait or stop it. Used to orphan a hidden CODESYS. |
-| Close during import | Refused until it finishes or times out. |
+| Close during import | Wait or stop it (restore a backup if the project will not open). Used to refuse until timeout. |
+| Status-bar Stop | Kills whatever is running, including an import. Try again lights after cancel. |
 | Switch repository | Same guard. Dropdowns snap back if the switch does not happen. |
 | Open the same clone twice | `RepositorySession` / `session.json`. Second window is told who has it. Stale pid → free. Corrupt marker → open anyway. |
 | Confirm import | Banner on the project row, then a dialog naming the project and the plan. Declining leaves the offer up. |
@@ -1215,6 +1218,10 @@ pack.
   a threshold cannot express.
 - Idle status polls collapse into one periodic line. Refused or coalesced sync says
   nothing, because nothing happened.
+- **Stop is loud.** The bar names what it cancelled; an import Stop is Error and says
+  to restore. Runners then say mutex-wait cancel, host stdin-close, CODESYS pid kill, or
+  leftover Portal/XAE reap. Logoff is the only line that says `the session is ending`.
+  A cancelled git.exe is Warning, not silent.
 
 A silent failure is a bug even when the code is correct. Quiet when idle, loud when
 working.

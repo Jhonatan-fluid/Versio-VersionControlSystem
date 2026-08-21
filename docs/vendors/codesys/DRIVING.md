@@ -1234,11 +1234,11 @@ poke at CODESYS directly.
 | Batching several projects into one session | **not built** | Designed, documented as built, and refused by `CodesysJob.ToJson()` since it cannot work — §12 A2 |
 | Export pre-count | one extra tree walk, `.type` + `get_children()` per node | The progress denominator. Noise against the cold start, and the alternative is a bar that cannot move for 17–31 s |
 | Concurrency | One CODESYS at a time, **machine-wide** | `Global\Versio.Codesys.SingleInstance`. Not per-process: two Versio windows, or two user sessions, must not launch competing instances |
-| Mutex wait | 15 minutes, then `TimeoutException` | A wait over 1 s is logged, because it is the explanation for an export that appeared to hang before it started |
+| Mutex wait | 15 minutes, then `TimeoutException`, **and the wait observes cancel** | A wait over 1 s is logged, because it is the explanation for an export that appeared to hang before it started. Stop used to sit here for the full 15 minutes |
 | Crash recovery | `AbandonedMutexException` → **recover and continue** | A named `Semaphore` would dodge the thread-affinity problem and be the wrong fix: a process dying while holding it leaves the count permanently decremented and every future export on the machine blocks forever |
 | Job timeout | 10 minutes, then **process-tree kill** | A `--noUI` CODESYS sitting on a hidden modal never exits, and it spawns children that outlive a plain `Process.Kill()` |
 | Window | `CreateNoWindow` **and** `WindowStyle.Hidden` | Different subsystems. `CREATE_NO_WINDOW` suppresses a *console* child's console; CODESYS.exe is a GUI app and under `--noUI` still creates a top-level window, so `SW_HIDE` is needed as well |
-| Cancellation | An export may be cancelled; an **import may not** | The export stages and swaps; the import writes into the binary project. Enforced by `InterruptionGuard`, not by convention |
+| Cancellation | An export may be cancelled; an import stays `MustFinish` for a **branch switch**. Stop and close may kill an import | The export stages and swaps; the import writes into the binary project. Restore is the recovery. CODESYS.exe is assigned to the session Job Object so Task Manager kill of Versio reaps it. The log names the pid (`cancelled — killing the CODESYS process tree (pid N)`); a Stop during the mutex wait says `cancelled while waiting for the machine-wide CODESYS lock` |
 
 The mutex is acquired and released on **one dedicated long-running thread**
 (`TaskCreationOptions.LongRunning`), because a named `Mutex` has thread affinity: acquiring

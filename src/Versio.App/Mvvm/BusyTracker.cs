@@ -144,11 +144,11 @@ public sealed class BusyTracker(IClock clock, IVersioLogger? logger = null) : Ob
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>Work that must finish is skipped here, not merely absent.</b> The guard already
-    /// refuses to ask this question while an import is running, so in practice nothing
-    /// uninterruptible is ever in the dictionary when this is called — but "in practice" is
-    /// not the standard for the one method in the app that can kill a CODESYS process tree.
-    /// The filter is the guarantee; the guard is the courtesy.
+    /// <b>Work that must finish is skipped here, not merely absent.</b> Branch-switch still
+    /// refuses an import, and this is the method that switch calls. Stop on the status bar
+    /// and close-Stop call <see cref="CancelRunning"/> instead, which kills everything —
+    /// including a mid-import. The filter here is the guarantee that a context change cannot
+    /// tear a project file; the Stop button is the way the user asks for that anyway.
     /// </para>
     /// <para>
     /// Cancelling is a request, not an event. The operations end when their own
@@ -252,21 +252,42 @@ public sealed class BusyTracker(IClock clock, IVersioLogger? logger = null) : Ob
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>For Windows shutting down, and nothing else.</b> The process is going to die in a few
-    /// seconds whatever anybody prefers, and the choice is not between finishing the import and
-    /// stopping it — it is between stopping it deliberately and leaving a hidden CODESYS
-    /// orphaned, still holding the project, while its parent disappears.
+    /// <b>Stop and close-Stop.</b> Always kills, including a mid-import: the backup taken
+    /// before the import is the recovery. The log names the operation and, for an import,
+    /// says to restore — it does not pretend the session is ending, which is
+    /// <see cref="CancelEverythingForShutdown"/>.
     /// </para>
     /// <para>
-    /// Cancelling gets the runner to <c>KillTree</c> the process it started. That is a bad
-    /// outcome for a half-written project — the backup taken before the import is what makes it
-    /// survivable — but it is the better of the two bad outcomes available, and it is the only
-    /// moment in the application where <see cref="CancelCancellable"/>'s guarantee is
-    /// deliberately set aside.
+    /// This is the method that sets aside <see cref="CancelCancellable"/>'s guarantee.
+    /// Branch-switch still uses that one.
     /// </para>
     /// </remarks>
     /// <returns>How many operations were asked to stop.</returns>
-    public int CancelEverythingForShutdown()
+    public int CancelRunning() =>
+        CancelEach(entry =>
+            WorkKinds.InterruptionOf(entry.Kind) == Interruption.MustFinish
+                ? (LogLevel.Error,
+                    $"killed '{entry.What}' mid-import; restore a backup if the project will not open")
+                : (LogLevel.Warning,
+                    $"cancelled '{entry.What}' on request"));
+
+    /// <summary>
+    /// Cancel everything because Windows is ending the session, including work that must
+    /// otherwise be allowed to finish.
+    /// </summary>
+    /// <remarks>
+    /// Same tokens as <see cref="CancelRunning"/>, different sentence. The process has a
+    /// few seconds and no dialog; cancelling is what gets the runner to kill the tree it
+    /// started instead of leaving a hidden IDE behind.
+    /// </remarks>
+    public int CancelEverythingForShutdown() =>
+        CancelEach(entry =>
+            (WorkKinds.InterruptionOf(entry.Kind) == Interruption.MustFinish
+                ? LogLevel.Error
+                : LogLevel.Warning,
+            $"the session is ending: stopped '{entry.What}' mid-flight"));
+
+    private int CancelEach(Func<Entry, (LogLevel Level, string Message)> describe)
     {
         var cancelled = 0;
 
@@ -277,15 +298,12 @@ public sealed class BusyTracker(IClock clock, IVersioLogger? logger = null) : Ob
                 entry.Cancellation.Cancel();
                 cancelled++;
 
-                // Error, not Warning, for the ones that should never have been stopped. This
-                // is the line somebody reads after a shutdown left a project that will not
-                // open, and it has to say plainly that it happened and to what.
-                _log.Log(
-                    WorkKinds.InterruptionOf(entry.Kind) == Interruption.MustFinish
-                        ? LogLevel.Error
-                        : LogLevel.Warning,
-                    LogCategory.App,
-                    $"the session is ending: stopped '{entry.What}' mid-flight");
+                // Error, not Warning, for an import: that is the line somebody reads after a
+                // killed write left a project that will not open. Stop and Windows logoff
+                // share this loop but not the sentence — "the session is ending" on a Stop
+                // click is a lie, and a lie in the log is how the button looks broken.
+                var (level, message) = describe(entry);
+                _log.Log(level, LogCategory.App, message);
             }
             catch (ObjectDisposedException)
             {

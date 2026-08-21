@@ -109,9 +109,9 @@ Both directions run automatically and deterministically. A per-project **directi
 | **Branch creation** — validated against git's own rules as you type | ✅ creates from HEAD and switches; 35 unit tests over the rules, and the dialog says *which* rule was broken |
 | **Clone with verification** — URL, Verify, destination, progress | ✅ Clone stays dead until `ls-remote` passes, and editing the URL shuts it again |
 | **Discard** — per file, after a confirmation naming it | ✅ refuses an untracked file with an explanation; releases the direction lock when the file was inside a mirror |
-| **Nothing is interrupted mid-flight** — a guard decides whether closing, switching branch or switching repository may happen right now | ✅ `InterruptionGuard`, pure, 93 unit tests. An export may be cancelled and an import may not: the export stages and swaps, the import writes into the binary project |
-| **Closing waits, or refuses** | ✅ an export offers *wait* or *stop it*; an import refuses outright until it finishes or times out. Before this, closing orphaned a hidden CODESYS still holding the project |
-| **Every operation can actually be cancelled** | ✅ the plumbing reached `KillTree` all along and every caller passed `CancellationToken.None`. 25 call sites now carry a real token |
+| **Nothing is interrupted mid-flight** — a guard decides whether closing, switching branch or switching repository may happen right now | ✅ `InterruptionGuard`. An export may be cancelled; an import stays `MustFinish` for a branch switch. Close and the status-bar Stop may kill an import — Restore is the recovery |
+| **Closing waits, or stops** | ✅ an export and an import both offer *wait* or *stop it*; Don't close leaves it running. Stop on the status bar kills whatever is in flight. A second X while waiting is ignored |
+| **Stop actually kills** | ✅ TIA/TwinCAT `WaitForExit` and all three 15-minute mutex waits honour the token. CODESYS.exe and git.exe are in a `KILL_ON_JOB_CLOSE` job so Task Manager kill of Versio reaps them. Hosts watch the parent PID and Quit COM before they exit. Stop snapshots Portal/XAE PIDs before Host starts and reaps only the instance this run created. The log names what Stop cancelled; logoff is the only line that says the session is ending |
 | **The repository and branch dropdowns are guarded** | ✅ shut while an import runs, and they snap back whenever a switch does not happen — a refused checkout used to leave the control naming a branch you were not on |
 | **Auto-stash on a branch switch** | ✅ uncommitted work is stashed with a marker, recorded in `.versio/local/autostash.json` with the direction locks it released, and offered back — restore, leave, discard — on returning to that branch. The stash is proven to exist by a set difference over `git stash list`, because `git stash push` on a clean tree exits 0 and creates nothing |
 | Branch switching with work in the tree | ✅ the guard asks, the auto-stash saves it with the direction locks it released, and returning to the branch offers it back — restore, leave, or discard. A stash that git did not actually create abandons the switch rather than checking out over unsaved work |
@@ -206,11 +206,11 @@ Versio.sln
 ├─ tests/
 │  ├─ Versio.TestSupport/       not a test project: the three helpers more than one suite
 │  │                            needs (TestPaths, TestLogger, VendorSeamScanner)
-│  ├─ Versio.Core.Tests/        1,458 unit tests — pure, no IO, under a second
-│  ├─ Versio.Integration.Tests/ 153 tests against real git and the real filesystem, ~10 s.
+│  ├─ Versio.Core.Tests/        1,460 unit tests — pure, no IO, under a second
+│  ├─ Versio.Integration.Tests/ 155 tests against real git and the real filesystem, ~10 s.
 │  │                            NO CODESYS: that is a different project now, so this one
 │  │                            needs no filter and cannot accidentally cost half an hour
-│  ├─ Versio.App.Tests/         621 tests that build the real windows and panels against
+│  ├─ Versio.App.Tests/         630 tests that build the real windows and panels against
 │  │                            the real stylesheet on an STA thread — none is ever shown
 │  ├─ Versio.Plc.Codesys.Pure.Tests/ 263 pure vendor tests — the planner, the codecs, the
 │  │                            protocol — under a second, needing nothing
@@ -391,10 +391,10 @@ dotnet test tests/Versio.Core.Tests
 
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,458 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
-| `Versio.Integration.Tests` | 153 | a real `git.exe` and the real filesystem | ~10 s |
+| `Versio.Core.Tests` | 1,460 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
+| `Versio.Integration.Tests` | 155 | a real `git.exe` and the real filesystem | ~10 s |
 | `Versio.Arch.Tests` | 15 | nothing — it reads assembly metadata, IL, and the project files | instant |
-| `Versio.App.Tests` | 621 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
+| `Versio.App.Tests` | 629 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | nothing — the vendor's planner, codecs and protocol, pure | under a second |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 19 | nothing — format, planner, protocol, scrubber | instant |

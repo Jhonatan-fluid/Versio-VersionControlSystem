@@ -1371,7 +1371,21 @@ public sealed class SyncOrchestrator
 
         try
         {
-        var result = await RunnerFor(binding).RunAsync(job, _progress, ct).ConfigureAwait(false);
+        PlcResult result;
+        try
+        {
+            result = await RunnerFor(binding).RunAsync(job, _progress, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // The direction is already claimed. Leaving that throw uncaught kept the lock
+            // in the in-flight state, so Try again never lit. Persist with a live token:
+            // ApplyAsync hashes then writes state.json, and a cancelled ct would throw
+            // before the Failed lock reached disk.
+            return await RecordCancelledAsync(binding, SyncTrigger.ExportFailed, started)
+                .ConfigureAwait(false);
+        }
+
         var elapsed = _clock.UtcNow - started;
 
         if (!result.Succeeded)
@@ -1751,7 +1765,17 @@ public sealed class SyncOrchestrator
         // other is a rule somebody will eventually be surprised by.
         using var writing = BeginOwnWrite(binding.Id, ChangeSource.Project);
 
-        var result = await RunnerFor(binding).RunAsync(job, _progress, ct).ConfigureAwait(false);
+        PlcResult result;
+        try
+        {
+            result = await RunnerFor(binding).RunAsync(job, _progress, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return await RecordCancelledAsync(binding, SyncTrigger.ImportFailed, started)
+                .ConfigureAwait(false);
+        }
+
         var elapsed = _clock.UtcNow - started;
 
         if (!result.Succeeded)
@@ -2158,8 +2182,33 @@ public sealed class SyncOrchestrator
         return ApplyAsync(bindingId, SyncTrigger.FailureAcknowledged, string.Empty, ct);
     }
 
+    /// <summary>
+    /// Persist a user-cancelled run as Failed so Try again lights, even though the token
+    /// that killed the toolchain is already cancelled.
+    /// </summary>
+    private async Task<SyncOutcome> RecordCancelledAsync(
+        ProjectBinding binding, SyncTrigger fail, DateTimeOffset started)
+    {
+        var elapsed = _clock.UtcNow - started;
+        _log.Warn(LogCategory.Sync,
+            $"{binding.Id}: cancelled on request after {elapsed.TotalSeconds:F1}s");
+
+        await ApplyAsync(binding.Id, fail, string.Empty, CancellationToken.None,
+            reason: "cancelled on request").ConfigureAwait(false);
+
+        return new SyncOutcome
+        {
+            Verdict = SyncVerdict.Failed,
+            BindingId = binding.Id,
+            Explanation = "cancelled on request",
+            State = SyncDirection.Failed,
+            Duration = elapsed,
+        };
+    }
+
     private async Task ApplyAsync(string bindingId, SyncTrigger trigger, string projectHash,
-                                  CancellationToken ct, string? headCommit = null)
+                                  CancellationToken ct, string? headCommit = null,
+                                  string? reason = null)
     {
         if (!_locks.TryGetValue(bindingId, out var current))
         {
@@ -2202,7 +2251,7 @@ public sealed class SyncOrchestrator
         {
             Direction = transition.State,
             AcquiredUtc = transition.State == SyncDirection.Clean ? null : _clock.UtcNow,
-            Reason = transition.Reason,
+            Reason = reason ?? transition.Reason,
             Baseline = baseline,
             LastSynced = transition.State == SyncDirection.Clean
                 ? new SyncedState { ProjectHash = projectHash, MirrorHash = mirrorHash }

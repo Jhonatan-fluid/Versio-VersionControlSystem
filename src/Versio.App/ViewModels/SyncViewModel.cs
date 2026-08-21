@@ -3109,7 +3109,23 @@ public sealed class SyncViewModel : ObservableObject
 
             if (outcome.IsFailure)
             {
-                _logger.Error(LogCategory.Sync, sentence);
+                var cancelled = outcome.Explanation.Contains(
+                    "cancelled", StringComparison.OrdinalIgnoreCase);
+                if (cancelled)
+                {
+                    _logger.Info(LogCategory.Sync, sentence);
+                    await SweepKilledSwapsAsync().ConfigureAwait(true);
+                    if (Projects.FirstOrDefault(p => p.BindingId == binding.Id) is { } cancelledRow)
+                    {
+                        cancelledRow.State = "cancelled — try again";
+                    }
+                }
+                else
+                {
+                    _logger.Error(LogCategory.Sync, sentence);
+                }
+
+                RefreshFailure(binding.ProjectPath);
             }
             else if (outcome.DidWork)
             {
@@ -3146,7 +3162,25 @@ public sealed class SyncViewModel : ObservableObject
                 LockState = SyncNarrative.Describe(outcome.State);
                 await RescanAsync().ConfigureAwait(true);
                 await RefreshStalenessAsync().ConfigureAwait(true);
+                if (outcome.IsFailure)
+                {
+                    RefreshFailure(binding.ProjectPath);
+                }
             }
+        }
+        catch (OperationCanceledException)
+        {
+            // Fire-and-forget: an unobserved OCE is a silent failure. The orchestrator
+            // normally converts cancel into Failed; this is the occupancy-wait path
+            // that throws before RunAsync.
+            _logger.Info(LogCategory.Sync, $"{binding.Id}: cancelled on request");
+            await SweepKilledSwapsAsync().ConfigureAwait(true);
+            if (Projects.FirstOrDefault(p => p.BindingId == binding.Id) is { } row)
+            {
+                row.State = "cancelled — try again";
+            }
+
+            RefreshFailure(binding.ProjectPath);
         }
         finally
         {

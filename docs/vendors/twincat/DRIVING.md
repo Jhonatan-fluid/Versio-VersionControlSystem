@@ -121,6 +121,15 @@ Versio.Plc.TwinCat.Host.exe <job.json>
 `CREATE_NO_WINDOW`, and reads stdout/stderr for `@@VERSIO@@` lines. Timeout floor is
 **20 minutes**. `TypicalStartupCost` is **22 s** (measured export of a TEMP copy).
 
+Since 2026-08-21 the wait honours cancel (`ChildProcess.WaitForExitOrKill`): Stop closes
+stdin so the host can `TryQuit` DTE, then kills leftovers. Host.exe is **not** in the
+kill-on-close Job Object. `VERSIO_PARENT_PID` plus a stdin-EOF watch: if Versio dies, the
+host Quits COM and exits. XAE PIDs are snapshotted before Host starts (`TcXaeShell`) so a
+cancel reaps only the instance this run created. The 15-minute mutex wait observes the
+token too. The log says `cancelled while waiting for the machine-wide TwinCAT lock`, or
+`closed stdin so the host can Quit COM`, and if XAE outlived Host, `reaped N leftover
+TcXaeShell process(es) this run started`.
+
 The job schema (`TwinCatJob` / `JobReader`):
 
 | Field | Meaning |

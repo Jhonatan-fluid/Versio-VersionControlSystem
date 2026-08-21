@@ -71,10 +71,15 @@ public static class GuardNarrative
     public static string Body(GuardVerdict verdict) => verdict.Reason switch
     {
         GuardReason.UninterruptibleWork =>
-            $"{Running(verdict.Work)}\n\n" +
-            "That writes directly into files Versio cannot put back, so it is never " +
-            $"interrupted — it will finish, or time out on its own. You can {Action(verdict.Intent)} " +
-            "once it has.",
+            verdict.Intent == GuardIntent.CloseApp
+                ? $"{Running(verdict.Work)}\n\n" +
+                  "Stopping it can leave a project the IDE will not open. Restore a backup " +
+                  "from the project panel if that happens. Waiting lets it finish, which is " +
+                  "safer; stopping is how you close now."
+                : $"{Running(verdict.Work)}\n\n" +
+                  "That writes directly into files Versio cannot put back, so it is never " +
+                  $"interrupted — it will finish, or time out on its own. You can {Action(verdict.Intent)} " +
+                  "once it has.",
 
         GuardReason.CancellableWork =>
             $"{Running(verdict.Work)}\n\n" +
@@ -132,6 +137,9 @@ public static class GuardNarrative
         {
             GuardReason.CancellableWork =>
                 $"asking before {Action(verdict.Intent)}: {Summarise(verdict.Work)} is running",
+            GuardReason.UninterruptibleWork =>
+                $"asking before {Action(verdict.Intent)}: {Summarise(verdict.Work)} is running; " +
+                "stopping it can leave a project that needs a backup restore",
             GuardReason.DirtyWorkingTree =>
                 $"asking before {Action(verdict.Intent)}: {Files(verdict.DirtyFileCount)} " +
                 $"{Have(verdict.DirtyFileCount)} uncommitted changes",

@@ -63,9 +63,9 @@ public enum Interruption
 /// <list type="bullet">
 ///   <item><b>Export</b> stages into <c>&lt;mirror&gt;.versio_staging</c> and swaps only once
 ///     the run completed. A killed export leaves the previous mirror exactly as it was.</item>
-///   <item><b>Import</b> writes into the binary <c>.project</c> itself. A killed import can
-///     leave a file the IDE will not open — and while the project is copied aside first,
-///     nothing in the UI can yet restore that copy.</item>
+///   <item><b>Import</b> writes into the binary project itself. A killed import can leave a
+    ///     file the IDE will not open. Branch switch still refuses; Stop and closing the app
+    ///     may kill it — the backup taken before import is the recovery.</item>
 /// </list>
 /// </remarks>
 public static class WorkKinds

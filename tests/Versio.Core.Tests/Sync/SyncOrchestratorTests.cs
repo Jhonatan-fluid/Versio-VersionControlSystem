@@ -263,6 +263,37 @@ public class SyncOrchestratorTests
     }
 
     [Fact]
+    public async Task A_cancelled_export_persists_Failed_even_though_the_token_is_dead()
+    {
+        // The direction is claimed before RunAsync. An uncaught OCE left the lock
+        // in-flight, so Try again never lit. Persist must use a live token: ApplyAsync
+        // hashes then writes state.json, and a cancelled ct throws before that write.
+        var h = new Harness();
+        using var cts = new CancellationTokenSource();
+        h.Codesys.BeforeRun = _ =>
+        {
+            cts.Cancel();
+            return Task.CompletedTask;
+        };
+
+        var writesBefore = h.Locks.Writes;
+        var outcome = await h.Orchestrator.HandleChangeAsync(new SyncJob
+        {
+            BindingId = BindingId,
+            Source = ChangeSource.Project,
+            Synchronous = true,
+        }, cts.Token);
+
+        Assert.Equal(SyncVerdict.Failed, outcome.Verdict);
+        Assert.Equal("cancelled on request", outcome.Explanation);
+        Assert.Equal(SyncDirection.Failed, h.Orchestrator.StateOf(BindingId));
+        Assert.Equal("cancelled on request", h.Orchestrator.ReasonFor(BindingId));
+        Assert.True(h.Locks.Writes > writesBefore);
+        Assert.Equal(SyncDirection.Failed, h.Locks.State!.Bindings[BindingId].Direction);
+        Assert.Equal("cancelled on request", h.Locks.State.Bindings[BindingId].Reason);
+    }
+
+    [Fact]
     public async Task An_automatic_export_does_not_provoke_an_automatic_import()
     {
         // The loop the whole design exists to avoid. An export writes into the tree the text

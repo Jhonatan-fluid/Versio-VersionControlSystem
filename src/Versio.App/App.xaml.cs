@@ -91,6 +91,15 @@ public partial class App : Application
         logger.Info(LogCategory.App,
             $"vendors registered: {string.Join(", ", PlcFormats.All.Select(f => f.DisplayName))}");
 
+        // True children (CODESYS.exe, git.exe) die with Versio. Host.exe is not assigned:
+        // killing it before Quit/Dispose is how Portal and XAE survive a parent death.
+        ChildProcess.Session = new ChildProcess.KillOnCloseJob();
+        Exit += (_, _) =>
+        {
+            ChildProcess.Session?.Dispose();
+            ChildProcess.Session = null;
+        };
+
         if (fileSink is not null)
         {
             logger.Info(LogCategory.App, $"logging to {fileSink.CurrentFile}");

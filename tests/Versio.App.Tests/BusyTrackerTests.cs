@@ -14,8 +14,8 @@ namespace Versio.App.Tests;
 /// No STA thread and no window: this is a counted dictionary with a clock, and the reason it
 /// is tested at all is that two of its properties are now safety-relevant rather than
 /// cosmetic. <see cref="BusyTracker.HasUninterruptible"/> is what disables the branch dropdown,
-/// and <see cref="BusyTracker.CancelCancellable"/> is the only method in the app that can kill
-/// a CODESYS process tree.
+/// and <see cref="BusyTracker.CancelCancellable"/> skips an import (branch-switch).
+/// <see cref="BusyTracker.CancelRunning"/> is what Stop and close-Stop call.
 /// </remarks>
 public sealed class BusyTrackerTests
 {
@@ -133,6 +133,22 @@ public sealed class BusyTrackerTests
     }
 
     [Fact]
+    public void Stop_cancels_work_that_must_finish()
+    {
+        // CancelCancellable is the branch-switch path. Stop and close-Stop use CancelRunning,
+        // which is the one that may kill an import.
+        var tracker = new BusyTracker(new StoppedClock());
+
+        using var import = tracker.Begin(WorkKind.Import, "Importing…");
+        using var export = tracker.Begin(WorkKind.Export, "Exporting…");
+
+        Assert.Equal(2, tracker.CancelRunning());
+
+        Assert.True(export.Token.IsCancellationRequested);
+        Assert.True(import.Token.IsCancellationRequested);
+    }
+
+    [Fact]
     public void An_external_source_is_cancelled_but_not_disposed()
     {
         // The automatic export's token is created by the caller and adopted by the scope,
@@ -202,6 +218,28 @@ public sealed class BusyTrackerTests
         var line = Assert.Single(sink.Snapshot(), e => e.Level == LogLevel.Error);
 
         Assert.Contains("Importing into Machine…", line.Message, StringComparison.Ordinal);
+        Assert.Contains("session is ending", line.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Stop_does_not_log_as_if_the_session_is_ending()
+    {
+        // Mutation check: CancelRunning used to share CancelEverythingForShutdown's
+        // sentence, so clicking Stop wrote "the session is ending" while the window
+        // stayed open. That line is how the button looks broken in the log.
+        var sink = new InMemoryLogSink();
+        var logger = new VersioLogger(new SystemClock()).AddSink(sink);
+        var tracker = new BusyTracker(new StoppedClock(), logger);
+
+        using var importing = tracker.Begin(WorkKind.Import, "Importing into Machine…");
+
+        tracker.CancelRunning();
+
+        var line = Assert.Single(sink.Snapshot(), e => e.Level == LogLevel.Error);
+
+        Assert.Contains("Importing into Machine…", line.Message, StringComparison.Ordinal);
+        Assert.Contains("restore", line.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("session is ending", line.Message, StringComparison.Ordinal);
     }
 
     [Fact]

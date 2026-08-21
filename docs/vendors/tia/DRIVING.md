@@ -120,6 +120,16 @@ before reading the buffer (the timed overload is not a flush barrier — a succe
 could report "host exited 0"), logs malformed protocol lines instead of dropping them, and
 refuses a plan-less import instead of fabricating an empty plan. Findings, 2026-08-20.
 
+Since 2026-08-21 the wait honours cancel (`ChildProcess.WaitForExitOrKill`): Stop closes
+stdin so the host can `TryDispose` the portal, then kills leftovers. Host.exe is **not**
+in the kill-on-close Job Object — that would skip Quit. `VERSIO_PARENT_PID` plus a
+stdin-EOF watch: if Versio dies, the host Disposes COM and exits. Portal PIDs are
+snapshotted before Host starts (`Siemens.Automation.Portal`) so a cancel reaps only the
+instance this run created. The 15-minute mutex wait observes the token too. The log
+says `cancelled while waiting for the machine-wide TIA Portal lock`, or `closed stdin
+so the host can Quit COM`, and if Portal outlived Host, `reaped N leftover
+Siemens.Automation.Portal process(es) this run started`.
+
 The job schema (`TiaPortalJob` / `JobReader`):
 
 | Field | Meaning |

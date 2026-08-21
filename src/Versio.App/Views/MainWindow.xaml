@@ -1372,6 +1372,25 @@
                                Visibility="{Binding Busy.IsBusy,
                                    Converter={StaticResource BoolToVisibility}}" />
 
+                    <!-- Stop kills whatever the bar is showing, including a mid-import.
+                         Retry is the existing Try again, shown here so it is reachable when
+                         the project panel is not. -->
+                    <Button Content="Stop" Margin="8,0,0,0" Padding="8,1"
+                            VerticalAlignment="Center"
+                            Style="{StaticResource GhostButton}"
+                            Command="{Binding StopWorkCommand}"
+                            ToolTip="Stop the current operation. An import that is killed can leave a project that will not open; restore a backup if that happens."
+                            Visibility="{Binding Busy.IsBusy,
+                                Converter={StaticResource BoolToVisibility}}" />
+
+                    <Button Content="Try again" Margin="8,0,0,0" Padding="8,1"
+                            VerticalAlignment="Center"
+                            Style="{StaticResource GhostButton}"
+                            Command="{Binding Sync.RetryCommand}"
+                            ToolTip="{Binding Sync.FailureDetail}"
+                            Visibility="{Binding Sync.HasFailure,
+                                Converter={StaticResource BoolToVisibility}}" />
+
                     <TextBlock Text="{Binding StatusSummary}" Margin="8,0,0,0"
                                VerticalAlignment="Center"
                                FontFamily="{DynamicResource Font.UI}"

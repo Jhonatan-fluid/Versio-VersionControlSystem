@@ -594,6 +594,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         OpenRepositoryCommand = new AsyncCommand(OpenRepositoryAsync, onError: ReportError);
         OpenLogsFolderCommand = new RelayCommand(OpenLogsFolder);
+        StopWorkCommand = new AsyncCommand(StopWorkAsync, () => Busy.IsBusy, ReportError);
         RefreshCommand = new AsyncCommand(RefreshAsync, () => Ready,
                                           onError: ReportError);
 
@@ -700,6 +701,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     public AsyncCommand OpenRepositoryCommand { get; }
 
     public AsyncCommand RefreshCommand { get; }
+
+    /// <summary>
+    /// Kill whatever is running, including an import. Backup restore is the recovery.
+    /// </summary>
+    /// <remarks>
+    /// Branch-switch still uses <see cref="BusyTracker.CancelCancellable"/>, which skips
+    /// work that must finish. This is the button that sets that aside, and it is why the
+    /// close-Stop path uses the same method: changing the guard without changing the
+    /// cancel call would leave an import running until its timeout.
+    /// </remarks>
+    public AsyncCommand StopWorkCommand { get; }
 
     /// <summary>Reveal the log folder in Explorer, from the settings menu.</summary>
     /// <remarks>
@@ -2930,7 +2942,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             switch (e.PropertyName)
             {
                 case nameof(BusyTracker.IsBusy):
-                    OnUi(RaiseGitCommandStates);
+                    OnUi(() =>
+                    {
+                        RaiseGitCommandStates();
+                        StopWorkCommand.RaiseCanExecuteChanged();
+                    });
 
                     // Any deliberate git action means somebody is here, so the remote is worth
                     // watching closely again. The backoff exists to stop polling for nobody.
@@ -3984,11 +4000,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// <c>Window.Closing</c> can do with an asynchronous answer.
     /// </para>
     /// <para>
-    /// <b>An import in flight refuses outright.</b> The guard produces that verdict, not this
-    /// method, and it produces a refusal rather than a question because no answer would make it
-    /// safe: it is the one write that can leave a project the IDE will not open, and "are you
-    /// sure" is the wrong question when the honest answer is "twenty more seconds". The
-    /// toolchain job carries its own timeout, so the wait is bounded whatever happens.
+    /// <b>Closing during an import asks, it does not refuse.</b> Branch-switch still refuses
+    /// because the tree is about to move under a live write. Closing is leaving: Stop kills
+    /// the toolchain (restore a backup if the project will not open) and Wait is still
+    /// offered. The call that actually trips the token is <see cref="BusyTracker.CancelRunning"/>,
+    /// not <see cref="BusyTracker.CancelCancellable"/> — the latter skips an import, which is
+    /// why "Stop it and continue" used to wait out the job.
     /// </para>
     /// <para>
     /// Once closing is agreed, the watchers are released <b>before</b> waiting. Otherwise a
@@ -3996,13 +4013,33 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// working after being asked to stop.
     /// </para>
     /// </remarks>
+    private bool _closeInFlight;
+
     /// <returns>True when the window may close now.</returns>
     public async Task<bool> RequestCloseAsync()
     {
+        // A second X while the first wait is in flight used to start another
+        // RequestCloseAsync, another dialog, and another wait. The window also
+        // ignores a re-entrant Closing; this is the view-model half of that.
+        if (_closeInFlight)
+        {
+            return false;
+        }
+
         var choice = Ask(GuardIntent.CloseApp);
 
         if (choice == GuardChoice.Proceed)
         {
+            // Ask() returns Proceed when the guard said the road is clear. A hook answering
+            // Proceed on Stop/Wait/Don't close is not a button on that dialog — treating it
+            // as close-now would skip the wait the same way the old refusal-discard existed
+            // to prevent.
+            if (Busy.IsBusy)
+            {
+                _logger.Info(LogCategory.App, "close cancelled; Versio stays open");
+                return false;
+            }
+
             return true;
         }
 
@@ -4012,30 +4049,82 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return false;
         }
 
-        _logger.Info(LogCategory.App,
-            choice == GuardChoice.CancelWorkAndProceed
-                ? "closing: stopping what is running first"
-                : "closing: waiting for what is running to finish");
-
-        // Committed to closing. Nothing new may start from here on.
-        StopWatching();
-        Sync.Quiesce();
-
-        if (choice == GuardChoice.CancelWorkAndProceed)
+        _closeInFlight = true;
+        try
         {
-            var stopped = Busy.CancelCancellable();
             _logger.Info(LogCategory.App,
-                $"closing: asked {stopped} operation(s) to stop");
+                choice == GuardChoice.CancelWorkAndProceed
+                    ? "closing: stopping what is running first"
+                    : "closing: waiting for what is running to finish");
+
+            // Committed to closing. Nothing new may start from here on.
+            StopWatching();
+            Sync.Quiesce();
+
+            if (choice == GuardChoice.CancelWorkAndProceed)
+            {
+                var stopped = Busy.CancelRunning();
+                _logger.Info(LogCategory.App,
+                    $"closing: asked {stopped} operation(s) to stop");
+            }
+
+            StatusSummary = choice == GuardChoice.CancelWorkAndProceed
+                ? "Stopping, then closing…"
+                : "Closing when the current work finishes…";
+
+            if (choice == GuardChoice.CancelWorkAndProceed)
+            {
+                // If the runner still ignores the token, do not sit here until the job
+                // timeout. Eight seconds is long enough for KillTree and a host Quit;
+                // past that the window closes and the session job reaps CODESYS/git.
+                using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+                try
+                {
+                    await Busy.WhenIdleAsync(deadline.Token).ConfigureAwait(true);
+                }
+                catch (OperationCanceledException)
+                {
+                    _logger.Warn(LogCategory.App,
+                        "closing: still busy after 8s; closing anyway");
+                }
+            }
+            else
+            {
+                await Busy.WhenIdleAsync().ConfigureAwait(true);
+            }
+
+            _logger.Info(LogCategory.App, "nothing left running; closing");
+            return true;
         }
+        finally
+        {
+            // Left set if we are actually closing, so a second X during the posted Close
+            // is a no-op rather than another question.
+        }
+    }
 
-        StatusSummary = choice == GuardChoice.CancelWorkAndProceed
-            ? "Stopping, then closing…"
-            : "Closing when the current work finishes…";
+    /// <summary>
+    /// Kill in-flight work from the status bar. Always, including an import.
+    /// </summary>
+    private async Task StopWorkAsync()
+    {
+        _logger.Click("App.Stop");
+        var stopped = Busy.CancelRunning();
+        _logger.Info(LogCategory.App, $"stop: asked {stopped} operation(s) to stop");
+        StatusSummary = "Stopping…";
 
-        await Busy.WhenIdleAsync().ConfigureAwait(true);
-
-        _logger.Info(LogCategory.App, "nothing left running; closing");
-        return true;
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        try
+        {
+            await Busy.WhenIdleAsync(deadline.Token).ConfigureAwait(true);
+            _logger.Info(LogCategory.App, "stop: all operations ended");
+            StatusSummary = "Stopped.";
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.Warn(LogCategory.App, "stop: still busy after 8s");
+            StatusSummary = "Stopping…";
+        }
     }
 
     /// <summary>

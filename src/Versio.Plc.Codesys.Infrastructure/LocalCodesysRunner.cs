@@ -4,6 +4,7 @@ using Versio.Core.Abstractions;
 using Versio.Core.Logging;
 using Versio.Core.Plc;
 using Versio.Infrastructure.Plc;
+using Versio.Infrastructure.Platform;
 using Versio.Plc.Codesys;
 
 namespace Versio.Plc.Codesys.Infrastructure;
@@ -234,7 +235,7 @@ public sealed class LocalCodesysRunner(
         {
             try
             {
-                acquired = mutex.WaitOne(MutexWait);
+                acquired = ChildProcess.WaitMutex(mutex, MutexWait, cancellationToken);
             }
             catch (AbandonedMutexException)
             {
@@ -244,6 +245,12 @@ public sealed class LocalCodesysRunner(
                 _log.Warn(CodesysLog.Category,
                     "recovered an abandoned CODESYS lock — a previous Versio process died " +
                     "while holding it");
+            }
+            catch (OperationCanceledException)
+            {
+                _log.Warn(CodesysLog.Category,
+                    "cancelled while waiting for the machine-wide CODESYS lock");
+                throw;
             }
 
             waited.Stop();
@@ -351,42 +358,28 @@ public sealed class LocalCodesysRunner(
         _log.Debug(CodesysLog.Category, $"exec {codesysExecutablePath} {psi.Arguments}");
 
         process.Start();
+        ChildProcess.AssignToSession(process);
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
 
         var timedOut = false;
-        using var timeoutCts = new CancellationTokenSource(job.Timeout);
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken, timeoutCts.Token);
-
         try
         {
-            await process.WaitForExitAsync(linked.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            timedOut = timeoutCts.IsCancellationRequested;
-            if (timedOut)
+            if (!await ChildProcess.WaitForExitOrKillAsync(
+                    process, job.Timeout, cancellationToken).ConfigureAwait(false))
             {
+                timedOut = true;
                 _log.Error(CodesysLog.Category,
                     $"timed out after {job.Timeout} — killing the CODESYS process tree. A " +
                     "--noUI CODESYS sitting on a hidden modal never exits on its own");
             }
-            else
-            {
-                _log.Warn(CodesysLog.Category, "cancelled — killing the CODESYS process tree");
-            }
-
-            KillTree(process);
-
-            if (!timedOut)
-            {
-                throw;
-            }
         }
-
-        // WaitForExitAsync can return before the async readers have flushed.
-        await Task.Run(() => process.WaitForExit(), CancellationToken.None).ConfigureAwait(false);
+        catch (OperationCanceledException)
+        {
+            _log.Warn(CodesysLog.Category,
+                $"cancelled — killing the CODESYS process tree (pid {SafePid(process)})");
+            throw;
+        }
         stopwatch.Stop();
 
         string stdout;
@@ -896,25 +889,6 @@ public sealed class LocalCodesysRunner(
         return path;
     }
 
-    private static void KillTree(Process process)
-    {
-        try
-        {
-            if (!process.HasExited)
-            {
-                process.Kill(entireProcessTree: true);
-            }
-        }
-        catch (InvalidOperationException)
-        {
-            // Already gone between the check and the kill.
-        }
-        catch (NotSupportedException)
-        {
-            // Platform without tree-kill support; the single kill above is the best we can do.
-        }
-    }
-
     private static int SafeExitCode(Process process)
     {
         try
@@ -924,6 +898,18 @@ public sealed class LocalCodesysRunner(
         catch (InvalidOperationException)
         {
             return -1;
+        }
+    }
+
+    private static string SafePid(Process process)
+    {
+        try
+        {
+            return process.Id.ToString();
+        }
+        catch (InvalidOperationException)
+        {
+            return "gone";
         }
     }
 

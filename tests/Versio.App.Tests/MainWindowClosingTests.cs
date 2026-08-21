@@ -74,9 +74,9 @@ public sealed class MainWindowClosingTests
     }
 
     [Fact]
-    public void A_refused_close_leaves_the_window_open()
+    public void Declining_to_close_during_an_import_leaves_the_window_open()
     {
-        // The other half. A window that closed anyway would make the import guard decorative.
+        // Don't close is still how an import keeps the window up. Stop would kill it.
         StaHarness.Run(() =>
         {
             var (window, shell) = BuildOffScreen();
@@ -87,16 +87,13 @@ public sealed class MainWindowClosingTests
 
             using var importing = shell.Busy.Begin(WorkKind.Import, "Importing into Machine…");
 
-            // The dialog is never shown: a refusal discards the answer, so the hook only has
-            // to exist. Returning the most permissive answer it could give proves that.
-            shell.Asked().Guard = _ => GuardChoice.Proceed;
+            shell.Asked().Guard = _ => GuardChoice.Cancel;
 
             window.Close();
             window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background);
 
             Assert.False(closed, "the window closed over a running import");
 
-            // Leave nothing behind for the next test on this shared STA thread.
             importing.Dispose();
             shell.Asked().Guard = null;
             window.Close();

@@ -19,6 +19,55 @@ produce a diff touching everything else.
 
 ---
 
+### Stop was a caption. Cancel did not kill. Try again never lit.
+
+**Found 2026-08-21**, reviewing why a running export cannot be stopped, the window will not
+close, and Task Manager kill of Versio leaves the toolchain running. The cancel plumbing
+existed. Four independent holes made it a lie.
+
+1. **TIA and TwinCAT sat in `WaitForExit(timeout)` and only then looked at the token.**
+   CODESYS honoured the token once the process was running, but all three vendors ignored
+   it for the fifteen-minute machine mutex. "Stop it and continue" waited out the job.
+   The popup that "does nothing" is `WhenIdleAsync` hanging on a runner that never dies.
+
+2. **A cancelled `RunAsync` threw after the direction lock was already claimed.**
+   `ExportAsync` / `ImportAsync` had no `catch (OperationCanceledException)`. The throw
+   left fire-and-forget `_ = SyncSettledChangeAsync`, the lock stayed in-flight, and
+   Try again never lit. `ApplyAsync` after cancel used the cancelled token, so even a
+   catch that persisted Failed would throw again before `state.json` was written.
+
+3. **Close during import was a hard refusal, and close-Stop called `CancelCancellable`.**
+   Changing the guard without changing that call would still wait out an import:
+   `CancelCancellable` skips `WorkKind.Import`. There was no Stop on the busy chrome.
+
+4. **No Job Object.** Hidden `--noUI` CODESYS survives Task Manager kill of Versio.exe.
+   TIA `WithoutUserInterface` and TwinCAT `TcXaeShell.DTE` are COM servers, not Host
+   children; `Kill(entireProcessTree)` on Host skips `TryDispose` / `TryQuit`.
+
+**Fixed the same day.** Status-bar Stop (and Try again when Failed) beside `Busy.Message`.
+Stop and close-Stop call `CancelRunning`, which cancels every busy scope including an
+import. CloseApp during import asks Stop / Wait / Don't close; branch-switch still
+refuses. Shared `ChildProcess.WaitForExitOrKill` / `WaitMutex`. Orchestrator catches OCE
+and persists `ExportFailed`/`ImportFailed` with `CancellationToken.None` and explanation
+"cancelled on request". Session Job Object with `KILL_ON_JOB_CLOSE` for CODESYS.exe and
+git.exe only — Host.exe is left out so it can Quit COM; hosts watch `VERSIO_PARENT_PID`
+and stdin EOF, then `TryDispose`/`TryQuit`. TIA Portal and TwinCAT XAE PIDs are snapshotted
+before Host starts so a cancel reaps only the COM server this run created. Restore a backup
+if a killed import leaves a project that will not open.
+
+**What the log says.** Stop names the operation (`cancelled '…' on request`) and does not
+pretend the session is ending — that sentence is logoff only. An import Stop is Error:
+`killed '…' mid-import; restore a backup if the project will not open`. Runners then say
+whether they were still waiting on the machine mutex, closed stdin so the host can Quit,
+killed a CODESYS pid, or reaped leftover Portal/XAE this run started. The lock persists
+`cancelled on request` so Try again lights. A cancelled git.exe is Warning, not silent.
+
+**What was rejected:** putting Host.exe in the kill-on-close job (that is how Portal/XAE
+survive a parent death today). Auto-restore on a killed import (Restore stays a button).
+Changing `WorkKind.Import` off `MustFinish` (the switch path still needs the filter).
+
+---
+
 ### PR #15 merged with two suites deterministically red
 
 **Found 2026-08-21** by an audit whose first act was running the fast loop. `main` failed

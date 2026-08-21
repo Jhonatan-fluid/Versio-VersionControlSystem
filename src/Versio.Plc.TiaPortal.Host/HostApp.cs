@@ -27,6 +27,11 @@ internal static partial class HostApp
 
         object? portal = null;
         object? project = null;
+        using var lifetime = HostLifetime.Attach(() =>
+        {
+            TryDispose(project);
+            TryDispose(portal);
+        });
         try
         {
             portal = CreatePortal();
