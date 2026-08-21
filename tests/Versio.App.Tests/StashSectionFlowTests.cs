@@ -55,7 +55,7 @@ public sealed class StashSectionFlowTests
 
         // The working tree got the change back — and the stash is still there, because
         // apply-then-drop is two decisions and pop would have made them one.
-        Assert.Contains(shell.Unstaged, r => r.Path == "seed.txt");
+        Assert.Contains(shell.Pending, r => r.Path == "seed.txt");
         Assert.True(shell.HasStashes);
     }
 

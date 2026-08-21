@@ -122,8 +122,8 @@ public sealed class ConflictFlowTests
         await Eventually.Press(shell.ReconcileCommand, false, "merge");
         await Eventually.Until(() => shell.Conflicted.Count > 0, "the merge stopped");
 
-        Assert.DoesNotContain("seed.txt", shell.Staged.Select(r => r.Path));
-        Assert.DoesNotContain("seed.txt", shell.Unstaged.Select(r => r.Path));
+        Assert.DoesNotContain("seed.txt", shell.Pending.Select(r => r.Path));
+        Assert.Contains("seed.txt", shell.Conflicted.Select(r => r.Path));
     }
 
     [Fact]

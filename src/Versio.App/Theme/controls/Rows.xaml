@@ -62,11 +62,12 @@
                                     Value="{DynamicResource Brush.Surface.Selected}" />
                         </Trigger>
 
-                        <!-- Focus is NOT selection here, and in the staged and not-staged
-                             lists they genuinely come apart: those are extended-selection
-                             lists, so Ctrl+Arrow walks the focus without moving what is
-                             picked. An outline rather than the selected fill, so the two
-                             states stay tellable apart when a row is both. -->
+                        <!-- Focus is NOT selection here, and in the changes
+                             list they genuinely come apart: it is an
+                             extended-selection list, so Ctrl+Arrow walks the focus
+                             without moving what is picked. An outline rather than
+                             the selected fill, so the two states stay tellable
+                             apart when a row is both. -->
                         <Trigger Property="IsKeyboardFocused" Value="True">
                             <Setter TargetName="Fill" Property="BorderThickness" Value="1" />
                             <Setter TargetName="Fill" Property="BorderBrush"
@@ -80,6 +81,57 @@
 
     <Style x:Key="LogRowItem" TargetType="ListBoxItem" BasedOn="{StaticResource RowItem}">
         <Setter Property="Height" Value="{DynamicResource Size.Row.Log}" />
+    </Style>
+
+    <!--
+        Git change rows, not tree rows. Copied rather than BasedOn with a Height
+        override: RowItem's template centers a 24 px clip, and that is the overlap
+        this exists to stop. Top-aligned so two caption lines stack inside 40 px
+        instead of colliding with the next row.
+    -->
+    <Style x:Key="ChangeRowItem" TargetType="ListBoxItem">
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Height" Value="{DynamicResource Size.Row.Change}" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Grid>
+                        <Border x:Name="Fill" Background="Transparent"
+                                CornerRadius="{DynamicResource Radius.Control}" Margin="4,0" />
+                        <Border x:Name="Bar" Width="3" HorizontalAlignment="Left"
+                                Margin="4,4,0,4" CornerRadius="2"
+                                Background="{DynamicResource Brush.Accent.Default}" Opacity="0" />
+                        <ContentPresenter VerticalAlignment="Top" Margin="12,4,8,2" />
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Fill" Property="Background"
+                                    Value="{DynamicResource Brush.Surface.Hover}" />
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Trigger.EnterActions>
+                                <BeginStoryboard Storyboard="{StaticResource Motion.MarkIn}" />
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard Storyboard="{StaticResource Motion.MarkOut}" />
+                            </Trigger.ExitActions>
+
+                            <Setter TargetName="Fill" Property="Background"
+                                    Value="{DynamicResource Brush.Surface.Selected}" />
+                        </Trigger>
+
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Fill" Property="BorderThickness" Value="1" />
+                            <Setter TargetName="Fill" Property="BorderBrush"
+                                    Value="{DynamicResource Brush.Accent.Default}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <!-- ================================================================ TREE ROW -->

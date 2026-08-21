@@ -6,34 +6,30 @@ public enum CommitIntent
     /// <summary>Nothing to commit.</summary>
     Nothing,
 
-    /// <summary>Commit what is already staged, and touch nothing else.</summary>
-    CommitStaged,
+    /// <summary>Commit the ticked rows, and leave the rest in the working tree.</summary>
+    CommitTicked,
 
-    /// <summary>Stage the ticked rows, then commit.</summary>
-    StageTickedThenCommit,
-
-    /// <summary>Stage everything unstaged, then commit.</summary>
-    StageAllThenCommit,
+    /// <summary>Commit every changed file. Nothing ticked means the whole list.</summary>
+    CommitAll,
 }
 
 /// <summary>
-/// One button, three behaviours, and a label that never lies about which.
+/// One button, two behaviours, and a label that never lies about which.
 /// </summary>
 /// <remarks>
 /// <para>
 /// <b>Why one button.</b> The panel carried <c>Commit</c> and <c>Commit &amp; Push</c>, which
 /// bundled two operations with different failure modes: the commit succeeds, the push fails, and
 /// one status line has to describe both. Push is its own deliberate act now, up in the remote
-/// row where the ahead-count already lives. What is left is the commit — and staging is the
-/// step people forget, so the button does both and says so.
+/// row where the ahead-count already lives. Staging is the step people forget, so the button
+/// still stages — in the background, after a preflight, never as a verb on the panel.
 /// </para>
 /// <para>
-/// <b>The third case is the one that matters.</b> With something already staged and nothing
-/// ticked, this commits <i>only what is staged</i>. Sweeping the unstaged files in because
-/// somebody pressed a general-purpose button would silently undo a deliberate partial stage —
-/// and they would not find out until they read the commit, by which time it is history. So the
-/// label drops to plain <c>Commit</c> there, and the difference is visible before the press
-/// rather than discoverable after it.
+/// <b>Nothing ticked means the whole list.</b> That is the GitHub Desktop shape: check some
+/// files to commit only those, or check none (or all) to commit everything. The old third
+/// case — something already in the index and nothing ticked committed <i>only the index</i> —
+/// needed a visible STAGED list to be honest. Without that list, a plain <c>Commit</c> that
+/// left files behind would be the silent sweep this type exists to prevent, just in reverse.
 /// </para>
 /// <para>
 /// <b>The PLC export gate is not modelled here and must not be.</b> It runs before the commit
@@ -46,8 +42,8 @@ public sealed record CommitPlan
 {
     public required CommitIntent Intent { get; init; }
 
-    /// <summary>How many rows will be staged first. Zero when nothing needs staging.</summary>
-    public int StagingCount { get; init; }
+    /// <summary>How many files the button will take. Zero when there is nothing to commit.</summary>
+    public int IncludeCount { get; init; }
 
     /// <summary>The button's caption.</summary>
     public required string Label { get; init; }
@@ -58,51 +54,37 @@ public sealed record CommitPlan
     /// <summary>
     /// Work out what the button means right now.
     /// </summary>
-    /// <param name="staged">Rows already in the index.</param>
-    /// <param name="unstaged">Rows changed but not staged.</param>
+    /// <param name="changes">Rows in the one changes list (not conflicted).</param>
     /// <param name="ticked">
-    /// How many unstaged rows the user has ticked. Ticks win over everything: an explicit
-    /// selection is the least ambiguous instruction the panel can receive.
+    /// How many of those rows the user has ticked. Ticks win: an explicit selection is the
+    /// least ambiguous instruction the panel can receive. None ticked means the whole list.
     /// </param>
-    public static CommitPlan For(int staged, int unstaged, int ticked)
+    public static CommitPlan For(int changes, int ticked)
     {
         if (ticked > 0)
         {
             return new CommitPlan
             {
-                Intent = CommitIntent.StageTickedThenCommit,
-                StagingCount = ticked,
-                Label = $"Stage & commit ({ticked})",
+                Intent = CommitIntent.CommitTicked,
+                IncludeCount = ticked,
+                Label = $"Commit ({ticked})",
             };
         }
 
-        // Something is staged and nothing is ticked: commit exactly that. The plain label is
-        // the whole safeguard - it is what tells somebody who staged three files deliberately
-        // that the fourth is not coming with them.
-        if (staged > 0)
+        if (changes > 0)
         {
             return new CommitPlan
             {
-                Intent = CommitIntent.CommitStaged,
-                StagingCount = 0,
+                Intent = CommitIntent.CommitAll,
+                IncludeCount = changes,
                 Label = "Commit",
-            };
-        }
-
-        if (unstaged > 0)
-        {
-            return new CommitPlan
-            {
-                Intent = CommitIntent.StageAllThenCommit,
-                StagingCount = unstaged,
-                Label = "Stage all & commit",
             };
         }
 
         return new CommitPlan
         {
             Intent = CommitIntent.Nothing,
-            StagingCount = 0,
+            IncludeCount = 0,
             Label = "Commit",
         };
     }
@@ -142,24 +124,21 @@ public sealed record CommitPlan
 
     /// <summary>What the button will do, spelled out for its tooltip.</summary>
     /// <remarks>
-    /// Said even when the button is live. The three behaviours are the point of the design and
-    /// a caption of two or three words cannot carry all of it — particularly the one where the
-    /// unstaged files are deliberately left behind.
+    /// Said even when the button is live. The two behaviours are the point of the design and
+    /// a caption of one word cannot carry the difference between "the three you ticked" and
+    /// "every changed file".
     /// </remarks>
     public string Explanation => Intent switch
     {
-        CommitIntent.StageTickedThenCommit =>
-            StagingCount == 1
-                ? "Stage the file you ticked, then commit it."
-                : $"Stage the {StagingCount} files you ticked, then commit them.",
+        CommitIntent.CommitTicked =>
+            IncludeCount == 1
+                ? "Commit the file you ticked. The others stay in the working tree."
+                : $"Commit the {IncludeCount} files you ticked. The others stay in the working tree.",
 
-        CommitIntent.CommitStaged =>
-            "Commit what is staged. The files below it are left alone.",
-
-        CommitIntent.StageAllThenCommit =>
-            StagingCount == 1
-                ? "Stage the changed file, then commit it."
-                : $"Stage all {StagingCount} changed files, then commit them.",
+        CommitIntent.CommitAll =>
+            IncludeCount == 1
+                ? "Commit the changed file."
+                : $"Commit all {IncludeCount} changed files.",
 
         _ => "Nothing to commit.",
     };

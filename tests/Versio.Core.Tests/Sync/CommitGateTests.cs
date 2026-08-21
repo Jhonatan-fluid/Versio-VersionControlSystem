@@ -126,6 +126,94 @@ public class CommitGateTests
         Assert.Equal(GateDecision.ExportRequired, result.Decision);
     }
 
+    private static BindingFreshness Tracked(
+        string id, string project, string export, bool failed = false, bool stale = false) =>
+        new()
+        {
+            BindingId = id,
+            Name = id,
+            ProjectPath = project,
+            ExportPath = export,
+            CurrentProjectHash = stale ? "sha256:new" : "sha256:same",
+            ExportedProjectHash = "sha256:same",
+            InFailedState = failed,
+        };
+
+    [Fact]
+    public void A_failed_binding_does_not_block_a_commit_it_does_not_own()
+    {
+        // Committing a README next to a broken PLC project used to refuse the whole
+        // repository. The failure still needs acknowledging — but not by holding every
+        // other file hostage.
+        var result = CommitGate.Evaluate(
+            [Tracked("plc", "plc/Machine.project", "plc/Machine", failed: true)],
+            includePaths: ["docs/README.md"]);
+
+        Assert.Equal(GateDecision.Proceed, result.Decision);
+        Assert.Empty(result.FailedBindings);
+    }
+
+    [Fact]
+    public void A_failed_binding_plus_unrelated_files_asks_before_dropping_its_own()
+    {
+        var result = CommitGate.Evaluate(
+            [Tracked("plc", "plc/Machine.project", "plc/Machine", failed: true)],
+            includePaths: ["plc/Machine/App/FB_Motor.st", "docs/README.md"]);
+
+        Assert.Equal(GateDecision.ExcludeAndAsk, result.Decision);
+        Assert.Equal(["plc"], result.FailedBindings);
+        Assert.Equal(["plc/Machine/App/FB_Motor.st"], result.BlockedPaths);
+        Assert.Contains("left out", result.Explanation);
+    }
+
+    [Fact]
+    public void A_failed_binding_whose_files_are_the_whole_include_set_blocks()
+    {
+        var result = CommitGate.Evaluate(
+            [Tracked("plc", "plc/Machine.project", "plc/Machine", failed: true)],
+            includePaths: ["plc/Machine.project", "plc/Machine/App/FB_Motor.st"]);
+
+        Assert.Equal(GateDecision.Blocked, result.Decision);
+        Assert.Contains("acknowledge", result.Explanation);
+    }
+
+    [Fact]
+    public void A_stale_binding_not_in_the_include_set_is_not_exported()
+    {
+        // Committing docs/README.md must not spend 17-31 s exporting a stale second project.
+        var result = CommitGate.Evaluate(
+            [Fresh("b-1"), Stale("b-2") with { ProjectPath = "plc/B.project", ExportPath = "plc/B" }],
+            includePaths: ["docs/README.md"]);
+
+        Assert.Equal(GateDecision.Proceed, result.Decision);
+        Assert.Empty(result.StaleBindings);
+    }
+
+    [Fact]
+    public void A_stale_binding_in_the_include_set_still_exports_first()
+    {
+        var result = CommitGate.Evaluate(
+            [Stale("b-2") with { ProjectPath = "plc/B.project", ExportPath = "plc/B" }],
+            includePaths: ["plc/B/App/FB_Motor.st"]);
+
+        Assert.Equal(GateDecision.ExportRequired, result.Decision);
+        Assert.Equal(["b-2"], result.StaleBindings);
+    }
+
+    [Fact]
+    public void The_project_file_itself_counts_as_owned()
+    {
+        // OwnerOf on the binding only matches the export tree. The gate has to match the
+        // pointer too, or a failed import of the .project would not be in the include set
+        // while its mirror was.
+        Assert.True(CommitGate.Owns(
+            Tracked("plc", "plc/Machine.project", "plc/Machine"),
+            "plc/Machine.project"));
+        Assert.False(CommitGate.Owns(
+            Tracked("plc", "plc/Machine.project", "plc/Machine"),
+            "plc/Machine.project.bak"));
+    }
+
     [Fact]
     public void The_explanation_is_always_something_a_user_can_read()
     {

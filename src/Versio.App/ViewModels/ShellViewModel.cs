@@ -231,12 +231,12 @@ public sealed class ChangeRow(FileChange change) : ObservableObject
     private bool _isSelected;
 
     /// <summary>
-    /// Ticked for the next staging action.
+    /// Ticked for the next commit or discard.
     /// </summary>
     /// <remarks>
     /// <b>Not the list selection.</b> Clicking a row opens its diff; ticking its box says what
-    /// the next Stage, Unstage or Discard applies to. Two jobs, two pieces of state — a user
-    /// who lost their diff every time they changed what they were about to stage would stop
+    /// the next Commit or Discard applies to. Two jobs, two pieces of state — a user
+    /// who lost their diff every time they changed what they were about to commit would stop
     /// using one of the two.
     /// <para>
     /// Survives a refresh because <c>ReconcileInto</c> updates rows in place rather than
@@ -500,8 +500,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         //
         // Subscribing to the collections instead means a row is tracked because it is IN the
         // list, not because whoever put it there remembered to say so.
-        Staged.CollectionChanged += OnStagingListChanged;
-        Unstaged.CollectionChanged += OnStagingListChanged;
+        Pending.CollectionChanged += OnStagingListChanged;
 
         // The rail badge's count, on the same argument one line up: it is a computed property
         // over this collection, so it moves because the collection moved rather than because
@@ -1031,13 +1030,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         WithoutSideEffects(() =>
         {
             Changes.Clear();
-            Staged.Clear();
-            Unstaged.Clear();
+            Pending.Clear();
+            Conflicted.Clear();
             Branches.Clear();
             Stashes.Clear();
 
-            SelectedStaged = null;
-            SelectedUnstaged = null;
+            SelectedPending = null;
             SelectedBranch = null;
         });
         OnPropertyChanged(nameof(HasStashes));
@@ -1656,48 +1654,32 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref _lastRefreshText, value);
     }
 
-    private ChangeRow? _selectedStaged;
-    private ChangeRow? _selectedUnstaged;
+    private ChangeRow? _selectedPending;
 
     /// <summary>
-    /// The row picked in the git panel's staged list.
+    /// The row picked in the git panel's one changes list.
     /// </summary>
     /// <remarks>
-    /// Two properties rather than one shared selection, because they are two list boxes and
-    /// WPF will not let them agree. The pair exists at all because the git panel used to be
-    /// the one place in the app where clicking a file did nothing — the changed-files list it
-    /// duplicates has always opened a diff, and the difference read as a dead control.
+    /// Clicking a row opens its diff; ticking its box says what the next commit or discard
+    /// applies to. Those are two jobs and two pieces of state — this is the click, not the tick.
     /// </remarks>
-    public ChangeRow? SelectedStaged
+    public ChangeRow? SelectedPending
     {
-        get => _selectedStaged;
+        get => _selectedPending;
         set
         {
-            if (SetProperty(ref _selectedStaged, value) && value is not null)
-            {
-                _ = ShowPathAsync(value.Path, staged: true);
-            }
-        }
-    }
-
-    public ChangeRow? SelectedUnstaged
-    {
-        get => _selectedUnstaged;
-        set
-        {
-            if (!SetProperty(ref _selectedUnstaged, value))
+            if (!SetProperty(ref _selectedPending, value))
             {
                 return;
             }
 
-            // Discard acts on this selection, so its enabled state moves with it — including
-            // back to disabled when the selection is cleared, which is why this sits outside
-            // the null check.
             DiscardCommand.RaiseCanExecuteChanged();
 
             if (value is not null)
             {
-                _ = ShowPathAsync(value.Path, staged: false);
+                // Null lets ShowPathAsync try the working tree first and fall back to the
+                // index, which is the right answer for a file that can be in both at once.
+                _ = ShowPathAsync(value.Path, staged: null);
             }
         }
     }
@@ -2135,21 +2117,22 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
     // ---------------------------------------------------------------- git panel
 
-    /// <summary>Files git will include in the next commit.</summary>
-    public ObservableCollection<ChangeRow> Staged { get; } = [];
-
-    /// <summary>Files changed in the working tree but not staged.</summary>
-    public ObservableCollection<ChangeRow> Unstaged { get; } = [];
+    /// <summary>
+    /// The git panel's one list: every changed file that is not conflicted.
+    /// </summary>
+    /// <remarks>
+    /// Conflicted paths have their own section. A file with staged hunks and further unstaged
+    /// ones is one row here, not two — porcelain already reports it that way.
+    /// </remarks>
+    public ObservableCollection<ChangeRow> Pending { get; } = [];
 
     // ------------------------------------------------------- per-file selection (plan §4)
 
-    /// <summary>How many staged rows are ticked.</summary>
-    public int StagedSelectedCount => Staged.Count(r => r.IsSelected);
-
-    public int UnstagedSelectedCount => Unstaged.Count(r => r.IsSelected);
+    /// <summary>How many pending rows are ticked.</summary>
+    public int PendingSelectedCount => Pending.Count(r => r.IsSelected);
 
     /// <summary>
-    /// The staged list's master checkbox, three-state.
+    /// The list's master checkbox, three-state.
     /// </summary>
     /// <remarks>
     /// Nullable bool because that is what WPF's <c>IsThreeState</c> reads: null is the
@@ -2157,48 +2140,25 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// is only ever produced, never accepted, because "set this to partially ticked" has no
     /// meaning.
     /// </remarks>
-    public bool? StagedAllSelected
+    public bool? PendingAllSelected
     {
-        get => ToCheck(StagingSelection.StateFor(Staged.Count, StagedSelectedCount));
-        set => SetAll(Staged, value == true);
-    }
-
-    public bool? UnstagedAllSelected
-    {
-        get => ToCheck(StagingSelection.StateFor(Unstaged.Count, UnstagedSelectedCount));
-        set => SetAll(Unstaged, value == true);
+        get => ToCheck(StagingSelection.StateFor(Pending.Count, PendingSelectedCount));
+        set => SetAll(Pending, value == true);
     }
 
     /// <summary>"3 of 12 selected", or nothing when nothing is ticked.</summary>
-    public string StagedSelectionCaption =>
-        StagingSelection.Caption(Staged.Count, StagedSelectedCount);
+    public string PendingSelectionCaption =>
+        StagingSelection.Caption(Pending.Count, PendingSelectedCount);
 
-    public string UnstagedSelectionCaption =>
-        StagingSelection.Caption(Unstaged.Count, UnstagedSelectedCount);
-
-    /// <summary>"STAGED · 12", or "STAGED · 3 of 12 selected" while anything is ticked.</summary>
-    /// <remarks>
-    /// The label is passed in from here rather than living in <see cref="StagingSelection"/>,
-    /// because the casing is this panel's typographic choice and Core has no business holding
-    /// it. What Core owns is the rule about which of the two sentences applies.
-    /// </remarks>
-    public string StagedHeader =>
-        StagingSelection.Header("STAGED", Staged.Count, StagedSelectedCount);
-
-    public string UnstagedHeader =>
-        StagingSelection.Header("NOT STAGED", Unstaged.Count, UnstagedSelectedCount);
+    /// <summary>"CHANGES · 12", or "CHANGES · 3 of 12 selected" while anything is ticked.</summary>
+    public string PendingHeader =>
+        StagingSelection.Header("CHANGES", Pending.Count, PendingSelectedCount);
 
     /// <summary>
     /// What the commit button will do right now.
     /// </summary>
-    /// <remarks>
-    /// Recomputed whenever the lists or the ticks move. The three behaviours it covers are why
-    /// the panel no longer carries a <c>Commit</c> and a <c>Commit &amp; Push</c>: push is its
-    /// own act in the remote row, and what is left is a commit that also does the step people
-    /// forget.
-    /// </remarks>
     public CommitPlan Commit =>
-        CommitPlan.For(Staged.Count, Unstaged.Count, UnstagedSelectedCount);
+        CommitPlan.For(Pending.Count, PendingSelectedCount);
 
     /// <summary>Why the commit button is dead, or empty when it is live.</summary>
     /// <remarks>
@@ -2429,14 +2389,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
 
     /// <summary>Button labels that say what will happen, not what the button is called.</summary>
-    public string StageLabel =>
-        StagingSelection.Label("Stage", Unstaged.Count, UnstagedSelectedCount);
-
-    public string UnstageLabel =>
-        StagingSelection.Label("Unstage", Staged.Count, StagedSelectedCount);
-
     public string DiscardLabel =>
-        StagingSelection.Label("Discard", Unstaged.Count, UnstagedSelectedCount);
+        StagingSelection.Label("Discard", Pending.Count, PendingSelectedCount);
 
     private static bool? ToCheck(SelectionState state) => state switch
     {
@@ -2455,13 +2409,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         RaiseSelectionState();
     }
 
-    /// <summary>
-    /// The rows an action applies to: the ticked ones, or all of them when none are.
-    /// </summary>
-    /// <remarks>
-    /// What makes "Stage all" and "Stage selected" one button. The label carries the difference
-    /// so nobody presses it expecting the other meaning.
-    /// </remarks>
+    /// <summary>The rows a header action applies to: the ticked ones, or all of them when none are.</summary>
     private static IReadOnlyList<ChangeRow> Chosen(ObservableCollection<ChangeRow> rows)
     {
         var ticked = rows.Where(r => r.IsSelected).ToList();
@@ -2481,16 +2429,10 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// </remarks>
     private void RaiseStagingCounts()
     {
-        OnPropertyChanged(nameof(StagedSelectedCount));
-        OnPropertyChanged(nameof(UnstagedSelectedCount));
-        OnPropertyChanged(nameof(StagedAllSelected));
-        OnPropertyChanged(nameof(UnstagedAllSelected));
-        OnPropertyChanged(nameof(StagedSelectionCaption));
-        OnPropertyChanged(nameof(UnstagedSelectionCaption));
-        OnPropertyChanged(nameof(StagedHeader));
-        OnPropertyChanged(nameof(UnstagedHeader));
-        OnPropertyChanged(nameof(StageLabel));
-        OnPropertyChanged(nameof(UnstageLabel));
+        OnPropertyChanged(nameof(PendingSelectedCount));
+        OnPropertyChanged(nameof(PendingAllSelected));
+        OnPropertyChanged(nameof(PendingSelectionCaption));
+        OnPropertyChanged(nameof(PendingHeader));
         OnPropertyChanged(nameof(DiscardLabel));
     }
 
@@ -2502,17 +2444,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         RaiseGitCommandStates();
     }
 
-    public AsyncCommand StageCommand { get; private set; } = null!;
-    public AsyncCommand UnstageCommand { get; private set; } = null!;
-    /// <summary>
-    /// Stage what the panel says it will, then commit.
-    /// </summary>
-    /// <remarks>
-    /// <b><c>CommitAndPushCommand</c> is gone.</b> It bundled two operations with different
-    /// failure modes into one button, and its failure story was the worst in the panel: the
-    /// commit succeeds, the push fails, and one message has to describe both. Push is a
-    /// deliberate act of its own now, in the remote row where the ahead-count already lives.
-    /// </remarks>
     public AsyncCommand CommitCommand { get; private set; } = null!;
 
     /// <summary>Put a branch on the remote for the first time.</summary>
@@ -2607,15 +2538,14 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         return $"origin · {where}";
     }
 
-    /// <summary>One line instead of two empty boxes (GP-L §10.2).</summary>
+    /// <summary>One line instead of an empty box (GP-L §10.2).</summary>
     /// <remarks>
-    /// Two boxes labelled STAGED and NOT STAGED with nothing in them say less than a
-    /// sentence and take four times the height. Conflicts count as not-clean even though
-    /// they sit in neither list, because "clean" over a merge in progress would be a lie.
+    /// Conflicts count as not-clean even though they sit in their own section, because
+    /// "clean" over a merge in progress would be a lie.
     /// </remarks>
     public bool IsWorkingTreeClean =>
         RepositoryPath is not null
-        && Staged.Count == 0 && Unstaged.Count == 0 && Conflicted.Count == 0;
+        && Pending.Count == 0 && Conflicted.Count == 0;
 
     private string _changeSummary = string.Empty;
 
@@ -2625,8 +2555,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// <remarks>
     /// <para>
     /// <b>It describes what will be committed, not what changed.</b> Those differ the moment
-    /// anything is staged, and a line above the button that counted the whole working tree
-    /// while the button beside it said <c>Commit</c> — staged only — would be two controls
+    /// anything is ticked, and a line above the button that counted the whole working tree
+    /// while the button beside it said <c>Commit (3)</c> — a subset — would be two controls
     /// disagreeing about the same press. The set comes from <see cref="Commit"/>, so there is
     /// one answer to "what is about to happen" and the caption and this sentence are both
     /// reading it.
@@ -2667,11 +2597,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     {
         IEnumerable<string> paths = Commit.Intent switch
         {
-            CommitIntent.CommitStaged => Staged.Select(r => r.Path),
-            CommitIntent.StageTickedThenCommit => Staged.Select(r => r.Path)
-                .Concat(Unstaged.Where(r => r.IsSelected).Select(r => r.Path)),
-            CommitIntent.StageAllThenCommit => Staged.Select(r => r.Path)
-                .Concat(Unstaged.Select(r => r.Path)),
+            CommitIntent.CommitTicked => Pending.Where(r => r.IsSelected).Select(r => r.Path),
+            CommitIntent.CommitAll => Pending.Select(r => r.Path),
             _ => [],
         };
 
@@ -2693,7 +2620,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     {
         var index = Sync.Objects;
 
-        foreach (var row in Conflicted.Concat(Staged).Concat(Unstaged))
+        foreach (var row in Conflicted.Concat(Pending))
         {
             row.Describe(index.Lookup(row.Path));
         }
@@ -2857,15 +2784,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         DraftCommitMessageCommand = new RelayCommand(DraftCommitMessage, CanDraftCommitMessage);
         OpenMergeRequestCommand = new RelayCommand(OpenMergeRequest, () => MergeRequest.CanOpen);
 
-        // Chosen(), not the whole list: the ticked rows when any are, otherwise all of them.
-        StageCommand = new AsyncCommand(
-            () => StageAsync(Chosen(Unstaged), stage: true),
-            () => Ready && Unstaged.Count > 0, ReportError);
-
-        UnstageCommand = new AsyncCommand(
-            () => StageAsync(Chosen(Staged), stage: false),
-            () => Ready && Staged.Count > 0, ReportError);
-
         CommitCommand = new AsyncCommand(CommitAsync, CanCommit, ReportError);
 
         BuildHunkCommand();
@@ -2912,7 +2830,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // beside "stage all" would put an irreversible button one pixel away from a routine
         // one, and the two are not comparable operations.
         DiscardCommand = new AsyncCommand(
-            DiscardAsync, () => Ready && SelectedUnstaged is not null, ReportError);
+            DiscardAsync, () => Ready && Pending.Count > 0, ReportError);
 
         CreateBranchCommand = new AsyncCommand(
             () => CreateBranchAsync("TopBar.CreateBranch"), () => Ready, ReportError);
@@ -3034,8 +2952,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
     private void RaiseGitCommandStates()
     {
-        StageCommand.RaiseCanExecuteChanged();
-        UnstageCommand.RaiseCanExecuteChanged();
         CommitCommand.RaiseCanExecuteChanged();
         Remote.RaiseCommandStates();
         Auth.RaiseCommandStates();
@@ -3072,55 +2988,19 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         ReconcileCommand.RaiseCanExecuteChanged();
     }
 
-    /// <summary>Stage or unstage every row in a list.</summary>
-    /// <remarks>
-    /// Whole-list rather than per-file selection for now. Partial staging is a real feature
-    /// and belongs with per-hunk staging, which needs the diff view to own a selection first;
-    /// half-offering it would be worse than not offering it.
-    /// </remarks>
-    private async Task StageAsync(IReadOnlyList<ChangeRow> rows, bool stage)
-    {
-        if (_git is null || rows.Count == 0)
-        {
-            return;
-        }
-
-        var paths = rows.Select(r => r.Path).ToList();
-        _logger.Click(stage ? "Git.Stage" : "Git.Unstage");
-
-        using var busy = Busy.Begin(WorkKind.GitWrite, stage ? "Staging…" : "Unstaging…");
-
-        var result = stage
-            ? await _git.StageAsync(paths, busy.Token).ConfigureAwait(true)
-            : await _git.UnstageAsync(paths, busy.Token).ConfigureAwait(true);
-
-        if (!result.Success)
-        {
-            Notifications.Failure(stage ? "Could not stage." : "Could not unstage.",
-                                  result.FailureReason ?? string.Empty);
-            return;
-        }
-
-        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
-    }
-
     /// <summary>
-    /// Commit, running the export gate first.
+    /// Commit, running the preflight before the index moves.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>The gate runs before the commit, and exports rather than merely refusing.</b> A
-    /// backstop, not the trigger: exports run when a change is detected, so by the time
-    /// somebody commits the mirror is normally already current. This covers what the watcher
-    /// missed — a dropped event, a save during a throttle window, a project adopted while the
-    /// toolchain was unavailable. Refusing here and leaving the user to find an export button
-    /// would turn a rare gap into a dead end.
+    /// <b>Evaluate first. Mutate the index only when the commit can succeed</b> — or when
+    /// the user has confirmed a smaller one. The previous order staged first and then asked
+    /// the gate, so a blocked commit left the index already rewritten.
     /// </para>
     /// <para>
-    /// The export writes files, so those files are staged afterwards and before the commit.
-    /// A commit recording the project without the mirror it exports to is the exact state the
-    /// gate exists to prevent, and exporting and then committing only what happened to be
-    /// staged beforehand would produce it silently.
+    /// The gate is scoped to the files this commit will record. A failed import of one
+    /// project must not hold a README hostage; a stale neighbour must not be exported as a
+    /// side effect of committing docs.
     /// </para>
     /// </remarks>
     private async Task CommitAsync()
@@ -3130,38 +3010,50 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
-        // Captured before anything runs. The gate below stages export trees and the refresh
-        // rebuilds the lists, so a plan read afterwards would describe a different panel than
-        // the one whose button was pressed.
-        var plan = Commit;
+        var include = Chosen(Pending).ToList();
+        if (include.Count == 0)
+        {
+            return;
+        }
 
         _logger.Click("Git.Commit");
         using var scope = _logger.BeginOperation(Guid.NewGuid().ToString("N")[..8]);
 
-        // WHAT THE USER ASKED FOR, BEFORE WHAT THE GATE INSISTS ON.
-        //
-        // Staging first means the export gate's own staging lands on top of a tree that
-        // already holds the user's choice, rather than racing it. And the CommitStaged case
-        // stages nothing at all - which is the whole safeguard: somebody who staged three
-        // files deliberately does not get the fourth swept in because they pressed a button
-        // whose caption said "Commit".
-        if (plan.Intent is CommitIntent.StageTickedThenCommit or CommitIntent.StageAllThenCommit)
-        {
-            var rows = Chosen(Unstaged);
-            _logger.Info(LogCategory.Git,
-                $"{plan.Label}: staging {rows.Count} file(s) before the commit");
+        var includePaths = include.Select(r => r.Path).ToList();
+        var gate = await Sync.EvaluateGateAsync(includePaths, CancellationToken.None)
+            .ConfigureAwait(true);
 
-            if (!await StageForCommitAsync(rows).ConfigureAwait(true))
+        if (gate.Decision == GateDecision.ExcludeAndAsk)
+        {
+            var who = gate.FailedNames.Count == 1
+                ? gate.FailedNames[0]
+                : $"{gate.FailedBindings.Count} projects";
+            var rest = include.Count - gate.BlockedPaths.Count;
+
+            using var asking = AskingSomething();
+            var confirmed = Prompts.ConfirmDestructive(new DestructivePrompt(
+                $"{who} failed to sync",
+                $"{gate.Explanation}.\n\n" +
+                $"Leave those files out and commit the other {rest}?",
+                Confirm: rest == 1 ? "Commit the rest" : $"Commit {rest} files"));
+
+            if (!confirmed)
             {
+                _logger.Info(LogCategory.Git,
+                    "commit cancelled: leaving the failed project's files in the working tree");
                 return;
             }
+
+            var blocked = gate.BlockedPaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            include = [.. include.Where(r => !blocked.Contains(r.Path))];
+            includePaths = [.. include.Select(r => r.Path)];
+
+            gate = await Sync.EvaluateGateAsync(includePaths, CancellationToken.None)
+                .ConfigureAwait(true);
         }
 
-        var gate = await Sync.EvaluateGateAsync(CancellationToken.None).ConfigureAwait(true);
         if (gate.Decision == GateDecision.Blocked)
         {
-            // Something an export will not fix, such as a failed binding awaiting
-            // acknowledgement. Say so rather than running an export that cannot help.
             _logger.Warn(LogCategory.Sync, $"commit blocked: {gate.Explanation}");
             Notifications.Failure("Nothing was committed.", gate.Explanation);
             return;
@@ -3170,7 +3062,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         if (gate.Decision == GateDecision.ExportRequired)
         {
             StatusSummary = "Exporting before the commit…";
-            var outcomes = await Sync.SatisfyGateAsync(CancellationToken.None).ConfigureAwait(true);
+            var outcomes = await Sync
+                .SatisfyGateAsync(gate.StaleBindings, CancellationToken.None)
+                .ConfigureAwait(true);
 
             if (outcomes.Any(o => o.IsFailure))
             {
@@ -3180,15 +3074,29 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 return;
             }
 
-            var staged = await StageExportedTreesAsync().ConfigureAwait(true);
+            var staged = await StageExportedTreesAsync(gate.StaleBindings).ConfigureAwait(true);
             _logger.Info(LogCategory.Git,
                 $"staged {staged} export path(s) before committing");
         }
 
-        // The last cheap moment (GP-K §9h). A host rejects a large binary at the PUSH, by
-        // which time the object is in history and removing it is a rewrite — so the
-        // question is asked here, over what is actually staged after the gate's own
-        // staging, not over the lists the button was pressed against.
+        var included = include.Select(r => r.Path).ToHashSet(StringComparer.Ordinal);
+        // Only paths already in the index. `git restore --staged` on an untracked file
+        // that was never added fails the whole batch, and then nothing commits — which
+        // is how a ticked subset of untracked files used to look like a hang.
+        var excluded = Pending.Where(r => r.IsStaged && !included.Contains(r.Path)).ToList();
+        if (excluded.Count > 0 && !await UnstageForCommitAsync(excluded).ConfigureAwait(true))
+        {
+            return;
+        }
+
+        _logger.Info(LogCategory.Git,
+            $"{Commit.Label}: staging {include.Count} file(s) before the commit");
+
+        if (!await StageForCommitAsync(include).ConfigureAwait(true))
+        {
+            return;
+        }
+
         if (!await ConfirmLargeFilesAsync().ConfigureAwait(true))
         {
             _logger.Info(LogCategory.Git, "commit cancelled at the large-file preflight");
@@ -3211,10 +3119,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         CommitMessage = string.Empty;
         await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
 
-        // The most surprising rule in the tool, said where the decision was just made: a commit
-        // does not release the direction lock. Until the work is pushed nobody else can see it,
-        // so the direction is still meaningfully owned. Push is its own button now, which makes
-        // that easier to act on than it was when the two were bundled.
         Notifications.Success("Committed.",
                               "Not pushed, so the direction lock is still held.");
     }
@@ -3246,15 +3150,38 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         return false;
     }
 
-    /// <summary>Stage every tracked project's export directory.</summary>
+    private async Task<bool> UnstageForCommitAsync(IReadOnlyList<ChangeRow> rows)
+    {
+        if (_git is null || rows.Count == 0)
+        {
+            return true;
+        }
+
+        var result = await _git
+            .UnstageAsync([.. rows.Select(r => r.Path)], CancellationToken.None)
+            .ConfigureAwait(true);
+
+        if (result.Success)
+        {
+            return true;
+        }
+
+        Notifications.Failure("Nothing was committed — leftover staged files could not be unstaged.",
+                              result.FailureReason ?? string.Empty);
+        return false;
+    }
+
+    /// <summary>Stage every exported tree the gate just wrote, or every tracked tree.</summary>
     /// <remarks>
     /// By directory rather than by the file list the export reported. An export can delete an
     /// object as well as write one, and staging only what was written would leave the deletion
     /// out of the commit.
     /// </remarks>
-    private async Task<int> StageExportedTreesAsync()
+    private async Task<int> StageExportedTreesAsync(IReadOnlyList<string>? bindingIds = null)
     {
-        var paths = Sync.ExportPaths;
+        var paths = bindingIds is { Count: > 0 }
+            ? Sync.ExportPathsFor(bindingIds)
+            : Sync.ExportPaths;
         if (_git is null || paths.Count == 0)
         {
             return 0;
@@ -4582,16 +4509,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         var stuck = conflicted.Select(c => c.Path).ToHashSet(StringComparer.Ordinal);
 
         ReconcileInto(Conflicted, conflicted);
-        ReconcileInto(Staged, [.. status.Staged
-            .Where(c => !stuck.Contains(c.Path))
-            .OrderBy(c => c.Path, StringComparer.Ordinal)]);
-        ReconcileInto(Unstaged, [.. status.Unstaged
+        ReconcileInto(Pending, [.. status.Changes
             .Where(c => !stuck.Contains(c.Path))
             .OrderBy(c => c.Path, StringComparer.Ordinal)]);
 
         OnPropertyChanged(nameof(ConflictHeadline));
 
-        _treeIsDirty = Staged.Count > 0 || Unstaged.Count > 0 || Conflicted.Count > 0;
+        _treeIsDirty = Pending.Count > 0 || Conflicted.Count > 0;
         OnPropertyChanged(nameof(IsWorkingTreeClean));
 
         // Named from the index the last tree refresh left behind, which is current except on
@@ -4782,7 +4706,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// Throw away the working-tree changes to the selected unstaged file.
+    /// Throw away the working-tree changes the header button applies to: the ticked rows, or
+    /// the whole list when none are.
     /// </summary>
     /// <remarks>
     /// The git panel's entrance into <see cref="DiscardRowsAsync"/>, which carries the
@@ -4791,12 +4716,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// </remarks>
     private async Task DiscardAsync()
     {
-        if (_git is null || SelectedUnstaged is not { } row)
+        if (_git is null)
         {
             return;
         }
 
-        await DiscardRowsAsync([row]).ConfigureAwait(true);
+        await DiscardRowsAsync(Chosen(Pending)).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -4817,7 +4742,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
 
         var files = row.Node.Files.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var rows = Unstaged.Where(r => files.Contains(r.Path)).ToList();
+        var rows = Pending.Where(r => files.Contains(r.Path)).ToList();
 
         if (rows.Count == 0)
         {
@@ -4998,77 +4923,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             Confirm: "Commit anyway"));
     }
 
-    /// <summary>
-    /// Stage the tree row's own files, from the context menu.
-    /// </summary>
-    /// <remarks>
-    /// All of the row's files rather than only the changed ones: <c>git add</c> on an
-    /// unchanged path is a no-op, and filtering here would be a second answer to a question
-    /// git already answers. The commit gate still runs at commit time — staging early
-    /// changes when the mirror is recorded, not whether the gate sees it.
-    /// </remarks>
-    /// <summary>
-    /// Stage, unstage or discard exactly one row of a staging list.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>The clicked row, never the ticks.</b> This is the whole reason these exist rather
-    /// than the menu reusing <c>StageCommand</c>: the buttons act on <c>Chosen</c> — the ticked
-    /// rows, or all of them when nothing is ticked — and a right-click is a statement about the
-    /// row under the cursor. Somebody who has ticked three files, then right-clicks a fourth to
-    /// stage it, must not have their three swept in. The two interactions mean different things
-    /// and they both have to keep meaning them.
-    /// </para>
-    /// <para>
-    /// <b>Discard goes through <see cref="DiscardRowsAsync"/> unchanged</b>, so the one flow in
-    /// this application that destroys work nothing else has a copy of still names every file it
-    /// will touch and still asks first. The context menu is a new way to reach that flow, not a
-    /// second implementation of it.
-    /// </para>
-    /// </remarks>
-    public async Task StageRowAsync(ChangeRow row)
-    {
-        if (_git is null)
-        {
-            return;
-        }
-
-        _logger.Click("Row.Stage");
-        using var busy = Busy.Begin(WorkKind.GitWrite, $"Staging {row.Primary}…");
-
-        var result = await _git.StageAsync([row.Path], busy.Token).ConfigureAwait(true);
-
-        if (!result.Success)
-        {
-            _logger.Warn(LogCategory.Git, $"stage failed for {row.Path}: {result.FailureReason}");
-            Notifications.Failure("Could not stage.", result.FailureReason ?? string.Empty);
-        }
-
-        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
-    }
-
-    public async Task UnstageRowAsync(ChangeRow row)
-    {
-        if (_git is null)
-        {
-            return;
-        }
-
-        _logger.Click("Row.Unstage");
-        using var busy = Busy.Begin(WorkKind.GitWrite, $"Unstaging {row.Primary}…");
-
-        var result = await _git.UnstageAsync([row.Path], busy.Token).ConfigureAwait(true);
-
-        if (!result.Success)
-        {
-            _logger.Warn(LogCategory.Git,
-                         $"unstage failed for {row.Path}: {result.FailureReason}");
-            Notifications.Failure("Could not unstage.", result.FailureReason ?? string.Empty);
-        }
-
-        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
-    }
-
     public Task DiscardRowAsync(ChangeRow row) => DiscardRowsAsync([row]);
 
     /// <summary>Reveal one staging row's file in Explorer.</summary>
@@ -5085,6 +4939,15 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         CopyPathToClipboard(row.Path);
     }
 
+    /// <summary>
+    /// Stage the tree row's own files, from the context menu.
+    /// </summary>
+    /// <remarks>
+    /// All of the row's files rather than only the changed ones: <c>git add</c> on an
+    /// unchanged path is a no-op, and filtering here would be a second answer to a question
+    /// git already answers. The commit gate still runs at commit time — staging early
+    /// changes when the mirror is recorded, not whether the gate sees it.
+    /// </remarks>
     public async Task StageNodeAsync(TreeRow row)
     {
         if (_git is null || row.Node.Files.Count == 0)

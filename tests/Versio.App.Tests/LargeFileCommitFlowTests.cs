@@ -49,7 +49,7 @@ public sealed class LargeFileCommitFlowTests
         Assert.Equal("Commit a large file without LFS?", asked);
 
         // Declined means declined: the file is still only staged.
-        Assert.Contains(shell.Staged, r => r.Path == "huge.bin");
+        Assert.Contains(shell.Pending, r => r.Path == "huge.bin");
     }
 
     [Fact]
@@ -66,7 +66,7 @@ public sealed class LargeFileCommitFlowTests
 
         shell.CommitMessage = "eyes open";
         await Eventually.Press(shell.CommitCommand, "commit");
-        await Eventually.Until(() => shell.Staged.Count == 0, "the commit landed");
+        await Eventually.Until(() => shell.Pending.Count == 0, "the commit landed");
     }
 
     [Fact]
@@ -86,7 +86,7 @@ public sealed class LargeFileCommitFlowTests
 
         shell.CommitMessage = "protected";
         await Eventually.Press(shell.CommitCommand, "commit");
-        await Eventually.Until(() => shell.Staged.Count == 0, "the commit landed");
+        await Eventually.Until(() => shell.Pending.Count == 0, "the commit landed");
 
         // The whole point of writing the rule at adoption: the question never comes up on
         // a repository configured the way Versio configures them.

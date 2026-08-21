@@ -75,8 +75,7 @@ public sealed class GitPanelGeometryTests(ITestOutputHelper output) : IDisposabl
     private (MainWindow Window, ShellViewModel Shell, FrameworkElement Panel,
                     FrameworkElement Content) Loaded(
         double panelWidth = PanelWidth,
-        int stagedRows = 4,
-        int unstagedRows = 12,
+        int pendingRows = 16,
         bool tickEverything = false)
     {
         // NOT `using var` here. That used to dispose the shell at the closing brace of
@@ -98,29 +97,15 @@ public sealed class GitPanelGeometryTests(ITestOutputHelper output) : IDisposabl
         var column = Assert.IsType<ColumnDefinition>(window.FindName("PanelColumn"));
         column.Width = new GridLength(panelWidth, GridUnitType.Pixel);
 
-        for (var i = 0; i < stagedRows; i++)
+        for (var i = 0; i < pendingRows; i++)
         {
-            shell.Staged.Add(Row($"src/MainProject/PLC/POU/FB_Conveyor_{i}.st",
+            shell.Pending.Add(Row($"src/MainProject/PLC/POU/FB_Conveyor_{i}.st",
                                  ChangeKind.Modified, ChangeKind.Unmodified));
-        }
-
-        for (var i = 0; i < unstagedRows; i++)
-        {
-            shell.Unstaged.Add(Row($"src/MainProject/PLC/GVL/GVL_Alarms_Section_{i}.st",
-                                   ChangeKind.Unmodified, ChangeKind.Modified));
         }
 
         if (tickEverything)
         {
-            // Ticking is what makes the headers as wide as they get, in both directions at
-            // once: the captions stop being empty ("127 of 127 selected") and every button
-            // label picks up the count ("Discard 127"). Neither happens with nothing ticked.
-            foreach (var row in shell.Staged)
-            {
-                row.IsSelected = true;
-            }
-
-            foreach (var row in shell.Unstaged)
+            foreach (var row in shell.Pending)
             {
                 row.IsSelected = true;
             }
@@ -170,30 +155,18 @@ public sealed class GitPanelGeometryTests(ITestOutputHelper output) : IDisposabl
     }
 
     [Fact]
-    public void Both_staging_lists_get_real_room_with_content_in_them()
+    public void The_changes_list_gets_real_room_with_content_in_it()
     {
         StaHarness.Run(() =>
         {
             var (window, _, _, _) = Loaded();
 
-            // By name: the conflict section added a third ListBox to this panel, and indexing
-            // by position would quietly start measuring that one instead.
-            var staged = Inside<ListBox>(window, "StagedList");
-            var unstaged = Inside<ListBox>(window, "UnstagedList");
+            var list = Inside<ListBox>(window, "ChangesList");
 
-            output.WriteLine($"staged list:   {staged.ActualHeight:F0} px for 4 rows");
-            output.WriteLine($"unstaged list: {unstaged.ActualHeight:F0} px for 12 rows");
+            output.WriteLine($"changes list: {list.ActualHeight:F0} px for 16 rows");
 
-            // The layout this replaced trapped the staged list at 150 px however much was in
-            // it. Both panes are star-sized now, so neither should be a sliver.
-            Assert.True(staged.ActualHeight >= 60,
-                        $"the staged list got {staged.ActualHeight:F0} px");
-            Assert.True(unstaged.ActualHeight >= 60,
-                        $"the unstaged list got {unstaged.ActualHeight:F0} px");
-
-            // Enough for more than one row each, or the splitter has nothing to divide.
-            Assert.True(staged.ActualHeight + unstaged.ActualHeight > 200,
-                        "the two lists together got less room than a single one used to");
+            Assert.True(list.ActualHeight >= 60,
+                        $"the changes list got {list.ActualHeight:F0} px");
         });
     }
 
@@ -234,12 +207,12 @@ public sealed class GitPanelGeometryTests(ITestOutputHelper output) : IDisposabl
     [InlineData(NarrowPanelWidth, 12, false)]
     // Both at once, which is the state being reported.
     [InlineData(NarrowPanelWidth, 127, true)]
-    public void Nothing_overflows_the_panel_sideways(double width, int unstagedRows, bool ticked)
+    public void Nothing_overflows_the_panel_sideways(double width, int pendingRows, bool ticked)
     {
         StaHarness.Run(() =>
         {
             var (_, _, panel, content) = Loaded(
-                panelWidth: width, unstagedRows: unstagedRows, tickEverything: ticked);
+                panelWidth: width, pendingRows: pendingRows, tickEverything: ticked);
 
             var panelRight = panel.TransformToAncestor(content)
                                   .Transform(new Point(panel.ActualWidth, 0)).X;
@@ -281,7 +254,7 @@ public sealed class GitPanelGeometryTests(ITestOutputHelper output) : IDisposabl
             }
 
             output.WriteLine(
-                $"width {width:F0}, {unstagedRows} unstaged, ticked={ticked}: " +
+                $"width {width:F0}, {pendingRows} changes, ticked={ticked}: " +
                 $"panel right edge {panelRight:F0}, widest child {widest:F0} ({offender})");
 
             // A pixel of tolerance for rounding at the boundary.
@@ -392,14 +365,17 @@ public sealed class GitPanelGeometryTests(ITestOutputHelper output) : IDisposabl
         {
             var (window, _, _, _) = Loaded();
 
-            var unstaged = Inside<ListBox>(window, "UnstagedList");
-            var item = AllOf<ListBoxItem>(unstaged).FirstOrDefault();
+            var list = Inside<ListBox>(window, "ChangesList");
+            var item = AllOf<ListBoxItem>(list).FirstOrDefault();
 
-            Assert.True(item is not null, "no unstaged row was realised");
+            Assert.True(item is not null, "no change row was realised");
             output.WriteLine($"row: {item!.ActualWidth:F0} x {item.ActualHeight:F0}");
 
-            Assert.True(item.ActualHeight > 0, "a realised row has no height");
-            Assert.True(item.ActualWidth <= unstaged.ActualWidth + 1,
+            // Two 11 px caption lines plus a chip. A 24 px tree row is what made the
+            // filename of one row draw on top of the path of the row above it.
+            Assert.True(item.ActualHeight >= 40,
+                        $"a two-line change row is {item.ActualHeight:F0} px tall");
+            Assert.True(item.ActualWidth <= list.ActualWidth + 1,
                         "a row is wider than the list holding it");
         });
     }

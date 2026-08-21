@@ -393,6 +393,15 @@ public sealed class SyncViewModel : ObservableObject
     public IReadOnlyList<string> ExportPaths =>
         [.. _config.Bindings.Where(b => b.Enabled).Select(b => b.ExportPath)];
 
+    /// <summary>Export directories for a named set of bindings, in the order given.</summary>
+    public IReadOnlyList<string> ExportPathsFor(IReadOnlyList<string> bindingIds)
+    {
+        var wanted = bindingIds.ToHashSet(StringComparer.Ordinal);
+        return [.. _config.Bindings
+            .Where(b => b.Enabled && wanted.Contains(b.Id))
+            .Select(b => b.ExportPath)];
+    }
+
     /// <summary>That count as a sentence, empty when nothing is outstanding.</summary>
     public string StalenessSummary
     {
@@ -2785,13 +2794,17 @@ public sealed class SyncViewModel : ObservableObject
     /// two answers to one question end up disagreeing at the moment somebody commits.
     /// </remarks>
     public Task<CommitGateResult> EvaluateGateAsync(CancellationToken ct) =>
+        EvaluateGateAsync(includePaths: null, ct);
+
+    public Task<CommitGateResult> EvaluateGateAsync(
+        IReadOnlyList<string>? includePaths, CancellationToken ct) =>
         _orchestrator is null
             ? Task.FromResult(new CommitGateResult
             {
                 Decision = GateDecision.Proceed,
                 Explanation = "no tracked PLC projects in this repository",
             })
-            : _orchestrator.EvaluateCommitGateAsync(ct);
+            : _orchestrator.EvaluateCommitGateAsync(includePaths, ct);
 
     /// <summary>
     /// Export every stale binding, so the commit records the project and its mirror together.
@@ -2810,7 +2823,11 @@ public sealed class SyncViewModel : ObservableObject
     /// the direction lock still apply.
     /// </para>
     /// </remarks>
-    public async Task<IReadOnlyList<SyncOutcome>> SatisfyGateAsync(CancellationToken ct)
+    public Task<IReadOnlyList<SyncOutcome>> SatisfyGateAsync(CancellationToken ct) =>
+        SatisfyGateAsync(bindingIds: null, ct);
+
+    public async Task<IReadOnlyList<SyncOutcome>> SatisfyGateAsync(
+        IReadOnlyList<string>? bindingIds, CancellationToken ct)
     {
         if (_orchestrator is null)
         {
@@ -2826,9 +2843,13 @@ public sealed class SyncViewModel : ObservableObject
         // commit gate, the catch-up on open and a retry, and a line claiming a commit is
         // about to happen was wrong for two of the three - in a log that is read precisely
         // when somebody is trying to work out what the app did on its own.
-        _logger.Info(LogCategory.Sync, "exporting every project whose mirror is behind");
+        _logger.Info(LogCategory.Sync, bindingIds is { Count: > 0 }
+            ? $"exporting {bindingIds.Count} project(s) whose mirror is behind"
+            : "exporting every project whose mirror is behind");
 
-        var outcomes = await _orchestrator.SatisfyCommitGateAsync(ct).ConfigureAwait(true);
+        var outcomes = await _orchestrator
+            .SatisfyCommitGateAsync(ct, bindingIds)
+            .ConfigureAwait(true);
 
         foreach (var outcome in outcomes)
         {

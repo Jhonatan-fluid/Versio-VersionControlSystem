@@ -48,8 +48,8 @@ public sealed class RepositoryChangeResetTests
     private static void Populate(ShellViewModel shell)
     {
         shell.Changes.Add(Row("plc/Machine.st"));
-        shell.Staged.Add(Row("plc/Other.st"));
-        shell.Unstaged.Add(Row("plc/Third.st"));
+        shell.Pending.Add(Row("plc/Other.st"));
+        shell.Pending.Add(Row("plc/Third.st"));
 
         shell.Branches.Add(new BranchEntry(new BranchInfo { Name = "main", IsCurrent = true }));
         shell.Branches.Add(new BranchEntry(new BranchInfo { Name = "wip", IsCurrent = false }));
@@ -75,12 +75,10 @@ public sealed class RepositoryChangeResetTests
         shell.ResetForRepositoryChange(RepoA, RepoB);
 
         Assert.Empty(shell.Changes);
-        Assert.Empty(shell.Staged);
-        Assert.Empty(shell.Unstaged);
+        Assert.Empty(shell.Pending);
         Assert.Empty(shell.Branches);
         Assert.Null(shell.SelectedBranch);
-        Assert.Null(shell.SelectedStaged);
-        Assert.Null(shell.SelectedUnstaged);
+        Assert.Null(shell.SelectedPending);
         Assert.Equal("—", shell.BranchName);
         Assert.Equal(string.Empty, shell.Remote.AheadBehind);
         Assert.Equal(string.Empty, shell.SelectedDiff);

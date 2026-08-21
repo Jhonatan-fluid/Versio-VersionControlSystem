@@ -101,7 +101,7 @@ public sealed class PlcAwareNamingFlowTests
         using var shell = Shell();
         await shell.OpenAsync(repo.Path);
 
-        var row = shell.Unstaged.Single(r => r.Path == "plc/Machine/App/FB_Motor.st");
+        var row = shell.Pending.Single(r => r.Path == "plc/Machine/App/FB_Motor.st");
 
         // The whole chain: repo.json -> manifest -> ObjectIndex -> SyncViewModel.Objects ->
         // DescribeRows -> the row. Removing any link leaves this row showing "FB_Motor.st".
@@ -120,7 +120,7 @@ public sealed class PlcAwareNamingFlowTests
         using var shell = Shell();
         await shell.OpenAsync(repo.Path);
 
-        var row = shell.Unstaged.Single(r => r.Path == "notes.st");
+        var row = shell.Pending.Single(r => r.Path == "notes.st");
 
         Assert.False(row.IsObject);
         Assert.Equal("notes.st", row.Primary);
@@ -136,9 +136,9 @@ public sealed class PlcAwareNamingFlowTests
         using var shell = Shell();
         await shell.OpenAsync(repo.Path);
 
-        var library = shell.Unstaged.Single(
+        var library = shell.Pending.Single(
             r => r.Path == "plc/Machine/App/Library Manager.libraries.yaml");
-        var pou = shell.Unstaged.Single(r => r.Path == "plc/Machine/App/FB_Motor.st");
+        var pou = shell.Pending.Single(r => r.Path == "plc/Machine/App/FB_Motor.st");
 
         Assert.True(library.IsExportOnly);
         Assert.False(pou.IsExportOnly);
@@ -194,7 +194,7 @@ public sealed class PlcAwareNamingFlowTests
         repo.Git("commit -qm exported");
         await shell.RefreshAsync();
 
-        Assert.Empty(shell.Unstaged);
+        Assert.Empty(shell.Pending);
 
         File.WriteAllText(
             Path.Combine(repo.Path, "plc", "Machine", "App", "FB_Motor.st"),
@@ -202,7 +202,7 @@ public sealed class PlcAwareNamingFlowTests
 
         await shell.RefreshAsync();
 
-        var row = shell.Unstaged.Single(r => r.Path == "plc/Machine/App/FB_Motor.st");
+        var row = shell.Pending.Single(r => r.Path == "plc/Machine/App/FB_Motor.st");
         Assert.Equal("FB_Motor", row.Primary);
         Assert.Equal("1 POU changed in Machine", shell.ChangeSummaryLine);
     }

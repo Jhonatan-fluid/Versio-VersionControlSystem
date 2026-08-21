@@ -24,10 +24,8 @@ public enum SelectionState
 /// what they are about to stage, or ticks a box and finds the pane has jumped somewhere else.
 /// </para>
 /// <para>
-/// <b>Nothing ticked means the whole list.</b> That is what makes the pair of buttons collapse
-/// into one: "Stage all" and "Stage selected" are the same command with a different argument,
-/// and a panel 380 px wide cannot afford two of everything. The label carries the difference so
-/// nobody presses it expecting the other meaning.
+/// <b>Nothing ticked means the whole list.</b> That is what makes Commit and Discard one
+/// command each: an explicit tick is the include set, and an empty tick set is every file.
 /// </para>
 /// <para>
 /// Pure, because the interesting part is a set of rules about counts rather than anything to do
