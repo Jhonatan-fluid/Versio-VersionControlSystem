@@ -73,6 +73,22 @@ public sealed class VendorSeamScannerTests
     }
 
     [Fact]
+    public void Every_name_in_the_vendor_list_is_findable()
+    {
+        // The list itself is data, and a typo'd entry matches nothing anywhere, forever,
+        // with every seam test green around it. EveryTell carries each entry verbatim, so
+        // the entry that cannot be found here is the entry that guards nothing out there.
+        // Added with the 2026-08-21 widening (Beckhoff, Openness, TcXae, "TIA Portal" with
+        // its space), which landed as pure data with no proof any new entry worked.
+        var found = VendorSeamScanner.VendorNamingLiterals(Here, [Fixtures]).ToList();
+
+        foreach (var name in VendorSeamScanner.VendorNames)
+        {
+            Assert.Contains(found, f => f.Contains(name, StringComparison.Ordinal));
+        }
+    }
+
+    [Fact]
     public void A_namespace_with_nothing_in_it_finds_nothing()
     {
         // The other half of a positive control: it must be capable of an empty answer too, or

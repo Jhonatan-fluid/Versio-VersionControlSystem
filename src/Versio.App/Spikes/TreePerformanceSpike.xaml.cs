@@ -61,8 +61,9 @@ public partial class TreePerformanceSpike : Window
 
         (_roots, _nodeCount) = BuildSyntheticProject(TargetNodeCount);
         SubtitleText.Text =
-            $"{_nodeCount:N0} nodes in a CODESYS-shaped tree (devices → applications → folders → " +
-            "POUs → methods). Both panes render the same data; only the left one virtualizes.";
+            $"{_nodeCount:N0} nodes in a PLC-project-shaped tree (devices → applications → " +
+            "folders → POUs → methods). Both panes render the same data; only the left one " +
+            "virtualizes.";
     }
 
     private void OnRun(object sender, RoutedEventArgs e)

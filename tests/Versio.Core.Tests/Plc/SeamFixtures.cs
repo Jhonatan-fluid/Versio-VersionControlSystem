@@ -40,6 +40,19 @@ internal static class VendorNamingFixture
     /// </remarks>
     public static string InLambda() =>
         new[] { 1 }.Select(_ => "a TwinCAT project would say this").First();
+
+    /// <summary>
+    /// Every entry of <c>VendorSeamScanner.VendorNames</c> in one literal.
+    /// </summary>
+    /// <remarks>
+    /// The list is data, and data cannot fail to compile: a typo'd entry ("Bekchoff") would
+    /// match nothing anywhere, forever, and every seam test would stay green around it. The
+    /// test that walks the list against this literal is what turns that typo into a failure.
+    /// New entry in the list, new word here — the test says which one is missing.
+    /// </remarks>
+    public static string EveryTell() =>
+        "Codesys CODESYS TwinCat TwinCAT TiaPortal Siemens Rockwell Studio5000 " +
+        "Beckhoff Openness TcXae and TIA Portal spelled with its space";
 }
 
 /// <summary>A vendor type travelling inside a generic and inside an array.</summary>

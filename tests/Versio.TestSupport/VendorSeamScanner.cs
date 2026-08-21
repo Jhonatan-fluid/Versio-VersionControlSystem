@@ -26,14 +26,29 @@ public static class VendorSeamScanner
 {
     /// <summary>Every brand name that must not appear outside its own corner.</summary>
     /// <remarks>
+    /// <para>
     /// The unimplemented vendors are listed deliberately. They cost nothing today and they are
-    /// the whole point: the seam is being kept honest for their sake, and whoever adds TwinCAT
-    /// should find this failing before they get far enough to regret it.
+    /// the whole point: the seam is being kept honest for their sake, and whoever adds the next
+    /// pack should find this failing before they get far enough to regret it.
+    /// </para>
+    /// <para>
+    /// The second row is not brands but tells: the maker behind a brand, one vendor's API and
+    /// another's shell, and "TIA Portal" written the way a sentence writes it — which the unspaced
+    /// <c>TiaPortal</c> entry cannot match, and a sentence shown to the user is exactly the
+    /// leak that survived the first list (a 2026-08-21 audit found "as CODESYS structures it"
+    /// in a tooltip). Not listed: "3S" (two characters, matches noise) and the file
+    /// extensions (<c>.project</c>, <c>.tsproj</c>, <c>.apXX</c>) — <c>BindingConventions</c>
+    /// keeps <c>.project</c> as the documented no-format fallback, so an extension scan would
+    /// start life needing the exemption it exists to forbid. Every entry here must also
+    /// appear in <c>SeamFixtures.EveryTell</c>, or the positive control says which one is
+    /// unproven.
+    /// </para>
     /// </remarks>
     public static readonly string[] VendorNames =
     [
         "Codesys", "CODESYS", "TwinCat", "TwinCAT", "TiaPortal", "Siemens", "Rockwell",
         "Studio5000",
+        "Beckhoff", "Openness", "TcXae", "TIA Portal",
     ];
 
     /// <summary>True when a piece of text names any vendor.</summary>
