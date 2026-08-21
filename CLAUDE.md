@@ -233,7 +233,7 @@ stays that way.
 
 | Suite | Count | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,450 | under a second | nothing |
+| `Versio.Core.Tests` | 1,451 | under a second | nothing |
 | `Versio.Integration.Tests` | 153 | ~10 s | real git |
 | `Versio.Arch.Tests` | 14 | instant | nothing — it reads assembly metadata, IL and the `.csproj` files |
 | `Versio.App.Tests` | 619 | ~50 s, STA, no window shown | nothing |

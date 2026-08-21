@@ -61,10 +61,17 @@ lock to Failed. The tree on disk is the successful first export. Commit gate:
 
 CODESYS does not hit this: its export folder sits beside the `.project`, not
 inside it. The shared scratch path per binding is the other half — two jobs
-must not own the same `.versio/local/open/{id}/`.
+must not own the same `.versio/local/open/{id}/`. **Fix (same session):** each
+held-export copy gets its own folder under that binding, because the commit
+gate skips the coalescer and a watcher-driven export can start while the
+first copy is still in use. Owner commit on 2026-08-21 was refused with
+"acknowledge the failure before committing" — the Git panel has no Try again;
+that button is the red failure banner above the tree.
 
 **What was rejected:** treating the Failed lock as a COM refusal of the copy.
-The copy exported; the failure is bookkeeping after a successful swap.
+The copy exported; the failure is bookkeeping after a successful swap. Clearing
+Failed by editing `state.json` while Versio holds it. Letting the commit gate
+skip Failed so a stale export is not acknowledged.
 
 ---
 

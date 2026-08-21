@@ -1082,6 +1082,39 @@ public class SyncOrchestratorTests
     }
 
     [Fact]
+    public async Task Two_held_exports_do_not_share_a_scratch_folder()
+    {
+        // The commit gate is synchronous and skips the coalescer, so a second
+        // export can start while the first still holds `.versio/local/open/{id}/`.
+        // Sharing that folder is how a successful export was followed by
+        // ExportFailed when the first job deleted the copy. Each run gets its
+        // own folder; putting them back in one folder makes these two paths equal.
+        var h = new Harness();
+        h.Occupancy.Hold();
+        h.SetProject("v2");
+
+        Assert.Equal(SyncVerdict.Completed, (await h.Orchestrator.HandleChangeAsync(
+            new SyncJob { BindingId = BindingId, Source = ChangeSource.Project,
+                          Synchronous = true },
+            CancellationToken.None)).Verdict);
+
+        h.SetProject("v3");
+        Assert.Equal(SyncVerdict.Completed, (await h.Orchestrator.HandleChangeAsync(
+            new SyncJob { BindingId = BindingId, Source = ChangeSource.Project,
+                          Synchronous = true },
+            CancellationToken.None)).Verdict);
+
+        Assert.Equal(2, h.Codesys.Jobs.Count);
+        var first = Path.GetDirectoryName(h.Codesys.Jobs[0].Projects[0].ProjectPath);
+        var second = Path.GetDirectoryName(h.Codesys.Jobs[1].Projects[0].ProjectPath);
+        Assert.NotEqual(first, second);
+        Assert.Contains(Path.Combine(".versio", "local", "open", BindingId), first,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(Path.Combine(".versio", "local", "open", BindingId), second,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task An_export_waits_when_the_format_cannot_copy_a_held_project()
     {
         // A format that opens the payload exclusively cannot export a copy the IDE

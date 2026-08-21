@@ -13,9 +13,8 @@ skip). That run is also the counted gate `LOCK-1` owed. After the eyeballs: UX-6
 UX-7 `Ctrl+F` / UX-8 / UX-12 (item 3), unless the owner picks packaging (item 5)
 instead. Do not start from `archive/` or a handoff.
 
-**Tests:** 2,698 across eleven projects, last counted 2026-08-21 after git pathspec-from-file
-(2,696 was the TwinCAT I/O export-only count the same day; 2,693 was the TIA hardware
-Comment count on 2026-08-20). TwinCAT XAE gate: 5 tests, **green in 3 m 4 s on
+**Tests:** 2,699 across eleven projects, last counted 2026-08-21 after held-export scratch isolation
+(2,698 was the git pathspec-from-file count the same day). TwinCAT XAE gate: 5 tests, **green in 3 m 4 s on
 2026-08-21** over I/O export-only — probe, export (`Devices/Devices.devices.yaml`, form
 `DEVICES`), two unchanged textual exports byte-identical including the yaml, import/re-export
 of an ST mutation and its deletion. TIA Portal gate: 5 tests,
@@ -35,7 +34,7 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,450 | under a second | nothing |
+| `Versio.Core.Tests` | 1,451 | under a second | nothing |
 | `Versio.Integration.Tests` | 153 | ~10 s | real git |
 | `Versio.App.Tests` | 619 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 14 | instant | nothing |
