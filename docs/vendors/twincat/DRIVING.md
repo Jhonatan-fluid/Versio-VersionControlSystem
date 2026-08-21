@@ -1,6 +1,6 @@
 # Driving TwinCAT 3
 
-**Date:** 2026-08-20 (hardening pass same day) · Beside `Versio.Plc.TwinCat*` — one
+**Date:** 2026-08-21 (I/O export-only) · Beside `Versio.Plc.TwinCat*` — one
 vendor's docs, beside its projects. How TwinCAT XAE is driven, what the Automation
 Interface actually does in this host, and what is still open.
 
@@ -26,7 +26,9 @@ talks back over stdout with the same `@@VERSIO@@` JSON-lines the other vendors u
 DLLs are never shipped — every Automation Interface call is late-bound `IDispatch`
 (`Type.InvokeMember`). PLC software (ST via `DeclarationText` / `ImplementationText`, with
 `ProduceXml` when IDispatch does not surface those properties) is the round-trip subject.
-I/O, NC, safety, C++ and visualisations are coverage skips.
+I/O is exported as `*.devices.yaml` (form `DEVICES`, export-only). Comment set in-session
+and showed up in `ProduceXml`; it does not persist through Save. NC, safety, C++ and
+visualisations are coverage skips.
 
 ---
 
@@ -36,7 +38,7 @@ I/O, NC, safety, C++ and visualisations are coverage skips.
 |---|---|
 | `Versio.Plc.TwinCat` | Pure. Format (`.tsproj` working; `.tszip` / `.tspproj` as templates so adoption refuses), directory payload, occupancy, transients, import planner, ST header, `TwinCatJob` / `TwinCatProtocol` |
 | `Versio.Plc.TwinCat.Infrastructure` | Driven. Locator (`TcXaeShell.DTE.17.0` preferred over 15.0), `LocalTwinCatRunner`, mutex `Global\Versio.TwinCat.SingleInstance`, `TwinCatPack.Register()` |
-| `Versio.Plc.TwinCat.Host` | net9-windows x64 exe. `[STAThread]`, message filter, late-bound COM. Split: `Program` / `MessageFilter`, `HostApp` (session), `HostExport`, `HostImport`, `HostCom`, `HostText` |
+| `Versio.Plc.TwinCat.Host` | net9-windows x64 exe. `[STAThread]`, message filter, late-bound COM. Split: `Program` / `MessageFilter`, `HostApp` (session), `HostExport`, `HostImport`, `HostDeviceCatalog`, `HostIoProbe`, `HostCom`, `HostText` |
 
 `Versio.App` has a third `ProjectReference` and calls `TwinCatPack.Register()` **after**
 `TiaPortalPack.Register()`. A missing `vendor` field on an old binding still deserialises as
@@ -122,7 +124,7 @@ The job schema (`TwinCatJob` / `JobReader`):
 
 | Field | Meaning |
 |---|---|
-| `op` | `probe` / `export` / `import` |
+| `op` | `probe` / `export` / `import` / `ioprobe` (tools-only) |
 | `schema` | 1 |
 | `project` | absolute path to the `.tsproj` |
 | `out` | export destination (probe, export) |
@@ -161,7 +163,7 @@ STA thread
   → DTE.Solution.Open(sibling.sln)
   → solution.Projects.Item(1).Object  // ITcSysManager
   → wait until TIPC^…^… Project exists
-  → probe | export | import
+  → probe | export | import | ioprobe
   → Solution.Close(false) ; DTE.Quit
 ```
 
@@ -173,7 +175,7 @@ STA thread
 | `Solution.Open(sln)` | every job | Sibling `.sln` only. No `.tsproj`-alone open |
 | `Projects.Item(1).Object` | every job | The System Manager. EnvDTE `Item` is **1-based** |
 | `ITcSysManager.LookupTreeItem(path)` | session, export | Caret paths: `TIPC`, `TIPC^PlcName^PlcName Project`, `TIID`, `TINC` |
-| `DTE.ExecuteCommand("File.SaveAll")` | import, when `save` | **The save that works.** `ITcSysManager.Save` is `DISP_E_UNKNOWNNAME` (0x80020006). Fallback: `SaveProject`, then `project.Save("")` |
+| `DTE.ExecuteCommand("File.SaveAll")` | import, when `save` | **The save that works for PLC.** `ITcSysManager.Save` and `SaveProject` are `DISP_E_UNKNOWNNAME` (0x80020006). Fallback: `project.Save("")`. I/O Comment does not persist through any of these on an empty TIID — see §4.5 |
 | `Solution.Close(false)` / `DTE.Quit` | finally | Best effort; a leftover shell is a finding, not a second fatal |
 
 Attach-to-running is **not used**. Two DTE instances on one project are not safe — that is
@@ -181,12 +183,13 @@ why the runner takes a machine-wide mutex.
 
 ### 4.2 The tree (TIPC is lazy)
 
-TwinCAT's System Manager is a forest. Only the PLC branch is the round-trip subject:
+TwinCAT's System Manager is a forest. PLC software is the round-trip subject; the
+I/O catalog is exported for review:
 
 | Path prefix | What it is | Versio |
 |---|---|---|
 | `TIPC` | PLC projects | **walked** — export / import ST |
-| `TIID` | I/O devices and mappings | coverage skip (`SERVICE_OBJECT`) |
+| `TIID` | I/O devices | **walked** — `*.devices.yaml`, export-only |
 | `TINC` | NC / motion | coverage skip |
 | Safety / C++ / visualisation | other project kinds | coverage skip (`ItemSubType` 619 is visualisation) |
 
@@ -207,7 +210,7 @@ Identity in the manifest is that Automation Interface **`PathName`**
 (`TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^…`), not a GUID
 inside `.TcPOU`.
 
-### 4.3 Export (TIPC only)
+### 4.3 Export (TIPC + TIID catalog)
 
 | Member | Used by | Notes |
 |---|---|---|
@@ -238,13 +241,53 @@ display name only when unique in the tree. Ambiguity throws, and every throw lan
 the save: `Solution.Close(false)` discards the half-applied session, so disk stays
 untouched. Planned work that cannot be carried out — a missing source file, an unmatched
 rename, an action this host does not apply (`ApplyNative` included) — refuses the same
-way rather than importing less than was confirmed. See Findings, 2026-08-20.
+way rather than importing less than was confirmed. `ApplyText` on `*.devices.yaml` is
+refused: Comment does not persist through Save (§4.5). See Findings, 2026-08-20.
 
 The planner is the same `ImportPlan` the other vendors fill (`ApplyText` / `Create` /
 `Skip` / `Deletions` / `Renames`). Five deletion preconditions stay in the planner, not
 in Sync — and the planner's refusal paths are pinned by mutation-verified pure tests
 since 2026-08-20. The runner refuses a plan-less import outright instead of fabricating
 an empty plan that no-ops, saves and reports green.
+
+### 4.5 I/O surface (measured 2026-08-20)
+
+Product Export writes `Devices/Devices.devices.yaml` (form `DEVICES`, export-only).
+The host op `ioprobe` (`tools/twincat/Probe-Io.ps1`) is the measurement. Work copy
+under `%TEMP%`; the probe never saved. Two untouched dumps of
+`TC3_PlcSample_reStrText` were SHA-256 identical
+(`f076680fd611b99eac630625a471e680795861cd1f75ad2bb139d25bec85b0d4`). Raw dump:
+[`probes/ioprobe-TC3-2026-08-20.json`](probes/ioprobe-TC3-2026-08-20.json).
+
+**Render — yes, and this fixture has no rack.** `LookupTreeItem("TIID")` returns a
+node named `Devices` (`PathName` `TIID`, `ItemType` 17, `ItemSubType` -1,
+`ChildCount` 0). The committed sample has no `<Io>` tree in the `.tsproj`; the
+node still exists. `Comment` is an empty string; `Disabled` is `0`. `ProduceXml`
+returns a 291-byte `TreeItem`. Process-image `Var` / mappings were not walked —
+ChildCount on this node is zero, and mapping is not this slice.
+
+**Comment in-session, not through Save.** `ITcSmTreeItem.Comment` set to
+`versio-ioprobe-temp` on `TIID` applied, `ProduceXml` contained the marker, and
+the property restored; project **not** saved on the probe. The gate then set
+Comment, verified the read-back, `File.SaveAll` persisted a companion ST edit,
+and the next export still read an empty Comment. `ITcSysManager.SaveProject` is
+`DISP_E_UNKNOWNNAME` (same as `.Save`). This fixture has no Io XML to hang a
+Comment on. Applying Comment would confirm an import that silently reverts —
+form `DEVICES`, export-only, same as CODESYS I/O.
+
+**CreateChild — measured, refused.** A probe-only
+`CreateChild("EtherCAT Master", 111, "", "")` (Beckhoff's documented EtherCAT
+master subtype) was refused (`Invalid item sub type`). The PLC-measured argument
+order (`name, 1, "", 111`) created a child named EtherCAT Master at
+`TIID^EtherCAT Master` whose `ItemSubType` was **1**, not 111 — not a trustworthy
+EtherCAT plug. Product import never calls CreateChild.
+
+**Product (2026-08-21).** Export writes `Devices/Devices.devices.yaml` (the node's
+Name; a folder literally named `I/O` is not a Windows path). Identity is
+Automation Interface `PathName`. Import does not apply the file. Gate: yaml
+present, I/O skip gone, two textual exports include the yaml byte-identical, ST
+overwrite still round-trips. NC / safety / C++ / visualisation stay skips.
+Mappings stay out of the catalog.
 
 ---
 
@@ -311,9 +354,9 @@ refuses. Work only on a **copy** under `%TEMP%`. Do not adopt it into this repos
 ## 8. What the gate proved (2026-08-19)
 
 `tests/Versio.Plc.TwinCat.Tests` — **5/5 green in 3 m 14 s**, zero skips, on a `%TEMP%`
-copy. Close XAE and Versio first. **Re-gated 2026-08-20 in 3 m 17 s** over the hardened
-host — through the generic TIPC branch this time, the fixture fast path being gone, so
-the three extra seconds bought the branch real projects actually take.
+copy. Close XAE and Versio first. **Re-gated 2026-08-21 in 3 m 4 s** over I/O
+export-only (`DEVICES`) — yaml present, I/O skip gone, two textual exports include the
+yaml byte-identical, ST overwrite still round-trips. Comment apply is not this gate.
 
 | Job | Cost on this install |
 |---|---|
@@ -336,11 +379,12 @@ should not have to re-derive.
 ### Done (gated against live XAE)
 
 1. ~~Detect `.tsproj`, probe `TcXaeShell.DTE.17.0`.~~
-2. ~~Export TIPC as `.st`; coverage-skip TIID / TINC / safety / C++ / visualisation.~~
+2. ~~Export TIPC as `.st`; I/O as `*.devices.yaml`; coverage-skip TINC / safety / C++ / visualisation.~~
 3. ~~Two unchanged textual exports byte-identical.~~
 4. ~~ST overwrite and the inverse line-deletion, re-exported.~~
 5. ~~Refuse conversion on the bound path; allow it only under `%TEMP%`.~~
 6. ~~`IOleMessageFilter`; version from `Build_*`, not the VS shell ProductVersion.~~
+7. ~~I/O catalogs (`Devices/Devices.devices.yaml`, form `DEVICES`, export-only). Comment does not persist through Save; never CreateChild.~~
 
 ### Wired, not an XAE Fact yet
 
@@ -367,7 +411,8 @@ existing confirm-import dialog. They have **not** been walked against live XAE.
 
 ### Not this queue (coverage skips)
 
-IO mapping, NC axes, Safety (`tspproj`), C++ projects, visualisation bindings,
-compile-after-import, library YAML, a 54-test real-XAE suite. Archives (`.tszip`) and
-safety projects (`.tspproj`) are seen and refused. Same bargain as TIA
-hardware/HMI/`F_*`.
+IO **mapping** (process image / `Var`), NC axes, Safety (`tspproj`), C++ projects,
+visualisation bindings, compile-after-import, library YAML, a 54-test real-XAE suite.
+CreateChild of EtherCAT terminals. Archives (`.tszip`) and safety projects (`.tspproj`)
+are seen and refused. Same bargain as TIA PlugNew / topology / HMI / `F_*`.
+I/O catalogs ship **export-only** 2026-08-21 (§4.5). Comment apply does not persist.

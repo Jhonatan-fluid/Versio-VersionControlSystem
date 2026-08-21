@@ -105,8 +105,15 @@ public sealed class TwinCatGateTests
                 Directory.EnumerateFiles(outDir, "*.st", SearchOption.AllDirectories).Any(),
                 "export wrote a manifest but no .st — TIPC walk missed DeclarationText");
             var coverage = File.ReadAllText(Path.Combine(outDir, "_coverage.md"));
-            Assert.Contains("I/O", coverage, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("TIID devices and mappings are a coverage skip", coverage);
+            Assert.Contains("devices.yaml", coverage, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("NC", coverage, StringComparison.OrdinalIgnoreCase);
+            var yaml = Directory.EnumerateFiles(outDir, "*.devices.yaml", SearchOption.AllDirectories)
+                .FirstOrDefault();
+            Assert.True(yaml is not null, "export wrote no *.devices.yaml");
+            var manifest = File.ReadAllText(Path.Combine(outDir, "_manifest.json"));
+            Assert.Contains("DEVICES", manifest, StringComparison.Ordinal);
+            Assert.DoesNotContain("DEVICE_COMMENT", manifest, StringComparison.Ordinal);
         }
         finally
         {
@@ -376,8 +383,14 @@ public sealed class TwinCatGateTests
     private static Dictionary<string, byte[]> TextualBytes(string root)
     {
         var files = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
-        foreach (var file in Directory.EnumerateFiles(root, "*.st", SearchOption.AllDirectories))
+        foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
         {
+            if (!file.EndsWith(".st", StringComparison.OrdinalIgnoreCase)
+                && !file.EndsWith(".devices.yaml", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             var relative = Path.GetRelativePath(root, file).Replace('\\', '/');
             files[relative] = File.ReadAllBytes(file);
         }

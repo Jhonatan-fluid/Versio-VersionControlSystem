@@ -9,7 +9,8 @@ exported and imported for PLC software (SCL, UDTs, tag tables) once Openness
 membership is granted. Hardware, HMI and safety stay coverage skips
 ([`docs/STATUS.md`](docs/STATUS.md); [`docs/vendors/tia/DRIVING.md`](docs/vendors/tia/DRIVING.md)
 §12). **TwinCAT 3 is the third pack** — the same PLC-software loop through
-`TcXaeShell.DTE.17.0` ([`docs/vendors/twincat/DRIVING.md`](docs/vendors/twincat/DRIVING.md)).
+`TcXaeShell.DTE.17.0`, plus I/O catalog export (Comment does not persist through Save)
+([`docs/vendors/twincat/DRIVING.md`](docs/vendors/twincat/DRIVING.md)).
 Rockwell Studio 5000 remains an intended next vendor. The code is organised so adding one is additive
 — a rule enforced by a test that reads assembly metadata, not by a paragraph here.
 
@@ -96,7 +97,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | **Device tree exported** (`<device>.devices.yaml`) | ✅ **the collision is closed.** One YAML inside each device directory: connectors, parameters, empty IO-Link slots keyed by index. Eight `<Empty>` children used to share one `%3CEmpty%3E.xml`. Export-only: change devices in the IDE. Parameter import and IEC mapping are not this pass |
 | Template generation | ⛔ needs a new operation and script — not assembly |
 | A second vendor — TIA Portal | ✅ the second pack; probe, export and SCL generate overwrite are gated. Hardware / HMI / safety stay coverage skips — see [`docs/STATUS.md`](docs/STATUS.md) and [`docs/vendors/tia/DRIVING.md`](docs/vendors/tia/DRIVING.md) |
-| A third vendor — TwinCAT 3 | ✅ the third pack; probe, export and ST overwrite are gated. I/O / NC / safety / C++ stay coverage skips — see [`docs/vendors/twincat/DRIVING.md`](docs/vendors/twincat/DRIVING.md). Studio 5000 is not started |
+| A third vendor — TwinCAT 3 | ✅ the third pack; probe, export, ST overwrite and I/O catalog export are gated. Comment does not persist through Save. NC / safety / C++ stay coverage skips — see [`docs/vendors/twincat/DRIVING.md`](docs/vendors/twincat/DRIVING.md). Studio 5000 is not started |
 | **Git side panel** — staging, commit message, fetch/pull/push | ✅ one operation at a time across every button |
 | **Changed files named as objects** — `FB_Motor · POU`, not `src/…/POU/FB_Motor.st` | ✅ resolved through the export manifest, so it costs no extra read. A file the manifest does not describe stays a path and is **never** guessed at. A library-reference file carries a lock: editing it does not reach the project |
 | **Change summary and drafted commit subject** — *"1 GVL and 1 POU changed in RefrigeratorControl"*, and a **Draft** button that writes `Modify FB_Motor, Glob_Var` | ✅ counted by object, not by file — one GVL is two files and one edit. Both describe exactly what the commit button will record, and Draft refuses to overwrite anything you have typed |
@@ -220,11 +221,12 @@ Versio.sln
 │  ├─ Versio.Plc.TiaPortal.Pure.Tests/ 19 pure vendor tests — format, planner, protocol
 │  ├─ Versio.Plc.TiaPortal.Tests/ 5 tests against real TIA Portal; skip with a count when
 │                               Openness membership or the install is missing
-│  ├─ Versio.Plc.TwinCat.Pure.Tests/ 18 pure vendor tests — format, planner, protocol
+│  ├─ Versio.Plc.TwinCat.Pure.Tests/ 21 pure vendor tests — format, planner, protocol
 │  └─ Versio.Plc.TwinCat.Tests/ 5 tests against real TwinCAT XAE; skip with a count when
 │                               TcXaeShell.DTE.17.0 or the fixture is missing
 ├─ tools/                       PowerShell and python harnesses. tools/tia/ is the second
-│                               vendor's round-trip, P7, and hardware-probe harness; the rest are CODESYS
+│                               vendor's round-trip, P7, and hardware-probe harness;
+│                               tools/twincat/ is the I/O probe; the rest are CODESYS
 │                               probes. New-VersioIcon.ps1 generates the app icon.
 ├─ assets/                      versio.svg (reference drawing) and versio.ico
 │                               (the build input — generated, never hand-edited)
@@ -398,7 +400,7 @@ dotnet test tests/Versio.Core.Tests
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 19 | nothing — format, planner, protocol, scrubber | instant |
 | `Versio.Plc.TiaPortal.Tests` | 5 | **a real TIA Portal**; skips cleanly without Openness membership | seconds when skipped |
-| `Versio.Plc.TwinCat.Pure.Tests` | 18 | nothing — the vendor's planner, format and protocol, pure | instant |
+| `Versio.Plc.TwinCat.Pure.Tests` | 21 | nothing — the vendor's planner, format and protocol, pure | instant |
 | `Versio.Plc.TwinCat.Tests` | 5 | **a real TwinCAT XAE**; skips cleanly without `TcXaeShell.DTE.17.0` | seconds when skipped; ~3 min when XAE runs the import gate |
 | `Versio.Plc.Codesys.Tests` | 55 | **a real CODESYS**, and **skips cleanly** without one | **~30 min** |
 

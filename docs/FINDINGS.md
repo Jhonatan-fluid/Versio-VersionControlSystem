@@ -19,6 +19,25 @@ produce a diff touching everything else.
 
 ---
 
+### TwinCAT I/O Comment does not persist through Save
+
+**Found 2026-08-20**, by the TwinCAT gate after `ioprobe` had shown Comment set and
+`ProduceXml` containing the marker. Product import applied `ITcSmTreeItem.Comment` on
+`TIID`, verified the read-back, and `File.SaveAll` persisted a companion ST edit. The
+re-export still read an empty Comment. Forcing `ITcSysManager.SaveProject` after SaveAll
+is `DISP_E_UNKNOWNNAME` (0x80020006) — the same as `.Save`. This fixture's `.tsproj` has
+no `<Io>` tree; Comment has nowhere on disk to hang.
+
+Applying Comment and reporting success would confirm an import that silently reverts —
+worse than export-only. Product writes form `DEVICES`, the planner skips the file, and
+the host throws if a plan still asks to ApplyText a `*.devices.yaml`. CreateChild stays
+refused (subtype 111 invalid; PLC argument order created ItemSubType 1, not a real
+EtherCAT plug). Dump:
+[`vendors/twincat/probes/ioprobe-TC3-2026-08-20.json`](vendors/twincat/probes/ioprobe-TC3-2026-08-20.json).
+Driving notes: [`vendors/twincat/DRIVING.md`](vendors/twincat/DRIVING.md) §4.5.
+
+---
+
 ### TIA hardware probe: render is real, port partners are not on this fixture, import is SetAttribute not PlugNew
 
 **Found 2026-08-20**, by `hwprobe` on a `%TEMP%` copy of CleaningStation, before any

@@ -313,10 +313,13 @@ are `*.devices.yaml` (form `DEVICE_COMMENT`); PlugNew is not this slice.
 
 ### TwinCAT — placeholder
 
-`LocalTwinCatRunner` spawns `Versio.Plc.TwinCat.Host.exe`. Host files: `Program.cs`,
-`HostApp.cs`, `HostExport.cs`, `HostImport.cs`, `HostCom.cs`, `HostText.cs`,
-`MessageFilter.cs`. Details: [`vendors/twincat/DRIVING.md`](vendors/twincat/DRIVING.md).
-*Still developing — fill later.*
+`LocalTwinCatRunner` spawns `Versio.Plc.TwinCat.Host.exe`. Product ops are Probe /
+Export / Import. A fourth op, `ioprobe`, is **tools-only**
+(`tools/twincat/Probe-Io.ps1`) and is not product Export — see
+[`vendors/twincat/DRIVING.md`](vendors/twincat/DRIVING.md) §4.5. Host files:
+`Program.cs`, `HostApp.cs`, `HostExport.cs`, `HostImport.cs`, `HostDeviceCatalog.cs`,
+`HostIoProbe.cs`, `HostCom.cs`, `HostText.cs`, `MessageFilter.cs`. I/O catalogs are
+`*.devices.yaml` (form `DEVICES`, export-only); CreateChild is not this slice.
 
 ### Studio 5000
 

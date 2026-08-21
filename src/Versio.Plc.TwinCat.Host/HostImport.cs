@@ -80,6 +80,18 @@ internal static partial class HostApp
 
             if (action is "text" or "ApplyText")
             {
+                if (rel.EndsWith(".devices.yaml", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Comment set and ProduceXml showed the marker in-session
+                    // (ioprobe 2026-08-20). File.SaveAll persisted the companion
+                    // ST edit and ITcSysManager.SaveProject is DISP_E_UNKNOWNNAME,
+                    // so the next export still read an empty Comment. Applying
+                    // here would confirm an import that silently reverts.
+                    throw new InvalidOperationException(
+                        rel + " is export-only — I/O Comment does not persist through " +
+                        "Save on this Automation Interface");
+                }
+
                 ApplyText(index, renamed, file, abs);
                 Emit("object", "path", rel, "action", action);
             }
