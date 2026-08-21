@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using Versio.Core.Logging;
 using Versio.Core.Plc;
 using Versio.Infrastructure.FileSystem;
@@ -130,8 +131,15 @@ public sealed class TiaPortalGateTests
             Assert.True(result.Succeeded, result.FailureReason);
             Assert.True(File.Exists(Path.Combine(outDir, "_manifest.json")));
             var coverage = File.ReadAllText(Path.Combine(outDir, "_coverage.md"));
-            Assert.Contains("Hardware", coverage, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("devices and networks are a coverage skip", coverage);
+            Assert.Contains("devices.yaml", coverage, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("HMI", coverage, StringComparison.OrdinalIgnoreCase);
+            var yaml = Directory.EnumerateFiles(outDir, "*.devices.yaml", SearchOption.AllDirectories)
+                .FirstOrDefault();
+            Assert.True(yaml is not null, "export wrote no *.devices.yaml");
+            var manifest = File.ReadAllText(Path.Combine(outDir, "_manifest.json"));
+            Assert.Contains("DEVICE_COMMENT", manifest, StringComparison.Ordinal);
+            Assert.DoesNotContain("\"path\": \"Hardware\"", manifest, StringComparison.Ordinal);
         }
         finally
         {
@@ -282,6 +290,12 @@ public sealed class TiaPortalGateTests
             var udtMarker = "versio_udt_" + stamp;
             MutateInPlace(udt!, text => InsertUdtMember(text, udtMarker));
 
+            var yaml = Directory.EnumerateFiles(export1, "*.devices.yaml", SearchOption.AllDirectories)
+                .FirstOrDefault();
+            Skip.If(yaml is null, "export wrote no *.devices.yaml — cannot mutate Comment");
+            var hwMarker = "versio_hw_" + stamp;
+            MutateInPlace(yaml, text => SetStationComment(text, "CleaningStation", hwMarker));
+
             var fs = new WindowsFileSystem();
             var plan = await ImportPlanReader.ReadAsync(
                 fs, TiaPortalProjectFormat.Instance, export1, NullLogger.Instance,
@@ -296,6 +310,7 @@ public sealed class TiaPortalGateTests
                 [
                     PlannedApplyText(plan, export1, scl!),
                     PlannedApplyText(plan, export1, udt!),
+                    PlannedApplyText(plan, export1, yaml),
                 ],
                 Deletions = [],
                 Renames = [],
@@ -337,6 +352,12 @@ public sealed class TiaPortalGateTests
             Assert.True(
                 after.Any(kv => TextFromUtf8(kv.Value).Contains(udtMarker, StringComparison.Ordinal)),
                 "UDT member " + udtMarker + " missing after re-export. import wrote: "
+                + string.Join(", ", imported.ChangedPaths)
+                + (imported.Warnings.Count == 0 ? "" : "; warnings: " + string.Join("; ", imported.Warnings)));
+            Assert.True(
+                after.Any(kv => kv.Key.EndsWith(".devices.yaml", StringComparison.OrdinalIgnoreCase)
+                                && TextFromUtf8(kv.Value).Contains(hwMarker, StringComparison.Ordinal)),
+                "device Comment " + hwMarker + " missing after re-export. import wrote: "
                 + string.Join(", ", imported.ChangedPaths)
                 + (imported.Warnings.Count == 0 ? "" : "; warnings: " + string.Join("; ", imported.Warnings)));
 
@@ -441,7 +462,8 @@ public sealed class TiaPortalGateTests
             var ext = Path.GetExtension(file);
             if (!ext.Equals(".scl", StringComparison.OrdinalIgnoreCase)
                 && !ext.Equals(".udt", StringComparison.OrdinalIgnoreCase)
-                && !ext.Equals(".s7dcl", StringComparison.OrdinalIgnoreCase))
+                && !ext.Equals(".s7dcl", StringComparison.OrdinalIgnoreCase)
+                && !file.EndsWith(".devices.yaml", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -451,6 +473,32 @@ public sealed class TiaPortalGateTests
         }
 
         return files;
+    }
+
+    /// <summary>
+    /// Set Comment on one named DeviceItem. Other items may not be writable
+    /// (hwprobe: the nested server module listed no Comment CanWrite).
+    /// </summary>
+    private static string SetStationComment(string yaml, string interfaceName, string comment)
+    {
+        var needle = "interface: " + interfaceName;
+        var start = yaml.IndexOf(needle, StringComparison.Ordinal);
+        Assert.True(start >= 0, "devices.yaml has no interface " + interfaceName);
+        var next = yaml.IndexOf("\n  - ", start, StringComparison.Ordinal);
+        if (next < 0)
+        {
+            next = yaml.Length;
+        }
+
+        var block = yaml[start..next];
+        var replaced = Regex.Replace(
+            block,
+            @"Comment:\s*(?:""[^""]*""|\S*)",
+            "Comment: \"" + comment + "\"",
+            RegexOptions.None,
+            TimeSpan.FromSeconds(1));
+        Assert.Contains(comment, replaced, StringComparison.Ordinal);
+        return yaml[..start] + replaced + yaml[next..];
     }
 
     /// <summary>

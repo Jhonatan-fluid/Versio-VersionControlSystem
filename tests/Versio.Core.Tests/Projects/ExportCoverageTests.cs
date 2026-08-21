@@ -179,6 +179,18 @@ public sealed class ExportCoverageTests
     }
 
     [Fact]
+    public void A_device_comment_catalog_is_imported_and_cannot_delete_the_device()
+    {
+        // DEVICES stays export-only (CODESYS I/O). DEVICE_COMMENT is the measured
+        // Comment SetAttribute path: the lock glyph must not say export-only, and a
+        // missing file must not vote to unplug the station.
+        Assert.True(ExportCoverage.IsExportOnly(ExportCoverage.DevicesForm));
+        Assert.False(ExportCoverage.IsExportOnly(ExportCoverage.DeviceCommentForm));
+        Assert.True(ExportCoverage.IsDeviceStructure(ExportCoverage.DevicesForm));
+        Assert.True(ExportCoverage.IsDeviceStructure(ExportCoverage.DeviceCommentForm));
+    }
+
+    [Fact]
     public void An_export_with_no_one_way_files_says_nothing_about_them()
     {
         // The sentence appears only when there is something to say. Volunteering "0 files are

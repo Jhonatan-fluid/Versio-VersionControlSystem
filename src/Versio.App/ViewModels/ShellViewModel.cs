@@ -5983,8 +5983,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         else if (connAt >= 0)
         {
             var key = path[(connAt + DeviceCatalog.ConnectorRowMarker.Length)..];
-            var connector = catalog.Connectors.FirstOrDefault(c =>
-                string.Equals(c.Key, key, StringComparison.Ordinal));
+
+            // KeyedConnectors, matching the tree's row paths: colliding keys carry #2/#3
+            // there, so a raw-Key lookup would open the first duplicate's facts for both.
+            var connector = catalog.KeyedConnectors()
+                .FirstOrDefault(kv => string.Equals(kv.Key, key, StringComparison.Ordinal))
+                .Value;
             if (connector is not null)
             {
                 if (connector.ConnectorId.Length > 0)

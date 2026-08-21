@@ -13,11 +13,12 @@ skip). That run is also the counted gate `LOCK-1` owed. After the eyeballs: UX-6
 UX-7 `Ctrl+F` / UX-8 / UX-12 (item 3), unless the owner picks packaging (item 5)
 instead. Do not start from `archive/` or a handoff.
 
-**Tests:** 2,688 across eleven projects, last counted 2026-08-20 after the I/O export review
-fixes (2,680 was the I/O-export count earlier the same day). TwinCAT XAE gate: 5 tests, **green in 3 m 17 s on
+**Tests:** 2,693 across eleven projects, last counted 2026-08-20 after TIA hardware Comment
+import (2,688 was the I/O-export-review count earlier the same day). TwinCAT XAE gate: 5 tests, **green in 3 m 17 s on
 2026-08-20** over the hardened host — probe, export, two unchanged textual exports
 byte-identical, import/re-export of an ST mutation and its deletion. TIA Portal gate: 5 tests,
-**green**. The CODESYS gate last full run is **54/54, 2026-08-19 evening**. I/O export adds
+**green in 9 m on 2026-08-20** (re-run after slot identity) including Comment `SetAttribute` on
+`*.devices.yaml`. The CODESYS gate last full run is **54/54, 2026-08-19 evening**. I/O export adds
 one live Fact (`Empty_IO_Link_slots_are_listed_in_the_parent_yaml_rather_than_colliding`);
 that gate has not been re-run this session.
 
@@ -32,13 +33,13 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,446 | under a second | nothing |
+| `Versio.Core.Tests` | 1,448 | under a second | nothing |
 | `Versio.Integration.Tests` | 151 | ~10 s | real git |
 | `Versio.App.Tests` | 618 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 14 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 16 | instant | nothing |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 19 | instant | nothing |
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.TwinCat.Pure.Tests` | 18 | instant | nothing |
 | `Versio.Plc.TwinCat.Tests` | 5 | seconds when skipped; ~3 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
@@ -62,7 +63,7 @@ real toolchain.
 | [`FINDINGS.md`](FINDINGS.md) | Every defect with its evidence, newest first — **search it** |
 | [`SAFEGUARDS.md`](SAFEGUARDS.md) | What Versio refuses, asks about, or waits for |
 | [`vendors/codesys/DRIVING.md`](vendors/codesys/DRIVING.md) | How CODESYS is driven |
-| [`vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md) | How TIA Portal is driven. §12 is evidence; remaining TIA is coverage skips |
+| [`vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md) | How TIA Portal is driven. §4.4 is the hardware probe; remaining TIA is coverage skips until the owner picks a slice |
 | [`vendors/twincat/DRIVING.md`](vendors/twincat/DRIVING.md) | How TwinCAT 3 is driven. PLC-software loop is evidence; remaining TwinCAT is coverage skips |
 | [`phase1/`](phase1/) | Phase 1 archive — founding architecture, import plan, git-panel plan, Phase 0 measurements |
 | [`archive/`](archive/) | Phase 2 queue, UX plan, session handoffs, the long STATUS diary they replaced |
@@ -84,8 +85,10 @@ guessed wherever the toolchain is silent.
   YAML keys rather than one collided `%3CEmpty%3E.xml`. Parameter import and IEC mapping are
   not this pass.
 - **TIA Portal** — the same product loop for SCL, UDTs and tag tables, through a net48 Openness
-  host. PLC-software loop closed 2026-08-19 on `Siemens2`. Hardware, HMI, safety and technology
-  are coverage skips (`SERVICE_OBJECT`), not holes. Gate fixture:
+  host. PLC-software loop closed 2026-08-19 on `Siemens2`. Hardware **Comment** catalogs
+  (`*.devices.yaml`, form `DEVICE_COMMENT`) ship 2026-08-20: export plus `SetAttribute`
+  with verify-before-Save; never PlugNew. This fixture has no port-to-port partners.
+  HMI, safety and technology stay coverage skips. Gate fixture:
   `fixtures/projects/CleaningStation_V20_V21/` (Git LFS). Work only on a **copy**. Never the
   OneDrive original. Session notes: [`archive/HANDOFF-Siemens2.md`](archive/HANDOFF-Siemens2.md).
 - **TwinCAT 3** — the same product loop for ST, through a net9 COM host into
@@ -155,8 +158,10 @@ One list. Reorder it; do not copy it into another file.
 6. **Wait for a specimen, not a build.** C5 (`DELETE_UNREADABLE`) and `native_partial` close when
    reality produces an object nobody has observed. They cannot be manufactured. See
    [`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md).
-7. **Not this queue.** TIA hardware / HMI / safety (`F_*`) / technology / know-how-protected
-   import / compile-after-import / VCI / Project Server. TwinCAT I/O / NC / safety / C++ /
+7. **Not this queue.** TIA HMI / safety (`F_*`) / technology / know-how-protected
+   import / compile-after-import / VCI / Project Server. TIA **hardware** Comment
+   apply shipped 2026-08-20 ([`vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md) §4.4);
+   PlugNew and topology stay off this queue. TwinCAT I/O / NC / safety / C++ /
    visualisation, plus create / object-delete / rename Facts, folder move, and a live XAE
    window occupancy watch — [`vendors/twincat/DRIVING.md`](vendors/twincat/DRIVING.md) §9.
    `_coverage.md` names the skips. They are `SERVICE_OBJECT`. ~~GUI occupancy with a

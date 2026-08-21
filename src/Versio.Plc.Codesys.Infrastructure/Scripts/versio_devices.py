@@ -40,6 +40,10 @@
 #       missing. Which .device description a node is is not in this file.
 # ---------------------------------------------------------------------------------
 
+# The one import. versio_yaml is a pure sibling - no scriptengine, no IO - and is
+# embedded and path-mounted beside this file everywhere it runs.
+from versio_yaml import text_of as _text
+
 DEVICE_SCHEMA = 1
 
 TOP_KEYS = ["schema", "vendor", "name", "path", "slotCount", "slots", "connectorCount"]
@@ -223,13 +227,3 @@ def catalog_document(yaml, name, path, slots, connectors):
         top["slotCount"] = len(slots)
         top["slots"] = slots
     return yaml.document(_HEADER, top, TOP_KEYS, "connectors", connectors, CONN_KEYS)
-
-
-def _text(value):
-    if value is None:
-        return None
-    try:
-        text = u"%s" % (value,)
-    except Exception:
-        return None
-    return text

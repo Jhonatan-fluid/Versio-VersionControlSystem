@@ -205,7 +205,7 @@ Versio.sln
 ├─ tests/
 │  ├─ Versio.TestSupport/       not a test project: the three helpers more than one suite
 │  │                            needs (TestPaths, TestLogger, VendorSeamScanner)
-│  ├─ Versio.Core.Tests/        1,446 unit tests — pure, no IO, under a second
+│  ├─ Versio.Core.Tests/        1,448 unit tests — pure, no IO, under a second
 │  ├─ Versio.Integration.Tests/ 151 tests against real git and the real filesystem, ~10 s.
 │  │                            NO CODESYS: that is a different project now, so this one
 │  │                            needs no filter and cannot accidentally cost half an hour
@@ -217,14 +217,14 @@ Versio.sln
 │  │                            ~15 s, no CODESYS — python on PATH, skips cleanly without
 │  ├─ Versio.Plc.Codesys.Tests/ 55 tests against real CODESYS, ~30 min. The CODESYS gate
 │  │                            before a commit, and the only suite that needs that toolchain
-│  ├─ Versio.Plc.TiaPortal.Pure.Tests/ 16 pure vendor tests — format, planner, protocol
+│  ├─ Versio.Plc.TiaPortal.Pure.Tests/ 19 pure vendor tests — format, planner, protocol
 │  ├─ Versio.Plc.TiaPortal.Tests/ 5 tests against real TIA Portal; skip with a count when
 │                               Openness membership or the install is missing
 │  ├─ Versio.Plc.TwinCat.Pure.Tests/ 18 pure vendor tests — format, planner, protocol
 │  └─ Versio.Plc.TwinCat.Tests/ 5 tests against real TwinCAT XAE; skip with a count when
 │                               TcXaeShell.DTE.17.0 or the fixture is missing
 ├─ tools/                       PowerShell and python harnesses. tools/tia/ is the second
-│                               vendor's round-trip and P7 harness; the rest are CODESYS
+│                               vendor's round-trip, P7, and hardware-probe harness; the rest are CODESYS
 │                               probes. New-VersioIcon.ps1 generates the app icon.
 ├─ assets/                      versio.svg (reference drawing) and versio.ico
 │                               (the build input — generated, never hand-edited)
@@ -390,13 +390,13 @@ dotnet test tests/Versio.Core.Tests
 
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,446 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
+| `Versio.Core.Tests` | 1,448 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
 | `Versio.Integration.Tests` | 151 | a real `git.exe` and the real filesystem | ~10 s |
 | `Versio.Arch.Tests` | 14 | nothing — it reads assembly metadata, IL, and the project files | instant |
 | `Versio.App.Tests` | 618 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | nothing — the vendor's planner, codecs and protocol, pure | under a second |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 16 | nothing — format, planner, protocol, scrubber | instant |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 19 | nothing — format, planner, protocol, scrubber | instant |
 | `Versio.Plc.TiaPortal.Tests` | 5 | **a real TIA Portal**; skips cleanly without Openness membership | seconds when skipped |
 | `Versio.Plc.TwinCat.Pure.Tests` | 18 | nothing — the vendor's planner, format and protocol, pure | instant |
 | `Versio.Plc.TwinCat.Tests` | 5 | **a real TwinCAT XAE**; skips cleanly without `TcXaeShell.DTE.17.0` | seconds when skipped; ~3 min when XAE runs the import gate |
@@ -500,7 +500,7 @@ Each of these cost real debugging time and is now pinned by a test.
 | **`Mutex` has thread affinity** | It cannot be acquired and released across an `await`. A named `Semaphore` avoids that but loses abandonment recovery, which crash recovery depends on. |
 | **Import runs in two phases** | Creating objects then immediately calling `import_native` makes CODESYS enumerate a dictionary it is still mutating — and it **swallows the exception**, so the import silently does nothing and the run looks clean. |
 | **A manifest is read by a different language than wrote it** | `_manifest.json` is written by IronPython 2.7 inside CODESYS and read by System.Text.Json. `warnings` was written as records and declared as strings, and the whole-document `Deserialize` threw — so **one field's type disagreeing discarded all 56 objects** and the panel drew a flat list of paths with nothing said anywhere. `Parse` now reads field by field and element by element, and names what it could not read. The fixture has no warnings, which is why `"warnings": []` passed every test for the life of the property. |
-| **The export tree holds three kinds of file** | The project's objects; Versio's own bookkeeping (`_manifest.json`, `_coverage.md`); and **export-only** files that are real project state written for review with no trustworthy import path (`*.libraries.yaml`, `*.devices.yaml`). The importer walks the tree and imports everything it finds, so anything in the second or third group must be declared in `versio_types.py` — `VERSIO_FILES` or `EXPORT_ONLY_SUFFIXES` — or CODESYS is handed markdown or YAML as native XML. It fails with a warning rather than loudly, which is worse. |
+| **The export tree holds three kinds of file** | The project's objects; Versio's own bookkeeping (`_manifest.json`, `_coverage.md`); and **export-only** files that are real project state written for review with no trustworthy import path (`*.libraries.yaml`, `*.devices.yaml`). The importer walks the tree and imports everything it finds, so anything in the second or third group must be declared in `versio_types.py` — `VERSIO_FILES` or `EXPORT_ONLY_FORMS` — or CODESYS is handed markdown or YAML as native XML. It fails with a warning rather than loudly, which is worse. |
 | **`libman.get_libraries()` is not the library API** | It returns *names* — `"#Standard"` — with no version, company or parameters, and looks like a success. `libman.references` carries the real thing, and must be **iterated**: `references[i]` indexes by id, so `references[0]` raises on any project whose first reference has a non-zero id. Reading zero references out of a manager holding 21 is the symptom. |
 | **A library reference's `id` is re-minted on every open** | Measured across two runs of an untouched project: 68 differing lines, **all of them ids**, nothing else moved. Same class as the `__VisualizationStyle` GUID below. What a reference *resolves* to is machine state too — `Standard, *` becomes `3.5.22.0` only because that version is installed here — so the export records what the project **asks for**, never what it got. |
 | **Not every CODESYS GUID is stable** | The project-level `__VisualizationStyle` is re-minted on **every open**. Recording it in the manifest made every export produce a diff. Exported objects' GUIDs are stable and are identity; do not assume the same of an object you only observed once. |

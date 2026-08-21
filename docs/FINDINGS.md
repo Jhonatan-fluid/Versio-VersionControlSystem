@@ -19,6 +19,45 @@ produce a diff touching everything else.
 
 ---
 
+### TIA hardware probe: render is real, port partners are not on this fixture, import is SetAttribute not PlugNew
+
+**Found 2026-08-20**, by `hwprobe` on a `%TEMP%` copy of CleaningStation, before any
+`*.devices.yaml` was written. Product Export still walks `Devices` only to find
+`PlcSoftware` and records Hardware as `SERVICE_OBJECT`. The discarded tree is 13
+DeviceItems under one ET 200SP station: CPU `6ES7 514-2DN03-0AB0`, bus adapter, server
+module, two PN interfaces, ports. Two untouched dumps were SHA-256 identical.
+
+The first lookup names were wrong, the same class of miss as CODESYS `get_libraries()`:
+`GetAttributes` is a no-op for write flags — `GetAttributeInfos` is the list;
+`IoConnector` / `IoController` / `IoSystem` live in `Siemens.Engineering.HW`, not
+`Features`. `PositionNumber` mixes rack slots with PN-encoded values (32768+) and
+OPC UA (254); treating gaps as empty IO-Link slots invented 33,015 holes, then 249
+after capping at 256. The real rack still is not eight `<Empty>` children.
+
+`NetworkPort.ConnectedPorts` is empty because this project has **one** station. Subnet
+`Plantbus` names node `X1` on `PROFINET interface_1`. That is membership, not
+device-A-port-X to device-B-port-Y. `ConnectToPort` exists. Comment `SetAttribute`
+applied and restored without Save. `PlugNew` is on the type; `Unplug` and
+`CreateWithItem` are not. No hardware `Import`/`Export` method on Device.
+
+**What we did.** `hwprobe` and `tools/tia/Probe-Hardware.ps1`, then product export of
+`*.devices.yaml` (form `DEVICE_COMMENT`) after the owner picked Comment
+`SetAttribute`. Import verifies the read-back. Evidence in
+[`vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md) §4.4. Gate 5/5 green in 9 m on
+2026-08-20 after identity was parent+name+`@PositionNumber` (two `Port_1` on this
+fixture would otherwise share one path). First gate that day was 15 m 2 s on
+name-only paths.
+
+**What we rejected.** Inferring partners from slot order. Dumping hardware SimaticML
+as the reviewable form (`UId` already failed as identity for blocks). Using form
+`DEVICES` for the TIA file — that form is export-only, so a missing yaml would have
+been a silent no-op instead of ApplyText, and making `DEVICES` importable would have
+offered CODESYS I/O as an import. Applying a CODESYS `DEVICES` file as TIA Comment
+(the planner did that until the second pass). `PlugNew` exists on the type and was
+not invoked. Name-only DeviceItem paths.
+
+---
+
 ### I/O export review: a failed Device write could delete the application from the mirror
 
 **Found 2026-08-20**, by a second-pass review of the same day's I/O export, before anyone
@@ -44,7 +83,19 @@ indexes key `unindexed-n` rather than collapsing on `<Empty>`. A skipped slot th
 children warns and walks them.
 
 **What we rejected.** Teaching `Versio.Core` to percent-decode CODESYS stems — that is a
-vendor decoder. The encoded path is already the folder's identity. Uniquifying colliding
+vendor decoder. The encoded path is already the folder's identity.
+
+**A second look found the one that got away.** Two connectors whose keys collide — id-less
+ports sharing an interface; nothing upstream guarantees `Key` is unique, the exporter
+writes the toolchain's list verbatim — were still one row: `DeviceNodes` dropped the
+second on a seen-set, so a changed parameter on it had no diff row anywhere while the
+clicked catalog table showed both ports. `DeviceCatalog.KeyedConnectors()` now suffixes
+colliding keys `#2`, `#3` in file order — the same rule the exporter applies to duplicate
+parameter names — and the tree rows, their parameter paths, and the detail-pane lookup all
+key off it. The same pass fixed two smaller things: README and DRIVING named a constant
+that has never existed (`EXPORT_ONLY_SUFFIXES`; the real one is `EXPORT_ONLY_FORMS`), and
+`_text` existed three times before it existed once (now `versio_yaml.text_of`, imported by
+all three catalog modules). Uniquifying colliding
 connector keys in the tree — the fixture's ids are distinct, and collapsing on `Key` is
 the same rule libraries already use.
 

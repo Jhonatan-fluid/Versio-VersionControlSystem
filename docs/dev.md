@@ -302,9 +302,13 @@ a silent defect: the import still "works", still runs from a plan, and runs from
 
 ### TIA Portal — placeholder
 
-`LocalTiaPortalRunner` spawns `Versio.Plc.TiaPortal.Host.exe` with a job JSON. Same three
-ops (Probe / Export / Import). Host files: `Program.cs`, `HostApp.cs`, `HostExport.cs`,
-`HostImport.cs`, `JobReader.cs`, `OpennessLoader.cs`. Details: [`vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md).
+`LocalTiaPortalRunner` spawns `Versio.Plc.TiaPortal.Host.exe` with a job JSON. Product
+ops are Probe / Export / Import. A fourth op, `hwprobe`, is **tools-only**
+(`tools/tia/Probe-Hardware.ps1`) and is not product Export — see
+[`vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md) §4.4. Host files: `Program.cs`,
+`HostApp.cs`, `HostExport.cs`, `HostImport.cs`, `HostHardwareProbe.cs`,
+`HostDeviceCatalog.cs`, `JobReader.cs`, `OpennessLoader.cs`. Hardware Comments
+are `*.devices.yaml` (form `DEVICE_COMMENT`); PlugNew is not this slice.
 *Still developing — fill later.*
 
 ### TwinCAT — placeholder

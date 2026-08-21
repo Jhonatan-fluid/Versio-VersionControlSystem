@@ -124,6 +124,83 @@ public sealed class TiaPortalImportPlannerTests
     }
 
     [Fact]
+    public void A_device_comment_catalog_is_applied_and_never_deleted()
+    {
+        var yaml = """
+            schema: 1
+            vendor: tia
+            name: Station
+            connectors:
+              - connectorId: Station/CPU
+                interface: CPU
+                parameters:
+                  Comment: hello
+            """;
+        var manifest = new ProjectManifest
+        {
+            Schema = ExportCoverage.CurrentSchema,
+            Objects =
+            [
+                new ProjectObject
+                {
+                    Guid = "device:Station/Station.devices.yaml",
+                    Name = "Station",
+                    Type = "DEVICE",
+                    Form = ExportCoverage.DeviceCommentForm,
+                    Path = "Station/Station.devices.yaml",
+                    Hash = "sha256:aaa",
+                },
+            ],
+        };
+
+        var apply = TiaPortalImportPlanner.Plan(manifest,
+        [
+            new MirrorFile { Path = "Station/Station.devices.yaml", Text = yaml },
+        ]);
+        Assert.Contains(apply.Files, f => f.Path.EndsWith(".devices.yaml", StringComparison.Ordinal)
+                                          && f.Action == PlannedAction.ApplyText);
+        Assert.Empty(apply.Deletions);
+
+        var gone = TiaPortalImportPlanner.Plan(manifest, [new MirrorFile { Path = "_manifest.json" }]);
+        Assert.Empty(gone.Deletions);
+    }
+
+    [Fact]
+    public void A_codesys_devices_form_is_not_applied_as_comment()
+    {
+        var manifest = new ProjectManifest
+        {
+            Schema = ExportCoverage.CurrentSchema,
+            Objects =
+            [
+                new ProjectObject
+                {
+                    Guid = "g",
+                    Name = "Coupler",
+                    Type = "DEVICE",
+                    Form = ExportCoverage.DevicesForm,
+                    Path = "Device/Coupler.devices.yaml",
+                    Hash = "sha256:aaa",
+                },
+            ],
+        };
+
+        var plan = TiaPortalImportPlanner.Plan(manifest,
+        [
+            new MirrorFile { Path = "Device/Coupler.devices.yaml" },
+        ]);
+        Assert.Contains(plan.Files, f => f.Path.EndsWith(".devices.yaml", StringComparison.Ordinal)
+                                         && f.Skip == PlannedSkip.ExportOnly);
+    }
+
+    [Fact]
+    public void The_host_device_comment_form_string_matches_core()
+    {
+        // HostDeviceCatalog writes this literal; it cannot reference ExportCoverage.
+        Assert.Equal("DEVICE_COMMENT", ExportCoverage.DeviceCommentForm);
+    }
+
+    [Fact]
     public void A_missing_scl_file_is_a_deletion_and_the_review_xml_does_not_vote()
     {
         var body = "FUNCTION_BLOCK \"Motor\"\nEND_FUNCTION_BLOCK";

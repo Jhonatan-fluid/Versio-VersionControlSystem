@@ -54,6 +54,10 @@
 # "can I trust this" decision off it, exactly as the manifest's schema does: an empty task
 # list means two different things - a project that schedules nothing, or a file written
 # before anybody recorded them.
+# The one import. versio_yaml is a pure sibling - no scriptengine, no IO - and is
+# embedded and path-mounted beside this file everywhere it runs.
+from versio_yaml import text_of as _text
+
 TASK_SCHEMA = 1
 
 # Key order for the document header and for each task. This is the CONTRACT with the reader
@@ -188,8 +192,9 @@ def read_tasks(config, safe, on_error=None):
 def catalog_document(yaml, config_name, config_path, tasks):
     """Render the whole `.tasks.yaml` document.
 
-    `yaml` is passed in rather than imported so this module stays importable on its own;
-    the exporter wires the two together.
+    `yaml` is passed in so the exporter's wiring of reader to emitter stays explicit
+    at its call site; the parity tests hand it in the same way. (The module does
+    import `text_of` from versio_yaml - a leaf helper, not the render dependency.)
     """
     top = {
         "schema": TASK_SCHEMA,
@@ -199,14 +204,3 @@ def catalog_document(yaml, config_name, config_path, tasks):
         "taskCount": len(tasks),
     }
     return yaml.document(_HEADER, top, TOP_KEYS, "tasks", tasks, TASK_KEYS)
-
-
-def _text(value):
-    """Coerce a .NET value to text, or None when there is nothing there."""
-    if value is None:
-        return None
-    try:
-        text = u"%s" % (value,)
-    except Exception:
-        return None
-    return text

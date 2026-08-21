@@ -150,6 +150,38 @@ public sealed class DeviceCatalogTests
     }
 
     [Fact]
+    public void A_tia_station_catalog_with_comment_parses()
+    {
+        // The TIA host cannot reference Core. This string is the shape it emits;
+        // Parse is the half that pins it. Comment is the measured apply path.
+        var catalog = DeviceCatalog.Parse(
+            """
+            schema: 1
+            vendor: tia
+            name: ET 200SP station_2
+            path: ET 200SP station_2
+            apply: comment
+            connectors:
+              - connectorId: ET 200SP station_2/CleaningStation@1
+                interface: CleaningStation
+                moduleType: OrderNumber:6ES7 514-2DN03-0AB0/V4.0
+                parameters:
+                  Classification: CPU
+                  Comment: "line comment"
+                  PositionNumber: "1"
+                  ShortDesignation: CPU 1514SP-2 PN
+            """);
+
+        Assert.True(catalog.IsValid);
+        Assert.Equal("tia", catalog.Vendor);
+        var item = Assert.Single(catalog.Connectors);
+        Assert.Equal("ET 200SP station_2/CleaningStation@1", item.ConnectorId);
+        Assert.Equal("CleaningStation", item.Interface);
+        Assert.Equal("line comment", item.Parameters["Comment"]);
+        Assert.Equal("1", item.Parameters["PositionNumber"]);
+    }
+
+    [Fact]
     public void A_connector_with_no_identifying_field_is_dropped()
     {
         var catalog = DeviceCatalog.Parse(
@@ -165,5 +197,35 @@ public sealed class DeviceCatalogTests
         var only = Assert.Single(catalog.Connectors);
         Assert.Equal("2", only.ConnectorId);
         Assert.Equal("Kept", only.Interface);
+    }
+
+    [Fact]
+    public void Colliding_connector_keys_uniquify_in_file_order()
+    {
+        // Nothing upstream guarantees Key is unique — the exporter writes the toolchain's
+        // connector list verbatim. The tree used to drop the second of a colliding pair;
+        // #2/#3 in file order keeps every connector addressable, the same rule the
+        // exporter applies to duplicate parameter names.
+        var catalog = DeviceCatalog.Parse(
+            """
+            schema: 1
+            name: Device
+            connectors:
+              - interface: Common.IoLink
+                moduleType: a
+              - interface: Common.IoLink
+                moduleType: b
+              - interface: Common.IoLink
+                moduleType: c
+              - connectorId: 9
+                moduleType: d
+            """);
+
+        Assert.Equal(
+            ["Common.IoLink", "Common.IoLink#2", "Common.IoLink#3", "9"],
+            catalog.KeyedConnectors().Select(kv => kv.Key));
+        Assert.Equal(
+            ["a", "b", "c", "d"],
+            catalog.KeyedConnectors().Select(kv => kv.Value.ModuleType));
     }
 }

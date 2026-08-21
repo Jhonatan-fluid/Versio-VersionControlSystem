@@ -191,6 +191,41 @@ public sealed class DeviceTreeFlowTests
     }
 
     [Fact]
+    public async Task The_second_of_two_colliding_connectors_opens_its_own_facts()
+    {
+        // Two id-less ports sharing an interface used to render one row. The second now
+        // keys "#2" in the tree path, and the pane must resolve that key — a raw-Key
+        // lookup would open the first port's facts for both rows.
+        using var repo = new TempRepo();
+        GivenATrackedProject(repo, """
+            schema: 1
+            vendor: codesys
+            name: Device
+            path: Device
+            connectors:
+              - interface: Common.IoLink
+                moduleType: portA
+                parameters:
+                  CycleTime: "4000"
+              - interface: Common.IoLink
+                moduleType: portB
+                parameters:
+                  CycleTime: "2000"
+            """);
+
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+
+        var device = FindRow(shell.Sync.Tree, "Device");
+        var ports = device.Children.Where(c => c.Name == "Common.IoLink").ToList();
+        Assert.Equal(2, ports.Count);
+
+        shell.Sync.SelectedNode = ports[1];
+        var detail = Assert.IsType<DeviceDetailRender>(shell.RenderedContent);
+        Assert.Contains(detail.Facts, f => f is { Label: "Module type", Value: "portB" });
+    }
+
+    [Fact]
     public async Task A_parameter_edit_in_the_working_tree_marks_that_row()
     {
         using var repo = new TempRepo();

@@ -121,6 +121,23 @@ def _to_text(value):
         return u"<unprintable>"
 
 
+def text_of(value):
+    """Coerce a .NET value to text, or None when there is nothing there.
+
+    The catalog readers' twin of `_to_text`: None stays None (their `put` helpers and
+    `or default` fallbacks key off it) where the emitter needs a printable placeholder.
+    This existed three times before it existed once - identical in versio_libraries,
+    versio_tasks and versio_devices - so a coercion fix landed in one catalog and
+    missed the other two silently. One copy, three importers.
+    """
+    if value is None:
+        return None
+    try:
+        return u"%s" % (value,)
+    except Exception:
+        return None
+
+
 def scalar(value):
     """Render one scalar: bool, int, None or string.
 

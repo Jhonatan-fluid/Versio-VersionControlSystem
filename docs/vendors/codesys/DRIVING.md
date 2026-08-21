@@ -895,7 +895,7 @@ The export tree holds **three** kinds of file, not two:
 |---|---|---|
 | Objects | `.st`, `.xml` | Applied |
 | Versio bookkeeping | `_manifest.json`, `_coverage.md` (`VERSIO_FILES`) | Ignored |
-| **Export-only project state** | `*.libraries.yaml`, `*.devices.yaml` (`EXPORT_ONLY_SUFFIXES`) | Emitted as `not_imported`, never handed to the toolchain |
+| **Export-only project state** | `*.libraries.yaml`, `*.devices.yaml` (`EXPORT_ONLY_FORMS`) | Emitted as `not_imported`, never handed to the toolchain |
 
 The third category exists because of a real defect: when `_coverage.md` was added, the importer
 knew about `_manifest.json` **by name, in two places**, and the new file was added to neither —

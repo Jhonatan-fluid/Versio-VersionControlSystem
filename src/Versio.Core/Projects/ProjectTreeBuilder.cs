@@ -874,22 +874,19 @@ public static class ProjectTreeBuilder
         var current = snapshot.Current;
         var baseline = snapshot.Baseline is { IsValid: true } b ? b : null;
 
-        var oldConnectors = baseline is null
-            ? null
-            : baseline.Connectors
-                .GroupBy(c => c.Key, StringComparer.Ordinal)
-                .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        // KeyedConnectors, not Key: two id-less connectors sharing an interface collide,
+        // and a HashSet-and-continue here rendered one row for two connectors — the
+        // second's parameters never got a diff row anywhere. The #2/#3 keys are stable
+        // per file, so a current "X#2" pairs with the baseline's "X#2" by position.
+        var oldConnectors = baseline?.KeyedConnectors()
+            .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
 
         var rows = new List<ProjectTreeNode>();
         var seenConnectors = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var connector in current.Connectors)
+        foreach (var (key, connector) in current.KeyedConnectors())
         {
-            var key = connector.Key;
-            if (!seenConnectors.Add(key))
-            {
-                continue;
-            }
+            seenConnectors.Add(key);
 
             DeviceConnector? old = null;
             var connectorStatus =
@@ -898,7 +895,7 @@ public static class ProjectTreeBuilder
                 : connector.ContentEquals(old) ? ChangeKind.Unmodified
                 : ChangeKind.Modified;
 
-            var paramRows = ParameterNodes(device, connector, old, hasBaseline: oldConnectors is not null);
+            var paramRows = ParameterNodes(device, key, connector, old, hasBaseline: oldConnectors is not null);
             rows.Add(new ProjectTreeNode
             {
                 Name = connector.DisplayName,
@@ -919,12 +916,11 @@ public static class ProjectTreeBuilder
 
         if (oldConnectors is not null)
         {
-            foreach (var old in oldConnectors.Values
-                         .Where(c => !seenConnectors.Contains(c.Key))
-                         .OrderBy(c => c.DisplayName, StringComparer.OrdinalIgnoreCase))
+            foreach (var (key, old) in oldConnectors
+                         .Where(kv => !seenConnectors.Contains(kv.Key))
+                         .OrderBy(kv => kv.Value.DisplayName, StringComparer.OrdinalIgnoreCase))
             {
-                var key = old.Key;
-                var paramRows = ParameterNodes(device, old, old, hasBaseline: true)
+                var paramRows = ParameterNodes(device, key, old, old, hasBaseline: true)
                     .Select(p => p with { Status = ChangeKind.Deleted })
                     .ToList();
                 rows.Add(new ProjectTreeNode
@@ -950,6 +946,7 @@ public static class ProjectTreeBuilder
 
     private static List<ProjectTreeNode> ParameterNodes(
         ProjectTreeNode device,
+        string key,
         DeviceConnector connector,
         DeviceConnector? previous,
         bool hasBaseline)
@@ -959,10 +956,12 @@ public static class ProjectTreeBuilder
         // so its parameter rows stayed Unmodified: no badge, ChangedOnly pruned them,
         // and the row promised "N param(s)" with zero children. A deleted connector
         // forced Deleted on every param. Same comparison, both directions.
+        //
+        // `key` is the caller's uniquified connector key, not connector.Key: recomputing
+        // it here would fold two colliding connectors' parameter rows onto one path.
         var oldParams = hasBaseline ? previous?.Parameters : null;
         var rows = new List<ProjectTreeNode>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        var key = connector.Key;
 
         foreach (var pair in connector.Parameters)
         {

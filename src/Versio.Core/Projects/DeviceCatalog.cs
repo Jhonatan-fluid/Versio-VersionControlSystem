@@ -79,10 +79,11 @@ public sealed record DeviceConnector
 /// </summary>
 /// <remarks>
 /// <para>
-/// Written by the export, read here, and <b>never applied back</b>. A wrong mapping can
-/// brick a machine, and the write API has not been measured. The file exists so a cycle-time
-/// change diffs under the device that owns it rather than vanishing into native XML — or,
-/// for empty IO-Link slots that share a name, colliding onto one file.
+/// Written by the export. The catalog itself never talks to a toolchain: a vendor host
+/// may apply a named subset of parameters (Comment via SetAttribute) and must refuse
+/// PlugNew. <see cref="ExportCoverage.DevicesForm"/> stays export-only for catalogs
+/// whose write API has not been measured; <see cref="ExportCoverage.DeviceCommentForm"/>
+/// is the measured Comment path. Empty slots are listed here rather than written as files.
 /// </para>
 /// <para>
 /// Empty slots are listed here rather than written as files. Their identity is the parent's
@@ -140,6 +141,41 @@ public sealed record DeviceCatalog
 
     /// <summary>True when the file parsed and described a real device.</summary>
     public bool IsValid => Schema > 0;
+
+    /// <summary>
+    /// <see cref="Connectors"/> paired with keys made unique within this catalog.
+    /// </summary>
+    /// <remarks>
+    /// Nothing guarantees <see cref="DeviceConnector.Key"/> is unique: the exporter writes
+    /// the toolchain's connector list verbatim, and two id-less connectors can share an
+    /// interface. The tree used to drop the second one on the collision — no row, no log,
+    /// and a changed parameter on it produced no diff anywhere while the catalog table
+    /// still showed both. Colliding keys take <c>#2</c>, <c>#3</c> in file order — the
+    /// same rule the exporter applies to duplicate parameter names — so the same file
+    /// always yields the same keys and current/baseline pair positionally.
+    /// </remarks>
+    public IReadOnlyList<KeyValuePair<string, DeviceConnector>> KeyedConnectors()
+    {
+        var used = new HashSet<string>(StringComparer.Ordinal);
+        var keyed = new List<KeyValuePair<string, DeviceConnector>>(Connectors.Count);
+        foreach (var connector in Connectors)
+        {
+            var key = connector.Key;
+            if (!used.Add(key))
+            {
+                var n = 2;
+                do
+                {
+                    key = $"{connector.Key}#{n++}";
+                }
+                while (!used.Add(key));
+            }
+
+            keyed.Add(new(key, connector));
+        }
+
+        return keyed;
+    }
 
     /// <summary>
     /// Parse one <c>*.devices.yaml</c> document.

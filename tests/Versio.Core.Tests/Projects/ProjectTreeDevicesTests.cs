@@ -226,6 +226,61 @@ public sealed class ProjectTreeDevicesTests
     }
 
     [Fact]
+    public void Colliding_connector_keys_render_both_rows_and_diff_the_second()
+    {
+        // Two id-less ports sharing an interface collide on Key. DeviceNodes used to keep
+        // a seen-set and drop the second row, so a change to its parameters produced no
+        // Modified row anywhere while the catalog table still showed both ports.
+        var current = Catalog(
+        [
+            Connector("", "Common.IoLink",
+                new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["CycleTime"] = "4000",
+                }),
+            Connector("", "Common.IoLink",
+                new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["CycleTime"] = "2000",
+                }),
+        ]);
+        var baseline = Catalog(
+        [
+            Connector("", "Common.IoLink",
+                new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["CycleTime"] = "4000",
+                }),
+            Connector("", "Common.IoLink",
+                new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["CycleTime"] = "4000",
+                }),
+        ]);
+
+        var device = Device(Build(new DeviceSnapshot
+        {
+            Path = RepoDeviceYaml,
+            Current = current,
+            Baseline = baseline,
+        }));
+
+        var ports = device.Children.Where(c => c.Name == "Common.IoLink").ToList();
+        Assert.Equal(2, ports.Count);
+        Assert.Equal(ChangeKind.Unmodified, ports[0].Status);
+        Assert.Equal(ChangeKind.Modified, ports[1].Status);
+        Assert.Equal(ChangeKind.Modified,
+            ports[1].Children.Single(c => c.Name == "CycleTime").Status);
+
+        // Distinct row paths (#2 on the second) — selection and the detail pane must be
+        // able to tell the ports apart, parameter rows included.
+        Assert.NotEqual(ports[0].Path, ports[1].Path);
+        Assert.NotEqual(
+            ports[0].Children.Single(c => c.Name == "CycleTime").Path,
+            ports[1].Children.Single(c => c.Name == "CycleTime").Path);
+    }
+
+    [Fact]
     public void An_encoded_device_folder_still_merges_with_its_yaml()
     {
         // Folder Name is the path segment (COM1%20, foo%3Cbar%3E); object Name is the

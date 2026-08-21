@@ -68,6 +68,13 @@ internal static partial class HostApp
             var plc = MatchPlc(plcs, Str(file, "resolve"), rel) ?? plcs[0];
             if (action is "text" or "ApplyText" or "create" or "Create")
             {
+                if (rel.EndsWith(".devices.yaml", StringComparison.OrdinalIgnoreCase))
+                {
+                    ApplyDeviceComments(project, abs);
+                    Emit("object", "path", rel, "action", action);
+                    continue;
+                }
+
                 // Throws rather than emitting success: import used to report the path
                 // in ChangedPaths after a generate that left the live block unchanged
                 // or unexportable. A throw skips Save, so the file on disk is intact.
