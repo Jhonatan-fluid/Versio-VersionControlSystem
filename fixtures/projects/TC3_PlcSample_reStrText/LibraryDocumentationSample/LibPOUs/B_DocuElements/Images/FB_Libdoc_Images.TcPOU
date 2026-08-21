@@ -1,0 +1,75 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.17">
+  <POU Name="FB_Libdoc_Images" Id="{539db25c-09d4-4a78-8128-b2f3a3c06545}" SpecialFunc="None">
+    <Declaration><![CDATA[(*
+
+**Absolute or relative file path as directive argument**
+
+Absolute path
+
+.. image:: C:\Tc3LibDocImages\tulpis.jpg
+   :width: 70px
+
+Relative path
+
+.. image:: ../../LibPics/penguins.jpg
+   :width: 70px
+
+**Left aligned image**
+
+.. image:: ../../LibPics/desert.jpg
+   :width: 20%
+
+Description of the function block. Description of the function block. Description of the function block.
+Description of the function block. Description of the function block. Description of the function block.
+Description of the function block. Description of the function block. Description of the function block.
+Description of the function block. Description of the function block. Description of the function block.
+
+**Floating image, left aligned**
+
+.. image:: ../../LibPics/desert.jpg
+   :width: 20%
+   :align: left
+
+Description of the function block. Description of the function block. Description of the function block.
+Description of the function block. Description of the function block. Description of the function block.
+Description of the function block. Description of the function block. Description of the function block.
+Description of the function block. Description of the function block. Description of the function block.
+
+|
+|
+|
+|
+|
+
+**Floating image, right aligned**
+
+.. image:: ../../LibPics/desert.jpg
+   :width: 20%
+   :align: right
+
+Description of the function block. Description of the function block. Description of the function block.
+Description of the function block. Description of the function block. Description of the function block.
+Description of the function block. Description of the function block. Description of the function block.
+Description of the function block. Description of the function block. Description of the function block.
+
+*)
+
+FUNCTION_BLOCK FB_Libdoc_Images
+VAR_INPUT
+    nVarA : INT;
+    nVarB : INT;
+END_VAR
+VAR_OUTPUT
+    nSum : INT;
+END_VAR
+VAR
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <LineIds Name="FB_Libdoc_Images">
+      <LineId Id="9" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

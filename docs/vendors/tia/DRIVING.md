@@ -6,11 +6,12 @@ projects. How TIA Portal is driven, and what was measured rather than assumed.
 | | |
 |---|---|
 | Document | **The TIA Portal integration, end to end.** Which Openness surface Versio uses, how the net48 host is launched, what crosses the boundary, what every job does, and where the seams and the gaps are |
-| Audience | An engineer who has to change the export, the import, the host or the runner — or add a third vendor beside the first two |
-| Related | [`STATUS.md`](../../STATUS.md) · [`archive/HANDOFF-Siemens2.md`](../../archive/HANDOFF-Siemens2.md) · [`SAFEGUARDS.md`](../../SAFEGUARDS.md) · the first vendor's [`vendors/codesys/DRIVING.md`](../codesys/DRIVING.md) |
+| Audience | An engineer who has to change the export, the import, the host or the runner — or add a fourth vendor beside the first three |
+| Related | [`STATUS.md`](../../STATUS.md) · [`archive/HANDOFF-Siemens2.md`](../../archive/HANDOFF-Siemens2.md) · [`SAFEGUARDS.md`](../../SAFEGUARDS.md) · the first vendor's [`vendors/codesys/DRIVING.md`](../codesys/DRIVING.md) · TwinCAT's [`vendors/twincat/DRIVING.md`](../twincat/DRIVING.md) |
 
-Versio is not a TIA Portal tool. Neutral code must not grow any of this. TwinCAT will be a
-directory project too; that is `PayloadPathFor` / `CopyTreeAsync` growing, not a brand leaking.
+Versio is not a TIA Portal tool. Neutral code must not grow any of this. TwinCAT is the same
+kind of directory project; that is `PayloadPathFor` / `CopyTreeAsync` growing, not a brand
+leaking.
 
 ---
 
@@ -114,6 +115,10 @@ Versio.Plc.TiaPortal.Host.exe <job.json>
 `Global\Versio.TiaPortal.SingleInstance` (15 min wait), and reads stdout for `@@VERSIO@@`
 lines. Timeout floor is **20 minutes** — a 488 MB project is not the first vendor's 20-second
 session. `TypicalStartupCost` is **45 s** (measured warm probe 42 s, warm export 37 s).
+Since 2026-08-20 the runner drains the async readers with a parameterless `WaitForExit()`
+before reading the buffer (the timed overload is not a flush barrier — a successful run
+could report "host exited 0"), logs malformed protocol lines instead of dropping them, and
+refuses a plan-less import instead of fabricating an empty plan. Findings, 2026-08-20.
 
 The job schema (`TiaPortalJob` / `JobReader`):
 
@@ -188,6 +193,61 @@ review and are not imported.
 
 G12: one object, one importable file. SCL (or `.udt`) imports; the SimaticML beside it is
 `XML_REVIEW` and is never applied back. Importing both puts the old body back.
+
+### 4.4 Hardware surface (measured 2026-08-20)
+
+Product Export writes Comment catalogs as `*.devices.yaml` (form `DEVICE_COMMENT`).
+The host op `hwprobe` (`tools/tia/Probe-Hardware.ps1`) is the measurement that led to
+that slice. Work copy under `%TEMP%`; the probe never saved.
+Two untouched dumps of CleaningStation were SHA-256 identical
+(`4a69e75cfc2230e5c3feea47011c175f1679e676eea11a25811aa0a39aadc148`). Raw dump:
+[`probes/hwprobe-CleaningStation-2026-08-20.json`](probes/hwprobe-CleaningStation-2026-08-20.json)
+(api type list stripped; 1,149 `Siemens.Engineering.HW.*` names were present).
+
+**Render — yes.** One device in `project.Devices`: `ET 200SP station_2`
+(`System:Device.ET200SP`). Thirteen `DeviceItem`s, including:
+
+| Name | What it is | TypeIdentifier / order |
+|---|---|---|
+| Rack_0 | rack | `System:Rack.ET200SP` |
+| CleaningStation | CPU 1514SP-2 PN | `OrderNumber:6ES7 514-2DN03-0AB0/V4.0` |
+| BA 2xRJ45 | bus adapter | `OrderNumber:6ES7 193-6AR00-0AA0/V0.0` |
+| Server module_1 | server module | `OrderNumber:6ES7 193-6PA00-0AA0/V1.1` |
+| PROFINET interface_1 / _2 | PN interfaces | position 32768 / 33024 |
+| Port_1 / Port_2 | PN ports | |
+
+`GetAttributeInfos` (not `GetAttributes`) lists names and write access. The CPU has 83
+attributes, 56 writable (cycle time, comment, plant designation, …). `ShortDesignation`
+and `OrderNumber` are readable. `IpAddress` / `StartAddress` appear in the **name** list
+and did not return via `GetAttribute` on this run. HMI is not in `Devices` or
+`DeviceGroups` (empty). `PositionNumber` is overloaded — rack slots, PN-encoded 32768+,
+OPC UA at 254 — so subtracting gaps is not “empty ET 200SP slots”.
+
+**Topology — API yes, this fixture no partners.** `NetworkInterface` and `NetworkPort`
+exist as `GetService` types. Interface_1 is `IoController`, nodes `X1`/`X2`, ports
+`Port_1; Port_2`. `X1.ConnectedSubnet` is `Plantbus`. `project.Subnets` has that one
+subnet with node `X1` on `PROFINET interface_1`. `ConnectedPorts` is empty on every
+port. `IoConnector` / `IoController` / `IoSystem` types live under
+`Siemens.Engineering.HW.*`, not `Features.*` (the first probe looked in the wrong
+namespace). This project has **one** station, so device-to-device “who is on which port”
+has no partner to name. `NetworkPort.ConnectToPort` / `DisconnectFromPort` exist.
+
+**Import — partial, not a rack rebuild.** Methods present: `PlugNew` / `PlugCopy` /
+`PlugMove` / `CanPlugNew` / `SetAttribute` / `SetAttributes` / `Delete`. Missing:
+`CreateWithItem`, `Unplug`, device `Import` / `Export`. Comment `SetAttribute` applied
+and restored on the station (`versio-hwprobe-temp`); project **not** saved. That is
+grade 2: a scalar will take; plugging a module still needs the HSP/GSD for that
+`TypeIdentifier` on this PC, and this dump is not a measured round-trip of the rack.
+Planner `DEVICES` stays export-only (CODESYS I/O). This vendor writes form
+`DEVICE_COMMENT` so Comment can ApplyText without a missing file unplugging the station.
+
+**Product (2026-08-20, owner picked narrow import).** Export writes
+`ET 200SP station_2/ET 200SP station_2.devices.yaml`. Identity is parent chain +
+name + `@PositionNumber` (two `Port_1` on this fixture would otherwise collide).
+Import applies **Comment** via `SetAttribute`, verifies the read-back, never PlugNew. Gate Fact: yaml present,
+Hardware skip gone, two textual exports include the yaml byte-identical, Comment
+mutation round-trips with SCL/UDT. HMI / safety / technology stay skips. Topology
+is not in the catalog.
 
 ---
 
@@ -360,7 +420,12 @@ Close Versio **and** TIA Portal first. Default project is the committed fixture.
 ```
 tools/tia/Test-RoundTrip.ps1 -MutateFirst
 tools/tia/Measure-ImportStability.ps1
+tools/tia/Probe-Hardware.ps1
 ```
+
+`Probe-Hardware.ps1` copies the fixture to `%TEMP%`, runs `hwprobe` twice, and optionally
+`-WriteTest` (Comment set-and-restore, no Save). Close Versio and Portal first. A host
+rebuild drops the Openness AllowList.
 
 Layered verdict: textual must match; native XML is expected to differ; never a single
 `Lossless: False`. `-MutateFirst` is mandatory — without it a round trip that writes nothing
@@ -404,8 +469,11 @@ queue was derived from, so a later session does not have to re-derive it.
 
 ### Not this queue (coverage skips)
 
-Hardware, HMI, safety (`F_*`), technology objects, know-how-protected import,
+HMI, safety (`F_*`), technology objects, know-how-protected import,
 compile-after-import, VCI, Project Server. Archives (`.alXX`) are seen and refused.
+**Hardware** Comment catalogs ship 2026-08-20 (§4.4): export-only was the probe;
+the owner picked Comment `SetAttribute`. PlugNew, topology, HMI, safety and
+technology stay off this queue.
 
 ### Friction that remains after the loop works
 

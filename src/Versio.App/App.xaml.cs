@@ -13,6 +13,7 @@ using Versio.Infrastructure.Logging;
 using Versio.Infrastructure.Platform;
 using Versio.Plc.Codesys.Infrastructure;
 using Versio.Plc.TiaPortal.Infrastructure;
+using Versio.Plc.TwinCat.Infrastructure;
 
 namespace Versio.App;
 
@@ -86,6 +87,7 @@ public partial class App : Application
         // format and a shell built first would scan for none.
         CodesysPack.Register();
         TiaPortalPack.Register();
+        TwinCatPack.Register();
         logger.Info(LogCategory.App,
             $"vendors registered: {string.Join(", ", PlcFormats.All.Select(f => f.DisplayName))}");
 

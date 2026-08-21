@@ -1,86 +1,33 @@
 {
   "bindingId": "6d3f8855e205", 
-  "objectCount": 59, 
+  "objectCount": 54, 
   "objects": [
     {
-      "bytes": 9768, 
-      "form": "NATIVE", 
-      "guid": "d074104a-0f2b-4a72-82ec-64ceeabff0af", 
-      "hash": "sha256:a567c3abc7b88877c88ceed7fe6d5506f9f2badfabbdc52ac815bb9f53584d96", 
-      "name": "<Empty>", 
-      "nhash": "sha256:e3c6f0d9ccc5d57397a63988e68b410be75289fd86b91a9148e96a1df6126b9f", 
-      "path": "Device/EtherCAT_Master/BNI_XG3_508_0C5_R015/%3CEmpty%3E.xml", 
-      "type": "UNKNOWN"
+      "bytes": 851, 
+      "form": "DEVICES", 
+      "guid": "85dc16e3-1481-4b68-9cbd-65c55e650a57", 
+      "hash": "sha256:a91dcef07bce8d1903f09eec40261dbdc267a97bc63a10247240b01df776c18e", 
+      "name": "Device", 
+      "path": "Device/Device.devices.yaml", 
+      "type": "DEVICE"
     }, 
     {
-      "bytes": 9768, 
-      "form": "NATIVE", 
-      "guid": "aa6bd101-a613-4c7c-9378-dfe7988b4e4f", 
-      "hash": "sha256:2b19c929954dfb632bfad964049f1b3eef8fcdf00c0cffc0b6a9fd6050854a4a", 
-      "name": "<Empty>", 
-      "nhash": "sha256:b770d4c503da42f11d2864d622dacc8aa9da25ac772280f07035e1e0b3069431", 
-      "path": "Device/EtherCAT_Master/BNI_XG3_508_0C5_R015/%3CEmpty%3E.xml", 
-      "type": "UNKNOWN"
+      "bytes": 15428, 
+      "form": "DEVICES", 
+      "guid": "d54c0bc7-c70a-41a3-a915-b7dc445e99a1", 
+      "hash": "sha256:35e0c4087f1ef4676ad17051324cf3978bf93809d9065875e2e90ed2f610ac08", 
+      "name": "BNI_XG3_508_0C5_R015", 
+      "path": "Device/EtherCAT_Master/BNI_XG3_508_0C5_R015/BNI_XG3_508_0C5_R015.devices.yaml", 
+      "type": "DEVICE"
     }, 
     {
-      "bytes": 9768, 
-      "form": "NATIVE", 
-      "guid": "42a686ac-d7c4-4779-8f4c-a634c176601f", 
-      "hash": "sha256:23093937240d99f54ff15c31ea9f18be0b1f63c27235523a6b15c02758d10f58", 
-      "name": "<Empty>", 
-      "nhash": "sha256:8c8d43e721784ee3c08dac1ea867e604e04afdcc8b2e66238119e3cca60520b0", 
-      "path": "Device/EtherCAT_Master/BNI_XG3_508_0C5_R015/%3CEmpty%3E.xml", 
-      "type": "UNKNOWN"
-    }, 
-    {
-      "bytes": 9768, 
-      "form": "NATIVE", 
-      "guid": "cbee0652-c8a5-431a-848a-219652ea7c50", 
-      "hash": "sha256:2575815fd005033ec10d1e8ee0732d23fc7f64a122aa3d2f6065a762f9cc06a5", 
-      "name": "<Empty>", 
-      "nhash": "sha256:73e6471beecef275639894e0bab4f69239960627f5e115752994eaefff5b925a", 
-      "path": "Device/EtherCAT_Master/BNI_XG3_508_0C5_R015/%3CEmpty%3E.xml", 
-      "type": "UNKNOWN"
-    }, 
-    {
-      "bytes": 9768, 
-      "form": "NATIVE", 
-      "guid": "472b9dad-c30b-45e2-95a1-ddde8a463d49", 
-      "hash": "sha256:ff99c2177a3cf31ea7d343893478cb766b062cae3b6eb108b09f50048b34f376", 
-      "name": "<Empty>", 
-      "nhash": "sha256:8263004bed070148da8d2f1dc21d53585e139f3970e90d7f5aa4416c4b1fe88b", 
-      "path": "Device/EtherCAT_Master/BNI_XG3_508_0C5_R015/%3CEmpty%3E.xml", 
-      "type": "UNKNOWN"
-    }, 
-    {
-      "bytes": 9768, 
-      "form": "NATIVE", 
-      "guid": "9f32f174-a162-48e7-a9e9-d16fd4f8d9a3", 
-      "hash": "sha256:0a729f17a719445c5843c58ee8f06bfdfa2e657c6daf7d887e19af6824ced2ef", 
-      "name": "<Empty>", 
-      "nhash": "sha256:f1114490ba1fe05061e3220328f918488ee1e9c4884eb337ada21c4539f1e2bf", 
-      "path": "Device/EtherCAT_Master/BNI_XG3_508_0C5_R015/%3CEmpty%3E.xml", 
-      "type": "UNKNOWN"
-    }, 
-    {
-      "bytes": 9768, 
-      "form": "NATIVE", 
-      "guid": "910cd8c7-5dc1-46f8-9803-91b419eb8675", 
-      "hash": "sha256:a0d39adcdab49b9a8c5a70beb3a394f291a2060f8b98d21937db0bd40f6c3a30", 
-      "name": "<Empty>", 
-      "nhash": "sha256:45f34cab4ea88d10bb2b2b824023bd78e13bed3537e70345532d1dfb191dc9e6", 
-      "path": "Device/EtherCAT_Master/BNI_XG3_508_0C5_R015/%3CEmpty%3E.xml", 
-      "type": "UNKNOWN"
-    }, 
-    {
-      "bytes": 9768, 
-      "form": "NATIVE", 
-      "guid": "0ecd142e-6bb5-4693-9a80-9cfbffa1c4f0", 
-      "hash": "sha256:e11557ca48e6467732844aa375156c15cd0bad9eea8755fb2e6b76257e6732ac", 
-      "name": "<Empty>", 
-      "nhash": "sha256:7ff0a20a6cd61507dbcd1ef8eecbc1436e186548560e8fd2054f66a60a2856e4", 
-      "path": "Device/EtherCAT_Master/BNI_XG3_508_0C5_R015/%3CEmpty%3E.xml", 
-      "type": "UNKNOWN"
+      "bytes": 2730, 
+      "form": "DEVICES", 
+      "guid": "63fab554-7c1b-45da-82d0-4bad5ab78aac", 
+      "hash": "sha256:b0a559fab5fb96ff47a864dbcdbc415840b1a9060f73f55c79194822a736a081", 
+      "name": "EtherCAT_Master", 
+      "path": "Device/EtherCAT_Master/EtherCAT_Master.devices.yaml", 
+      "type": "DEVICE"
     }, 
     {
       "bytes": 238, 
@@ -608,6 +555,54 @@
   "schema": 10, 
   "skipped": [
     {
+      "name": "<Empty>", 
+      "path": "Device/EtherCAT_Master/BNI_XG3_508_0C5_R015/<Empty>", 
+      "reason": "COVERED_ELSEWHERE", 
+      "type": "DEVICE_SLOT"
+    }, 
+    {
+      "name": "<Empty>", 
+      "path": "Device/EtherCAT_Master/BNI_XG3_508_0C5_R015/<Empty>", 
+      "reason": "COVERED_ELSEWHERE", 
+      "type": "DEVICE_SLOT"
+    }, 
+    {
+      "name": "<Empty>", 
+      "path": "Device/EtherCAT_Master/BNI_XG3_508_0C5_R015/<Empty>", 
+      "reason": "COVERED_ELSEWHERE", 
+      "type": "DEVICE_SLOT"
+    }, 
+    {
+      "name": "<Empty>", 
+      "path": "Device/EtherCAT_Master/BNI_XG3_508_0C5_R015/<Empty>", 
+      "reason": "COVERED_ELSEWHERE", 
+      "type": "DEVICE_SLOT"
+    }, 
+    {
+      "name": "<Empty>", 
+      "path": "Device/EtherCAT_Master/BNI_XG3_508_0C5_R015/<Empty>", 
+      "reason": "COVERED_ELSEWHERE", 
+      "type": "DEVICE_SLOT"
+    }, 
+    {
+      "name": "<Empty>", 
+      "path": "Device/EtherCAT_Master/BNI_XG3_508_0C5_R015/<Empty>", 
+      "reason": "COVERED_ELSEWHERE", 
+      "type": "DEVICE_SLOT"
+    }, 
+    {
+      "name": "<Empty>", 
+      "path": "Device/EtherCAT_Master/BNI_XG3_508_0C5_R015/<Empty>", 
+      "reason": "COVERED_ELSEWHERE", 
+      "type": "DEVICE_SLOT"
+    }, 
+    {
+      "name": "<Empty>", 
+      "path": "Device/EtherCAT_Master/BNI_XG3_508_0C5_R015/<Empty>", 
+      "reason": "COVERED_ELSEWHERE", 
+      "type": "DEVICE_SLOT"
+    }, 
+    {
       "name": "Visualization Manager", 
       "path": "Device/Plc Logic/Application/Visualization Manager", 
       "reason": "SERVICE_OBJECT", 
@@ -634,46 +629,5 @@
   ], 
   "toolchainVersion": "CODESYS.exe CODESYS V3.5 SP22 Patch 2, ScriptEngine.plugin 4.2.0.0", 
   "vendor": "Codesys", 
-  "warnings": [
-    {
-      "code": "UNKNOWN_TYPE_GUID", 
-      "detail": "085766fd-043e-4545-8e8d-d651d56d5d3b", 
-      "path": "Device/EtherCAT_Master/BNI_XG3_508_0C5_R015/<Empty>"
-    }, 
-    {
-      "code": "UNKNOWN_TYPE_GUID", 
-      "detail": "085766fd-043e-4545-8e8d-d651d56d5d3b", 
-      "path": "Device/EtherCAT_Master/BNI_XG3_508_0C5_R015/<Empty>"
-    }, 
-    {
-      "code": "UNKNOWN_TYPE_GUID", 
-      "detail": "085766fd-043e-4545-8e8d-d651d56d5d3b", 
-      "path": "Device/EtherCAT_Master/BNI_XG3_508_0C5_R015/<Empty>"
-    }, 
-    {
-      "code": "UNKNOWN_TYPE_GUID", 
-      "detail": "085766fd-043e-4545-8e8d-d651d56d5d3b", 
-      "path": "Device/EtherCAT_Master/BNI_XG3_508_0C5_R015/<Empty>"
-    }, 
-    {
-      "code": "UNKNOWN_TYPE_GUID", 
-      "detail": "085766fd-043e-4545-8e8d-d651d56d5d3b", 
-      "path": "Device/EtherCAT_Master/BNI_XG3_508_0C5_R015/<Empty>"
-    }, 
-    {
-      "code": "UNKNOWN_TYPE_GUID", 
-      "detail": "085766fd-043e-4545-8e8d-d651d56d5d3b", 
-      "path": "Device/EtherCAT_Master/BNI_XG3_508_0C5_R015/<Empty>"
-    }, 
-    {
-      "code": "UNKNOWN_TYPE_GUID", 
-      "detail": "085766fd-043e-4545-8e8d-d651d56d5d3b", 
-      "path": "Device/EtherCAT_Master/BNI_XG3_508_0C5_R015/<Empty>"
-    }, 
-    {
-      "code": "UNKNOWN_TYPE_GUID", 
-      "detail": "085766fd-043e-4545-8e8d-d651d56d5d3b", 
-      "path": "Device/EtherCAT_Master/BNI_XG3_508_0C5_R015/<Empty>"
-    }
-  ]
+  "warnings": []
 }

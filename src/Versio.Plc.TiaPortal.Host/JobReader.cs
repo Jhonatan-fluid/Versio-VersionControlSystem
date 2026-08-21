@@ -13,6 +13,7 @@ internal sealed class JobModel
     public string ApiFolder { get; set; } = "";
     public string Install { get; set; } = "";
     public bool Save { get; set; } = true;
+    public bool WriteTest { get; set; }
     public int TimeoutSeconds { get; set; } = 1200;
     public JsonElement Plan { get; set; }
 }

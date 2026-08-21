@@ -1,0 +1,27 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.18">
+  <POU Name="FB_Libdoc_GenericNotes" Id="{d6ae01ea-f028-4cf4-9848-81962ce46acb}" SpecialFunc="None">
+    <Declaration><![CDATA[(*
+.. admonition:: And, by the way...
+
+   You can make up your own admonition too.
+*)
+
+FUNCTION_BLOCK FB_Libdoc_GenericNotes
+VAR_INPUT
+    nVarA : INT;
+    nVarB : INT;
+END_VAR
+VAR_OUTPUT
+    nSum : INT;
+END_VAR
+VAR
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <LineIds Name="FB_Libdoc_GenericNotes">
+      <LineId Id="9" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

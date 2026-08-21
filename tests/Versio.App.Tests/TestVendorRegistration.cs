@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using Versio.Plc.Codesys.Infrastructure;
 using Versio.Plc.TiaPortal.Infrastructure;
+using Versio.Plc.TwinCat.Infrastructure;
 
 namespace Versio.App.Tests;
 
@@ -32,5 +33,6 @@ internal static class TestVendorRegistration
     {
         CodesysPack.Register();
         TiaPortalPack.Register();
+        TwinCatPack.Register();
     }
 }

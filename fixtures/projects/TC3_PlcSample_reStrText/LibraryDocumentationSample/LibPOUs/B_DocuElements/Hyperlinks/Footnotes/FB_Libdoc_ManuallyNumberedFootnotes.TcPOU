@@ -1,0 +1,33 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.17">
+  <POU Name="FB_Libdoc_ManuallyNumberedFootnotes" Id="{2611b9ed-1882-4766-bc40-e4e3dead1038}" SpecialFunc="None">
+    <Declaration><![CDATA[(*
+
+**Numerical footnote**
+
+Footnote references, like [5]_. Note that footnotes may get rearranged, e.g., to the bottom of the "page".
+
+--------
+
+.. [5] A numerical footnote. Note there's no colon after the ``]``.
+*)
+
+FUNCTION_BLOCK FB_Libdoc_ManuallyNumberedFootnotes
+VAR_INPUT
+    nVarA : INT;
+    nVarB : INT;
+END_VAR
+VAR_OUTPUT
+    nSum : INT;
+END_VAR
+VAR
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <LineIds Name="FB_Libdoc_ManuallyNumberedFootnotes">
+      <LineId Id="9" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

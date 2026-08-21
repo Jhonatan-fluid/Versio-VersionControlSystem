@@ -56,6 +56,7 @@ public sealed class DiffLayerChoice
         path.EndsWith(".st", StringComparison.OrdinalIgnoreCase) ? "ST"
         : path.EndsWith(LibraryCatalog.FileSuffix, StringComparison.OrdinalIgnoreCase) ? "libraries"
         : path.EndsWith(TaskCatalog.FileSuffix, StringComparison.OrdinalIgnoreCase) ? "tasks"
+        : path.EndsWith(DeviceCatalog.FileSuffix, StringComparison.OrdinalIgnoreCase) ? "devices"
         : path.EndsWith(".xml", StringComparison.OrdinalIgnoreCase) ? "native"
         : System.IO.Path.GetFileName(path);
 }

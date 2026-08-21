@@ -2027,6 +2027,7 @@ public sealed class SyncViewModel : ObservableObject
                 Manifest = manifest,
                 Libraries = catalogs.Libraries,
                 Tasks = catalogs.Tasks,
+                Devices = catalogs.Devices,
                 ExportState = Projects.FirstOrDefault(p => p.BindingId == binding.Id)?.State
                               ?? "tracked",
                 Busy = Projects.FirstOrDefault(p => p.BindingId == binding.Id)?.Busy ?? false,
@@ -2250,7 +2251,9 @@ public sealed class SyncViewModel : ObservableObject
     /// and an export mid-swap is a moment, not an error.
     /// </para>
     /// </remarks>
-    private (IReadOnlyList<LibrarySnapshot> Libraries, IReadOnlyList<TaskSnapshot> Tasks)
+    private (IReadOnlyList<LibrarySnapshot> Libraries,
+             IReadOnlyList<TaskSnapshot> Tasks,
+             IReadOnlyList<DeviceSnapshot> Devices)
         ReadCatalogs(
             ProjectManifest? manifest,
             string exportPath,
@@ -2258,11 +2261,12 @@ public sealed class SyncViewModel : ObservableObject
     {
         if (manifest is null)
         {
-            return ([], []);
+            return ([], [], []);
         }
 
         List<LibrarySnapshot>? libraries = null;
         List<TaskSnapshot>? tasks = null;
+        List<DeviceSnapshot>? devices = null;
         var root = exportPath.Replace('\\', '/').Trim('/');
 
         foreach (var record in manifest.Objects)
@@ -2271,8 +2275,10 @@ public sealed class SyncViewModel : ObservableObject
                 record.Form, ExportCoverage.LibrariesForm, StringComparison.Ordinal);
             var isTasks = string.Equals(
                 record.Form, ExportCoverage.TaskBothForm, StringComparison.Ordinal);
+            var isDevices = string.Equals(
+                record.Form, ExportCoverage.DevicesForm, StringComparison.Ordinal);
 
-            if ((!isLibraries && !isTasks) || record.Path.Length == 0)
+            if ((!isLibraries && !isTasks && !isDevices) || record.Path.Length == 0)
             {
                 continue;
             }
@@ -2302,7 +2308,7 @@ public sealed class SyncViewModel : ObservableObject
                     });
                 }
             }
-            else
+            else if (isTasks)
             {
                 var current = TaskCatalog.Parse(text);
                 if (current.IsValid)
@@ -2315,9 +2321,22 @@ public sealed class SyncViewModel : ObservableObject
                     });
                 }
             }
+            else
+            {
+                var current = DeviceCatalog.Parse(text);
+                if (current.IsValid)
+                {
+                    (devices ??= []).Add(new DeviceSnapshot
+                    {
+                        Path = repoPath,
+                        Current = current,
+                        Baseline = old is null ? null : DeviceCatalog.Parse(old),
+                    });
+                }
+            }
         }
 
-        return (libraries ?? [], tasks ?? []);
+        return (libraries ?? [], tasks ?? [], devices ?? []);
     }
 
     /// <summary>Where this repository's expansion state lives: machine-local, gitignored.</summary>
@@ -2541,7 +2560,8 @@ public sealed class SyncViewModel : ObservableObject
                 var path = change.Path.Replace('\\', '/');
                 var isCatalog =
                     path.EndsWith(LibraryCatalog.FileSuffix, StringComparison.OrdinalIgnoreCase)
-                    || path.EndsWith(TaskCatalog.FileSuffix, StringComparison.OrdinalIgnoreCase);
+                    || path.EndsWith(TaskCatalog.FileSuffix, StringComparison.OrdinalIgnoreCase)
+                    || path.EndsWith(DeviceCatalog.FileSuffix, StringComparison.OrdinalIgnoreCase);
                 if (isCatalog
                     && change.Effective is not (ChangeKind.Added or ChangeKind.Untracked))
                 {
@@ -2589,6 +2609,7 @@ public sealed class SyncViewModel : ObservableObject
                     Manifest = manifest,
                     Libraries = catalogs.Libraries,
                     Tasks = catalogs.Tasks,
+                    Devices = catalogs.Devices,
 
                     // A project with no manifest has never been exported. Git reports nothing
                     // about it, because there is nothing on disk to report on - and it is

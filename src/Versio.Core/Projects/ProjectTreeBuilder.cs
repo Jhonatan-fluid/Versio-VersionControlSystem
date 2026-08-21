@@ -50,6 +50,18 @@ public enum ProjectNodeKind
     /// applies.
     /// </remarks>
     Task,
+
+    /// <summary>
+    /// One connector, parameter or empty slot, read from an exported device catalog and
+    /// drawn under the device that owns it.
+    /// </summary>
+    /// <remarks>
+    /// Same construction as <see cref="Library"/>: the facts live in the device's
+    /// <c>.devices.yaml</c>, which is export-only. It exists as a row so a cycle-time
+    /// change reads as <i>that parameter</i> rather than as "the device file changed",
+    /// and so eight empty IO-Link slots are eight rows instead of one collided file.
+    /// </remarks>
+    Device,
 }
 
 /// <summary>One node of the project as the engineer thinks about it.</summary>
@@ -177,6 +189,28 @@ public sealed record TaskSnapshot
     public TaskCatalog? Baseline { get; init; }
 }
 
+/// <summary>
+/// One exported device catalog, with the copy to compare it against.
+/// </summary>
+/// <remarks>
+/// <see cref="LibrarySnapshot"/>'s twin for the third catalog type: parsed by the caller
+/// because this assembly does no IO, joined to its device by any of the leaf's
+/// <see cref="ProjectTreeNode.Files"/> rather than <see cref="ProjectTreeNode.Path"/> —
+/// after the folder+yaml merge the path is the folder and the yaml lives in Files.
+/// A null <see cref="Baseline"/> means "mark nothing", never "everything is new".
+/// </remarks>
+public sealed record DeviceSnapshot
+{
+    /// <summary>Repo-relative path of the catalog's YAML file, forward slashes.</summary>
+    public required string Path { get; init; }
+
+    /// <summary>The catalog as the working tree has it.</summary>
+    public required DeviceCatalog Current { get; init; }
+
+    /// <summary>The catalog as HEAD has it, or null when there is nothing to compare.</summary>
+    public DeviceCatalog? Baseline { get; init; }
+}
+
 /// <summary>What to include when building the tree.</summary>
 public sealed record ProjectTreeOptions
 {
@@ -238,13 +272,16 @@ public static class ProjectTreeBuilder
     /// repo-relative path. Empty is the ordinary state of a project whose catalogs have not
     /// been read, not an error.</param>
     /// <param name="tasks">Parsed task catalogs, same contract.</param>
+    /// <param name="devices">Parsed device catalogs, same contract. Optional so existing
+    /// callers keep compiling — null is "not read", not "no devices".</param>
     public static ProjectTreeNode Build(
         ProjectManifest manifest,
         string exportPath,
         IReadOnlyList<FileChange> changes,
         ProjectTreeOptions? options = null,
         IReadOnlyList<LibrarySnapshot>? libraries = null,
-        IReadOnlyList<TaskSnapshot>? tasks = null)
+        IReadOnlyList<TaskSnapshot>? tasks = null,
+        IReadOnlyList<DeviceSnapshot>? devices = null)
     {
         var opts = options ?? new ProjectTreeOptions();
         var root = exportPath.Replace('\\', '/').Trim('/');
@@ -265,6 +302,7 @@ public static class ProjectTreeBuilder
 
         objects = AttachLibraries(objects, libraries);
         objects = AttachTasks(objects, tasks);
+        objects = AttachDevices(objects, devices);
 
         // Members hung off their owner before anything is placed in a folder, because a
         // method's folder is its owner's folder — the export writes clsLight.Light.xml beside
@@ -284,6 +322,7 @@ public static class ProjectTreeBuilder
         placed = GroupPoolObjects(placed);
 
         var tree = Assemble(placed, name: RootName(manifest, exportPath), path: root);
+        tree = MergeDeviceFolders(tree);
 
         return opts.ChangedOnly ? PruneUnchanged(tree) ?? EmptyRoot(tree) : tree;
     }
@@ -780,6 +819,311 @@ public static class ProjectTreeBuilder
                 : task.Priority.Length > 0
                     ? $"prio {task.Priority}"
                     : string.Empty;
+    }
+
+    /// <summary>Hang each device catalog's connectors, parameters and slots under the device.</summary>
+    /// <remarks>
+    /// Joined on any of the leaf's <see cref="ProjectTreeNode.Files"/>, not on
+    /// <see cref="ProjectTreeNode.Path"/>. After <see cref="MergeDeviceFolders"/> the path
+    /// is the folder and the yaml lives in Files; joining on Path only would silently drop
+    /// every grafted row. The same wrinkle <see cref="AttachTasks"/> already records.
+    /// Grafted rows are concatenated onto the existing children: replacing them is what
+    /// libraries and tasks can do, and on a device it would hide EtherCAT and Plc Logic.
+    /// </remarks>
+    private static List<Leaf> AttachDevices(
+        List<Leaf> leaves, IReadOnlyList<DeviceSnapshot>? devices)
+    {
+        if (devices is null || devices.Count == 0)
+        {
+            return leaves;
+        }
+
+        var byPath = new Dictionary<string, DeviceSnapshot>(StringComparer.OrdinalIgnoreCase);
+        foreach (var snapshot in devices)
+        {
+            byPath[snapshot.Path.Replace('\\', '/').Trim('/')] = snapshot;
+        }
+
+        return leaves
+            .Select(l =>
+                l.Node.Files.Select(f => byPath.TryGetValue(f, out var s) ? s : null)
+                        .FirstOrDefault(s => s is not null) is { } snapshot &&
+                snapshot.Current.IsValid &&
+                DeviceNodes(l.Node, snapshot) is { Count: > 0 } grafted
+                    // KEEP the structural children (EtherCAT, Plc Logic). Replacing them
+                    // with the graft is what libraries and tasks can do — those nodes have
+                    // no other children — and on a device it would hide the I/O tree the
+                    // moment SyncViewModel actually passed the catalogs.
+                    ? l with { Node = WithChildren(l.Node, [.. l.Node.Children, .. grafted]) }
+                    : l)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Connector rows, then parameter rows under them, then empty-slot rows.
+    /// </summary>
+    /// <remarks>
+    /// Flat 55 + 193 parameters would bury CycleTime. Connectors first, parameters hanging
+    /// off the connector that owns them, slots last — they are absences, not settings.
+    /// Marking rules match <see cref="LibraryNodes"/>: a null baseline marks nothing; a
+    /// connector or slot deleted from the catalog still gets a row from the baseline.
+    /// </remarks>
+    private static List<ProjectTreeNode> DeviceNodes(
+        ProjectTreeNode device, DeviceSnapshot snapshot)
+    {
+        var current = snapshot.Current;
+        var baseline = snapshot.Baseline is { IsValid: true } b ? b : null;
+
+        // KeyedConnectors, not Key: two id-less connectors sharing an interface collide,
+        // and a HashSet-and-continue here rendered one row for two connectors — the
+        // second's parameters never got a diff row anywhere. The #2/#3 keys are stable
+        // per file, so a current "X#2" pairs with the baseline's "X#2" by position.
+        var oldConnectors = baseline?.KeyedConnectors()
+            .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
+
+        var rows = new List<ProjectTreeNode>();
+        var seenConnectors = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var (key, connector) in current.KeyedConnectors())
+        {
+            seenConnectors.Add(key);
+
+            DeviceConnector? old = null;
+            var connectorStatus =
+                oldConnectors is null ? ChangeKind.Unmodified
+                : !oldConnectors.TryGetValue(key, out old) ? ChangeKind.Added
+                : connector.ContentEquals(old) ? ChangeKind.Unmodified
+                : ChangeKind.Modified;
+
+            var paramRows = ParameterNodes(device, key, connector, old, hasBaseline: oldConnectors is not null);
+            rows.Add(new ProjectTreeNode
+            {
+                Name = connector.DisplayName,
+                Path = $"{device.Path}{DeviceCatalog.ConnectorRowMarker}{key}",
+                Kind = ProjectNodeKind.Device,
+                Detail = connector.Parameters.Count == 0
+                    ? string.Empty
+                    : $"{connector.Parameters.Count} param(s)",
+                Files = device.Files,
+                Status = connectorStatus,
+                Children = paramRows,
+                ChangedDescendants = paramRows.Count(p => p.Status != ChangeKind.Unmodified),
+                RollUp = paramRows
+                    .Select(p => p.Status)
+                    .Aggregate(ChangeKind.Unmodified, Stronger),
+            });
+        }
+
+        if (oldConnectors is not null)
+        {
+            foreach (var (key, old) in oldConnectors
+                         .Where(kv => !seenConnectors.Contains(kv.Key))
+                         .OrderBy(kv => kv.Value.DisplayName, StringComparer.OrdinalIgnoreCase))
+            {
+                var paramRows = ParameterNodes(device, key, old, old, hasBaseline: true)
+                    .Select(p => p with { Status = ChangeKind.Deleted })
+                    .ToList();
+                rows.Add(new ProjectTreeNode
+                {
+                    Name = old.DisplayName,
+                    Path = $"{device.Path}{DeviceCatalog.ConnectorRowMarker}{key}",
+                    Kind = ProjectNodeKind.Device,
+                    Detail = old.Parameters.Count == 0
+                        ? string.Empty
+                        : $"{old.Parameters.Count} param(s)",
+                    Files = device.Files,
+                    Status = ChangeKind.Deleted,
+                    Children = paramRows,
+                    ChangedDescendants = paramRows.Count,
+                    RollUp = ChangeKind.Deleted,
+                });
+            }
+        }
+
+        rows.AddRange(SlotNodes(device, current, baseline));
+        return rows;
+    }
+
+    private static List<ProjectTreeNode> ParameterNodes(
+        ProjectTreeNode device,
+        string key,
+        DeviceConnector connector,
+        DeviceConnector? previous,
+        bool hasBaseline)
+    {
+        // hasBaseline is "HEAD had a catalog", not "this connector existed". An added
+        // connector used to pass previous=null and then treat that as "mark nothing",
+        // so its parameter rows stayed Unmodified: no badge, ChangedOnly pruned them,
+        // and the row promised "N param(s)" with zero children. A deleted connector
+        // forced Deleted on every param. Same comparison, both directions.
+        //
+        // `key` is the caller's uniquified connector key, not connector.Key: recomputing
+        // it here would fold two colliding connectors' parameter rows onto one path.
+        var oldParams = hasBaseline ? previous?.Parameters : null;
+        var rows = new List<ProjectTreeNode>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var pair in connector.Parameters)
+        {
+            if (!seen.Add(pair.Key))
+            {
+                continue;
+            }
+
+            var status =
+                !hasBaseline ? ChangeKind.Unmodified
+                : oldParams is null || !oldParams.TryGetValue(pair.Key, out var old)
+                    ? ChangeKind.Added
+                : string.Equals(old, pair.Value, StringComparison.Ordinal) ? ChangeKind.Unmodified
+                : ChangeKind.Modified;
+
+            rows.Add(new ProjectTreeNode
+            {
+                Name = pair.Key,
+                Path = $"{device.Path}{DeviceCatalog.ParamRowMarker}{key}::{pair.Key}",
+                Kind = ProjectNodeKind.Device,
+                Detail = pair.Value,
+                Files = device.Files,
+                Status = status,
+            });
+        }
+
+        if (hasBaseline && oldParams is not null)
+        {
+            rows.AddRange(oldParams
+                .Where(p => !seen.Contains(p.Key))
+                .OrderBy(p => p.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(p => new ProjectTreeNode
+                {
+                    Name = p.Key,
+                    Path = $"{device.Path}{DeviceCatalog.ParamRowMarker}{key}::{p.Key}",
+                    Kind = ProjectNodeKind.Device,
+                    Detail = p.Value,
+                    Files = device.Files,
+                    Status = ChangeKind.Deleted,
+                }));
+        }
+
+        return rows;
+    }
+
+    private static List<ProjectTreeNode> SlotNodes(
+        ProjectTreeNode device, DeviceCatalog current, DeviceCatalog? baseline)
+    {
+        var oldSlots = baseline?.Slots;
+        var rows = new List<ProjectTreeNode>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var pair in current.Slots.OrderBy(p => p.Key, SlotKeyComparer))
+        {
+            if (!seen.Add(pair.Key))
+            {
+                continue;
+            }
+
+            var status =
+                oldSlots is null ? ChangeKind.Unmodified
+                : !oldSlots.TryGetValue(pair.Key, out var old) ? ChangeKind.Added
+                : string.Equals(old, pair.Value, StringComparison.Ordinal) ? ChangeKind.Unmodified
+                : ChangeKind.Modified;
+
+            rows.Add(new ProjectTreeNode
+            {
+                Name = pair.Value,
+                Path = $"{device.Path}{DeviceCatalog.SlotRowMarker}{pair.Key}",
+                Kind = ProjectNodeKind.Device,
+                Detail = pair.Key,
+                Files = device.Files,
+                Status = status,
+            });
+        }
+
+        if (oldSlots is not null)
+        {
+            rows.AddRange(oldSlots
+                .Where(p => !seen.Contains(p.Key))
+                .OrderBy(p => p.Key, SlotKeyComparer)
+                .Select(p => new ProjectTreeNode
+                {
+                    Name = p.Value,
+                    Path = $"{device.Path}{DeviceCatalog.SlotRowMarker}{p.Key}",
+                    Kind = ProjectNodeKind.Device,
+                    Detail = p.Key,
+                    Files = device.Files,
+                    Status = ChangeKind.Deleted,
+                }));
+        }
+
+        return rows;
+    }
+
+    /// <summary>
+    /// Numeric slot indices in numeric order ("2" before "10"), everything else ordinal.
+    /// </summary>
+    private static readonly IComparer<string> SlotKeyComparer = Comparer<string>.Create((a, b) =>
+        int.TryParse(a, out var na) && int.TryParse(b, out var nb)
+            ? na.CompareTo(nb)
+            : string.Compare(a, b, StringComparison.Ordinal));
+
+    /// <summary>
+    /// Promote a folder that contains this folder's <c>*.devices.yaml</c> object into that
+    /// object, keeping the other children (EtherCAT, Plc Logic).
+    /// </summary>
+    /// <remarks>
+    /// Without this, <c>Device/Device.devices.yaml</c> draws as a folder named Device
+    /// containing a second object also named Device, and grafted parameters hang only on
+    /// the inner object. Tests in <c>ProjectTreeDevicesTests</c> must go red if this merge
+    /// is deleted — the same class of silent-green as a dropped subscription.
+    /// <para>
+    /// Joined on the encoded path, not on <see cref="ProjectTreeNode.Name"/>. The folder
+    /// segment is <c>safe_file_stem</c> (percent-encoded, reserved-name <c>%20</c>, digest
+    /// tail); the manifest name is verbatim. Ordinal name equality never merged a device
+    /// named <c>COM1</c> or <c>foo&lt;bar&gt;</c>, and Core must not grow a vendor decoder
+    /// to fix it.
+    /// </para>
+    /// </remarks>
+    private static ProjectTreeNode MergeDeviceFolders(ProjectTreeNode node)
+    {
+        var children = node.Children.Select(MergeDeviceFolders).ToList();
+        var yaml = children.FirstOrDefault(c => YamlFileIsThisFolder(c, node.Path));
+
+        if (node.Kind != ProjectNodeKind.Folder || yaml is null)
+        {
+            return children.Count == node.Children.Count &&
+                   children.Zip(node.Children, (a, b) => ReferenceEquals(a, b)).All(x => x)
+                ? node
+                : WithChildren(node, children);
+        }
+
+        var others = children.Where(c => !ReferenceEquals(c, yaml)).ToList();
+        return WithChildren(yaml with { Path = node.Path }, [.. others, .. yaml.Children]);
+    }
+
+    /// <summary>
+    /// True when <paramref name="child"/> is the <c>{folderStem}.devices.yaml</c> that
+    /// lives directly in <paramref name="folderPath"/>.
+    /// </summary>
+    private static bool YamlFileIsThisFolder(ProjectTreeNode child, string folderPath)
+    {
+        if (child.Kind != ProjectNodeKind.Object)
+        {
+            return false;
+        }
+
+        var folder = folderPath.Replace('\\', '/').Trim('/');
+        var slash = folder.LastIndexOf('/');
+        var stem = slash < 0 ? folder : folder[(slash + 1)..];
+        if (stem.Length == 0)
+        {
+            return false;
+        }
+
+        var expected = $"{folder}/{stem}{DeviceCatalog.FileSuffix}";
+        return child.Files.Any(f =>
+            string.Equals(
+                f.Replace('\\', '/').Trim('/'),
+                expected,
+                StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

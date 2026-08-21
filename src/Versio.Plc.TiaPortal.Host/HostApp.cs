@@ -10,8 +10,9 @@ namespace Versio.Plc.TiaPortal.Host;
 /// </summary>
 /// <remarks>
 /// Split along the existing methods — <c>HostExport</c>, <c>HostImport</c>,
-/// <c>HostReflection</c> — so a 1,100-line file is not the unit of change. One type,
-/// still reflection-only, still no Core reference.
+/// <c>HostHardwareProbe</c>, <c>HostDeviceCatalog</c>, <c>HostReflection</c> —
+/// so a 1,100-line file is not the unit of change. One type, still reflection-only,
+/// still no Core reference.
 /// </remarks>
 internal static partial class HostApp
 {
@@ -67,6 +68,16 @@ internal static partial class HostApp
                 }
 
                 Import(project, job.Src!, job.Plan, job.Save);
+            }
+            else if (op == "hwprobe")
+            {
+                if (string.IsNullOrWhiteSpace(job.Out))
+                {
+                    EmitFatal("hwprobe job has no out directory");
+                    return 5;
+                }
+
+                HardwareProbe(project, job.Out!, job.WriteTest);
             }
             else
             {

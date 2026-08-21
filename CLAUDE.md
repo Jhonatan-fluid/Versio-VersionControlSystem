@@ -17,6 +17,9 @@ distinction is the project's central architectural rule rather than an aspiratio
 | `Versio.Plc.TiaPortal` | **One vendor, pure.** `.apXX` conventions, directory payload, import planner, SCL header, native-XML scrubber |
 | `Versio.Plc.TiaPortal.Infrastructure` | **One vendor, driven.** Portal locator, net48 host spawn, Openness session |
 | `Versio.Plc.TiaPortal.Host` | **One vendor, net48 exe.** Loads Openness from the install; never shipped as Siemens DLLs |
+| `Versio.Plc.TwinCat` | **One vendor, pure.** `.tsproj` conventions, directory payload, import planner, ST header |
+| `Versio.Plc.TwinCat.Infrastructure` | **One vendor, driven.** TcXaeShell locator, net9 host spawn, Automation Interface session |
+| `Versio.Plc.TwinCat.Host` | **One vendor, net9 x64 exe.** COM into `TcXaeShell.DTE.17.0`; never shipped as Beckhoff DLLs |
 | everything else | Vendor-neutral: git, diff, sync, locking, watching, logging, bindings |
 
 Adding a vendor means a new project implementing `IPlcRunner`, `IPlcProjectFormat` and
@@ -24,7 +27,7 @@ Adding a vendor means a new project implementing `IPlcRunner`, `IPlcProjectForma
 `App.xaml.cs` beside `CodesysPack.Register()` —
 **nothing in `Sync/`, `Git/`, `Locking/`, `Watching/`, `Projects/` or `Diff/` may learn a
 vendor's name. If it does, vendor knowledge has leaked past the seam, and the leak is the
-bug.** A directory project (TIA Portal, and TwinCAT later) widens `IPlcProjectFormat.PayloadPathFor`
+bug.** A directory project (TIA Portal, TwinCAT) widens `IPlcProjectFormat.PayloadPathFor`
 and `IFileSystem.CopyTreeAsync`; that is the seam growing, not a brand leaking.
 
 **`Versio.Core` has no project reference to a vendor pack**, so that is a compiler error rather
@@ -56,6 +59,7 @@ questions about "why is this like this" are already answered there.
 | `docs/SAFEGUARDS.md` | What Versio refuses, asks about, or waits for. Phases 1–9 built; §5.H deferred on purpose. |
 | `docs/vendors/codesys/DRIVING.md` | **One vendor's docs**, beside its two projects. How CODESYS is driven end to end, and the audit of it |
 | `docs/vendors/tia/DRIVING.md` | **One vendor's docs**, beside its three projects. How TIA Portal is driven. PLC-software loop is done; §12 is evidence; coverage skips stay out of scope |
+| `docs/vendors/twincat/DRIVING.md` | **One vendor's docs**, beside its three projects. How TwinCAT 3 is driven. PLC-software loop is done; coverage skips stay out of scope |
 | `docs/phase1/` | **The Phase 1 archive** — four completed plans, marked done, kept for reasoning and evidence: `PLAN.md` (the founding architecture), `IMPORT-PLAN.md` (thirteen gaps, the feature checklist, and the measurements — its raw probe logs are in `probes/`), `GIT-PANEL-PLAN.md`, `PHASE0-FINDINGS.md`. Read them for why, never for state |
 | `docs/archive/` | **Completed later plans** — Phase 2 queue, UX plan, session handoffs, the long STATUS diary. Record, not state |
 | `README.md` | Repository layout, vendor boundaries, the one architectural rule |
@@ -229,18 +233,22 @@ stays that way.
 
 | Suite | Count | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,434 | under a second | nothing |
-| `Versio.Integration.Tests` | 150 | ~10 s | real git |
+| `Versio.Core.Tests` | 1,450 | under a second | nothing |
+| `Versio.Integration.Tests` | 151 | ~10 s | real git |
 | `Versio.Arch.Tests` | 14 | instant | nothing — it reads assembly metadata, IL and the `.csproj` files |
-| `Versio.App.Tests` | 613 | ~50 s, STA, no window shown | nothing |
-| `Versio.Plc.Codesys.Pure.Tests` | 260 | under a second | nothing — the planner, the codecs, the protocol |
-| `Versio.Plc.Codesys.Parity.Tests` | 92 | ~15 s | `python` on PATH — **skips cleanly without it, so check the count, not the colour** |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 16 | instant | nothing — format, planner, protocol |
+| `Versio.App.Tests` | 619 | ~50 s, STA, no window shown | nothing |
+| `Versio.Plc.Codesys.Pure.Tests` | 263 | under a second | nothing — the planner, the codecs, the protocol |
+| `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — **skips cleanly without it, so check the count, not the colour** |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 19 | instant | nothing — format, planner, protocol |
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips cleanly without Openness membership or LFS content. Import Fact is green |
-| `Versio.Plc.Codesys.Tests` | 54 | **~30 min** | **real CODESYS** — every test launches it, which is the whole cost |
+| `Versio.Plc.TwinCat.Pure.Tests` | 18 | instant | nothing — format, planner, protocol |
+| `Versio.Plc.TwinCat.Tests` | 5 | seconds when skipped; ~3 min when XAE runs the import gate | **real TwinCAT XAE** — skips cleanly without `TcXaeShell.DTE.17.0` or the fixture. Import Fact is green |
+| `Versio.Plc.Codesys.Tests` | 55 | **~30 min** | **real CODESYS** — every test launches it, which is the whole cost |
 
 The TIA gate fixture is `fixtures/projects/CleaningStation_V20_V21/` (Git LFS). Never the
-OneDrive original. `docs/vendors/tia/DRIVING.md` is this vendor's driving notes.
+OneDrive original. `docs/vendors/tia/DRIVING.md` is this vendor's driving notes. The TwinCAT
+gate fixture is `fixtures/projects/TC3_PlcSample_reStrText/` (no LFS). Work only on a **copy**.
+`docs/vendors/twincat/DRIVING.md` is that vendor's driving notes.
 
 **The loop to work in is everything except the last one:**
 
@@ -251,6 +259,7 @@ C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Arch.
 C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Plc.Codesys.Pure.Tests
 C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Plc.Codesys.Parity.Tests
 C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Plc.TiaPortal.Pure.Tests
+C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Plc.TwinCat.Pure.Tests
 ```
 
 About thirty seconds together, plus fifty for `Versio.App.Tests` when the UI is in play.

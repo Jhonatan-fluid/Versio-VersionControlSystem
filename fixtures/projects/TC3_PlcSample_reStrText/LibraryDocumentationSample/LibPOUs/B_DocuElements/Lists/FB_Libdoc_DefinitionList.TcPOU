@@ -1,0 +1,39 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.17">
+  <POU Name="FB_Libdoc_DefinitionList" Id="{7f38faeb-06c3-4f28-ace8-158c24cd15c8}" SpecialFunc="None">
+    <Declaration><![CDATA[(*
+Term 1
+    Definition 1.
+
+Term 2
+    Definition 2, paragraph 1.
+
+    Definition 2, paragraph 2.
+
+Term 3 : classifier
+    Definition 3.
+
+Term 4 : classifier one : classifier two
+    - Item 1
+    - Item 2
+*)
+
+FUNCTION_BLOCK FB_Libdoc_DefinitionList
+VAR_INPUT
+    nVarA : INT;
+    nVarB : INT;
+END_VAR
+VAR_OUTPUT
+    nSum : INT;
+END_VAR
+VAR
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <LineIds Name="FB_Libdoc_DefinitionList">
+      <LineId Id="9" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

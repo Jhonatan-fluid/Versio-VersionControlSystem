@@ -1,6 +1,6 @@
 # Versio — how CODESYS is driven
 
-**Date:** 2026-08-14 · Written against `0286d1f`, audited and revised on `08a8239`
+**Date:** 2026-08-20 · Written against `0286d1f`, audited and revised on `08a8239`
 
 | | |
 |---|---|
@@ -404,7 +404,7 @@ CPython.
 
 | Form | On disk | Types |
 |---|---|---|
-| `CONTAINER` | becomes a **directory**, children walked into it | `FOLDER`, `DEVICE`, `PLC_LOGIC`, `APPLICATION` |
+| `CONTAINER` | becomes a **directory**, children walked into it | `FOLDER`, `PLC_LOGIC`, `APPLICATION` |
 | `ST_FULL` | declaration + delimiter + implementation, one `.st` | `POU`, `INTERFACE`, `METHOD`, `METHOD_NORET` |
 | `ST_DECL` | declaration only, one `.st` | `DUT` |
 | `ST_IMPL` | implementation only (no declaration exists) | `ACTION`, `TRANSITION` |
@@ -415,6 +415,7 @@ CPython.
 | `NATIVE_R` | `obj.export_native(path, True)` — owns children not walked separately | `PROPERTY` |
 | `NATIVE_WITH_CHILDREN` | the node natively **and** a subdirectory for its children | **no type maps to it** — only an *unmapped* type that has children |
 | `LIBRARIES` | `<manager>.libraries.yaml`, **export-only** | `LIBRARY_MANAGER` |
+| `DEVICES` | `<name>.devices.yaml` **inside** the device directory, **export-only** | `DEVICE` |
 | `TASK_BOTH` | **two files** — `.xml` (recursive) for fidelity, `<name>.tasks.yaml` for review **and for import**. The *decision* is `TASK_BOTH`; the two files are **recorded** `TASK_NATIVE` and `TASK_BOTH`, because only the YAML is applied back | `TASK_CONFIGURATION` |
 | `TASK_NATIVE` | **recorded, never decided.** The `.xml` half above, marked so the manifest says it is export-only. It carried `NATIVE_R` until 2026-08-15, which is an *importable* form — see the finding in [`FINDINGS.md`](../../FINDINGS.md) | — |
 | `SKIP` | nothing, but the reason is recorded | see below |
@@ -452,7 +453,7 @@ things:
 |---|---|---|
 | `SERVICE_OBJECT` | Deliberate. Exporting it makes every later import raise an interactive overwrite dialog (codescribe's finding); the project template carries it | `VISUALISATION_MANAGER`, `TARGET_VISUALISATION`, `WEB_VISUALISATION`, `VISUALISATION_STYLE` |
 | `TEMPLATE_ONLY` | Deliberate. Diffable in principle, changed in the IDE | `PROJECT_SETTINGS` |
-| `COVERED_ELSEWHERE` | Deliberate. Already inside another object's recursive export | `TASK`, `CALL_TO_POU` |
+| `COVERED_ELSEWHERE` | Deliberate. Already inside another object's recursive export, or listed in a parent YAML | `TASK`, `CALL_TO_POU`, `DEVICE_SLOT` |
 | **`NOT_IMPLEMENTED`** | **A real gap.** The object holds state no exported file records, so a change to it moves nothing through the hash gate and reaches no diff | the default for any `SKIP` with no reason recorded |
 
 `skip_reason()` defaults to `NOT_IMPLEMENTED` on purpose: a type marked `SKIP` without a reason
@@ -561,6 +562,11 @@ is what CODESYS shows, segment for segment.
 plc/Machine.project              ← binary, git-lfs, -diff -merge
 plc/Machine/                     ← the mirror
 ├─ Device/
+│  ├─ Device.devices.yaml                    DEVICES (export-only)
+│  ├─ EtherCAT_Master/
+│  │  ├─ EtherCAT_Master.devices.yaml
+│  │  └─ BNI_XG3_…/
+│  │     └─ BNI_XG3_….devices.yaml           eight empty IO-Link slots listed here
 │  └─ Plc Logic/
 │     └─ Application/
 │        ├─ Simulation.st                    ST_FULL   (textual POU)
@@ -697,6 +703,41 @@ The file is **export-only** (§6.5). `versio_yaml.py` is a hand-written emitter 
 one document shape — mappings of scalars, and a list of mappings — with key order supplied by
 the caller rather than taken from dict order, because IronPython 2.7 and CPython 3 do not agree
 about dict order and the export must be byte-identical across runs.
+
+### 5.7 Device tree
+
+`DEVICE` used to export as `CONTAINER` — a directory with no file of its own — and eight empty
+IO-Link slots named `<Empty>` all wrote `%3CEmpty%3E.xml`. Last write won; seven slots vanished;
+the manifest recorded eight `UNKNOWN_TYPE_GUID` warnings. See the Finding in
+[`FINDINGS.md`](../../FINDINGS.md).
+
+`versio_devices.py` writes one `*.devices.yaml` **inside** each device directory
+(`Device/Device.devices.yaml`, not a sibling of `Device/`). A YAML beside the folder becomes two
+rows named Device. The walk is **CONTAINER-style**: directory plus children, **incoming
+`parent_guid` only**. Passing the device GUID as `parent_guid` would make Plc Logic look like a
+member of Device. A failed YAML write warns `EXPORT_FAILED` and **still walks children** —
+Device used to be `CONTAINER` with no write; gating the walk on the write would drop Plc Logic
+from the swapped mirror. Folder+yaml merge joins on `{folder}/{stem}.devices.yaml` (the encoded
+path), not on the manifest's verbatim name.
+
+The YAML subset is the library one: top-level `document()` list = connectors; each connector's
+`parameters:` is a nested name→value map; empty slots are a top-level nested map keyed by
+sibling index (`"0"`…`"7"`). Duplicate names (`---` and `Cycle Time` on the coupler) key as
+`name#id`; a third collision without an id uniquifies as `name#2`, `name#3` rather than
+overwriting. Parameter `id` is stable on SP22 Patch 2; it is the disambiguator, not the displayed
+identity. Quoted parameter keys that contain a colon split at the colon outside quotes.
+`device_identification` and `io_mapping` are missing on this ScriptEngine — accepted
+this pass; the YAML does not record which `.device` description a node is, and IEC `%I/%Q`
+mapping is not a separate table.
+
+Empty slots (`085766fd-043e-4545-8e8d-d651d56d5d3b`) map as `DEVICE_SLOT` / `SKIP` /
+`COVERED_ELSEWHERE`. A plugged-in module is a real `DEVICE` child with its own YAML. The tree
+merges the folder with that folder's `{stem}.devices.yaml`, then grafts connector and slot
+rows under the device that owns them. Export-only: change devices in the IDE.
+The probe that measured this is `tools/codesys/versio_probe_devices.py`.
+
+Two untouched exports of the fixture copy on 2026-08-20 were SHA-256-identical on all three
+YAML files.
 
 ---
 
@@ -854,7 +895,7 @@ The export tree holds **three** kinds of file, not two:
 |---|---|---|
 | Objects | `.st`, `.xml` | Applied |
 | Versio bookkeeping | `_manifest.json`, `_coverage.md` (`VERSIO_FILES`) | Ignored |
-| **Export-only project state** | `*.libraries.yaml` (`EXPORT_ONLY_SUFFIXES`) | Emitted as `not_imported`, never handed to the toolchain |
+| **Export-only project state** | `*.libraries.yaml`, `*.devices.yaml` (`EXPORT_ONLY_FORMS`) | Emitted as `not_imported`, never handed to the toolchain |
 
 The third category exists because of a real defect: when `_coverage.md` was added, the importer
 knew about `_manifest.json` **by name, in two places**, and the new file was added to neither —
@@ -881,7 +922,7 @@ not give it one verdict. The layers are judged separately, and only some of them
 | Layer | Rule | Fatal? |
 |---|---|---|
 | **textual** (`.st`) | must be **byte-identical** — this is the layer an engineer edits, and the one the round trip actually proves | **yes** |
-| **export-only** (`.libraries.yaml`) | must be **byte-identical**. The import never applies it, so a re-export has nothing to perturb: a difference here means the *export* is non-deterministic | **yes** |
+| **export-only** (`.libraries.yaml`, `.devices.yaml`) | must be **byte-identical**. The import never applies it, so a re-export has nothing to perturb: a difference here means the *export* is non-deterministic | **yes** |
 | **native** (`.xml`) | **expected to differ.** Byte comparison is the wrong instrument (§7) | no — reported, and explicitly not verified here |
 | **bookkeeping** (`_manifest.json`, `_coverage.md`) | derived; the manifest records native hashes, so it differs whenever the native layer does | no |
 | **structure** (added / removed) | a file that appeared or vanished is a structural failure at any layer | **yes** |
@@ -1457,7 +1498,7 @@ listed here because only one of them is currently written down anywhere.
 | D2 | ~~**Filenames are never decoded.**~~ — **closed 2026-08-15 by the plan-driven import.** Resolution chains are built C#-side by `CodesysImportPlanner` from the manifest's verbatim names, with directory segments decoded through `PathMapper.DecodeStem` — which gained its first production caller in the process. The script compares real names against real names | An object or folder whose name needed encoding resolves now. A *shortened* stem (digest tail) still cannot be recovered from the path alone — the object it names simply does not resolve, and the script reports it rather than guessing |
 | D3 | ~~**A dot in an object name breaks the owner split.**~~ — **closed 2026-08-15 for recorded objects**: the manifest's `parent` GUID chain decides ownership, and for pre-schema-4 mirrors the recorded *name* disambiguates the split — a name equal to the whole stem is not split, however many dots the filename carries. **Still true for a manifest-absent create**, where only the filename exists; P5 measured that such names cannot be created, so that residue is unreachable by the only door left | `My.Thing.xml` recorded as `My.Thing` resolves as one object. A brand-new dotted file with no manifest record would still be read as owner and member — and CODESYS would refuse to create it anyway |
 | D4 | ~~**Any stray non-`.st` file in the mirror is handed to `import_native`.**~~ — **closed 2026-08-15.** The planner classifies from the manifest, and a file that is neither a recorded object, bookkeeping, nor a recognisable source is **skipped with a warning, never handed to the toolchain** — including a YAML the manifest does not record, and including files that appear between planning and execution (`NOT_IN_PLAN`) | Proven live: a `README.md` dropped into the mirror is warned about and never imported, in the same run that catches a corrupt native file — see `ImportLoggingTests` |
-| D5 | **`*.libraries.yaml` is export-only** | Editing it changes nothing. Stated in the file's own header, in `_coverage.md`, in the manifest and by a lock glyph in the UI |
+| D5 | **`*.libraries.yaml` and `*.devices.yaml` are export-only** | Editing them changes nothing. Stated in each file's own header, in `_coverage.md`, in the manifest and by a lock glyph in the UI |
 | D6 | ~~**Task Configuration is diff-only**~~ — **closed 2026-08-15**, both halves of it | This row carried two defects. `import_native` mutated `Core2` (§7); and — *not* the same defect, though this row said so for an afternoon — every import run with a `<project>_project.precompilecache` beside the project threw on `MainTask` and `VISU_TASK` while reporting `failed: 0`. **Phase 4 removed both by removing the shared cause**: task configuration exports as `TASK_BOTH` and imports through typed property assignment, so `import_native` is never handed the object. Measured over three cycles with the cache present: **zero warnings**, where cycles 2 and 3 used to throw twice each. Versio deletes nothing of CODESYS's. See G7 and G11 in [`vendors/codesys/IMPORT-PLAN.md`](../../phase1/IMPORT-PLAN.md) and the findings in [`FINDINGS.md`](../../FINDINGS.md). **What replaces it, and it is smaller:** the `.xml` half is export-only, a task named in the YAML but absent from the project is warned about rather than created, and a task deleted from the YAML is left alone until Phase 2 |
 
 ### E. Smaller observations
@@ -1514,9 +1555,10 @@ What the CODESYS implementation shows a second vendor it will have to answer:
 
 Two pieces are already vendor-neutral and should be reused rather than reinvented:
 `versio_yaml.py` (nothing in it knows what a PLC is) and the `LibraryReference` /
-`LibraryCatalog` pair in `Versio.Core/Projects/` — every toolchain has some notion of a
-dependency on a versioned library, and all of them answer the same three questions a reviewer
-asks: what is it, which version, and did anybody pin it.
+`LibraryCatalog` / `DeviceCatalog` pair in `Versio.Core/Projects/` — every toolchain has some
+notion of a dependency on a versioned library, and of a device tree whose connectors carry
+named parameters a reviewer diffs. The questions are the same; what is vendor-specific is the
+code that produces the file. TwinCAT TIID and TIA hardware are not this pass.
 
 ---
 

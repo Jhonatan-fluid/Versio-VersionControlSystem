@@ -1,0 +1,38 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.17">
+  <POU Name="FB_Libdoc_ListTable" Id="{2dea8548-38bf-44d9-97c7-1f72371331e2}" SpecialFunc="None">
+    <Declaration><![CDATA[(*
+.. list-table:: Property list
+    :widths: 50 50 50
+    :header-rows: 1
+
+    * - Items
+      - Property 1
+      - Property 2
+    * - Item 1
+      - angular
+      - red
+    * - Item 2
+      - round
+      - blue
+*)
+
+FUNCTION_BLOCK FB_Libdoc_ListTable
+VAR_INPUT
+    nVarA : INT;
+    nVarB : INT;
+END_VAR
+VAR_OUTPUT
+    nSum : INT;
+END_VAR
+VAR
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <LineIds Name="FB_Libdoc_ListTable">
+      <LineId Id="9" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

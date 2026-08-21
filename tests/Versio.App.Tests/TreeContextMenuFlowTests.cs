@@ -112,14 +112,15 @@ public sealed class TreeContextMenuFlowTests
     [InlineData(ProjectNodeKind.Object, ChangeKind.Unmodified, false)]
     [InlineData(ProjectNodeKind.Library, ChangeKind.Modified, false)]
     [InlineData(ProjectNodeKind.Task, ChangeKind.Modified, false)]
+    [InlineData(ProjectNodeKind.Device, ChangeKind.Modified, false)]
     [InlineData(ProjectNodeKind.Folder, ChangeKind.Unmodified, false)]
     [InlineData(ProjectNodeKind.Project, ChangeKind.Modified, false)]
     public void Stage_and_discard_are_offered_only_for_a_rows_own_changed_files(
         ProjectNodeKind kind, ChangeKind status, bool expected)
     {
-        // Library and task rows share their catalog's file: "stage this reference" would
-        // silently stage every change in the file beside it, so the manager's row is where
-        // that verb honestly lives.
+        // Library, task and device rows share their catalog's file: "stage this reference"
+        // would silently stage every change in the file beside it, so the manager's row is
+        // where that verb honestly lives.
         var row = new TreeRow(new ProjectTreeNode
         {
             Name = "N",

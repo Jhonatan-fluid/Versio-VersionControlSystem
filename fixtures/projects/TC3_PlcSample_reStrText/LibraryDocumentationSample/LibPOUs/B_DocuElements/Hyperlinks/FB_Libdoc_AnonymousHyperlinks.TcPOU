@@ -1,0 +1,30 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.17">
+  <POU Name="FB_Libdoc_AnonymousHyperlinks" Id="{1a8356c1-6a33-4dcd-a483-ad23079c7c24}" SpecialFunc="None">
+    <Declaration><![CDATA[(*
+See the `Beckhoff Online Information System`__ or the `Beckhoff home page`__.
+
+.. __: http://infosys.beckhoff.de/
+
+.. __: http://beckhoff.de/
+*)
+
+FUNCTION_BLOCK FB_Libdoc_AnonymousHyperlinks
+VAR_INPUT
+    nVarA : INT;
+    nVarB : INT;
+END_VAR
+VAR_OUTPUT
+    nSum : INT;
+END_VAR
+VAR
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <LineIds Name="FB_Libdoc_AnonymousHyperlinks">
+      <LineId Id="9" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

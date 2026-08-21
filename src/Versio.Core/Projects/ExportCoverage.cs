@@ -213,6 +213,33 @@ public static class ExportCoverage
     public const string TaskBothForm = "TASK_BOTH";
 
     /// <summary>
+    /// The manifest's <c>form</c> for a device's connectors, parameters and empty slots —
+    /// exported, never applied back.
+    /// </summary>
+    /// <remarks>
+    /// The third catalog form, after libraries and tasks. A wrong mapping can brick a
+    /// machine, and the write API has not been measured, so there is no import path.
+    /// Counted and said out loud for the same reason <see cref="LibrariesForm"/> is: a
+    /// file that looks editable and is silently ignored is its own kind of gap.
+    /// </remarks>
+    public const string DevicesForm = "DEVICES";
+
+    /// <summary>
+    /// A device catalog whose <c>Comment</c> parameters are applied back. Same file
+    /// suffix as <see cref="DevicesForm"/>; a different form so the lock glyph and the
+    /// planner agree that this file is imported, and so a missing file cannot vote to
+    /// delete the live device.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="DevicesForm"/> stays export-only: a wrong connector mapping can brick
+    /// a machine, and that write API has not been measured for every vendor. Comment
+    /// <c>SetAttribute</c> has been: apply the scalar, verify the read-back, never
+    /// PlugNew. Create and delete of the device stay off this file — see
+    /// <see cref="IsDeviceStructure"/>.
+    /// </remarks>
+    public const string DeviceCommentForm = "DEVICE_COMMENT";
+
+    /// <summary>
     /// The manifest's <c>form</c> for the native <c>.xml</c> half of a task configuration.
     /// </summary>
     /// <remarks>
@@ -341,11 +368,20 @@ public static class ExportCoverage
     /// </remarks>
     public static bool IsExportOnly(string? form) =>
         string.Equals(form, LibrariesForm, StringComparison.Ordinal)
+        || string.Equals(form, DevicesForm, StringComparison.Ordinal)
         || string.Equals(form, TaskNativeForm, StringComparison.Ordinal)
         || string.Equals(form, GvlNativeForm, StringComparison.Ordinal)
         || string.Equals(form, ExternalNativeForm, StringComparison.Ordinal)
         || string.Equals(form, PropertyTextForm, StringComparison.Ordinal)
         || string.Equals(form, NativeReviewForm, StringComparison.Ordinal);
+
+    /// <summary>
+    /// True when the file describes a device that must not be created, renamed or
+    /// deleted from the mirror. Comment apply is allowed; PlugNew is not.
+    /// </summary>
+    public static bool IsDeviceStructure(string? form) =>
+        string.Equals(form, DevicesForm, StringComparison.Ordinal)
+        || string.Equals(form, DeviceCommentForm, StringComparison.Ordinal);
 
     /// <summary>What an export covers, from its manifest alone.</summary>
     public static CoverageReport Of(ProjectManifest? manifest)

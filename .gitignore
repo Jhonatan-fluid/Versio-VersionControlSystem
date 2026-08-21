@@ -99,3 +99,13 @@ fixtures/projects/CleaningStation_V20_V21/tmp/
 fixtures/projects/CleaningStation_V20_V21/Vci/
 fixtures/projects/CleaningStation_V20_V21/*.info
 fixtures/projects/CleaningStation_V20_V21/System/~*
+
+# TwinCAT occupancy and churn beside the committed gate fixture.
+# _Boot/ _CompileInfo/ .vs/ are not copied into the fixture; these rules catch them
+# if a test or XAE recreates them. .~u is OccupancyMarkerFor.
+fixtures/projects/TC3_PlcSample_reStrText/_Boot/
+fixtures/projects/TC3_PlcSample_reStrText/_CompileInfo/
+fixtures/projects/TC3_PlcSample_reStrText/.vs/
+fixtures/projects/TC3_PlcSample_reStrText/*.~u
+fixtures/projects/TC3_PlcSample_reStrText/*.suo
+fixtures/projects/TC3_PlcSample_reStrText/*.user

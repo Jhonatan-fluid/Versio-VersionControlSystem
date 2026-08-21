@@ -61,6 +61,7 @@ public static class CodesysObjectTypeNames
             ["PROJECT_INFORMATION"] = new("Project information", "project information", "project information"),
             ["PROJECT_SETTINGS"] = new("Project settings", "project settings", "project settings"),
             ["DEVICE"] = new("Device", "device", "devices"),
+            ["DEVICE_SLOT"] = new("Empty slot", "empty slot", "empty slots"),
             ["FOLDER"] = new("Folder", "folder", "folders"),
             ["CALL_TO_POU"] = new("POU call", "POU call", "POU calls"),
             ["VISUALISATION"] = new("Visualisation", "visualisation", "visualisations"),

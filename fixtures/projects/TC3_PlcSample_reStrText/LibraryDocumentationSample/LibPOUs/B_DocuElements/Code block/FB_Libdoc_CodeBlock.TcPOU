@@ -1,0 +1,66 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.17">
+  <POU Name="FB_Libdoc_CodeBlock" Id="{85a60794-3b52-4a6a-9b49-1b44384dd3c3}" SpecialFunc="None">
+    <Declaration><![CDATA[(*
+
+**Code block with color-coded syntax**
+
+.. code:: 
+    
+    // Attempts to return the value of a boolean property.
+   
+    FUNCTION GetBooleanProperty : BOOL
+    VAR_INPUT
+        sKey: STRING;
+    END_VAR
+
+    // This structure defines a special profile.
+
+    TYPE ST_Profile :
+    STRUCT
+        nId     : INT := -1;
+        sBuffer : STRING(255) := 'Hello';
+    END_STRUCT
+    END_TYPE
+
+**Code block with line numbering**
+
+.. code:: 
+   :number-lines: 1
+    
+    // Attempts to return the value of a boolean property.
+   
+    FUNCTION GetBooleanProperty : BOOL
+    VAR_INPUT
+        sKey: STRING;
+    END_VAR
+
+    // This structure defines a special profile.
+
+    TYPE ST_Profile :
+    STRUCT
+        nId     : INT := -1;
+        sBuffer : STRING(255) := 'Hello';
+    END_STRUCT
+    END_TYPE
+
+*)
+
+FUNCTION_BLOCK FB_Libdoc_CodeBlock
+VAR_INPUT
+    nVarA : INT;
+    nVarB : INT;
+END_VAR
+VAR_OUTPUT
+    nSum : INT;
+END_VAR
+VAR
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <LineIds Name="FB_Libdoc_CodeBlock">
+      <LineId Id="9" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

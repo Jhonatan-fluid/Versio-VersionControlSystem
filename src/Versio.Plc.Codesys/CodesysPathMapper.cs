@@ -259,6 +259,7 @@ public static partial class PathMapper
         ExportForm.StFull or ExportForm.StDeclaration or ExportForm.StImplementation
             or ExportForm.PropertyBoth or ExportForm.PropertyText => ".st",
         ExportForm.Libraries => ".libraries.yaml",
+        ExportForm.Devices => ".devices.yaml",
         _ => ".xml",
     };
 

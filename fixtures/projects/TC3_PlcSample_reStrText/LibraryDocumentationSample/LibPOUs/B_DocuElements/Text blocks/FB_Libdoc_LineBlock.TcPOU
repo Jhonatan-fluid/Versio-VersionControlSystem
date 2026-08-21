@@ -1,0 +1,42 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.17">
+  <POU Name="FB_Libdoc_LineBlock" Id="{90c7e157-0a0a-4bf0-bcd1-41f222ef9362}" SpecialFunc="None">
+    <Declaration><![CDATA[(*
+Line blocks are useful where the structure of lines is significant.
+
+| Each new line begins with 
+| a vertical bar ("|"). 
+|     Line breaks and initial indents 
+|     are preserved. 
+| Continuation lines are wrapped 
+  portions of long lines; they begin 
+  with spaces in place of vertical bars.
+
+    | Each new line begins with 
+    | a vertical bar ("|"). 
+    |     Line breaks and initial indents 
+    |     are preserved. 
+    | Continuation lines are wrapped 
+      portions of long lines; they begin 
+      with spaces in place of vertical bars.
+*)
+
+FUNCTION_BLOCK FB_Libdoc_LineBlock
+VAR_INPUT
+    nVarA : INT;
+    nVarB : INT;
+END_VAR
+VAR_OUTPUT
+    nSum : INT;
+END_VAR
+VAR
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <LineIds Name="FB_Libdoc_LineBlock">
+      <LineId Id="9" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,80 @@
+# Device tree, exported by Versio. Do not edit - it is rewritten on
+# every export, and importing this file back into the project is NOT supported: change
+# devices in the IDE.
+#
+# NOT recorded here, on purpose:
+#   * which device description the node is (identification was missing on this
+#     ScriptEngine)
+#   * driver_info fields we could not read
+#   * IEC %I/%Q mapping as a separate table - it is not on io_mapping here; compound
+#     parameter values are recorded as their value strings
+#   * parameter id, except as a suffix on a duplicate name - the id is stable on this
+#     install but it is not what a reviewer reads
+schema: 1
+vendor: codesys
+name: EtherCAT_Master
+path: "Device/EtherCAT_Master"
+connectorCount: 2
+connectors:
+  - connectorId: 1
+    interface: Common.PCI
+    moduleType: 257
+  - connectorId: 2
+    interface: Common.Ethercat
+    moduleType: 64
+    parameters:
+      Autoconfig: "1"
+      CheckPortStatus: "FALSE"
+      "Clear Statistics": "FALSE"
+      "CompareNetworkName#1073745932": "FALSE"
+      "CompareNetworkName#805458177": "FALSE"
+      "Config version": "50662144"
+      CreateENIFileForSimulation: "TRUE"
+      CreateENIFileWithIoLink: "FALSE"
+      CustomENIExport: "FALSE"
+      DCMode: "0"
+      DCSyncInWindow: "50"
+      DestAddress: "[255,255,255,255,255,255]"
+      DestAddress1: "65535"
+      DestAddress2: "4294967295"
+      DisableTaskGeneration: "FALSE"
+      "Enable mailbox gateway": "FALSE"
+      "Enable sync units": "TRUE"
+      EnableSecondAdapter: "FALSE"
+      EnableTaskMessage: "FALSE"
+      FrameAtTaskStart: "FALSE"
+      "IP address": "[0,0,0,0]"
+      IgnoreManualAddres: "FALSE"
+      ImageInAddress: "16777216"
+      ImageInLength: "0"
+      ImageOutAddress: "33554432"
+      ImageOutLength: "0"
+      "Keep last input data": "FALSE"
+      MasterCycleTime: "4000"
+      MasterUseLRW: "FALSE"
+      "NetworkName#1073745929": "''"
+      "NetworkName#1073745930": "\"\""
+      "NetworkName#805457920": "''"
+      "NetworkName#805457921": "\"\""
+      NumberOfInputSlaves: "0"
+      NumberOfOutputSlaves: "0"
+      OnlyArpBroadcasts: "TRUE"
+      ScanForAliasAddress: "TRUE"
+      "SelectNetworkByName#1073745931": "FALSE"
+      "SelectNetworkByName#805458176": "FALSE"
+      ShowLoggerPage: "true"
+      ShowSafetyChannels: "true"
+      ShowSafetyConnections: "true"
+      ShpwDCStatistik: "true"
+      SlaveAutorestart: "FALSE"
+      SlaveCheckMode: "0"
+      SplitFrame: "FALSE"
+      SrcAddress: "[0,0,0,0,0,0]"
+      SrcAddress1: "0"
+      SrcAddress2: "0"
+      Statistics: "{0, 0, 0, 0, 0, , , , , }"
+      SupportFixedAddresses: "true"
+      SupportMemoryService: "true"
+      SyncOffset: "20"
+      SyncWindowMonitoring: "0"
+      WaitForPacket: "FALSE"

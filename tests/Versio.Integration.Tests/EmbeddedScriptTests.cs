@@ -16,10 +16,10 @@ namespace Versio.Integration.Tests;
 /// </para>
 /// <para>
 /// <b>The count is asserted, not just "more than none".</b> A glob that matched one file would
-/// satisfy a non-empty check and still break every export, and the thirteen modules are a set
+/// satisfy a non-empty check and still break every export, and the fourteen modules are a set
 /// that changes rarely and deliberately: if this number moves, somebody added or removed a script
-/// and should say which in the same commit. <c>versio_tree.py</c> is the newest, split out on
-/// 2026-08-17 so the folder-blind name walk could be driven under CPython.
+/// and should say which in the same commit. <c>versio_devices.py</c> is the newest, added
+/// 2026-08-20 so device connectors and empty IO-Link slots have a catalog of their own.
 /// </para>
 /// <para>
 /// No CODESYS, no python interpreter, no git — it reads the manifest resources of an assembly
@@ -33,6 +33,7 @@ public sealed class EmbeddedScriptTests
     [
         "versio_decl.py",
         "versio_delete_objects.py",
+        "versio_devices.py",
         "versio_export.py",
         "versio_import.py",
         "versio_libraries.py",

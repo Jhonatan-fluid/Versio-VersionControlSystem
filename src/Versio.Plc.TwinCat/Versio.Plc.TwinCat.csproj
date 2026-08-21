@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Versio.Plc.TwinCat</RootNamespace>
+    <!-- ONE VENDOR. Project-file conventions, the import planner, object-type names,
+         and the host wire protocol. No processes, no filesystem, no TwinCAT install —
+         driving lives in Infrastructure. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Versio.Core\Versio.Core.csproj" />
+  </ItemGroup>
+
+</Project>

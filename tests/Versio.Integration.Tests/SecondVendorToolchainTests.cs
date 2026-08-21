@@ -29,7 +29,7 @@ namespace Versio.Integration.Tests;
 [Trait("Category", "Integration")]
 public sealed class SecondVendorToolchainTests
 {
-    private sealed class FakeTwinCatToolchain : IPlcToolchain
+    private sealed class FakeStudio5000Toolchain : IPlcToolchain
     {
         public IPlcProjectFormat Format => throw new NotSupportedException("not needed here");
 
@@ -43,12 +43,12 @@ public sealed class SecondVendorToolchainTests
     [Fact]
     public void A_vendor_Versio_cannot_drive_answers_null_rather_than_throwing()
     {
-        // A repository can legitimately hold a project Versio can see and not run - a TwinCAT
-        // project on a machine that only has CODESYS support built. That is a state to report,
-        // not an exception to handle, and it is the whole reason formats and toolchains are two
-        // registries rather than one.
-        Assert.Null(PlcToolchains.For(PlcVendor.TwinCat));
-        Assert.DoesNotContain(PlcVendor.TwinCat, PlcToolchains.Supported);
+        // A repository can legitimately hold a project Versio can see and not run - a Studio
+        // 5000 project on a machine that only has the vendors this build registered. That is
+        // a state to report, not an exception to handle, and it is the whole reason formats
+        // and toolchains are two registries rather than one.
+        Assert.Null(PlcToolchains.For(PlcVendor.Studio5000));
+        Assert.DoesNotContain(PlcVendor.Studio5000, PlcToolchains.Supported);
     }
 
     [Fact]
@@ -56,10 +56,10 @@ public sealed class SecondVendorToolchainTests
     {
         try
         {
-            PlcToolchains.Register(PlcVendor.TwinCat, _ => new FakeTwinCatToolchain());
+            PlcToolchains.Register(PlcVendor.Studio5000, _ => new FakeStudio5000Toolchain());
 
-            Assert.NotNull(PlcToolchains.For(PlcVendor.TwinCat));
-            Assert.Contains(PlcVendor.TwinCat, PlcToolchains.Supported);
+            Assert.NotNull(PlcToolchains.For(PlcVendor.Studio5000));
+            Assert.Contains(PlcVendor.Studio5000, PlcToolchains.Supported);
 
             // The one that was already there is untouched. Registering a vendor must not be a
             // way to accidentally deregister another.
@@ -67,15 +67,15 @@ public sealed class SecondVendorToolchainTests
         }
         finally
         {
-            PlcToolchains.Unregister(PlcVendor.TwinCat);
+            PlcToolchains.Unregister(PlcVendor.Studio5000);
         }
 
-        Assert.Null(PlcToolchains.For(PlcVendor.TwinCat));
+        Assert.Null(PlcToolchains.For(PlcVendor.Studio5000));
     }
 
     [Fact]
     public void Unregistering_something_that_was_never_there_says_so_rather_than_throwing()
     {
-        Assert.False(PlcToolchains.Unregister(PlcVendor.Studio5000));
+        Assert.False(PlcToolchains.Unregister(PlcVendor.TwinCat));
     }
 }

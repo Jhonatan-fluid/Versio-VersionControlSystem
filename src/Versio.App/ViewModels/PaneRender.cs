@@ -92,3 +92,17 @@ public sealed record TaskDetailRender
 
     private static string Blank(string value) => value.Length == 0 ? "—" : value;
 }
+
+/// <summary>
+/// One connector, parameter or empty slot, opened from its row.
+/// </summary>
+/// <remarks>
+/// The catalog is the file; this is the highlight. Selecting the device object itself
+/// renders the whole <see cref="DeviceCatalog"/> table, the same split task rows already
+/// make between <see cref="TaskDetailRender"/> and <see cref="TaskCatalog"/>.
+/// </remarks>
+public sealed record DeviceDetailRender
+{
+    public required string Title { get; init; }
+    public required IReadOnlyList<FactRow> Facts { get; init; }
+}

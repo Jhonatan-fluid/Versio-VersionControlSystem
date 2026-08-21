@@ -261,6 +261,42 @@ public sealed class ExportCoverageFromRealExportTests(ITestOutputHelper output) 
     }
 
     [SkippableFact]
+    public async Task Empty_IO_Link_slots_are_listed_in_the_parent_yaml_rather_than_colliding()
+    {
+        // The collision this export exists to close: eight children named <Empty>, one
+        // %3CEmpty%3E.xml, eight UNKNOWN_TYPE_GUID warnings. Against a real export rather
+        // than the committed fixture, because the defect was in what the exporter wrote
+        // and a stale committed mirror would keep the assertion green for the old shape.
+        var exportRoot = await ExportAsync("first");
+
+        var manifest = ProjectManifest.Parse(
+            await File.ReadAllTextAsync(Path.Combine(exportRoot, "_manifest.json")));
+
+        Assert.Equal(3, manifest.Objects.Count(o => o.Form == ExportCoverage.DevicesForm));
+        Assert.Equal(8, manifest.Skipped.Count(s => s.Type == "DEVICE_SLOT"));
+        Assert.All(manifest.Skipped.Where(s => s.Type == "DEVICE_SLOT"),
+            s => Assert.Equal("COVERED_ELSEWHERE", s.Reason));
+        Assert.DoesNotContain(manifest.Warnings, w =>
+            w.Code == "UNKNOWN_TYPE_GUID" &&
+            w.Detail.Contains("085766fd", StringComparison.OrdinalIgnoreCase));
+        Assert.False(File.Exists(Path.Combine(
+            exportRoot, "Device", "EtherCAT_Master", "BNI_XG3_508_0C5_R015",
+            "%3CEmpty%3E.xml")));
+
+        var couplerYaml = Directory.GetFiles(
+                Path.Combine(exportRoot, "Device", "EtherCAT_Master"),
+                "*.devices.yaml",
+                SearchOption.AllDirectories)
+            .Single(p => Path.GetFileName(Path.GetDirectoryName(p))
+                ?.StartsWith("BNI_", StringComparison.Ordinal) == true);
+
+        var catalog = DeviceCatalog.Parse(await File.ReadAllTextAsync(couplerYaml));
+        Assert.True(catalog.IsValid);
+        Assert.Equal(8, catalog.Slots.Count);
+        Assert.All(catalog.Slots.Values, v => Assert.Equal("<Empty>", v));
+    }
+
+    [SkippableFact]
     public async Task The_task_configurations_native_half_is_recorded_and_named_as_one_way()
     {
         // What nothing was watching. The .tasks.yaml is the importable half and the .xml

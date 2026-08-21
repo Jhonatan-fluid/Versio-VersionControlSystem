@@ -66,6 +66,7 @@ function Get-Layer([string]$relativePath) {
     $leaf = [System.IO.Path]::GetFileName($relativePath)
     if ($leaf -in @("_manifest.json", "_coverage.md")) { return "bookkeeping" }
     if ($leaf -like "*.libraries.yaml")                { return "export-only" }
+    if ($leaf -like "*.devices.yaml")                  { return "export-only" }
     if ($leaf -like "*.st")                            { return "textual" }
     return "native"
 }

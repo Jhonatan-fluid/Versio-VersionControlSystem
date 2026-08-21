@@ -35,14 +35,19 @@ internal static partial class HostApp
             WalkTags(plc, root, objects, skipped, warnings);
         }
 
-        // NOT_IMPLEMENTED is a hole the panel paints as "this project is missing
-        // objects". Hardware, HMI, safety and technology are decisions for this
-        // product slice, not holes in the PLC-software loop — the same bargain
-        // SERVICE_OBJECT makes for a template-only object on the first vendor.
-        // _coverage.md still names them. Using the gap reason made every TIA
-        // tree read "not exported · 4 objects not exported" after a successful
-        // export (CleaningStation, 2026-08-19).
-        skipped.Add(Skip("Hardware", "SERVICE_OBJECT", "devices and networks are a coverage skip"));
+        // Comment SetAttribute has been measured (hwprobe 2026-08-20). PlugNew has
+        // not been round-tripped. YAML write must not gate the PLC walk: a failed
+        // station dump still leaves SCL/UDT/tags in the mirror.
+        try
+        {
+            ExportHardware(project, objects, warnings);
+        }
+        catch (Exception ex)
+        {
+            Warn(warnings, "EXPORT_FAILED", "Hardware", Innermost(ex));
+            Emit("warning", "msg", "device catalog: " + Innermost(ex));
+        }
+
         skipped.Add(Skip("HMI", "SERVICE_OBJECT", "WinCC screens are a coverage skip"));
         skipped.Add(Skip("Safety", "SERVICE_OBJECT", "F-programs are a coverage skip"));
         skipped.Add(Skip("Technology", "SERVICE_OBJECT", "technology objects are a coverage skip"));
@@ -64,7 +69,8 @@ internal static partial class HostApp
         md.AppendLine($"Objects exported: {objects.Count}");
         md.AppendLine($"Skipped: {skipped.Count}");
         md.AppendLine();
-        md.AppendLine("Hardware, HMI, safety programs and technology objects are coverage skips.");
+        md.AppendLine("Hardware comments are exported as *.devices.yaml (Comment SetAttribute only; never PlugNew).");
+        md.AppendLine("HMI, safety programs and technology objects are coverage skips.");
         md.AppendLine("Know-how-protected blocks export for review only and are not imported.");
         md.AppendLine("SimaticML beside an SCL file is XML_REVIEW (G12) — never applied back.");
         File.WriteAllText(Path.Combine(outDir, "_coverage.md"), md.ToString(), new UTF8Encoding(false));

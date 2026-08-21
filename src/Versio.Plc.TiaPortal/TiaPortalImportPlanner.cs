@@ -91,6 +91,21 @@ public static class TiaPortalImportPlanner
 
         if (byPath.TryGetValue(file.Path, out var known))
         {
+            if (string.Equals(known.Form, ExportCoverage.DeviceCommentForm, StringComparison.Ordinal))
+            {
+                // Comment SetAttribute only. Missing this file must not delete the
+                // live device — PlanDeletions skips IsDeviceStructure. DEVICES (the
+                // CODESYS I/O form) stays export-only even when the suffix matches.
+                return new PlannedFile
+                {
+                    Path = file.Path,
+                    Action = PlannedAction.ApplyText,
+                    Name = known.Name,
+                    Guid = known.Guid,
+                    Resolve = ResolveOf(known),
+                };
+            }
+
             if (ExportCoverage.IsExportOnly(known.Form))
             {
                 var sibling = SiblingText(file.Path, present);
@@ -167,7 +182,9 @@ public static class TiaPortalImportPlanner
         ProjectManifest manifest, HashSet<string> present)
     {
         return manifest.Objects
-            .Where(o => !present.Contains(o.Path) && !ExportCoverage.IsExportOnly(o.Form))
+            .Where(o => !present.Contains(o.Path)
+                        && !ExportCoverage.IsExportOnly(o.Form)
+                        && !ExportCoverage.IsDeviceStructure(o.Form))
             .GroupBy(o => o.Guid, StringComparer.OrdinalIgnoreCase)
             .Where(g => !string.IsNullOrEmpty(g.Key)
                         && g.All(o => !present.Contains(o.Path)))

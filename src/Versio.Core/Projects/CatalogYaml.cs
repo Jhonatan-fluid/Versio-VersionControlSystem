@@ -5,45 +5,77 @@ namespace Versio.Core.Projects;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <see cref="LibraryCatalog"/> and <see cref="TaskCatalog"/> read documents written by the
-/// same emitter — <c>versio_yaml.py</c> — so the quoting, the <c>key: value</c> split and the
-/// flag rule are one contract, not two. They lived inside <see cref="LibraryCatalog"/> while
-/// it was the only reader; a second reader copying them would mean the day the emitter's
-/// quoting changed, one reader would be fixed and the other would corrupt names quietly.
+/// <see cref="LibraryCatalog"/>, <see cref="TaskCatalog"/> and <see cref="DeviceCatalog"/>
+/// read documents written by the same emitter — <c>versio_yaml.py</c> — so the quoting, the
+/// <c>key: value</c> split and the flag rule are one contract, not three. They lived inside
+/// <see cref="LibraryCatalog"/> while it was the only reader; a second reader copying them
+/// would mean the day the emitter's quoting changed, one reader would be fixed and the other
+/// would corrupt names quietly.
 /// </para>
 /// <para>
-/// What is deliberately NOT shared is the document walk itself: the two formats nest
-/// differently — libraries carry nested mappings (<c>parameters</c>), tasks carry nested
-/// scalar lists (<c>pous</c>) — and a walk generic over both would be harder to read than
-/// two short concrete ones, for machinery only two files use.
+/// What is deliberately NOT shared is the document walk itself: the formats nest
+/// differently — libraries and devices carry nested mappings (<c>parameters</c>,
+/// <c>slots</c>), tasks carry nested scalar lists (<c>pous</c>) — and a walk generic over
+/// them would be harder to read than three short concrete ones.
 /// </para>
 /// </remarks>
 internal static class CatalogYaml
 {
-    /// <summary>Split <c>key: value</c> at the first colon.</summary>
+    /// <summary>Split <c>key: value</c> at the first colon that is not inside quotes.</summary>
     /// <remarks>
-    /// A colon inside a quoted <b>value</b> is safe, because the split happens before the
-    /// value is unquoted — <c>"Standard, * (System)"</c> and friends survive. A colon inside a
-    /// quoted <b>key</b> would not, and is not defended against: the keys are these formats'
-    /// own field names plus library parameter names, and a parameter name is an IEC
-    /// identifier, which cannot contain one. Stated rather than silently assumed, because it
-    /// is the kind of bound that stops being true when somebody reuses the reader for another
-    /// file.
+    /// A colon inside a quoted <b>value</b> was always safe, because the split happened
+    /// before the value was unquoted. A colon inside a quoted <b>key</b> was not: the
+    /// first <c>IndexOf(':')</c> cut <c>"Mode: DC-Synchron": "1"</c> into key
+    /// <c>"Mode</c>. That bound held while keys were IEC identifiers (library parameters).
+    /// Device parameter names are free vendor text and the emitter quotes a colon, so the
+    /// separator has to skip quoted spans. Unclosed quotes yield no split rather than a
+    /// corrupted key.
     /// </remarks>
     internal static bool Split(string text, out string key, out string value)
     {
         key = string.Empty;
         value = string.Empty;
 
-        var colon = text.IndexOf(':');
-        if (colon <= 0)
+        var inQuotes = false;
+        var escape = false;
+        for (var i = 0; i < text.Length; i++)
         {
-            return false;
+            var ch = text[i];
+            if (escape)
+            {
+                escape = false;
+                continue;
+            }
+
+            if (inQuotes)
+            {
+                if (ch == '\\')
+                {
+                    escape = true;
+                }
+                else if (ch == '"')
+                {
+                    inQuotes = false;
+                }
+
+                continue;
+            }
+
+            if (ch == '"')
+            {
+                inQuotes = true;
+                continue;
+            }
+
+            if (ch == ':')
+            {
+                key = Unquote(text[..i].Trim());
+                value = text[(i + 1)..].Trim();
+                return key.Length > 0;
+            }
         }
 
-        key = Unquote(text[..colon].Trim());
-        value = text[(colon + 1)..].Trim();
-        return key.Length > 0;
+        return false;
     }
 
     internal static string Value(IReadOnlyDictionary<string, string> map, string key) =>

@@ -33,13 +33,16 @@
     <ProjectReference Include="..\Versio.Infrastructure\Versio.Infrastructure.csproj" />
 
     <!-- THE COMPOSITION ROOT, and the only project outside the pack itself that may name a
-         vendor. App.xaml.cs calls CodesysPack.Register() then TiaPortalPack.Register();
+         vendor. App.xaml.cs calls CodesysPack.Register() then TiaPortalPack.Register()
+         then TwinCatPack.Register();
          adding Rockwell means another reference here and another line there, and nothing
          else in the solution changes. -->
     <ProjectReference Include="..\Versio.Plc.Codesys.Infrastructure\Versio.Plc.Codesys.Infrastructure.csproj" />
     <ProjectReference Include="..\Versio.Plc.TiaPortal.Infrastructure\Versio.Plc.TiaPortal.Infrastructure.csproj" />
+    <ProjectReference Include="..\Versio.Plc.TwinCat.Infrastructure\Versio.Plc.TwinCat.Infrastructure.csproj" />
   </ItemGroup>
 
   <Import Project="..\Versio.Plc.TiaPortal.Host\CopyHostToReferrer.targets" />
+  <Import Project="..\Versio.Plc.TwinCat.Host\CopyHostToReferrer.targets" />
 
 </Project>

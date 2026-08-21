@@ -139,7 +139,7 @@ public readonly record struct PlcProgress(
 /// interchangeable — which is what keeps the server-hosted option (plan §13.8) free to defer.
 /// </para>
 /// <para>
-/// <b>This is the seam.</b> Adding Rockwell, Siemens or TwinCAT means implementing this,
+/// <b>This is the seam.</b> Adding a vendor means implementing this,
 /// <see cref="IPlcProjectFormat"/> and <see cref="IPlcToolchain"/>. Nothing in <c>Sync/</c>,
 /// <c>Git/</c>, <c>Locking/</c>, <c>Watching/</c> or <c>Diff/</c> should need to change; if it
 /// does, vendor knowledge has leaked past here and the leak is the bug.

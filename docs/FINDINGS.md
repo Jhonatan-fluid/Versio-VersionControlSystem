@@ -19,6 +19,258 @@ produce a diff touching everything else.
 
 ---
 
+### TIA hardware probe: render is real, port partners are not on this fixture, import is SetAttribute not PlugNew
+
+**Found 2026-08-20**, by `hwprobe` on a `%TEMP%` copy of CleaningStation, before any
+`*.devices.yaml` was written. Product Export still walks `Devices` only to find
+`PlcSoftware` and records Hardware as `SERVICE_OBJECT`. The discarded tree is 13
+DeviceItems under one ET 200SP station: CPU `6ES7 514-2DN03-0AB0`, bus adapter, server
+module, two PN interfaces, ports. Two untouched dumps were SHA-256 identical.
+
+The first lookup names were wrong, the same class of miss as CODESYS `get_libraries()`:
+`GetAttributes` is a no-op for write flags — `GetAttributeInfos` is the list;
+`IoConnector` / `IoController` / `IoSystem` live in `Siemens.Engineering.HW`, not
+`Features`. `PositionNumber` mixes rack slots with PN-encoded values (32768+) and
+OPC UA (254); treating gaps as empty IO-Link slots invented 33,015 holes, then 249
+after capping at 256. The real rack still is not eight `<Empty>` children.
+
+`NetworkPort.ConnectedPorts` is empty because this project has **one** station. Subnet
+`Plantbus` names node `X1` on `PROFINET interface_1`. That is membership, not
+device-A-port-X to device-B-port-Y. `ConnectToPort` exists. Comment `SetAttribute`
+applied and restored without Save. `PlugNew` is on the type; `Unplug` and
+`CreateWithItem` are not. No hardware `Import`/`Export` method on Device.
+
+**What we did.** `hwprobe` and `tools/tia/Probe-Hardware.ps1`, then product export of
+`*.devices.yaml` (form `DEVICE_COMMENT`) after the owner picked Comment
+`SetAttribute`. Import verifies the read-back. Evidence in
+[`vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md) §4.4. Gate 5/5 green in 9 m on
+2026-08-20 after identity was parent+name+`@PositionNumber` (two `Port_1` on this
+fixture would otherwise share one path). First gate that day was 15 m 2 s on
+name-only paths.
+
+**What we rejected.** Inferring partners from slot order. Dumping hardware SimaticML
+as the reviewable form (`UId` already failed as identity for blocks). Using form
+`DEVICES` for the TIA file — that form is export-only, so a missing yaml would have
+been a silent no-op instead of ApplyText, and making `DEVICES` importable would have
+offered CODESYS I/O as an import. Applying a CODESYS `DEVICES` file as TIA Comment
+(the planner did that until the second pass). `PlugNew` exists on the type and was
+not invoked. Name-only DeviceItem paths.
+
+---
+
+### I/O export review: a failed Device write could delete the application from the mirror
+
+**Found 2026-08-20**, by a second-pass review of the same day's I/O export, before anyone
+ran it against a failing write. `FORM_DEVICES` warned `EXPORT_FAILED` and returned
+before walking children. Device used to be `FORM_CONTAINER` — no write, children walked
+unconditionally. A disk error, AV lock, or path-length `IOError` on the root Device YAML
+would swap in a mirror missing Plc Logic, Application and every POU; coverage would name
+only the device; the next commit could look like a mass deletion.
+
+The same review found five quieter holes in the same delivery: `CatalogYaml.Split` cut
+quoted parameter keys at the first colon (library keys were IEC identifiers; device names
+are free text); folder+yaml merge compared the encoded path segment to the manifest's
+verbatim name, so `COM1` / `foo<bar>` never merged; an added connector's parameters stayed
+`Unmodified` (`markBaseline` meant the opposite of its name); a third same-named parameter
+with no id overwrote the second's `#dup` key; the detail pane looked up connectors by id or
+interface only, missing the `DisplayName` fallback the tree uses.
+
+**What we did.** Warn and walk children after a failed device write. Quote-aware split in
+C# and `versio_yaml._split`. Merge on `{folder}/{stem}.devices.yaml`, not on `Name`.
+`hasBaseline` marks an added connector's params Added. Duplicate keys uniquify with `#2`,
+`#3`. Pane lookup uses `DeviceConnector.Key` and shared path markers. Unreadable slot
+indexes key `unindexed-n` rather than collapsing on `<Empty>`. A skipped slot that reports
+children warns and walks them.
+
+**What we rejected.** Teaching `Versio.Core` to percent-decode CODESYS stems — that is a
+vendor decoder. The encoded path is already the folder's identity.
+
+**A second look found the one that got away.** Two connectors whose keys collide — id-less
+ports sharing an interface; nothing upstream guarantees `Key` is unique, the exporter
+writes the toolchain's list verbatim — were still one row: `DeviceNodes` dropped the
+second on a seen-set, so a changed parameter on it had no diff row anywhere while the
+clicked catalog table showed both ports. `DeviceCatalog.KeyedConnectors()` now suffixes
+colliding keys `#2`, `#3` in file order — the same rule the exporter applies to duplicate
+parameter names — and the tree rows, their parameter paths, and the detail-pane lookup all
+key off it. The same pass fixed two smaller things: README and DRIVING named a constant
+that has never existed (`EXPORT_ONLY_SUFFIXES`; the real one is `EXPORT_ONLY_FORMS`), and
+`_text` existed three times before it existed once (now `versio_yaml.text_of`, imported by
+all three catalog modules). Uniquifying colliding
+connector keys in the tree — the fixture's ids are distinct, and collapsing on `Key` is
+the same rule libraries already use.
+
+---
+
+### Eight empty IO-Link slots collided onto one file, and the founding plan named APIs that do not exist
+
+**Found 2026-08-20**, by a probe of RefrigeratorControl on CODESYS V3.5 SP22 Patch 2 before
+writing the I/O export. The coupler `BNI_XG3_508_0C5_R015` has eight children, all named
+`<Empty>`, all GUID `085766fd-043e-4545-8e8d-d651d56d5d3b`, all `connector_id: 1`. Native
+export percent-encodes that name to `%3CEmpty%3E.xml` and writes every sibling onto the same
+path — last write wins, seven slots vanish, and the manifest records eight
+`UNKNOWN_TYPE_GUID` warnings for one leftover file. Identity is the child's `obj.index`
+(0–7), not the name and not `connector_id`.
+
+The founding plan's ScriptEngine names were also wrong on this install. `parameters`,
+`get_all_parameters`, `device_identification` / `identification`, and `io_mapping` are
+missing. The payload that exists is `connector.host_parameters` (`name` / `id` / `value` /
+`description` / `unit`). Parameter `id` is stable across two untouched exports; names are
+not unique (`---` and `Cycle Time` both recur on the coupler). Two consecutive probe runs
+were byte-identical.
+
+**What we did.** Empty slots map as `DEVICE_SLOT` / `FORM_SKIP` / `COVERED_ELSEWHERE` and are
+listed in the parent `*.devices.yaml` (`slots:` nested map, keys `"0"`…`"7"`). Each real
+device writes `Device/Device.devices.yaml` *inside* its directory (a YAML beside the folder
+would be two sibling rows named Device). Duplicate parameter names key as `name#id`. The
+walk is CONTAINER-style: incoming `parent_guid` only — passing the device GUID would make
+Plc Logic look like a member of Device. The form is `DEVICES`, export-only; parameter
+`setattr` and IEC `%I/%Q` mapping are not this pass. Identification is still missing — the
+YAML does not record which `.device` description a node is.
+
+**What we rejected.** Analogizing `DEVICE` to a POU (`Main.st` + `Main/`) — one YAML, not
+two, and the YAML must live inside the directory. Nested lists of parameter maps — the YAML
+subset has one top-level list of mappings (`connectors`) and nested *scalar* maps for
+parameters and slots. Treating `id` as the displayed identity — it is the disambiguator, not
+what a reviewer reads.
+
+**Evidence.** Two untouched exports of the fixture copy, 2026-08-20: 3 YAML files,
+SHA-256-identical across runs; 8 `DEVICE_SLOT` skips; 0 warnings; the collided
+`%3CEmpty%3E.xml` gone. Probe scripts kept at `tools/codesys/versio_probe_devices.py` and
+`Probe-Devices.ps1`.
+
+---
+
+### A TwinCAT import could delete or overwrite the wrong same-named object
+
+**Found 2026-08-20**, by a code review of commit `73741e4` — before any user ran a TwinCAT
+import with deletions. The host's delete and ApplyText both fell back to a **display-name
+index** when the identity lookup missed: `index.ByGuid.TryGetValue(guid, out found) ||
+index.ByName.TryGetValue(n, out found)`. The "guid" is an Automation Interface `PathName`
+(`TIPC^PLC^PLC Project^Motor`), which goes stale the moment the user moves or renames
+anything in XAE — precisely when the fallback fired. The name index was
+first-encountered-wins over *every* tree node, folders included, and POU member names
+recur (`Init`, `Execute`), so a planned deletion of a departed POU could `Delete()` a
+folder or a newer same-named object, and an edit could land on the wrong FB's method. The
+ApplyText read-back could not catch it: it verifies the text landed on the item written
+to, not that the item was the right one. TIA's host is deliberately guid-only on delete;
+the fallback was TwinCAT's addition.
+
+The same review found the host never honoured the contract `DeletedFile.Hash` documents
+("the executing side compares the *live* object against it before removing anything") —
+CODESYS does, via `why_not_delete`; TwinCAT deleted without comparing, so an object
+edited in XAE after the last export went down with its unexported edits. And planned
+work could drop silently: a missing source file warned and continued, an unmatched
+rename or a null guid skipped with no event, an unrecognised action (`ApplyNative`
+included) fell through both branches — then the run saved and emitted `done ok`.
+"Import job has no plan" was worse: `EmitFatal` then *return*, after which `Run`
+emitted `done` and exited 0.
+
+**Fix (same day):** delete is identity-only and compares the live packed-text hash to
+the recorded one before `Delete()` — miss or mismatch keeps the object with a sentence.
+ApplyText resolves guid, then a session rename map (a rename changes the live `PathName`
+mid-import, which is the one legitimate reason the name fallback existed), then a name
+only when it is unique in the tree; ambiguity throws. Every silent drop now throws
+before anything is saved — `Solution.Close(false)` discards the half-applied session,
+so disk stays untouched. Both directory-vendor runners refuse a plan-less import
+instead of fabricating an empty plan that no-ops, saves and reports green.
+
+**What was rejected:** a "unique name" fallback for delete. A unique-named survivor is
+still not the object the plan named, and `Delete()` is the call P3 measured to destroy a
+referenced object with no exception and no cascade.
+
+The gate's import Fact exercises ApplyText only, so the delete-verify and rename
+preconditions are code-reviewed, not XAE-gated — they join create/delete/rename in
+[`vendors/twincat/DRIVING.md`](vendors/twincat/DRIVING.md) §9 as Facts still owed.
+
+---
+
+### The TwinCAT conversion refusal failed open exactly when it knew the least
+
+**Found 2026-08-20**, same review. `WouldConvert` ended in `if (project is null ||
+install is null) return false` — proceed. `ProjectTcVersion` swallowed every exception,
+and the locator returned `Version = "unknown", InstallFolder = ""` for any TwinCAT
+outside its three hardcoded folders. On such a machine a 4024 project on a 4026 shell
+opened **on the bound path** with `SuppressUI` set and converted headless, nobody asked —
+the OpenWithUpgrade class of mistake the check exists to refuse, disabled by exactly the
+missing information that makes the mistake likely. The refusal message even had wording
+for an unknown install; that branch was unreachable in the unknown case.
+
+**Fix:** `ConvertRefusal` returns a sentence naming which side could not be read — unknown
+refuses. The false-refusal cost is paid in discovery, not by skipping the check:
+`TWINCAT3DIR` (set machine-wide by the Beckhoff installer) is a fallback in both the
+locator and the host's own walk, `Build_*` is picked numerically rather than by ordinal
+string sort (a five-digit build would have sorted below `Build_4026`), and an unreadable
+`Version.txt` degrades to unknown instead of faulting `ProbeAsync`. `AllowConvert` — the
+`%TEMP%` copy — bypasses as designed. Gate re-ran 5/5 green.
+
+---
+
+### The lazy-TIPC wait was dead code, and an empty export reported success
+
+**Found 2026-08-20**, same review. `WaitForPlcProject`'s generic branch ended its
+coalesce in `?? child`, so it returned on the first pass for any named TIPC child — the
+90 × 500 ms retry loop could never retry, and the node returned could be the outer child
+whose lazy children had not loaded. `Export` would then walk zero children, write a
+mirror with no objects, and emit `done ok`: the next diff reads as **every object
+deleted**, the one failure this project exists to prevent. The gate never saw any of it
+because the fixture's name was compiled into a fast path (`TIPC^LibraryDocumentationSample^…`),
+so the gate proved a branch no real project would take.
+
+**Fix:** fast path deleted, the loop actually retries the nested `<name> Project`
+lookup, an outer child may stand in only after half the wait *and* only with
+demonstrably loaded children — and `Export` now refuses to write a mirror with zero
+objects at all, so even a wrongly-accepted node cannot produce the mass-deletion diff
+silently. Cost accepted: a genuinely empty PLC project cannot export; it has nothing to
+lose by the refusal. Gate re-ran green through the generic branch it now actually
+exercises — 3 m 17 s against 3 m 14 s before, so the fast path was buying nothing.
+
+---
+
+### WaitForExit(int) let the TIA and TwinCAT runners read a truncated stream
+
+**Found 2026-08-20**, same review. `WaitForExit(int)` is not a flush barrier — the async
+`OutputDataReceived` handlers can still hold the last lines when it returns, and only
+the parameterless `WaitForExit()` is documented to wait for them. On that race the final
+`@@VERSIO@@` `done` line is missing, `Completed` is false, and a fully successful import
+— one that changed the project — returns `Succeeded = false, "host exited 0"`.
+`LocalCodesysRunner` and `GitCliClient` already carry the follow-up wait with the same
+reasoning in a comment; the two newer runners were copied from a shape predating it.
+Both drain now, both log malformed protocol lines (previously dropped without a trace —
+the "failure arrives with no message" shape the quiet-verbosity finding already
+records), and the hosts' JSON escaping covers control characters, which COM error
+messages do carry.
+
+---
+
+### TwinCAT version taken from the Visual Studio shell refused every open
+
+**Found 2026-08-19**, first TwinCAT host open of `TC3_PlcSample_reStrText`
+(`TcVersion="3.1.4024.4"`) on a 3.1.4026.25 install. The locator compared the
+project to `TcXaeShell.exe` ProductVersion, which is **`15.0.0.0`** — the Visual
+Studio shell, not TwinCAT. Every open looked like a conversion and was refused,
+including the `%TEMP%` copies the gate is allowed to convert.
+
+**Fix:** read `Components\Plc\Build_4026.25` (and `Version.txt` if that folder is
+missing). Probe of a TEMP copy then succeeded in ~19 s. Conversion of the path the
+user bound stays refused; only `Path.GetTempPath()` copies set `AllowConvert`. The
+host's own convert-check had the same ProductVersion fallback until 2026-08-20 —
+a locator-supplied version hid it on the gate path; an `unknown` version would have
+compared `3.1.4026.25` to `15.0.0.0` and refused a matching project. Both walks
+now use `Build_*`.
+
+**What was rejected:** treating several TwinCAT shells as TIA's "several Portal
+versions → refuse" case. 17.0 and 15.0 on this machine are the same TwinCAT
+build; 17.0 is the 64-bit host and is preferred, logged, never a silent swap.
+
+Related traps measured the same day, kept in
+[`vendors/twincat/DRIVING.md`](vendors/twincat/DRIVING.md) rather than as
+separate findings: no `IOleMessageFilter` → `RPC_E_CALL_REJECTED` after a 2.6 s
+DTE create; `ITcSysManager.Save` is `DISP_E_UNKNOWNNAME`, `File.SaveAll` works;
+`DeclarationText` often missing on IDispatch, `ProduceXml` is the fallback —
+still the Automation Interface, not a disk parse of `.TcPOU`.
+
+---
+
 ### A deletion-only mirror edit could report success while the object kept the line
 
 **Found 2026-08-19**, by a code audit of the import verification — not by a test, because

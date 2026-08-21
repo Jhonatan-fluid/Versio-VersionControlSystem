@@ -83,10 +83,16 @@ public sealed class LocalTiaPortalRunner(
             return PlcResult.Failure("TIA Portal is not installed on this machine.");
         }
 
+        // The orchestrator leaves the plan null only when no format claims the path any
+        // more, and "the runner decides" what that means. Fabricating an empty plan here
+        // decided it was a successful no-op — an import that applies nothing, saves, and
+        // reports green. Refusing with a sentence is the honest decision.
         var plan = only.Plan;
         if (job.Operation == PlcOperation.Import && plan is null)
         {
-            plan = TiaPortalProjectFormat.Instance.PlanImport(null, [], new Dictionary<string, string>());
+            return PlcResult.Failure(
+                "an import without a plan is refused — nothing was planned, so nothing would "
+                + "be applied.");
         }
 
         var native = new TiaPortalJob
@@ -235,6 +241,12 @@ public sealed class LocalTiaPortalRunner(
             return PlcResult.Failure("the TIA Portal host did not finish within the timeout");
         }
 
+        // WaitForExit(int) can return before the async readers have delivered their last
+        // lines; only the parameterless overload is documented to wait for them. Without
+        // it the final done line is sometimes still in flight when the buffer is read,
+        // and a fully successful import reports "host exited 0" as a failure.
+        process.WaitForExit();
+
         cancellationToken.ThrowIfCancellationRequested();
 
         string stdout;
@@ -247,6 +259,13 @@ public sealed class LocalTiaPortalRunner(
         foreach (var line in output.Chatter)
         {
             _log.Debug(TiaPortalLog.Category, line);
+        }
+
+        // A malformed protocol line may be the fatal that explains everything else —
+        // dropping it silently is how a failure arrives with no message at all.
+        foreach (var line in output.Malformed)
+        {
+            _log.Warn(TiaPortalLog.Category, "malformed protocol line: " + line);
         }
 
         if (output.Fatal is { } fatal)

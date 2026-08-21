@@ -1,0 +1,43 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.17">
+  <POU Name="FB_Libdoc_IndirectHyperlinks" Id="{0a49df7b-f8d0-4741-aa0d-5a05a6cb4bc5}" SpecialFunc="None">
+    <Declaration><![CDATA[(*
+
+**Indirect references to an internal reference target**
+
+This hyperlink points to target one_ and indirect to target three.
+
+.. _one: two_
+.. _two: three_
+.. _three:
+
+The hyperlink targets above point to this paragraph.
+
+**Indirect references to an external reference target**
+
+The `Beckhoff Information System`_ is a reference source for Beckhoff_ products
+
+.. _Beckhoff: `Beckhoff Information System`_
+
+.. _Beckhoff Information System: https://infosys.beckhoff.de/
+*)
+
+FUNCTION_BLOCK FB_Libdoc_IndirectHyperlinks
+VAR_INPUT
+    nVarA : INT;
+    nVarB : INT;
+END_VAR
+VAR_OUTPUT
+    nSum : INT;
+END_VAR
+VAR
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <LineIds Name="FB_Libdoc_IndirectHyperlinks">
+      <LineId Id="9" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>
