@@ -5,7 +5,7 @@ using Versio.Core.Text;
 namespace Versio.Core.Iec;
 
 /// <summary>
-/// Packs a CODESYS object's declaration and implementation into one reviewable .st file
+/// Packs an IEC object's declaration and implementation into one reviewable .st file
 /// and takes it apart again.
 /// </summary>
 /// <remarks>

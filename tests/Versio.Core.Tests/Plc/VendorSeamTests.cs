@@ -54,6 +54,8 @@ public sealed class VendorSeamTests
         "Versio.Core.Hashing",
         "Versio.Core.Logging",
         "Versio.Core.Guarding",
+        "Versio.Core.Iec",
+        "Versio.Core.Settings",
     ];
 
     /// <summary>

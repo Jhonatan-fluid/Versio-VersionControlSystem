@@ -427,6 +427,26 @@ public sealed class MainWindowTests
         });
     }
 
+    [Fact]
+    public void The_project_rail_tooltip_does_not_name_a_vendor()
+    {
+        // Shown to every session. "as CODESYS structures it" was the sentence a TwinCAT
+        // or TIA owner still read. VendorSeamTests never sees Versio.App, so this is
+        // the lock: a brand in the tooltip has to fail here.
+        StaHarness.Run(() =>
+        {
+            var window = Build();
+            var rail = Assert.IsType<RadioButton>(window.FindName("RailProject"));
+            var tip = Assert.IsType<string>(rail.ToolTip);
+
+            Assert.DoesNotContain("CODESYS", tip, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("TwinCAT", tip, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("Siemens", tip, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("TIA Portal", tip, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("toolchain", tip, StringComparison.OrdinalIgnoreCase);
+        });
+    }
+
     /// <summary>
     /// Selecting one rail button clears the other two, and shows only its own panel.
     /// </summary>

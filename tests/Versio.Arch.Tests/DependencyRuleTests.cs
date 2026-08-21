@@ -98,6 +98,22 @@ public sealed class DependencyRuleTests
     }
 
     [Fact]
+    public void ViewModels_do_not_reach_into_a_vendor_pack()
+    {
+        // The composition root may name vendors. A view model that imports a pack is
+        // the next vendor costing an edit that is not Register() — LogFilterViewModel
+        // listed three log categories by type until this assertion existed.
+        var offenders = VendorSeamScanner
+            .VendorTypeReferences(App, "Versio.App.ViewModels", "Versio.Plc.")
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(offenders.Count == 0,
+            "a view model reaches into a vendor pack:" + Environment.NewLine +
+            string.Join(Environment.NewLine, offenders));
+    }
+
+    [Fact]
     public void Rule5_every_public_async_method_in_Core_can_be_cancelled()
     {
         // An await with no way out is a hang with no way out. Everything in Core is driven by

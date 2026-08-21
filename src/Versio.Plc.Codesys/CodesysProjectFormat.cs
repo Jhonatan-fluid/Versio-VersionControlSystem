@@ -19,6 +19,8 @@ public sealed class CodesysProjectFormat : IPlcProjectFormat
 
     public string DisplayName => "CODESYS 3.5";
 
+    public string LogCategory => CodesysLog.Category;
+
     /// <remarks>
     /// Every capability here was measured against a real project rather than assumed —
     /// see <c>docs/phase1/PHASE0-FINDINGS.md</c>. <see cref="PlcCapabilities.TypicalStartupCost"/>
@@ -48,6 +50,9 @@ public sealed class CodesysProjectFormat : IPlcProjectFormat
 
     public string ConventionalExportPath(string projectPath) =>
         BindingConventions.ConventionalExportPath(projectPath);
+
+    public string? ConventionalTemplatePath(string projectPath) =>
+        BindingConventions.ConventionalTemplatePath(projectPath);
 
     /// <summary>
     /// What CODESYS leaves beside a project, measured on 3.5.22.20.

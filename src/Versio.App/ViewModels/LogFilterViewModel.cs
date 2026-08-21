@@ -1,9 +1,7 @@
 using System.Collections.ObjectModel;
 using Versio.App.Mvvm;
 using Versio.Core.Logging;
-using Versio.Plc.Codesys;
-using Versio.Plc.TiaPortal;
-using Versio.Plc.TwinCat;
+using Versio.Core.Plc;
 
 namespace Versio.App.ViewModels;
 
@@ -92,20 +90,19 @@ public sealed class CategoryToggle(string name, bool enabled) : ObservableObject
 public sealed class LogFilterViewModel : ObservableObject
 {
     /// <summary>
-    /// Every category in <see cref="LogCategory"/>, in the order they are worth reading.
+    /// Neutral categories, in the order they are worth reading.
     /// </summary>
     /// <remarks>
     /// Ordered by what somebody is usually chasing rather than alphabetically: the sync
     /// engine and the toolchain first, then git, then the supporting detail. Alphabetical
-    /// would open the list on <c>App</c>, which is three lines a session.
+    /// would open the list on <c>App</c>, which is three lines a session. Vendor names
+    /// come from <see cref="PlcFormats"/> so this file never imports a pack — a fourth
+    /// vendor is a <c>Register()</c> call, not another line here.
     /// </remarks>
-    private static readonly string[] KnownCategories =
+    private static readonly string[] NeutralCategories =
     [
         LogCategory.Sync,
         LogCategory.Plc,
-        CodesysLog.Category,
-        TiaPortalLog.Category,
-        TwinCatLog.Category,
         LogCategory.Git,
         LogCategory.Lock,
         LogCategory.Watch,
@@ -128,7 +125,7 @@ public sealed class LogFilterViewModel : ObservableObject
             new LevelToggle(LogLevel.Error, "ERR", "Brush.Status.Deleted", enabled: true),
         ];
 
-        Categories = [.. KnownCategories.Select(c => new CategoryToggle(c, enabled: true))];
+        Categories = [.. CategoriesAtConstruction().Select(c => new CategoryToggle(c, enabled: true))];
 
         foreach (var toggle in Levels)
         {
@@ -320,6 +317,32 @@ public sealed class LogFilterViewModel : ObservableObject
         }
 
         Raise();
+    }
+
+    /// <summary>
+    /// Neutral chips, with one chip per registered vendor between Plc and Git.
+    /// </summary>
+    /// <remarks>
+    /// Read from the registry at construction, not baked into a static list: a test
+    /// that registers a stand-in has to see its chip, and a build that has not yet
+    /// called <c>Register()</c> must not show three empty brand names. The walk is
+    /// the same mutation check as the rest of the seam — deleting it leaves a
+    /// fourth vendor's chatter in the log with no toggle.
+    /// </remarks>
+    private static IReadOnlyList<string> CategoriesAtConstruction()
+    {
+        var known = new List<string> { LogCategory.Sync, LogCategory.Plc };
+        foreach (var category in PlcFormats.All.Select(f => f.LogCategory))
+        {
+            if (!string.IsNullOrWhiteSpace(category)
+                && !known.Contains(category, StringComparer.Ordinal))
+            {
+                known.Add(category);
+            }
+        }
+
+        known.AddRange(NeutralCategories.Skip(2));
+        return known;
     }
 
     private void Raise()

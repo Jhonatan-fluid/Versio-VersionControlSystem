@@ -17,13 +17,13 @@ namespace Versio.Core.Projects;
 /// </remarks>
 public enum ProjectNodeKind
 {
-    /// <summary>A folder in the CODESYS structure. Carries no diff of its own.</summary>
+    /// <summary>A folder in the project structure. Carries no diff of its own.</summary>
     Folder,
 
-    /// <summary>One CODESYS object, with one or more exported layers.</summary>
+    /// <summary>One exported object, with one or more layers.</summary>
     Object,
 
-    /// <summary>A tracked <c>.project</c> file. Reports its export, never a diff.</summary>
+    /// <summary>A tracked project file. Reports its export, never a diff.</summary>
     Project,
 
     /// <summary>A changed file that is not part of any export tree.</summary>
@@ -247,13 +247,13 @@ public sealed record ProjectTreeOptions
 }
 
 /// <summary>
-/// Builds the CODESYS object tree from the manifest and git's view of the working tree.
+/// Builds the object tree from the manifest and git's view of the working tree.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The export mirrors the CODESYS structure, so the left pane can show the project as the
+/// The export mirrors the toolchain's structure, so the left pane can show the project as the
 /// engineer thinks about it rather than as paths on disk. A flat list of
-/// <c>plc/Machine/Device/Plc Logic/Application/Main.st</c> is a regression from what CODESYS
+/// <c>plc/Machine/Device/Plc Logic/Application/Main.st</c> is a regression from what the IDE
 /// itself shows them all day.
 /// </para>
 /// <para>

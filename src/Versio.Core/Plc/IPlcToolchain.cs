@@ -45,6 +45,17 @@ public interface IPlcProjectFormat
     /// <summary>Display name, e.g. "CODESYS 3.5".</summary>
     string DisplayName { get; }
 
+    /// <summary>
+    /// How this vendor's runner labels its own log lines.
+    /// </summary>
+    /// <remarks>
+    /// Default is <see cref="PlcVendor.Name"/>, which is what every shipping pack emits.
+    /// Declared here so the log filter can list a chip per registered vendor without
+    /// importing any pack — adding a vendor is still one <c>Register()</c> call, not a
+    /// fourth edit in the shell. Empty is skipped, never shown as a blank row.
+    /// </remarks>
+    string LogCategory => Vendor.Name;
+
     PlcCapabilities Capabilities { get; }
 
     /// <summary>Extensions identifying a project, e.g. <c>.project</c>.</summary>
@@ -62,6 +73,17 @@ public interface IPlcProjectFormat
 
     /// <summary>Conventional export directory for a project path.</summary>
     string ConventionalExportPath(string projectPath);
+
+    /// <summary>
+    /// Sibling template path for a working project, or null when this vendor has none.
+    /// </summary>
+    /// <remarks>
+    /// Default is none. The first vendor names a sibling <c>*_template.project</c>; the
+    /// others treat archives as templates of the file itself (<see cref="IsTemplate"/>)
+    /// and have no sibling to record. Inventing <c>_template.project</c> for every
+    /// adopt is how a TwinCAT binding stored <c>foo.tsproj_template.project</c>.
+    /// </remarks>
+    string? ConventionalTemplatePath(string projectPath) => null;
 
     /// <summary>
     /// The bytes that <i>are</i> the project on disk — the file, or the directory that

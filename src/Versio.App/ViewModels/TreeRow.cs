@@ -169,7 +169,7 @@ public sealed class TreeRow : ObservableObject
     /// </remarks>
     public bool IsFile => Node.Kind == ProjectNodeKind.File;
 
-    /// <summary>The object's CODESYS type, shown beside the name. Empty for anything else.</summary>
+    /// <summary>The object's type, shown beside the name. Empty for anything else.</summary>
     public string TypeLabel =>
         Node.Kind == ProjectNodeKind.Object ? Node.Type?.ToLowerInvariant() ?? "" : string.Empty;
 
@@ -185,7 +185,7 @@ public sealed class TreeRow : ObservableObject
     /// <remarks>
     /// A project reports its export state; a library its version and a task its schedule,
     /// which are the facts a reviewer opens the catalog to check; an object reports its
-    /// CODESYS type, so a POU and a visualisation with the same name are told apart. One
+    /// type, so a POU and a visualisation with the same name are told apart. One
     /// property rather than several columns competing for the same space, since no row ever
     /// has more than one.
     /// </remarks>

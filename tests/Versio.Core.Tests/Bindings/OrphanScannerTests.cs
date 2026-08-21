@@ -1,6 +1,7 @@
 using Versio.Core.Bindings;
 using Versio.Core.Plc;
 using Versio.Core.Projects;
+using Versio.Plc.Codesys;
 using Xunit;
 
 namespace Versio.Core.Tests.Bindings;
@@ -283,16 +284,32 @@ public class OrphanScannerTests
     }
 
     [Fact]
-    public void A_proposed_binding_uses_the_conventions()
+    public void A_proposed_binding_without_a_format_does_not_invent_a_template_path()
     {
         var b = OrphanScanner.ProposeBinding("plc/New.project", "b-new", "CODESYS V3.5 SP22 Patch 2");
 
         Assert.Equal("plc/New.project", b.ProjectPath);
         Assert.Equal("plc/New", b.ExportPath);
-        Assert.Equal("plc/New_template.project", b.TemplatePath);
+        Assert.Null(b.TemplatePath);
         Assert.Equal("CODESYS V3.5 SP22 Patch 2", b.Profile);
         Assert.True(b.Vendor.IsUnknown);
         Assert.True(b.Enabled);
+    }
+
+    [Fact]
+    public void A_proposed_binding_takes_its_template_path_from_the_format()
+    {
+        var codesys = OrphanScanner.ProposeBinding(
+            "plc/New.project", "b-new", "CODESYS V3.5 SP22 Patch 2", CodesysProjectFormat.Instance);
+
+        Assert.Equal("plc/New_template.project", codesys.TemplatePath);
+        Assert.Equal(PlcVendor.Codesys, codesys.Vendor);
+
+        var none = OrphanScanner.ProposeBinding(
+            "plc/Archive.al21", "b-al", format: ArchiveFormat.Instance);
+
+        Assert.Null(none.TemplatePath);
+        Assert.Equal(new PlcVendor("ArchiveStandIn"), none.Vendor);
     }
 
     [Fact]

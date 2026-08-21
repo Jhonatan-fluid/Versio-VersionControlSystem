@@ -19,6 +19,8 @@ public sealed class TiaPortalProjectFormat : IPlcProjectFormat
 
     public string DisplayName => "TIA Portal";
 
+    public string LogCategory => TiaPortalLog.Category;
+
     /// <remarks>
     /// Measured 2026-08-19: a warm probe of CleaningStation is 42 s, a warm export 37 s.
     /// The host still uses a twenty-minute timeout because a 488 MB project and a first
@@ -63,6 +65,8 @@ public sealed class TiaPortalProjectFormat : IPlcProjectFormat
             ? normalised + ".export"
             : normalised[..^ext.Length];
     }
+
+    public string? ConventionalTemplatePath(string projectPath) => null;
 
     /// <inheritdoc />
     /// <remarks>

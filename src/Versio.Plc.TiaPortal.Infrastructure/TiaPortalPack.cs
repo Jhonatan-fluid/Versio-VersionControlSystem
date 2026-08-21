@@ -12,8 +12,8 @@ public static class TiaPortalPack
 {
     /// <summary>Register the format and toolchain. Safe to call more than once.</summary>
     /// <remarks>
-    /// Called after the first vendor's pack so <see cref="PlcFormats.All"/>[0] stays the
-    /// default for anything that still picks the first registered format.
+    /// Called after the first vendor's pack. Probe and adopt walk the whole registry;
+    /// registration order is not a session pin.
     /// </remarks>
     public static void Register()
     {

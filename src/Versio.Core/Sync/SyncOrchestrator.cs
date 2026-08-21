@@ -58,7 +58,7 @@ public readonly record struct SyncRunNotice(
     string BindingId, PlcOperation Operation, string OperationId);
 
 /// <summary>
-/// Reconciles a CODESYS project against its exported text.
+/// Reconciles a PLC project against its exported text.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -1515,8 +1515,10 @@ public sealed class SyncOrchestrator
         // meant the first job deleted the second's project on the way out —
         // Win32 missing-file, ExportFailed, and every later commit blocked until
         // acknowledgement (2026-08-21, TwinCAT held-copy).
+        // NewOperationId rather than Guid.NewGuid here: Core's purity rule already
+        // exempts that helper, and this is the same eight-character identity.
         var folder = Combine(".versio", "local", "open", binding.Id,
-            Guid.NewGuid().ToString("N")[..8]);
+            LoggerExtensions.NewOperationId());
         var name = Path.GetFileName(binding.ProjectPath.Replace('/', Path.DirectorySeparatorChar));
         var destination = Path.Combine(folder, name);
 

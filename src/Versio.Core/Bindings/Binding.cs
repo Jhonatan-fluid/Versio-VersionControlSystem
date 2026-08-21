@@ -94,7 +94,17 @@ public sealed record RepoConfig
     public Git.ForgeKind Forge { get; init; } = Git.ForgeKind.Unknown;
 }
 
-/// <summary>The names and layout a binding assumes when nothing overrides them.</summary>
+/// <summary>
+/// Shared names Versio writes, plus the first vendor's file layout.
+/// </summary>
+/// <remarks>
+/// Staging, trash and <c>.versio/local/</c> are Versio's own and belong here.
+/// <see cref="ProjectExtension"/>, <see cref="TemplateSuffix"/> and the two path
+/// helpers that follow from them are the first vendor's conventions, consumed by
+/// that vendor's format. A second vendor's export and template paths come from
+/// its <c>IPlcProjectFormat</c>; using these helpers to invent a sibling
+/// <c>_template.project</c> for every adopt was the leak.
+/// </remarks>
 public static class BindingConventions
 {
     public const string ProjectExtension = ".project";

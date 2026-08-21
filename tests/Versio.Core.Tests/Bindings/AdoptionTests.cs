@@ -29,6 +29,7 @@ public sealed class AdoptionTests
         Assert.True(decision.CanAdopt);
         Assert.Equal("plc/Machine.project", decision.Binding!.ProjectPath);
         Assert.Equal("plc/Machine", decision.Binding.ExportPath);
+        Assert.Equal("plc/Machine_template.project", decision.Binding.TemplatePath);
         Assert.Equal("CODESYS V3.5 SP22 Patch 2", decision.Binding.Profile);
         Assert.True(decision.Binding.Enabled);
     }

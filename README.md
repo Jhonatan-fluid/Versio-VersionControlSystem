@@ -89,7 +89,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | **Automatic import** when the mirror changes and no lock forbids it | ✅ the project is copied aside first; a failed backup fails the import |
 | Change detection over the mirror's real contents | ✅ `ContentHash.OfTree`; a hand-edited `.st` is seen, an untouched tree is not |
 | Side-by-side diff and word-level intra-line diff | ✅ a fold of the same unified diff; word emphasis is a token-aligned trim, not an LCS |
-| **One project view** — the full CODESYS tree with changes marked, plus every other changed file | ✅ replaced the PLC panel and the changed-files list |
+| **One project view** — the object tree with changes marked, plus every other changed file | ✅ replaced the PLC panel and the changed-files list |
 | A project with a clean mirror is not listed | ✅ unless it needs attention — never exported, behind, locked, failed. The empty state says why rather than going blank |
 | **Lazy object rendering** — a row is built when something can reach it, not before | ✅ `TreeRow.Children` on first access; the tree survives a refresh without collapsing |
 | **Export coverage stated, not assumed** — `_coverage.md` + every skip in the manifest | ✅ a gap is distinguished from a deliberate omission; an old manifest reports "unknown", never "complete"; and **an object the export could not write at all is reported rather than counted as covered** — it reaches neither the records nor the skips, so until 2026-08-16 a lost object left a verdict of "everything reaches the mirror" |
@@ -206,11 +206,11 @@ Versio.sln
 ├─ tests/
 │  ├─ Versio.TestSupport/       not a test project: the three helpers more than one suite
 │  │                            needs (TestPaths, TestLogger, VendorSeamScanner)
-│  ├─ Versio.Core.Tests/        1,451 unit tests — pure, no IO, under a second
+│  ├─ Versio.Core.Tests/        1,457 unit tests — pure, no IO, under a second
 │  ├─ Versio.Integration.Tests/ 153 tests against real git and the real filesystem, ~10 s.
 │  │                            NO CODESYS: that is a different project now, so this one
 │  │                            needs no filter and cannot accidentally cost half an hour
-│  ├─ Versio.App.Tests/         619 tests that build the real windows and panels against
+│  ├─ Versio.App.Tests/         621 tests that build the real windows and panels against
 │  │                            the real stylesheet on an STA thread — none is ever shown
 │  ├─ Versio.Plc.Codesys.Pure.Tests/ 263 pure vendor tests — the planner, the codecs, the
 │  │                            protocol — under a second, needing nothing
@@ -391,10 +391,10 @@ dotnet test tests/Versio.Core.Tests
 
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,451 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
+| `Versio.Core.Tests` | 1,457 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
 | `Versio.Integration.Tests` | 153 | a real `git.exe` and the real filesystem | ~10 s |
-| `Versio.Arch.Tests` | 14 | nothing — it reads assembly metadata, IL, and the project files | instant |
-| `Versio.App.Tests` | 619 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
+| `Versio.Arch.Tests` | 15 | nothing — it reads assembly metadata, IL, and the project files | instant |
+| `Versio.App.Tests` | 621 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | nothing — the vendor's planner, codecs and protocol, pure | under a second |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 19 | nothing — format, planner, protocol, scrubber | instant |

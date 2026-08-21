@@ -47,6 +47,8 @@ public sealed class TwinCatFormatTests
     {
         Assert.Equal("plc/Station",
             TwinCatProjectFormat.Instance.ConventionalExportPath("plc/Station.tsproj"));
+        Assert.Null(TwinCatProjectFormat.Instance.ConventionalTemplatePath("plc/Station.tsproj"));
+        Assert.Equal(TwinCatLog.Category, TwinCatProjectFormat.Instance.LogCategory);
     }
 
     [Fact]

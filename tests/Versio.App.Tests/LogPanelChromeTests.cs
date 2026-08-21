@@ -5,6 +5,8 @@ using Versio.App.ViewModels;
 using Versio.App.Views;
 using Versio.Infrastructure.Platform;
 using Versio.Core.Logging;
+using Versio.Core.Plc;
+using Versio.Core.Projects;
 using Xunit;
 
 namespace Versio.App.Tests;
@@ -242,6 +244,35 @@ public sealed class LogPanelChromeTests
         Assert.Equal(0, filters.Categories.Single(c => c.Name == LogCategory.Plc).Count);
     }
 
+    [Fact]
+    public void Vendor_log_categories_come_from_the_registry()
+    {
+        // Hard-listing CodesysLog / TiaPortalLog / TwinCatLog in this view model is the
+        // edit a fourth vendor must not need. The three shipping chips are still here
+        // because TestVendorRegistration registered the packs; the stand-in is the
+        // mutation: deleting the PlcFormats walk leaves it out and this goes red.
+        var filters = new LogFilterViewModel();
+        Assert.Contains(filters.Categories, c => c.Name == "Codesys");
+        Assert.Contains(filters.Categories, c => c.Name == "TiaPortal");
+        Assert.Contains(filters.Categories, c => c.Name == "TwinCat");
+
+        var exotic = new PlcVendor("Mitsubishi GX Works3");
+        try
+        {
+            PlcFormats.Register(new StandInFormat(exotic));
+            var again = new LogFilterViewModel();
+            var names = again.Categories.Select(c => c.Name).ToList();
+
+            Assert.Contains(exotic.Name, names);
+            Assert.True(names.IndexOf(LogCategory.Plc) < names.IndexOf(exotic.Name));
+            Assert.True(names.IndexOf(exotic.Name) < names.IndexOf(LogCategory.Git));
+        }
+        finally
+        {
+            PlcFormats.Unregister(exotic);
+        }
+    }
+
     /// <summary>
     /// Expanding the log reaches the panel, which shows its list and turns its chevron.
     /// </summary>
@@ -308,4 +339,25 @@ public sealed class LogPanelChromeTests
             Category = category,
             Message = message,
         };
+
+    private sealed class StandInFormat : IPlcProjectFormat
+    {
+        public StandInFormat(PlcVendor vendor) => Vendor = vendor;
+
+        public PlcVendor Vendor { get; }
+        public string DisplayName => Vendor.Name;
+        public PlcCapabilities Capabilities => new();
+        public IReadOnlyList<string> ProjectExtensions => [".gxw3"];
+        public bool IsTemplate(string path) => false;
+        public string ConventionalExportPath(string projectPath) => projectPath + ".export";
+        public string? OccupancyMarkerFor(string projectPath) => null;
+        public IReadOnlyList<string> TransientPatternsFor(string projectPath) => [];
+        public ProjectOccupancy ParseOccupancy(string markerContents) => ProjectOccupancy.Free;
+        public bool NeedsTextToPlan(string relativePath) => false;
+        public ImportPlan PlanImport(
+            ProjectManifest? manifest,
+            IReadOnlyList<MirrorFile> mirror,
+            IReadOnlyDictionary<string, string> departed) => new() { Files = [] };
+        public ObjectTypeName? DisplayNameFor(string type) => null;
+    }
 }

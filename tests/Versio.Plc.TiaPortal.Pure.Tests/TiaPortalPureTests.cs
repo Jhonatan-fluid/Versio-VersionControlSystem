@@ -41,6 +41,8 @@ public sealed class TiaPortalFormatTests
     {
         Assert.Equal("plc/Station",
             TiaPortalProjectFormat.Instance.ConventionalExportPath("plc/Station.ap21"));
+        Assert.Null(TiaPortalProjectFormat.Instance.ConventionalTemplatePath("plc/Station.ap21"));
+        Assert.Equal(TiaPortalLog.Category, TiaPortalProjectFormat.Instance.LogCategory);
     }
 
     [Fact]

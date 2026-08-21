@@ -19,6 +19,8 @@ public sealed class TwinCatProjectFormat : IPlcProjectFormat
 
     public string DisplayName => "TwinCAT 3";
 
+    public string LogCategory => TwinCatLog.Category;
+
     /// <remarks>
     /// DTE create was 2.6 s on this machine (2026-08-19) and then rejected the next
     /// call without an IOleMessageFilter — that is why the host registers one before
@@ -63,6 +65,8 @@ public sealed class TwinCatProjectFormat : IPlcProjectFormat
             ? normalised + ".export"
             : normalised[..^ext.Length];
     }
+
+    public string? ConventionalTemplatePath(string projectPath) => null;
 
     /// <inheritdoc />
     /// <remarks>

@@ -52,6 +52,14 @@ public class PlcFormatTests
     }
 
     [Fact]
+    public void The_template_path_is_this_vendor_s_sibling_convention()
+    {
+        Assert.Equal("plc/MyMachine_template.project",
+            Codesys.ConventionalTemplatePath("plc/MyMachine.project"));
+        Assert.Equal(CodesysLog.Category, Codesys.LogCategory);
+    }
+
+    [Fact]
     public void Capabilities_are_declared_rather_than_assumed()
     {
         // A vendor whose only export is a proprietary blob cannot produce reviewable text,

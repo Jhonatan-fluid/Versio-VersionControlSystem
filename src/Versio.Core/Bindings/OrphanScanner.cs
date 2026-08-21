@@ -231,16 +231,19 @@ public sealed class OrphanScanner(Func<string, IPlcProjectFormat?>? formats = nu
     }
 
     /// <summary>Propose a binding for an orphaned project, using the conventions.</summary>
-    /// <param name="format">Supplies the export-path convention. Optional so the neutral
-    /// default stays usable, but the caller should pass it: the export layout is a vendor
-    /// decision, and letting it default is how vendor knowledge quietly re-centralises.</param>
+    /// <param name="format">Supplies the export-path and template conventions. Optional so
+    /// the neutral default stays usable, but the caller should pass it: both layouts are
+    /// vendor decisions, and inventing a sibling <c>_template.project</c> without asking
+    /// is how a TwinCAT adopt stored a path that vendor does not use.</param>
     public static ProjectBinding ProposeBinding(
         string projectPath, string id, string? profile = null, IPlcProjectFormat? format = null) =>
         new()
         {
             Id = id,
             ProjectPath = Normalize(projectPath),
-            TemplatePath = BindingConventions.ConventionalTemplatePath(projectPath),
+            TemplatePath = format?.ConventionalTemplatePath(projectPath) is { Length: > 0 } template
+            ? Normalize(template)
+            : null,
             ExportPath = Normalize(format is null
                 ? BindingConventions.ConventionalExportPath(projectPath)
                 : format.ConventionalExportPath(projectPath)),

@@ -19,6 +19,36 @@ produce a diff touching everything else.
 
 ---
 
+### First-vendor leftovers past the seam: tooltip, log chips, template path
+
+**Found 2026-08-21**, by a three-vendor audit after the session-pin bugs were already closed.
+The project graph and IL scanners were clean. What they do not see is Versio.App, file
+extensions, and XAML.
+
+Three leftovers a TwinCAT or TIA session still paid for:
+
+1. The Project rail tooltip said "the repository as CODESYS structures it". Shown to
+   every vendor. VendorSeamTests never reads BAML.
+2. `LogFilterViewModel` imported all three packs and hard-listed `CodesysLog` /
+   `TiaPortalLog` / `TwinCatLog`. Adding a vendor was not only a csproj line and a
+   `Register()` call.
+3. `OrphanScanner.ProposeBinding` always wrote `BindingConventions.ConventionalTemplatePath`,
+   which is `*_template.project`. A TwinCAT adopt stored `foo.tsproj_template.project`.
+
+**Fix:** `IPlcProjectFormat.LogCategory` (default `Vendor.Name`) and
+`ConventionalTemplatePath` (default null). The log filter walks `PlcFormats.All`.
+ProposeBinding asks the format; TIA and TwinCAT have no sibling template. Tooltip
+says "toolchain". Arch test: ViewModels do not reference `Versio.Plc.*`.
+VendorSeamTests now covers `Iec` and `Settings`.
+
+**What was rejected.** Using `Vendor.Name` in the filter without putting `LogCategory`
+on the format — the `*Log.Category` constants would then be free to drift. Moving
+`BindingConventions.ProjectExtension` into the CODESYS pack this session — the
+behavioral leak was ProposeBinding, and the constants are still what
+`CodesysProjectFormat` consumes.
+
+---
+
 ### Stage all & commit cannot start git: Win32 206, command line too long
 
 **Found 2026-08-21**, owner clicked Stage all & commit on this repository.

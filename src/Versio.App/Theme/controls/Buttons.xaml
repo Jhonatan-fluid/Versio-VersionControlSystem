@@ -196,7 +196,7 @@
     <Style x:Key="RailButton" TargetType="RadioButton">
         <!--
             Name from Tag, not from ToolTip, and that is deliberate: these three tooltips are
-            whole sentences - "Project - the repository as CODESYS structures it, with every
+            whole sentences - "Project - the repository as the toolchain structures it, with every
             change marked" - and a name is what a reader says every time focus lands. The Tag
             already holds the short one the panel is called by, so Project, Git and History.
             The sentence stays in HelpText, where a reader offers it on request.

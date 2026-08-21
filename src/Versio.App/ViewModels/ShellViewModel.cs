@@ -71,7 +71,7 @@ public enum RefreshTrigger
 /// </remarks>
 public enum ShellPanel
 {
-    /// <summary>The repository as CODESYS structures it, plus every other changed file.</summary>
+    /// <summary>The repository as the toolchain structures it, plus every other changed file.</summary>
     Project,
 
     /// <summary>The open clone as a folder tree. Visualize, not review.</summary>
