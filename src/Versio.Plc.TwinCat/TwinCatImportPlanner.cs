@@ -167,7 +167,12 @@ public static class TwinCatImportPlanner
         ProjectManifest manifest, HashSet<string> present)
     {
         return manifest.Objects
-            .Where(o => !present.Contains(o.Path) && !ExportCoverage.IsExportOnly(o.Form))
+            // IsDeviceStructure is belt-and-suspenders beside IsExportOnly: DEVICES
+            // is both, and a DEVICE_COMMENT record (TIA's form, not this vendor's)
+            // must not vote to delete TIID either.
+            .Where(o => !present.Contains(o.Path)
+                        && !ExportCoverage.IsExportOnly(o.Form)
+                        && !ExportCoverage.IsDeviceStructure(o.Form))
             .GroupBy(o => o.Guid, StringComparer.OrdinalIgnoreCase)
             .Where(g => !string.IsNullOrEmpty(g.Key)
                         && g.All(o => !present.Contains(o.Path)))

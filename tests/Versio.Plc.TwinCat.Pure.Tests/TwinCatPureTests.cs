@@ -50,9 +50,11 @@ public sealed class TwinCatFormatTests
     }
 
     [Fact]
-    public void A_held_export_waits_rather_than_copying_the_directory_payload()
+    public void A_held_export_copies_the_directory_payload()
     {
-        Assert.False(TwinCatProjectFormat.Instance.Capabilities.ExportHeldViaCopy);
+        // Occupancy is a path sidecar (.~u). Sync copies the folder and exports
+        // the copy, the same seam the first vendor uses for a held .project.
+        Assert.True(TwinCatProjectFormat.Instance.Capabilities.ExportHeldViaCopy);
     }
 }
 
@@ -395,6 +397,79 @@ public sealed class TwinCatImportPlannerTests
         Assert.Equal(PlannedAction.Skip, skipped.Action);
         Assert.Equal(PlannedSkip.ExportOnly, skipped.Skip);
         Assert.Empty(plan.Deletions);
+    }
+
+    [Fact]
+    public void A_tia_device_comment_form_is_not_applied_and_never_deleted()
+    {
+        // TwinCAT product writes DEVICES. DEVICE_COMMENT is TIA's measured path;
+        // planning ApplyText here would disagree with the host, which throws.
+        var manifest = new ProjectManifest
+        {
+            Schema = ExportCoverage.CurrentSchema,
+            Objects =
+            [
+                new ProjectObject
+                {
+                    Guid = "device:Devices/Devices.devices.yaml",
+                    Name = "Devices",
+                    Type = "DEVICE",
+                    Form = ExportCoverage.DeviceCommentForm,
+                    Path = "Devices/Devices.devices.yaml",
+                    Hash = "sha256:aaa",
+                },
+            ],
+        };
+
+        var apply = TwinCatImportPlanner.Plan(manifest,
+        [
+            new MirrorFile { Path = "Devices/Devices.devices.yaml" },
+        ]);
+        var file = Assert.Single(apply.Files, f => f.Path.EndsWith(".devices.yaml", StringComparison.Ordinal));
+        Assert.Equal(PlannedAction.Skip, file.Action);
+        Assert.Empty(apply.Deletions);
+
+        var gone = TwinCatImportPlanner.Plan(manifest, [new MirrorFile { Path = "_manifest.json" }]);
+        Assert.Empty(gone.Deletions);
+    }
+
+    [Fact]
+    public void A_devices_form_catalog_is_export_only()
+    {
+        var manifest = new ProjectManifest
+        {
+            Schema = ExportCoverage.CurrentSchema,
+            Objects =
+            [
+                new ProjectObject
+                {
+                    Guid = "g",
+                    Name = "Coupler",
+                    Type = "DEVICE",
+                    Form = ExportCoverage.DevicesForm,
+                    Path = "Device/Coupler.devices.yaml",
+                    Hash = "sha256:aaa",
+                },
+            ],
+        };
+
+        var plan = TwinCatImportPlanner.Plan(manifest,
+        [
+            new MirrorFile { Path = "Device/Coupler.devices.yaml" },
+        ]);
+        Assert.Contains(plan.Files, f => f.Path.EndsWith(".devices.yaml", StringComparison.Ordinal)
+                                         && f.Skip == PlannedSkip.ExportOnly);
+        Assert.Empty(plan.Deletions);
+
+        var gone = TwinCatImportPlanner.Plan(manifest, [new MirrorFile { Path = "_manifest.json" }]);
+        Assert.Empty(gone.Deletions);
+    }
+
+    [Fact]
+    public void The_host_devices_form_string_matches_core()
+    {
+        // HostDeviceCatalog writes this literal; it cannot reference ExportCoverage.
+        Assert.Equal("DEVICES", ExportCoverage.DevicesForm);
     }
 }
 

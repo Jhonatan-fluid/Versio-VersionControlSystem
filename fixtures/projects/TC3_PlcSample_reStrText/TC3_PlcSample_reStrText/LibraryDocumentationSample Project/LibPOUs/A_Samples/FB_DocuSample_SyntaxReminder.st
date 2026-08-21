@@ -1,0 +1,108 @@
+(*
+=================================================
+The reStructuredText Cheat Sheet: Syntax Reminder
+=================================================
+:Info: See <https://infosys.beckhoff.de/.
+:Author: Beckhoff <support@beckhoff.com>
+:Date: 2017-12-14
+
+.. NOTE:: This syntax reminder is based on the docutils documentation
+
+Section Structure
+=================
+
+A reStructuredText comment is made up of body elements, and may be
+structured into sections. Section titles are underlined or overlined and underlined.
+Sections contain body elements and/or subsections.
+
+Paragraphs are flush-left and separated by blank lines.
+
+Body Elements
+=============
+Grid table:
+
++--------------------------------+-------------------------------------+
+|Block quotes consist of         |Literal block, preceded by "::"::    |
+|indented body elements:         |                                     |
+|                                |    If (a=TRUE) Then                 |
+|    Block quotes are indented.  |      b=3                            |
+|                                |                                     |
++--------------------------------+-------------------------------------+
+|| Line blocks preserve line breaks and indents.                       |
+||    Useful for adornment-free lists;                                 |
+||    long lines can be wrapped                                        |
+|     with continuation lines.                                         |
++----------------------------------------------------------------------+
+
+Simple table:
+
+================  ========================================================
+List Type         Examples
+================  ========================================================
+Bullet list       - This is a bullet list
+                  - Items begin with "-", "+", or "*"
+Enumerated list   1. This is an enumerated list.
+                  2. Items use any variation of "1.", "A)", and "(i)"
+                  #. Item can also be auto-enumerated
+Definition list   Term is flush-left : optional classifier
+                      Definition is indented, no blank line between
+                      continue
+Field list        :Field name: field body
+================  ========================================================
+
+Inline Markup
+=============
+*emphasis*, **strong emphasis**, ``inline literal text``
+
+| Standalone hyperlink: http://beckhoff.de
+| Named reference: Beckhoff_
+| Anonymous reference: `Anonymous reference`__
+| Footnote reference: [1]_
+| Citation reference: [CIT2002]_
+| Substitution: |substitution|
+| Inline internal target: `Inline internal target`_
+
+Explicit Markup
+================
+
+================  ========================================================
+Explicit Markup       Examples (visible in the source code)
+================  ========================================================
+Footnote          .. [1] Manually numbered or [#] auto-numbered
+                        (even [#label]) or [*] auto-symbol
+Citation          .. [CIT2002] This is a citation.
+Hyperlink Target  .. _Beckhoff: http://beckhoff.de
+                  .. _indirect target: Beckhoff_
+                  .. _internal target:
+Anonymous Target  __ http://beckhoff.de
+Directive ("::")  .. image::, .. code::
+Substitution Def  .. |substitution| replace:: This is a substitution
+Comment           .. This text will not be shown
+================  ========================================================
+
+Directives
+===========
+
+================  ========================================================
+Directive Name    Description
+================  ========================================================
+attention         Specific admonition ("caution", "danger",
+                  "error", "hint", "important", "note", "tip", "warning")
+admonition        Generic titled admonition
+image             .. image:: C:\Tc3LibDocImages\BeckhoffLogo.png
+                     :width: 40
+code              .. code::
+
+                     if(a=true) then b=3;
+list-table        Create a table from a uniform two-level bullet list
+csv-table         Create a table from CSV data
+================  ========================================================*)
+
+FUNCTION_BLOCK FB_DocuSample_SyntaxReminder
+VAR_INPUT
+    nVarInA : INT;       //First input variable
+    nVarInB : INT := 5;  //Second input variable
+END_VAR
+VAR_OUTPUT
+    nVarOut : INT;       //Output variable
+END_VAR

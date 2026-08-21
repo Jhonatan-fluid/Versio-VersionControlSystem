@@ -59,7 +59,7 @@ questions about "why is this like this" are already answered there.
 | `docs/SAFEGUARDS.md` | What Versio refuses, asks about, or waits for. Phases 1–9 built; §5.H deferred on purpose. |
 | `docs/vendors/codesys/DRIVING.md` | **One vendor's docs**, beside its two projects. How CODESYS is driven end to end, and the audit of it |
 | `docs/vendors/tia/DRIVING.md` | **One vendor's docs**, beside its three projects. How TIA Portal is driven. PLC-software loop is done; §12 is evidence; coverage skips stay out of scope |
-| `docs/vendors/twincat/DRIVING.md` | **One vendor's docs**, beside its three projects. How TwinCAT 3 is driven. PLC-software loop is done; coverage skips stay out of scope |
+| `docs/vendors/twincat/DRIVING.md` | **One vendor's docs**, beside its three projects. How TwinCAT 3 is driven. PLC-software loop is done; I/O is export-only; coverage skips stay out of scope |
 | `docs/phase1/` | **The Phase 1 archive** — four completed plans, marked done, kept for reasoning and evidence: `PLAN.md` (the founding architecture), `IMPORT-PLAN.md` (thirteen gaps, the feature checklist, and the measurements — its raw probe logs are in `probes/`), `GIT-PANEL-PLAN.md`, `PHASE0-FINDINGS.md`. Read them for why, never for state |
 | `docs/archive/` | **Completed later plans** — Phase 2 queue, UX plan, session handoffs, the long STATUS diary. Record, not state |
 | `README.md` | Repository layout, vendor boundaries, the one architectural rule |
@@ -233,15 +233,15 @@ stays that way.
 
 | Suite | Count | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,450 | under a second | nothing |
-| `Versio.Integration.Tests` | 151 | ~10 s | real git |
+| `Versio.Core.Tests` | 1,451 | under a second | nothing |
+| `Versio.Integration.Tests` | 153 | ~10 s | real git |
 | `Versio.Arch.Tests` | 14 | instant | nothing — it reads assembly metadata, IL and the `.csproj` files |
 | `Versio.App.Tests` | 619 | ~50 s, STA, no window shown | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | under a second | nothing — the planner, the codecs, the protocol |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — **skips cleanly without it, so check the count, not the colour** |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 19 | instant | nothing — format, planner, protocol |
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips cleanly without Openness membership or LFS content. Import Fact is green |
-| `Versio.Plc.TwinCat.Pure.Tests` | 18 | instant | nothing — format, planner, protocol |
+| `Versio.Plc.TwinCat.Pure.Tests` | 21 | instant | nothing — format, planner, protocol |
 | `Versio.Plc.TwinCat.Tests` | 5 | seconds when skipped; ~3 min when XAE runs the import gate | **real TwinCAT XAE** — skips cleanly without `TcXaeShell.DTE.17.0` or the fixture. Import Fact is green |
 | `Versio.Plc.Codesys.Tests` | 55 | **~30 min** | **real CODESYS** — every test launches it, which is the whole cost |
 

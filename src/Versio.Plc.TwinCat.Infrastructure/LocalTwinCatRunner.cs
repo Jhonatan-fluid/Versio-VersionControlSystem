@@ -104,9 +104,10 @@ public sealed class LocalTwinCatRunner(
             Save = job.Save,
             TimeoutSeconds = Math.Max((int)job.Timeout.TotalSeconds, 1200),
             Plan = plan,
-            // A %TEMP% copy is the conscious conversion the product allows. Opening the
-            // path the user bound, on a newer install, is the OpenWithUpgrade class of
-            // mistake and stays refused.
+            // A throwaway copy is the conscious conversion the product allows.
+            // Opening the path the user bound, on a newer install, is the
+            // OpenWithUpgrade class of mistake and stays refused. Held-export
+            // copies land under .versio/local/open/, not %TEMP% — same class.
             AllowConvert = IsDisposableCopy(only.ProjectPath),
         };
 
@@ -311,8 +312,17 @@ public sealed class LocalTwinCatRunner(
 
     private static bool IsDisposableCopy(string projectPath)
     {
-        var temp = Path.GetTempPath();
-        return projectPath.StartsWith(temp, StringComparison.OrdinalIgnoreCase);
+        var full = Path.GetFullPath(projectPath);
+        if (full.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        // CopyOpenProjectAsync writes here when the IDE holds the original.
+        // Conversion on that copy is the same bargain as a %TEMP% gate copy:
+        // the bound path is never opened, so OpenWithUpgrade cannot land on it.
+        var marker = Path.Combine(".versio", "local", "open") + Path.DirectorySeparatorChar;
+        return full.Contains(marker, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string Quote(string path) =>

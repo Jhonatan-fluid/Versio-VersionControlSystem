@@ -1,0 +1,39 @@
+{
+  "items": [
+    {
+      "childCount": 0,
+      "comment": "",
+      "disabled": "0",
+      "itemSubType": "-1",
+      "itemType": "17",
+      "name": "Devices",
+      "pathName": "TIID",
+      "produceXml": {
+        "attributes": {},
+        "length": 291,
+        "root": "TreeItem"
+      }
+    }
+  ],
+  "op": "ioprobe",
+  "schema": 1,
+  "summary": {
+    "itemCount": 1,
+    "present": true,
+    "rootName": "Devices",
+    "rootPath": "TIID"
+  },
+  "writeTest": {
+    "applied": true,
+    "attempted": true,
+    "detail": "Comment set and restored; project was not saved",
+    "disabledTest": {
+      "readable": true,
+      "value": "0"
+    },
+    "readBack": "versio-ioprobe-temp",
+    "restored": true,
+    "saved": false,
+    "target": "TIID"
+  }
+}

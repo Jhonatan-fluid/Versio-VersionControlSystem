@@ -471,6 +471,56 @@ public sealed class GitCliClientTests(ITestOutputHelper output) : IDisposable
         Assert.Contains("+  nSpeed : INT;", diff);
     }
 
+    [SkippableFact]
+    public async Task Staging_hundreds_of_long_paths_does_not_overflow_CreateProcess()
+    {
+        // Win32 206. Stage all & commit on this repository handed git 336 TIA
+        // fixture paths as argv (2026-08-21) and the process never started.
+        // Pathspec-from-file is the seam; this many long names is the subject.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        const string folder =
+            "fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21/"
+            + "PLC data types/Connector - data types";
+        const int count = 400;
+        var paths = new List<string>(count);
+        for (var i = 0; i < count; i++)
+        {
+            var relative = $"{folder}/UDT_MTP_LongName_{i:D4}.udt";
+            paths.Add(relative);
+            Write(relative, $"TYPE UDT_{i}\nEND_TYPE\n");
+        }
+
+        // The argv this used to build would not fit. If a future change puts
+        // the paths back on the command line, this is the number that breaks
+        // Windows before git can refuse them.
+        var argvChars = "git add -- ".Length + paths.Sum(p => p.Length + 3);
+        Assert.True(argvChars > 32_767, $"fixture too small to overflow CreateProcess ({argvChars})");
+
+        var result = await Client.StageAsync(paths, CancellationToken.None);
+        Assert.True(result.Success, result.FailureReason);
+
+        var status = await Client.StatusAsync(CancellationToken.None);
+        Assert.Equal(count, status.Changes.Count(c => c.Staged == ChangeKind.Added));
+    }
+
+    [SkippableFact]
+    public async Task A_path_that_looks_like_a_flag_still_stages()
+    {
+        // The argv form used `--` for this. Pathspec-from-file must keep it.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        Write("--odd.st", "PROGRAM Odd\nEND_PROGRAM\n");
+        var result = await Client.StageAsync(["--odd.st"], CancellationToken.None);
+        Assert.True(result.Success, result.FailureReason);
+
+        var status = await Client.StatusAsync(CancellationToken.None);
+        Assert.Equal(ChangeKind.Added,
+            Assert.Single(status.Changes, c => c.Path == "--odd.st").Staged);
+    }
+
     private static bool GitAvailable
     {
         get

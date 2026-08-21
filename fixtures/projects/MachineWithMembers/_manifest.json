@@ -1,7 +1,16 @@
 {
-  "bindingId": "9a1c47f0b2de", 
-  "objectCount": 20, 
+  "bindingId": "889e74c717e3", 
+  "objectCount": 24, 
   "objects": [
+    {
+      "bytes": 851, 
+      "form": "DEVICES", 
+      "guid": "85dc16e3-1481-4b68-9cbd-65c55e650a57", 
+      "hash": "sha256:a91dcef07bce8d1903f09eec40261dbdc267a97bc63a10247240b01df776c18e", 
+      "name": "Device", 
+      "path": "Device/Device.devices.yaml", 
+      "type": "DEVICE"
+    }, 
     {
       "bytes": 2119, 
       "form": "EXTERNAL_NATIVE", 
@@ -78,6 +87,27 @@
       "type": "POU"
     }, 
     {
+      "bytes": 172, 
+      "form": "ST_FULL", 
+      "guid": "d02989f7-103d-46c0-984c-6bb98c393532", 
+      "hash": "sha256:eb890893638eb83cde3aabd4922358de3207aff7e7958db69884222a465fc553", 
+      "ihash": "sha256:3be4556b31b6a4c8ffe559192a7c974d416e572c3f812b01012e62da464110cc", 
+      "name": "FB_Pump", 
+      "path": "Device/Plc Logic/Application/Pumps/FB_Pump.st", 
+      "shash": "2d6d2aec,3be4556b,3d3336fd,764147a3,a7096452,a9541dd5,aebea00d,b0398cdf,b7f3366e,cf55db8b", 
+      "type": "POU"
+    }, 
+    {
+      "bytes": 21, 
+      "form": "PROPERTY_TEXT", 
+      "guid": "f70a17d4-a439-4d06-ab56-5f28e6df0c76", 
+      "hash": "sha256:023cd3cb7bc850c30df28108cbec0b131067d721def8bcf6bedb2bd064e29c3d", 
+      "name": "Speed", 
+      "parent": "d02989f7-103d-46c0-984c-6bb98c393532", 
+      "path": "Device/Plc Logic/Application/Pumps/FB_Pump/Speed.st", 
+      "type": "PROPERTY"
+    }, 
+    {
       "bytes": 7415, 
       "form": "NATIVE_R", 
       "guid": "f70a17d4-a439-4d06-ab56-5f28e6df0c76", 
@@ -85,8 +115,28 @@
       "name": "Speed", 
       "nhash": "sha256:a72f4a515cfa6ca9409a732a52152eb73e6de38b2969bad88f89d7c2cefd1c49", 
       "parent": "d02989f7-103d-46c0-984c-6bb98c393532", 
-      "path": "Device/Plc Logic/Application/Pumps/FB_Pump.Speed.xml", 
+      "path": "Device/Plc Logic/Application/Pumps/FB_Pump/Speed.xml", 
       "type": "PROPERTY"
+    }, 
+    {
+      "bytes": 1, 
+      "form": "PROPERTY_TEXT", 
+      "guid": "edd2b252-f067-4cf1-9520-a825ee68fbf6", 
+      "hash": "sha256:01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b", 
+      "name": "Get", 
+      "parent": "f70a17d4-a439-4d06-ab56-5f28e6df0c76", 
+      "path": "Device/Plc Logic/Application/Pumps/FB_Pump/Speed/Get.st", 
+      "type": "PROPERTY_METHOD"
+    }, 
+    {
+      "bytes": 1, 
+      "form": "PROPERTY_TEXT", 
+      "guid": "b522dd83-6e46-474b-bc1f-e33de83012b6", 
+      "hash": "sha256:01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b", 
+      "name": "Set", 
+      "parent": "f70a17d4-a439-4d06-ab56-5f28e6df0c76", 
+      "path": "Device/Plc Logic/Application/Pumps/FB_Pump/Speed/Set.st", 
+      "type": "PROPERTY_METHOD"
     }, 
     {
       "bytes": 119, 
@@ -96,7 +146,7 @@
       "ihash": "sha256:ca0248d905d34c3866b6224111394b7d959b6025746b60802ceeda5bc2f97098", 
       "name": "Start", 
       "parent": "d02989f7-103d-46c0-984c-6bb98c393532", 
-      "path": "Device/Plc Logic/Application/Pumps/FB_Pump.Start.st", 
+      "path": "Device/Plc Logic/Application/Pumps/FB_Pump/Start.st", 
       "shash": "0fc973f4,3d3336fd,764147a3,a7096452,adac0531,af4dfbbe,d091d3bb", 
       "type": "METHOD"
     }, 
@@ -107,19 +157,8 @@
       "hash": "sha256:ba9346f0d61bb3394dfb06b02769207824c3d3ab5b84c555105d9a2c52ce2eda", 
       "name": "Stop", 
       "parent": "d02989f7-103d-46c0-984c-6bb98c393532", 
-      "path": "Device/Plc Logic/Application/Pumps/FB_Pump.Stop.action.st", 
+      "path": "Device/Plc Logic/Application/Pumps/FB_Pump/Stop.action.st", 
       "type": "ACTION"
-    }, 
-    {
-      "bytes": 172, 
-      "form": "ST_FULL", 
-      "guid": "d02989f7-103d-46c0-984c-6bb98c393532", 
-      "hash": "sha256:eb890893638eb83cde3aabd4922358de3207aff7e7958db69884222a465fc553", 
-      "ihash": "sha256:3be4556b31b6a4c8ffe559192a7c974d416e572c3f812b01012e62da464110cc", 
-      "name": "FB_Pump", 
-      "path": "Device/Plc Logic/Application/Pumps/FB_Pump.st", 
-      "shash": "2d6d2aec,3be4556b,3d3336fd,764147a3,a7096452,a9541dd5,aebea00d,b0398cdf,b7f3366e,cf55db8b", 
-      "type": "POU"
     }, 
     {
       "bytes": 39722, 
@@ -200,7 +239,7 @@
     }
   ], 
   "project": "MachineWithMembers.project", 
-  "schema": 8, 
+  "schema": 10, 
   "skipped": [
     {
       "name": "Visualization Manager", 
@@ -227,6 +266,7 @@
       "type": "VISUALISATION_STYLE"
     }
   ], 
+  "toolchainVersion": "CODESYS.exe CODESYS V3.5 SP22 Patch 2, ScriptEngine.plugin 4.2.0.0", 
   "vendor": "Codesys", 
   "warnings": []
 }

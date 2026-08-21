@@ -19,6 +19,81 @@ produce a diff touching everything else.
 
 ---
 
+### Stage all & commit cannot start git: Win32 206, command line too long
+
+**Found 2026-08-21**, owner clicked Stage all & commit on this repository.
+Log: `Stage all & commit: staging 336 file(s)` then
+`Win32Exception (206): An error occurred trying to start process 'git' with
+working directory 'C:/GIT/Versio'. The filename or extension is too long.`
+The process never started. The 336 paths were TIA fixture UDTs whose
+repo-relative names are ~180 characters; `git add --` plus those as argv
+exceeds Windows CreateProcess (32,767).
+
+**Fix:** `GitCliClient` feeds pathspecs through `--pathspec-from-file=-`
+with NUL separators (Stage / Unstage / Discard). Argv stays short; a path
+that looks like a flag still stages. Test:
+`Staging_hundreds_of_long_paths_does_not_overflow_CreateProcess` — 400
+paths whose argv would overflow, so putting them back on the command line
+goes red.
+
+**What was rejected:** batching `git add` into chunks of N. Two index
+writes for one button, and N is a guess that fails again on a deeper
+tree. `--pathspec-from-file` is one invocation, which is what the button
+is.
+
+---
+
+### TwinCAT held-copy export succeeds, then a nested-mirror echo fails the lock
+
+**Found 2026-08-21**, first live `ExportHeldViaCopy` with TcXaeShell still holding
+`TC3_PlcSample_reStrText`. Versio 25012 copied the folder to
+`.versio/local/open/64eb778c77ff/` and the host exported the copy: **36 objects
+in 27.4 s**, including `Devices/Devices.devices.yaml`. Two DTE on different
+paths is therefore valid.
+
+The conventional export path is `…/TC3_PlcSample_reStrText/TC3_PlcSample_reStrText`,
+which sits **inside** the directory payload. Swapping the mirror therefore
+settled as a `Project` change (10:32:29). A second copy-export started on the
+same scratch folder; the first job then deleted that folder (`DiscardScratchProject`);
+the waiter reported `project file is missing` and `ExportFailed` flipped the
+lock to Failed. The tree on disk is the successful first export. Commit gate:
+"acknowledge the failure before committing."
+
+CODESYS does not hit this: its export folder sits beside the `.project`, not
+inside it. The shared scratch path per binding is the other half — two jobs
+must not own the same `.versio/local/open/{id}/`. **Fix (same session):** each
+held-export copy gets its own folder under that binding, because the commit
+gate skips the coalescer and a watcher-driven export can start while the
+first copy is still in use. Owner commit on 2026-08-21 was refused with
+"acknowledge the failure before committing" — the Git panel has no Try again;
+that button is the red failure banner above the tree.
+
+**What was rejected:** treating the Failed lock as a COM refusal of the copy.
+The copy exported; the failure is bookkeeping after a successful swap. Clearing
+Failed by editing `state.json` while Versio holds it. Letting the commit gate
+skip Failed so a stale export is not acknowledged.
+
+---
+
+### TwinCAT I/O Comment does not persist through Save
+
+**Found 2026-08-20**, by the TwinCAT gate after `ioprobe` had shown Comment set and
+`ProduceXml` containing the marker. Product import applied `ITcSmTreeItem.Comment` on
+`TIID`, verified the read-back, and `File.SaveAll` persisted a companion ST edit. The
+re-export still read an empty Comment. Forcing `ITcSysManager.SaveProject` after SaveAll
+is `DISP_E_UNKNOWNNAME` (0x80020006) — the same as `.Save`. This fixture's `.tsproj` has
+no `<Io>` tree; Comment has nowhere on disk to hang.
+
+Applying Comment and reporting success would confirm an import that silently reverts —
+worse than export-only. Product writes form `DEVICES`, the planner skips the file, and
+the host throws if a plan still asks to ApplyText a `*.devices.yaml`. CreateChild stays
+refused (subtype 111 invalid; PLC argument order created ItemSubType 1, not a real
+EtherCAT plug). Dump:
+[`vendors/twincat/probes/ioprobe-TC3-2026-08-20.json`](vendors/twincat/probes/ioprobe-TC3-2026-08-20.json).
+Driving notes: [`vendors/twincat/DRIVING.md`](vendors/twincat/DRIVING.md) §4.5.
+
+---
+
 ### TIA hardware probe: render is real, port partners are not on this fixture, import is SetAttribute not PlugNew
 
 **Found 2026-08-20**, by `hwprobe` on a `%TEMP%` copy of CleaningStation, before any

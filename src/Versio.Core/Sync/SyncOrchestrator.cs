@@ -1509,7 +1509,14 @@ public sealed class SyncOrchestrator
     private async Task<string?> CopyOpenProjectAsync(ProjectBinding binding, CancellationToken ct)
     {
         var source = PayloadPath(binding);
-        var folder = Combine(".versio", "local", "open", binding.Id);
+        // One folder per run, not per binding. The commit gate skips the coalescer
+        // (it must export now, not queue), so a watcher-driven export can start
+        // while that copy is still in use. Sharing `.versio/local/open/{id}/`
+        // meant the first job deleted the second's project on the way out —
+        // Win32 missing-file, ExportFailed, and every later commit blocked until
+        // acknowledgement (2026-08-21, TwinCAT held-copy).
+        var folder = Combine(".versio", "local", "open", binding.Id,
+            Guid.NewGuid().ToString("N")[..8]);
         var name = Path.GetFileName(binding.ProjectPath.Replace('/', Path.DirectorySeparatorChar));
         var destination = Path.Combine(folder, name);
 

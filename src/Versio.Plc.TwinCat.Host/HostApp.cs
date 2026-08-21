@@ -6,8 +6,8 @@ using System.Xml.Linq;
 namespace Versio.Plc.TwinCat.Host;
 
 /// <summary>
-/// DTE session: probe, export, import. COM types are late-bound so this project
-/// compiles without Beckhoff DLLs on the machine that builds Versio.
+/// DTE session: probe, export, import, ioprobe. COM types are late-bound so this
+/// project compiles without Beckhoff DLLs on the machine that builds Versio.
 /// </summary>
 internal static partial class HostApp
 {
@@ -84,6 +84,16 @@ internal static partial class HostApp
                 }
 
                 Import(dte, sysMan, plcRoot, job.Src!, job.Plan, job.Save);
+            }
+            else if (op == "ioprobe")
+            {
+                if (string.IsNullOrWhiteSpace(job.Out))
+                {
+                    EmitFatal("ioprobe job has no out directory");
+                    return 5;
+                }
+
+                IoProbe(sysMan, job.Out!, job.WriteTest, job.CreateTest);
             }
             else
             {

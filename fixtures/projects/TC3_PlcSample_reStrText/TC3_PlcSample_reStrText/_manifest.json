@@ -1,0 +1,439 @@
+{
+  "schema": 10,
+  "vendor": "TwinCat",
+  "objects": [
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^A_Samples^FB_DocuSample_FunctionBlock",
+      "name": "FB_DocuSample_FunctionBlock",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/A_Samples/FB_DocuSample_FunctionBlock.st",
+      "hash": "sha256:399460a9bd6fd133f43b799d8d16e274f37bb2731c30cdb72d1899f76b12614f",
+      "nhash": "sha256:399460a9bd6fd133f43b799d8d16e274f37bb2731c30cdb72d1899f76b12614f",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^A_Samples^FB_DocuSample_SyntaxReminder",
+      "name": "FB_DocuSample_SyntaxReminder",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/A_Samples/FB_DocuSample_SyntaxReminder.st",
+      "hash": "sha256:904eede1001c245343cfe4a9f8e9b23cf82e3b2d07d07f5ab4798f009c9960bf",
+      "nhash": "sha256:904eede1001c245343cfe4a9f8e9b23cf82e3b2d07d07f5ab4798f009c9960bf",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Code block^FB_Libdoc_CodeBlock",
+      "name": "FB_Libdoc_CodeBlock",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Code block/FB_Libdoc_CodeBlock.st",
+      "hash": "sha256:2ab897b563c32026c8729d0db20958ab22354fee9c212f591d6ef663128beb7d",
+      "nhash": "sha256:2ab897b563c32026c8729d0db20958ab22354fee9c212f591d6ef663128beb7d",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Comment structure^FB_Libdoc_Sections",
+      "name": "FB_Libdoc_Sections",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Comment structure/FB_Libdoc_Sections.st",
+      "hash": "sha256:6863923946bc9f049c970c835b70a467f2e40f8ffe411616479d67563ca9bc87",
+      "nhash": "sha256:6863923946bc9f049c970c835b70a467f2e40f8ffe411616479d67563ca9bc87",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Comment structure^FB_Libdoc_Transitions",
+      "name": "FB_Libdoc_Transitions",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Comment structure/FB_Libdoc_Transitions.st",
+      "hash": "sha256:f4cdaaf1e6de9ac19d387b1667c253db4ad44fce50abc53dd0bf98735538f6b0",
+      "nhash": "sha256:f4cdaaf1e6de9ac19d387b1667c253db4ad44fce50abc53dd0bf98735538f6b0",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Font style^FB_Libdoc_FontStyle",
+      "name": "FB_Libdoc_FontStyle",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Font style/FB_Libdoc_FontStyle.st",
+      "hash": "sha256:ffb0c259347659e1299b4a619c43e5b93ff5a68918e195a5995d72feda6a38b4",
+      "nhash": "sha256:ffb0c259347659e1299b4a619c43e5b93ff5a68918e195a5995d72feda6a38b4",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Hyperlinks^Footnotes^FB_Libdoc_AutomaticallyNumberedFootnotes",
+      "name": "FB_Libdoc_AutomaticallyNumberedFootnotes",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Hyperlinks/Footnotes/FB_Libdoc_AutomaticallyNumberedFootnotes.st",
+      "hash": "sha256:697f5a0ad830228341041f2085a579c4ccfa3e8d6b6f7d1b5220dd6bc709668f",
+      "nhash": "sha256:697f5a0ad830228341041f2085a579c4ccfa3e8d6b6f7d1b5220dd6bc709668f",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Hyperlinks^Footnotes^FB_Libdoc_AutomaticallySymbolFootnotes",
+      "name": "FB_Libdoc_AutomaticallySymbolFootnotes",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Hyperlinks/Footnotes/FB_Libdoc_AutomaticallySymbolFootnotes.st",
+      "hash": "sha256:afcaa2a49d9540f970db029132be532545ae477994472a239be5e07299862d0b",
+      "nhash": "sha256:afcaa2a49d9540f970db029132be532545ae477994472a239be5e07299862d0b",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Hyperlinks^Footnotes^FB_Libdoc_ManuallyAndAutomaticallyNumberedFootnotes",
+      "name": "FB_Libdoc_ManuallyAndAutomaticallyNumberedFootnotes",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Hyperlinks/Footnotes/FB_Libdoc_ManuallyAndAutomaticallyNumberedFootnotes.st",
+      "hash": "sha256:43caecee1ade6f07cb8291c49057bcd97218493ff6511b92d7898e97175bbd23",
+      "nhash": "sha256:43caecee1ade6f07cb8291c49057bcd97218493ff6511b92d7898e97175bbd23",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Hyperlinks^Footnotes^FB_Libdoc_ManuallyNumberedFootnotes",
+      "name": "FB_Libdoc_ManuallyNumberedFootnotes",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Hyperlinks/Footnotes/FB_Libdoc_ManuallyNumberedFootnotes.st",
+      "hash": "sha256:414e88ec20e1eac7b5f515f109cdc405db6b75ffe80d20e9f392d5e2a554760c",
+      "nhash": "sha256:414e88ec20e1eac7b5f515f109cdc405db6b75ffe80d20e9f392d5e2a554760c",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Hyperlinks^Footnotes^FB_Libdoc_NamedAutomaticallyNumberedFootnotes",
+      "name": "FB_Libdoc_NamedAutomaticallyNumberedFootnotes",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Hyperlinks/Footnotes/FB_Libdoc_NamedAutomaticallyNumberedFootnotes.st",
+      "hash": "sha256:c512ce8732b3d43de46a00201c62c5ae5dcb047c13451a7215a6125623958fc6",
+      "nhash": "sha256:c512ce8732b3d43de46a00201c62c5ae5dcb047c13451a7215a6125623958fc6",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Hyperlinks^FB_Libdoc_AnonymousHyperlinks",
+      "name": "FB_Libdoc_AnonymousHyperlinks",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Hyperlinks/FB_Libdoc_AnonymousHyperlinks.st",
+      "hash": "sha256:5c6bc00fb8dcd63105704c2e7c9d381cc303b5fe5f9d3c41e5d8fbbfc0c30508",
+      "nhash": "sha256:5c6bc00fb8dcd63105704c2e7c9d381cc303b5fe5f9d3c41e5d8fbbfc0c30508",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Hyperlinks^FB_Libdoc_Citation",
+      "name": "FB_Libdoc_Citation",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Hyperlinks/FB_Libdoc_Citation.st",
+      "hash": "sha256:59f33c242458ea019d5c5a279a1c8536460fc559d0f63848dc1e199955508346",
+      "nhash": "sha256:59f33c242458ea019d5c5a279a1c8536460fc559d0f63848dc1e199955508346",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Hyperlinks^FB_Libdoc_ExternalHyperlinks",
+      "name": "FB_Libdoc_ExternalHyperlinks",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Hyperlinks/FB_Libdoc_ExternalHyperlinks.st",
+      "hash": "sha256:cfb6302a67eead89f37ce6741ffb82b35aa2667087a68f9f42407e483b7109bb",
+      "nhash": "sha256:cfb6302a67eead89f37ce6741ffb82b35aa2667087a68f9f42407e483b7109bb",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Hyperlinks^FB_Libdoc_IndirectHyperlinks",
+      "name": "FB_Libdoc_IndirectHyperlinks",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Hyperlinks/FB_Libdoc_IndirectHyperlinks.st",
+      "hash": "sha256:01c2c0008beb385a90b3a43f5be857eebed3f3ac9e26ae9470cc61bac3a9f520",
+      "nhash": "sha256:01c2c0008beb385a90b3a43f5be857eebed3f3ac9e26ae9470cc61bac3a9f520",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Hyperlinks^FB_Libdoc_InlineHyperlinks",
+      "name": "FB_Libdoc_InlineHyperlinks",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Hyperlinks/FB_Libdoc_InlineHyperlinks.st",
+      "hash": "sha256:d58dd6e62990ffa7051e8319141885faf817e24f38e95cbc341ec7753ae2fba6",
+      "nhash": "sha256:d58dd6e62990ffa7051e8319141885faf817e24f38e95cbc341ec7753ae2fba6",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Hyperlinks^FB_Libdoc_InternalHyperlinks",
+      "name": "FB_Libdoc_InternalHyperlinks",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Hyperlinks/FB_Libdoc_InternalHyperlinks.st",
+      "hash": "sha256:bfd5544cbae30a9692dcd5cee3842e056bc1e091d3dc83c6d84f780cfd260304",
+      "nhash": "sha256:bfd5544cbae30a9692dcd5cee3842e056bc1e091d3dc83c6d84f780cfd260304",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Hyperlinks^FB_Libdoc_LinkToAnotherObject",
+      "name": "FB_Libdoc_LinkToAnotherObject",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Hyperlinks/FB_Libdoc_LinkToAnotherObject.st",
+      "hash": "sha256:3eb0224788ff280c8c8e1ecfdbbb67e68019607affb625a83bcf53dd5b1ef538",
+      "nhash": "sha256:3eb0224788ff280c8c8e1ecfdbbb67e68019607affb625a83bcf53dd5b1ef538",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Images^FB_Libdoc_Images",
+      "name": "FB_Libdoc_Images",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Images/FB_Libdoc_Images.st",
+      "hash": "sha256:96adccd23e02125b985f84536d33b2fa25a7c3a2936c966b80fd8cf2f776f17b",
+      "nhash": "sha256:96adccd23e02125b985f84536d33b2fa25a7c3a2936c966b80fd8cf2f776f17b",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Internal Comments^FB_Libdoc_InternalComments",
+      "name": "FB_Libdoc_InternalComments",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Internal Comments/FB_Libdoc_InternalComments.st",
+      "hash": "sha256:9c92ddad93cc115a14145020f4481087cd1d89917fef33867cc62c23d26196b5",
+      "nhash": "sha256:9c92ddad93cc115a14145020f4481087cd1d89917fef33867cc62c23d26196b5",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Lists^FB_Libdoc_DefinitionList",
+      "name": "FB_Libdoc_DefinitionList",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Lists/FB_Libdoc_DefinitionList.st",
+      "hash": "sha256:a6b33dcce259dda6176bf9e5171ae638d18af32bfc58ef7001940f9d76982559",
+      "nhash": "sha256:a6b33dcce259dda6176bf9e5171ae638d18af32bfc58ef7001940f9d76982559",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Lists^FB_Libdoc_FieldList",
+      "name": "FB_Libdoc_FieldList",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Lists/FB_Libdoc_FieldList.st",
+      "hash": "sha256:50cfd04a608a4925c6c7ab3244dd46703c064d25e7577938872fcbb9cf96f11c",
+      "nhash": "sha256:50cfd04a608a4925c6c7ab3244dd46703c064d25e7577938872fcbb9cf96f11c",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Lists^FB_Libdoc_OrderedNumberedEnumerationList",
+      "name": "FB_Libdoc_OrderedNumberedEnumerationList",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Lists/FB_Libdoc_OrderedNumberedEnumerationList.st",
+      "hash": "sha256:96f6967cc833f1abd8e064878126aaac44d48bc972e1e37d68f09b5febee3e78",
+      "nhash": "sha256:96f6967cc833f1abd8e064878126aaac44d48bc972e1e37d68f09b5febee3e78",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Lists^FB_Libdoc_UnorderedEnumerationList",
+      "name": "FB_Libdoc_UnorderedEnumerationList",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Lists/FB_Libdoc_UnorderedEnumerationList.st",
+      "hash": "sha256:226f7729870ee3d340b9ce8d83db4b6f26b8d49e9591270c303ab6c63997930f",
+      "nhash": "sha256:226f7729870ee3d340b9ce8d83db4b6f26b8d49e9591270c303ab6c63997930f",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Note elements^FB_Libdoc_GenericNotes",
+      "name": "FB_Libdoc_GenericNotes",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Note elements/FB_Libdoc_GenericNotes.st",
+      "hash": "sha256:4147a0666587fec4b11b8c6e871f29d69d6a850b24b4060554d10a23ae63e739",
+      "nhash": "sha256:4147a0666587fec4b11b8c6e871f29d69d6a850b24b4060554d10a23ae63e739",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Note elements^FB_Libdoc_SpecificNotes",
+      "name": "FB_Libdoc_SpecificNotes",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Note elements/FB_Libdoc_SpecificNotes.st",
+      "hash": "sha256:e81cebbe62bc5c316137a157dfc90ea5d9ca85ed6cf44bd5cf4120bbae442261",
+      "nhash": "sha256:e81cebbe62bc5c316137a157dfc90ea5d9ca85ed6cf44bd5cf4120bbae442261",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Substitution^FB_Libdoc_Substitution_Images",
+      "name": "FB_Libdoc_Substitution_Images",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Substitution/FB_Libdoc_Substitution_Images.st",
+      "hash": "sha256:495ee5e2514a69fb8a695923ad1b4d1cc35121cb5576f0ca2e43007b708276d6",
+      "nhash": "sha256:495ee5e2514a69fb8a695923ad1b4d1cc35121cb5576f0ca2e43007b708276d6",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Substitution^FB_Libdoc_Substitution_ReplacementText",
+      "name": "FB_Libdoc_Substitution_ReplacementText",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Substitution/FB_Libdoc_Substitution_ReplacementText.st",
+      "hash": "sha256:d205f88365096967fe47032b7a3ce32c837bced38e136693397f218ac3ed008a",
+      "nhash": "sha256:d205f88365096967fe47032b7a3ce32c837bced38e136693397f218ac3ed008a",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Tables^FB_Libdoc_CSVTable",
+      "name": "FB_Libdoc_CSVTable",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Tables/FB_Libdoc_CSVTable.st",
+      "hash": "sha256:c94891f1107477d059a26fa9c6d5d5c1a516a2050de76411efd6e2e4e216cb1f",
+      "nhash": "sha256:c94891f1107477d059a26fa9c6d5d5c1a516a2050de76411efd6e2e4e216cb1f",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Tables^FB_Libdoc_GridTable",
+      "name": "FB_Libdoc_GridTable",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Tables/FB_Libdoc_GridTable.st",
+      "hash": "sha256:e6ccd6851cd520a44f2cf61645ccaff7cd3f86f8b3a234b53245c320c8813546",
+      "nhash": "sha256:e6ccd6851cd520a44f2cf61645ccaff7cd3f86f8b3a234b53245c320c8813546",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Tables^FB_Libdoc_ListTable",
+      "name": "FB_Libdoc_ListTable",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Tables/FB_Libdoc_ListTable.st",
+      "hash": "sha256:380f0ec2d4c500654c9c25a13ad6ef1e88800e890e02715a40ce700256c09a4c",
+      "nhash": "sha256:380f0ec2d4c500654c9c25a13ad6ef1e88800e890e02715a40ce700256c09a4c",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Tables^FB_Libdoc_SimpleTables",
+      "name": "FB_Libdoc_SimpleTables",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Tables/FB_Libdoc_SimpleTables.st",
+      "hash": "sha256:616b3c5b1ca898902fa3bf65dcb3f36138957638be43afea7674f0c68eec2716",
+      "nhash": "sha256:616b3c5b1ca898902fa3bf65dcb3f36138957638be43afea7674f0c68eec2716",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Text blocks^FB_Libdoc_BlockQuote",
+      "name": "FB_Libdoc_BlockQuote",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Text blocks/FB_Libdoc_BlockQuote.st",
+      "hash": "sha256:09cc63d8f8780f9ed2c802b8f1a9af8eda81af02ab373a5994c593ddbda19794",
+      "nhash": "sha256:09cc63d8f8780f9ed2c802b8f1a9af8eda81af02ab373a5994c593ddbda19794",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Text blocks^FB_Libdoc_LineBlock",
+      "name": "FB_Libdoc_LineBlock",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Text blocks/FB_Libdoc_LineBlock.st",
+      "hash": "sha256:4ab4e0b5418ad1b8058db4ca5d92d43c3d772356b6a75c4a1c23acfbae4b727f",
+      "nhash": "sha256:4ab4e0b5418ad1b8058db4ca5d92d43c3d772356b6a75c4a1c23acfbae4b727f",
+      "parent": ""
+    },
+    {
+      "guid": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPOUs^B_DocuElements^Text blocks^FB_Libdoc_Paragraph",
+      "name": "FB_Libdoc_Paragraph",
+      "type": "POU",
+      "form": "ST_DECL",
+      "path": "LibraryDocumentationSample Project/LibPOUs/B_DocuElements/Text blocks/FB_Libdoc_Paragraph.st",
+      "hash": "sha256:e365c1a1551122e30f4ee363adbb4016f7f4417e424e5f1bf6777b71d5f572b9",
+      "nhash": "sha256:e365c1a1551122e30f4ee363adbb4016f7f4417e424e5f1bf6777b71d5f572b9",
+      "parent": ""
+    },
+    {
+      "guid": "device:Devices/Devices.devices.yaml",
+      "name": "Devices",
+      "type": "DEVICE",
+      "form": "DEVICES",
+      "path": "Devices/Devices.devices.yaml",
+      "hash": "sha256:5ff0b5bfb17b8ebec41fd8a6370cdd910fdd19be7bc72fc5a6a481d506cc4109",
+      "nhash": "sha256:5ff0b5bfb17b8ebec41fd8a6370cdd910fdd19be7bc72fc5a6a481d506cc4109",
+      "parent": ""
+    }
+  ],
+  "skipped": [
+    {
+      "path": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^References",
+      "reason": "SERVICE_OBJECT",
+      "detail": "no DeclarationText / ImplementationText \u2014 not textual PLC software"
+    },
+    {
+      "path": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPics^BeckhoffLogo.png",
+      "reason": "SERVICE_OBJECT",
+      "detail": "no DeclarationText / ImplementationText \u2014 not textual PLC software"
+    },
+    {
+      "path": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPics^desert.jpg",
+      "reason": "SERVICE_OBJECT",
+      "detail": "no DeclarationText / ImplementationText \u2014 not textual PLC software"
+    },
+    {
+      "path": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPics^penguins.jpg",
+      "reason": "SERVICE_OBJECT",
+      "detail": "no DeclarationText / ImplementationText \u2014 not textual PLC software"
+    },
+    {
+      "path": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPics^safetysymbol.png",
+      "reason": "SERVICE_OBJECT",
+      "detail": "no DeclarationText / ImplementationText \u2014 not textual PLC software"
+    },
+    {
+      "path": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPics^tc3configmode.png",
+      "reason": "SERVICE_OBJECT",
+      "detail": "no DeclarationText / ImplementationText \u2014 not textual PLC software"
+    },
+    {
+      "path": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPics^tc3runmode.png",
+      "reason": "SERVICE_OBJECT",
+      "detail": "no DeclarationText / ImplementationText \u2014 not textual PLC software"
+    },
+    {
+      "path": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPics^tc3stopmode.png",
+      "reason": "SERVICE_OBJECT",
+      "detail": "no DeclarationText / ImplementationText \u2014 not textual PLC software"
+    },
+    {
+      "path": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibPics^tulips.jpg",
+      "reason": "SERVICE_OBJECT",
+      "detail": "no DeclarationText / ImplementationText \u2014 not textual PLC software"
+    },
+    {
+      "path": "TIPC^LibraryDocumentationSample^LibraryDocumentationSample Project^LibraryDocumentationSample.tmc",
+      "reason": "SERVICE_OBJECT",
+      "detail": "no DeclarationText / ImplementationText \u2014 not textual PLC software"
+    },
+    {
+      "path": "NC",
+      "reason": "SERVICE_OBJECT",
+      "detail": "TINC motion is a coverage skip"
+    },
+    {
+      "path": "Safety",
+      "reason": "SERVICE_OBJECT",
+      "detail": "safety projects are a coverage skip"
+    },
+    {
+      "path": "C\u002B\u002B",
+      "reason": "SERVICE_OBJECT",
+      "detail": "C\u002B\u002B projects are a coverage skip"
+    },
+    {
+      "path": "Visualisation",
+      "reason": "SERVICE_OBJECT",
+      "detail": "visualisations are a coverage skip"
+    }
+  ],
+  "warnings": []
+}

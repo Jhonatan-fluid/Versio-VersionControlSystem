@@ -1,0 +1,65 @@
+# I/O tree, exported by Versio. Do not edit — it is rewritten on
+# every export, and importing this file back into the project is NOT
+# supported: Comment set in-session but does not persist through Save.
+# Change devices in the IDE. CreateChild is refused.
+schema: 1
+vendor: twincat
+name: Devices
+path: Devices
+connectors:
+  - connectorId: TIID
+    interface: Devices
+    moduleType: "-1"
+    parameters:
+      Comment: ""
+      Disabled: "0"
+      ItemSubType: "-1"
+      ItemType: "17"
+  - connectorId: "TIID^Device 1 (EtherCAT)"
+    interface: "Device 1 (EtherCAT)"
+    moduleType: "111"
+    parameters:
+      Comment: ""
+      Disabled: "0"
+      ItemSubType: "111"
+      ItemType: "2"
+  - connectorId: "TIID^Device 1 (EtherCAT)^Term 1 (EK1100)"
+    interface: "Term 1 (EK1100)"
+    moduleType: "9099"
+    parameters:
+      Comment: ""
+      Disabled: "0"
+      ItemSubType: "9099"
+      ItemType: "5"
+  - connectorId: "TIID^Device 1 (EtherCAT)^Term 1 (EK1100)^Term 2 (ED2889)"
+    interface: "Term 2 (ED2889)"
+    moduleType: "9099"
+    parameters:
+      Comment: ""
+      Disabled: "0"
+      ItemSubType: "9099"
+      ItemType: "5"
+  - connectorId: "TIID^Device 1 (EtherCAT)^Term 1 (EK1100)^Term 2 (ED2889)"
+    interface: "Term 2 (ED2889)"
+    moduleType: "9099"
+    parameters:
+      Comment: ""
+      Disabled: "0"
+      ItemSubType: "9099"
+      ItemType: "5"
+  - connectorId: "TIID^Device 1 (EtherCAT)^Term 1 (EK1100)^Term 3 (ED1889)"
+    interface: "Term 3 (ED1889)"
+    moduleType: "9099"
+    parameters:
+      Comment: ""
+      Disabled: "0"
+      ItemSubType: "9099"
+      ItemType: "5"
+  - connectorId: "TIID^Device 1 (EtherCAT)^Term 1 (EK1100)^Term 3 (ED1889)"
+    interface: "Term 3 (ED1889)"
+    moduleType: "9099"
+    parameters:
+      Comment: ""
+      Disabled: "0"
+      ItemSubType: "9099"
+      ItemType: "5"

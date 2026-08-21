@@ -1,6 +1,6 @@
 # Versio — status and what is next
 
-**Date:** 2026-08-20 · **This is the live page.** Where the project is, and what is next, live
+**Date:** 2026-08-21 · **This is the live page.** Where the project is, and what is next, live
 here and only here. Search [`FINDINGS.md`](FINDINGS.md) for defects. Completed plans and session
 handoffs are records in [`phase1/`](phase1/) and [`archive/`](archive/) — read them for why,
 never for state.
@@ -13,10 +13,11 @@ skip). That run is also the counted gate `LOCK-1` owed. After the eyeballs: UX-6
 UX-7 `Ctrl+F` / UX-8 / UX-12 (item 3), unless the owner picks packaging (item 5)
 instead. Do not start from `archive/` or a handoff.
 
-**Tests:** 2,693 across eleven projects, last counted 2026-08-20 after TIA hardware Comment
-import (2,688 was the I/O-export-review count earlier the same day). TwinCAT XAE gate: 5 tests, **green in 3 m 17 s on
-2026-08-20** over the hardened host — probe, export, two unchanged textual exports
-byte-identical, import/re-export of an ST mutation and its deletion. TIA Portal gate: 5 tests,
+**Tests:** 2,699 across eleven projects, last counted 2026-08-21 after held-export scratch isolation
+(2,698 was the git pathspec-from-file count the same day). TwinCAT XAE gate: 5 tests, **green in 3 m 4 s on
+2026-08-21** over I/O export-only — probe, export (`Devices/Devices.devices.yaml`, form
+`DEVICES`), two unchanged textual exports byte-identical including the yaml, import/re-export
+of an ST mutation and its deletion. TIA Portal gate: 5 tests,
 **green in 9 m on 2026-08-20** (re-run after slot identity) including Comment `SetAttribute` on
 `*.devices.yaml`. The CODESYS gate last full run is **54/54, 2026-08-19 evening**. I/O export adds
 one live Fact (`Empty_IO_Link_slots_are_listed_in_the_parent_yaml_rather_than_colliding`);
@@ -33,15 +34,15 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,450 | under a second | nothing |
-| `Versio.Integration.Tests` | 151 | ~10 s | real git |
+| `Versio.Core.Tests` | 1,451 | under a second | nothing |
+| `Versio.Integration.Tests` | 153 | ~10 s | real git |
 | `Versio.App.Tests` | 619 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 14 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 19 | instant | nothing |
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
-| `Versio.Plc.TwinCat.Pure.Tests` | 18 | instant | nothing |
+| `Versio.Plc.TwinCat.Pure.Tests` | 21 | instant | nothing |
 | `Versio.Plc.TwinCat.Tests` | 5 | seconds when skipped; ~3 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
 | `Versio.Plc.Codesys.Tests` | 55 | **~30 min** | **real CODESYS** |
 
@@ -64,7 +65,7 @@ real toolchain.
 | [`SAFEGUARDS.md`](SAFEGUARDS.md) | What Versio refuses, asks about, or waits for |
 | [`vendors/codesys/DRIVING.md`](vendors/codesys/DRIVING.md) | How CODESYS is driven |
 | [`vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md) | How TIA Portal is driven. §4.4 is the hardware probe; remaining TIA is coverage skips until the owner picks a slice |
-| [`vendors/twincat/DRIVING.md`](vendors/twincat/DRIVING.md) | How TwinCAT 3 is driven. PLC-software loop is evidence; remaining TwinCAT is coverage skips |
+| [`vendors/twincat/DRIVING.md`](vendors/twincat/DRIVING.md) | How TwinCAT 3 is driven. PLC-software loop is evidence; I/O is export-only; remaining TwinCAT is coverage skips |
 | [`phase1/`](phase1/) | Phase 1 archive — founding architecture, import plan, git-panel plan, Phase 0 measurements |
 | [`archive/`](archive/) | Phase 2 queue, UX plan, session handoffs, the long STATUS diary they replaced |
 
@@ -89,7 +90,7 @@ guessed wherever the toolchain is silent.
   (`*.devices.yaml`, form `DEVICE_COMMENT`) ship 2026-08-20: export plus `SetAttribute`
   with verify-before-Save; never PlugNew. This fixture has no port-to-port partners.
   HMI, safety and technology stay coverage skips. Gate fixture:
-  `fixtures/projects/CleaningStation_V20_V21/` (Git LFS). Work only on a **copy**. Never the
+  `fixtures/projects/CleaningStation_V20_V21/` (Git LFS). Never the
   OneDrive original. Session notes: [`archive/HANDOFF-Siemens2.md`](archive/HANDOFF-Siemens2.md).
 - **TwinCAT 3** — the same product loop for ST, through a net9 COM host into
   `TcXaeShell.DTE.17.0`. **Gated 2026-08-19, re-gated 2026-08-20** after the hardening
@@ -97,9 +98,12 @@ guessed wherever the toolchain is silent.
   inverse deletion. Destructive import actions are identity-only and hash-verified
   against the last export since 2026-08-20; the conversion check fails closed. Create /
   object-delete / rename are in the planner and host, not an XAE Fact yet. 4024.4
-  opened on 4026.25 only as a disposable `%TEMP%` copy. I/O, NC, safety, C++ and
-  visualisation are coverage skips. Gate fixture:
-  `fixtures/projects/TC3_PlcSample_reStrText/`. Work only on a **copy**. Session notes:
+  opened on 4026.25 only as a disposable `%TEMP%` copy. **I/O catalogs 2026-08-21:**
+  `Devices/Devices.devices.yaml` (form `DEVICES`, export-only). Comment set in-session
+  and showed in `ProduceXml`; it does not persist through Save. Never CreateChild.
+  This fixture has an empty TIID node. NC, safety, C++ and visualisation stay coverage
+  skips. Gate fixture:
+  `fixtures/projects/TC3_PlcSample_reStrText/`. Session notes:
   [`vendors/twincat/DRIVING.md`](vendors/twincat/DRIVING.md).
 
 Versio **deletes, renames and moves objects**. Delete a `.st` from the mirror, confirm the
@@ -121,7 +125,7 @@ needed.
 ```
   CODESYS pipeline    ████████████████████  proven on a real project
   TIA PLC-software    ████████████████████  SCL / UDT / tag tables; coverage skips elsewhere
-  TwinCAT PLC-software████████████████████  ST; coverage skips for I/O / NC / safety / C++
+  TwinCAT PLC-software████████████████████  ST; I/O export-only; coverage skips for NC / safety / C++
   Domain core         ████████████████████  vendor-blind, tested without a toolchain
   Vendor seam         ████████████████████  enforced by the project graph + metadata
   Desktop shell       ███████████████████░  git surface, tree, explorer; UX remainder below
@@ -140,9 +144,8 @@ One list. Reorder it; do not copy it into another file.
    locked-pointer skip, and the run is the counted gate `LOCK-1` owed.
 2. **Owner eyeball leftovers.** Merge dialog; both themes on the rail badge; staged / not-staged
    headers dragged to 260 px. TIA confirm-import and restore of the ~500 MB tree (the existing
-   directory-payload seam; export was seen on `%TEMP%\versio-tia-p7`). TwinCAT: adopt a
-   **`%TEMP%` copy** of `TC3_PlcSample_reStrText` (never this repository's bindings) and
-   confirm export / confirm-import look right.
+   directory-payload seam; export was seen on `%TEMP%\versio-tia-p7`). TwinCAT: adopt the
+   committed fixture in this repository and confirm export / confirm-import look right.
 3. **UX remainder** — evidence and ranking in [`archive/UX-PLAN.md`](archive/UX-PLAN.md):
    - **UX-6** — search in the git panel and the history
    - **UX-7** second half — `Ctrl+F` / Escape (`Ctrl+1/2/3/4` shipped; `Ctrl+F` waits on UX-6)
@@ -161,14 +164,19 @@ One list. Reorder it; do not copy it into another file.
 7. **Not this queue.** TIA HMI / safety (`F_*`) / technology / know-how-protected
    import / compile-after-import / VCI / Project Server. TIA **hardware** Comment
    apply shipped 2026-08-20 ([`vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md) §4.4);
-   PlugNew and topology stay off this queue. TwinCAT I/O / NC / safety / C++ /
-   visualisation, plus create / object-delete / rename Facts, folder move, and a live XAE
-   window occupancy watch — [`vendors/twincat/DRIVING.md`](vendors/twincat/DRIVING.md) §9.
+   PlugNew and topology stay off this queue. TwinCAT I/O **export** catalogs shipped
+   2026-08-21 ([`vendors/twincat/DRIVING.md`](vendors/twincat/DRIVING.md) §4.5);
+Comment apply, CreateChild, mappings, NC / safety / C++ / visualisation stay off this queue,
+   plus create / object-delete / rename Facts and folder move —
+   [`vendors/twincat/DRIVING.md`](vendors/twincat/DRIVING.md) §9.
    `_coverage.md` names the skips. They are `SERVICE_OBJECT`. ~~GUI occupancy with a
    Portal window (no Openness) was not separately measured~~ — **measured 2026-08-19 evening:
    the Portal GUI writes and deletes the same `.info` marker Openness does**
    (`vendors/tia/DRIVING.md` §5), so a project held in the window reads Held and closing Portal
-   is the retry.
+   is the retry. ~~TwinCAT live XAE occupancy was not separately watched~~ — **measured
+   2026-08-21: TcXaeShell writes the same sibling `.~u` the format already watches**,
+   rewritten every ~5 s via `.~u~` (`vendors/twincat/DRIVING.md` §5). Export copies
+   the directory aside (`ExportHeldViaCopy`); import still waits for close.
 
 Close Versio **and** Portal before a host rebuild. Click **Yes to all** on Openness access (path
 + hash — a rebuild drops the host off the AllowList).
@@ -196,8 +204,13 @@ Close Versio **and** Portal before a host rebuild. Click **Yes to all** on Openn
   does not use CODESYS visualisations. A project that does should measure whether bindings hold
   by name before trusting a rename.
 - **TwinCAT identity is the Automation Interface `PathName`** (`TIPC^…`). Conversion of a
-  4024 project on a 4026 install is refused on the path the user bound; only a `%TEMP%` copy
-  is allowed to convert. Occupancy is sibling `.~u`; `ExportHeldViaCopy` is false.
+  4024 project on a 4026 install is refused on the path the user bound; only a throwaway
+  copy (`%TEMP%` or `.versio/local/open/`) is allowed to convert. Occupancy is sibling
+  `.~u` (GUI measured 2026-08-21: same marker, rewrite via `.~u~` every ~5 s);
+  `ExportHeldViaCopy` is true.
+- **TwinCAT I/O YAML is export-only.** `Devices/Devices.devices.yaml` is rewritten on every
+  export. Comment set in-session and showed in `ProduceXml`; `File.SaveAll` does not persist
+  it on an empty TIID, and `SaveProject` is `DISP_E_UNKNOWNNAME`. Change devices in XAE.
 - **Interfaces, text lists, image pools** have export rules written and unit-tested but never
   exercised — the CODESYS fixture contains none.
 

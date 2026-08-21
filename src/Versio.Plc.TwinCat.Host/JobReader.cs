@@ -14,6 +14,8 @@ internal sealed class JobModel
     public string Install { get; set; } = "";
     public string Version { get; set; } = "";
     public bool Save { get; set; } = true;
+    public bool WriteTest { get; set; }
+    public bool CreateTest { get; set; }
     public int TimeoutSeconds { get; set; } = 1200;
     public bool AllowConvert { get; set; }
     public JsonElement Plan { get; set; }

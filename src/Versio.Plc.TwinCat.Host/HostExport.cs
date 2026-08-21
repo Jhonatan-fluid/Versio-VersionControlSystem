@@ -27,32 +27,31 @@ internal static partial class HostApp
         Emit("progress", "phase", "export", "detail", plcName);
         WalkTree(plcRoot, root, objects, skipped, warnings);
 
-        skipped.Add(Skip("I/O", "SERVICE_OBJECT", "TIID devices and mappings are a coverage skip"));
         skipped.Add(Skip("NC", "SERVICE_OBJECT", "TINC motion is a coverage skip"));
         skipped.Add(Skip("Safety", "SERVICE_OBJECT", "safety projects are a coverage skip"));
         skipped.Add(Skip("C++", "SERVICE_OBJECT", "C++ projects are a coverage skip"));
         skipped.Add(Skip("Visualisation", "SERVICE_OBJECT", "visualisations are a coverage skip"));
-
-        if (Lookup(sysMan, "TIID") is not null)
-        {
-            Emit("info", "msg", "TIID present — coverage skip");
-        }
 
         if (Lookup(sysMan, "TINC") is not null)
         {
             Emit("info", "msg", "TINC present — coverage skip");
         }
 
-        // A mirror with zero objects is worse than no mirror: it looks like a successful
-        // export in which every object was deleted, and the next import would offer to
-        // make the project match. A tree that walked to nothing means the PLC branch was
-        // not really loaded — refuse rather than write it.
+        // A mirror with zero PLC objects is worse than no mirror: it looks like a
+        // successful export in which every object was deleted. Count PLC before the
+        // I/O catalog is recorded — a yaml-only mirror would hide a failed TIPC walk.
         if (objects.Count == 0)
         {
             throw new InvalidOperationException(
                 "the export found no PLC software under " + plcName + " — refusing to " +
                 "write an empty mirror, which would read as every object deleted");
         }
+
+        // Comment set in-session (ioprobe 2026-08-20) and ProduceXml showed the
+        // marker; File.SaveAll did not persist it and SaveProject is
+        // DISP_E_UNKNOWNNAME. Form DEVICES, export-only. YAML write must not
+        // gate the PLC walk: a failed TIID dump still leaves .st in the mirror.
+        ExportIo(sysMan, objects, skipped, warnings);
 
         var manifest = new Dictionary<string, object?>
         {
@@ -71,7 +70,8 @@ internal static partial class HostApp
         md.AppendLine($"Objects exported: {objects.Count}");
         md.AppendLine($"Skipped: {skipped.Count}");
         md.AppendLine();
-        md.AppendLine("I/O, NC, safety, C++ and visualisations are coverage skips.");
+        md.AppendLine("I/O is exported as *.devices.yaml (export-only; Comment does not persist through Save; never CreateChild).");
+        md.AppendLine("NC, safety, C++ and visualisations are coverage skips.");
         md.AppendLine("Graphical POUs export for review only when DeclarationText is unavailable.");
         md.AppendLine("LibPics images are documentation assets, not PLC software.");
         File.WriteAllText(Path.Combine(outDir, "_coverage.md"), md.ToString(), Utf8NoBom);
