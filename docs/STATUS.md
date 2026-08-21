@@ -33,9 +33,9 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,448 | under a second | nothing |
+| `Versio.Core.Tests` | 1,450 | under a second | nothing |
 | `Versio.Integration.Tests` | 151 | ~10 s | real git |
-| `Versio.App.Tests` | 618 | ~50 s | nothing |
+| `Versio.App.Tests` | 619 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 14 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
