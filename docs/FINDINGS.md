@@ -19,6 +19,25 @@ produce a diff touching everything else.
 
 ---
 
+### Two-line change rows were clipped into a 24 px tree row
+
+**Found 2026-08-21**, from a screenshot of the git panel: the filename of one row drew on top
+of the path of the row above it. Not a density choice. `ChangeRowTemplate` is two caption
+lines (object name + directory) and the type chip, and every list row used `RowItem`, whose
+`Height` is `Size.Row.Tree` — 24 px, on purpose, for the **project tree**. The
+`ContentPresenter` is vertically centred, so both lines were clipped into the same strip as
+the next row's first line.
+
+Geometry tests asserted sideways overflow and `ActualHeight > 0`. They never asked whether a
+row was tall enough for both lines, and they populated two lists so the overlap was easy to
+miss in the numbers.
+
+**Fix:** `Size.Row.Change` (40 px) and a `ChangeRowItem` style that top-aligns. The tree stays
+24 px. The git panel is one `CHANGES` list now — staging is no longer a visible verb — so
+there is only one container to point at it.
+
+---
+
 ### Stop was a caption. Cancel did not kill. Try again never lit.
 
 **Found 2026-08-21**, reviewing why a running export cannot be stopped, the window will not

@@ -1,5 +1,5 @@
 <!--
-    GIT: staging, the commit message, and the remote operations.
+    GIT: the commit message, the one changes list, and the remote operations.
 
     Every button here goes dead while any operation runs - see ShellViewModel.Ready. Git
     serialises some of this itself with index and ref locks, but not a push racing a commit,
@@ -10,9 +10,9 @@
     here as well would mean two files deciding the same thing.
 
     The DataContext is inherited, so the bindings below read the same ShellViewModel they read
-    when this markup lived in MainWindow.xaml. StagedList and UnstagedList are named inside
-    this control's own scope now, so a test reaches them through the panel rather than through
-    the window - see GitPanelGeometryTests.Inside.
+    when this markup lived in MainWindow.xaml. ChangesList is named inside this control's own
+    scope now, so a test reaches it through the panel rather than through the window - see
+    GitPanelGeometryTests.Inside.
 -->
 <UserControl x:Class="Versio.App.Views.Panels.GitPanelView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -28,83 +28,42 @@
             </ResourceDictionary.MergedDictionaries>
 
             <!--
-                THE SAME ROW, WITH THE MENU EACH LIST ACTUALLY WANTS.
+                ONE LIST, ONE MENU.
 
-                Two templates rather than one with half its entries hidden, because the two
-                lists want genuinely different verbs: a staged row can be taken back out, an
-                unstaged row can be staged or thrown away. A shared menu would need a flag on
-                ChangeRow saying which list it is in - and a file can be in BOTH at once, with
-                staged changes and further unstaged ones on top, so that flag would have to be
-                about the list rather than the row, and the row is what a template binds to.
-
-                The body is still shared. Only the checkbox and the menu are repeated; the
-                glyph, the name, the type chip and the path all come from ChangeRowTemplate
-                exactly as before, so the two lists cannot drift apart on what a modified file
-                looks like.
+                Staging is no longer a visible verb: the checkbox says what the next commit
+                or discard applies to, and double-click toggles that box. The body is still
+                ChangeRowTemplate, shared with the history panel's commit-file list.
 
                 THE MENU HANGS OFF THE ROW'S OWN GRID, which is the shape the project tree
                 uses and is not a style choice: a ContextMenu inherits its DataContext from
                 the element it is set on, so every entry acts on the row that was
                 right-clicked. Hanging it off the ListBox instead would make it act on the
-                SELECTION - and WPF does not select a row on right-click, so right-clicking
-                the third row while the first is selected would silently act on the first.
+                SELECTION - and WPF does not select a row on right-click.
 
-                The verbs act on the CLICKED ROW, never on the ticks. The buttons above the
-                list already act on the ticked set; someone who ticked three files and then
-                right-clicks a fourth must not get their three swept in. See StageRowAsync.
+                Discard acts on the CLICKED ROW, never on the ticks. The button above the
+                list already acts on the ticked set; someone who ticked three files and then
+                right-clicks a fourth must not get their three swept in.
             -->
 
             <!--
                 DOUBLE-CLICK HANGS OFF THE ROW CONTAINER, NOT THE LIST.
 
-                The obvious wiring is MouseDoubleClick on the ListBox. It does not work, and
-                the reason is worth keeping: Control.MouseDoubleClick is registered with
-                RoutingStrategy.DIRECT, so it does not bubble - a double-click on a row never
-                reaches a handler on the list. The first attempt did exactly that, and the
-                test caught it before the app was ever run.
-
-                Attached to the container instead, `sender` IS the row, so the handler reads
-                its DataContext with no tree walking and no assumption about what
-                OriginalSource carries at the moment the event is re-raised. It also gives the
-                right answer for free below the last row: empty space is not a container, so
-                nothing fires.
+                Control.MouseDoubleClick is registered with RoutingStrategy.DIRECT, so it
+                does not bubble — a handler on the ListBox never sees a click on a row.
+                Attached to the container, sender IS the row.
             -->
-            <Style x:Key="StagedRowContainer" TargetType="ListBoxItem"
-                   BasedOn="{StaticResource RowItem}">
-                <EventSetter Event="MouseDoubleClick" Handler="OnStagedRowDoubleClick" />
+            <Style x:Key="ChangeRowContainer" TargetType="ListBoxItem"
+                   BasedOn="{StaticResource ChangeRowItem}">
+                <EventSetter Event="MouseDoubleClick" Handler="OnChangeRowDoubleClick" />
             </Style>
 
-            <Style x:Key="UnstagedRowContainer" TargetType="ListBoxItem"
-                   BasedOn="{StaticResource RowItem}">
-                <EventSetter Event="MouseDoubleClick" Handler="OnUnstagedRowDoubleClick" />
-            </Style>
-
-            <DataTemplate x:Key="StagedRowTemplate">
+            <DataTemplate x:Key="PendingRowTemplate">
                 <Grid>
                     <Grid.ContextMenu>
                         <ContextMenu>
-                            <MenuItem Header="Unstage" Click="OnUnstageRow" />
-                            <Separator />
-                            <MenuItem Header="Reveal in Explorer" Click="OnRevealRow" />
-                            <MenuItem Header="Copy path" Click="OnCopyRowPath" />
-                        </ContextMenu>
-                    </Grid.ContextMenu>
-
-                    <ContentPresenter Content="{Binding}"
-                                      ContentTemplate="{StaticResource StageRowTemplate}" />
-                </Grid>
-            </DataTemplate>
-
-            <DataTemplate x:Key="UnstagedRowTemplate">
-                <Grid>
-                    <Grid.ContextMenu>
-                        <ContextMenu>
-                            <MenuItem Header="Stage" Click="OnStageRow" />
-
                             <!-- Still the only entry that destroys work nothing else has a
                                  copy of, and it still goes through DiscardRowsAsync - which
-                                 names every file it will touch and asks first. A new way to
-                                 REACH that flow, not a second implementation of it. The
+                                 names every file it will touch and asks first. The
                                  ellipsis says a question is coming. -->
                             <MenuItem Header="Discard changes…" Click="OnDiscardRow" />
                             <Separator />
@@ -260,7 +219,7 @@
                                  SelectedItem="{Binding SelectedConflict}"
                                  Background="Transparent" BorderThickness="0"
                                  Margin="0,6,0,0" MaxHeight="120"
-                                 ItemContainerStyle="{StaticResource RowItem}"
+                                 ItemContainerStyle="{StaticResource ChangeRowItem}"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
                                  ItemTemplate="{StaticResource ChangeRowTemplate}" />
@@ -903,29 +862,16 @@
                              KeyDown="OnCommitMessageKeyDown"
                              Text="{Binding CommitMessage, UpdateSourceTrigger=PropertyChanged}" />
 
-                    <!-- ONE BUTTON, THREE BEHAVIOURS, AND A CAPTION THAT SAYS
-                         WHICH.
+                    <!-- ONE BUTTON, TWO BEHAVIOURS, AND A CAPTION THAT SAYS WHICH.
 
-                         "Commit & Push" is gone. It bundled two operations with
-                         different failure modes, and its failure story was the
-                         worst in the panel: the commit succeeds, the push fails,
-                         and one message has to describe both. Push is a deliberate
-                         act of its own now, up in the remote row where the
-                         ahead-count already lives.
-
-                         The caption is bound because it MEANS different things:
-                         "Stage & commit (3)" stages what is ticked, "Stage all &
-                         commit" takes the lot, and a plain "Commit" leaves the
-                         unstaged files exactly where they are. That last one is
-                         the safeguard - somebody who staged three files on purpose
-                         must not get a fourth swept in - and it is only visible
-                         before the press if the caption carries it.
+                         "Commit & Push" is gone. Staging as a visible verb is gone too:
+                         the button stages in the background after a preflight, and the
+                         caption says Commit or Commit (N) according to the ticks.
 
                          ToolTipService.ShowOnDisabled because WPF hides a tooltip
                          on a disabled control by default, so the one moment the
                          explanation is wanted is the one moment it would be
-                         missing. The tooltip says what the button will do while it
-                         is live, and why it cannot while it is not. -->
+                         missing. -->
                     <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
                         <Button Content="{Binding Commit.Label}"
                                 Style="{StaticResource AccentButton}"
@@ -985,24 +931,12 @@
                      one knows the other is there. The label takes what is left and
                      trims; the buttons keep their width. -->
                 <!--
-                    TWO PANES THAT BOTH SCROLL, AND A SPLITTER BETWEEN THEM.
-
-                    The staged list used to be docked top with a hard
-                    MaxHeight="150" while the unstaged list took everything left.
-                    So a forty-file stage was trapped in four rows next to an empty
-                    list holding four hundred pixels of nothing - the layout was
-                    honest about neither.
-
-                    Both rows are star-sized with a MinHeight, so neither can be
-                    crushed to nothing, and the splitter lets somebody who is
-                    mostly reviewing what is staged give it the room.
+                    ONE LIST. Staging is not a visible verb: the checkboxes pick
+                    what the next commit or discard applies to, and git add
+                    happens in the background after a preflight.
                 -->
                 <Grid>
-                    <!-- ONE LINE INSTEAD OF TWO EMPTY BOXES (GP-L §10.2). Two
-                         boxes labelled STAGED and NOT STAGED with nothing in them
-                         say less than this sentence and take four times its
-                         height. The lists collapse under it rather than sitting
-                         empty beside it. -->
+                    <!-- ONE LINE INSTEAD OF AN EMPTY BOX (GP-L §10.2). -->
                     <TextBlock Text="Working tree clean — nothing to commit."
                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                FontFamily="{DynamicResource Font.UI}"
@@ -1025,104 +959,12 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" MinHeight="60" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" MinHeight="60" />
                     </Grid.RowDefinitions>
 
-                    <!-- STAGED header: master checkbox, label-with-count, action.
-
-                         THREE COLUMNS, NOT FOUR, AND THAT IS THE OVERFLOW FIX.
-
-                         This was Auto | Auto | * | Auto - checkbox, label, caption,
-                         button - and the label's Auto column was the defect. A Grid
-                         measures every Auto column against infinity and hands each
-                         its full desired width; the star takes what is left, floored
-                         at zero and never negative. So once the Autos together wanted
-                         more than the row had, the star collapsed to nothing, the
-                         Autos kept their width regardless, and the row arranged PAST
-                         the panel - over the splitter and the diff pane, because
-                         nothing in that chain clips.
-
-                         `STAGED` in the letter-spaced SectionLabel face, with no
-                         trimming and no ceiling, was rigid while everything around it
-                         grew with the number of changes: StagingSelection.Label puts
-                         the count in the button, so `Discard 127` and `Stage 127` sit
-                         side by side one row down.
-
-                         Measured, at the panel's own MinWidth of 260 px - which is
-                         reachable by dragging and is PERSISTED, so a panel narrowed
-                         once is narrow on every later launch. The NOT STAGED row,
-                         which carries two buttons where this one carries one,
-                         overflowed by 13 px with the short labels and by 26 px with
-                         three-digit counts.
-
-                         Label and count are one trimming string in the star column
-                         now, so the header yields to the buttons instead of shoving
-                         them off the panel - and the count arrives as a side effect
-                         rather than as another thing to fit. See StagingSelection.Header. -->
+                    <!-- THREE COLUMNS, NOT FOUR, AND THAT IS THE OVERFLOW FIX.
+                         Auto | * | Auto — checkbox, trimming header, Discard.
+                         See StagingSelection.Header. -->
                     <Grid Grid.Row="0" Margin="0,0,0,4" ClipToBounds="True">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" MinWidth="24" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-
-                        <!-- Three-state, and the middle one is only ever produced,
-                             never accepted: "set this to partially ticked" has no
-                             meaning. -->
-                        <CheckBox Grid.Column="0" Margin="0,0,6,0"
-                                  VerticalAlignment="Center" IsThreeState="True"
-                                  Style="{StaticResource MenuCheck}"
-                                  ToolTip="Tick or clear every staged file"
-                                  IsChecked="{Binding StagedAllSelected, Mode=TwoWay}" />
-
-                        <!-- The tooltip carries the untrimmed text, because at 260 px
-                             this is the control that gives way and an ellipsis with no
-                             way to read the whole thing is worse than the crowding it
-                             replaced. -->
-                        <TextBlock Grid.Column="1" Text="{Binding StagedHeader}"
-                                   VerticalAlignment="Center"
-                                   TextTrimming="CharacterEllipsis"
-                                   ToolTip="{Binding StagedHeader}"
-                                   Style="{StaticResource SectionLabel}" />
-
-                        <Button Grid.Column="2" Content="{Binding UnstageLabel}"
-                                Margin="8,0,0,0"
-                                Style="{StaticResource GhostButton}" Padding="8,2"
-                                Height="{DynamicResource Size.Control.Compact}"
-                                ToolTipService.ShowOnDisabled="True"
-                                ToolTip="Take these back out of the next commit"
-                                Command="{Binding UnstageCommand}" />
-                    </Grid>
-
-                    <ListBox Grid.Row="1" x:Name="StagedList"
-                             AutomationProperties.Name="Staged files"
-                             ItemsSource="{Binding Staged}"
-                             SelectedItem="{Binding SelectedStaged}"
-                             Background="Transparent" BorderThickness="0"
-                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             ItemTemplate="{StaticResource StagedRowTemplate}"
-                             ItemContainerStyle="{StaticResource StagedRowContainer}"
-                             VirtualizingStackPanel.IsVirtualizing="True"
-                             VirtualizingStackPanel.VirtualizationMode="Recycling" />
-
-                    <!-- The staged list can be tall now, so it virtualizes too.
-                         It could not before, behind its 150 px ceiling. -->
-                    <GridSplitter Grid.Row="2" Height="6"
-                                  HorizontalAlignment="Stretch"
-                                  VerticalAlignment="Center"
-                                  Style="{StaticResource PaneSplitter}"
-                                  ResizeBehavior="PreviousAndNext"
-                                  ResizeDirection="Rows"
-                                  AutomationProperties.Name="Resize the staged list" />
-
-                    <!-- The same three columns as the STAGED header above, and this is
-                         the row that actually overflowed: two buttons where that one
-                         has one. The reasoning is on that grid; do not change one
-                         without the other. -->
-                    <Grid Grid.Row="3" Margin="0,4,0,4" ClipToBounds="True">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" MinWidth="24" />
@@ -1133,47 +975,33 @@
                                   VerticalAlignment="Center" IsThreeState="True"
                                   Style="{StaticResource MenuCheck}"
                                   ToolTip="Tick or clear every changed file"
-                                  IsChecked="{Binding UnstagedAllSelected, Mode=TwoWay}" />
+                                  IsChecked="{Binding PendingAllSelected, Mode=TwoWay}" />
 
-                        <TextBlock Grid.Column="1" Text="{Binding UnstagedHeader}"
+                        <TextBlock Grid.Column="1" Text="{Binding PendingHeader}"
                                    VerticalAlignment="Center"
                                    TextTrimming="CharacterEllipsis"
-                                   ToolTip="{Binding UnstagedHeader}"
+                                   ToolTip="{Binding PendingHeader}"
                                    Style="{StaticResource SectionLabel}" />
 
-                        <StackPanel Grid.Column="2" Orientation="Horizontal"
-                                    Margin="8,0,0,0">
-                            <!-- Still the only button here that destroys work
-                                 nothing else has a copy of, and it still confirms
-                                 with the files named. What changed is that it can
-                                 now act on a ticked set rather than only on the
-                                 one row somebody happened to click. -->
-                            <Button Content="{Binding DiscardLabel}" Padding="8,2"
-                                    Height="{DynamicResource Size.Control.Compact}"
-                                    Style="{StaticResource GhostButton}"
-                                    Foreground="{DynamicResource Brush.Status.Deleted}"
-                                    Command="{Binding DiscardCommand}"
-                                    ToolTipService.ShowOnDisabled="True"
-                                    ToolTip="Throw these changes away — this cannot be undone" />
-                            <Button Content="{Binding StageLabel}" Padding="8,2"
-                                    Margin="6,0,0,0"
-                                    Height="{DynamicResource Size.Control.Compact}"
-                                    Style="{StaticResource GhostButton}"
-                                    ToolTipService.ShowOnDisabled="True"
-                                    ToolTip="Put these into the next commit"
-                                    Command="{Binding StageCommand}" />
-                        </StackPanel>
+                        <Button Grid.Column="2" Content="{Binding DiscardLabel}"
+                                Margin="8,0,0,0" Padding="8,2"
+                                Height="{DynamicResource Size.Control.Compact}"
+                                Style="{StaticResource GhostButton}"
+                                Foreground="{DynamicResource Brush.Status.Deleted}"
+                                Command="{Binding DiscardCommand}"
+                                ToolTipService.ShowOnDisabled="True"
+                                ToolTip="Throw these changes away — this cannot be undone" />
                     </Grid>
 
-                    <ListBox Grid.Row="4" x:Name="UnstagedList"
-                             AutomationProperties.Name="Files not staged"
-                             ItemsSource="{Binding Unstaged}"
-                             SelectedItem="{Binding SelectedUnstaged}"
+                    <ListBox Grid.Row="1" x:Name="ChangesList"
+                             AutomationProperties.Name="Changed files"
+                             ItemsSource="{Binding Pending}"
+                             SelectedItem="{Binding SelectedPending}"
                              Background="Transparent" BorderThickness="0"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                              ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             ItemTemplate="{StaticResource UnstagedRowTemplate}"
-                             ItemContainerStyle="{StaticResource UnstagedRowContainer}"
+                             ItemTemplate="{StaticResource PendingRowTemplate}"
+                             ItemContainerStyle="{StaticResource ChangeRowContainer}"
                              VirtualizingStackPanel.IsVirtualizing="True"
                              VirtualizingStackPanel.VirtualizationMode="Recycling" />
                     </Grid>

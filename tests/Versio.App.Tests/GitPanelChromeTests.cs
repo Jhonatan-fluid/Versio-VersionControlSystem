@@ -198,7 +198,7 @@ public sealed class GitPanelChromeTests : IDisposable
 
             Assert.Equal("Commit", commit.Content);
 
-            shell.Unstaged.Add(new ChangeRow(new FileChange
+            shell.Pending.Add(new ChangeRow(new FileChange
             {
                 Path = "a.st",
                 Staged = ChangeKind.Unmodified,
@@ -206,11 +206,11 @@ public sealed class GitPanelChromeTests : IDisposable
             }));
 
             content.UpdateLayout();
-            Assert.Equal("Stage all & commit", commit.Content);
+            Assert.Equal("Commit", commit.Content);
 
-            shell.Unstaged[0].IsSelected = true;
+            shell.Pending[0].IsSelected = true;
             content.UpdateLayout();
-            Assert.Equal("Stage & commit (1)", commit.Content);
+            Assert.Equal("Commit (1)", commit.Content);
         });
     }
 
@@ -300,63 +300,27 @@ public sealed class GitPanelChromeTests : IDisposable
     }
 
     [Fact]
-    public void Both_staging_lists_scroll_and_neither_can_be_crushed()
+    public void The_changes_list_scrolls_and_cannot_be_crushed()
     {
-        // The layout this replaced: the staged list was docked top with a hard
-        // MaxHeight="150" and the unstaged list took everything left. A forty-file stage was
-        // trapped in four rows next to an empty list holding four hundred pixels of nothing.
         StaHarness.Run(() =>
         {
             var (window, _) = Build();
             var (panel, _) = ShowGitPanel(window);
 
-            // BY NAME, not by position. A third ListBox arrived with the conflict section, and
-            // an index-based lookup silently started measuring the wrong control - which is
-            // exactly the kind of test that keeps passing while it stops meaning anything.
-            //
-            // Through the panel rather than the window: the git panel is a UserControl now
-            // and owns its own name scope, so the window cannot see the lists inside it.
-            var lists = new[] { "StagedList", "UnstagedList" }
-                .Select(n => Assert.IsType<ListBox>(panel.FindName(n)))
-                .ToList();
+            var list = Assert.IsType<ListBox>(panel.FindName("ChangesList"));
 
-            foreach (var list in lists)
-            {
-                Assert.Equal(ScrollBarVisibility.Auto,
-                             ScrollViewer.GetVerticalScrollBarVisibility(list));
+            Assert.Equal(ScrollBarVisibility.Auto,
+                         ScrollViewer.GetVerticalScrollBarVisibility(list));
+            Assert.True(VirtualizingPanel.GetIsVirtualizing(list),
+                        "the changes list does not virtualize");
 
-                // Both virtualize now. The staged one could not before, behind its ceiling.
-                Assert.True(VirtualizingPanel.GetIsVirtualizing(list),
-                            "a staging list does not virtualize");
-
-                var row = (FrameworkElement)VisualTreeHelper.GetParent(list)!;
-                var height = Grid.GetRow(list) < 0 ? 0 : 1;
-                Assert.True(height > 0 || row is not null);
-            }
-
-            // Neither pane may be squeezed to nothing by the other.
             var grid = AllOf<Grid>(panel)
-                .FirstOrDefault(g => g.RowDefinitions.Count == 5);
+                .FirstOrDefault(g => g.RowDefinitions.Count == 2
+                                     && g.RowDefinitions.Any(r => r.Height.IsStar));
 
-            Assert.True(grid is not null, "the two-pane staging grid is not there");
+            Assert.True(grid is not null, "the changes list grid is not there");
             Assert.All(grid!.RowDefinitions.Where(r => r.Height.IsStar),
-                       r => Assert.True(r.MinHeight > 0, "a staging pane can be crushed to nothing"));
-        });
-    }
-
-    [Fact]
-    public void The_panes_can_be_resized_against_each_other()
-    {
-        StaHarness.Run(() =>
-        {
-            var (window, _) = Build();
-            var (panel, _) = ShowGitPanel(window);
-
-            var splitter = AllOf<GridSplitter>(panel).FirstOrDefault();
-
-            Assert.True(splitter is not null, "there is no splitter between the two panes");
-            Assert.Equal(GridResizeDirection.Rows, splitter!.ResizeDirection);
-            Assert.Equal(GridResizeBehavior.PreviousAndNext, splitter.ResizeBehavior);
+                       r => Assert.True(r.MinHeight > 0, "the changes list can be crushed to nothing"));
         });
     }
 
@@ -376,7 +340,7 @@ public sealed class GitPanelChromeTests : IDisposable
             var (window, shell) = Build();
             var (panel, content) = ShowGitPanel(window);
 
-            shell.Unstaged.Add(new ChangeRow(new FileChange
+            shell.Pending.Add(new ChangeRow(new FileChange
             {
                 Path = "src/App/POU/FB_Motor.st",
                 Staged = ChangeKind.Unmodified,
@@ -415,7 +379,7 @@ public sealed class GitPanelChromeTests : IDisposable
             var (window, shell) = Build();
             var (panel, content) = ShowGitPanel(window);
 
-            shell.Unstaged.Add(new ChangeRow(new FileChange
+            shell.Pending.Add(new ChangeRow(new FileChange
             {
                 Path = "a.st",
                 Staged = ChangeKind.Unmodified,
@@ -431,7 +395,7 @@ public sealed class GitPanelChromeTests : IDisposable
 
             // The whole chain: control -> row -> shell count. A one-way binding would pass
             // every other assertion in this file and fail here.
-            Assert.Equal(1, shell.UnstagedSelectedCount);
+            Assert.Equal(1, shell.PendingSelectedCount);
         });
     }
 
@@ -666,21 +630,14 @@ public sealed class GitPanelChromeTests : IDisposable
     /// </para>
     /// </remarks>
     [Fact]
-    public void Each_staging_list_carries_its_own_row_menu()
+    public void A_change_row_carries_discard_and_not_stage()
     {
         StaHarness.Run(() =>
         {
             var (window, shell) = Build();
             var (panel, content) = ShowGitPanel(window);
 
-            shell.Staged.Add(new ChangeRow(new FileChange
-            {
-                Path = "src/App/POU/FB_Staged.st",
-                Staged = ChangeKind.Modified,
-                Unstaged = ChangeKind.Unmodified,
-            }));
-
-            shell.Unstaged.Add(new ChangeRow(new FileChange
+            shell.Pending.Add(new ChangeRow(new FileChange
             {
                 Path = "src/App/GVL/GVL_Changed.st",
                 Staged = ChangeKind.Unmodified,
@@ -691,26 +648,13 @@ public sealed class GitPanelChromeTests : IDisposable
             content.Arrange(new Rect(0, 0, 1400, 900));
             content.UpdateLayout();
 
-            var staged = Headers(panel, "StagedList");
-            var unstaged = Headers(panel, "UnstagedList");
+            var menu = Headers(panel, "ChangesList");
 
-            // A staged row can only be taken back out. Discarding it would act on the working
-            // tree, which is not what this row is showing.
-            Assert.Contains("Unstage", staged);
-            Assert.DoesNotContain("Stage", staged);
-            Assert.DoesNotContain("Discard changes…", staged);
-
-            Assert.Contains("Stage", unstaged);
-            Assert.Contains("Discard changes…", unstaged);
-            Assert.DoesNotContain("Unstage", unstaged);
-
-            // Shared by both, and the reason the project tree's menu was worth copying rather
-            // than inventing a new vocabulary for the same two acts.
-            foreach (var menu in new[] { staged, unstaged })
-            {
-                Assert.Contains("Reveal in Explorer", menu);
-                Assert.Contains("Copy path", menu);
-            }
+            Assert.Contains("Discard changes…", menu);
+            Assert.DoesNotContain("Stage", menu);
+            Assert.DoesNotContain("Unstage", menu);
+            Assert.Contains("Reveal in Explorer", menu);
+            Assert.Contains("Copy path", menu);
         });
     }
 
@@ -751,94 +695,55 @@ public sealed class GitPanelChromeTests : IDisposable
     /// </para>
     /// </remarks>
     [Fact]
-    public void Both_staging_lists_answer_a_double_click()
+    public void A_double_click_toggles_the_row_checkbox()
     {
         StaHarness.Run(() =>
         {
             var (window, shell) = Build();
             var (panel, content) = ShowGitPanel(window);
 
-            shell.Staged.Add(new ChangeRow(new FileChange
-            {
-                Path = "src/App/POU/FB_Staged.st",
-                Staged = ChangeKind.Modified,
-                Unstaged = ChangeKind.Unmodified,
-            }));
-
-            shell.Unstaged.Add(new ChangeRow(new FileChange
+            var row = new ChangeRow(new FileChange
             {
                 Path = "src/App/GVL/GVL_Changed.st",
                 Staged = ChangeKind.Unmodified,
                 Unstaged = ChangeKind.Modified,
-            }));
+            });
+            shell.Pending.Add(row);
 
             content.Measure(new Size(1400, 900));
             content.Arrange(new Rect(0, 0, 1400, 900));
             content.UpdateLayout();
 
-            foreach (var name in new[] { "StagedList", "UnstagedList" })
+            var list = Assert.IsType<ListBox>(panel.FindName("ChangesList"));
+            var item = AllOf<ListBoxItem>(list).FirstOrDefault();
+
+            Assert.True(item is not null, "ChangesList realised no rows");
+            Assert.False(row.IsSelected);
+
+            var args = new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left)
             {
-                var list = Assert.IsType<ListBox>(panel.FindName(name));
-                var item = AllOf<ListBoxItem>(list).FirstOrDefault();
+                RoutedEvent = Control.MouseDoubleClickEvent,
+                Source = item,
+            };
 
-                Assert.True(item is not null, $"{name} realised no rows");
+            item!.RaiseEvent(args);
 
-                var args = new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left)
-                {
-                    RoutedEvent = Control.MouseDoubleClickEvent,
-                    Source = item,
-                };
-
-                item!.RaiseEvent(args);
-
-                Assert.True(args.Handled,
-                            $"a double-click on a {name} row was not answered");
-            }
+            Assert.True(args.Handled, "a double-click on a change row was not answered");
+            Assert.True(row.IsSelected, "double-click did not tick the row");
         });
     }
 
-    /// <summary>
-    /// Both list headers carry their count, and move when the ticks do.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>The geometry test cannot cover this, and would go greener if it broke.</b> A WPF
-    /// binding to a property that does not exist fails silently and leaves the TextBlock
-    /// empty — and an empty header is <i>narrower</i>, so
-    /// <c>Nothing_overflows_the_panel_sideways</c> would pass more comfortably with the count
-    /// gone entirely. Whether the header fits and whether the header says anything are two
-    /// questions, and only one of them is about pixels.
-    /// </para>
-    /// <para>
-    /// <b>The second half is the notification.</b> The counts are computed properties, so
-    /// nothing reaches the screen unless <c>RaiseSelectionState</c> names them. Deleting those
-    /// two <c>OnPropertyChanged</c> lines leaves the header frozen at whatever it said when
-    /// the row was realised, and every other test in the suite stays green — the exact shape
-    /// this codebase has been bitten by three times, where a pure move loses its coverage
-    /// because nothing about it looks like new behaviour.
-    /// </para>
-    /// </remarks>
     [Fact]
-    public void The_list_headers_carry_their_counts_and_follow_the_ticks()
+    public void The_list_header_carries_its_count_and_follows_the_ticks()
     {
         StaHarness.Run(() =>
         {
             var (window, shell) = Build();
             var (panel, content) = ShowGitPanel(window);
 
-            for (var i = 0; i < 3; i++)
-            {
-                shell.Staged.Add(new ChangeRow(new FileChange
-                {
-                    Path = $"src/App/POU/FB_Staged_{i}.st",
-                    Staged = ChangeKind.Modified,
-                    Unstaged = ChangeKind.Unmodified,
-                }));
-            }
-
             for (var i = 0; i < 12; i++)
             {
-                shell.Unstaged.Add(new ChangeRow(new FileChange
+                shell.Pending.Add(new ChangeRow(new FileChange
                 {
                     Path = $"src/App/GVL/GVL_Changed_{i}.st",
                     Staged = ChangeKind.Unmodified,
@@ -852,30 +757,17 @@ public sealed class GitPanelChromeTests : IDisposable
 
             var texts = AllOf<TextBlock>(panel).Select(t => t.Text).ToList();
 
-            // The count, on screen, where a scrolling list cannot show it.
-            Assert.Contains("STAGED · 3", texts);
-            Assert.Contains("NOT STAGED · 12", texts);
+            Assert.Contains("CHANGES · 12", texts);
+            Assert.DoesNotContain("CHANGES", texts.Where(t => t == "CHANGES"));
 
-            // And the bare labels are gone, which is what proves the binding resolved rather
-            // than the old literal text still being there.
-            Assert.DoesNotContain("NOT STAGED", texts);
-
-            // Tick two, and the header has to follow. This is the assertion that dies if the
-            // OnPropertyChanged calls are removed.
-            shell.Unstaged[0].IsSelected = true;
-            shell.Unstaged[1].IsSelected = true;
+            shell.Pending[0].IsSelected = true;
+            shell.Pending[1].IsSelected = true;
             content.UpdateLayout();
 
             var after = AllOf<TextBlock>(panel).Select(t => t.Text).ToList();
 
-            Assert.Contains("NOT STAGED · 2 of 12 selected", after);
-
-            // The total alone is no longer shown while a selection is: one header, one
-            // sentence, and the selection's own wording already carries the total.
-            Assert.DoesNotContain("NOT STAGED · 12", after);
-
-            // The other list is untouched by the other's ticks.
-            Assert.Contains("STAGED · 3", after);
+            Assert.Contains("CHANGES · 2 of 12 selected", after);
+            Assert.DoesNotContain("CHANGES · 12", after);
         });
     }
 

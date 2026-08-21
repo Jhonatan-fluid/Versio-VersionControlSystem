@@ -144,9 +144,9 @@ public sealed class TreeContextMenuFlowTests
         await shell.StageNodeAsync(FindRow(shell.Sync.Tree, "Glob_Var"));
 
         // Both layers: the row is the object, and the object is both files.
-        Assert.Contains(shell.Staged, r => r.Path == "plc/Machine/App/Glob_Var.gvl.st");
-        Assert.Contains(shell.Staged, r => r.Path == "plc/Machine/App/Glob_Var.gvl.xml");
-        Assert.DoesNotContain(shell.Staged, r => r.Path == "plc/Machine/App/FB_Motor.st");
+        Assert.Contains(shell.Pending, r => r.Path == "plc/Machine/App/Glob_Var.gvl.st" && r.IsStaged);
+        Assert.Contains(shell.Pending, r => r.Path == "plc/Machine/App/Glob_Var.gvl.xml" && r.IsStaged);
+        Assert.Contains(shell.Pending, r => r.Path == "plc/Machine/App/FB_Motor.st" && !r.IsStaged);
     }
 
     [Fact]

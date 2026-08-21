@@ -162,7 +162,7 @@ public sealed class PlcAwareRowTests
 
             var row = Row("plc/Machine/App/FB_Motor.st");
             row.Describe(Named("FB_Motor", "POU"));
-            shell.Unstaged.Add(row);
+            shell.Pending.Add(row);
 
             content.Measure(new Size(1400, 900));
             content.Arrange(new Rect(0, 0, 1400, 900));
@@ -191,7 +191,7 @@ public sealed class PlcAwareRowTests
             var (window, shell) = Build();
             var (panel, content) = ShowGitPanel(window);
 
-            shell.Unstaged.Add(Row("README.md"));
+            shell.Pending.Add(Row("README.md"));
 
             content.Measure(new Size(1400, 900));
             content.Arrange(new Rect(0, 0, 1400, 900));

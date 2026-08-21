@@ -6,12 +6,12 @@ using Versio.App.ViewModels;
 namespace Versio.App.Views.Panels;
 
 /// <summary>
-/// Staging, the commit message, and the remote operations.
+/// The commit message, the one changes list, and the remote operations.
 /// </summary>
 /// <remarks>
 /// Split out of MainWindow.xaml, which held this panel, the history panel, the project panel
 /// and the log console in one file - so a change to any one of them produced a diff touching
-/// all of them. Nothing about the markup changed in the move.
+/// all of them.
 /// </remarks>
 public partial class GitPanelView : UserControl
 {
@@ -49,58 +49,24 @@ public partial class GitPanelView : UserControl
     }
 
     /// <summary>
-    /// Double-click stages or unstages the row, depending on which list it is in.
+    /// Double-click toggles the row's checkbox.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// The single most common interaction in every git client there is, and Versio asked for a
-    /// tick and then a button press every time. It moves the row between the two lists, which
-    /// is what double-clicking a file in a staging pane has meant for twenty years.
-    /// </para>
+    /// There is no second list to move the row into. The checkbox is still not the list
+    /// selection — clicking once still opens the diff — so a double-click is the leftover
+    /// gesture that used to stage, now pointing at the include set instead.
     /// <para>
     /// <b>The clicked row, not the ticks, and not the selection either.</b> The row is read
     /// from the DataContext under the pointer rather than from <c>SelectedItem</c>, because a
-    /// double-click on empty space below the last row leaves the selection untouched and would
-    /// otherwise stage whatever happened to be selected — a file the user never pointed at.
-    /// </para>
-    /// <para>
-    /// The tick state is deliberately left alone. The checkbox says what the buttons will act
-    /// on and this says what to do with one row; a double-click that also cleared somebody's
-    /// selection of three would be the same conflation the row template's own comment warns
-    /// about.
+    /// double-click on empty space below the last row leaves the selection untouched.
     /// </para>
     /// </remarks>
-    private void OnStagedRowDoubleClick(object sender, MouseButtonEventArgs e)
+    private void OnChangeRowDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        if (RowOf(sender) is { } row && DataContext is ShellViewModel shell)
+        if (RowOf(sender) is { } row)
         {
             e.Handled = true;
-            _ = shell.UnstageRowAsync(row);
-        }
-    }
-
-    private void OnUnstagedRowDoubleClick(object sender, MouseButtonEventArgs e)
-    {
-        if (RowOf(sender) is { } row && DataContext is ShellViewModel shell)
-        {
-            e.Handled = true;
-            _ = shell.StageRowAsync(row);
-        }
-    }
-
-    private void OnStageRow(object sender, RoutedEventArgs e)
-    {
-        if (RowOf(sender) is { } row && DataContext is ShellViewModel shell)
-        {
-            _ = shell.StageRowAsync(row);
-        }
-    }
-
-    private void OnUnstageRow(object sender, RoutedEventArgs e)
-    {
-        if (RowOf(sender) is { } row && DataContext is ShellViewModel shell)
-        {
-            _ = shell.UnstageRowAsync(row);
+            row.IsSelected = !row.IsSelected;
         }
     }
 
@@ -131,12 +97,6 @@ public partial class GitPanelView : UserControl
     /// <summary>
     /// Close the branch overflow once one of its entries has been pressed.
     /// </summary>
-    /// <remarks>
-    /// The command runs on its own; this is only about the popup, which is StaysOpen="False"
-    /// and so closes on a click OUTSIDE itself but not on one within. Left alone it would hang
-    /// over the dialog its own entry just opened - the settings popup carries the same note,
-    /// having learned it the same way.
-    /// </remarks>
     private void OnBranchMenuItem(object sender, RoutedEventArgs e) =>
         BranchMenuButton.IsChecked = false;
 

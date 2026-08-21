@@ -30,6 +30,15 @@
     <sys:Double x:Key="Size.Row.Tree">24</sys:Double>
     <sys:Double x:Key="Size.Row.Log">20</sys:Double>
     <!--
+        Off the 2-4-8-12-16-24-32 scale on purpose. Git change rows are TWO lines —
+        object name plus directory — and Size.Row.Tree is 24 px for a single-line
+        project-tree row. Forcing that height on a two-line body centered the
+        filename of one row on top of the path of the row above it. Forty is two
+        11 px caption lines plus the type chip and a little padding; the tree
+        stays 24.
+    -->
+    <sys:Double x:Key="Size.Row.Change">40</sys:Double>
+    <!--
         One height for everything that sits in a row together. It was 28 while IconButton
         hardcoded 32, so the top bar had 28 px dropdowns beside 32 px buttons and a ragged
         baseline nobody could name but everybody could see. Both read this now.

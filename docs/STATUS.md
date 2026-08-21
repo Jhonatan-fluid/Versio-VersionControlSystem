@@ -13,8 +13,9 @@ skip). That run is also the counted gate `LOCK-1` owed. After the eyeballs: UX-6
 UX-7 `Ctrl+F` / UX-8 / UX-12 (item 3), unless the owner picks packaging (item 5)
 instead. Do not start from `archive/` or a handoff.
 
-**Tests:** 2,725 across eleven projects, last counted 2026-08-21 after Stop / Retry / close
-(2,709 was the seam-scanner leftover count the same day). Stop on the status bar kills
+**Tests:** 2,722 across eleven projects, last counted 2026-08-21 after the single-list git panel
+(Core 1,463, App 624). The git panel is one CHANGES list: checkboxes pick the include set,
+Commit / Discard are the verbs, and a failed project no longer vetoes unrelated files.
 in-flight work including an import; Try again lights after cancel; close asks even during
 import; CODESYS.exe and git.exe die with Versio (Job Object); TIA/TwinCAT hosts watch the
 parent and Quit COM, and Stop reaps only the Portal/XAE PID this run created. TwinCAT XAE
@@ -38,9 +39,9 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,460 | under a second | nothing |
+| `Versio.Core.Tests` | 1,463 | under a second | nothing |
 | `Versio.Integration.Tests` | 155 | ~10 s | real git |
-| `Versio.App.Tests` | 630 | ~50 s | nothing |
+| `Versio.App.Tests` | 624 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 15 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
@@ -149,8 +150,9 @@ One list. Reorder it; do not copy it into another file.
    39 m 33 s, zero skips**, IDE closed, machine otherwise idle. The first vendor's gate has
    now seen `ExportHeldViaCopy`, the held-wait, the occupancy-then-hash path and the
    locked-pointer skip, and the run is the counted gate `LOCK-1` owed.
-2. **Owner eyeball leftovers.** Merge dialog; both themes on the rail badge; staged / not-staged
-   headers dragged to 260 px. **Stop / Retry / close:** start an export, click Stop, confirm the
+2. **Owner eyeball leftovers.** Merge dialog; both themes on the rail badge. **Git panel is
+   one CHANGES list** (no STAGED / NOT STAGED splitter); two-line rows are 40 px so they no
+   longer overlap. **Stop / Retry / close:** start an export, click Stop, confirm the
    log names the operation (not `the session is ending`), Try again lights, then close during a
    run and the window actually goes. Filter `%LOCALAPPDATA%\Versio\logs\versio-<date>.log` to
    that window. TIA confirm-import and restore of the ~500 MB tree (the existing

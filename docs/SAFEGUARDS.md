@@ -978,6 +978,12 @@ a commit lands, dirtying the tree that was just committed. The commit gate expor
 not a correctness bug — but *"I committed and it immediately went dirty again"* reads as one.
 Suppress deferred work for the duration of a git write.
 
+A failed binding still stops **that** project's sync until it is acknowledged (`Try again` on
+the row). It no longer vetoes every other commit in the repository: the gate is scoped to
+bindings the include set actually touches, evaluated **before** `git add`, so a README next
+to a broken import can still land. Mix — failed project's files plus unrelated changes —
+asks, then drops those paths. Cancel leaves the index alone.
+
 ### M. An import replaces an object and takes its members with it — **BUILT 2026-08-18**
 
 `import_native` **replaces** rather than merges, and a non-recursive payload holds the node

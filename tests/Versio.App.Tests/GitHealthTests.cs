@@ -93,7 +93,7 @@ public sealed class GitHealthTests
         await shell.OpenAsync(repo.Path);
         shell.CommitMessage = "a real message";
 
-        Assert.NotEmpty(shell.Staged);
+        Assert.NotEmpty(shell.Pending);
         Assert.False(shell.Auth.Identity.IsComplete);
         Assert.True(shell.Auth.IdentityIsMissing);
         Assert.False(shell.CommitCommand.CanExecute(null));
@@ -112,7 +112,7 @@ public sealed class GitHealthTests
         await shell.OpenAsync(repo.Path);
         shell.CommitMessage = "a real message";
 
-        Assert.NotEmpty(shell.Staged);
+        Assert.NotEmpty(shell.Pending);
         Assert.True(shell.Auth.Identity.IsComplete);
         Assert.False(shell.Auth.IdentityIsMissing);
         Assert.True(shell.CommitCommand.CanExecute(null));

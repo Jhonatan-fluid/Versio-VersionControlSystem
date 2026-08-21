@@ -201,26 +201,17 @@ public sealed class ShellLayoutTests : IDisposable
         });
     }
 
-    // The button captions are bound now, not literals: StagingSelection.Label reads "Stage"
-    // over an empty list, "Stage all" when rows exist and none are ticked, and "Stage 3" when
-    // three are. No repository is open here, so the empty-list forms are what render.
-    [Theory]
-    [InlineData("STAGED", "Unstage")]
-    [InlineData("NOT STAGED", "Discard")]
-    [InlineData("NOT STAGED", "Stage")]
-    public void A_section_label_never_sits_under_its_own_buttons(string label, string button)
+    [Fact]
+    public void A_section_label_never_sits_under_its_own_buttons()
     {
-        // Reported: "git panel cluttered ... looks really bad", with NOT STAGED and Discard
-        // touching. The cause is one Grid cell holding both a label and a right-aligned button
-        // group: a right-aligned child grows leftwards ACROSS the label rather than pushing
-        // it, and neither knows the other is there. Two columns fix it; this is what proves
-        // they stay.
+        // Reported: "git panel cluttered ... looks really bad", with a section label and
+        // Discard touching. The cause is one Grid cell holding both a label and a
+        // right-aligned button: a right-aligned child grows leftwards ACROSS the label
+        // rather than pushing it. Two columns fix it; this is what proves they stay.
         StaHarness.Run(() =>
         {
             var window = Build();
 
-            // The git panel is collapsed until the rail selects it, and a collapsed element
-            // arranges to nothing - which would make every assertion below vacuously true.
             var rail = Assert.IsType<RadioButton>(window.FindName("RailGit"));
             rail.IsChecked = true;
 
@@ -231,14 +222,14 @@ public sealed class ShellLayoutTests : IDisposable
             Assert.Equal(Visibility.Visible, panel.Visibility);
             Assert.True(panel.RenderSize.Width > 0, "the git panel did not render");
 
-            var labelBounds = BoundsIn(Text(panel, label), content);
-            var buttonBounds = BoundsIn(Button(panel, button), content);
+            var labelBounds = BoundsIn(Text(panel, "CHANGES"), content);
+            var buttonBounds = BoundsIn(Button(panel, "Discard"), content);
 
-            Assert.True(labelBounds.Width > 0, $"'{label}' did not render");
-            Assert.True(buttonBounds.Width > 0, $"'{button}' did not render");
+            Assert.True(labelBounds.Width > 0, "'CHANGES' did not render");
+            Assert.True(buttonBounds.Width > 0, "'Discard' did not render");
 
             Assert.False(labelBounds.IntersectsWith(buttonBounds),
-                         $"'{label}' occupies {labelBounds} and '{button}' {buttonBounds}, " +
+                         $"'CHANGES' occupies {labelBounds} and 'Discard' {buttonBounds}, " +
                          "which overlap");
         });
     }

@@ -1824,7 +1824,11 @@ public sealed class SyncOrchestrator
     /// It is a backstop: exports follow a detected change, so a commit normally finds every
     /// mirror already current and this gate finds nothing to do.
     /// </remarks>
-    public async Task<CommitGateResult> EvaluateCommitGateAsync(CancellationToken ct)
+    public Task<CommitGateResult> EvaluateCommitGateAsync(CancellationToken ct) =>
+        EvaluateCommitGateAsync(includePaths: null, ct);
+
+    public async Task<CommitGateResult> EvaluateCommitGateAsync(
+        IReadOnlyList<string>? includePaths, CancellationToken ct)
     {
         var freshness = new List<BindingFreshness>();
         foreach (var binding in _bindings.Values)
@@ -1832,6 +1836,10 @@ public sealed class SyncOrchestrator
             freshness.Add(new BindingFreshness
             {
                 BindingId = binding.Id,
+                Name = Path.GetFileNameWithoutExtension(
+                    binding.ProjectPath.Replace('/', Path.DirectorySeparatorChar)),
+                ProjectPath = binding.ProjectPath,
+                ExportPath = binding.ExportPath,
                 CurrentProjectHash = await ProjectHashAsync(binding, ct).ConfigureAwait(false),
                 ExportedProjectHash = _locks[binding.Id].LastSynced.ProjectHash,
                 Enabled = binding.Enabled,
@@ -1839,7 +1847,7 @@ public sealed class SyncOrchestrator
             });
         }
 
-        var result = CommitGate.Evaluate(freshness);
+        var result = CommitGate.Evaluate(freshness, includePaths);
 
         // The gate is the primary path by which the export tree is written, so its verdict
         // is part of the narrative of every commit, not a diagnostic.
@@ -1854,23 +1862,38 @@ public sealed class SyncOrchestrator
     }
 
     /// <summary>Run a blocking export for every stale binding, then re-check the gate.</summary>
-    public async Task<IReadOnlyList<SyncOutcome>> SatisfyCommitGateAsync(CancellationToken ct)
+    /// <param name="bindingIds">
+    /// When set, export exactly these bindings rather than re-evaluating the whole repository.
+    /// A commit scoped to one project's files must not export a stale neighbour.
+    /// </param>
+    public async Task<IReadOnlyList<SyncOutcome>> SatisfyCommitGateAsync(
+        CancellationToken ct, IReadOnlyList<string>? bindingIds = null)
     {
         using var scope = _log.JoinOrBeginOperation(out _);
 
-        var gate = await EvaluateCommitGateAsync(ct).ConfigureAwait(false);
-        var outcomes = new List<SyncOutcome>();
-
-        if (gate.Decision != GateDecision.ExportRequired)
+        IReadOnlyList<string> stale;
+        if (bindingIds is { Count: > 0 })
         {
-            return outcomes;
+            stale = bindingIds;
+        }
+        else
+        {
+            var gate = await EvaluateCommitGateAsync(ct).ConfigureAwait(false);
+            if (gate.Decision != GateDecision.ExportRequired)
+            {
+                return [];
+            }
+
+            stale = gate.StaleBindings;
         }
 
+        var outcomes = new List<SyncOutcome>();
+
         _log.Info(LogCategory.Sync,
-            $"commit gate requires an export of {gate.StaleBindings.Count} project(s); " +
+            $"commit gate requires an export of {stale.Count} project(s); " +
             "running them synchronously before the commit");
 
-        foreach (var bindingId in gate.StaleBindings)
+        foreach (var bindingId in stale)
         {
             outcomes.Add(await HandleChangeAsync(new SyncJob
             {

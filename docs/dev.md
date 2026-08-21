@@ -203,7 +203,7 @@ flowchart TB
 3. Tear down the previous session (`ResetForRepositoryChange`).
 4. Attach git auth, ensure local git excludes, start a **`RepositoryWatcher`** (git status
    only — not PLC sync).
-5. Refresh staged / unstaged lists.
+5. Refresh the changes list.
 6. **`Sync.AttachAsync`** — probe toolchains, build the orchestrator, **recover locks**,
    rescan and adopt projects into `repo.json`, start PLC file watchers, evaluate staleness.
 7. **`Sync.CatchUpAsync`** — export what changed while Versio was closed. Same path as the
@@ -797,7 +797,7 @@ Two watchers. Do not mix them up.
 | Watcher | File | What it is for |
 |---|---|---|
 | `FileChangeWatcher` | [`Infrastructure/Watching/FileChangeWatcher.cs`](../src/Versio.Infrastructure/Watching/FileChangeWatcher.cs) | Project file + mirror tree → `SyncOrchestrator` |
-| `RepositoryWatcher` | [`Infrastructure/Watching/RepositoryWatcher.cs`](../src/Versio.Infrastructure/Watching/RepositoryWatcher.cs) | `.git` metadata → refresh staged/unstaged lists |
+| `RepositoryWatcher` | [`Infrastructure/Watching/RepositoryWatcher.cs`](../src/Versio.Infrastructure/Watching/RepositoryWatcher.cs) | `.git` metadata → refresh the changes list |
 
 `FileChangeWatcher` has three tiers:
 
@@ -1005,7 +1005,7 @@ through it. One operation at a time (`BusyTracker`).
 
 | Action | What runs |
 |---|---|
-| Stage / unstage | `git add` / `git restore --staged` |
+| Stage / unstage (background, at commit) | `git add` / `git restore --staged` of the include set |
 | Stage hunk | Copy the hunk verbatim, `git apply --cached` (working tree untouched) |
 | Commit | Commit gate first, then `git commit -m` |
 | Discard | Names the file. Untracked is refused with an explanation. |
@@ -1266,9 +1266,13 @@ export must not leave a project with no mirror. See also
 resolve ours/theirs. `MergePreflight`: if the merge touches a tracked project/mirror,
 proceed and then require import.
 
-**Commit button.** [`CommitPlan`](../src/Versio.Core/Git/CommitPlan.cs) — one button, three
-intents: stage ticked, commit staged only, stage all and commit. Blocks on conflicts,
-missing identity, empty message. Then the PLC commit gate.
+**Commit button.** [`CommitPlan`](../src/Versio.Core/Git/CommitPlan.cs) — one button, two
+intents: commit the ticked files, or the whole list when nothing is ticked. Caption is
+`Commit` or `Commit (N)`. Blocks on conflicts, missing identity, empty message. Then a
+**preflight**: the PLC commit gate is scoped to bindings the include set actually
+touches, and the index is not rewritten until that answer is proceed / export-these /
+exclude-these-and-ask. A failed project's files can be left out so the rest still
+commit; they no longer veto every other file in the repository.
 
 **IEC layer.** [`src/Versio.Core/Iec`](../src/Versio.Core/Iec) — ST codec, declaration
 parser, the standard's object-type names. Shared by every vendor that speaks IEC 61131-3.

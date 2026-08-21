@@ -194,7 +194,7 @@ public sealed class DiffLayerFlowTests
         // The other route into the pane — no tree row, so nothing re-offers layers, and
         // only ShowPathAsync's own reconcile can take the stale strip down. This is the
         // half of the ownership rule the tree-driven tests cannot reach.
-        shell.SelectedUnstaged = shell.Unstaged.Single(r => r.Path == "plc/Machine.project");
+        shell.SelectedPending = shell.Pending.Single(r => r.Path == "plc/Machine.project");
 
         Assert.False(shell.HasDiffLayers);
     }
