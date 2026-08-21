@@ -1256,8 +1256,8 @@ public class CodesysImportPlannerTests
     // ── The committed fixture, planned end to end ──────────────────────────────
 
     /// <summary>
-    /// The member fixture: ownership from recorded parent GUIDs, and a dotted stem that is
-    /// not split.
+    /// The member fixture: ownership from recorded parent GUIDs, under the chain paths
+    /// schema 9 made canonical.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -1270,16 +1270,19 @@ public class CodesysImportPlannerTests
     /// real exporter, so what is asserted below is what the export actually writes.
     /// </para>
     /// <para>
-    /// <b>Members sit BESIDE their owner</b>, as <c>FB_Pump.Start.st</c> and
-    /// <c>FB_Pump.Stop.action.st</c> — one file, a dotted stem, and a parent recorded by
-    /// GUID. That shape is G5 in miniature: read the chain off the stem and
-    /// <c>FB_Pump.Stop</c> becomes member <c>Stop</c> of some parent <c>FB_Pump</c> found by
-    /// name, which is a guess that happens to be right here and is wrong the moment a name
-    /// contains a dot of its own. The manifest’s parent GUID is what makes it not a guess.
+    /// <b>Members sit INSIDE their owner’s directory</b> since schema 9 —
+    /// <c>FB_Pump/Start.st</c>, <c>FB_Pump/Stop.action.st</c> — segment for segment what the
+    /// CODESYS tree shows. The dotted-stem layout this test originally pinned
+    /// (<c>FB_Pump.Start.st</c> beside its owner) is the legacy shape now, exercised through
+    /// <c>LegacyManifest</c> rather than through the committed fixture; the fixture caught up
+    /// when it was regenerated on 2026-08-21 (schema 10, the devices catalog and per-file
+    /// accessors added). What has not changed is G5’s point: <c>FB_Pump/Speed.xml</c> could
+    /// be FB_Pump’s property or an object inside a folder that merely shares the name, and
+    /// the manifest’s parent GUID is what makes the answer not a guess.
     /// </para>
     /// </remarks>
     [Fact]
-    public void The_member_fixture_resolves_by_recorded_parent_rather_than_by_the_dotted_stem()
+    public void The_member_fixture_resolves_by_recorded_parent_under_chain_paths()
     {
         var root = Path.Combine(TestPaths.Fixtures, "projects", "MachineWithMembers");
         var manifest = ProjectManifest.Parse(
@@ -1303,7 +1306,10 @@ public class CodesysImportPlannerTests
         Assert.Contains(manifest.Objects, o => o.Form == "ST_IMPL");
         Assert.Contains(manifest.Objects, o => o.Form == "NATIVE_R");
         Assert.Contains(manifest.Objects, o => o.Type == "METHOD");
-        Assert.Equal(3, manifest.Objects.Count(o => !string.IsNullOrEmpty(o.Parent)));
+        // Six since schema 10: the method, the action, the property's two halves (text and
+        // NATIVE_R share the owner), and the property's two accessors, which export as
+        // PROPERTY_TEXT files of their own now.
+        Assert.Equal(6, manifest.Objects.Count(o => !string.IsNullOrEmpty(o.Parent)));
 
         Assert.Empty(plan.Warnings);
         Assert.Empty(plan.MissingFromMirror);
@@ -1311,31 +1317,36 @@ public class CodesysImportPlannerTests
         Assert.DoesNotContain(plan.Files, f => f.Skip == PlannedSkip.UnknownForm);
         Assert.DoesNotContain(plan.Files, f => f.Action == PlannedAction.Create);
 
-        // E1: the chain walks Pumps (a folder, and a real object) and then FB_Pump (the
-        // owner, from its GUID) before naming the member.
+        // E1: the chain is the path — Pumps (a folder, and a real object), then FB_Pump —
+        // and the recorded parent GUID is what says FB_Pump/ is an owner, not a folder.
         Assert.Equal(
             ["Device", "Plc Logic", "Application", "Pumps", "FB_Pump", "Start"],
-            One(plan, "Device/Plc Logic/Application/Pumps/FB_Pump.Start.st").Resolve);
+            One(plan, "Device/Plc Logic/Application/Pumps/FB_Pump/Start.st").Resolve);
 
-        // E3: the same for the ACTION, whose stem carries the dot AND the .action suffix.
-        var stop = One(plan, "Device/Plc Logic/Application/Pumps/FB_Pump.Stop.action.st");
+        // E3: the same for the ACTION, whose file carries the .action suffix.
+        var stop = One(plan, "Device/Plc Logic/Application/Pumps/FB_Pump/Stop.action.st");
         Assert.Equal(
             ["Device", "Plc Logic", "Application", "Pumps", "FB_Pump", "Stop"], stop.Resolve);
 
         // A3: an implementation-only form is applied as text, not handed to import_native.
         Assert.Equal(PlannedAction.ApplyText, stop.Action);
 
-        // The PROPERTY is NATIVE_R — importable, recursive, and carrying its own
-        // accessors. It is the form TASK_NATIVE was mistakenly recorded as for a whole
-        // phase, and this is the first time the real one has been planned.
-        var speed = One(plan, "Device/Plc Logic/Application/Pumps/FB_Pump.Speed.xml");
+        // The PROPERTY exports both halves, and NATIVE_R is the importable one — recursive,
+        // carrying its own accessors. It is the form TASK_NATIVE was mistakenly recorded as
+        // for a whole phase, and this is the first time the real one has been planned.
+        var speed = One(plan, "Device/Plc Logic/Application/Pumps/FB_Pump/Speed.xml");
         Assert.Equal(PlannedAction.ApplyNative, speed.Action);
         Assert.Equal(
             ["Device", "Plc Logic", "Application", "Pumps", "FB_Pump", "Speed"], speed.Resolve);
 
-        // Its accessors are NOT separate records: NATIVE_R means the recursive export
-        // already contains them, which is what stops them being planned twice.
-        Assert.DoesNotContain(manifest.Objects, o => o.Name == "Get" || o.Name == "Set");
+        // The accessors ARE separate records since the property gained its readable half,
+        // but their files skip as export-only — which is what stops them being applied
+        // twice, once as text and again inside the recursive payload.
+        Assert.Contains(manifest.Objects, o => o.Name == "Get");
+        Assert.Contains(manifest.Objects, o => o.Name == "Set");
+        var get = One(plan, "Device/Plc Logic/Application/Pumps/FB_Pump/Speed/Get.st");
+        Assert.Equal(PlannedAction.Skip, get.Action);
+        Assert.Equal(PlannedSkip.ExportOnly, get.Skip);
 
         // The owner itself is an ordinary POU under a folder, with no recorded parent —
         // the folder is a directory, not an owner.
