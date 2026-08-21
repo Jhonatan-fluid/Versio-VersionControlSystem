@@ -50,9 +50,11 @@ public sealed class TwinCatFormatTests
     }
 
     [Fact]
-    public void A_held_export_waits_rather_than_copying_the_directory_payload()
+    public void A_held_export_copies_the_directory_payload()
     {
-        Assert.False(TwinCatProjectFormat.Instance.Capabilities.ExportHeldViaCopy);
+        // Occupancy is a path sidecar (.~u). Sync copies the folder and exports
+        // the copy, the same seam the first vendor uses for a held .project.
+        Assert.True(TwinCatProjectFormat.Instance.Capabilities.ExportHeldViaCopy);
     }
 }
 

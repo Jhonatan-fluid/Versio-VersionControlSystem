@@ -1,6 +1,6 @@
 # Driving TwinCAT 3
 
-**Date:** 2026-08-21 (I/O export-only) · Beside `Versio.Plc.TwinCat*` — one
+**Date:** 2026-08-21 (I/O export-only; GUI occupancy same day) · Beside `Versio.Plc.TwinCat*` — one
 vendor's docs, beside its projects. How TwinCAT XAE is driven, what the Automation
 Interface actually does in this host, and what is still open.
 
@@ -90,9 +90,10 @@ which side could not be read; the false-refusal cost is paid in discovery instea
 and the host's own walk, `Build_*` is picked numerically, and an unreadable `Version.txt`
 degrades to unknown rather than faulting the probe. See Findings, 2026-08-20.
 
-A **`%TEMP%` copy** is the conscious conversion the product allows: the runner sets
-`allowConvert` only when the `.tsproj` sits under `Path.GetTempPath()`. Gate Facts copy the
-fixture there first. The committed tree is never opened. Carried deliberately: any path
+A **throwaway copy** is the conscious conversion the product allows: the runner sets
+`allowConvert` when the `.tsproj` sits under `Path.GetTempPath()` or under
+`.versio/local/open/` (the held-export scratch). Gate Facts copy the fixture to
+`%TEMP%` first. The committed tree is never opened. Carried deliberately: any path
 under `%TEMP%` qualifies, so a project somebody *binds* from their temp directory loses the
 refusal — scoping the grant to Versio-created copies is the tighter rule if that ever bites.
 
@@ -134,7 +135,7 @@ The job schema (`TwinCatJob` / `JobReader`):
 | `version` | TwinCAT build string from `Build_*`, e.g. `3.1.4026.25` |
 | `save` | import only; export and probe do not save |
 | `timeoutSeconds` | at least 1200 |
-| `allowConvert` | **only** when the `.tsproj` is under `%TEMP%` |
+| `allowConvert` | throwaway copies: `%TEMP%` or `.versio/local/open/` |
 | `plan` | confirmed `ImportPlan` JSON; an import without one refuses to serialise |
 
 ---
@@ -305,14 +306,48 @@ Skipping `.TcPOU` would hash a pointer and call the program unchanged. LineIds
 *inside* `.TcPOU` are a finding if they churn on idle open, not a reason to skip the
 program files. They do not appear in the exported `.st`.
 
-### Occupancy
+### Occupancy (measured 2026-08-21, live TcXaeShell window)
 
-| Fact | Value |
-|---|---|
-| Marker | `Path.ChangeExtension(tsproj, ".~u")` — same stem as the sibling `.sln` |
-| Verdict | Existence is Held. Body is parsed as user / machine / pid when those three lines are present; stale PID uses the existing `ProjectOccupancyProbe.Resolve` |
-| `ExportHeldViaCopy` | **false.** Exclusive DTE open. Copy-aside of the XML tree is not a second DTE on one project |
-| Live XAE window | **Not separately watched this session.** Third-party notes and the format treat sibling `.~u` as the marker; a leftover after a crash stays Held rather than guessed Free |
+`OccupancyMarkerFor` is `ChangeExtension(tsproj, ".~u")`. On this fixture that is the
+same path as `ChangeExtension(sln, ".~u")` — one stem. Existence is Held. The body is
+parsed as user / machine / pid when those three lines are present; stale PID uses
+`ProjectOccupancyProbe.Resolve`. A leftover after a crash stays Held rather than
+guessed Free.
+
+**GUI occupancy — measured 2026-08-21, TcXaeShell 41772 holding the committed
+`TC3_PlcSample_reStrText` (do not save; 4024.4 on 4026.25 converts).** Shell started
+10:00:33. `_Boot/` appeared at 10:01:01. `<stem>.~u` first seen at 10:01:33 (~60 s
+after launch), 43 bytes, CRLF:
+
+```
+elli_
+ROG-JVM
+41772
+<DateTime ticks>
+```
+
+Pid **41772 matches the live `TcXaeShell.exe`**. The fourth line is a tick timestamp
+and is ignored by `ParseOccupancy` (first three lines only). Idle rewrite is every
+**~5 s**, not in place: XAE writes `<stem>.~u~` and renames it over `<stem>.~u`. A
+45 s poll saw nine SHA changes of the marker (ticks only) and watcher events
+Created/Changed/Deleted on `.~u~` then Changed on `.~u` — the same two-file hop
+CODESYS uses, which is why `TransientPatternsFor` is `.~u*` rather than `.~u`.
+`ExportHeldViaCopy` is **true**: the lock is that sidecar, so a copy of the
+directory at another path is unencumbered the same way a held `.project` is.
+Sync copies under `.versio/local/open/` and the host opens the copy; import
+still waits (the IDE holds the original in memory).
+
+**Held-copy with the GUI still holding the original — measured 2026-08-21,
+10:32, TcXaeShell 41772 + Versio 25012.** Copy landed, host opened the copy
+(`TcXaeShell.DTE.17.0`), exported **36 objects in 27.4 s** including
+`Devices/Devices.devices.yaml`. Two DTE on different paths works. A follow-on
+job then failed: the conventional export folder is nested *inside* the
+payload directory, so swapping the mirror looked like a Project change,
+a second copy started on the same `.versio/local/open/{id}/` path, and the
+first job deleted that folder on the way out. The lock went Failed even
+though the tree is on disk. Finding at the top of `docs/FINDINGS.md`.
+Marker-gone-on-close was not measured this session (the window was still
+open).
 
 Headless probe/export/import of a TEMP copy completed with no interactive dialog.
 
@@ -382,9 +417,10 @@ should not have to re-derive.
 2. ~~Export TIPC as `.st`; I/O as `*.devices.yaml`; coverage-skip TINC / safety / C++ / visualisation.~~
 3. ~~Two unchanged textual exports byte-identical.~~
 4. ~~ST overwrite and the inverse line-deletion, re-exported.~~
-5. ~~Refuse conversion on the bound path; allow it only under `%TEMP%`.~~
+5. ~~Refuse conversion on the bound path; allow it on throwaway copies (`%TEMP%` and `.versio/local/open/`).~~
 6. ~~`IOleMessageFilter`; version from `Build_*`, not the VS shell ProductVersion.~~
 7. ~~I/O catalogs (`Devices/Devices.devices.yaml`, form `DEVICES`, export-only). Comment does not persist through Save; never CreateChild.~~
+8. ~~Live XAE window occupancy — sibling `.~u`, rewrite via `.~u~` every ~5 s (2026-08-21).~~
 
 ### Wired, not an XAE Fact yet
 
@@ -400,8 +436,12 @@ existing confirm-import dialog. They have **not** been walked against live XAE.
 
 ### Not measured
 
-- **Live XAE window occupancy.** Sibling `.~u` is the marker the format watches; a
-  watcher while the IDE holds the fixture was not run this session.
+- ~~**Held-copy export with the GUI still holding the original.**~~ Measured
+  2026-08-21: 36 objects in 27.4 s. The follow-on Failed lock is a separate
+  defect (nested export path + shared scratch folder) — see FINDINGS.
+- **Marker gone on close.** GUI occupancy is the same `.~u` as the format watches
+  (§5); the window was still open when that was recorded, so delete-on-close was
+  not seen this session.
 - **App eyeball.** Adopt a `%TEMP%` copy in the running window and read the log. Never
   this repository's own bindings.
 - **`ConsumeXml` / import when IDispatch rejects `DeclarationText` set.** Export already

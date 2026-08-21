@@ -70,3 +70,19 @@ fixtures/projects/RefrigeratorControl/** text eol=lf
 fixtures/projects/CleaningStation_V20_V21/** filter=lfs diff=lfs merge=lfs -text
 fixtures/projects/CleaningStation_V20_V21/ProjectInfo.txt text eol=lf -filter -diff -merge
 fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21/** -filter -diff -merge text eol=lf
+
+# Added by Versio: a PLC project is a binary compound document. Marking it
+# binary -diff -merge stops git from attempting a line merge and corrupting it.
+*.tsproj  binary -diff -merge filter=lfs diff=lfs
+*.tszip   binary -diff -merge filter=lfs diff=lfs
+*.tspproj binary -diff -merge filter=lfs diff=lfs
+
+# Added by Versio: the mirror is text, and must arrive byte-identical everywhere.
+# Without eol=lf a core.autocrlf=true clone lands CRLF, which git calls clean and
+# Versio's hash gate calls an edit to every file in it.
+fixtures/projects/MachineWithMembers/** text eol=lf
+
+# Added by Versio: the mirror is text, and must arrive byte-identical everywhere.
+# Without eol=lf a core.autocrlf=true clone lands CRLF, which git calls clean and
+# Versio's hash gate calls an edit to every file in it.
+fixtures/projects/TC3_PlcSample_reStrText/TC3_PlcSample_reStrText/** text eol=lf

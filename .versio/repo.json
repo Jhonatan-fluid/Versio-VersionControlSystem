@@ -9,16 +9,39 @@
       "profile": "CODESYS V3.5 SP22 Patch 2",
       "vendor": "Codesys",
       "enabled": true
+    },
+    {
+      "id": "161b94dc224c",
+      "projectPath": "fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21.ap21",
+      "templatePath": "fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21.ap21_template.project",
+      "exportPath": "fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21",
+      "profile": "V21",
+      "vendor": "TiaPortal",
+      "enabled": true
+    },
+    {
+      "id": "889e74c717e3",
+      "projectPath": "fixtures/projects/MachineWithMembers.project",
+      "templatePath": "fixtures/projects/MachineWithMembers_template.project",
+      "exportPath": "fixtures/projects/MachineWithMembers",
+      "profile": "CODESYS V3.5 SP22 Patch 2",
+      "vendor": "Codesys",
+      "enabled": true
+    },
+    {
+      "id": "64eb778c77ff",
+      "projectPath": "fixtures/projects/TC3_PlcSample_reStrText/TC3_PlcSample_reStrText.tsproj",
+      "templatePath": "fixtures/projects/TC3_PlcSample_reStrText/TC3_PlcSample_reStrText.tsproj_template.project",
+      "exportPath": "fixtures/projects/TC3_PlcSample_reStrText/TC3_PlcSample_reStrText",
+      "profile": "TcXaeShell.DTE.17.0",
+      "vendor": "TwinCat",
+      "enabled": true
     }
   ],
-    "ignore": [
-    "phase0/**",
-    "fixtures/projects/MachineWithMembers",
-    "fixtures/projects/MachineWithMembers.project",
-    "fixtures/projects/CleaningStation_V20_V21",
-    "fixtures/projects/CleaningStation_V20_V21/**",
-    "fixtures/projects/TC3_PlcSample_reStrText",
-    "fixtures/projects/TC3_PlcSample_reStrText/**"
+  "ignore": [
+    "phase0/**"
   ],
-  "autoAdoptNewProjects": false
+  "autoAdoptNewProjects": false,
+  "defaultBranch": "",
+  "forge": "Unknown"
 }

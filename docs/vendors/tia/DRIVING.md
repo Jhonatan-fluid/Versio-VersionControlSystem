@@ -386,12 +386,9 @@ HMI (`HMI_RT`) and MTP Creator exports are coverage skips.
 (`C:\Users\elli_\OneDrive\Documentos\Automation\CleaningStation_V20_V21`). That copy is not
 the fixture.
 
-This repository's `.versio/repo.json` **ignores** the fixture, so opening Versio on Versio
-does not adopt a 488 MB TIA tree and start exporting it. The first vendor's
-`RefrigeratorControl.project` is the opposite — it is both the gate fixture and a working
-project, which is a known loose end. Do not repeat that here.
-
-A clone without `git lfs pull` gets a 130-byte pointer. `TestPaths.TiaPortalProject()`
+This repository's `.versio/repo.json` tracks the fixture (same as
+`RefrigeratorControl.project`): opening Versio on Versio will adopt it and export.
+Never write the OneDrive original. A clone without `git lfs pull` gets a 130-byte pointer. `TestPaths.TiaPortalProject()`
 returns null and the gate skips. Mutating round-trips (`Test-RoundTrip.ps1 -MutateFirst`)
 write **this** tree; close Versio and Portal first.
 

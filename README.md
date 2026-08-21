@@ -207,7 +207,7 @@ Versio.sln
 │  ├─ Versio.TestSupport/       not a test project: the three helpers more than one suite
 │  │                            needs (TestPaths, TestLogger, VendorSeamScanner)
 │  ├─ Versio.Core.Tests/        1,450 unit tests — pure, no IO, under a second
-│  ├─ Versio.Integration.Tests/ 151 tests against real git and the real filesystem, ~10 s.
+│  ├─ Versio.Integration.Tests/ 153 tests against real git and the real filesystem, ~10 s.
 │  │                            NO CODESYS: that is a different project now, so this one
 │  │                            needs no filter and cannot accidentally cost half an hour
 │  ├─ Versio.App.Tests/         619 tests that build the real windows and panels against
@@ -236,10 +236,9 @@ Versio.sln
 │                               a directory) are GIT LFS — a clone without git-lfs
 │                               gets 130-byte stubs and the toolchain gate skips
 │                               rather than opening a pointer. TwinCAT's
-│                               TC3_PlcSample_reStrText/ is XML, not LFS. This
-│                               repository's .versio/repo.json ignores both directory
-│                               fixtures so opening Versio here does not start a
-│                               Portal or XAE export
+│                               TC3_PlcSample_reStrText/ is XML, not LFS. Opening Versio
+│                               on this repository adopts the fixtures so the app can be
+│                               exercised against them. phase0/ stays ignored (harness scratch).
 ├─ phase0/                      GITIGNORED scratch, created on demand by the tools/ harnesses
 │                               and safe to delete whole — it reached 150 MB of scratch
 │                               project copies before it was cleaned out on 2026-08-17. The
@@ -393,7 +392,7 @@ dotnet test tests/Versio.Core.Tests
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|
 | `Versio.Core.Tests` | 1,450 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
-| `Versio.Integration.Tests` | 151 | a real `git.exe` and the real filesystem | ~10 s |
+| `Versio.Integration.Tests` | 153 | a real `git.exe` and the real filesystem | ~10 s |
 | `Versio.Arch.Tests` | 14 | nothing — it reads assembly metadata, IL, and the project files | instant |
 | `Versio.App.Tests` | 619 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | nothing — the vendor's planner, codecs and protocol, pure | under a second |

@@ -1,0 +1,100 @@
+schema: 1
+vendor: tia
+name: "ET 200SP station_2"
+path: "ET 200SP station_2"
+apply: comment
+connectors:
+  - connectorId: "ET 200SP station_2"
+    interface: "ET 200SP station_2"
+    moduleType: "System:Device.ET200SP"
+    parameters:
+      Comment: ""
+      TypeIdentifier: "System:Device.ET200SP"
+  - connectorId: "ET 200SP station_2/BA 2xRJ45@127"
+    interface: "BA 2xRJ45"
+    moduleType: "OrderNumber:6ES7 193-6AR00-0AA0/V0.0"
+    parameters:
+      Classification: None
+      Comment: ""
+      FirmwareVersion: V0.0
+      OrderNumber: "6ES7 193-6AR00-0AA0"
+      PositionNumber: "127"
+      TypeIdentifier: "OrderNumber:6ES7 193-6AR00-0AA0/V0.0"
+  - connectorId: "ET 200SP station_2/BA 2xRJ45@127/Port_1@32769"
+    interface: Port_1
+    parameters:
+      Classification: None
+      Comment: ""
+      PositionNumber: "32769"
+  - connectorId: "ET 200SP station_2/BA 2xRJ45@127/Port_2@32770"
+    interface: Port_2
+    parameters:
+      Classification: None
+      Comment: ""
+      PositionNumber: "32770"
+  - connectorId: "ET 200SP station_2/CleaningStation@1"
+    interface: CleaningStation
+    moduleType: "OrderNumber:6ES7 514-2DN03-0AB0/V4.0"
+    parameters:
+      Classification: CPU
+      Comment: ""
+      FirmwareVersion: V4.0
+      OrderNumber: "6ES7 514-2DN03-0AB0"
+      PositionNumber: "1"
+      ShortDesignation: "CPU 1514SP-2 PN"
+      TypeIdentifier: "OrderNumber:6ES7 514-2DN03-0AB0/V4.0"
+  - connectorId: "ET 200SP station_2/CleaningStation@1/Card reader/writer_1@4"
+    interface: "Card reader/writer_1"
+    parameters:
+      Classification: None
+      Comment: ""
+      PositionNumber: "4"
+  - connectorId: "ET 200SP station_2/CleaningStation@1/OPC UA_1@254"
+    interface: "OPC UA_1"
+    parameters:
+      Classification: None
+      Comment: ""
+      PositionNumber: "254"
+  - connectorId: "ET 200SP station_2/CleaningStation@1/PROFINET interface_1@32768"
+    interface: "PROFINET interface_1"
+    parameters:
+      Classification: None
+      Comment: ""
+      PositionNumber: "32768"
+  - connectorId: "ET 200SP station_2/CleaningStation@1/PROFINET interface_2@33024"
+    interface: "PROFINET interface_2"
+    parameters:
+      Classification: None
+      Comment: ""
+      PositionNumber: "33024"
+  - connectorId: "ET 200SP station_2/CleaningStation@1/PROFINET interface_2@33024/Port_1@33025"
+    interface: Port_1
+    parameters:
+      Classification: None
+      Comment: ""
+      PositionNumber: "33025"
+  - connectorId: "ET 200SP station_2/Rack_0@0"
+    interface: Rack_0
+    moduleType: "System:Rack.ET200SP"
+    parameters:
+      Classification: None
+      Comment: ""
+      PositionNumber: "0"
+      TypeIdentifier: "System:Rack.ET200SP"
+  - connectorId: "ET 200SP station_2/Server module_1@2"
+    interface: "Server module_1"
+    moduleType: "OrderNumber:6ES7 193-6PA00-0AA0/V1.1"
+    parameters:
+      Classification: None
+      Comment: ""
+      FirmwareVersion: V1.1
+      OrderNumber: "6ES7 193-6PA00-0AA0"
+      PositionNumber: "2"
+      ShortDesignation: "Server module"
+      TypeIdentifier: "OrderNumber:6ES7 193-6PA00-0AA0/V1.1"
+  - connectorId: "ET 200SP station_2/Server module_1@2/Server module_1@1"
+    interface: "Server module_1"
+    parameters:
+      Classification: None
+      Comment: ""
+      PositionNumber: "1"

@@ -180,18 +180,16 @@ public sealed partial class GitCliClient(
 
     /// <summary>Stage the given paths. An empty list is a no-op, not an error — the caller
     /// usually got it from a selection that happened to be empty.</summary>
-    /// <remarks>The <c>--</c> separator matters: without it a path that looks like a flag,
-    /// or matches a branch name, is interpreted as one.</remarks>
     public Task<GitResult> StageAsync(IReadOnlyList<string> paths, CancellationToken ct) =>
         paths.Count == 0
             ? Task.FromResult(NoOp())
-            : RunAsync(["add", "--", .. paths], null, ct);
+            : RunWithPathspecsAsync(["add"], paths, ct);
 
     /// <summary>Remove the given paths from the index, leaving the working tree alone.</summary>
     public Task<GitResult> UnstageAsync(IReadOnlyList<string> paths, CancellationToken ct) =>
         paths.Count == 0
             ? Task.FromResult(NoOp())
-            : RunAsync(["restore", "--staged", "--", .. paths], null, ct);
+            : RunWithPathspecsAsync(["restore", "--staged"], paths, ct);
 
     /// <summary>Commit whatever is staged.</summary>
     /// <remarks>An empty message is refused here rather than by git, so the user gets a
@@ -232,7 +230,7 @@ public sealed partial class GitCliClient(
         _log.Warn(LogCategory.Git,
             $"discarding working-tree changes to {paths.Count} path(s): {string.Join(", ", paths)}");
 
-        return RunAsync(["restore", "--worktree", "--", .. paths], null, ct);
+        return RunWithPathspecsAsync(["restore", "--worktree"], paths, ct);
     }
 
     /// <summary>Create a branch, optionally checking it out.</summary>
@@ -548,6 +546,26 @@ public sealed partial class GitCliClient(
 
     private static GitResult NoOp() =>
         new() { Success = true, ExitCode = 0 };
+
+    /// <summary>
+    /// Run a git verb whose operands are pathspecs, without putting them on argv.
+    /// </summary>
+    /// <remarks>
+    /// Windows CreateProcess refuses a command line over 32,767 characters
+    /// (Win32 206, "The filename or extension is too long"). Staging a TIA
+    /// tree is hundreds of long paths — measured 2026-08-21: the panel's
+    /// Stage all &amp; commit handed <c>git add --</c> 336 of them and the
+    /// process never started. <c>--pathspec-from-file=-</c> with NUL
+    /// separators keeps argv short. It also accepts a path that looks like
+    /// a flag, which is why <c>--</c> was on the argv form.
+    /// </remarks>
+    private Task<GitResult> RunWithPathspecsAsync(
+        string[] verb, IReadOnlyList<string> paths, CancellationToken ct)
+    {
+        var stdin = string.Join('\0', paths);
+        string[] args = [.. verb, "--pathspec-from-file=-", "--pathspec-file-nul"];
+        return RunAsync(args, null, ct, stdin: stdin);
+    }
 
     /// <param name="stdin">
     /// Written to the child's standard input and then closed, for the commands that read a

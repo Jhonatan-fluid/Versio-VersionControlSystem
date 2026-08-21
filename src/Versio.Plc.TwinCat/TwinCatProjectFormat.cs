@@ -31,10 +31,13 @@ public sealed class TwinCatProjectFormat : IPlcProjectFormat
         TextualImport = true,
         ObjectCreation = true,
         Headless = true,
-        // Exclusive DTE open of the solution. Copy-aside is the first vendor's
-        // sidecar trick; it has not been measured valid here. Occupancy waits
-        // both directions instead, same bargain as the directory TIA payload.
-        ExportHeldViaCopy = false,
+        // Occupancy is a sidecar on the path (sibling .~u), measured 2026-08-21
+        // against a live TcXaeShell window. A copy at another path is therefore
+        // unencumbered the same way the first vendor's copy is: the lock is the
+        // original's marker, not a machine-wide hold on the tree. Sync already
+        // copies a directory payload (CopyOpenProjectAsync); this flag is what
+        // lets it. Import still waits — the IDE holds the original in memory.
+        ExportHeldViaCopy = true,
         TypicalStartupCost = TimeSpan.FromSeconds(22),
     };
 

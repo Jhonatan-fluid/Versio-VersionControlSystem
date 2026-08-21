@@ -102,10 +102,32 @@ fixtures/projects/CleaningStation_V20_V21/System/~*
 
 # TwinCAT occupancy and churn beside the committed gate fixture.
 # _Boot/ _CompileInfo/ .vs/ are not copied into the fixture; these rules catch them
-# if a test or XAE recreates them. .~u is OccupancyMarkerFor.
+# if a test or XAE recreates them. Occupancy is stem.~u, rewritten via stem.~u~
+# (measured 2026-08-21, live TcXaeShell) — same two-file hop as CODESYS, so .~u*.
 fixtures/projects/TC3_PlcSample_reStrText/_Boot/
 fixtures/projects/TC3_PlcSample_reStrText/_CompileInfo/
 fixtures/projects/TC3_PlcSample_reStrText/.vs/
-fixtures/projects/TC3_PlcSample_reStrText/*.~u
+fixtures/projects/TC3_PlcSample_reStrText/*.~u*
 fixtures/projects/TC3_PlcSample_reStrText/*.suo
 fixtures/projects/TC3_PlcSample_reStrText/*.user
+
+# Added by Versio: files the PLC toolchain writes beside a project.
+# The per-user one carries a username and machine name in its filename.
+fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21.info
+fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21.versio_staging/
+fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21.versio_trash/
+
+# Added by Versio: files the PLC toolchain writes beside a project.
+# The per-user one carries a username and machine name in its filename.
+fixtures/projects/MachineWithMembers.~u*
+fixtures/projects/MachineWithMembers-*.opt
+fixtures/projects/MachineWithMembers_project.precompilecache
+fixtures/projects/MachineWithMembers.versio_staging/
+fixtures/projects/MachineWithMembers.versio_trash/
+
+# Added by Versio: files the PLC toolchain writes beside a project.
+# The per-user one carries a username and machine name in its filename.
+fixtures/projects/TC3_PlcSample_reStrText/TC3_PlcSample_reStrText.~u*
+fixtures/projects/TC3_PlcSample_reStrText/**/LineIDs.dbg
+fixtures/projects/TC3_PlcSample_reStrText/TC3_PlcSample_reStrText.versio_staging/
+fixtures/projects/TC3_PlcSample_reStrText/TC3_PlcSample_reStrText.versio_trash/

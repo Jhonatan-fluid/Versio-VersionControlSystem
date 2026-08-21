@@ -19,6 +19,55 @@ produce a diff touching everything else.
 
 ---
 
+### Stage all & commit cannot start git: Win32 206, command line too long
+
+**Found 2026-08-21**, owner clicked Stage all & commit on this repository.
+Log: `Stage all & commit: staging 336 file(s)` then
+`Win32Exception (206): An error occurred trying to start process 'git' with
+working directory 'C:/GIT/Versio'. The filename or extension is too long.`
+The process never started. The 336 paths were TIA fixture UDTs whose
+repo-relative names are ~180 characters; `git add --` plus those as argv
+exceeds Windows CreateProcess (32,767).
+
+**Fix:** `GitCliClient` feeds pathspecs through `--pathspec-from-file=-`
+with NUL separators (Stage / Unstage / Discard). Argv stays short; a path
+that looks like a flag still stages. Test:
+`Staging_hundreds_of_long_paths_does_not_overflow_CreateProcess` — 400
+paths whose argv would overflow, so putting them back on the command line
+goes red.
+
+**What was rejected:** batching `git add` into chunks of N. Two index
+writes for one button, and N is a guess that fails again on a deeper
+tree. `--pathspec-from-file` is one invocation, which is what the button
+is.
+
+---
+
+### TwinCAT held-copy export succeeds, then a nested-mirror echo fails the lock
+
+**Found 2026-08-21**, first live `ExportHeldViaCopy` with TcXaeShell still holding
+`TC3_PlcSample_reStrText`. Versio 25012 copied the folder to
+`.versio/local/open/64eb778c77ff/` and the host exported the copy: **36 objects
+in 27.4 s**, including `Devices/Devices.devices.yaml`. Two DTE on different
+paths is therefore valid.
+
+The conventional export path is `…/TC3_PlcSample_reStrText/TC3_PlcSample_reStrText`,
+which sits **inside** the directory payload. Swapping the mirror therefore
+settled as a `Project` change (10:32:29). A second copy-export started on the
+same scratch folder; the first job then deleted that folder (`DiscardScratchProject`);
+the waiter reported `project file is missing` and `ExportFailed` flipped the
+lock to Failed. The tree on disk is the successful first export. Commit gate:
+"acknowledge the failure before committing."
+
+CODESYS does not hit this: its export folder sits beside the `.project`, not
+inside it. The shared scratch path per binding is the other half — two jobs
+must not own the same `.versio/local/open/{id}/`.
+
+**What was rejected:** treating the Failed lock as a COM refusal of the copy.
+The copy exported; the failure is bookkeeping after a successful swap.
+
+---
+
 ### TwinCAT I/O Comment does not persist through Save
 
 **Found 2026-08-20**, by the TwinCAT gate after `ioprobe` had shown Comment set and
