@@ -139,6 +139,7 @@ public sealed class TiaPortalGateTests
             Assert.True(yaml is not null, "export wrote no *.devices.yaml");
             var manifest = File.ReadAllText(Path.Combine(outDir, "_manifest.json"));
             Assert.Contains("DEVICE_COMMENT", manifest, StringComparison.Ordinal);
+            Assert.Contains("SCL_REVIEW", manifest, StringComparison.Ordinal);
             Assert.DoesNotContain("\"path\": \"Hardware\"", manifest, StringComparison.Ordinal);
         }
         finally

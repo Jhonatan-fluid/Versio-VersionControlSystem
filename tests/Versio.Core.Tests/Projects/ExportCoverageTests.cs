@@ -186,6 +186,7 @@ public sealed class ExportCoverageTests
         // missing file must not vote to unplug the station.
         Assert.True(ExportCoverage.IsExportOnly(ExportCoverage.DevicesForm));
         Assert.False(ExportCoverage.IsExportOnly(ExportCoverage.DeviceCommentForm));
+        Assert.True(ExportCoverage.IsExportOnly(ExportCoverage.SclReviewForm));
         Assert.True(ExportCoverage.IsDeviceStructure(ExportCoverage.DevicesForm));
         Assert.True(ExportCoverage.IsDeviceStructure(ExportCoverage.DeviceCommentForm));
     }

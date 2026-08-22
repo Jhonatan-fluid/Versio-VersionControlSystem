@@ -181,7 +181,7 @@ holds the project, `Open` fails and the runner reports it.
 | `PlcSoftware.TagTableGroup` / `.TagTables` / `.Groups` | export; import find (`…/TAG_TABLE/{name}`) |
 | `block.Name`, `Number`, `ProgrammingLanguage`, `IsKnowHowProtected` | export |
 | `block.Export(FileInfo, ExportOptions.None)` | SimaticML beside every object |
-| `IGenerateSource.GenerateSource(FileInfo)` on the block | SCL / `.udt` |
+| `IGenerateSource.GenerateSource(FileInfo)` on the block | SCL / `.udt` / **DB `.scl`** |
 | `ExternalSourceGroup.GenerateSource(collection, FileInfo)` | fallback when the block has no `IGenerateSource` |
 
 Export walks emit `progress` (`phase` + `detail`). The runner already maps `t == "progress"`
@@ -347,6 +347,10 @@ identities, 58 coverage skips.
 |---|---|---|
 | 18 `.scl`, 93 `.udt`, 159 `.xml` | 111 SCL + 111 XML_REVIEW + 48 NATIVE | 24 DB, 29 FB, 26 FC, 4 OB, 186 UDT, 1 tag table |
 
+DBs were NATIVE XML only on that run: `ProgrammingLanguage` is `DB`, so `GenerateSource`
+was never called. From 2026-08-22 a successful DB generate writes `*.scl` as `SCL_REVIEW`
+(export-only) beside the same XML (still `NATIVE`). Re-export to refresh the fixture.
+
 Namespaced as `ET 200SP station_2/CleaningStation/…`. Manifest schema 9. `_coverage.md`
 names Hardware, HMI, safety, technology.
 
@@ -473,6 +477,8 @@ queue was derived from, so a later session does not have to re-derive it.
    `.info` measured under Openness. `ExportHeldViaCopy = false`. ~~A Portal window (no
    host) was not separately measured this session~~ — **measured 2026-08-19 evening: the
    GUI writes and deletes the same `.info` marker** (§5). Nothing left open here.
+6. ~~**Data blocks as SimaticML only.**~~ — **export 2026-08-22.** `GenerateSource` for
+   language `DB`; form `SCL_REVIEW`. Instance-DB import of that source is not this pass.
 
 ### Not this queue (coverage skips)
 
@@ -480,7 +486,9 @@ HMI, safety (`F_*`), technology objects, know-how-protected import,
 compile-after-import, VCI, Project Server. Archives (`.alXX`) are seen and refused.
 **Hardware** Comment catalogs ship 2026-08-20 (§4.4): export-only was the probe;
 the owner picked Comment `SetAttribute`. PlugNew, topology, HMI, safety and
-technology stay off this queue.
+technology stay off this queue. Data-block **source import** (`GenerateBlocksFromSource`
+of `SCL_REVIEW`) stays off until a mutating Fact; 23 of 24 DBs on this fixture are
+instance DBs.
 
 ### Friction that remains after the loop works
 

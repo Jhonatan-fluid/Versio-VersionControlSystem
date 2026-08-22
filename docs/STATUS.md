@@ -13,8 +13,8 @@ skip). That run is also the counted gate `LOCK-1` owed. After the eyeballs: UX-6
 UX-7 `Ctrl+F` / UX-8 / UX-12 (item 3), unless the owner picks packaging (item 5)
 instead. Do not start from `archive/` or a handoff.
 
-**Tests:** 2,722 across eleven projects, last counted 2026-08-21 after the single-list git panel
-(Core 1,463, App 624). The git panel is one CHANGES list: checkboxes pick the include set,
+**Tests:** 2,727 across eleven projects, last counted 2026-08-22 after TIA data-block SCL
+(Core 1,463, App 626, TIA pure 22). The git panel is one CHANGES list: checkboxes pick the include set,
 Commit / Discard are the verbs, and a failed project no longer vetoes unrelated files.
 in-flight work including an import; Try again lights after cancel; close asks even during
 import; CODESYS.exe and git.exe die with Versio (Job Object); TIA/TwinCAT hosts watch the
@@ -41,11 +41,11 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 |---|---|---|---|
 | `Versio.Core.Tests` | 1,463 | under a second | nothing |
 | `Versio.Integration.Tests` | 155 | ~10 s | real git |
-| `Versio.App.Tests` | 624 | ~50 s | nothing |
+| `Versio.App.Tests` | 626 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 15 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 19 | instant | nothing |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 22 | instant | nothing |
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.TwinCat.Pure.Tests` | 21 | instant | nothing |
 | `Versio.Plc.TwinCat.Tests` | 5 | seconds when skipped; ~3 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
@@ -96,7 +96,9 @@ when the parent dies, and Stop reaps only the Portal/XAE PID this run created.
 - **TIA Portal** — the same product loop for SCL, UDTs and tag tables, through a net48 Openness
   host. PLC-software loop closed 2026-08-19 on `Siemens2`. Hardware **Comment** catalogs
   (`*.devices.yaml`, form `DEVICE_COMMENT`) ship 2026-08-20: export plus `SetAttribute`
-  with verify-before-Save; never PlugNew. This fixture has no port-to-port partners.
+  with verify-before-Save; never PlugNew. **Data blocks 2026-08-22:** `GenerateSource` to
+  `*.scl` (`SCL_REVIEW`, export-only); SimaticML stays the import. Re-export to see them.
+  This fixture has no port-to-port partners.
   HMI, safety and technology stay coverage skips. Gate fixture:
   `fixtures/projects/CleaningStation_V20_V21/` (Git LFS). Never the
   OneDrive original. Session notes: [`archive/HANDOFF-Siemens2.md`](archive/HANDOFF-Siemens2.md).
@@ -176,7 +178,8 @@ One list. Reorder it; do not copy it into another file.
 7. **Not this queue.** TIA HMI / safety (`F_*`) / technology / know-how-protected
    import / compile-after-import / VCI / Project Server. TIA **hardware** Comment
    apply shipped 2026-08-20 ([`vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md) §4.4);
-   PlugNew and topology stay off this queue. TwinCAT I/O **export** catalogs shipped
+   PlugNew and topology stay off this queue. TIA data-block SCL is export-only
+   (`SCL_REVIEW`); instance-DB generate-from-source is unmeasured. TwinCAT I/O **export** catalogs shipped
    2026-08-21 ([`vendors/twincat/DRIVING.md`](vendors/twincat/DRIVING.md) §4.5);
 Comment apply, CreateChild, mappings, NC / safety / C++ / visualisation stay off this queue,
    plus create / object-delete / rename Facts and folder move —
@@ -196,6 +199,10 @@ Close Versio **and** Portal before a host rebuild. Click **Yes to all** on Openn
 ---
 
 ## Known limitations, carried deliberately
+
+- **TIA data-block SCL is export-only.** `*.scl` beside a DB is `SCL_REVIEW`: readable,
+  lock glyph, never applied back. Change start values in Portal or in the SimaticML.
+  Instance-DB `GenerateBlocksFromSource` is unmeasured (23 of CleaningStation's 24).
 
 - **Library references are export-only.** Editing `Library Manager.libraries.yaml` changes
   nothing in the project. The changed-files row carries a lock glyph saying so.

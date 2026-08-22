@@ -58,6 +58,29 @@ late-diff case. Tests: `PaneClearingFlowTests`.
 
 ---
 
+### TIA data blocks exported as SimaticML because the language was `DB`
+
+**Found 2026-08-22**, looking at CleaningStation in the project tree: 24 data blocks,
+23 of them instance DBs, every one a `NATIVE` `.xml`. Openness reports
+`ProgrammingLanguage` as `DB`, and `ExportBlock` only called `GenerateSource` when the
+language looked like SCL or was blank. A start-value table opened as a thousand-line
+SimaticML blob.
+
+`IGenerateSource` is on `PlcBlock`, including DBs. The header parser already knew
+`DATA_BLOCK`. The hole was the language gate, not a missing API.
+
+**Fix:** try `GenerateSource` for DBs too. The `.scl` is `SCL_REVIEW` (export-only, lock
+glyph); SimaticML stays `NATIVE` and is what import applies. Making the text importable
+first is how property accessors emptied on 2026-08-18, and instance-DB
+`GenerateBlocksFromSource` has not been walked against live Portal. The pane prefers
+`.scl` over `.xml` so the readable layer opens once a re-export has written it.
+
+**What was rejected:** treating DB source as `SCL` + `XML_REVIEW` (the function-block
+shape) without a mutating gate Fact. Rendering SimaticML in the diff without
+`GenerateSource` — that would be a second language for one object.
+
+---
+
 ### Two-line change rows were clipped into a 24 px tree row
 
 **Found 2026-08-21**, from a screenshot of the git panel: the filename of one row drew on top

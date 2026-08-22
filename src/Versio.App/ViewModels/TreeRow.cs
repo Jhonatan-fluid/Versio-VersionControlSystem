@@ -269,9 +269,12 @@ public sealed class TreeRow : ObservableObject
     /// <summary>The file the diff pane opens for this node, or null when it opens none.</summary>
     /// <remarks>
     /// <para>
-    /// The readable layer wins. An object exporting to both <c>.st</c> and <c>.xml</c> opens
-    /// the Structured Text, because that is the one somebody can review; the native XML is
-    /// there for completeness and reads like a machine wrote it, which it did. This is only
+    /// The readable layer wins. An object exporting to both <c>.st</c> / <c>.scl</c> and
+    /// <c>.xml</c> opens the Structured Text, because that is the one somebody can review;
+    /// the native XML is there for completeness and reads like a machine wrote it, which
+    /// it did. Matching by suffix rather than sort order is load-bearing for TIA: a data
+    /// block's <c>.scl</c> is the review copy, and falling through to "first file" used
+    /// to open SimaticML whenever the textual suffix was not <c>.st</c>. This is only
     /// the <i>default</i>: the diff pane's header offers the other layers as chips
     /// (<see cref="DiffLayerChoice"/>), so the native half stopped being unreachable.
     /// </para>
@@ -284,8 +287,13 @@ public sealed class TreeRow : ObservableObject
     public string? PrimaryFile =>
         IsProject || IsFolder
             ? null
-            : Node.Files.FirstOrDefault(f => f.EndsWith(".st", StringComparison.OrdinalIgnoreCase))
+            : Node.Files.FirstOrDefault(IsTextualLayer)
               ?? Node.Files.FirstOrDefault();
+
+    private static bool IsTextualLayer(string path) =>
+        path.EndsWith(".st", StringComparison.OrdinalIgnoreCase)
+        || path.EndsWith(".scl", StringComparison.OrdinalIgnoreCase)
+        || path.EndsWith(".udt", StringComparison.OrdinalIgnoreCase);
 
     private static string BrushFor(ChangeKind kind) => kind switch
     {
