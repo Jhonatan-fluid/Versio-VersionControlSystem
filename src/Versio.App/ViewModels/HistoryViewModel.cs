@@ -13,8 +13,10 @@ namespace Versio.App.ViewModels;
 /// in every commit that ever touched it, and a row that knew only its path could not say
 /// which of those changes to render.
 /// </remarks>
-public sealed class CommitFileRow
+public sealed class CommitFileRow : ObservableObject
 {
+    private bool _isSelected;
+
     /// <summary>A real file row.</summary>
     public CommitFileRow(CommitRow commit, CommitFile file)
     {
@@ -67,6 +69,13 @@ public sealed class CommitFileRow
     /// tree, in the log somebody is reading to find a real problem.
     /// </remarks>
     public bool IsExpanded { get; set; }
+
+    /// <summary>Two-way with the container, so <see cref="HistoryViewModel.ClearSelection"/> can let go.</summary>
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set => SetProperty(ref _isSelected, value);
+    }
 }
 
 /// <summary>
@@ -90,6 +99,7 @@ public sealed class CommitRow : ObservableObject
 {
     private readonly Func<CommitRow, Task> _loadFiles;
     private bool _isExpanded;
+    private bool _isSelected;
     private bool _requested;
 
     public CommitRow(CommitEntry commit, Func<CommitRow, Task> loadFiles)
@@ -127,6 +137,13 @@ public sealed class CommitRow : ObservableObject
         : string.Empty;
 
     public string Age => Entry.Age;
+
+    /// <summary>Two-way with the container, so <see cref="HistoryViewModel.ClearSelection"/> can let go.</summary>
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set => SetProperty(ref _isSelected, value);
+    }
 
     private bool _isUnpushed;
 
@@ -453,9 +470,14 @@ public sealed class HistoryViewModel : ObservableObject
         _logger.Debug(LogCategory.Git, $"history: {files.Count} files in {row.ShortId}");
     }
 
+    /// <summary>The row last handed to <see cref="Select"/>, kept so it can be let go of.</summary>
+    private object? _selected;
+
     /// <summary>A row was picked in the tree. A commit and a file render differently.</summary>
     public void Select(object? row)
     {
+        _selected = row;
+
         switch (row)
         {
             case CommitFileRow { IsNote: false } file:
@@ -468,8 +490,32 @@ public sealed class HistoryViewModel : ObservableObject
         }
     }
 
+    /// <summary>Drop the selection, so the same row can be picked again.</summary>
+    /// <remarks>
+    /// The shell calls this when the rail leaves the history, having emptied the pane this
+    /// panel fed. A row still highlighted in the tree raises nothing when it is clicked again,
+    /// so without this the pane would stay blank on the way back — the same reason
+    /// <c>TreeRow.IsSelected</c> exists for the other two trees.
+    /// </remarks>
+    public void ClearSelection()
+    {
+        switch (_selected)
+        {
+            case CommitFileRow file:
+                file.IsSelected = false;
+                break;
+
+            case CommitRow commit:
+                commit.IsSelected = false;
+                break;
+        }
+
+        _selected = null;
+    }
+
     private void Reset()
     {
+        _selected = null;
         Commits.Clear();
         _files.Clear();
         _stale = true;

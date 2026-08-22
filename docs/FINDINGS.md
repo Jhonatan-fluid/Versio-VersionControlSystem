@@ -19,6 +19,45 @@ produce a diff touching everything else.
 
 ---
 
+### The diff pane outlived the thing it was showing
+
+**Reported 2026-08-22 by the owner**, from using the app: "if I click on a file under the
+changed files panel, but then I move to commit history, the diff panel needs to clear" — and
+"very often a file loaded on the diff keeps showing even after it's committed".
+
+Two defects, one pane.
+
+1. **The rail never touched the pane.** `ActivePanel` toggled panel visibility and woke the
+   remote poller; nothing emptied `SelectedDiff`. A diff from the changed list stayed under
+   the history, a commit's patch under the explorer.
+
+2. **After a commit, the refresh re-read the file on purpose.** The rule — reload the shown
+   path when its status moved — was written so an editor save updates the open diff, and it
+   cannot tell "status moved" from "left the list". For a file that had just been committed
+   or discarded it showed the whole file under a small "No changes right now" note, which at
+   a glance is the change still being there.
+
+**Fix.** `ClearPane()` is the one place the pane's seven fields empty (the repository reset
+did it inline; the rail did nothing). The rail calls it and lets go of every panel's
+selection; the refresh calls it when the shown path was in the changed set and is no longer
+in the status. A path still listed reloads as before —
+`A_file_still_in_the_list_keeps_its_diff_across_a_refresh` guards the editor-save case.
+
+**Letting go of the row is half the fix, not polish.** An already-selected row raises no
+selection change when clicked again, so a cleared pane beside a still-highlighted row would
+stay blank on the way back. `TreeView.SelectedItem` is read-only, so `TreeRow`, `CommitRow`
+and `CommitFileRow` carry `IsSelected`, bound two-way in the three container styles, and the
+view models null their selection through it. Stale results are dropped too: a click followed
+by a rail switch inside the time git takes landed the patch in the emptied pane —
+`ShowPathAsync` and the two commit readers now check the pane still points at their target
+before writing.
+
+Mutation-checked one guard at a time: without the rail call four of seven tests go red,
+without the refresh branch the committed and discarded cases, without the stale check the
+late-diff case. Tests: `PaneClearingFlowTests`.
+
+---
+
 ### Two-line change rows were clipped into a 24 px tree row
 
 **Found 2026-08-21**, from a screenshot of the git panel: the filename of one row drew on top

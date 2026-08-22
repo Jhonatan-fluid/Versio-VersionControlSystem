@@ -35,6 +35,7 @@ public sealed class TreeRow : ObservableObject
     private readonly TreeExpansion? _expansion;
     private ObservableCollection<TreeRow>? _children;
     private bool _isExpanded;
+    private bool _isSelected;
     private ProjectTreeNode _node;
 
     public TreeRow(ProjectTreeNode node, int depth, TreeExpansion? expansion = null)
@@ -222,6 +223,20 @@ public sealed class TreeRow : ObservableObject
                 _expansion?.Record(_node, value);
             }
         }
+    }
+
+    /// <summary>Whether the tree shows this row as the selected one.</summary>
+    /// <remarks>
+    /// Bound two-way to the container so the view model can <i>deselect</i>, which WPF's
+    /// read-only <c>TreeView.SelectedItem</c> cannot be asked to do. Needed the moment the
+    /// pane started clearing when the rail leaves a panel: a row left highlighted raises no
+    /// selection change when it is clicked again, so the pane would stay blank on the way
+    /// back. Letting go of the row is what makes the second click a click.
+    /// </remarks>
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set => SetProperty(ref _isSelected, value);
     }
 
     /// <summary>One letter for this node's own state, blank when it did not change.</summary>

@@ -2171,8 +2171,23 @@ public sealed class SyncViewModel : ObservableObject
         get => _selectedNode;
         set
         {
-            if (!SetProperty(ref _selectedNode, value) || value is null)
+            var previous = _selectedNode;
+
+            if (!SetProperty(ref _selectedNode, value))
             {
+                return;
+            }
+
+            if (value is null)
+            {
+                // Told to let go — the shell does this when the rail leaves the panel or the
+                // shown file leaves the list. The TreeView deselects the old container itself
+                // on a click; for a null it has to be asked, through the row's own flag.
+                if (previous is not null)
+                {
+                    previous.IsSelected = false;
+                }
+
                 return;
             }
 
