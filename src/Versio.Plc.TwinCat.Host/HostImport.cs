@@ -131,9 +131,9 @@ internal static partial class HostApp
             }
 
             // Identity only — never the name index. A same-named survivor (folders
-            // included) would "match", and Delete() has nothing downstream to object to
-            // a mistake. An object that moved in the IDE keeps living under a new
-            // PathName; keeping it and saying so is the correct outcome.
+            // included) would "match", and DeleteChild has nothing downstream to
+            // object to a mistake. An object that moved in the IDE keeps living
+            // under a new PathName; keeping it and saying so is the correct outcome.
             if (!index.ByGuid.TryGetValue(guid, out var found))
             {
                 Emit("warning", "msg",
@@ -154,7 +154,20 @@ internal static partial class HostApp
 
             try
             {
-                Com.Call(found, "Delete");
+                // ITcSmTreeItem has DeleteChild on the parent, not Delete on the
+                // item. item.Delete() is not on the interface — the 2026-08-22
+                // Fact still re-exported the POU after a "successful" import
+                // because the missing call was swallowed as a warning and the
+                // object was kept.
+                var parent = Com.Get(found, "Parent");
+                if (parent is null)
+                {
+                    Emit("warning", "msg",
+                        "kept " + (name ?? guid) + ": the live object has no parent to DeleteChild on");
+                    continue;
+                }
+
+                Com.Call(parent, "DeleteChild", Com.Str(found, "Name") ?? name);
                 Emit("object", "path", name ?? guid, "action", "delete");
             }
             catch (Exception ex)
@@ -315,8 +328,14 @@ internal static partial class HostApp
         object? created;
         try
         {
-            // TREEITEMINSERT last = 1. Fourth argument is the IEC subtype.
-            created = Com.Call(parent, "CreateChild", name, 1, "", subType);
+            // ITcSmTreeItem.CreateChild(name, nSubType, before, vInfo). vInfo for a
+            // function block is IECLANGUAGETYPES — ST is 1. An empty string is not a
+            // language int: XAE then throws "Must specify valid information for
+            // parsing in the string." The I/O probe's guessed order (name, 1, "",
+            // subType) treats 1 as nSubType — measured on TIID 2026-08-20, where the
+            // child arrived as ItemSubType 1, not 111. Live XAE refused a PLC FB with
+            // that order on 2026-08-22: "Couldn't create 'VersioGateFb_…'!".
+            created = Com.Call(parent, "CreateChild", name, subType, "", IecLanguageSt);
         }
         catch (Exception ex)
         {
@@ -330,6 +349,12 @@ internal static partial class HostApp
 
         SetTexts(created, decl, impl);
     }
+
+    /// <summary>
+    /// <c>IECLANGUAGETYPES.IECLANGUAGE_ST</c> — Structured Text. Empty vInfo is not
+    /// the documented default on this Automation Interface; it fails to parse.
+    /// </summary>
+    private const int IecLanguageSt = 1;
 
     private static void SetTexts(object item, string decl, string impl)
     {

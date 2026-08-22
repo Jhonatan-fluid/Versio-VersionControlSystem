@@ -242,7 +242,7 @@ stays that way.
 | `Versio.Plc.TiaPortal.Pure.Tests` | 19 | instant | nothing — format, planner, protocol |
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips cleanly without Openness membership or LFS content. Import Fact is green |
 | `Versio.Plc.TwinCat.Pure.Tests` | 21 | instant | nothing — format, planner, protocol |
-| `Versio.Plc.TwinCat.Tests` | 5 | seconds when skipped; ~3 min when XAE runs the import gate | **real TwinCAT XAE** — skips cleanly without `TcXaeShell.DTE.17.0` or the fixture. Import Fact is green |
+| `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped; ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips cleanly without `TcXaeShell.DTE.17.0` or the fixture. Import Fact is green |
 | `Versio.Plc.Codesys.Tests` | 55 | **~30 min** | **real CODESYS** — every test launches it, which is the whole cost |
 
 The TIA gate fixture is `fixtures/projects/CleaningStation_V20_V21/` (Git LFS). Never the

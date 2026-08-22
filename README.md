@@ -222,7 +222,7 @@ Versio.sln
 │  ├─ Versio.Plc.TiaPortal.Tests/ 5 tests against real TIA Portal; skip with a count when
 │                               Openness membership or the install is missing
 │  ├─ Versio.Plc.TwinCat.Pure.Tests/ 21 pure vendor tests — format, planner, protocol
-│  └─ Versio.Plc.TwinCat.Tests/ 5 tests against real TwinCAT XAE; skip with a count when
+│  └─ Versio.Plc.TwinCat.Tests/ 6 tests against real TwinCAT XAE; skip with a count when
 │                               TcXaeShell.DTE.17.0 or the fixture is missing
 ├─ tools/                       PowerShell and python harnesses. tools/tia/ is the second
 │                               vendor's round-trip, P7, and hardware-probe harness;
@@ -400,7 +400,7 @@ dotnet test tests/Versio.Core.Tests
 | `Versio.Plc.TiaPortal.Pure.Tests` | 22 | nothing — format, planner, protocol, scrubber | instant |
 | `Versio.Plc.TiaPortal.Tests` | 5 | **a real TIA Portal**; skips cleanly without Openness membership | seconds when skipped |
 | `Versio.Plc.TwinCat.Pure.Tests` | 21 | nothing — the vendor's planner, format and protocol, pure | instant |
-| `Versio.Plc.TwinCat.Tests` | 5 | **a real TwinCAT XAE**; skips cleanly without `TcXaeShell.DTE.17.0` | seconds when skipped; ~3 min when XAE runs the import gate |
+| `Versio.Plc.TwinCat.Tests` | 6 | **a real TwinCAT XAE**; skips cleanly without `TcXaeShell.DTE.17.0` | seconds when skipped; ~5 min when XAE runs the import gate |
 | `Versio.Plc.Codesys.Tests` | 55 | **a real CODESYS**, and **skips cleanly** without one | **~30 min** |
 
 The first ten are the loop to work in. The last is the gate before a commit — and it is a

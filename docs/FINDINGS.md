@@ -19,6 +19,42 @@ produce a diff touching everything else.
 
 ---
 
+### TwinCAT create used the I/O-probe argument order; delete called a method that is not on the interface
+
+**Found 2026-08-22**, walking create / rename / object-delete against live XAE
+(`Create_rename_and_object_delete_round_trip` on a `%TEMP%` copy of
+`TC3_PlcSample_reStrText`). The planner and host already emitted those actions;
+the Fact is what proved they did not.
+
+Three refusals, one host method.
+
+1. **`CreateChild(name, 1, "", subType)` treats `1` as `nSubType`.** The I/O probe
+   measured that order on TIID in 2026-08-20: the child arrived as `ItemSubType` 1,
+   not 111. The PLC host copied it. XAE refused a function block with
+   `Couldn't create 'VersioGateFb_…'!`. Beckhoff's signature is
+   `CreateChild(name, nSubType, before, vInfo)` — subtype 604 for an FB.
+
+2. **Empty `vInfo` is not "default to ST".** After the arity fix, XAE threw
+   `Must specify valid information for parsing in the string.`
+   `IECLANGUAGETYPES.IECLANGUAGE_ST` is `1`. Passing that integer creates the POU.
+   `DeclarationText` / `ImplementationText` then took the packed file.
+
+3. **`ITcSmTreeItem` has `DeleteChild` on the parent, not `Delete` on the item.**
+   `item.Delete()` is not on the interface. InvokeMember failed, the host swallowed
+   it as a warning, reported success, and the next export still had the POU.
+   `Parent.DeleteChild(Name)` after the PathName + live-hash check removes it, and
+   `File.SaveAll` persists that.
+
+Rename (`Name = newName`) was already right; pairing used `departed` because TwinCAT
+export does not write `shash` and the temp tree is not git. Folder move is still
+Name-only — not this Fact.
+
+**Fix.** `HostImport.CreatePou` calls `CreateChild(name, subType, "", 1)`.
+`HostImport` delete looks the object up by PathName, hash-verifies, then
+`Parent.DeleteChild`. Gate: 6/6 in 5 m 14 s, 2026-08-22.
+
+---
+
 ### The diff pane outlived the thing it was showing
 
 **Reported 2026-08-22 by the owner**, from using the app: "if I click on a file under the
