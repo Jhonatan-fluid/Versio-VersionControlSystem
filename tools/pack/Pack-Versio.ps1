@@ -78,11 +78,15 @@ Invoke-Dotnet @(
 )
 
 Write-Host "Building TIA host (net48)..."
-Invoke-Dotnet @('build', $tiaProj, '-c', 'Release')
-$tiaSrc = Join-Path $Repo 'src\Versio.Plc.TiaPortal.Host\bin\Release\net48'
+# Into a fresh folder with -o, never a copy of bin\Release\net48: bin is incremental and
+# nothing ever cleans it, so a renamed assembly or a dropped dependency lingers there from
+# old builds and would ship in every installer from then on. The app and the TwinCAT host
+# already publish into wiped folders; this is the same rule for the one net48 payload.
 $tiaOut = Join-Path $publish 'tia'
-New-Item -ItemType Directory -Force -Path $tiaOut | Out-Null
-Copy-Item -Path (Join-Path $tiaSrc '*') -Destination $tiaOut -Recurse -Force
+if (Test-Path -LiteralPath $tiaOut) {
+    Remove-Item -LiteralPath $tiaOut -Recurse -Force
+}
+Invoke-Dotnet @('build', $tiaProj, '-c', 'Release', '-o', $tiaOut)
 
 $manifest = Get-Content -LiteralPath (Join-Path $Repo 'third_party\manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $gitDep = $manifest.dependencies | Where-Object { $_.id -eq 'PortableGit' }
@@ -110,18 +114,28 @@ if (-not (Test-Path -LiteralPath $gitExe)) {
     throw "PortableGit extract did not produce cmd\git.exe"
 }
 
+# Both existence polls run before anything from the payload is EXECUTED. git.exe lands
+# early in the extraction; running `git lfs version` or the config pin against a tree the
+# extractor is still writing would fail a perfectly good pack, and GCM is among the last
+# files, so its appearance is the better "extraction finished" signal.
+$gcm = $null
+while ($null -eq $gcm -and (Get-Date) -lt $deadline) {
+    $gcm = Get-ChildItem -LiteralPath $gitOut -Recurse -Filter 'git-credential-manager.exe' -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($null -eq $gcm) {
+        Start-Sleep -Seconds 1
+    }
+}
+if ($null -eq $gcm) {
+    throw "PortableGit extract has no git-credential-manager.exe"
+}
+Write-Host "GCM at $($gcm.FullName)"
+
 Write-Host "Confirming git-lfs..."
 & $gitExe 'lfs' 'version'
 if ($LASTEXITCODE -ne 0) {
     throw "bundled git lfs version failed - this archive is not PortableGit"
 }
-
-$gcm = Get-ChildItem -LiteralPath $gitOut -Recurse -Filter 'git-credential-manager.exe' -ErrorAction SilentlyContinue |
-    Select-Object -First 1
-if ($null -eq $gcm) {
-    throw "PortableGit extract has no git-credential-manager.exe"
-}
-Write-Host "GCM at $($gcm.FullName)"
 
 # PortableGit's first-run helper is helper-selector (a GUI). GIT_TERMINAL_PROMPT=0
 # does not suppress it, and "Always use this" cannot persist under Program Files.
@@ -153,6 +167,7 @@ foreach ($path in $required) {
 }
 
 $vpk = Join-Path $Repo 'tools\pack\vpk\vpk.exe'
+$packStarted = Get-Date
 Write-Host "Packing Setup.exe and per-machine MSI (version $version)..."
 # Rebuilds of the same VersioVersion are expected until that number moves.
 # --legacyConsole (-x) turns the overwrite question off; --yes (-y) is the
@@ -173,10 +188,14 @@ if ($LASTEXITCODE -ne 0) {
     throw "vpk pack failed (exit $LASTEXITCODE)"
 }
 
-$setup = Get-ChildItem -LiteralPath $releases -Filter '*Setup.exe' | Select-Object -First 1
-$msi = Get-ChildItem -LiteralPath $releases -Filter '*.msi' | Select-Object -First 1
+# Written THIS run, not merely present: the releases folder is never cleaned, so an
+# existence check would flash green on artifacts an earlier pack left behind.
+$setup = Get-ChildItem -LiteralPath $releases -Filter '*Setup.exe' |
+    Where-Object { $_.LastWriteTime -ge $packStarted } | Select-Object -First 1
+$msi = Get-ChildItem -LiteralPath $releases -Filter '*.msi' |
+    Where-Object { $_.LastWriteTime -ge $packStarted } | Select-Object -First 1
 if ($null -eq $setup -or $null -eq $msi) {
-    throw "vpk pack did not produce both Setup.exe and an MSI in $releases"
+    throw "vpk pack did not write both Setup.exe and an MSI to $releases this run"
 }
 
 Write-Host "PACKED"
