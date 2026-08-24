@@ -41,6 +41,28 @@ public sealed class PackagingManifestTests
     }
 
     [Fact]
+    public void The_Velopack_package_and_the_vpk_tool_are_the_same_version()
+    {
+        // The csproj comment demands this and nothing enforced it: the Velopack package is
+        // the in-app half (install hooks, Update.exe protocol) and vpk is the packer.
+        // Bumping one without the other ships an installer whose hooks and packer disagree,
+        // which is drift of exactly the kind the manifest exists to prevent.
+        var manifest = Path.Combine(TestPaths.Root, "third_party", "manifest.json");
+        using var doc = JsonDocument.Parse(File.ReadAllText(manifest));
+        var pinned = doc.RootElement.GetProperty("dependencies").EnumerateArray()
+            .Single(e => e.GetProperty("id").GetString() == "vpk")
+            .GetProperty("version").GetString();
+
+        var csproj = File.ReadAllText(
+            Path.Combine(TestPaths.Root, "src", "Versio.App", "Versio.App.csproj"));
+
+        Assert.Contains(
+            $"<PackageReference Include=\"Velopack\" Version=\"{pinned}\" />",
+            csproj,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Notices_file_names_git_and_codescribe()
     {
         var path = Path.Combine(TestPaths.Root, "third_party", "THIRD-PARTY-NOTICES.txt");
