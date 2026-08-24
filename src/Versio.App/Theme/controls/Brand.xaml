@@ -2,7 +2,7 @@
     The Versio mark, drawn in the app rather than only in the .ico.
 
     The shell showed the word "Versio" in accent blue and nothing else, while the real mark -
-    assets/versio.svg, three plates and a status dot - existed and appeared nowhere a user
+    assets/versio.svg, two plates and an agreement disc - existed and appeared nowhere a user
     could see it. This is that drawing, at 20 px, in the app's own colours.
 
     THREE PLACES CARRY THIS GEOMETRY, and the header of assets/versio.svg says so: the SVG
@@ -32,22 +32,19 @@
         <Viewbox Stretch="Uniform">
             <Canvas Width="64" Height="64">
 
-                <!-- Oldest at the bottom, current on top in the brightest ink: the mark is a
-                     version history, and the stagger is the point. -->
-                <Border Canvas.Left="16" Canvas.Top="40" Width="34" Height="8"
-                        CornerRadius="3"
-                        Background="{DynamicResource Brush.Border.Strong}" />
-                <Border Canvas.Left="15" Canvas.Top="28" Width="34" Height="8"
-                        CornerRadius="3"
-                        Background="{DynamicResource Brush.Text.Disabled}" />
-                <Border Canvas.Left="14" Canvas.Top="16" Width="34" Height="8"
-                        CornerRadius="3"
+                <!-- Mirror on top, project below, equal weight. The disc sits in the gap
+                     and notches both: the two sides currently agree. -->
+                <Border Canvas.Left="13" Canvas.Top="15" Width="38" Height="14"
+                        CornerRadius="4"
                         Background="{DynamicResource Brush.Text.Primary}" />
+                <Border Canvas.Left="13" Canvas.Top="35" Width="38" Height="14"
+                        CornerRadius="4"
+                        Background="{DynamicResource Brush.Text.Disabled}" />
 
-                <!-- The notch, then the badge inside it. -->
-                <Ellipse Canvas.Left="39.5" Canvas.Top="12.5" Width="15" Height="15"
+                <!-- The notch, then the badge inside it. 32,32 / r 8.5 and 6 in the SVG. -->
+                <Ellipse Canvas.Left="23.5" Canvas.Top="23.5" Width="17" Height="17"
                          Fill="{DynamicResource Brush.Surface.Base}" />
-                <Ellipse Canvas.Left="41.8" Canvas.Top="14.8" Width="10.4" Height="10.4"
+                <Ellipse Canvas.Left="26" Canvas.Top="26" Width="12" Height="12"
                          Fill="{DynamicResource Brush.Status.Added}" />
             </Canvas>
         </Viewbox>

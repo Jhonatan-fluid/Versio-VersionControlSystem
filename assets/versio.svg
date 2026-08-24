@@ -1,22 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Versio application icon - "Stack".
+  Versio application icon - "Pair".
 
-  Three plates: the version history, oldest at the bottom, current on top in the
-  brightest ink. The green dot is the status badge - the current version is
-  synced. Colours are the app's own tokens (src/Versio.App/Theme/tokens/), so the
-  icon and the UI cannot drift apart:
+  Two plates of equal weight: the light one is the text mirror, the dark one is
+  the binary project. The green disc sits in the gap and notches both - they
+  currently agree. That is the product. The previous mark was three plates with
+  a status badge on the top one, which said "version history, latest is healthy"
+  - git's job, not Versio's.
+
+  Colours are the app's own tokens (src/Versio.App/Theme/tokens/), so the icon
+  and the UI cannot drift apart:
 
       #1D2026  Color.Surface.Base     tile
-      #3D4451  Color.Border.Strong    oldest plate
-      #5C6472  Color.Text.Disabled    middle plate
-      #E8EAED  Color.Text.Primary     current plate
-      #4ADE80  Color.Status.Added     badge
+      #E8EAED  Color.Text.Primary     mirror (top)
+      #5C6472  Color.Text.Disabled    project (bottom)
+      #4ADE80  Color.Status.Added     agreement
 
   This file is the reference drawing, NOT the build input. The shipped icon is
   assets/versio.ico, produced by tools/New-VersioIcon.ps1, which redraws this
-  geometry per size and uses a simplified variant below 32 px - the stagger and
-  the notch turn to mush at 16 px.
+  geometry per size and uses a simplified variant below 48 px - at 16 px a
+  14-unit plate is three and a half pixels, and the join turns to mush.
 
   THREE PLACES CARRY THIS GEOMETRY. Change one, change all three:
 
@@ -35,11 +38,11 @@
 
   <rect width="64" height="64" rx="14" fill="#1D2026"/>
 
-  <rect x="16" y="40" width="34" height="8" rx="3" fill="#3D4451"/>
-  <rect x="15" y="28" width="34" height="8" rx="3" fill="#5C6472"/>
-  <rect x="14" y="16" width="34" height="8" rx="3" fill="#E8EAED"/>
+  <rect x="13" y="15" width="38" height="14" rx="4" fill="#E8EAED"/>
+  <rect x="13" y="35" width="38" height="14" rx="4" fill="#5C6472"/>
 
-  <!-- Punched in the tile colour so the badge reads as a notch, not an overlay. -->
-  <circle cx="47" cy="20" r="7.5" fill="#1D2026"/>
-  <circle cx="47" cy="20" r="5.2" fill="#4ADE80"/>
+  <!-- Punched in the tile colour so the badge reads as a notch cut out of both
+       plates, not a sticker dropped on the gap. -->
+  <circle cx="32" cy="32" r="8.5" fill="#1D2026"/>
+  <circle cx="32" cy="32" r="6" fill="#4ADE80"/>
 </svg>

@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Shapes;
 using Versio.App.ViewModels;
 using Versio.Core.Git;
 using Versio.Core.Guarding;
@@ -315,10 +316,11 @@ public sealed class MainWindowTests
 
             Assert.Equal(20, mark.ActualWidth);
 
-            // The plates themselves, not just the box around them: a Canvas with nothing in
-            // it arranges to exactly the same 20x20.
-            var plate = VisualChild(mark, static v => v is Border);
-            Assert.NotNull(plate);
+            // Pair is two plates and a punched disc: two Borders, two Ellipses. A Canvas
+            // with nothing in it arranges to the same 20x20, and the previous three-plate
+            // mark would still satisfy "at least one Border".
+            Assert.Equal(2, AllOf<Border>(mark).Count());
+            Assert.Equal(2, AllOf<Ellipse>(mark).Count());
         });
     }
 
