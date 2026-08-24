@@ -58,6 +58,20 @@ public sealed record BranchInfo
     public bool IsUnborn { get; init; }
 
     /// <summary>
+    /// True when an upstream is configured but its remote-tracking ref no longer exists —
+    /// the remote branch was deleted, usually by a forge cleaning up after a merge.
+    /// </summary>
+    /// <remarks>
+    /// Porcelain v2 states this by omission: it prints <c>branch.upstream</c> and then no
+    /// <c>branch.ab</c> line, because there is nothing left to count against. Left unflagged,
+    /// that omission decays to <c>Ahead == Behind == 0</c>, which rendered as "Up to date
+    /// with origin/x" over a branch nobody else could even see any more — the one wrong
+    /// answer, because it reads as "my work is safe" precisely when it is not
+    /// (FINDINGS 2026-08-23).
+    /// </remarks>
+    public bool UpstreamGone { get; init; }
+
+    /// <summary>
     /// Whether this branch is on this machine, on the remote, or both.
     /// </summary>
     /// <remarks>

@@ -21,6 +21,7 @@ public static class PorcelainV2Parser
     {
         var branch = new BranchInfo { Name = "HEAD", IsCurrent = true, IsDetached = true };
         var changes = new List<FileChange>();
+        var sawAheadBehind = false;
 
         if (string.IsNullOrEmpty(output))
         {
@@ -43,6 +44,11 @@ public static class PorcelainV2Parser
             switch (line[0])
             {
                 case '#':
+                    // Whether branch.ab appeared at all has to be remembered here, because
+                    // git states "the upstream's ref is gone" by omitting the line entirely
+                    // — there is nothing left to count against — and an omission cannot be
+                    // seen from inside the per-line handler.
+                    sawAheadBehind |= line.StartsWith("# branch.ab ", StringComparison.Ordinal);
                     branch = ApplyHeader(branch, line);
                     break;
 
@@ -85,6 +91,15 @@ public static class PorcelainV2Parser
                     // Ignored entries only appear when explicitly requested; skip them.
                     break;
             }
+        }
+
+        // An upstream with no ahead/behind line is git saying the remote-tracking ref is
+        // gone — the remote branch was deleted and the ref pruned. Without this flag the
+        // zeros the omission leaves behind read as InSync, and the badge says "Up to date"
+        // with a branch that no longer exists.
+        if (branch.Upstream is { Length: > 0 } && !sawAheadBehind)
+        {
+            branch = branch with { UpstreamGone = true };
         }
 
         return new GitStatus { Branch = branch, Changes = changes };

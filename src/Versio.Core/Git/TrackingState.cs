@@ -29,6 +29,17 @@ public enum TrackingState
 
     /// <summary>Both, which no fast-forward can resolve.</summary>
     Diverged,
+
+    /// <summary>
+    /// An upstream is configured but its branch is gone from the remote — deleted after a
+    /// merge, usually.
+    /// </summary>
+    /// <remarks>
+    /// The state that used to render as <see cref="InSync"/>: with the remote branch deleted,
+    /// ahead/behind decays to 0/0 and the badge said "Up to date" with a branch nobody else
+    /// could see any more (FINDINGS 2026-08-23).
+    /// </remarks>
+    UpstreamGone,
 }
 
 /// <summary>
@@ -93,8 +104,14 @@ public sealed record RemoteStanding
     /// button stays live anyway: pre-emptively disabling it hides the state the user has to
     /// resolve, where git's own rejection — now visible in a notification that does not expire
     /// — is the clearest possible explanation of what is wrong.
+    /// <para>
+    /// <b><see cref="TrackingState.UpstreamGone"/> counts too.</b> Pushing to a deleted
+    /// upstream recreates the branch on the remote, which is exactly the "push to republish"
+    /// that state's headline offers.
+    /// </para>
     /// </remarks>
-    public bool CanPush => State is TrackingState.Ahead or TrackingState.Diverged;
+    public bool CanPush => State is TrackingState.Ahead or TrackingState.Diverged
+                                 or TrackingState.UpstreamGone;
 
     // There is no `Primary` here, and there was.
     //
@@ -133,15 +150,21 @@ public sealed record RemoteStanding
     public bool IsDetached => State == TrackingState.Detached;
 
     /// <summary>
-    /// True whenever there is an upstream at all.
+    /// True whenever there is an upstream that can actually be pulled from.
     /// </summary>
     /// <remarks>
     /// <b>Not gated on <see cref="Behind"/>.</b> Behind-ness is only ever as fresh as the last
     /// fetch, and disabling a safe fast-forward pull on possibly-stale knowledge would leave
     /// somebody unable to act on a remote that had moved a second ago. A pull that reports
     /// "already up to date" costs nothing; a dead button costs a trip to the terminal.
+    /// <para>
+    /// <b>Except when the upstream is gone.</b> That argument rests on a useless pull being
+    /// harmless, and a pull from a deleted branch is not harmless-useless but a guaranteed
+    /// error ("no such ref was fetched") — a button that can only fail teaches people to
+    /// distrust the panel.
+    /// </para>
     /// </remarks>
-    public bool CanPull => HasUpstream;
+    public bool CanPull => HasUpstream && State != TrackingState.UpstreamGone;
 
     /// <summary>Suffix for a button label, so the count informs without gating. Empty when
     /// there is nothing to count.</summary>
@@ -214,6 +237,23 @@ public sealed record RemoteStanding
             {
                 State = TrackingState.NoUpstream,
                 Headline = $"Not on the remote yet. Nobody else can see {branch.Name}.",
+                BrushKey = Amber,
+            };
+        }
+
+        if (branch.UpstreamGone)
+        {
+            // Porcelain states this by omission — an upstream and no ahead/behind line — and
+            // the zeros that omission leaves behind used to fall through to InSync below:
+            // "Up to date with origin/x" over a branch the forge deleted after merging it.
+            // Amber for the same reason NoUpstream is: the work is invisible to everybody
+            // else, and doing nothing has a cost.
+            return new RemoteStanding
+            {
+                State = TrackingState.UpstreamGone,
+                Upstream = upstream,
+                Headline = $"{upstream} is gone from the remote — deleted after a merge, " +
+                           "usually. Push to republish it, or switch to another branch.",
                 BrushKey = Amber,
             };
         }
