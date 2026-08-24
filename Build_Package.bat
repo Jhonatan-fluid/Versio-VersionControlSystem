@@ -8,8 +8,6 @@ for /F "delims=" %%E in ('forfiles /p "%~dp0." /m "%~nx0" /c "cmd /c echo(0x1B"'
 rem Repo root = the directory this script lives in (strip trailing backslash).
 set "REPO=%~dp0"
 if "%REPO:~-1%"=="\" set "REPO=%REPO:~0,-1%"
-set "PUBLISH=%REPO%\artifacts\publish"
-set "RELEASES=%REPO%\artifacts\releases"
 
 rem Prefer the user-local SDK (exists inside the Claude Code sandbox, where the
 rem PATH dotnet is runtime-only); fall back to dotnet on PATH, which on the real
@@ -29,68 +27,23 @@ rem A running Versio.exe locks its own binaries, so close it before publishing.
 taskkill /IM Versio.exe /F >nul 2>&1
 if not errorlevel 1 echo Closed running Versio.exe.
 
-echo Fetching pack deps, publishing, packing Setup.exe and MSI...
-echo First run downloads PortableGit and vpk. Later runs reuse the cache.
-echo(
+rem A host lingering from a crashed run holds artifacts\publish open, and the wipe
+rem then fails with an unfriendly PowerShell error instead of this one-line insurance.
+taskkill /IM Versio.Plc.TiaPortal.Host.exe /F >nul 2>&1
+taskkill /IM Versio.Plc.TwinCat.Host.exe /F >nul 2>&1
+
+rem The whole show lives in the script: banner, version menu, seven timed phases,
+rem systems check, liftoff. Child output goes to artifacts\pack.log, not the console.
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%REPO%\tools\pack\Pack-Versio.ps1" -Repo "%REPO%" -Dotnet "%DOTNET%"
+
+rem Exit 2 is the menu's Quit: nothing was touched, so neither banner applies.
+if errorlevel 2 exit /b 0
 if errorlevel 1 goto :abort
-
-rem After pack: Pack-Versio.ps1 may have bumped VersioVersion. Read it here so the
-rem banner names the number that actually landed, not the one before the menu.
-set "VERLINE="
-for /f "delims=" %%V in ('findstr /c:"<VersioVersion>" "%REPO%\Directory.Build.props"') do set "VERLINE=%%V"
-if not defined VERLINE set "VERLINE=<VersioVersion>unknown</VersioVersion>"
-set "VER=%VERLINE:*<VersioVersion>=%"
-set "VER=%VER:</VersioVersion>=%"
-
-cls
-echo(
-echo %ESC%[97m  ##   ##  #######  ######    #####   ####   #######  %ESC%[0m
-echo %ESC%[96m  ##   ##  ##       ##   ##  ##        ##   ##     ## %ESC%[0m
-echo %ESC%[96m  ##   ##  #####    ######    #####    ##   ##     ## %ESC%[0m
-echo %ESC%[36m   ## ##   ##       ##   ##       ##   ##   ##     ## %ESC%[0m
-echo %ESC%[34m    ###    #######  ##   ##   #####   ####   #######  %ESC%[0m
-echo %ESC%[90m  ==================================================  %ESC%[0m
-echo %ESC%[37m           PLC projects, versioned in git             %ESC%[0m
-echo(
-echo %ESC%[92m   PACKAGE GREEN%ESC%[90m - Versio %VER% - Setup.exe and MSI are on disk%ESC%[0m
-echo(
-call :ready "Self-contained Versio.exe ...." "%PUBLISH%\Versio.exe"
-call :ready "Bundled git.exe .............." "%PUBLISH%\git\cmd\git.exe"
-call :ready "TIA Portal host .............." "%PUBLISH%\tia\Versio.Plc.TiaPortal.Host.exe"
-call :ready "TwinCAT host ................." "%PUBLISH%\twincat\Versio.Plc.TwinCat.Host.exe"
-call :any "Setup.exe ...................." "%RELEASES%\*Setup.exe"
-call :any "Per-machine MSI .............." "%RELEASES%\*.msi"
-echo(
-echo %ESC%[92m   LIFTOFF - artifacts\releases is go.%ESC%[0m
-echo %ESC%[90m   Not launching Setup: that would install this machine.%ESC%[0m
-start "" "%RELEASES%"
 ping -n 3 127.0.0.1 >nul
 exit /b 0
 
-rem One line of the systems check: green OK when the built artifact is on disk,
-rem red MISSING when it is not - so the list reports the disk, not optimism.
-:ready
-if exist "%~2" (
-    echo %ESC%[92m   [ OK ]%ESC%[0m %ESC%[37m%~1%ESC%[0m %ESC%[92mready%ESC%[0m
-) else (
-    echo %ESC%[91m   [FAIL]%ESC%[0m %ESC%[37m%~1%ESC%[0m %ESC%[91mMISSING%ESC%[0m
-)
-exit /b 0
-
-rem Same as :ready, for a glob (Setup.exe / MSI names come from vpk).
-:any
-set "_FOUND="
-for %%F in ("%~2") do if exist "%%~fF" set "_FOUND=1"
-if defined _FOUND (
-    echo %ESC%[92m   [ OK ]%ESC%[0m %ESC%[37m%~1%ESC%[0m %ESC%[92mready%ESC%[0m
-) else (
-    echo %ESC%[91m   [FAIL]%ESC%[0m %ESC%[37m%~1%ESC%[0m %ESC%[91mMISSING%ESC%[0m
-)
-exit /b 0
-
-rem Pack failed: the compiler / vpk output stays right above this banner, and the
-rem window stays open so it can actually be read.
+rem Pack failed: the script has already printed the reason and the tail of pack.log
+rem right above this art, and the window stays open so it can actually be read.
 :abort
 echo(
 echo %ESC%[91m   ####   #####    ####   #####   ######%ESC%[0m
