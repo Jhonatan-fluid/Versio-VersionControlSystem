@@ -80,9 +80,10 @@ desktop.ini
 tools/dotnet-install.ps1
 
 # Pack-time downloads and publish output. Pins live in third_party/manifest.json.
+# vpk installs under third_party/cache/vpk/ - beside the PortableGit download, and
+# out of the source tree, so the covering ignore is the cache one.
 artifacts/
 third_party/cache/
-tools/pack/vpk/
 
 # Added by Versio: files the PLC toolchain writes beside a project.
 # The per-user one carries a username and machine name in its filename.

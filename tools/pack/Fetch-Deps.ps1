@@ -5,7 +5,9 @@
 
 .DESCRIPTION
     PortableGit is cached under third_party/cache/. vpk is installed to
-    tools/pack/vpk/ so a global tool on the machine cannot silently drift.
+    third_party/cache/vpk/ so a global tool on the machine cannot silently
+    drift - beside the other fetched pack dependency, and out of the source
+    tree, where its ~450 files kept turning up in searches.
     Siemens, CODESYS and TwinCAT are never fetched.
 #>
 param(
@@ -62,7 +64,7 @@ if (Test-Path -LiteralPath $gitFile) {
 }
 
 $vpk = Get-Dep 'vpk'
-$toolDir = Join-Path $Repo 'tools\pack\vpk'
+$toolDir = Join-Path $Repo 'third_party\cache\vpk'
 New-Item -ItemType Directory -Force -Path $toolDir | Out-Null
 $vpkExe = Join-Path $toolDir 'vpk.exe'
 $havePinnedVpk = $false
@@ -70,11 +72,11 @@ if (Test-Path -LiteralPath $vpkExe) {
     $listed = & $Dotnet tool list --tool-path $toolDir | Out-String
     if ($listed -match ('(?m)^vpk\s+' + [regex]::Escape($vpk.version) + '\b')) {
         $havePinnedVpk = $true
-        Write-Host "vpk $($vpk.version) already in tools\pack\vpk"
+        Write-Host "vpk $($vpk.version) already in third_party\cache\vpk"
     }
 }
 if (-not $havePinnedVpk) {
-    Write-Host "Installing vpk $($vpk.version) into tools\pack\vpk..."
+    Write-Host "Installing vpk $($vpk.version) into third_party\cache\vpk..."
     & $Dotnet tool update --tool-path $toolDir --version $vpk.version vpk
     if ($LASTEXITCODE -ne 0) {
         & $Dotnet tool install --tool-path $toolDir --version $vpk.version vpk

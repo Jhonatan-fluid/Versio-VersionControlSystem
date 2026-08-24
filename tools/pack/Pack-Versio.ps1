@@ -179,7 +179,7 @@ foreach ($path in $required) {
     }
 }
 
-$vpk = Join-Path $Repo 'tools\pack\vpk\vpk.exe'
+$vpk = Join-Path $Repo 'third_party\cache\vpk\vpk.exe'
 $packStarted = Get-Date
 Write-Host "Packing Setup.exe and per-machine MSI (version $version)..."
 # Rebuilds of the same VersioVersion are expected until that number moves.

@@ -113,6 +113,6 @@ public sealed class PackagingManifestTests
     {
         var text = File.ReadAllText(Path.Combine(TestPaths.Root, "tools", "pack", "Fetch-Deps.ps1"));
         Assert.Contains("PortableGit cache ok", text, StringComparison.Ordinal);
-        Assert.Contains("already in tools\\pack\\vpk", text, StringComparison.Ordinal);
+        Assert.Contains("already in third_party\\cache\\vpk", text, StringComparison.Ordinal);
     }
 }
