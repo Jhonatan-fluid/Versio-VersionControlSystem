@@ -53,7 +53,9 @@ public sealed class DiffLayerChoice
     /// a guessed category.
     /// </remarks>
     private static string LabelFor(string path) =>
-        path.EndsWith(".st", StringComparison.OrdinalIgnoreCase) ? "ST"
+        path.EndsWith(".st", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".scl", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".udt", StringComparison.OrdinalIgnoreCase) ? "ST"
         : path.EndsWith(LibraryCatalog.FileSuffix, StringComparison.OrdinalIgnoreCase) ? "libraries"
         : path.EndsWith(TaskCatalog.FileSuffix, StringComparison.OrdinalIgnoreCase) ? "tasks"
         : path.EndsWith(DeviceCatalog.FileSuffix, StringComparison.OrdinalIgnoreCase) ? "devices"

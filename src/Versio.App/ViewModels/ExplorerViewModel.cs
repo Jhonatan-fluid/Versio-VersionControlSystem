@@ -77,8 +77,22 @@ public sealed class ExplorerViewModel : ObservableObject
         get => _selectedNode;
         set
         {
-            if (!SetProperty(ref _selectedNode, value) || value is null)
+            var previous = _selectedNode;
+
+            if (!SetProperty(ref _selectedNode, value))
             {
+                return;
+            }
+
+            if (value is null)
+            {
+                // Same reason as the project tree: a null is the shell letting go, and the
+                // container only follows through the row's flag.
+                if (previous is not null)
+                {
+                    previous.IsSelected = false;
+                }
+
                 return;
             }
 

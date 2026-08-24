@@ -240,9 +240,9 @@ textual exports match.
 |---|---|---|
 | Index by `PathName` (manifest `guid`), ambiguity-aware `Name` | apply / delete / rename | Rebuild after renames and each create. A name carried by more than one node resolves **nothing** |
 | `DeclarationText` / `ImplementationText` set | `ApplyText` / create | No `ConsumeXml` fallback. If IDispatch rejects the set, the import fails rather than writing `.TcPOU` on disk |
-| `CreateChild(name, 1, "", subType)` | create | `TREEITEMINSERT` last = 1. Subtype from the ST header. Parent walked segment-by-segment down the recorded `resolve` chain, never a tree-wide name lookup |
+| `CreateChild(name, nSubType, "", IECLANGUAGE_ST)` | create | Documented arity (2026-08-22). Subtype from the ST header (604 FB). `vInfo` is `IECLANGUAGETYPES.IECLANGUAGE_ST` = 1 — an empty string fails to parse. Parent walked segment-by-segment down the recorded `resolve` chain, never a tree-wide name lookup. The I/O-probe order `(name, 1, "", subType)` treats 1 as `nSubType` and XAE refuses a PLC FB |
 | `item.Name = newName` | rename | **Name only.** A folder move is planned as `IsMove`; relocating under a new parent is not gated. A missing target aborts the whole import — renaming a guess is how a different POU gets somebody else's name |
-| `item.Delete()` | delete | **Identity-only, hash-verified** (2026-08-20): `PathName` lookup, then the live packed text is hashed and compared to what the plan recorded — miss or mismatch keeps the object with a sentence, honouring `DeletedFile.Hash`'s contract. Skipped when `cannotVerify` is set. Failure emits a warning and **keeps** the object |
+| `parent.DeleteChild(Name)` | delete | **Identity-only, hash-verified** (2026-08-20), **XAE-gated 2026-08-22**: `PathName` lookup, then the live packed text is hashed and compared to what the plan recorded — miss or mismatch keeps the object with a sentence, honouring `DeletedFile.Hash`'s contract. Skipped when `cannotVerify` is set. `ITcSmTreeItem` has no `Delete()` on the item; calling it was swallowed as a warning and the POU survived. Failure emits a warning and **keeps** the object |
 | `File.SaveAll` | when `save` | See §4.1 |
 
 `ApplyText` resolves its target as: `PathName` → this session's rename map (a rename
@@ -285,12 +285,14 @@ and the next export still read an empty Comment. `ITcSysManager.SaveProject` is
 Comment on. Applying Comment would confirm an import that silently reverts —
 form `DEVICES`, export-only, same as CODESYS I/O.
 
-**CreateChild — measured, refused.** A probe-only
+**CreateChild — I/O measured, refused; PLC gated 2026-08-22.** A probe-only
 `CreateChild("EtherCAT Master", 111, "", "")` (Beckhoff's documented EtherCAT
-master subtype) was refused (`Invalid item sub type`). The PLC-measured argument
+master subtype) was refused (`Invalid item sub type`). The guessed argument
 order (`name, 1, "", 111`) created a child named EtherCAT Master at
 `TIID^EtherCAT Master` whose `ItemSubType` was **1**, not 111 — not a trustworthy
-EtherCAT plug. Product import never calls CreateChild.
+EtherCAT plug. **I/O import never calls CreateChild.** PLC import does, with the
+documented `(name, nSubType, before, vInfo)` order — the I/O-probe order was
+copied into `HostImport` and live XAE refused it (Findings, 2026-08-22).
 
 **Product (2026-08-21).** Export writes `Devices/Devices.devices.yaml` (the node's
 Name; a folder literally named `I/O` is not a Windows path). Identity is
@@ -397,10 +399,11 @@ refuses. Work only on a **copy** under `%TEMP%`. Do not adopt it into this repos
 
 ## 8. What the gate proved (2026-08-19)
 
-`tests/Versio.Plc.TwinCat.Tests` — **5/5 green in 3 m 14 s**, zero skips, on a `%TEMP%`
-copy. Close XAE and Versio first. **Re-gated 2026-08-21 in 3 m 4 s** over I/O
-export-only (`DEVICES`) — yaml present, I/O skip gone, two textual exports include the
-yaml byte-identical, ST overwrite still round-trips. Comment apply is not this gate.
+`tests/Versio.Plc.TwinCat.Tests` — **6/6 green in 5 m 14 s**, zero skips, on a `%TEMP%`
+copy, 2026-08-22. Close XAE and Versio first. Earlier: **5/5 in 3 m 4 s** on
+2026-08-21 over I/O export-only (`DEVICES`) — yaml present, I/O skip gone, two
+textual exports include the yaml byte-identical, ST overwrite still round-trips.
+Comment apply is not this gate. Folder move is not this gate.
 
 | Job | Cost on this install |
 |---|---|
@@ -408,10 +411,17 @@ yaml byte-identical, ST overwrite still round-trips. Comment apply is not this g
 | Export | **~22 s** |
 | Two unchanged textual exports | **~44 s** together; `.st` bytes matched |
 | Import mutation + line-deletion round-trip | **~1 m 49 s** |
+| Create + rename + object-delete round-trip | **~2 m 18 s** |
 
-The import Fact mutates one `.st` with a comment, imports the planner's `ApplyText` plan,
+The overwrite Fact mutates one `.st` with a comment, imports the planner's `ApplyText` plan,
 re-exports, asserts the marker, then **deletes that line**, imports again, and asserts it
-is gone. That is ST overwrite + the inverse edit — not object create / delete / rename.
+is gone. That is ST overwrite + the inverse edit.
+
+The structural Fact writes a unique `FUNCTION_BLOCK VersioGateFb_<stamp>`, imports
+`Create`, re-exports (header present, no folder asserted — create resolve is the
+declared name only), renames file and declaration with `departed` pairing, imports
+`Rename`, then deletes the `.st` and imports a hash-bearing `Deletion`. CreateChild
+arity / ST `vInfo` / `DeleteChild` were host fixes the Fact named — see Findings.
 
 ---
 
@@ -430,18 +440,16 @@ should not have to re-derive.
 6. ~~`IOleMessageFilter`; version from `Build_*`, not the VS shell ProductVersion.~~
 7. ~~I/O catalogs (`Devices/Devices.devices.yaml`, form `DEVICES`, export-only). Comment does not persist through Save; never CreateChild.~~
 8. ~~Live XAE window occupancy — sibling `.~u`, rewrite via `.~u~` every ~5 s (2026-08-21).~~
+9. ~~Create / object-delete / rename against live XAE (2026-08-22). CreateChild documented arity + ST vInfo; `Parent.DeleteChild` after PathName + live-hash.~~
 
 ### Wired, not an XAE Fact yet
 
-These exist in `TwinCatImportPlanner` and `HostImport`. Sync will offer them through the
-existing confirm-import dialog. They have **not** been walked against live XAE.
+Folder move is planned as `IsMove`. Sync will offer it through the existing
+confirm-import dialog. It has **not** been walked against live XAE.
 
 | Item | What the host does | Gap |
 |---|---|---|
-| **Create** | `CreateChild` + set texts, parent walked down the `resolve` chain | No Fact that a new `.st` becomes a live POU |
-| **Object delete** | `Delete()` after `PathName` lookup **and a live-hash match** (2026-08-20) | The gate deleted a *line*, not a POU — the verify-then-delete path is code-reviewed, not XAE-gated |
-| **Rename** | `Name = newName`; missing target aborts the import | No Fact |
-| **Folder move** | Planned as `IsMove`; host sets `Name` only | Relocating under a new parent is unmeasured, same first-loop bargain as TIA |
+| **Folder move** | Planned as `IsMove`; host sets `Name` only | Relocating under a new parent is unmeasured, same first-loop bargain as TIA. A Fact that moved `Motor.st` between folders would import as `Name = "Motor"` and re-export in the old folder |
 
 ### Not measured
 

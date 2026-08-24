@@ -1,6 +1,7 @@
 using System.Text;
 using Versio.Core.Logging;
 using Versio.Core.Plc;
+using Versio.Core.Projects;
 using Versio.Infrastructure.FileSystem;
 using Versio.Plc.TwinCat;
 using Versio.Plc.TwinCat.Infrastructure;
@@ -332,6 +333,226 @@ public sealed class TwinCatGateTests
     }
 
     /// <summary>
+    /// A new <c>.st</c> becomes a live POU, renaming it changes the Automation Interface
+    /// name, and deleting the file removes the object — not a line inside one.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The overwrite Fact only deletes a comment. Create / object-delete / rename were
+    /// already in the planner and host; this is the walk against live XAE. Folder move
+    /// is not this Fact: the host still only sets <c>Name</c>.
+    /// </para>
+    /// <para>
+    /// The created FB is ours, so rename and delete do not touch the sample's own POUs.
+    /// Create lands at the PLC root (a new file's resolve is the declared name only);
+    /// assertions look for the header, not a folder. Rename pairing uses
+    /// <c>departed</c> because TwinCAT export does not write <c>shash</c> and this tree
+    /// is not a git repo.
+    /// </para>
+    /// </remarks>
+    [SkippableFact(Timeout = 1_200_000)]
+    public async Task Create_rename_and_object_delete_round_trip()
+    {
+        Skip.IfNot(OperatingSystem.IsWindows(), "TwinCAT XAE is Windows-only");
+        var install = new TwinCatLocator().FindPreferred();
+        Skip.If(install is null, "no TwinCAT XAE install");
+
+        var fixture = TestPaths.TwinCatProject();
+        Skip.If(fixture is null, "committed TwinCAT fixture is missing");
+
+        var toolchain = new TwinCatToolchain(NullLogger.Instance);
+        var status = await toolchain.ProbeAsync(CancellationToken.None);
+        Skip.If(!status.Available, status.Explanation);
+        Skip.If(LocalTwinCatRunner.FindHost() is null, "TwinCAT host was not copied to the output directory");
+
+        var stamp = Guid.NewGuid().ToString("N")[..8];
+        var createdName = "VersioGateFb_" + stamp;
+        var renamedName = "VersioGateRn_" + stamp;
+        var marker = "versio_struct_" + stamp;
+
+        var copyDir = Path.Combine(Path.GetTempPath(), "versio-tc-struct-" + stamp);
+        var export1 = Path.Combine(Path.GetTempPath(), "versio-tc-st1-" + stamp);
+        var export2 = Path.Combine(Path.GetTempPath(), "versio-tc-st2-" + stamp);
+        var export3 = Path.Combine(Path.GetTempPath(), "versio-tc-st3-" + stamp);
+        var export4 = Path.Combine(Path.GetTempPath(), "versio-tc-st4-" + stamp);
+        Directory.CreateDirectory(copyDir);
+        Directory.CreateDirectory(export1);
+        Directory.CreateDirectory(export2);
+        Directory.CreateDirectory(export3);
+        Directory.CreateDirectory(export4);
+
+        try
+        {
+            var copyProject = await CopyFixtureAsync(fixture!, copyDir);
+            var runner = toolchain.CreateRunner(status);
+            var fs = new WindowsFileSystem();
+
+            var exported = await runner.RunAsync(
+                Job(PlcOperation.Export, status.Profile ?? "", copyProject, export1),
+                progress: null,
+                CancellationToken.None);
+            SkipIfMeasuredBlocker(exported);
+            Assert.True(exported.Succeeded, exported.FailureReason);
+
+            File.WriteAllText(
+                Path.Combine(export1, createdName + ".st"),
+                PackedFunctionBlock(createdName, marker),
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+
+            var createPlan = await ImportPlanReader.ReadAsync(
+                fs, TwinCatProjectFormat.Instance, export1, NullLogger.Instance,
+                TwinCatLog.Category, "tc-struct", CancellationToken.None);
+            var create = Assert.Single(createPlan.Files, f => f.Action == PlannedAction.Create);
+            Assert.Equal(createdName, create.Name);
+
+            var created = await runner.RunAsync(
+                Job(PlcOperation.Import, status.Profile ?? "", copyProject, export1,
+                    createPlan with
+                    {
+                        Files = [create],
+                        Deletions = [],
+                        Renames = [],
+                    }),
+                progress: null,
+                CancellationToken.None);
+            SkipIfMeasuredBlocker(created);
+            Assert.True(created.Succeeded, ImportFailed(created, "create"));
+
+            var afterCreate = await runner.RunAsync(
+                Job(PlcOperation.Export, status.Profile ?? "", copyProject, export2),
+                progress: null,
+                CancellationToken.None);
+            SkipIfMeasuredBlocker(afterCreate);
+            Assert.True(afterCreate.Succeeded, afterCreate.FailureReason);
+
+            var createdFile = FindStContaining(export2, createdName);
+            Assert.True(createdFile is not null,
+                "create did not survive re-export — no .st names " + createdName
+                + ". import wrote: " + string.Join(", ", created.ChangedPaths)
+                + Warn(created)
+                + "; files: " + string.Join(", ", StNames(export2)));
+            Assert.Contains(marker, File.ReadAllText(createdFile!), StringComparison.Ordinal);
+
+            var oldRel = Path.GetRelativePath(export2, createdFile!).Replace('\\', '/');
+            var oldText = File.ReadAllText(createdFile!);
+            var newRel = ReplaceFileStem(oldRel, renamedName);
+            var newText = oldText.Replace(
+                "FUNCTION_BLOCK " + createdName,
+                "FUNCTION_BLOCK " + renamedName,
+                StringComparison.Ordinal);
+            Assert.False(string.Equals(oldText, newText, StringComparison.Ordinal),
+                "rename did not change the FUNCTION_BLOCK header");
+
+            File.WriteAllText(
+                Path.Combine(export2, newRel.Replace('/', Path.DirectorySeparatorChar)),
+                newText,
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            File.Delete(createdFile!);
+
+            var manifest = ProjectManifest.Parse(File.ReadAllText(Path.Combine(export2, "_manifest.json")));
+            var renamePlan = TwinCatImportPlanner.Plan(
+                manifest,
+                MirrorOf(export2),
+                new Dictionary<string, string>(StringComparer.Ordinal) { [oldRel] = oldText });
+            Assert.False(renamePlan.Renames.Count == 0,
+                "planner did not pair the rename — departed bytes did not match. warnings: "
+                + string.Join("; ", renamePlan.Warnings)
+                + (renamePlan.StructuralChangesUnavailable is null
+                    ? ""
+                    : "; " + renamePlan.StructuralChangesUnavailable));
+            var rename = Assert.Single(renamePlan.Renames);
+            Assert.True(rename.IsRename, "planner treated the header change as a move or a no-op");
+            Assert.Equal(createdName, rename.OldName);
+            Assert.Equal(renamedName, rename.NewName);
+
+            var renamed = await runner.RunAsync(
+                Job(PlcOperation.Import, status.Profile ?? "", copyProject, export2,
+                    renamePlan with
+                    {
+                        // Similarity pairing marks the arrival ApplyText (hash pairing
+                        // would Skip it). Either way, do not ApplyText every other .st.
+                        Files = [.. renamePlan.Files.Where(f =>
+                            f.Skip == PlannedSkip.RenameTarget
+                            || f.Action == PlannedAction.Create
+                            || (f.Action == PlannedAction.ApplyText
+                                && f.Path.Equals(rename.NewPath, StringComparison.Ordinal)))],
+                        Deletions = [],
+                    }),
+                progress: null,
+                CancellationToken.None);
+            SkipIfMeasuredBlocker(renamed);
+            Assert.True(renamed.Succeeded, ImportFailed(renamed, "rename"));
+
+            var afterRename = await runner.RunAsync(
+                Job(PlcOperation.Export, status.Profile ?? "", copyProject, export3),
+                progress: null,
+                CancellationToken.None);
+            SkipIfMeasuredBlocker(afterRename);
+            Assert.True(afterRename.Succeeded, afterRename.FailureReason);
+
+            Assert.Null(FindStContaining(export3, createdName));
+            var renamedFile = FindStContaining(export3, renamedName);
+            Assert.True(renamedFile is not null,
+                "rename did not survive re-export — no .st names " + renamedName
+                + ". import wrote: " + string.Join(", ", renamed.ChangedPaths)
+                + Warn(renamed)
+                + "; files: " + string.Join(", ", StNames(export3)));
+            Assert.Contains(marker, File.ReadAllText(renamedFile!), StringComparison.Ordinal);
+
+            File.Delete(renamedFile!);
+            var deletePlan = await ImportPlanReader.ReadAsync(
+                fs, TwinCatProjectFormat.Instance, export3, NullLogger.Instance,
+                TwinCatLog.Category, "tc-struct", CancellationToken.None);
+            var deletion = Assert.Single(deletePlan.Deletions);
+            Assert.Equal(renamedName, deletion.Name);
+            Assert.Null(deletion.CannotVerify);
+
+            var deleted = await runner.RunAsync(
+                Job(PlcOperation.Import, status.Profile ?? "", copyProject, export3,
+                    deletePlan with
+                    {
+                        Files = [],
+                        Renames = [],
+                    }),
+                progress: null,
+                CancellationToken.None);
+            SkipIfMeasuredBlocker(deleted);
+            Assert.True(deleted.Succeeded, ImportFailed(deleted, "delete"));
+            Assert.Contains(deleted.ChangedPaths, p =>
+                p.Contains(renamedName, StringComparison.OrdinalIgnoreCase));
+            Assert.DoesNotContain(deleted.Warnings, w =>
+                w.Contains("kept ", StringComparison.OrdinalIgnoreCase));
+
+            var afterDelete = await runner.RunAsync(
+                Job(PlcOperation.Export, status.Profile ?? "", copyProject, export4),
+                progress: null,
+                CancellationToken.None);
+            SkipIfMeasuredBlocker(afterDelete);
+            Assert.True(afterDelete.Succeeded, afterDelete.FailureReason);
+
+            Assert.True(FindStContaining(export4, renamedName) is null,
+                "deleted POU " + renamedName + " came back after re-export — DeleteChild "
+                + "kept the object or SaveAll did not persist it. import wrote: "
+                + string.Join(", ", deleted.ChangedPaths) + Warn(deleted)
+                + "; files: " + string.Join(", ", StNames(export4)));
+            Assert.False(
+                TextualBytes(export4).Any(kv =>
+                    TextFromUtf8(kv.Value).Contains(marker, StringComparison.Ordinal)),
+                "deleted POU " + renamedName + " came back after re-export — DeleteChild "
+                + "kept the object or SaveAll did not persist it. import wrote: "
+                + string.Join(", ", deleted.ChangedPaths) + Warn(deleted));
+        }
+        finally
+        {
+            TryDeleteTree(copyDir);
+            TryDeleteTree(export1);
+            TryDeleteTree(export2);
+            TryDeleteTree(export3);
+            TryDeleteTree(export4);
+        }
+    }
+
+    /// <summary>
     /// Conversion refusal, exclusive hold, license, and RPC rejection are measured
     /// blockers, not product bugs. A 4024 fixture on 4026 is refused on purpose.
     /// </summary>
@@ -450,6 +671,62 @@ public sealed class TwinCatGateTests
 
         return Encoding.UTF8.GetString(bytes);
     }
+
+    private static string PackedFunctionBlock(string name, string marker) =>
+        "FUNCTION_BLOCK " + name + "\n"
+        + "VAR\n"
+        + "END_VAR\n"
+        + "\n"
+        + "// --- BEGIN IMPLEMENTATION ---\n"
+        + "\n"
+        + "// " + marker + "\n";
+
+    private static string? FindStContaining(string root, string objectName)
+    {
+        var needle = "FUNCTION_BLOCK " + objectName;
+        return Directory.EnumerateFiles(root, "*.st", SearchOption.AllDirectories)
+            .FirstOrDefault(file =>
+            {
+                var stem = Path.GetFileNameWithoutExtension(file);
+                return stem.Equals(objectName, StringComparison.OrdinalIgnoreCase)
+                    || File.ReadAllText(file).Contains(needle, StringComparison.Ordinal);
+            });
+    }
+
+    private static IEnumerable<string> StNames(string root) =>
+        Directory.EnumerateFiles(root, "*.st", SearchOption.AllDirectories)
+            .Select(file => Path.GetRelativePath(root, file).Replace('\\', '/'));
+
+    private static string ReplaceFileStem(string relative, string newStem)
+    {
+        var slash = relative.LastIndexOf('/');
+        var dir = slash < 0 ? "" : relative[..(slash + 1)];
+        return dir + newStem + ".st";
+    }
+
+    private static List<MirrorFile> MirrorOf(string root)
+    {
+        List<MirrorFile> files = [];
+        foreach (var absolute in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+        {
+            var relative = Path.GetRelativePath(root, absolute).Replace('\\', '/');
+            files.Add(new MirrorFile
+            {
+                Path = relative,
+                Text = TwinCatImportPlanner.NeedsText(relative) ? File.ReadAllText(absolute) : null,
+            });
+        }
+
+        return files;
+    }
+
+    private static string ImportFailed(PlcResult result, string step) =>
+        step + " import failed: " + result.FailureReason + Warn(result);
+
+    private static string Warn(PlcResult result) =>
+        result.Warnings.Count == 0
+            ? ""
+            : "; warnings: " + string.Join("; ", result.Warnings);
 
     private static void TryDeleteTree(string path)
     {

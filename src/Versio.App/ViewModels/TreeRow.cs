@@ -35,6 +35,7 @@ public sealed class TreeRow : ObservableObject
     private readonly TreeExpansion? _expansion;
     private ObservableCollection<TreeRow>? _children;
     private bool _isExpanded;
+    private bool _isSelected;
     private ProjectTreeNode _node;
 
     public TreeRow(ProjectTreeNode node, int depth, TreeExpansion? expansion = null)
@@ -224,6 +225,20 @@ public sealed class TreeRow : ObservableObject
         }
     }
 
+    /// <summary>Whether the tree shows this row as the selected one.</summary>
+    /// <remarks>
+    /// Bound two-way to the container so the view model can <i>deselect</i>, which WPF's
+    /// read-only <c>TreeView.SelectedItem</c> cannot be asked to do. Needed the moment the
+    /// pane started clearing when the rail leaves a panel: a row left highlighted raises no
+    /// selection change when it is clicked again, so the pane would stay blank on the way
+    /// back. Letting go of the row is what makes the second click a click.
+    /// </remarks>
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set => SetProperty(ref _isSelected, value);
+    }
+
     /// <summary>One letter for this node's own state, blank when it did not change.</summary>
     public string Glyph => Node.Status switch
     {
@@ -254,9 +269,12 @@ public sealed class TreeRow : ObservableObject
     /// <summary>The file the diff pane opens for this node, or null when it opens none.</summary>
     /// <remarks>
     /// <para>
-    /// The readable layer wins. An object exporting to both <c>.st</c> and <c>.xml</c> opens
-    /// the Structured Text, because that is the one somebody can review; the native XML is
-    /// there for completeness and reads like a machine wrote it, which it did. This is only
+    /// The readable layer wins. An object exporting to both <c>.st</c> / <c>.scl</c> and
+    /// <c>.xml</c> opens the Structured Text, because that is the one somebody can review;
+    /// the native XML is there for completeness and reads like a machine wrote it, which
+    /// it did. Matching by suffix rather than sort order is load-bearing for TIA: a data
+    /// block's <c>.scl</c> is the review copy, and falling through to "first file" used
+    /// to open SimaticML whenever the textual suffix was not <c>.st</c>. This is only
     /// the <i>default</i>: the diff pane's header offers the other layers as chips
     /// (<see cref="DiffLayerChoice"/>), so the native half stopped being unreachable.
     /// </para>
@@ -269,8 +287,13 @@ public sealed class TreeRow : ObservableObject
     public string? PrimaryFile =>
         IsProject || IsFolder
             ? null
-            : Node.Files.FirstOrDefault(f => f.EndsWith(".st", StringComparison.OrdinalIgnoreCase))
+            : Node.Files.FirstOrDefault(IsTextualLayer)
               ?? Node.Files.FirstOrDefault();
+
+    private static bool IsTextualLayer(string path) =>
+        path.EndsWith(".st", StringComparison.OrdinalIgnoreCase)
+        || path.EndsWith(".scl", StringComparison.OrdinalIgnoreCase)
+        || path.EndsWith(".udt", StringComparison.OrdinalIgnoreCase);
 
     private static string BrushFor(ChangeKind kind) => kind switch
     {

@@ -222,11 +222,26 @@ public static class TiaPortalImportPlanner
         || string.Equals(form, "ST_FULL", StringComparison.Ordinal)
         || string.Equals(form, "UDT", StringComparison.Ordinal);
 
+    /// <summary>
+    /// The other half of a two-file object, when this file is export-only.
+    /// </summary>
+    /// <remarks>
+    /// XML_REVIEW looks for <c>.scl</c> / <c>.udt</c>. SCL_REVIEW is the inverse — the
+    /// <c>.scl</c> is the review copy and the importable half is the SimaticML beside
+    /// it — so <c>.xml</c> has to be in this list too. Skipping the path we were given
+    /// is what keeps a file from naming itself as its own sibling.
+    /// </remarks>
     private static string? SiblingText(string xmlPath, HashSet<string> present)
     {
-        foreach (var ext in new[] { ".scl", ".s7dcl", ".udt" })
+        var slash = xmlPath.Replace('\\', '/');
+        foreach (var ext in new[] { ".scl", ".s7dcl", ".udt", ".xml" })
         {
-            var candidate = ReplaceExtension(xmlPath, ext);
+            var candidate = ReplaceExtension(slash, ext);
+            if (string.Equals(candidate, slash, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             if (present.Contains(candidate))
             {
                 return candidate;

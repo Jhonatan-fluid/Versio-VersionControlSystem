@@ -1,6 +1,7 @@
 using Versio.Core.Plc;
 using Versio.Core.Projects;
 using Versio.Plc.TiaPortal;
+using Versio.TestSupport;
 using Xunit;
 
 namespace Versio.Plc.TiaPortal.Tests;
@@ -73,6 +74,20 @@ public sealed class TiaPortalSclHeaderTests
     public void A_file_named_wrong_does_not_supply_the_name()
     {
         Assert.Null(TiaPortalSclHeader.ObjectName("this is a comment\n// no header"));
+    }
+
+    [Fact]
+    public void A_quoted_data_block_header_names_the_object()
+    {
+        const string scl = """
+            DATA_BLOCK "ReportValues_DB"
+            "ReportValues"
+            BEGIN
+            END_DATA_BLOCK
+            """;
+
+        Assert.Equal("ReportValues_DB", TiaPortalSclHeader.ObjectName(scl));
+        Assert.Equal("DB", TiaPortalSclHeader.ObjectType(scl));
     }
 }
 
@@ -200,6 +215,69 @@ public sealed class TiaPortalImportPlannerTests
     {
         // HostDeviceCatalog writes this literal; it cannot reference ExportCoverage.
         Assert.Equal("DEVICE_COMMENT", ExportCoverage.DeviceCommentForm);
+    }
+
+    [Fact]
+    public void The_host_records_db_source_as_the_review_form()
+    {
+        // HostExport writes this literal; it cannot reference ExportCoverage.
+        Assert.Equal("SCL_REVIEW", ExportCoverage.SclReviewForm);
+        var host = Path.Combine(TestPaths.Root, "src", "Versio.Plc.TiaPortal.Host", "HostExport.cs");
+        Assert.True(File.Exists(host), host + " missing — the check would pass vacuously");
+        var src = File.ReadAllText(host);
+        Assert.Contains("\"SCL_REVIEW\"", src, StringComparison.Ordinal);
+        Assert.Contains("IsDataBlock", src, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_data_block_scl_is_review_and_the_xml_imports()
+    {
+        // The inverse of G12 for DBs: GenerateSource is what a person reads, SimaticML
+        // is what import applies. Making the .scl importable first is how property
+        // text emptied every accessor.
+        var manifest = new ProjectManifest
+        {
+            Schema = ExportCoverage.CurrentSchema,
+            Objects =
+            [
+                new ProjectObject
+                {
+                    Guid = "db-1",
+                    Name = "ReportValues_DB",
+                    Type = "DB",
+                    Form = ExportCoverage.SclReviewForm,
+                    Path = "Device/PLC/Program blocks/ReportValues_DB.scl",
+                    Hash = "sha256:aaa",
+                },
+                new ProjectObject
+                {
+                    Guid = "db-1",
+                    Name = "ReportValues_DB",
+                    Type = "DB",
+                    Form = "NATIVE",
+                    Path = "Device/PLC/Program blocks/ReportValues_DB.xml",
+                    Hash = "sha256:bbb",
+                    NormalizedHash = "sha256:n",
+                },
+            ],
+        };
+
+        var plan = TiaPortalImportPlanner.Plan(manifest,
+        [
+            new MirrorFile
+            {
+                Path = "Device/PLC/Program blocks/ReportValues_DB.scl",
+                Text = "DATA_BLOCK \"ReportValues_DB\"",
+            },
+            new MirrorFile { Path = "Device/PLC/Program blocks/ReportValues_DB.xml" },
+        ]);
+
+        Assert.Contains(plan.Files, f => f.Path.EndsWith("ReportValues_DB.scl", StringComparison.Ordinal)
+                                         && f.Skip == PlannedSkip.ExportOnly
+                                         && f.ImportableSibling!.EndsWith(".xml", StringComparison.Ordinal));
+        Assert.Contains(plan.Files, f => f.Path.EndsWith("ReportValues_DB.xml", StringComparison.Ordinal)
+                                         && f.Action == PlannedAction.ApplyNative);
+        Assert.Empty(plan.Deletions);
     }
 
     [Fact]

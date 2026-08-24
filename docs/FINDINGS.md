@@ -19,6 +19,104 @@ produce a diff touching everything else.
 
 ---
 
+### TwinCAT create used the I/O-probe argument order; delete called a method that is not on the interface
+
+**Found 2026-08-22**, walking create / rename / object-delete against live XAE
+(`Create_rename_and_object_delete_round_trip` on a `%TEMP%` copy of
+`TC3_PlcSample_reStrText`). The planner and host already emitted those actions;
+the Fact is what proved they did not.
+
+Three refusals, one host method.
+
+1. **`CreateChild(name, 1, "", subType)` treats `1` as `nSubType`.** The I/O probe
+   measured that order on TIID in 2026-08-20: the child arrived as `ItemSubType` 1,
+   not 111. The PLC host copied it. XAE refused a function block with
+   `Couldn't create 'VersioGateFb_…'!`. Beckhoff's signature is
+   `CreateChild(name, nSubType, before, vInfo)` — subtype 604 for an FB.
+
+2. **Empty `vInfo` is not "default to ST".** After the arity fix, XAE threw
+   `Must specify valid information for parsing in the string.`
+   `IECLANGUAGETYPES.IECLANGUAGE_ST` is `1`. Passing that integer creates the POU.
+   `DeclarationText` / `ImplementationText` then took the packed file.
+
+3. **`ITcSmTreeItem` has `DeleteChild` on the parent, not `Delete` on the item.**
+   `item.Delete()` is not on the interface. InvokeMember failed, the host swallowed
+   it as a warning, reported success, and the next export still had the POU.
+   `Parent.DeleteChild(Name)` after the PathName + live-hash check removes it, and
+   `File.SaveAll` persists that.
+
+Rename (`Name = newName`) was already right; pairing used `departed` because TwinCAT
+export does not write `shash` and the temp tree is not git. Folder move is still
+Name-only — not this Fact.
+
+**Fix.** `HostImport.CreatePou` calls `CreateChild(name, subType, "", 1)`.
+`HostImport` delete looks the object up by PathName, hash-verifies, then
+`Parent.DeleteChild`. Gate: 6/6 in 5 m 14 s, 2026-08-22.
+
+---
+
+### The diff pane outlived the thing it was showing
+
+**Reported 2026-08-22 by the owner**, from using the app: "if I click on a file under the
+changed files panel, but then I move to commit history, the diff panel needs to clear" — and
+"very often a file loaded on the diff keeps showing even after it's committed".
+
+Two defects, one pane.
+
+1. **The rail never touched the pane.** `ActivePanel` toggled panel visibility and woke the
+   remote poller; nothing emptied `SelectedDiff`. A diff from the changed list stayed under
+   the history, a commit's patch under the explorer.
+
+2. **After a commit, the refresh re-read the file on purpose.** The rule — reload the shown
+   path when its status moved — was written so an editor save updates the open diff, and it
+   cannot tell "status moved" from "left the list". For a file that had just been committed
+   or discarded it showed the whole file under a small "No changes right now" note, which at
+   a glance is the change still being there.
+
+**Fix.** `ClearPane()` is the one place the pane's seven fields empty (the repository reset
+did it inline; the rail did nothing). The rail calls it and lets go of every panel's
+selection; the refresh calls it when the shown path was in the changed set and is no longer
+in the status. A path still listed reloads as before —
+`A_file_still_in_the_list_keeps_its_diff_across_a_refresh` guards the editor-save case.
+
+**Letting go of the row is half the fix, not polish.** An already-selected row raises no
+selection change when clicked again, so a cleared pane beside a still-highlighted row would
+stay blank on the way back. `TreeView.SelectedItem` is read-only, so `TreeRow`, `CommitRow`
+and `CommitFileRow` carry `IsSelected`, bound two-way in the three container styles, and the
+view models null their selection through it. Stale results are dropped too: a click followed
+by a rail switch inside the time git takes landed the patch in the emptied pane —
+`ShowPathAsync` and the two commit readers now check the pane still points at their target
+before writing.
+
+Mutation-checked one guard at a time: without the rail call four of seven tests go red,
+without the refresh branch the committed and discarded cases, without the stale check the
+late-diff case. Tests: `PaneClearingFlowTests`.
+
+---
+
+### TIA data blocks exported as SimaticML because the language was `DB`
+
+**Found 2026-08-22**, looking at CleaningStation in the project tree: 24 data blocks,
+23 of them instance DBs, every one a `NATIVE` `.xml`. Openness reports
+`ProgrammingLanguage` as `DB`, and `ExportBlock` only called `GenerateSource` when the
+language looked like SCL or was blank. A start-value table opened as a thousand-line
+SimaticML blob.
+
+`IGenerateSource` is on `PlcBlock`, including DBs. The header parser already knew
+`DATA_BLOCK`. The hole was the language gate, not a missing API.
+
+**Fix:** try `GenerateSource` for DBs too. The `.scl` is `SCL_REVIEW` (export-only, lock
+glyph); SimaticML stays `NATIVE` and is what import applies. Making the text importable
+first is how property accessors emptied on 2026-08-18, and instance-DB
+`GenerateBlocksFromSource` has not been walked against live Portal. The pane prefers
+`.scl` over `.xml` so the readable layer opens once a re-export has written it.
+
+**What was rejected:** treating DB source as `SCL` + `XML_REVIEW` (the function-block
+shape) without a mutating gate Fact. Rendering SimaticML in the diff without
+`GenerateSource` — that would be a second language for one object.
+
+---
+
 ### Two-line change rows were clipped into a 24 px tree row
 
 **Found 2026-08-21**, from a screenshot of the git panel: the filename of one row drew on top

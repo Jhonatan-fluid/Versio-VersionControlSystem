@@ -1058,13 +1058,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         // The diff pane, including which commit it was reading out of. A patch from the old
         // repository's history is not merely stale here — that commit does not exist.
-        SelectedDiff = string.Empty;
-        SelectedDiffPath = string.Empty;
-        _shownCommit = null;
-        _selectedDiffStaged = false;
+        ClearPane();
         ShowFullFile = false;
-        DiffLayers = [];
-        ClearRendered();
 
         // Handed back if this repository has one waiting. Empty otherwise, which is the point:
         // a message typed for one project must not be sitting in another project's box next to
@@ -1350,6 +1345,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
             _logger.Click($"Rail.{value}");
             OnPropertyChanged(nameof(PanelTitle));
+
+            // The pane shows what was picked in the panel being left, and that panel is
+            // gone from view: a diff from the changed list under the history, or a commit's
+            // patch under the explorer, answers a question nobody is looking at any more.
+            // Reported 2026-08-22 as "whenever I move panels I need that file to stop
+            // showing". The selections go with it, or the row could not be clicked again.
+            LeavePanel();
 
             // The history reads nothing until it is looked at, so it has to be told when
             // that happens. Everything else here is already loaded by the time the rail
@@ -4396,6 +4398,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             .CommitPatchAsync(commitId, CancellationToken.None, DiffContext)
             .ConfigureAwait(true);
 
+        // Same stale-result rule as ShowPathAsync: the pane may have moved on.
+        if (!string.Equals(SelectedDiffPath, caption, StringComparison.Ordinal))
+        {
+            return;
+        }
+
         SelectedDiff = string.IsNullOrWhiteSpace(patch)
             ? caption + Environment.NewLine + Environment.NewLine +
               "No patch to show. This is usually a merge commit, whose changes are a diff " +
@@ -4417,8 +4425,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // The commit is named in the header as well as the path. Without it this reads
         // identically to the working-tree diff of the same file, which is the one thing a
         // reviewer must not confuse it with.
-        SelectedDiffPath = $"{path} @ {shortId}";
-        _shownCommit = (commitId, shortId, SelectedDiffPath, path);
+        var header = $"{path} @ {shortId}";
+        SelectedDiffPath = header;
+        _shownCommit = (commitId, shortId, header, path);
         _selectedDiffStaged = false;
         CanStageHunks = false;
         DiffLayers = [];
@@ -4427,6 +4436,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         var patch = await _git
             .CommitFileDiffAsync(commitId, path, CancellationToken.None, DiffContext)
             .ConfigureAwait(true);
+
+        // Same stale-result rule as ShowPathAsync: the pane may have moved on.
+        if (!string.Equals(SelectedDiffPath, header, StringComparison.Ordinal))
+        {
+            return;
+        }
 
         SelectedDiff = string.IsNullOrWhiteSpace(patch)
             ? SelectedDiffPath + Environment.NewLine + Environment.NewLine +
@@ -5356,16 +5371,31 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 History.Invalidate();
             }
 
-            // The open diff is as stale as the list was. Reload it when the shown path's
-            // status moved, or when the refresh was triggered by a write to that very file.
+            // The open diff is as stale as the list was.
             //
-            // A diff read out of a commit is exempt: it is a patch that has already happened,
-            // and nothing in the working tree can change what it says.
-            if (_shownCommit is null &&
-                SelectedDiffPath is { Length: > 0 } shown &&
-                (changed.Contains(shown) || Touches(paths, shown)))
+            // If the shown path LEFT the list — committed, discarded, stashed — the pane
+            // empties. The row it was opened from is gone, and re-reading it, which is what
+            // this did until 2026-08-22, showed the whole file under a "no changes" note:
+            // at a glance, the change still being there. "Very often a file keeps showing
+            // even after it's committed" was that note being read as a diff.
+            //
+            // If it is still listed, reload it when its status moved, or when the refresh
+            // was triggered by a write to that very file.
+            //
+            // A diff read out of a commit is exempt from both: it is a patch that has already
+            // happened, and nothing in the working tree can change what it says.
+            if (_shownCommit is null && SelectedDiffPath is { Length: > 0 } shown)
             {
-                await ShowPathAsync(shown, _selectedDiffStaged).ConfigureAwait(true);
+                if (changed.Contains(shown) && !_lastChanges.Any(c =>
+                        string.Equals(c.Path, shown, StringComparison.Ordinal)))
+                {
+                    ClearPane();
+                    DropSelectionOf(shown);
+                }
+                else if (changed.Contains(shown) || Touches(paths, shown))
+                {
+                    await ShowPathAsync(shown, _selectedDiffStaged).ConfigureAwait(true);
+                }
             }
 
             // Automatic refreshes are the common case and mostly find nothing. Demoting
@@ -5808,6 +5838,76 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         RenderedContent = null;
         ShowRendered = false;
         PaneNote = string.Empty;
+    }
+
+    /// <summary>Empty the diff pane: no diff, no path, no commit, no layers, no rendered half.</summary>
+    /// <remarks>
+    /// One method because the pane's state is seven fields, and the two places that emptied
+    /// it before did so differently — the repository reset cleared them inline, and the rail
+    /// cleared none of them. The second is how a file picked in the changed list went on
+    /// showing under the history.
+    /// </remarks>
+    private void ClearPane()
+    {
+        SelectedDiff = string.Empty;
+        SelectedDiffPath = string.Empty;
+        _shownCommit = null;
+        _selectedDiffStaged = false;
+        CanStageHunks = false;
+        DiffLayers = [];
+        ClearRendered();
+    }
+
+    /// <summary>
+    /// Empty the pane and let go of whatever row fed it, in every panel.
+    /// </summary>
+    /// <remarks>
+    /// Every panel rather than the one being left, because the pane does not know which
+    /// one fed it and a stale selection in a panel nobody is looking at costs nothing to
+    /// drop. Dropping is not optional: a row left selected raises no selection change when
+    /// it is clicked again, so the pane would stay blank on the way back.
+    /// </remarks>
+    private void LeavePanel()
+    {
+        ClearPane();
+        SelectedPending = null;
+        SelectedConflict = null;
+        Sync.SelectedNode = null;
+        Explorer.SelectedNode = null;
+        History.ClearSelection();
+    }
+
+    /// <summary>Let go of any row that was showing <paramref name="path"/>.</summary>
+    /// <remarks>
+    /// The list half usually does this itself — WPF nulls <c>SelectedItem</c> when the row
+    /// leaves the list — but the tree keeps its row, and a shell driven without a view
+    /// keeps both. Matched on the file the row opens, because that is what the pane showed.
+    /// </remarks>
+    private void DropSelectionOf(string path)
+    {
+        if (string.Equals(SelectedPending?.Path, path, StringComparison.Ordinal))
+        {
+            SelectedPending = null;
+        }
+
+        if (string.Equals(SelectedConflict?.Path, path, StringComparison.Ordinal))
+        {
+            SelectedConflict = null;
+        }
+
+        if (Sync.SelectedNode is { } node && Opens(node, path))
+        {
+            Sync.SelectedNode = null;
+        }
+
+        if (Explorer.SelectedNode is { } entry && Opens(entry, path))
+        {
+            Explorer.SelectedNode = null;
+        }
+
+        static bool Opens(TreeRow row, string path) =>
+            string.Equals(row.PrimaryFile, path, StringComparison.Ordinal)
+            || string.Equals(row.Node.Path, path, StringComparison.Ordinal);
     }
 
     /// <summary>Build the rendered view for a tree row, or null when only raw makes sense.</summary>
@@ -6334,6 +6434,14 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 fromIndex = true;
                 diff = await _git.DiffAsync(path, staged: true, CancellationToken.None, context)
                     .ConfigureAwait(true);
+            }
+
+            // Dropped if the pane moved on while git was working: the rail left the panel,
+            // or another row was picked. Landing a late patch here would refill a pane that
+            // was just emptied, or answer a different question than the one now asked.
+            if (!string.Equals(SelectedDiffPath, path, StringComparison.Ordinal))
+            {
+                return;
             }
 
             _selectedDiffStaged = fromIndex;

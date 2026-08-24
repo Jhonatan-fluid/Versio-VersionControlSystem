@@ -1,6 +1,6 @@
 # Versio — status and what is next
 
-**Date:** 2026-08-21 · **This is the live page.** Where the project is, and what is next, live
+**Date:** 2026-08-22 · **This is the live page.** Where the project is, and what is next, live
 here and only here. Search [`FINDINGS.md`](FINDINGS.md) for defects. Completed plans and session
 handoffs are records in [`phase1/`](phase1/) and [`archive/`](archive/) — read them for why,
 never for state.
@@ -13,16 +13,16 @@ skip). That run is also the counted gate `LOCK-1` owed. After the eyeballs: UX-6
 UX-7 `Ctrl+F` / UX-8 / UX-12 (item 3), unless the owner picks packaging (item 5)
 instead. Do not start from `archive/` or a handoff.
 
-**Tests:** 2,722 across eleven projects, last counted 2026-08-21 after the single-list git panel
-(Core 1,463, App 624). The git panel is one CHANGES list: checkboxes pick the include set,
+**Tests:** 2,728 across eleven projects, last counted 2026-08-22 after TwinCAT create /
+rename / object-delete. The git panel is one CHANGES list: checkboxes pick the include set,
 Commit / Discard are the verbs, and a failed project no longer vetoes unrelated files.
 in-flight work including an import; Try again lights after cancel; close asks even during
 import; CODESYS.exe and git.exe die with Versio (Job Object); TIA/TwinCAT hosts watch the
 parent and Quit COM, and Stop reaps only the Portal/XAE PID this run created. TwinCAT XAE
-gate: 5 tests, **green in 3 m 4 s on
-2026-08-21** over I/O export-only — probe, export (`Devices/Devices.devices.yaml`, form
+gate: 6 tests, **green in 5 m 14 s on
+2026-08-22** over create / rename / object-delete — probe, export (`Devices/Devices.devices.yaml`, form
 `DEVICES`), two unchanged textual exports byte-identical including the yaml, import/re-export
-of an ST mutation and its deletion. TIA Portal gate: 5 tests,
+of an ST mutation and its deletion, plus a unique FB created, renamed, and removed. TIA Portal gate: 5 tests,
 **green in 9 m on 2026-08-20** (re-run after slot identity) including Comment `SetAttribute` on
 `*.devices.yaml`. The CODESYS gate last full run is **54/54, 2026-08-19 evening**. I/O export adds
 one live Fact (`Empty_IO_Link_slots_are_listed_in_the_parent_yaml_rather_than_colliding`);
@@ -41,14 +41,14 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 |---|---|---|---|
 | `Versio.Core.Tests` | 1,463 | under a second | nothing |
 | `Versio.Integration.Tests` | 155 | ~10 s | real git |
-| `Versio.App.Tests` | 624 | ~50 s | nothing |
+| `Versio.App.Tests` | 626 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 15 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 19 | instant | nothing |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 22 | instant | nothing |
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.TwinCat.Pure.Tests` | 21 | instant | nothing |
-| `Versio.Plc.TwinCat.Tests` | 5 | seconds when skipped; ~3 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
+| `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped; ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
 | `Versio.Plc.Codesys.Tests` | 55 | **~30 min** | **real CODESYS** |
 
 The first ten are the loop to work in — about thirty seconds plus the UI suite. The last is
@@ -96,16 +96,19 @@ when the parent dies, and Stop reaps only the Portal/XAE PID this run created.
 - **TIA Portal** — the same product loop for SCL, UDTs and tag tables, through a net48 Openness
   host. PLC-software loop closed 2026-08-19 on `Siemens2`. Hardware **Comment** catalogs
   (`*.devices.yaml`, form `DEVICE_COMMENT`) ship 2026-08-20: export plus `SetAttribute`
-  with verify-before-Save; never PlugNew. This fixture has no port-to-port partners.
+  with verify-before-Save; never PlugNew. **Data blocks 2026-08-22:** `GenerateSource` to
+  `*.scl` (`SCL_REVIEW`, export-only); SimaticML stays the import. Re-export to see them.
+  This fixture has no port-to-port partners.
   HMI, safety and technology stay coverage skips. Gate fixture:
   `fixtures/projects/CleaningStation_V20_V21/` (Git LFS). Never the
   OneDrive original. Session notes: [`archive/HANDOFF-Siemens2.md`](archive/HANDOFF-Siemens2.md).
 - **TwinCAT 3** — the same product loop for ST, through a net9 COM host into
-  `TcXaeShell.DTE.17.0`. **Gated 2026-08-19, re-gated 2026-08-20** after the hardening
-  pass: probe, export, two unchanged `.st` files byte-identical, ST overwrite and the
-  inverse deletion. Destructive import actions are identity-only and hash-verified
-  against the last export since 2026-08-20; the conversion check fails closed. Create /
-  object-delete / rename are in the planner and host, not an XAE Fact yet. 4024.4
+  `TcXaeShell.DTE.17.0`. **Gated 2026-08-19, re-gated 2026-08-22** after create /
+  rename / object-delete: probe, export, two unchanged `.st` files byte-identical, ST
+  overwrite and the inverse deletion, plus a unique FB created, renamed, and removed.
+  Destructive import actions are identity-only and hash-verified
+  against the last export since 2026-08-20; the conversion check fails closed. Folder
+  move is still Name-only, not an XAE Fact. 4024.4
   opened on 4026.25 only as a disposable `%TEMP%` copy. **I/O catalogs 2026-08-21:**
   `Devices/Devices.devices.yaml` (form `DEVICES`, export-only). Comment set in-session
   and showed in `ProduceXml`; it does not persist through Save. Never CreateChild.
@@ -176,10 +179,11 @@ One list. Reorder it; do not copy it into another file.
 7. **Not this queue.** TIA HMI / safety (`F_*`) / technology / know-how-protected
    import / compile-after-import / VCI / Project Server. TIA **hardware** Comment
    apply shipped 2026-08-20 ([`vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md) §4.4);
-   PlugNew and topology stay off this queue. TwinCAT I/O **export** catalogs shipped
-   2026-08-21 ([`vendors/twincat/DRIVING.md`](vendors/twincat/DRIVING.md) §4.5);
-Comment apply, CreateChild, mappings, NC / safety / C++ / visualisation stay off this queue,
-   plus create / object-delete / rename Facts and folder move —
+   PlugNew and topology stay off this queue. TIA data-block SCL is export-only
+   (`SCL_REVIEW`); instance-DB generate-from-source is unmeasured. TwinCAT I/O **export** catalogs shipped
+   2026-08-21 ([`vendors/twincat/DRIVING.md`](vendors/twincat/DRIVING.md) §4.5).
+   Comment apply, mappings, NC / safety / C++ / visualisation stay off this queue,
+   plus TwinCAT folder move (host still only sets `Name`) —
    [`vendors/twincat/DRIVING.md`](vendors/twincat/DRIVING.md) §9.
    `_coverage.md` names the skips. They are `SERVICE_OBJECT`. ~~GUI occupancy with a
    Portal window (no Openness) was not separately measured~~ — **measured 2026-08-19 evening:
@@ -196,6 +200,10 @@ Close Versio **and** Portal before a host rebuild. Click **Yes to all** on Openn
 ---
 
 ## Known limitations, carried deliberately
+
+- **TIA data-block SCL is export-only.** `*.scl` beside a DB is `SCL_REVIEW`: readable,
+  lock glyph, never applied back. Change start values in Portal or in the SimaticML.
+  Instance-DB `GenerateBlocksFromSource` is unmeasured (23 of CleaningStation's 24).
 
 - **Library references are export-only.** Editing `Library Manager.libraries.yaml` changes
   nothing in the project. The changed-files row carries a lock glyph saying so.

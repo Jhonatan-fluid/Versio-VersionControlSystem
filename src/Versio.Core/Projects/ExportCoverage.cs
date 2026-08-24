@@ -348,6 +348,29 @@ public static class ExportCoverage
     public const string NativeReviewForm = "XML_REVIEW";
 
     /// <summary>
+    /// The manifest's <c>form</c> for textual source kept for review when the native
+    /// payload is still the importable half.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The inverse of <see cref="NativeReviewForm"/>. An SCL function block imports from
+    /// <c>.scl</c> and keeps SimaticML as review; a TIA data block is the other way
+    /// around. Openness reports its language as <c>DB</c>, so the exporter used to skip
+    /// <c>GenerateSource</c> and leave 24 objects as opaque XML. The source is what a
+    /// person can read. Applying it back through <c>GenerateBlocksFromSource</c> has not
+    /// been measured on instance DBs — 23 of CleaningStation's 24 — and making property
+    /// text importable first emptied every accessor (2026-08-18). XML stays <c>NATIVE</c>
+    /// until that round-trip exists.
+    /// </para>
+    /// <para>
+    /// Same home as the other one-way forms, for the same reason: the lock glyph and the
+    /// planner must not invent a second list. Not in the CODESYS python table; that
+    /// vendor does not write this form.
+    /// </para>
+    /// </remarks>
+    public const string SclReviewForm = "SCL_REVIEW";
+
+    /// <summary>
     /// True for a manifest <c>form</c> whose file is written for review and never applied back.
     /// </summary>
     /// <remarks>
@@ -373,7 +396,8 @@ public static class ExportCoverage
         || string.Equals(form, GvlNativeForm, StringComparison.Ordinal)
         || string.Equals(form, ExternalNativeForm, StringComparison.Ordinal)
         || string.Equals(form, PropertyTextForm, StringComparison.Ordinal)
-        || string.Equals(form, NativeReviewForm, StringComparison.Ordinal);
+        || string.Equals(form, NativeReviewForm, StringComparison.Ordinal)
+        || string.Equals(form, SclReviewForm, StringComparison.Ordinal);
 
     /// <summary>
     /// True when the file describes a device that must not be created, renamed or

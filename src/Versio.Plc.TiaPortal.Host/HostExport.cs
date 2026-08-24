@@ -73,6 +73,7 @@ internal static partial class HostApp
         md.AppendLine("HMI, safety programs and technology objects are coverage skips.");
         md.AppendLine("Know-how-protected blocks export for review only and are not imported.");
         md.AppendLine("SimaticML beside an SCL file is XML_REVIEW (G12) — never applied back.");
+        md.AppendLine("Data blocks emit *.scl when GenerateSource succeeds (SCL_REVIEW; SimaticML stays the import).");
         File.WriteAllText(Path.Combine(outDir, "_coverage.md"), md.ToString(), new UTF8Encoding(false));
     }
     private static void WalkBlocks(
@@ -154,9 +155,17 @@ internal static partial class HostApp
         // GenerateSource still worked, the next export keyed off ProgrammingLanguage
         // and wrote no .scl. Treat any language that names SCL / Structured Text the
         // same, and still try GenerateSource when the property is blank.
+        //
+        // Data blocks report ProgrammingLanguage "DB", which is neither SCL nor blank.
+        // CleaningStation's 24 DBs therefore never called GenerateSource and landed as
+        // SimaticML only — the panel opened a thousand-line XML blob for a start-value
+        // table. Try it for DBs too. The .scl is SCL_REVIEW (export-only): instance-DB
+        // GenerateBlocksFromSource is unmeasured, and making property text importable
+        // first emptied every accessor. Literal must match ExportCoverage.SclReviewForm.
         var sclPath = Path.Combine(dir, Sanitize(name) + ".scl");
         var wroteScl = false;
-        if (LooksLikeScl(language) || language.Length == 0)
+        var dataBlock = IsDataBlock(typeName, language);
+        if (LooksLikeScl(language) || language.Length == 0 || dataBlock)
         {
             try
             {
@@ -170,9 +179,19 @@ internal static partial class HostApp
 
         if (wroteScl)
         {
-            Record(objects, guid, name, typeName, "SCL", RelTo(sclPath), HashTextFile(sclPath));
-            Record(objects, guid, name, typeName, "XML_REVIEW", RelTo(xmlPath), HashFile(xmlPath),
-                nhash: HashNormalized(xml));
+            if (dataBlock)
+            {
+                Record(objects, guid, name, typeName, "SCL_REVIEW", RelTo(sclPath), HashTextFile(sclPath));
+                Record(objects, guid, name, typeName, "NATIVE", RelTo(xmlPath), HashFile(xmlPath),
+                    nhash: HashNormalized(xml));
+            }
+            else
+            {
+                Record(objects, guid, name, typeName, "SCL", RelTo(sclPath), HashTextFile(sclPath));
+                Record(objects, guid, name, typeName, "XML_REVIEW", RelTo(xmlPath), HashFile(xmlPath),
+                    nhash: HashNormalized(xml));
+            }
+
             Emit("object", "path", RelTo(sclPath), "guid", guid);
         }
         else
@@ -375,6 +394,10 @@ internal static partial class HostApp
         language.IndexOf("SCL", StringComparison.OrdinalIgnoreCase) >= 0
         || language.IndexOf("StructuredText", StringComparison.OrdinalIgnoreCase) >= 0
         || language.IndexOf("Structured Text", StringComparison.OrdinalIgnoreCase) >= 0;
+
+    private static bool IsDataBlock(string typeName, string language) =>
+        string.Equals(typeName, "DB", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(language, "DB", StringComparison.OrdinalIgnoreCase);
 
     private static void ExportXml(object item, string dest)
     {

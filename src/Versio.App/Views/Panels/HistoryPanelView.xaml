@@ -71,6 +71,11 @@
                            BasedOn="{StaticResource TreeRowItem}">
                         <Setter Property="IsExpanded"
                                 Value="{Binding IsExpanded, Mode=TwoWay}" />
+                        <!-- Two-way so the shell can DESELECT when the rail leaves
+                             the panel; SelectedItem is read-only and cannot. Both
+                             row types carry the flag. -->
+                        <Setter Property="IsSelected"
+                                Value="{Binding IsSelected, Mode=TwoWay}" />
                     </Style>
                 </TreeView.ItemContainerStyle>
 
