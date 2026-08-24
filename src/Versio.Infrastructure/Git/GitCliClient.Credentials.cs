@@ -140,7 +140,8 @@ public sealed partial class GitCliClient
     /// and the next one will ask again anyway.
     /// </para>
     /// </remarks>
-    public async Task<string> LsRemoteAsync(string remote, string branch, CancellationToken ct)
+    public async Task<RemoteBranchProbe> LsRemoteAsync(
+        string remote, string branch, CancellationToken ct)
     {
         var result = await RunAsync(
             ["ls-remote", "--heads", remote, $"refs/heads/{branch}"],
@@ -148,15 +149,21 @@ public sealed partial class GitCliClient
 
         if (!result.Success)
         {
-            return string.Empty;
+            return RemoteBranchProbe.NoAnswer;
         }
 
         // "<sha>\trefs/heads/<branch>". No line at all means the branch is not on the remote,
-        // which is an answer rather than a failure.
+        // which is an answer rather than a failure - the exit code is what tells those two
+        // apart, and collapsing them into one empty string is how a deleted upstream used to
+        // read as an unreachable remote (FINDINGS 2026-08-23).
         var line = result.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries)
                                 .FirstOrDefault();
 
-        return line?.Split('\t', ' ')[0].Trim() ?? string.Empty;
+        return new RemoteBranchProbe
+        {
+            Answered = true,
+            Head = line?.Split('\t', ' ')[0].Trim() ?? string.Empty,
+        };
     }
 
     /// <summary>List refs on the remote matching a pattern, transferring no objects.</summary>

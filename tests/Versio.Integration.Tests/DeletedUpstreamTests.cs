@@ -91,6 +91,29 @@ public sealed class DeletedUpstreamTests(ITestOutputHelper output) : IDisposable
     }
 
     [SkippableFact]
+    public async Task The_probe_tells_a_deleted_branch_from_an_unanswering_remote()
+    {
+        // The distinction RemoteBranchProbe exists to carry, produced by real git: a deleted
+        // branch is success-with-no-rows (an answer), an unreachable remote is a failure
+        // (nothing learned). Collapsed into one empty string, the poller counted a merged
+        // branch as five unreachable probes and halted the watch.
+        Setup();
+        Git(Remote, "update-ref -d refs/heads/feature");
+
+        var gone = await Client.LsRemoteAsync("origin", "feature", CancellationToken.None);
+        Assert.True(gone.Answered);
+        Assert.False(gone.BranchExists);
+
+        var alive = await Client.LsRemoteAsync("origin", "main", CancellationToken.None);
+        Assert.True(alive.BranchExists);
+
+        // .invalid cannot resolve (RFC 2606), so this is a genuine no-answer, quickly.
+        Git(Work, "remote add dead https://versio-nothing-here.invalid/x/y.git");
+        var none = await Client.LsRemoteAsync("dead", "feature", CancellationToken.None);
+        Assert.False(none.Answered);
+    }
+
+    [SkippableFact]
     public async Task A_healthy_upstream_survives_the_pruning_fetch()
     {
         // The other half of adding --prune to every fetch: it must only drop refs whose

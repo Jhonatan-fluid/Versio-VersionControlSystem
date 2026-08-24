@@ -127,7 +127,9 @@ public sealed class GitRemoteViewModel : ObservableObject, IDisposable
 
         // Pull is enabled whenever an upstream exists, NOT only when behind. Behind-ness is
         // as fresh as the last fetch, and disabling a safe fast-forward on stale knowledge
-        // would leave somebody unable to act on a remote that moved a second ago.
+        // would leave somebody unable to act on a remote that moved a second ago. The one
+        // exception is an upstream that is gone from the remote, where a pull can only fail
+        // - CanPull's own remarks carry that reasoning.
         PullCommand = new AsyncCommand(
             PullAsync, () => ready() && Standing.CanPull, reportError);
 

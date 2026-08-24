@@ -108,6 +108,31 @@ public sealed record GitStatus
         Changes.Where(c => c.Unstaged is not ChangeKind.Unmodified);
 }
 
+/// <summary>What <c>ls-remote</c> said about one branch on the remote.</summary>
+/// <remarks>
+/// A string could not carry the distinction that matters: <c>ls-remote</c> succeeding with no
+/// output means <i>the branch is not there</i> — an answer, from a remote that is reachable
+/// and let us in — while the command failing means nothing was learned at all. For as long as
+/// this was a string the poller collapsed both into one emptiness and treated a deleted
+/// upstream as an unreachable remote, feeding the circuit breaker until the watch halted over
+/// a remote that was answering perfectly well (FINDINGS 2026-08-23).
+/// </remarks>
+public sealed record RemoteBranchProbe
+{
+    /// <summary>True when the remote answered, whatever the answer was.</summary>
+    public required bool Answered { get; init; }
+
+    /// <summary>The commit the branch points at. Empty when the branch is not on the
+    /// remote, or when there was no answer.</summary>
+    public string Head { get; init; } = string.Empty;
+
+    /// <summary>True when the remote answered and the branch is there.</summary>
+    public bool BranchExists => Answered && Head.Length > 0;
+
+    /// <summary>Nothing was learned: no connection, no credentials, or no permission.</summary>
+    public static readonly RemoteBranchProbe NoAnswer = new() { Answered = false };
+}
+
 /// <summary>The raw result of one <c>git</c> invocation.</summary>
 public sealed record GitResult
 {

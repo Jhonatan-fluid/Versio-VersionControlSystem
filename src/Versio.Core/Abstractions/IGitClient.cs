@@ -164,11 +164,11 @@ public interface IGitClient
     /// download. A real fetch runs only when this says the remote has actually moved.
     /// </para>
     /// <para>
-    /// Empty when the branch is not on the remote, which is an answer rather than a failure —
-    /// a branch that has never been published has nothing there to compare against.
+    /// The answer distinguishes "the branch is not there" from "the remote did not answer" —
+    /// see <see cref="RemoteBranchProbe"/> for why a string could not.
     /// </para>
     /// </remarks>
-    Task<string> LsRemoteAsync(string remote, string branch, CancellationToken ct);
+    Task<RemoteBranchProbe> LsRemoteAsync(string remote, string branch, CancellationToken ct);
 
     /// <summary>
     /// Resolve a revision to a commit id, locally.

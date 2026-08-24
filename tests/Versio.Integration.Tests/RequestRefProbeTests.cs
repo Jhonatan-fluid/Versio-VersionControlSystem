@@ -110,9 +110,11 @@ public sealed class RequestRefProbeTests(ITestOutputHelper output) : IDisposable
         var tip = (await Client.RevParseAsync("main", CancellationToken.None)).Trim();
         Git(Remote, $"update-ref refs/pull/7/head {tip}");
 
-        Assert.Equal(
-            string.Empty,
-            (await Client.LsRemoteAsync("origin", "pull/7/head", CancellationToken.None)).Trim());
+        var probe = await Client.LsRemoteAsync("origin", "pull/7/head", CancellationToken.None);
+
+        // The remote answered - the namespace is simply invisible to a --heads probe.
+        Assert.True(probe.Answered);
+        Assert.False(probe.BranchExists);
     }
 
     [SkippableFact]
