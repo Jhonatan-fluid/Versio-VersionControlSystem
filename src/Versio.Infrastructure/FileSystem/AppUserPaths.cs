@@ -56,6 +56,15 @@ public static class AppUserPaths
         Migrate(LegacyRoot, Root);
 
     /// <summary>The same copy, with roots a test can point at a temp tree.</summary>
+    /// <remarks>
+    /// <b>Best-effort on purpose — a rescue must not become the thing that needs rescuing.</b>
+    /// This runs inside <c>OnStartup</c> and two constructors, and two ordinary situations
+    /// make a copy fail: an older build still running holds today's log open, and two new
+    /// instances launching at once both pass the exists-check before one of them copies.
+    /// An exception here is a Versio that will not open, on exactly the machines the
+    /// migration exists to rescue — and a file skipped this launch is copied on the next,
+    /// because the originals are never deleted.
+    /// </remarks>
     public static void Migrate(string legacyRoot, string userRoot)
     {
         if (string.IsNullOrEmpty(legacyRoot) || string.IsNullOrEmpty(userRoot))
@@ -71,38 +80,59 @@ public static class AppUserPaths
             return;
         }
 
+        // Not guarded: if the durable root cannot be created, the settings store and the
+        // log sink fail on the same path a moment later, and THAT failure should surface.
         Directory.CreateDirectory(userRoot);
+
         CopyIfMissing(
             Path.Combine(legacyRoot, "settings.json"),
             Path.Combine(userRoot, "settings.json"));
 
-        var legacyLogs = Path.Combine(legacyRoot, "logs");
-        var userLogs = Path.Combine(userRoot, "logs");
-        if (!Directory.Exists(legacyLogs))
+        try
         {
-            return;
-        }
+            var legacyLogs = Path.Combine(legacyRoot, "logs");
+            var userLogs = Path.Combine(userRoot, "logs");
+            if (!Directory.Exists(legacyLogs))
+            {
+                return;
+            }
 
-        Directory.CreateDirectory(userLogs);
-        foreach (var file in Directory.EnumerateFiles(legacyLogs, "*.log"))
+            Directory.CreateDirectory(userLogs);
+            foreach (var file in Directory.EnumerateFiles(legacyLogs, "*.log"))
+            {
+                CopyIfMissing(file, Path.Combine(userLogs, Path.GetFileName(file)));
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            CopyIfMissing(file, Path.Combine(userLogs, Path.GetFileName(file)));
+            // Enumeration itself can fail on a directory an installer is mid-way through
+            // deleting. Old logs are the least valuable thing this copies; startup is not
+            // traded for them.
         }
     }
 
     private static void CopyIfMissing(string source, string destination)
     {
-        if (!File.Exists(source) || File.Exists(destination))
+        try
         {
-            return;
-        }
+            if (!File.Exists(source) || File.Exists(destination))
+            {
+                return;
+            }
 
-        var parent = Path.GetDirectoryName(destination);
-        if (!string.IsNullOrEmpty(parent))
+            var parent = Path.GetDirectoryName(destination);
+            if (!string.IsNullOrEmpty(parent))
+            {
+                Directory.CreateDirectory(parent);
+            }
+
+            File.Copy(source, destination);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            Directory.CreateDirectory(parent);
+            // A source held open by an older running build, or a destination another
+            // instance created between the check and the copy. Both self-resolve: the
+            // next launch copies what this one could not.
         }
-
-        File.Copy(source, destination);
     }
 }

@@ -62,6 +62,37 @@ public sealed class AppUserPathsTests : IDisposable
     }
 
     [Fact]
+    public void A_source_file_held_open_by_an_older_build_is_skipped_rather_than_fatal()
+    {
+        // The realistic worst case: an older Versio is still running while the new build
+        // migrates, and it holds today's log open exclusively. Migrate runs inside
+        // OnStartup and two constructors, so a throw here is an app that will not open -
+        // on exactly the machines the migration exists to rescue.
+        var legacy = Path.Combine(_root, "legacy");
+        var user = Path.Combine(_root, "user");
+        Directory.CreateDirectory(Path.Combine(legacy, "logs"));
+        File.WriteAllText(Path.Combine(legacy, "settings.json"), "{}");
+        var lockedLog = Path.Combine(legacy, "logs", "versio-held.log");
+        File.WriteAllText(lockedLog, "held");
+        var freeLog = Path.Combine(legacy, "logs", "versio-free.log");
+        File.WriteAllText(freeLog, "free");
+
+        using (File.Open(lockedLog, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            AppUserPaths.Migrate(legacy, user);
+        }
+
+        // Everything the lock did not cover still arrived; the held file waits for the
+        // next launch, because the originals are never deleted.
+        Assert.True(File.Exists(Path.Combine(user, "settings.json")));
+        Assert.True(File.Exists(Path.Combine(user, "logs", "versio-free.log")));
+        Assert.False(File.Exists(Path.Combine(user, "logs", "versio-held.log")));
+
+        AppUserPaths.Migrate(legacy, user);
+        Assert.True(File.Exists(Path.Combine(user, "logs", "versio-held.log")));
+    }
+
+    [Fact]
     public void Migrate_is_a_no_op_when_there_is_nothing_to_copy()
     {
         var user = Path.Combine(_root, "empty-user");
