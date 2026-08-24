@@ -118,7 +118,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | **Project tree** — CODESYS structure, roll-up badges, search | ✅ 34 unit tests + built from the export this repository commits |
 | **Methods and properties under the object that owns them** | ✅ manifest schema 4 records each member's owner GUID and the tree nests by it — a chain, since a property owns its accessors. Before this a function block's methods were its siblings, and four `InitRoom` methods on four different rooms were four rows in one folder. A mirror exported earlier carries no parents and stays flat until it is re-exported |
 | **Library and task rows, layer chips, context menu** | ✅ one node per library reference, task, device parameter and empty slot; chips in the diff header for ST / native / tasks / libraries / devices; a themed context menu on changed rows. Device YAML is export-only |
-| Packaging | ✅ `Build_Package.bat` produces unsigned `Setup.exe` and a per-machine MSI. PortableGit, .NET 9 and both vendor hosts ship in the payload. CODESYS / Portal / XAE are detected, never bundled. Signing and the update feed are still open. |
+| Packaging | ✅ `Build_Package.bat` produces unsigned `Setup.exe` and a per-machine MSI. It asks how to bump `VersioVersion` first. PortableGit, .NET 9 and both vendor hosts ship in the payload. CODESYS / Portal / XAE are detected, never bundled. Signing and the update feed are still open. |
 
 **[docs/STATUS.md](docs/STATUS.md)** has the current state and what is next — the only live
 status page.
@@ -368,7 +368,8 @@ That is not tidiness for its own sake — it is what makes the risky parts (the 
 | git | 2.x with `git-lfs`, **on `PATH` for a development F5 build**. The installer payload
   ships PortableGit (`git\cmd\git.exe`) so a packaged machine does not need Git for Windows.
   `Build_Package.bat` at the repo root publishes that payload and packs `Setup.exe` plus a
-  per-machine MSI. |
+  per-machine MSI. It asks how to bump the product version (`Directory.Build.props`
+  `VersioVersion`) before packing; Settings → Help → System information shows that number. |
 | CODESYS | 3.5 SP22 — **`Versio.Plc.Codesys.Tests` only**; the fast loop needs none |
 | TIA Portal | Openness membership — **`Versio.Plc.TiaPortal.Tests` only**; skips cleanly without it |
 | TwinCAT 3 | `TcXaeShell.DTE.17.0` — **`Versio.Plc.TwinCat.Tests` only**; skips cleanly without it |
@@ -393,8 +394,8 @@ dotnet test tests/Versio.Core.Tests
 |---|---|---|---|
 | `Versio.Core.Tests` | 1,469 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
 | `Versio.Integration.Tests` | 162 | a real `git.exe` and the real filesystem | ~10 s |
-| `Versio.Arch.Tests` | 24 | nothing — it reads assembly metadata, IL, and the project files | instant |
-| `Versio.App.Tests` | 644 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
+| `Versio.Arch.Tests` | 27 | nothing — it reads assembly metadata, IL, and the project files | instant |
+| `Versio.App.Tests` | 645 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | nothing — the vendor's planner, codecs and protocol, pure | under a second |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 22 | nothing — format, planner, protocol, scrubber | instant |

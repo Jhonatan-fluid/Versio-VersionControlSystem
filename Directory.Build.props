@@ -8,9 +8,13 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
 
-    <!-- Single source of truth for version. Flows to assembly metadata and the installer. -->
-    <VersioVersion>0.1.0</VersioVersion>
+    <!-- Single source of truth for version. Flows to assembly metadata and the installer.
+         Pack-Versio.ps1 writes this before publish so Setup.exe and System information agree. -->
+    <VersioVersion>0.1.1</VersioVersion>
     <Version>$(VersioVersion)</Version>
+    <!-- Without this the SDK appends +githash, and System information would not match
+         the number vpk packed. -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Company>Versio</Company>
     <Product>Versio</Product>
 

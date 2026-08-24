@@ -115,4 +115,40 @@ public sealed class PackagingManifestTests
         Assert.Contains("PortableGit cache ok", text, StringComparison.Ordinal);
         Assert.Contains("already in third_party\\cache\\vpk", text, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Pack_asks_how_to_bump_VersioVersion()
+    {
+        var text = File.ReadAllText(Path.Combine(TestPaths.Root, "tools", "pack", "Pack-Versio.ps1"));
+        Assert.Contains("Last number (patch)", text, StringComparison.Ordinal);
+        Assert.Contains("Middle (minor)", text, StringComparison.Ordinal);
+        Assert.Contains("First (major)", text, StringComparison.Ordinal);
+        Assert.Contains("Keep", text, StringComparison.Ordinal);
+        Assert.Contains("Type one", text, StringComparison.Ordinal);
+        Assert.Contains("function Set-VersioVersion", text, StringComparison.Ordinal);
+        Assert.Contains("[string] $Version", text, StringComparison.Ordinal);
+        Assert.Contains("[System.IO.File]::WriteAllText", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void VersioVersion_is_the_single_source_and_has_no_git_suffix()
+    {
+        var text = File.ReadAllText(Path.Combine(TestPaths.Root, "Directory.Build.props"));
+        Assert.Contains("<VersioVersion>", text, StringComparison.Ordinal);
+        Assert.Contains(
+            "<IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>",
+            text,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void System_information_uses_the_informational_product_version()
+    {
+        var shell = File.ReadAllText(
+            Path.Combine(TestPaths.Root, "src", "Versio.App", "ViewModels", "ShellViewModel.cs"));
+        var startup = File.ReadAllText(
+            Path.Combine(TestPaths.Root, "src", "Versio.App", "App.xaml.cs"));
+        Assert.Contains("new(\"Version\", AppVersion.Display)", shell, StringComparison.Ordinal);
+        Assert.Contains("Versio {AppVersion.Display} starting", startup, StringComparison.Ordinal);
+    }
 }

@@ -1240,7 +1240,8 @@ keys). F5 refreshes. Ctrl+Enter commits from the message box. Ctrl+Shift+P pushe
 repositories. A vanished recent repo offers clone-again / remove / cancel, not a blank
 folder picker. Startup falls back to the most recent path still on disk.
 
-**System information.** Settings → Help: toolchain, git version, profile. A failure sits
+**System information.** Settings → Help: Versio product version (the same `VersioVersion`
+the installer packed), toolchain, git version, profile. A failure sits
 on the **project row** with Try again. No permanently disabled buttons.
 
 **Prompts.** `NotificationCenter`, `WindowPrompts`, `GuardPromptWindow`,

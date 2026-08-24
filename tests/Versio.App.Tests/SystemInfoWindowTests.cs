@@ -1,6 +1,9 @@
 using System.Windows;
 using System.Windows.Controls;
+using Versio.App.ViewModels;
 using Versio.App.Views;
+using Versio.Core.Logging;
+using Versio.Infrastructure.Platform;
 using Xunit;
 
 namespace Versio.App.Tests;
@@ -79,5 +82,27 @@ public sealed class SystemInfoWindowTests
             Assert.IsType<BooleanToVisibilityConverter>(
                 Application.Current.Resources["BoolToVisibility"]);
         });
+    }
+
+    [Fact]
+    public async Task The_versio_version_row_is_the_product_number()
+    {
+        // Assembly.GetName().Version is four-part (0.1.0.0). The installer and
+        // Directory.Build.props are three-part. Informational version is the one
+        // a human comparing Setup.exe to this dialog can actually match.
+        var sink = new InMemoryLogSink();
+        var logger = new VersioLogger(new SystemClock()).AddSink(sink);
+        using var shell = new ShellViewModel(
+            logger, new LogViewModel(sink), toolchains: (_, _) => null);
+
+        var rows = await shell.BuildSystemInfoAsync(CancellationToken.None);
+        var header = Array.FindIndex(rows.ToArray(), r => r.IsHeader && r.Label == "VERSIO");
+        Assert.True(header >= 0, "VERSIO section is missing");
+        var version = rows[header + 1];
+
+        Assert.Equal("Version", version.Label);
+        Assert.Equal(global::Versio.App.AppVersion.Display, version.Value);
+        Assert.Matches(@"^\d+\.\d+\.\d+$", version.Value);
+        Assert.DoesNotContain('+', version.Value);
     }
 }

@@ -1810,16 +1810,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// <remarks>
     /// Assembled here rather than in the window, so what goes in it is decided somewhere
     /// testable and the window stays a list of rows it was handed. The git version is asked of
-    /// git itself: the one on PATH is the one Versio will use, and "which git" is a question
-    /// that has caused real confusion on machines with several.
+    /// git itself: bundled PortableGit when the installer put it there, otherwise PATH. "Which
+    /// git" has caused real confusion on machines with several. The Versio product version is
+    /// <see cref="AppVersion.Display"/>, not <c>Assembly.GetName().Version</c>, so this window
+    /// and the installer name the same number.
     /// </remarks>
     public async Task<IReadOnlyList<Views.SystemInfoRow>> BuildSystemInfoAsync(CancellationToken ct)
     {
         var rows = new List<Views.SystemInfoRow>
         {
             Views.SystemInfoRow.Section("VERSIO"),
-            new("Version", typeof(ShellViewModel).Assembly.GetName().Version?.ToString()
-                           ?? "unknown"),
+            new("Version", AppVersion.Display),
             new("Repository", RepositoryPath ?? "none open"),
             new("Logs", FileLogDirectory ?? "not writing to disk"),
         };

@@ -14,9 +14,8 @@ skip). That run is also the counted gate `LOCK-1` owed. Item 5 (packaging) has u
 eyeballs: UX-6 / UX-7 `Ctrl+F` / UX-8 / UX-12 (item 3). Do not start from `archive/`
 or a handoff.
 
-**Tests:** 2,768 across eleven projects, last counted 2026-08-24 after the packaging
-audit (migration crash-guard, fresh TIA payload, the Velopack/vpk version pact —
-FINDINGS 2026-08-24). The git panel is one CHANGES list: checkboxes pick the include set,
+**Tests:** 2,772 across eleven projects, last counted 2026-08-24 (Arch +3 version-bump
+pins, App +1 System information product version). The git panel is one CHANGES list: checkboxes pick the include set,
 Commit / Discard are the verbs, and a failed project no longer vetoes unrelated files.
 in-flight work including an import; Try again lights after cancel; close asks even during
 import; CODESYS.exe and git.exe die with Versio (Job Object); TIA/TwinCAT hosts watch the
@@ -43,8 +42,8 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 |---|---|---|---|
 | `Versio.Core.Tests` | 1,469 | under a second | nothing |
 | `Versio.Integration.Tests` | 162 | ~10 s | real git |
-| `Versio.App.Tests` | 644 | ~50 s | nothing |
-| `Versio.Arch.Tests` | 24 | instant | nothing |
+| `Versio.App.Tests` | 645 | ~50 s | nothing |
+| `Versio.Arch.Tests` | 27 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 22 | instant | nothing |
@@ -136,8 +135,10 @@ already on disk, publishes a self-contained win-x64 payload (git, both vendor ho
 .NET 9), and packs. Bundled git pins Git Credential Manager so PortableGit's
 helper-selector does not ask on every fill. Settings and logs live in
 `%LOCALAPPDATA%\VersioUser\`, not in the Velopack install directory, so a reinstall
-does not wipe the recent-repository list. Re-packing the same `VersioVersion` overwrites
-yesterday's `artifacts/releases` (`vpk --legacyConsole --yes`) — it is not a newer Git download. Signing and
+does not wipe the recent-repository list. `Build_Package.bat` asks how to bump
+`VersioVersion` (last / middle / first number, keep, or type one) before packing;
+System information shows that product version. Re-packing the same number still
+overwrites `artifacts/releases` (`vpk --legacyConsole --yes`). Signing and
 the update feed are still open. The CODESYS gate ran on `Siemens2` (item 1, done). Owner eyeballs
 and the UX remainder are still the product remainder beside this.
 
@@ -179,8 +180,10 @@ One list. Reorder it; do not copy it into another file.
    mirror disagrees with (41 mirror files, two carrying content the kept project did not have);
    `LOCK-1` pointed the lock at import so the export gate cannot win that race.
 5. **Packaging.** Unsigned `Setup.exe` and per-machine MSI from `Build_Package.bat`.
-   PortableGit is bundled (decision 3, closed). **Code signing** and the update feed
-   remain. Sequenced last on 2026-08-17, on purpose; first artifacts 2026-08-23.
+   The bat asks how to bump `VersioVersion` (last / middle / first number, keep, or type
+   one). System information shows that product version. PortableGit is bundled (decision 3,
+   closed). **Code signing** and the update feed remain. Sequenced last on 2026-08-17, on
+   purpose; first artifacts 2026-08-23.
 6. **Wait for a specimen, not a build.** C5 (`DELETE_UNREADABLE`) and `native_partial` close when
    reality produces an object nobody has observed. They cannot be manufactured. See
    [`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md).

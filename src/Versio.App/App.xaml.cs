@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 using System.Windows;
 using Versio.App.Spikes;
 using Versio.App.Theme;
@@ -320,13 +319,7 @@ public partial class App : Application
     /// </remarks>
     private static void LogStartupBanner(VersioLogger logger, string[] args)
     {
-        var assembly = Assembly.GetExecutingAssembly();
-        var version = assembly
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
-            ?? assembly.GetName().Version?.ToString()
-            ?? "unknown";
-
-        logger.Info(LogCategory.App, $"Versio {version} starting");
+        logger.Info(LogCategory.App, $"Versio {AppVersion.Display} starting");
         logger.Info(LogCategory.App,
             $"{Environment.OSVersion.VersionString}, .NET {Environment.Version}, " +
             $"{(Environment.Is64BitProcess ? "x64" : "x86")} process, " +

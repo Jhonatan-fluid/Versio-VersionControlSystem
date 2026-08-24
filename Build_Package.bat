@@ -11,14 +11,6 @@ if "%REPO:~-1%"=="\" set "REPO=%REPO:~0,-1%"
 set "PUBLISH=%REPO%\artifacts\publish"
 set "RELEASES=%REPO%\artifacts\releases"
 
-rem The version being packed, from the single source of truth, so the banner can say
-rem WHICH Versio just landed - the only other place it appears is inside vpk's output.
-set "VERLINE="
-for /f "delims=" %%V in ('findstr /c:"<VersioVersion>" "%REPO%\Directory.Build.props"') do set "VERLINE=%%V"
-if not defined VERLINE set "VERLINE=<VersioVersion>unknown</VersioVersion>"
-set "VER=%VERLINE:*<VersioVersion>=%"
-set "VER=%VER:</VersioVersion>=%"
-
 rem Prefer the user-local SDK (exists inside the Claude Code sandbox, where the
 rem PATH dotnet is runtime-only); fall back to dotnet on PATH, which on the real
 rem desktop session carries the full SDK at C:\Program Files\dotnet.
@@ -42,6 +34,14 @@ echo First run downloads PortableGit and vpk. Later runs reuse the cache.
 echo(
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%REPO%\tools\pack\Pack-Versio.ps1" -Repo "%REPO%" -Dotnet "%DOTNET%"
 if errorlevel 1 goto :abort
+
+rem After pack: Pack-Versio.ps1 may have bumped VersioVersion. Read it here so the
+rem banner names the number that actually landed, not the one before the menu.
+set "VERLINE="
+for /f "delims=" %%V in ('findstr /c:"<VersioVersion>" "%REPO%\Directory.Build.props"') do set "VERLINE=%%V"
+if not defined VERLINE set "VERLINE=<VersioVersion>unknown</VersioVersion>"
+set "VER=%VERLINE:*<VersioVersion>=%"
+set "VER=%VER:</VersioVersion>=%"
 
 cls
 echo(

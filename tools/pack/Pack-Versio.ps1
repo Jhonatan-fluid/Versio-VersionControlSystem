@@ -8,7 +8,10 @@ param(
     [string] $Repo,
 
     [Parameter(Mandatory = $true)]
-    [string] $Dotnet
+    [string] $Dotnet,
+
+    # Skip the bump menu. Scripted packs and tests pass x.y.z; the bat does not.
+    [string] $Version
 )
 
 Set-StrictMode -Version Latest
@@ -25,17 +28,95 @@ function Invoke-Dotnet {
 
 function Get-VersioVersion {
     $props = Join-Path $Repo 'Directory.Build.props'
-    $text = Get-Content -LiteralPath $props -Raw -Encoding UTF8
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+    $text = [System.IO.File]::ReadAllText($props, $utf8)
     if ($text -notmatch '<VersioVersion>([^<]+)</VersioVersion>') {
         throw "Directory.Build.props has no VersioVersion"
     }
     return $Matches[1].Trim()
 }
 
+function Assert-SemVer([string] $Value) {
+    if ($Value -notmatch '^\d+\.\d+\.\d+$') {
+        throw "version '$Value' is not x.y.z (what vpk pack will accept)"
+    }
+}
+
+function Set-VersioVersion([string] $NewVersion) {
+    Assert-SemVer $NewVersion
+    $props = Join-Path $Repo 'Directory.Build.props'
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+    $text = [System.IO.File]::ReadAllText($props, $utf8)
+    $updated = [regex]::Replace(
+        $text,
+        '<VersioVersion>[^<]+</VersioVersion>',
+        "<VersioVersion>$NewVersion</VersioVersion>",
+        1)
+    if ($updated -eq $text -and $text -notmatch "<VersioVersion>$NewVersion</VersioVersion>") {
+        throw "Directory.Build.props VersioVersion was not replaced"
+    }
+    # File APIs, not Get-Content/Set-Content: those add a BOM and can corrupt the file.
+    [System.IO.File]::WriteAllText($props, $updated, $utf8)
+}
+
+function Read-VersionChoice([string] $Current) {
+    Assert-SemVer $Current
+    $parts = $Current.Split('.') | ForEach-Object { [int]$_ }
+    $major = [int]$parts[0]
+    $minor = [int]$parts[1]
+    $patch = [int]$parts[2]
+    $asPatch = "$major.$minor.$($patch + 1)"
+    $asMinor = "$major.$($minor + 1).0"
+    $asMajor = "$($major + 1).0.0"
+
+    Write-Host ""
+    Write-Host "Current version: $Current"
+    Write-Host "  1) Last number (patch)  -> $asPatch   [default]"
+    Write-Host "  2) Middle (minor)       -> $asMinor"
+    Write-Host "  3) First (major)        -> $asMajor"
+    Write-Host "  4) Keep                 -> $Current"
+    Write-Host "  5) Type one"
+    Write-Host ""
+    $choice = Read-Host "Choice [1]"
+    if ([string]::IsNullOrWhiteSpace($choice)) {
+        $choice = '1'
+    }
+    switch ($choice.Trim()) {
+        '1' { return $asPatch }
+        '2' { return $asMinor }
+        '3' { return $asMajor }
+        '4' { return $Current }
+        '5' {
+            $typed = Read-Host "Version (x.y.z)"
+            if ([string]::IsNullOrWhiteSpace($typed)) {
+                throw "no version typed"
+            }
+            Assert-SemVer $typed.Trim()
+            return $typed.Trim()
+        }
+        default { throw "not a choice: $choice (1-5)" }
+    }
+}
+
+$current = Get-VersioVersion
+if ([string]::IsNullOrWhiteSpace($Version)) {
+    $chosen = Read-VersionChoice $current
+} else {
+    $chosen = $Version.Trim()
+    Assert-SemVer $chosen
+}
+
+if ($chosen -ne $current) {
+    Set-VersioVersion $chosen
+    Write-Host "VersioVersion $current -> $chosen"
+} else {
+    Write-Host "VersioVersion $chosen (unchanged)"
+}
+
 $fetch = Join-Path $Repo 'tools\pack\Fetch-Deps.ps1'
 & $fetch -Repo $Repo -Dotnet $Dotnet
 
-$version = Get-VersioVersion
+$packVersion = Get-VersioVersion
 $publish = Join-Path $Repo 'artifacts\publish'
 $releases = Join-Path $Repo 'artifacts\releases'
 $icon = Join-Path $Repo 'assets\versio.ico'
@@ -181,14 +262,14 @@ foreach ($path in $required) {
 
 $vpk = Join-Path $Repo 'third_party\cache\vpk\vpk.exe'
 $packStarted = Get-Date
-Write-Host "Packing Setup.exe and per-machine MSI (version $version)..."
+Write-Host "Packing Setup.exe and per-machine MSI (version $packVersion)..."
 # Rebuilds of the same VersioVersion are expected until that number moves.
 # --legacyConsole (-x) turns the overwrite question off; --yes (-y) is the
 # answer. --yes alone still draws the prompt and waits for a timeout.
 # Global flags belong before `pack` — System.CommandLine parses them on vpk itself.
 & $vpk --legacyConsole --yes --skip-updates pack `
     --packId Versio `
-    --packVersion $version `
+    --packVersion $packVersion `
     --packTitle Versio `
     --packAuthors Versio `
     --packDir $publish `
