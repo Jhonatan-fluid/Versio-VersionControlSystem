@@ -155,9 +155,6 @@ internal sealed class CountingGitClient : IGitClient
     public Task<GitResult> DeleteRemoteBranchAsync(string remote, string name, CancellationToken ct) =>
         throw new NotSupportedException();
 
-    public Task<GitResult> FetchPruneAsync(CancellationToken ct) =>
-        throw new NotSupportedException();
-
     public Task<IReadOnlyList<string>> RemotesAsync(CancellationToken ct) =>
         throw new NotSupportedException();
 

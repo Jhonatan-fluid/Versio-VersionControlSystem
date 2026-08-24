@@ -3788,10 +3788,10 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         var failed = outcomes.Where(o => !o.Succeeded).ToList();
 
         // Or the deleted branches linger as stale tracking refs and reappear in the dropdown
-        // looking alive.
+        // looking alive. Every fetch prunes now, so this is the ordinary fetch.
         if (gone.Any(o => o.RemoteDeleted))
         {
-            await _git!.FetchPruneAsync(CancellationToken.None).ConfigureAwait(true);
+            await _git!.FetchAsync(null, CancellationToken.None).ConfigureAwait(true);
         }
 
         if (failed.Count > 0)
