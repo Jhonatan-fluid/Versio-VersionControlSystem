@@ -13,6 +13,10 @@ Versio bundles a pinned PortableGit so a machine without Git for Windows can
 still commit, fetch, and use Git Credential Manager. The corresponding source
 for the bundled version is the GitHub tag recorded in third_party/manifest.json.
 
+The license texts travel inside the payload itself: git\LICENSE.txt at the
+bundle root, and per-component texts under git\usr\share\licenses\. The pack
+refuses to build if git\LICENSE.txt is missing.
+
 codescribe-derived portions
 ---------------------------
 License: Apache-2.0

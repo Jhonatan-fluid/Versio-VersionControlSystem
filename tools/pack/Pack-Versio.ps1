@@ -50,6 +50,9 @@ $tiaProj = Join-Path $Repo 'src\Versio.Plc.TiaPortal.Host\Versio.Plc.TiaPortal.H
 $twinProj = Join-Path $Repo 'src\Versio.Plc.TwinCat.Host\Versio.Plc.TwinCat.Host.csproj'
 
 Write-Host "Publishing Versio.App (self-contained win-x64)..."
+# ReadyToRun pre-compiles to native at publish, which is startup time a desktop app pays
+# on every cold open. Trimming and AOT stay off - WPF does not support them (plan 13.2) -
+# but R2R is the supported middle: bigger managed images, less first-launch JIT.
 Invoke-Dotnet @(
     'publish', $appProj,
     '-c', 'Release',
@@ -58,10 +61,13 @@ Invoke-Dotnet @(
     '-o', $publish,
     '-p:PublishTrimmed=false',
     '-p:PublishAot=false',
-    '-p:PublishSingleFile=false'
+    '-p:PublishSingleFile=false',
+    '-p:PublishReadyToRun=true'
 )
 
 Write-Host "Publishing TwinCAT host (self-contained win-x64)..."
+# R2R here too: the host is spawned per operation, so its cold start is paid on every
+# TwinCAT export and import, not once per day.
 $twinOut = Join-Path $publish 'twincat'
 if (Test-Path -LiteralPath $twinOut) {
     Remove-Item -LiteralPath $twinOut -Recurse -Force
@@ -74,7 +80,8 @@ Invoke-Dotnet @(
     '-o', $twinOut,
     '-p:PublishTrimmed=false',
     '-p:PublishAot=false',
-    '-p:PublishSingleFile=false'
+    '-p:PublishSingleFile=false',
+    '-p:PublishReadyToRun=true'
 )
 
 Write-Host "Building TIA host (net48)..."
@@ -158,7 +165,13 @@ $required = @(
     (Join-Path $publish 'Versio.exe'),
     (Join-Path $publish 'tia\Versio.Plc.TiaPortal.Host.exe'),
     (Join-Path $publish 'twincat\Versio.Plc.TwinCat.Host.exe'),
-    $gitExe
+    $gitExe,
+
+    # GPL-2.0 compliance travels with the payload: distributing PortableGit's binaries
+    # requires distributing its license text, and the notices file points at exactly this
+    # path. If a future PortableGit moves it, this gate makes that a failed pack rather
+    # than a quiet license violation.
+    (Join-Path $gitOut 'LICENSE.txt')
 )
 foreach ($path in $required) {
     if (-not (Test-Path -LiteralPath $path)) {
