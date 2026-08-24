@@ -11,6 +11,14 @@ if "%REPO:~-1%"=="\" set "REPO=%REPO:~0,-1%"
 set "PUBLISH=%REPO%\artifacts\publish"
 set "RELEASES=%REPO%\artifacts\releases"
 
+rem The version being packed, from the single source of truth, so the banner can say
+rem WHICH Versio just landed - the only other place it appears is inside vpk's output.
+set "VERLINE="
+for /f "delims=" %%V in ('findstr /c:"<VersioVersion>" "%REPO%\Directory.Build.props"') do set "VERLINE=%%V"
+if not defined VERLINE set "VERLINE=<VersioVersion>unknown</VersioVersion>"
+set "VER=%VERLINE:*<VersioVersion>=%"
+set "VER=%VER:</VersioVersion>=%"
+
 rem Prefer the user-local SDK (exists inside the Claude Code sandbox, where the
 rem PATH dotnet is runtime-only); fall back to dotnet on PATH, which on the real
 rem desktop session carries the full SDK at C:\Program Files\dotnet.
@@ -45,7 +53,7 @@ echo %ESC%[34m    ###    #######  ##   ##   #####   ####   #######  %ESC%[0m
 echo %ESC%[90m  ==================================================  %ESC%[0m
 echo %ESC%[37m           PLC projects, versioned in git             %ESC%[0m
 echo(
-echo %ESC%[92m   PACKAGE GREEN%ESC%[90m - Setup.exe and MSI are on disk%ESC%[0m
+echo %ESC%[92m   PACKAGE GREEN%ESC%[90m - Versio %VER% - Setup.exe and MSI are on disk%ESC%[0m
 echo(
 call :ready "Self-contained Versio.exe ...." "%PUBLISH%\Versio.exe"
 call :ready "Bundled git.exe .............." "%PUBLISH%\git\cmd\git.exe"
