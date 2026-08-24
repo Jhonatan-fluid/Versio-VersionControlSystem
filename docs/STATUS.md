@@ -14,8 +14,9 @@ skip). That run is also the counted gate `LOCK-1` owed. Item 5 (packaging) has u
 eyeballs: UX-6 / UX-7 `Ctrl+F` / UX-8 / UX-12 (item 3). Do not start from `archive/`
 or a handoff.
 
-**Tests:** 2,766 across eleven projects, last counted 2026-08-24 (user-state path
-out of the Velopack directory). The git panel is one CHANGES list: checkboxes pick the include set,
+**Tests:** 2,768 across eleven projects, last counted 2026-08-24 after the packaging
+audit (migration crash-guard, fresh TIA payload, the Velopack/vpk version pact —
+FINDINGS 2026-08-24). The git panel is one CHANGES list: checkboxes pick the include set,
 Commit / Discard are the verbs, and a failed project no longer vetoes unrelated files.
 in-flight work including an import; Try again lights after cancel; close asks even during
 import; CODESYS.exe and git.exe die with Versio (Job Object); TIA/TwinCAT hosts watch the
@@ -41,9 +42,9 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 | Project | Tests | Time | Needs |
 |---|---|---|---|
 | `Versio.Core.Tests` | 1,469 | under a second | nothing |
-| `Versio.Integration.Tests` | 161 | ~10 s | real git |
+| `Versio.Integration.Tests` | 162 | ~10 s | real git |
 | `Versio.App.Tests` | 644 | ~50 s | nothing |
-| `Versio.Arch.Tests` | 23 | instant | nothing |
+| `Versio.Arch.Tests` | 24 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 22 | instant | nothing |

@@ -19,6 +19,45 @@ produce a diff touching everything else.
 
 ---
 
+### Packaging audit: the state rescue could crash startup, and the TIA payload shipped from an uncleaned bin
+
+**Found 2026-08-24 by an audit of the packaging pass**, requested by the owner before the
+branch was committed. Four defects, none of which had bitten yet; all fixed the same day.
+
+1. **`AppUserPaths.Migrate` could take the app down with it.** The copy-out of legacy
+   settings and logs ran unguarded inside `OnStartup` and two constructors. Two ordinary
+   situations make `File.Copy` throw: an older build still running holds today's log open,
+   and two new instances launching at once both pass the exists-check before one copies.
+   Either exception was a Versio that will not open — on exactly the machines the migration
+   exists to rescue. Now best-effort per file (the originals are never deleted, so a skipped
+   file is copied next launch); creating the durable root stays unguarded on purpose,
+   because if that fails the settings store and log sink fail on the same path a moment
+   later and *that* should surface. The test locks a log with `FileShare.None` mid-migrate.
+
+2. **The TIA host payload was copied from `bin\Release\net48`, which nothing ever cleans.**
+   A renamed assembly or dropped dependency lingers in an incremental bin and would ship in
+   every installer from then on. The app and the TwinCAT host already published into wiped
+   folders; the one net48 payload now builds with `-o` into a wiped `publish\tia` too.
+
+3. **The Velopack/vpk version pact was a comment.** The csproj says the `Velopack` package
+   must match the `vpk` tool version and nothing enforced it — bumping one ships an
+   installer whose in-app hooks and packer disagree. An arch test now reads the pin from
+   `third_party/manifest.json` and asserts the csproj matches.
+
+4. **Two script edges.** `git lfs version` and the config pin ran between the two SFX
+   existence polls, i.e. against a tree the extractor could still be writing — both polls
+   now finish before anything from the payload is executed (GCM lands among the last files,
+   so its appearance is the better "extraction finished" signal). And the final
+   Setup.exe/MSI check accepted any file in a releases folder that is never cleaned; it now
+   requires `LastWriteTime` at or after this run's vpk start.
+
+Verified with a full pack after the fixes: green end to end in 3 m 47 s, `publish\tia`
+holding exactly the 12 files of the current build. Still open from the same audit, not
+code: what the per-machine MSI actually does belongs on a clean VM before anyone is handed
+it, and the update feed plus in-app `UpdateManager` check remain unbuilt (STATUS item 5).
+
+---
+
 ### Setup.exe lived in the same folder as settings.json and deleted the recent list
 
 **Reported 2026-08-24 by the owner**, from the first packaged install: the repository
