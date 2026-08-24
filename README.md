@@ -206,7 +206,7 @@ Versio.sln
 ├─ tests/
 │  ├─ Versio.TestSupport/       not a test project: the three helpers more than one suite
 │  │                            needs (TestPaths, TestLogger, VendorSeamScanner)
-│  ├─ Versio.Core.Tests/        1,460 unit tests — pure, no IO, under a second
+│  ├─ Versio.Core.Tests/        1,469 unit tests — pure, no IO, under a second
 │  ├─ Versio.Integration.Tests/ 155 tests against real git and the real filesystem, ~10 s.
 │  │                            NO CODESYS: that is a different project now, so this one
 │  │                            needs no filter and cannot accidentally cost half an hour
@@ -391,10 +391,10 @@ dotnet test tests/Versio.Core.Tests
 
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,460 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
-| `Versio.Integration.Tests` | 155 | a real `git.exe` and the real filesystem | ~10 s |
+| `Versio.Core.Tests` | 1,469 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
+| `Versio.Integration.Tests` | 158 | a real `git.exe` and the real filesystem | ~10 s |
 | `Versio.Arch.Tests` | 15 | nothing — it reads assembly metadata, IL, and the project files | instant |
-| `Versio.App.Tests` | 629 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
+| `Versio.App.Tests` | 637 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | nothing — the vendor's planner, codecs and protocol, pure | under a second |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 22 | nothing — format, planner, protocol, scrubber | instant |
@@ -508,7 +508,7 @@ Each of these cost real debugging time and is now pinned by a test.
 | **Never rewrite GUIDs in an export** | Only `Timestamp` is scrubbed. Rewriting identity GUIDs breaks visualisations. Masking them for a *comparison* is fine; writing masked ones to disk is not. |
 | **`git apply --cached` reads the index, not the working tree** | It is the *index* that a patch's context is checked against, so a file saved between a diff being read and a hunk being staged does not invalidate the hunk — what gets staged is still what was on screen. The staleness that does matter is the index moving, and that is refused. Never pass `--unidiff-zero`: it disables the check that makes both true. |
 | **WPF `TreeView` does not virtualize by default** | Measured at 5,002 nodes: **94.7 ms virtualized vs 10,635 ms at the defaults**. Needs `IsVirtualizing`, `VirtualizationMode=Recycling` and a `VirtualizingStackPanel` items panel. |
-| **An `.ico` is eight drawings, not one** | Windows does not downscale gracefully. The mark is redrawn per size, with a simplified variant below 48px — the 1-unit plate stagger is half a pixel at 32px, too small to see and large enough to smear every edge. Run `tools/New-VersioIcon.ps1 -PreviewDirectory …` and **look at the 16px output** before believing a change. |
+| **An `.ico` is eight drawings, not one** | Windows does not downscale gracefully. The mark is redrawn per size, with a simplified variant below 48px — two thicker plates and a larger join disc, because a 14-unit plate is three and a half pixels at 16px. Run `tools/New-VersioIcon.ps1 -PreviewDirectory …` and **look at the 16px output** before believing a change. |
 | **A framework-dependent exe needs `DOTNET_ROOT`** | If the SDK is installed per-user rather than machine-wide, `Versio.exe` cannot find the runtime and shows a "must install .NET" dialog. Self-contained publish removes this entirely — which is why §13.2 specifies it. |
 
 ---

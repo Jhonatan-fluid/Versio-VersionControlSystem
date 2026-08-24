@@ -19,6 +19,59 @@ produce a diff touching everything else.
 
 ---
 
+### A merged branch reported "Up to date" with an upstream that no longer existed
+
+**Reported 2026-08-23 by the owner**, from using the app: the `continue` branch had been
+merged and deleted on GitHub, and after pressing Fetch the panel still said *"Up to date with
+origin/continue"* and offered *Go to pull request*. `ls-remote` against the real remote
+confirmed only `main` existed; the local repository still had the `origin/continue`
+tracking ref.
+
+Three defects stacked, each hiding the next:
+
+1. **The ordinary fetch did not prune.** `FetchAsync` ran plain `git fetch`;
+   `FetchPruneAsync` existed and pruned correctly but ran only after an *in-app* remote
+   deletion (`ShellViewModel.ReportDeletionAsync`). A branch the forge deleted — the
+   ordinary end of every merged PR — kept its stale tracking ref, porcelain kept counting
+   against the ghost, and 0/0 rendered as InSync. Fixed by folding `--prune` into
+   `FetchAsync` and deleting the second method: two fetches whose only difference was
+   honesty meant every caller had to know which one told the truth.
+
+2. **The poller knew and threw the answer away.** `LsRemoteAsync` returned one string, so
+   "the branch is not there" (success, no output) and "the remote did not answer" (failure)
+   were the same emptiness. `RemotePoller` recorded a deleted upstream as
+   `ProbeOutcome.Failed` every interval — *"probe origin/continue: no answer"* — and
+   `FailuresBeforeHalt` of those halted the watch as unreachable, over a remote that was
+   answering perfectly well. Fixed with `RemoteBranchProbe { Answered, Head }`; a gone
+   branch with a stale local ref now triggers the (pruning) fetch once, a gone branch
+   already pruned is a quiet probe, and a branch recreated on the remote is ordinary
+   movement, so the state heals itself.
+
+3. **Even pruned, the state was unspeakable.** Porcelain v2 reports a gone upstream *by
+   omission* — `branch.upstream` with no `branch.ab` line — and `PorcelainV2Parser` let the
+   missing line decay to `Ahead == Behind == 0`, which `RemoteStanding.For` rendered as
+   InSync. `TrackingState` simply had no member for the situation. Fixed with
+   `BranchInfo.UpstreamGone` (the parser remembers whether `branch.ab` appeared at all) and
+   `TrackingState.UpstreamGone`, amber: *"origin/x is gone from the remote — deleted after
+   a merge, usually. Push to republish it, or switch to another branch."* Push stays live
+   (it recreates the branch); Pull goes dead — the one upstream-holding state where the
+   useless-pull-is-harmless argument fails, because the pull is a guaranteed error. The
+   merge-request button blocks with *"push it again first"* rather than offering a create
+   link that would 404.
+
+`DeletedUpstreamTests` proves the chain against real git, including the pre-fix lie: the
+test asserts the status *before* the fetch still reads InSync, so if git ever starts
+reporting the loss unprompted, the obsolete half of this reasoning fails a test rather than
+lingering. The parser flag survived a deliberate mutation check (`&& false` on the flag
+assignment: exactly one test failed).
+
+Worth keeping: the badge had been lying for as long as the app existed, and it took a
+*person* noticing "I deleted that branch" to see it. States that render as a healthy
+default — 0/0, empty string, "up to date" — deserve suspicion precisely because no test of
+the healthy path can catch them impersonating it.
+
+---
+
 ### TwinCAT create used the I/O-probe argument order; delete called a method that is not on the interface
 
 **Found 2026-08-22**, walking create / rename / object-delete against live XAE

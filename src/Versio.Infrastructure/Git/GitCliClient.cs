@@ -523,7 +523,14 @@ public sealed partial class GitCliClient(
         // The three network operations get a start line each, because they are the ones that
         // can sit for minutes behind an auth prompt that will never appear.
         _log.Info(LogCategory.Git, "fetching");
-        return RunAsync(["fetch", "--progress"], progress, ct, TimeSpan.FromMinutes(10));
+
+        // --prune on every fetch, not only after an in-app deletion. Without it a branch the
+        // forge deleted - the ordinary end of every merged PR - leaves its tracking ref
+        // behind, porcelain keeps counting against the ghost, and the panel says "Up to date
+        // with origin/x" for a branch nobody else can see (FINDINGS 2026-08-23). There is no
+        // scenario in which a tracking ref for a deleted branch is worth keeping.
+        return RunAsync(["fetch", "--prune", "--progress"], progress, ct,
+                        TimeSpan.FromMinutes(10));
     }
 
     /// <summary>Fast-forward the current branch from its upstream.</summary>

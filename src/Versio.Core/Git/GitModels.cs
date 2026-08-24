@@ -58,6 +58,20 @@ public sealed record BranchInfo
     public bool IsUnborn { get; init; }
 
     /// <summary>
+    /// True when an upstream is configured but its remote-tracking ref no longer exists —
+    /// the remote branch was deleted, usually by a forge cleaning up after a merge.
+    /// </summary>
+    /// <remarks>
+    /// Porcelain v2 states this by omission: it prints <c>branch.upstream</c> and then no
+    /// <c>branch.ab</c> line, because there is nothing left to count against. Left unflagged,
+    /// that omission decays to <c>Ahead == Behind == 0</c>, which rendered as "Up to date
+    /// with origin/x" over a branch nobody else could even see any more — the one wrong
+    /// answer, because it reads as "my work is safe" precisely when it is not
+    /// (FINDINGS 2026-08-23).
+    /// </remarks>
+    public bool UpstreamGone { get; init; }
+
+    /// <summary>
     /// Whether this branch is on this machine, on the remote, or both.
     /// </summary>
     /// <remarks>
@@ -92,6 +106,31 @@ public sealed record GitStatus
     public IEnumerable<FileChange> Staged => Changes.Where(c => c.IsStaged);
     public IEnumerable<FileChange> Unstaged =>
         Changes.Where(c => c.Unstaged is not ChangeKind.Unmodified);
+}
+
+/// <summary>What <c>ls-remote</c> said about one branch on the remote.</summary>
+/// <remarks>
+/// A string could not carry the distinction that matters: <c>ls-remote</c> succeeding with no
+/// output means <i>the branch is not there</i> — an answer, from a remote that is reachable
+/// and let us in — while the command failing means nothing was learned at all. For as long as
+/// this was a string the poller collapsed both into one emptiness and treated a deleted
+/// upstream as an unreachable remote, feeding the circuit breaker until the watch halted over
+/// a remote that was answering perfectly well (FINDINGS 2026-08-23).
+/// </remarks>
+public sealed record RemoteBranchProbe
+{
+    /// <summary>True when the remote answered, whatever the answer was.</summary>
+    public required bool Answered { get; init; }
+
+    /// <summary>The commit the branch points at. Empty when the branch is not on the
+    /// remote, or when there was no answer.</summary>
+    public string Head { get; init; } = string.Empty;
+
+    /// <summary>True when the remote answered and the branch is there.</summary>
+    public bool BranchExists => Answered && Head.Length > 0;
+
+    /// <summary>Nothing was learned: no connection, no credentials, or no permission.</summary>
+    public static readonly RemoteBranchProbe NoAnswer = new() { Answered = false };
 }
 
 /// <summary>The raw result of one <c>git</c> invocation.</summary>

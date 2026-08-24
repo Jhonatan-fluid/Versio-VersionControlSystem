@@ -221,7 +221,7 @@ public sealed class RemotePoller : IDisposable
         }
 
         var started = _clock.UtcNow;
-        var remoteHead = await git.LsRemoteAsync(target.Remote, target.Branch, ct)
+        var probe = await git.LsRemoteAsync(target.Remote, target.Branch, ct)
             .ConfigureAwait(false);
 
         // Between the probe starting and finishing, the user may have pressed something. A
@@ -233,11 +233,11 @@ public sealed class RemotePoller : IDisposable
 
         var elapsed = (_clock.UtcNow - started).TotalMilliseconds;
 
-        if (remoteHead.Length == 0)
+        if (!probe.Answered)
         {
-            // Either the branch is not on the remote — ordinary for one never published — or
-            // the call failed. Both mean there is nothing to compare, and neither is worth a
-            // notification on a timer.
+            // Nothing was learned: no connection, no credentials, or no permission. There is
+            // nothing to compare, and it is not worth a notification on a timer — the
+            // failure counting decides when to give up.
             _policy.Record(ProbeOutcome.Failed, "the remote did not answer");
             _logger.Debug(LogCategory.Git,
                 $"probe {target.Remote}/{target.Branch}: no answer in {elapsed:F0} ms");
@@ -257,7 +257,47 @@ public sealed class RemotePoller : IDisposable
         var localHead = await git.RevParseAsync($"{target.Remote}/{target.Branch}", ct)
             .ConfigureAwait(false);
 
-        if (string.Equals(remoteHead, localHead, StringComparison.OrdinalIgnoreCase))
+        if (!probe.BranchExists)
+        {
+            // The remote answered and the branch is not there: deleted, almost always by a
+            // forge cleaning up after a merge. This used to be recorded as a failed probe —
+            // ls-remote's emptiness read as unreachability — which fed the circuit breaker
+            // until the watch halted "unreachable" over a remote that was answering fine
+            // (FINDINGS 2026-08-23).
+            if (localHead.Length == 0)
+            {
+                // Already pruned; the standing already names the gone upstream. Nothing new
+                // to learn, so this is a quiet probe like any other.
+                _policy.Record(ProbeOutcome.Unchanged);
+                _logger.Debug(LogCategory.Git,
+                    $"probe {target.Remote}/{target.Branch}: still gone from the remote");
+
+                if (_quiet.RecordQuiet("remote", _clock.UtcNow) is { } quiet)
+                {
+                    _logger.Info(LogCategory.Git, quiet);
+                }
+
+                return;
+            }
+
+            if (_quiet.RecordChange(_clock.UtcNow) is { } endedRun)
+            {
+                _logger.Debug(LogCategory.Git, endedRun);
+            }
+
+            // The stale tracking ref is still here, so porcelain is still counting against a
+            // branch that does not exist and the badge still says "up to date". The fetch
+            // prunes the ref, and the refresh that follows reports the upstream as gone.
+            _logger.Info(LogCategory.Git,
+                $"{target.Remote}/{target.Branch} is gone from the remote — " +
+                "fetching to prune the stale tracking ref");
+
+            _policy.Record(ProbeOutcome.Moved);
+            await _onMoved(ct).ConfigureAwait(false);
+            return;
+        }
+
+        if (string.Equals(probe.Head, localHead, StringComparison.OrdinalIgnoreCase))
         {
             _policy.Record(ProbeOutcome.Unchanged);
 
@@ -282,7 +322,7 @@ public sealed class RemotePoller : IDisposable
 
         // The line somebody looks for when asking "when did the remote change".
         _logger.Info(LogCategory.Git,
-            $"{target.Remote}/{target.Branch} moved: {Short(localHead)} -> {Short(remoteHead)}");
+            $"{target.Remote}/{target.Branch} moved: {Short(localHead)} -> {Short(probe.Head)}");
 
         _policy.Record(ProbeOutcome.Moved);
 

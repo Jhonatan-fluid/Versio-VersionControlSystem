@@ -82,12 +82,10 @@ public sealed partial class GitCliClient
         return RunAsync(["push", remote, "--delete", name], null, ct, TimeSpan.FromMinutes(5));
     }
 
-    /// <summary>Fetch, dropping tracking refs for branches that are gone.</summary>
-    public Task<GitResult> FetchPruneAsync(CancellationToken ct)
-    {
-        _log.Info(LogCategory.Git, "fetching with prune");
-        return RunAsync(["fetch", "--prune", "--progress"], null, ct, TimeSpan.FromMinutes(10));
-    }
+    // FetchPruneAsync lived here until every fetch learned --prune (FINDINGS 2026-08-23).
+    // Two fetch methods whose only difference was honesty about deleted branches meant every
+    // caller had to know which one told the truth, and the ordinary one - the Fetch button,
+    // the poller's catch-up - was the one that did not.
 
     /// <summary>Every remote this repository has.</summary>
     /// <remarks>

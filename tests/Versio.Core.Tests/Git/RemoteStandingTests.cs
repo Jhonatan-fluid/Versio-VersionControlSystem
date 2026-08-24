@@ -24,7 +24,7 @@ public sealed class RemoteStandingTests
 {
     private static BranchInfo Branch(
         string? upstream = "origin/main", int ahead = 0, int behind = 0,
-        bool unborn = false, bool detached = false) => new()
+        bool unborn = false, bool detached = false, bool upstreamGone = false) => new()
     {
         Name = "main",
         Upstream = upstream,
@@ -32,6 +32,7 @@ public sealed class RemoteStandingTests
         Behind = behind,
         IsUnborn = unborn,
         IsDetached = detached,
+        UpstreamGone = upstreamGone,
         IsCurrent = true,
     };
 
@@ -92,6 +93,7 @@ public sealed class RemoteStandingTests
             RemoteStanding.For(Branch(ahead: 2), hasRemote: true),
             RemoteStanding.For(Branch(behind: 2), hasRemote: true),
             RemoteStanding.For(Branch(ahead: 1, behind: 3), hasRemote: true),
+            RemoteStanding.For(Branch(upstreamGone: true), hasRemote: true),
         ];
 
         Assert.All(others, s => Assert.False(s.IsDetached, $"{s.State} claims to be detached"));
@@ -208,6 +210,34 @@ public sealed class RemoteStandingTests
     }
 
     [Fact]
+    public void A_gone_upstream_is_named_rather_than_reported_in_sync()
+    {
+        var standing = RemoteStanding.For(Branch(upstreamGone: true), hasRemote: true);
+
+        // THE DEFECT THIS STATE EXISTS FOR (FINDINGS 2026-08-23). A forge deleting the
+        // branch after a merge leaves ahead/behind at 0/0, which used to fall through to
+        // InSync: "Up to date with origin/continue" over a branch nobody else could see.
+        // The one wrong answer, because it reads as "my work is safe" exactly when it is not.
+        Assert.Equal(TrackingState.UpstreamGone, standing.State);
+        Assert.Contains("origin/main", standing.Headline);
+        Assert.Contains("gone from the remote", standing.Headline);
+        Assert.Equal("Brush.Status.Modified", standing.BrushKey);
+    }
+
+    [Fact]
+    public void A_gone_upstream_offers_push_and_never_pull()
+    {
+        var standing = RemoteStanding.For(Branch(upstreamGone: true), hasRemote: true);
+
+        // Push recreates the branch on the remote - the republish the headline offers. Pull
+        // is the one upstream-holding state where the button can only fail ("no such ref was
+        // fetched"), so the usual useless-pull-is-harmless argument does not apply.
+        Assert.True(standing.CanPush);
+        Assert.False(standing.CanPull);
+        Assert.False(standing.CanPublish);
+    }
+
+    [Fact]
     public void Diverged_says_to_pull_first()
     {
         var standing = RemoteStanding.For(Branch(ahead: 2, behind: 3), hasRemote: true);
@@ -266,6 +296,7 @@ public sealed class RemoteStandingTests
             Branch(ahead: 1),
             Branch(behind: 1),
             Branch(ahead: 1, behind: 1),
+            Branch(upstreamGone: true),
         ];
 
         foreach (var branch in all)

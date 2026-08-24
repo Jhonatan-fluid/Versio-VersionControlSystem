@@ -33,17 +33,25 @@ public sealed class RemotePollerTests
 
         public string LocalHead { get; set; } = "aaaaaaa";
 
+        /// <summary>Whether the remote answers at all. False models no connection or no
+        /// credentials; true with an empty <see cref="RemoteHead"/> models a deleted branch —
+        /// the two situations the probe type exists to keep apart.</summary>
+        public bool Answered { get; set; } = true;
+
         public int LsRemoteCalls { get; private set; }
 
         /// <summary>Runs while the probe is in flight, so a test can model the user pressing
         /// something at exactly the wrong moment.</summary>
         public Action? DuringLsRemote { get; set; }
 
-        public Task<string> LsRemoteAsync(string remote, string branch, CancellationToken ct)
+        public Task<RemoteBranchProbe> LsRemoteAsync(
+            string remote, string branch, CancellationToken ct)
         {
             LsRemoteCalls++;
             DuringLsRemote?.Invoke();
-            return Task.FromResult(RemoteHead);
+            return Task.FromResult(Answered
+                ? new RemoteBranchProbe { Answered = true, Head = RemoteHead }
+                : RemoteBranchProbe.NoAnswer);
         }
 
         public Task<string> RevParseAsync(string revision, CancellationToken ct) =>
@@ -121,9 +129,6 @@ public sealed class RemotePollerTests
             throw new NotSupportedException();
 
         public Task<GitResult> DeleteRemoteBranchAsync(string remote, string name, CancellationToken ct) =>
-            throw new NotSupportedException();
-
-        public Task<GitResult> FetchPruneAsync(CancellationToken ct) =>
             throw new NotSupportedException();
 
         public Task<IReadOnlyList<string>> RemotesAsync(CancellationToken ct) => throw new NotSupportedException();
@@ -227,7 +232,7 @@ public sealed class RemotePollerTests
         // No answer means no connection or no credentials. Asking a second question down the
         // same pipe is a second timeout for the same information.
         var h = new Harness();
-        h.Git.RemoteHead = string.Empty;
+        h.Git.Answered = false;
 
         await h.TickAsync();
 
@@ -249,6 +254,80 @@ public sealed class RemotePollerTests
     {
         var h = new Harness();
         h.Git.RemoteHead = "bbbbbbb";
+
+        await h.TickAsync();
+
+        Assert.Equal(1, h.Fetches);
+    }
+
+    [Fact]
+    public async Task A_branch_gone_from_an_answering_remote_is_not_a_failure()
+    {
+        // THE MISCLASSIFICATION (FINDINGS 2026-08-23). A forge deleting the branch after a
+        // merge made ls-remote answer with nothing, which used to be recorded as Failed -
+        // feeding the circuit breaker until the watch halted "unreachable" over a remote
+        // that was answering perfectly well.
+        var h = new Harness();
+        h.Git.RemoteHead = string.Empty;
+
+        for (var i = 0; i < RemotePollPolicy.FailuresBeforeHalt + 1; i++)
+        {
+            h.Clock.Advance(TimeSpan.FromMinutes(2));
+            await h.TickAsync();
+        }
+
+        Assert.False(h.Poller.Policy.Halted);
+        Assert.Empty(h.Halts);
+    }
+
+    [Fact]
+    public async Task A_gone_branch_with_a_stale_tracking_ref_triggers_the_pruning_fetch()
+    {
+        // The one moment there is something to learn: the local ref still exists, so
+        // porcelain is still counting against a ghost and the badge says "up to date". The
+        // fetch prunes the ref; the refresh that follows reports the upstream as gone.
+        var h = new Harness();
+        h.Git.RemoteHead = string.Empty;
+        h.Git.LocalHead = "aaaaaaa";
+
+        await h.TickAsync();
+
+        Assert.Equal(1, h.Fetches);
+
+        var line = h.Sink.Snapshot()
+                    .First(e => e.Level == LogLevel.Information && e.Message.Contains("gone"));
+        Assert.Contains("origin/main", line.Message);
+    }
+
+    [Fact]
+    public async Task A_gone_branch_already_pruned_is_quiet_rather_than_fetched_again()
+    {
+        // After the prune the poller keeps watching - the branch could be recreated - but
+        // every further probe finds the same absence. Fetching on each would be a network
+        // call every interval to learn nothing, the exact thing the probe design exists to
+        // avoid.
+        var h = new Harness();
+        h.Git.RemoteHead = string.Empty;
+        h.Git.LocalHead = string.Empty;
+
+        for (var i = 0; i < 3; i++)
+        {
+            h.Clock.Advance(TimeSpan.FromMinutes(2));
+            await h.TickAsync();
+        }
+
+        Assert.Equal(0, h.Fetches);
+        Assert.False(h.Poller.Policy.Halted);
+    }
+
+    [Fact]
+    public async Task A_gone_branch_recreated_on_the_remote_is_fetched()
+    {
+        // The way back: pushing the branch again (or a teammate doing so) makes the probe
+        // see a head where the pruned local ref has none, which is ordinary movement.
+        var h = new Harness();
+        h.Git.RemoteHead = "ccccccc";
+        h.Git.LocalHead = string.Empty;
 
         await h.TickAsync();
 

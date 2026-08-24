@@ -138,6 +138,14 @@ public sealed record MergeRequestPlan
             return Blocked(kind, "Publish this branch first.");
         }
 
+        // The forge deleted the branch, almost always because its request was merged. A
+        // "create" link for a branch the forge cannot see would 404, and a "go to" ref that
+        // survived the deletion points at history rather than anything actionable.
+        if (tracking is TrackingState.UpstreamGone)
+        {
+            return Blocked(kind, "This branch is gone from the remote — push it again first.");
+        }
+
         if (tracking is TrackingState.NoRemote or TrackingState.Unborn
             or TrackingState.NoRepository or TrackingState.Detached)
         {

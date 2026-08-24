@@ -13,8 +13,10 @@ skip). That run is also the counted gate `LOCK-1` owed. After the eyeballs: UX-6
 UX-7 `Ctrl+F` / UX-8 / UX-12 (item 3), unless the owner picks packaging (item 5)
 instead. Do not start from `archive/` or a handoff.
 
-**Tests:** 2,728 across eleven projects, last counted 2026-08-22 after TwinCAT create /
-rename / object-delete. The git panel is one CHANGES list: checkboxes pick the include set,
+**Tests:** 2,748 across eleven projects, last counted 2026-08-23 after the upstream-gone
+work (a merged-and-deleted remote branch reported "Up to date"; every fetch now prunes, the
+poller tells a deleted branch from an unreachable remote, and the badge names the state —
+see FINDINGS 2026-08-23). The git panel is one CHANGES list: checkboxes pick the include set,
 Commit / Discard are the verbs, and a failed project no longer vetoes unrelated files.
 in-flight work including an import; Try again lights after cancel; close asks even during
 import; CODESYS.exe and git.exe die with Versio (Job Object); TIA/TwinCAT hosts watch the
@@ -39,9 +41,9 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,463 | under a second | nothing |
-| `Versio.Integration.Tests` | 155 | ~10 s | real git |
-| `Versio.App.Tests` | 626 | ~50 s | nothing |
+| `Versio.Core.Tests` | 1,469 | under a second | nothing |
+| `Versio.Integration.Tests` | 158 | ~10 s | real git |
+| `Versio.App.Tests` | 637 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 15 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |

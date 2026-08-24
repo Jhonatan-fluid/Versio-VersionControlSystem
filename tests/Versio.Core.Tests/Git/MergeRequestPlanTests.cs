@@ -110,6 +110,18 @@ public sealed class MergeRequestPlanTests
     }
 
     [Fact]
+    public void A_branch_whose_upstream_is_gone_is_asked_to_push_again()
+    {
+        // The forge deleted the branch, almost always because its request was merged. A
+        // create link would 404; pushing again is the only way back to an actionable state.
+        var plan = Plan(tracking: TrackingState.UpstreamGone);
+
+        Assert.False(plan.CanOpen);
+        Assert.Equal("This branch is gone from the remote — push it again first.",
+                     plan.BlockedReason);
+    }
+
+    [Fact]
     public void Unpushed_commits_are_counted_in_the_refusal()
     {
         var plan = Plan(branch: Branch(ahead: 3), tracking: TrackingState.Ahead);

@@ -58,9 +58,8 @@ $Design = 64.0
 # change is a one-line edit here.
 $Ink = @{
     Tile    = [System.Drawing.ColorTranslator]::FromHtml('#1D2026')  # Surface.Base
-    Oldest  = [System.Drawing.ColorTranslator]::FromHtml('#5C6472')  # Text.Disabled
-    Middle  = [System.Drawing.ColorTranslator]::FromHtml('#8B93A1')  # Status.Neutral
-    Current = [System.Drawing.ColorTranslator]::FromHtml('#E8EAED')  # Text.Primary
+    Mirror  = [System.Drawing.ColorTranslator]::FromHtml('#E8EAED')  # Text.Primary
+    Project = [System.Drawing.ColorTranslator]::FromHtml('#5C6472')  # Text.Disabled
     Badge   = [System.Drawing.ColorTranslator]::FromHtml('#4ADE80')  # Status.Added
 }
 
@@ -114,12 +113,12 @@ function New-IconBitmap {
       .DESCRIPTION
         Two variants, and the threshold is deliberate.
 
-        The 1-unit stagger between plates is half a pixel at 32 px: too small to
-        read as a stagger, large enough to smear every plate edge into grey. So
-        the staggered variant only runs at 48 px and above. Below that the plates
-        square up, the gaps widen to a full clean pixel, and the badge grows until
-        it survives - at 16 px it is the only thing distinguishing this from a
-        generic list glyph.
+        Pair has no stagger. Two plates of equal weight (mirror on top, project
+        below) with the badge in the gap, notching both. At 16 px a 14-unit plate
+        is three and a half pixels and the 6-unit badge is a smear, so below 48 px
+        the plates thicken, the gap stays a full pixel, and the badge grows until
+        the join survives. That join is what stops this reading as a list glyph:
+        a list does not have a disc in the middle.
 
         Small-variant coordinates are all multiples of 4, which lands every plate
         edge on a whole pixel at both 16 px and 32 px - the two sizes that matter
@@ -140,22 +139,20 @@ function New-IconBitmap {
         Add-Plate -Graphics $g -X 0 -Y 0 -W 64 -H 64 -R 14 -Color $Ink.Tile
 
         if ($Size -ge 48) {
-            Add-Plate -Graphics $g -X 15 -Y 40 -W 34 -H 8 -R 3 -Color $Ink.Oldest
-            Add-Plate -Graphics $g -X 14 -Y 28 -W 34 -H 8 -R 3 -Color $Ink.Middle
-            Add-Plate -Graphics $g -X 13 -Y 16 -W 34 -H 8 -R 3 -Color $Ink.Current
+            Add-Plate -Graphics $g -X 13 -Y 15 -W 38 -H 14 -R 4 -Color $Ink.Mirror
+            Add-Plate -Graphics $g -X 13 -Y 35 -W 38 -H 14 -R 4 -Color $Ink.Project
 
-            # Punched in the tile colour first, so the badge reads as a notch cut out
-            # of the top plate rather than a sticker dropped on it.
-            Add-Disc -Graphics $g -Cx 46 -Cy 20 -R 7.5 -Color $Ink.Tile
-            Add-Disc -Graphics $g -Cx 46 -Cy 20 -R 5.2 -Color $Ink.Badge
+            # Punched in the tile colour first, so the badge reads as a notch cut
+            # out of both plates rather than a sticker dropped on the gap.
+            Add-Disc -Graphics $g -Cx 32 -Cy 32 -R 8.5 -Color $Ink.Tile
+            Add-Disc -Graphics $g -Cx 32 -Cy 32 -R 6.0 -Color $Ink.Badge
         }
         else {
-            Add-Plate -Graphics $g -X 12 -Y 44 -W 28 -H 8 -R 3 -Color $Ink.Oldest
-            Add-Plate -Graphics $g -X 12 -Y 28 -W 28 -H 8 -R 3 -Color $Ink.Middle
-            Add-Plate -Graphics $g -X 12 -Y 12 -W 28 -H 8 -R 3 -Color $Ink.Current
+            Add-Plate -Graphics $g -X 12 -Y 12 -W 40 -H 16 -R 4 -Color $Ink.Mirror
+            Add-Plate -Graphics $g -X 12 -Y 36 -W 40 -H 16 -R 4 -Color $Ink.Project
 
-            Add-Disc -Graphics $g -Cx 46.5 -Cy 20 -R 8.5 -Color $Ink.Tile
-            Add-Disc -Graphics $g -Cx 46.5 -Cy 20 -R 6.5 -Color $Ink.Badge
+            Add-Disc -Graphics $g -Cx 32 -Cy 32 -R 9.5 -Color $Ink.Tile
+            Add-Disc -Graphics $g -Cx 32 -Cy 32 -R 7.0 -Color $Ink.Badge
         }
     }
     finally { $g.Dispose() }

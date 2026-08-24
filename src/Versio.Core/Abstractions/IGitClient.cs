@@ -164,11 +164,11 @@ public interface IGitClient
     /// download. A real fetch runs only when this says the remote has actually moved.
     /// </para>
     /// <para>
-    /// Empty when the branch is not on the remote, which is an answer rather than a failure —
-    /// a branch that has never been published has nothing there to compare against.
+    /// The answer distinguishes "the branch is not there" from "the remote did not answer" —
+    /// see <see cref="RemoteBranchProbe"/> for why a string could not.
     /// </para>
     /// </remarks>
-    Task<string> LsRemoteAsync(string remote, string branch, CancellationToken ct);
+    Task<RemoteBranchProbe> LsRemoteAsync(string remote, string branch, CancellationToken ct);
 
     /// <summary>
     /// Resolve a revision to a commit id, locally.
@@ -326,15 +326,6 @@ public interface IGitClient
     /// </remarks>
     Task<GitResult> DeleteRemoteBranchAsync(string remote, string name, CancellationToken ct);
 
-    /// <summary>
-    /// Fetch, dropping remote-tracking refs whose branches are gone.
-    /// </summary>
-    /// <remarks>
-    /// Run after deleting from a remote, or the deleted branches linger as stale tracking refs
-    /// and reappear in the dropdown looking alive.
-    /// </remarks>
-    Task<GitResult> FetchPruneAsync(CancellationToken ct);
-
     /// <summary>Verify a remote is reachable without cloning it.</summary>
     Task<GitResult> VerifyRemoteAsync(string url, CancellationToken ct);
 
@@ -388,6 +379,17 @@ public interface IGitClient
     /// </remarks>
     Task<string> GitDirectoryAsync(CancellationToken ct);
 
+    /// <summary>
+    /// Fetch from the remote, dropping tracking refs for branches that are gone.
+    /// </summary>
+    /// <remarks>
+    /// Pruning is part of every fetch rather than a separate call. Without it a branch the
+    /// forge deleted after merging lingers as a stale tracking ref: it reappears in the
+    /// dropdown looking alive, and porcelain counts against it so the panel reports "Up to
+    /// date" with a branch that no longer exists (FINDINGS 2026-08-23). A separate
+    /// <c>FetchPruneAsync</c> existed for the in-app deletion flow, which meant the ordinary
+    /// fetch — the button, the poller's catch-up — was the one that kept the ghosts.
+    /// </remarks>
     Task<GitResult> FetchAsync(IProgress<GitProgress>? progress, CancellationToken ct);
 
     Task<GitResult> PullAsync(IProgress<GitProgress>? progress, CancellationToken ct);

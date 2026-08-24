@@ -38,6 +38,49 @@ public class PorcelainV2ParserTests
 
         Assert.Equal(3, status.Branch.Ahead);
         Assert.Equal(2, status.Branch.Behind);
+        Assert.False(status.Branch.UpstreamGone);
+    }
+
+    [Fact]
+    public void An_upstream_without_an_ahead_behind_line_is_flagged_gone()
+    {
+        // Git states "the upstream's tracking ref is gone" BY OMISSION: branch.upstream is
+        // printed and branch.ab is not, because there is nothing left to count against. This
+        // is the shape a pruned repository reports after the forge deleted the branch
+        // post-merge, and it used to decay to 0/0 = "Up to date" (FINDINGS 2026-08-23).
+        var status = PorcelainV2Parser.Parse(Entries(
+            "# branch.oid 9291d00abc",
+            "# branch.head continue",
+            "# branch.upstream origin/continue"));
+
+        Assert.True(status.Branch.UpstreamGone);
+        Assert.Equal("origin/continue", status.Branch.Upstream);
+    }
+
+    [Fact]
+    public void No_upstream_at_all_is_not_flagged_gone()
+    {
+        // A branch never published also has no branch.ab line; "gone" is only meaningful
+        // when there is a configured upstream to be gone.
+        var status = PorcelainV2Parser.Parse(Entries(
+            "# branch.oid 9291d00abc",
+            "# branch.head feature/x"));
+
+        Assert.False(status.Branch.UpstreamGone);
+    }
+
+    [Fact]
+    public void A_zero_zero_ahead_behind_line_is_in_sync_rather_than_gone()
+    {
+        // The line being PRESENT with zeros is a healthy in-sync branch. Only its absence
+        // beside an upstream means the ref is gone - the two must not be conflated, or every
+        // clean branch turns amber.
+        var status = PorcelainV2Parser.Parse(Entries(
+            "# branch.head main",
+            "# branch.upstream origin/main",
+            "# branch.ab +0 -0"));
+
+        Assert.False(status.Branch.UpstreamGone);
     }
 
     [Fact]
