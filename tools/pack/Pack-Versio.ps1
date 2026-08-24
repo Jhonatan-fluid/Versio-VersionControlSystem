@@ -106,8 +106,24 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
     Assert-SemVer $chosen
 }
 
+# A failed pack must not burn the number. The bump has to happen before the build so the
+# version bakes into the assemblies - which means a pack that then fails has mutated
+# Directory.Build.props for nothing, and the next menu compounds from the burned value
+# (fail twice and 0.1.5 / 0.1.6 were silently skipped). The undo is a script-scope trap:
+# it fires on any terminating error below, restores the file only when THIS run wrote it,
+# and `break` rethrows so the failure still reaches the caller as a failure.
+$script:bumpedFrom = $null
+trap {
+    if ($null -ne $script:bumpedFrom) {
+        Set-VersioVersion $script:bumpedFrom
+        Write-Host "VersioVersion reverted to $script:bumpedFrom - the failed pack shipped nothing."
+    }
+    break
+}
+
 if ($chosen -ne $current) {
     Set-VersioVersion $chosen
+    $script:bumpedFrom = $current
     Write-Host "VersioVersion $current -> $chosen"
 } else {
     Write-Host "VersioVersion $chosen (unchanged)"
