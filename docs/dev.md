@@ -161,7 +161,7 @@ Read [`App.xaml.cs`](../src/Versio.App/App.xaml.cs). The order is not decorative
 4. **Vendor registration**, before any window and before any scan:
    `CodesysPack.Register()`, `TiaPortalPack.Register()`, `TwinCatPack.Register()`. Opening
    a repository looks at every known format. A shell built first would scan for none.
-5. Settings from `%LOCALAPPDATA%\Versio\settings.json` (theme, panel sizes, recent
+5. Settings from `%LOCALAPPDATA%\VersioUser\settings.json` (theme, panel sizes, recent
    repositories). Read **before** the window shows, so it does not paint the wrong size and
    jump.
 6. `ShellViewModel` is constructed. It owns git auth, sync, remotes, history, explorer.
@@ -1211,7 +1211,7 @@ look like a hang.
 pack.
 
 - **Ring buffer** → log panel (`LogViewModel`). Batched ~100 ms.
-- **Rolling file** → `%LOCALAPPDATA%\Versio\logs`, local day, kept a few days. Attached at
+- **Rolling file** → `%LOCALAPPDATA%\VersioUser\logs`, local day, kept a few days. Attached at
   process start.
 - **Correlation ids** via `BeginOperation`. Heartbeat lines share the same id as the run.
 - Filter chips are a **set**, not a minimum level. "Warnings and errors only" is a request
@@ -1236,7 +1236,7 @@ Easy to leave out of a sync document. Still how the app works.
 keys). F5 refreshes. Ctrl+Enter commits from the message box. Ctrl+Shift+P pushes.
 **Ctrl+F is not built** (search is UX-6).
 
-**Settings.** `%LOCALAPPDATA%\Versio\settings.json` — theme, panel sizes, last ten
+**Settings.** `%LOCALAPPDATA%\VersioUser\settings.json` — theme, panel sizes, last ten
 repositories. A vanished recent repo offers clone-again / remove / cancel, not a blank
 folder picker. Startup falls back to the most recent path still on disk.
 

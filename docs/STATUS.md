@@ -1,6 +1,6 @@
 # Versio — status and what is next
 
-**Date:** 2026-08-22 · **This is the live page.** Where the project is, and what is next, live
+**Date:** 2026-08-23 · **This is the live page.** Where the project is, and what is next, live
 here and only here. Search [`FINDINGS.md`](FINDINGS.md) for defects. Completed plans and session
 handoffs are records in [`phase1/`](phase1/) and [`archive/`](archive/) — read them for why,
 never for state.
@@ -9,14 +9,13 @@ never for state.
 `Versio.Plc.Codesys.Tests` ran on `Siemens2` on 2026-08-19 evening — **54/54 green in
 39 m 33 s, zero skips**, on an idle machine with the IDE closed, over the Core seam
 changes (`ExportHeldViaCopy`, the held-wait, occupancy-then-hash, the locked-pointer
-skip). That run is also the counted gate `LOCK-1` owed. After the eyeballs: UX-6 /
-UX-7 `Ctrl+F` / UX-8 / UX-12 (item 3), unless the owner picks packaging (item 5)
-instead. Do not start from `archive/` or a handoff.
+skip). That run is also the counted gate `LOCK-1` owed. Item 5 (packaging) has unsigned
+`Setup.exe` / MSI from `Build_Package.bat`; signing and the feed remain. After the
+eyeballs: UX-6 / UX-7 `Ctrl+F` / UX-8 / UX-12 (item 3). Do not start from `archive/`
+or a handoff.
 
-**Tests:** 2,748 across eleven projects, last counted 2026-08-23 after the upstream-gone
-work (a merged-and-deleted remote branch reported "Up to date"; every fetch now prunes, the
-poller tells a deleted branch from an unreachable remote, and the badge names the state —
-see FINDINGS 2026-08-23). The git panel is one CHANGES list: checkboxes pick the include set,
+**Tests:** 2,766 across eleven projects, last counted 2026-08-24 (user-state path
+out of the Velopack directory). The git panel is one CHANGES list: checkboxes pick the include set,
 Commit / Discard are the verbs, and a failed project no longer vetoes unrelated files.
 in-flight work including an import; Try again lights after cancel; close asks even during
 import; CODESYS.exe and git.exe die with Versio (Job Object); TIA/TwinCAT hosts watch the
@@ -42,9 +41,9 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 | Project | Tests | Time | Needs |
 |---|---|---|---|
 | `Versio.Core.Tests` | 1,469 | under a second | nothing |
-| `Versio.Integration.Tests` | 158 | ~10 s | real git |
-| `Versio.App.Tests` | 637 | ~50 s | nothing |
-| `Versio.Arch.Tests` | 15 | instant | nothing |
+| `Versio.Integration.Tests` | 161 | ~10 s | real git |
+| `Versio.App.Tests` | 644 | ~50 s | nothing |
+| `Versio.Arch.Tests` | 23 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 22 | instant | nothing |
@@ -130,10 +129,16 @@ and word-level diff, and a UX pass over the running window. The owner saw the me
 `UxPlan` window on 2026-08-19 and said it looks right. What that look did not include is in the
 queue below.
 
-**Packaging is the remaining product *build*** (item 5). The CODESYS gate ran on
-`Siemens2` (item 1, done); what stands between here and packaging is the owner's eyeballs
-and the UX remainder. Code signing is procurement lead time: start it before it is
-needed.
+**Packaging ships Setup.exe and a per-machine MSI** (item 5, in progress).
+`Build_Package.bat` uses a cached PortableGit 7z and a pinned vpk when they are
+already on disk, publishes a self-contained win-x64 payload (git, both vendor hosts,
+.NET 9), and packs. Bundled git pins Git Credential Manager so PortableGit's
+helper-selector does not ask on every fill. Settings and logs live in
+`%LOCALAPPDATA%\VersioUser\`, not in the Velopack install directory, so a reinstall
+does not wipe the recent-repository list. Re-packing the same `VersioVersion` overwrites
+yesterday's `artifacts/releases` (`vpk --legacyConsole --yes`) — it is not a newer Git download. Signing and
+the update feed are still open. The CODESYS gate ran on `Siemens2` (item 1, done). Owner eyeballs
+and the UX remainder are still the product remainder beside this.
 
 ```
   CODESYS pipeline    ████████████████████  proven on a real project
@@ -142,7 +147,7 @@ needed.
   Domain core         ████████████████████  vendor-blind, tested without a toolchain
   Vendor seam         ████████████████████  enforced by the project graph + metadata
   Desktop shell       ███████████████████░  git surface, tree, explorer; UX remainder below
-  Packaging           ██░░░░░░░░░░░░░░░░░░  icon and publish profile only
+  Packaging           ████████████░░░░░░░░  unsigned Setup.exe + MSI; signing and feed open
 ```
 
 ---
@@ -159,7 +164,7 @@ One list. Reorder it; do not copy it into another file.
    one CHANGES list** (no STAGED / NOT STAGED splitter); two-line rows are 40 px so they no
    longer overlap. **Stop / Retry / close:** start an export, click Stop, confirm the
    log names the operation (not `the session is ending`), Try again lights, then close during a
-   run and the window actually goes. Filter `%LOCALAPPDATA%\Versio\logs\versio-<date>.log` to
+   run and the window actually goes. Filter `%LOCALAPPDATA%\VersioUser\logs\versio-<date>.log` to
    that window. TIA confirm-import and restore of the ~500 MB tree (the existing
    directory-payload seam; export was seen on `%TEMP%\versio-tia-p7`). TwinCAT: adopt the
    committed fixture in this repository and confirm export / confirm-import look right.
@@ -172,9 +177,9 @@ One list. Reorder it; do not copy it into another file.
    needs a real CODESYS export. P-M1 already measured that a merge can commit a project its
    mirror disagrees with (41 mirror files, two carrying content the kept project did not have);
    `LOCK-1` pointed the lock at import so the export gate cannot win that race.
-5. **Packaging.** `third_party/` vendoring with SHA-256 pinning; Velopack (`Setup.exe`, MSI,
-   delta updates); **code signing**. Sequenced last on 2026-08-17, on purpose. Open decisions
-   1–4 below are the packaging questions.
+5. **Packaging.** Unsigned `Setup.exe` and per-machine MSI from `Build_Package.bat`.
+   PortableGit is bundled (decision 3, closed). **Code signing** and the update feed
+   remain. Sequenced last on 2026-08-17, on purpose; first artifacts 2026-08-23.
 6. **Wait for a specimen, not a build.** C5 (`DELETE_UNREADABLE`) and `native_partial` close when
    reality produces an object nobody has observed. They cannot be manufactured. See
    [`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md).
@@ -244,7 +249,7 @@ Close Versio **and** Portal before a host rebuild. Click **Yes to all** on Openn
 |---|---|---|
 | 1 | Who else runs this, and on what kind of machine? | Whether signing and an MSI are needed at all |
 | 2 | Budget and legal entity for a code-signing certificate? | External distribution |
-| 3 | Bundle PortableGit, or require Git for Windows? | Installer size and GPL compliance work |
+| 3 | ~~Bundle PortableGit, or require Git for Windows?~~ **Bundled.** PortableGit 2.55.0.5 ships in the installer; F5 still uses PATH. GPL notices in `third_party/THIRD-PARTY-NOTICES.txt`. | Installer size and GPL — handled |
 | 4 | Where does the update feed live? | Packaging |
 | 5 | Is a **resident CODESYS session** worth building? | 17–31 s vs sub-second on every save |
 | 6 | Can CODESYS run on a shared server? *(a licensing call, not engineering)* | PLC CI |
@@ -259,7 +264,8 @@ copy of `TC3_PlcSample_reStrText`. Studio 5000 remains additive, not this queue.
 
 1. Read `CLAUDE.md` end to end — the rules are load-bearing and each one names what it cost.
 2. **This page, item 2** — the owner eyeballs (item 1, the CODESYS gate, ran green on
-   2026-08-19). Then item 3 (UX), unless the owner says packaging. Do not re-derive this
+   2026-08-19). Item 5 first artifacts: double-click `Build_Package.bat` for unsigned
+   `Setup.exe` and MSI in `artifacts\releases`. Then item 3 (UX). Do not re-derive this
    list from the archive.
 3. The loop: `Versio.Core.Tests` + `Versio.Integration.Tests` + `Versio.Arch.Tests` +
    `Versio.Plc.Codesys.Pure.Tests` + `Versio.Plc.Codesys.Parity.Tests` +

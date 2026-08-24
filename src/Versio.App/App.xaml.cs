@@ -41,6 +41,11 @@ public partial class App : Application
         ThemeManager.Apply(AppTheme.System);
         ThemeManager.FollowSystemChanges();
 
+        // Before the file sink: leftover settings/logs still sit in the Velopack
+        // directory from builds that used that folder as AppData. Copy them out so
+        // today's log and the recent list are not inside a tree uninstall will delete.
+        AppUserPaths.MigrateFromLegacyInstallDirectory();
+
         // --spike runs the R25 tree measurement instead of the shell. Kept in the shipped
         // app rather than deleted, so the virtualization settings have a regression check
         // that anyone can run.

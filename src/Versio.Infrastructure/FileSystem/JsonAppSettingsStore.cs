@@ -8,12 +8,15 @@ using Versio.Core.Settings;
 namespace Versio.Infrastructure.FileSystem;
 
 /// <summary>
-/// Persists this machine's preferences to <c>%LOCALAPPDATA%\Versio\settings.json</c>.
+/// Persists this machine's preferences to <c>%LOCALAPPDATA%\VersioUser\settings.json</c>.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Beside the logs, not inside a repository. Every other piece of state Versio writes belongs
-/// to one repository and lives under its <c>.versio/</c>; this one is about the application —
+/// Beside the logs, not inside a repository, and not inside the Velopack install directory.
+/// <c>%LOCALAPPDATA%\Versio</c> is Setup.exe's per-user root; the first pack that landed
+/// there deleted the recent-repository list that used to share the name. See
+/// <see cref="AppUserPaths"/>. Every other piece of state Versio writes belongs to one
+/// repository and lives under its <c>.versio/</c>; this one is about the application —
 /// which repositories have been opened at all — and has no repository to live in. It is also
 /// the answer to "where does the first repository come from on a fresh window".
 /// </para>
@@ -30,11 +33,12 @@ public sealed class JsonAppSettingsStore : IAppSettingsStore
     public JsonAppSettingsStore(string? directory = null, IVersioLogger? logger = null)
     {
         _log = logger ?? NullLogger.Instance;
-        Path = System.IO.Path.Combine(
-            directory ?? System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "Versio"),
-            "settings.json");
+        if (directory is null)
+        {
+            AppUserPaths.MigrateFromLegacyInstallDirectory();
+        }
+
+        Path = System.IO.Path.Combine(directory ?? AppUserPaths.Root, "settings.json");
     }
 
     /// <summary>The file itself, so a log line can name it.</summary>

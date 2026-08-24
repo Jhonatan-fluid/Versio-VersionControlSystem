@@ -244,7 +244,7 @@ public sealed class RecentRepositoryTests
 
         var real = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Versio", "settings.json");
+            "VersioUser", "settings.json");
 
         var before = File.Exists(real) ? File.ReadAllBytes(real) : null;
 

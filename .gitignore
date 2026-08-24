@@ -79,6 +79,11 @@ desktop.ini
 # Downloaded Microsoft bootstrapper, not ours to vendor.
 tools/dotnet-install.ps1
 
+# Pack-time downloads and publish output. Pins live in third_party/manifest.json.
+artifacts/
+third_party/cache/
+tools/pack/vpk/
+
 # Added by Versio: files the PLC toolchain writes beside a project.
 # The per-user one carries a username and machine name in its filename.
 fixtures/projects/RefrigeratorControl.~u*

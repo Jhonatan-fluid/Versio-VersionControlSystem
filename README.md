@@ -73,7 +73,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | **App-wide progress bar** — one signal for git, export and import alike | ✅ counted `BusyTracker`, with a caption. **An export now counts**: the exporter walks the tree once to get a denominator and reports each object as it starts it, so the bar moves and names what it is on. Everything else stays indeterminate |
 | CODESYS runs with no visible window | ✅ `CREATE_NO_WINDOW` **and** `SW_HIDE` — different subsystems |
 | Repository validation — walks up to `.git`, refuses non-repos with a reason | ✅ handles subdirectories, bare repos and linked worktrees |
-| **The repository dropdown remembers** — recent repositories across restarts | ✅ `%LOCALAPPDATA%\Versio\settings.json`, atomic write, capped at ten. The remote is recorded while the repository is open, so one that has vanished offers *clone it again* / *remove from list* / *cancel* rather than a folder picker. Startup falls back to the most recent repository still on disk |
+| **The repository dropdown remembers** — recent repositories across restarts | ✅ `%LOCALAPPDATA%\VersioUser\settings.json`, atomic write, capped at ten. Outside the Velopack install directory, so Setup.exe / MSI / uninstall do not take the list. The remote is recorded while the repository is open, so one that has vanished offers *clone it again* / *remove from list* / *cancel* rather than a folder picker. Startup falls back to the most recent repository still on disk |
 | **Exports what changed while Versio was closed**, when the repository opens | ✅ after the toolchain is probed, the locks restored, the projects scanned and staleness evaluated — in that order, because exporting earlier would run against a lock not yet read |
 | PLC state — toolchain, lock and heartbeat | ✅ environment (toolchain, version, profile) moved to Settings → Help → System information; a failure is reported on the project's own row with a *Try again* beside it. No permanently disabled buttons |
 | **Vendor seam** — `IPlcRunner`/`PlcJob`/`PlcResult`, enforced from assembly metadata | ✅ 22 architecture tests, proven able to fail |
@@ -118,7 +118,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | **Project tree** — CODESYS structure, roll-up badges, search | ✅ 34 unit tests + built from the export this repository commits |
 | **Methods and properties under the object that owns them** | ✅ manifest schema 4 records each member's owner GUID and the tree nests by it — a chain, since a property owns its accessors. Before this a function block's methods were its siblings, and four `InitRoom` methods on four different rooms were four rows in one folder. A mirror exported earlier carries no parents and stays flat until it is re-exported |
 | **Library and task rows, layer chips, context menu** | ✅ one node per library reference, task, device parameter and empty slot; chips in the diff header for ST / native / tasks / libraries / devices; a themed context menu on changed rows. Device YAML is export-only |
-| Packaging | ⛔ not built |
+| Packaging | ✅ `Build_Package.bat` produces unsigned `Setup.exe` and a per-machine MSI. PortableGit, .NET 9 and both vendor hosts ship in the payload. CODESYS / Portal / XAE are detected, never bundled. Signing and the update feed are still open. |
 
 **[docs/STATUS.md](docs/STATUS.md)** has the current state and what is next — the only live
 status page.
@@ -365,10 +365,10 @@ That is not tidiness for its own sake — it is what makes the risky parts (the 
 | | |
 |---|---|
 | .NET SDK | 9.0.317 (pinned in `global.json`) |
-| git | 2.x with `git-lfs`, **on `PATH`** — Versio resolves `git` from `PATH` and drives it for
-  everything, so a machine without it starts and says so rather than working. Nothing is
-  vendored: that is what makes Git Credential Manager, SSH agents, 2FA and corporate proxies
-  behave exactly as they do in your own terminal. |
+| git | 2.x with `git-lfs`, **on `PATH` for a development F5 build**. The installer payload
+  ships PortableGit (`git\cmd\git.exe`) so a packaged machine does not need Git for Windows.
+  `Build_Package.bat` at the repo root publishes that payload and packs `Setup.exe` plus a
+  per-machine MSI. |
 | CODESYS | 3.5 SP22 — **`Versio.Plc.Codesys.Tests` only**; the fast loop needs none |
 | TIA Portal | Openness membership — **`Versio.Plc.TiaPortal.Tests` only**; skips cleanly without it |
 | TwinCAT 3 | `TcXaeShell.DTE.17.0` — **`Versio.Plc.TwinCat.Tests` only**; skips cleanly without it |
@@ -392,9 +392,9 @@ dotnet test tests/Versio.Core.Tests
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|
 | `Versio.Core.Tests` | 1,469 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
-| `Versio.Integration.Tests` | 158 | a real `git.exe` and the real filesystem | ~10 s |
-| `Versio.Arch.Tests` | 15 | nothing — it reads assembly metadata, IL, and the project files | instant |
-| `Versio.App.Tests` | 637 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
+| `Versio.Integration.Tests` | 161 | a real `git.exe` and the real filesystem | ~10 s |
+| `Versio.Arch.Tests` | 23 | nothing — it reads assembly metadata, IL, and the project files | instant |
+| `Versio.App.Tests` | 644 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | nothing — the vendor's planner, codecs and protocol, pure | under a second |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 22 | nothing — format, planner, protocol, scrubber | instant |
@@ -464,10 +464,13 @@ Deliberately few. Every one is a thing that can break a build or a publish.
 | xunit, xunit.runner.visualstudio | tests | test framework |
 | Microsoft.NET.Test.Sdk | tests | test host |
 | Xunit.SkippableFact | tests | integration tests skip cleanly without CODESYS |
+| Velopack | `Versio.App` | installer hooks; same version as the `vpk` tool `Build_Package.bat` installs |
 
 **`Versio.Core` and `Versio.Infrastructure` have no third-party dependencies at all.**
 
-**One tool is a prerequisite rather than a package: `git-lfs`.** The `.project` fixtures and
+**The installer payload bundles PortableGit** (git.exe, git-lfs, Git Credential Manager). A development F5 build still uses git on PATH.
+
+**One tool is a prerequisite for cloning this repository rather than a package: `git-lfs`.** The `.project` fixtures and
 the TIA Portal `System/*.plf` payload are stored in LFS, so a clone on a machine without it
 gets 130-byte pointer files instead. Nothing fails at build time — the CODESYS suite fails
 later, complaining that a project it was handed is not a project; the TIA gate **skips**
@@ -509,7 +512,7 @@ Each of these cost real debugging time and is now pinned by a test.
 | **`git apply --cached` reads the index, not the working tree** | It is the *index* that a patch's context is checked against, so a file saved between a diff being read and a hunk being staged does not invalidate the hunk — what gets staged is still what was on screen. The staleness that does matter is the index moving, and that is refused. Never pass `--unidiff-zero`: it disables the check that makes both true. |
 | **WPF `TreeView` does not virtualize by default** | Measured at 5,002 nodes: **94.7 ms virtualized vs 10,635 ms at the defaults**. Needs `IsVirtualizing`, `VirtualizationMode=Recycling` and a `VirtualizingStackPanel` items panel. |
 | **An `.ico` is eight drawings, not one** | Windows does not downscale gracefully. The mark is redrawn per size, with a simplified variant below 48px — two thicker plates and a larger join disc, because a 14-unit plate is three and a half pixels at 16px. Run `tools/New-VersioIcon.ps1 -PreviewDirectory …` and **look at the 16px output** before believing a change. |
-| **A framework-dependent exe needs `DOTNET_ROOT`** | If the SDK is installed per-user rather than machine-wide, `Versio.exe` cannot find the runtime and shows a "must install .NET" dialog. Self-contained publish removes this entirely — which is why §13.2 specifies it. |
+| **A packaged Versio is self-contained** | `Build_Package.bat` publishes `win-x64` with the .NET 9 Desktop runtime inside the payload, plus PortableGit at `git\cmd\git.exe`. A development F5 build is still framework-dependent and needs the SDK (or `DOTNET_ROOT`) — that is the debug loop, not the installer. |
 
 ---
 

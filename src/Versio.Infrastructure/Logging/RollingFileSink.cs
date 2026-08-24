@@ -1,5 +1,6 @@
 using System.Text;
 using Versio.Core.Logging;
+using Versio.Infrastructure.FileSystem;
 
 namespace Versio.Infrastructure.Logging;
 
@@ -38,7 +39,7 @@ public sealed class RollingFileSink : ILogSink, IDisposable
     private DateOnly _openFor;
 
     /// <summary>
-    /// Where logs live for the current user: <c>%LOCALAPPDATA%\Versio\logs</c>.
+    /// Where logs live for the current user: <c>%LOCALAPPDATA%\VersioUser\logs</c>.
     /// </summary>
     /// <remarks>
     /// <b>Local, deliberately, not Roaming.</b> On a domain with roaming profiles everything
@@ -46,17 +47,24 @@ public sealed class RollingFileSink : ILogSink, IDisposable
     /// logs are machine-specific by definition, so roaming them would slow every sign-in to
     /// carry data that is meaningless on the other machine — and this audience is far more
     /// likely than most to be on exactly that kind of managed domain.
+    /// <para>
+    /// Not <c>%LOCALAPPDATA%\Versio\logs</c>: that folder is inside the per-user Velopack
+    /// install, and uninstall of Setup.exe deletes it. See
+    /// <see cref="Versio.Infrastructure.FileSystem.AppUserPaths"/>.
+    /// </para>
     /// </remarks>
-    public static string DefaultDirectory => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "Versio",
-        "logs");
+    public static string DefaultDirectory => AppUserPaths.LogsDirectory;
 
     /// <param name="directory">Folder to write into. Defaults to
     /// <see cref="DefaultDirectory"/>; tests pass a temp folder.</param>
     /// <param name="retainDays">Files last written before this many days ago are deleted.</param>
     public RollingFileSink(string? directory = null, int retainDays = DefaultRetainDays)
     {
+        if (directory is null)
+        {
+            AppUserPaths.MigrateFromLegacyInstallDirectory();
+        }
+
         _directory = directory ?? DefaultDirectory;
         _retainDays = retainDays;
         Directory.CreateDirectory(_directory);

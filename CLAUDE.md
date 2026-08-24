@@ -153,7 +153,7 @@ start "" "src/Versio.App/bin/Debug/net9.0-windows/Versio.exe" "C:/GIT/Versio"
 ```
 
 It cannot be screenshotted from here — no interactive desktop — so read
-`%LOCALAPPDATA%\Versio\logs\versio-<date>.log` for what happened, and **filter to the launch
+`%LOCALAPPDATA%\VersioUser\logs\versio-<date>.log` for what happened, and **filter to the launch
 window**: stack-trace lines carry no timestamp, so an old exception grepped out of context
 reads as a live one. Zero `ERR` lines after startup means the window constructed, the panels
 realised and the bindings resolved.
@@ -234,9 +234,9 @@ stays that way.
 | Suite | Count | Time | Needs |
 |---|---|---|---|
 | `Versio.Core.Tests` | 1,469 | under a second | nothing |
-| `Versio.Integration.Tests` | 158 | ~10 s | real git |
-| `Versio.App.Tests` | 637 | ~50 s, STA, no window shown | nothing |
-| `Versio.Arch.Tests` | 15 | instant | nothing — it reads assembly metadata, IL and the `.csproj` files |
+| `Versio.Integration.Tests` | 161 | ~10 s | real git |
+| `Versio.App.Tests` | 644 | ~50 s, STA, no window shown | nothing |
+| `Versio.Arch.Tests` | 23 | instant | nothing — it reads assembly metadata, IL and the `.csproj` files |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | under a second | nothing — the planner, the codecs, the protocol |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — **skips cleanly without it, so check the count, not the colour** |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 19 | instant | nothing — format, planner, protocol |

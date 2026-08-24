@@ -19,11 +19,12 @@ public enum GitAvailability
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Versio has no git of its own.</b> Every operation in the application is
-/// <c>git.exe</c> resolved from <c>PATH</c>, which is a deliberate choice — it is what makes
-/// Git Credential Manager, SSH agents, 2FA and corporate proxies behave exactly as they do in
-/// the engineer's own terminal. The cost of that choice is this type: on a machine without git,
-/// nothing works, and the application has to say so in a sentence rather than by failing.
+/// <b>Versio drives the real git, and a packaged install ships it.</b> Every operation is
+/// <c>git.exe</c>: PortableGit beside the app when the installer put it there, otherwise the
+/// name <c>git</c> from PATH. That is what makes Git Credential Manager, SSH agents, 2FA and
+/// corporate proxies behave as they do in the engineer's own terminal. The cost of that choice
+/// is this type: on a machine with neither copy, nothing works, and the application has to say
+/// so in a sentence rather than by failing.
 /// </para>
 /// <para>
 /// <b>Asked once at launch, not at first use.</b> Before this existed the only caller was the
@@ -71,18 +72,18 @@ public sealed record GitPresence
     /// One sentence for the panel, whichever state this is in.
     /// </summary>
     /// <remarks>
-    /// The missing case names <c>PATH</c> explicitly. "Git is not installed" is wrong about
-    /// half the time — the usual cause is a git that exists but is not on the PATH of the
-    /// process Versio was launched from, and telling somebody to install what they already have
-    /// sends them the wrong way for an afternoon.
+    /// A packaged Versio ships git beside the app. A development build resolves <c>git</c>
+    /// from PATH. The missing sentence names both, because "Git is not installed" is wrong
+    /// about a development machine that has git off PATH, and "check PATH" is wrong about a
+    /// packaged install whose PortableGit folder went missing.
     /// </remarks>
     public string Explanation => Availability switch
     {
         GitAvailability.Present => Version,
         GitAvailability.Missing =>
             "Git could not be run. Versio drives the real git for everything it does, so " +
-            "nothing in this panel can work without it. Check that git is installed and on " +
-            "this machine's PATH." +
+            "nothing in this panel can work without it. A packaged install ships git beside " +
+            "the app; a development build needs git on this machine's PATH." +
             (FailureReason.Length == 0 ? string.Empty : $" ({FailureReason})"),
         _ => "Checking for git…",
     };

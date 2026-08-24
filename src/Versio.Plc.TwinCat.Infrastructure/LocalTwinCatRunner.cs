@@ -32,13 +32,7 @@ public sealed class LocalTwinCatRunner(
     /// </summary>
     public static string? FindHost()
     {
-        var names = new[]
-        {
-            Path.Combine(AppContext.BaseDirectory, "twincat", "Versio.Plc.TwinCat.Host.exe"),
-            Path.Combine(AppContext.BaseDirectory, "Versio.Plc.TwinCat.Host.exe"),
-        };
-
-        foreach (var candidate in names)
+        foreach (var candidate in HostCandidates(AppContext.BaseDirectory))
         {
             if (File.Exists(candidate))
             {
@@ -62,6 +56,20 @@ public sealed class LocalTwinCatRunner(
 
         return null;
     }
+
+    /// <summary>
+    /// Where the host is looked for, given the directory Versio.exe (or a test) is running from.
+    /// </summary>
+    /// <remarks>
+    /// The pack layout is <c>twincat\</c> beside the main exe, and that folder is a
+    /// self-contained publish of its own. Tests pin this list so a packaging change that
+    /// flattens the host cannot pass as a FindHost that still "works".
+    /// </remarks>
+    public static IReadOnlyList<string> HostCandidates(string baseDirectory) =>
+    [
+        Path.Combine(baseDirectory, "twincat", "Versio.Plc.TwinCat.Host.exe"),
+        Path.Combine(baseDirectory, "Versio.Plc.TwinCat.Host.exe"),
+    ];
 
     public async Task<PlcResult> RunAsync(
         PlcJob job, IProgress<PlcProgress>? progress, CancellationToken cancellationToken)

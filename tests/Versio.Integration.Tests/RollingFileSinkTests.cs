@@ -16,7 +16,7 @@ namespace Versio.Integration.Tests;
 /// </remarks>
 public sealed class RollingFileSinkTests : IDisposable
 {
-    /// <summary>A throwaway stand-in for <c>%LOCALAPPDATA%\Versio\logs</c>. The real
+    /// <summary>A throwaway stand-in for <c>%LOCALAPPDATA%\VersioUser\logs</c>. The real
     /// directory is asserted on separately, without writing to it.</summary>
     private readonly string _dir =
         Path.Combine(Path.GetTempPath(), "versio-sink-" + Guid.NewGuid().ToString("N")[..8]);
@@ -214,7 +214,7 @@ public sealed class RollingFileSinkTests : IDisposable
         var roaming = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
 
         Assert.StartsWith(local, RollingFileSink.DefaultDirectory, StringComparison.OrdinalIgnoreCase);
-        Assert.EndsWith(Path.Combine("Versio", "logs"), RollingFileSink.DefaultDirectory,
+        Assert.EndsWith(Path.Combine("VersioUser", "logs"), RollingFileSink.DefaultDirectory,
                         StringComparison.OrdinalIgnoreCase);
 
         if (!string.Equals(local, roaming, StringComparison.OrdinalIgnoreCase))

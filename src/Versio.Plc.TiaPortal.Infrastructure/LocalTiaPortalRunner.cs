@@ -32,13 +32,7 @@ public sealed class LocalTiaPortalRunner(
     /// </summary>
     public static string? FindHost()
     {
-        var names = new[]
-        {
-            Path.Combine(AppContext.BaseDirectory, "tia", "Versio.Plc.TiaPortal.Host.exe"),
-            Path.Combine(AppContext.BaseDirectory, "Versio.Plc.TiaPortal.Host.exe"),
-        };
-
-        foreach (var candidate in names)
+        foreach (var candidate in HostCandidates(AppContext.BaseDirectory))
         {
             if (File.Exists(candidate))
             {
@@ -62,6 +56,21 @@ public sealed class LocalTiaPortalRunner(
 
         return null;
     }
+
+    /// <summary>
+    /// Where the host is looked for, given the directory Versio.exe (or a test) is running from.
+    /// </summary>
+    /// <remarks>
+    /// The pack layout is <c>tia\</c> beside the main exe. The second candidate is a flat
+    /// copy, which is how a developer F5 output used to look before the targets file nested
+    /// it. Tests pin this list so a packaging change that moves the host cannot pass as a
+    /// FindHost that "still works" against a leftover file.
+    /// </remarks>
+    public static IReadOnlyList<string> HostCandidates(string baseDirectory) =>
+    [
+        Path.Combine(baseDirectory, "tia", "Versio.Plc.TiaPortal.Host.exe"),
+        Path.Combine(baseDirectory, "Versio.Plc.TiaPortal.Host.exe"),
+    ];
 
     public async Task<PlcResult> RunAsync(
         PlcJob job, IProgress<PlcProgress>? progress, CancellationToken cancellationToken)

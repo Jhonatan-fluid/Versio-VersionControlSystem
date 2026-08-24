@@ -10,7 +10,7 @@ namespace Versio.Core.Tests.Git;
 /// The wording is asserted, not just the enum. The missing-git sentence is the only thing a
 /// user on a git-less machine will ever see from this application, so it is behaviour rather
 /// than decoration — and the specific mistake it exists to avoid, telling somebody to install
-/// what they already have, is invisible unless something pins the word PATH.
+/// what they already have, is invisible unless something pins PATH and the packaged copy.
 /// </remarks>
 public sealed class GitPresenceTests
 {
@@ -58,14 +58,15 @@ public sealed class GitPresenceTests
     }
 
     [Fact]
-    public void Missing_names_PATH_rather_than_telling_the_user_to_install_git()
+    public void Missing_names_PATH_and_the_packaged_copy()
     {
         var presence = GitPresence.NotFound("The system cannot find the file specified.");
 
-        // The usual cause is a git that exists but is not on the PATH of the process Versio
-        // was launched from. "Git is not installed" is wrong about half the time and sends
+        // A development machine usually has git off PATH of the process Versio was launched
+        // from. A packaged install has git beside the app. Naming only one of those sends
         // somebody the wrong way for an afternoon.
         Assert.Contains("PATH", presence.Explanation);
+        Assert.Contains("packaged", presence.Explanation);
     }
 
     [Fact]

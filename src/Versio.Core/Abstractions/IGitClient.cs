@@ -16,15 +16,13 @@ namespace Versio.Core.Abstractions;
 ///     binaries, which are the documented way <c>PublishSingleFile</c> breaks. A pure-CLI
 ///     client has no native payload at all.</item>
 ///   <item><b>git.exe is already a hard dependency.</b> Credentials, LFS and network
-///     operations all go through the engineer's own git regardless, so the CLI costs nothing
-///     extra while LibGit2Sharp adds a second thing to keep in step with it.
+///     operations all go through git.exe, so the CLI costs nothing extra while LibGit2Sharp
+///     adds a second thing to keep in step with it.
 ///     <para>
-///     This item used to claim PortableGit was <i>vendored</i> for those. It is not, and never
-///     was: <see cref="GitProbe"/> resolves <c>git</c> from <c>PATH</c>, which is why a machine
-///     without it gets an explained empty state rather than a working application. Vendoring
-///     remains an option and would not change this interface; the sentence was corrected
-///     rather than the code, because a doc comment asserting a dependency that does not exist
-///     is the same defect class as a comment claiming a rule nothing enforces.
+///     A packaged install prefers PortableGit at <c>git\cmd\git.exe</c> beside the app. A
+///     development build still resolves the name <c>git</c> from PATH. The interface does not
+///     change either way: the client is handed an executable path, and a machine with neither
+///     copy gets an explained empty state rather than a Win32Exception from somewhere deep.
 ///     </para></item>
 ///   <item><b>Porcelain v2 is a stable machine format</b>, explicitly guaranteed across
 ///     versions. Parsing it is a bounded, testable problem — and it is now covered by

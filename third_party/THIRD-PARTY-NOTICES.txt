@@ -1,0 +1,36 @@
+Versio third-party notices
+==========================
+
+This file is shipped with the installer. Unsigned internal distribution is
+still distribution.
+
+Git for Windows (PortableGit)
+-----------------------------
+License: GPL-2.0
+Source: https://github.com/git-for-windows/git
+
+Versio bundles a pinned PortableGit so a machine without Git for Windows can
+still commit, fetch, and use Git Credential Manager. The corresponding source
+for the bundled version is the GitHub tag recorded in third_party/manifest.json.
+
+codescribe-derived portions
+---------------------------
+License: Apache-2.0
+Source: https://github.com/greenforge-labs/codescribe
+
+Object-type GUID table and Timestamp-only scrubbing, with attribution as
+required by Apache-2.0.
+
+Velopack
+--------
+License: MIT
+Source: https://github.com/velopack/velopack
+
+Installer, MSI generation, and in-app update hooks.
+
+.NET runtime (self-contained publish)
+-------------------------------------
+License: MIT
+Source: https://github.com/dotnet/runtime
+
+Bundled by `dotnet publish --self-contained`. Not a separate redistributable.

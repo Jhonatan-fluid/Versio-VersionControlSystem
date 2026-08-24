@@ -19,6 +19,51 @@ produce a diff touching everything else.
 
 ---
 
+### Setup.exe lived in the same folder as settings.json and deleted the recent list
+
+**Reported 2026-08-24 by the owner**, from the first packaged install: the repository
+dropdown was empty after Setup.exe. `%LOCALAPPDATA%\Versio` on that machine was the
+Velopack layout (`current\`, `packages\`, `Update.exe`) and `settings.json` was gone.
+
+Settings and logs used that folder because it was a convenient name, before an installer
+existed. Per-user Velopack *is* `%LOCALAPPDATA%\{packId}`. The first Setup.exe that
+occupied it replaced the directory F5 had been using. An uninstall of that layout would
+have taken the logs too. Update replacing `current\` was never the bug; sharing the
+install root with user state was.
+
+**Fix:** user state is `%LOCALAPPDATA%\VersioUser\` (`settings.json`, `logs\`). A one-way
+copy brings leftover files out of the packId folder and will not overwrite a file already
+in the durable location. Repositories themselves were never in AppData.
+
+The recents this install already deleted cannot be reconstructed from the Velopack
+directory. Open the repositories once on the new build.
+
+---
+
+### PortableGit's helper-selector kept asking which credential helper to use
+
+**Reported 2026-08-24 by the owner**, from the packaged app: `CredentialHelperSelector`
+(`<no helper>` / `wincred` / `manager`) returned on every git credential use even after
+picking Manager.
+
+PortableGit is Git for Windows as a folder, not the Git installer. The installer would have
+written `credential.helper=manager` during setup; the portable archive instead ships
+`helper-selector` so the first credential use can ask. That window is a GUI, so
+`GIT_TERMINAL_PROMPT=0` does not suppress it — background fills (the poller, Verify,
+HasStored) pop it again. "Always use this from now on" writes PortableGit's system
+gitconfig. A per-machine MSI lives under Program Files, which a normal user cannot write,
+so the tick cannot persist.
+
+Not a reason to run the Git for Windows installer on top. MinGit was already rejected
+(no GCM). Login is still GCM via Versio's Sign in; the selector was in the way of that.
+
+**Fix:** pack writes `git config --system credential.helper manager` into the payload;
+every bundled spawn also passes `-c credential.helper=` then `-c credential.helper=manager`
+(empty value is git's documented reset of a multi-valued helper list). PATH git is left
+alone.
+
+---
+
 ### A merged branch reported "Up to date" with an upstream that no longer existed
 
 **Reported 2026-08-23 by the owner**, from using the app: the `continue` branch had been

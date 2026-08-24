@@ -7,6 +7,7 @@
     <UseWPF>true</UseWPF>
     <RootNamespace>Versio.App</RootNamespace>
     <AssemblyName>Versio</AssemblyName>
+    <StartupObject>Versio.App.Program</StartupObject>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
 
     <!-- Embedded into the PE image, which is what Explorer, the taskbar and the
@@ -26,6 +27,11 @@
          it derives from a URL - so they can be driven by a test rather than made public for
          the benefit of one. Same arrangement Versio.Infrastructure has with its own suite. -->
     <InternalsVisibleTo Include="Versio.App.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Installer hooks. Must be the same version as the vpk tool Pack-Versio.ps1 installs. -->
+    <PackageReference Include="Velopack" Version="1.2.0" />
   </ItemGroup>
 
   <ItemGroup>

@@ -587,7 +587,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         History = new HistoryViewModel(logger, ReportError);
         Explorer = new ExplorerViewModel(logger, () => Sync.ReadProjectsForExplorer());
-        _gitFactory = gitFactory ?? (path => new GitCliClient(path, logger: logger));
+        _gitFactory = gitFactory ?? (path => new GitCliClient(path, GitExecutable.Resolve(), logger: logger));
         _locator = new RepositoryLocator(probe ?? new FileSystemRepositoryProbe());
         _policy = new StatusRefreshPolicy(_clock);
 
@@ -2944,7 +2944,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// </remarks>
     public async Task ProbeGitAsync(CancellationToken ct)
     {
-        GitPresence = await GitCliClient.ProbeAsync("git", _logger, ct).ConfigureAwait(true);
+        GitPresence = await GitCliClient.ProbeAsync(GitExecutable.Resolve(), _logger, ct).ConfigureAwait(true);
 
         if (!GitPresence.IsUsable)
         {
@@ -3834,12 +3834,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// <remarks>Handed to the clone dialog. Lives here rather than in the view so that the
     /// view never constructs a git client of its own.</remarks>
     public Task<GitResult> VerifyRemoteAsync(string url, CancellationToken ct) =>
-        GitCliClient.VerifyRemoteAsync(url, "git", _logger, ct);
+        GitCliClient.VerifyRemoteAsync(url, GitExecutable.Resolve(), _logger, ct);
 
     /// <summary>Clone a repository into a folder that does not exist yet.</summary>
     public Task<GitResult> CloneAsync(
         string url, string destination, IProgress<GitProgress>? progress, CancellationToken ct) =>
-        GitCliClient.CloneAsync(url, destination, "git", progress, _logger, ct);
+        GitCliClient.CloneAsync(url, destination, GitExecutable.Resolve(), progress, _logger, ct);
 
 
     /// <summary>

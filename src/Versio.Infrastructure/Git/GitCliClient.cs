@@ -639,6 +639,7 @@ public sealed partial class GitCliClient(
             psi.Environment["GIT_TERMINAL_PROMPT"] = "0";
         }
         psi.Environment["GIT_OPTIONAL_LOCKS"] = "0";
+        GitExecutable.ApplyBundledDefaults(psi, gitExecutable);
 
         var stdout = new StringBuilder();
         var stderr = new StringBuilder();
